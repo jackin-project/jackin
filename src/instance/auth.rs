@@ -142,35 +142,46 @@ impl RoleState {
 }
 
 impl RoleState {
-    /// Provision both Claude's account-metadata file (`account_json`,
-    /// host-side; mounted at `/home/agent/.claude.json` in the container)
-    /// and the OAuth credential file inside the session-state directory
-    /// (`state_dir/.credentials.json`, host-side; mounted at
-    /// `/home/agent/.claude/.credentials.json`) according to the chosen
-    /// auth forwarding strategy.
+    /// Provision Claude's host-side auth files (`account_json` and
+    /// `credentials_json`) according to the chosen auth-forwarding
+    /// strategy and report whether the files should be bind-mounted
+    /// into the container under `/jackin/claude/`.
     ///
-    /// `account_json` must always exist after this call because Docker
-    /// bind-mounts require the source to be a file, not a missing path
-    /// (otherwise Docker creates a directory, breaking Claude Code).
+    /// Returns `(outcome, forward_auth)`. `forward_auth` controls
+    /// whether the launcher will bind-mount the files; the underlying
+    /// host paths are unconditionally tracked on `RoleState` so callers
+    /// can still inspect them (tests, debug output, future migration).
+    ///
+    ///   * **Sync** + host file present → write both files at `0o600`,
+    ///     `forward_auth = true`. Container auth flows from host.
+    ///   * **Sync** + host file absent → preserve any existing role-
+    ///     state files (may carry forward an in-container login),
+    ///     `forward_auth = true`. The launcher then mounts only the
+    ///     files that actually exist on disk.
+    ///   * **`Ignore`/`ApiKey`/`OAuthToken`** → wipe both role-state
+    ///     files (revokes any forwarded creds from a prior Sync) and
+    ///     `forward_auth = false`. The agent authenticates via env vars
+    ///     (`CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`) or via a
+    ///     fresh in-container login that lives only in the writable
+    ///     layer (lost on `docker rm`, by design).
     ///
     /// On macOS the host credentials live in the system Keychain
-    /// ("Claude Code-credentials"), not in a file.  On Linux they are
+    /// ("Claude Code-credentials"), not in a file. On Linux they are
     /// stored at `~/.claude/.credentials.json`.
     pub(super) fn provision_claude_auth(
         account_json: &Path,
-        state_dir: &Path,
+        credentials_json: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
-    ) -> anyhow::Result<AuthProvisionOutcome> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
         let host_claude_json = host_home.join(".claude.json");
-        let credentials_json = state_dir.join(".credentials.json");
 
         let outcome = match mode {
             AuthForwardMode::Ignore => {
                 // Always ensure a clean slate — if switching from sync/token
                 // to ignore, the previously forwarded credentials must be
                 // revoked.
-                wipe_claude_state(account_json, &credentials_json)?;
+                wipe_claude_state(account_json, credentials_json)?;
                 AuthProvisionOutcome::Skipped
             }
             // ApiKey and OAuthToken share filesystem behavior: both env-driven
@@ -181,32 +192,41 @@ impl RoleState {
             // which env var the launcher sets (CLAUDE_CODE_OAUTH_TOKEN vs
             // ANTHROPIC_API_KEY); host-state provisioning is identical.
             AuthForwardMode::OAuthToken | AuthForwardMode::ApiKey => {
-                wipe_claude_state(account_json, &credentials_json)?;
+                wipe_claude_state(account_json, credentials_json)?;
                 AuthProvisionOutcome::TokenMode
             }
             AuthForwardMode::Sync => {
                 if let Some(creds) = read_host_credentials(host_home) {
                     copy_host_claude_json(&host_claude_json, account_json)?;
-                    write_private_file(&credentials_json, &creds)?;
+                    write_private_file(credentials_json, &creds)?;
                     AuthProvisionOutcome::Synced
                 } else {
                     // Host has no auth — leave the container's existing
-                    // files untouched (it may have credentials from a
-                    // previous manual login). Only bootstrap an empty
-                    // file if nothing exists yet.
+                    // files untouched (they may carry credentials from a
+                    // previous manual login). Bootstrap an empty
+                    // account.json if nothing exists yet so the file is
+                    // always present after `prepare`, simplifying
+                    // inspection callers.
                     if !account_json.exists() {
                         write_private_file(account_json, "{}")?;
                     }
                     // Repair permissions on pre-existing auth files that
                     // may have legacy permissive modes (e.g. 0644).
                     repair_permissions(account_json);
-                    repair_permissions(&credentials_json);
+                    repair_permissions(credentials_json);
                     AuthProvisionOutcome::HostMissing
                 }
             }
         };
 
-        Ok(outcome)
+        // Sync-mode outcomes forward auth state; env-driven modes don't.
+        // The launcher additionally checks file existence at mount time
+        // (host-missing sync may have neither file on disk).
+        let forward_auth = matches!(
+            outcome,
+            AuthProvisionOutcome::Synced | AuthProvisionOutcome::HostMissing
+        );
+        Ok((outcome, forward_auth))
     }
 }
 
@@ -448,13 +468,7 @@ plugins = []
             std::fs::read_to_string(state.claude_account_json().unwrap()).unwrap(),
             "{}"
         );
-        assert!(
-            !state
-                .claude_state_dir()
-                .unwrap()
-                .join(".credentials.json")
-                .exists()
-        );
+        assert!(!state.claude_credentials_json().unwrap().exists());
         assert_eq!(outcome, AuthProvisionOutcome::Skipped);
     }
 
@@ -481,8 +495,7 @@ plugins = []
                 .contains("test@example.com")
         );
         assert_eq!(
-            std::fs::read_to_string(state.claude_state_dir().unwrap().join(".credentials.json"))
-                .unwrap(),
+            std::fs::read_to_string(state.claude_credentials_json().unwrap()).unwrap(),
             TEST_CREDENTIALS
         );
         assert_eq!(outcome, AuthProvisionOutcome::Synced);
@@ -509,13 +522,7 @@ plugins = []
             std::fs::read_to_string(state.claude_account_json().unwrap()).unwrap(),
             "{}"
         );
-        assert!(
-            !state
-                .claude_state_dir()
-                .unwrap()
-                .join(".credentials.json")
-                .exists()
-        );
+        assert!(!state.claude_credentials_json().unwrap().exists());
         assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
     }
 
@@ -561,8 +568,7 @@ plugins = []
         .unwrap();
 
         assert_eq!(
-            std::fs::read_to_string(state2.claude_state_dir().unwrap().join(".credentials.json"))
-                .unwrap(),
+            std::fs::read_to_string(state2.claude_credentials_json().unwrap()).unwrap(),
             updated_creds
         );
         assert_eq!(outcome2, AuthProvisionOutcome::Synced);
@@ -587,13 +593,7 @@ plugins = []
             crate::agent::Agent::Claude,
         )
         .unwrap();
-        assert!(
-            state
-                .claude_state_dir()
-                .unwrap()
-                .join(".credentials.json")
-                .exists()
-        );
+        assert!(state.claude_credentials_json().unwrap().exists());
 
         // Operator switches to ignore — credentials must be wiped
         let (state2, _) = RoleState::prepare(
@@ -609,13 +609,7 @@ plugins = []
             std::fs::read_to_string(state2.claude_account_json().unwrap()).unwrap(),
             "{}"
         );
-        assert!(
-            !state2
-                .claude_state_dir()
-                .unwrap()
-                .join(".credentials.json")
-                .exists()
-        );
+        assert!(!state2.claude_credentials_json().unwrap().exists());
     }
 
     #[test]
@@ -641,11 +635,7 @@ plugins = []
             "{}"
         );
         assert!(
-            !state
-                .claude_state_dir()
-                .unwrap()
-                .join(".credentials.json")
-                .exists(),
+            !state.claude_credentials_json().unwrap().exists(),
             "token mode must not write .credentials.json"
         );
         assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
@@ -678,11 +668,7 @@ plugins = []
         )
         .unwrap();
         assert!(
-            state
-                .claude_state_dir()
-                .unwrap()
-                .join(".credentials.json")
-                .exists(),
+            state.claude_credentials_json().unwrap().exists(),
             "precondition: sync seeded .credentials.json"
         );
 
@@ -702,11 +688,7 @@ plugins = []
             "api_key mode must reset .claude.json to empty object"
         );
         assert!(
-            !state2
-                .claude_state_dir()
-                .unwrap()
-                .join(".credentials.json")
-                .exists(),
+            !state2.claude_credentials_json().unwrap().exists(),
             "api_key mode must wipe .credentials.json"
         );
         assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
@@ -729,13 +711,7 @@ plugins = []
             crate::agent::Agent::Claude,
         )
         .unwrap();
-        assert!(
-            state
-                .claude_state_dir()
-                .unwrap()
-                .join(".credentials.json")
-                .exists()
-        );
+        assert!(state.claude_credentials_json().unwrap().exists());
 
         // Operator switches to token — credentials must be wiped and
         // .claude.json reset to {} so Claude Code inside the container
@@ -753,13 +729,7 @@ plugins = []
             std::fs::read_to_string(state2.claude_account_json().unwrap()).unwrap(),
             "{}"
         );
-        assert!(
-            !state2
-                .claude_state_dir()
-                .unwrap()
-                .join(".credentials.json")
-                .exists()
-        );
+        assert!(!state2.claude_credentials_json().unwrap().exists());
         assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
     }
 
@@ -801,8 +771,7 @@ plugins = []
                 .contains("test@example.com")
         );
         assert_eq!(
-            std::fs::read_to_string(state2.claude_state_dir().unwrap().join(".credentials.json"))
-                .unwrap(),
+            std::fs::read_to_string(state2.claude_credentials_json().unwrap()).unwrap(),
             TEST_CREDENTIALS
         );
         assert_eq!(outcome, AuthProvisionOutcome::Synced);
@@ -840,13 +809,7 @@ plugins = []
             std::fs::read_to_string(state2.claude_account_json().unwrap()).unwrap(),
             "{}"
         );
-        assert!(
-            !state2
-                .claude_state_dir()
-                .unwrap()
-                .join(".credentials.json")
-                .exists()
-        );
+        assert!(!state2.claude_credentials_json().unwrap().exists());
         assert_eq!(outcome, AuthProvisionOutcome::Skipped);
     }
 
@@ -921,10 +884,9 @@ plugins = []
             0o600,
             "claude.json should have 0600 permissions"
         );
-        let creds_perms =
-            std::fs::metadata(state.claude_state_dir().unwrap().join(".credentials.json"))
-                .unwrap()
-                .permissions();
+        let creds_perms = std::fs::metadata(state.claude_credentials_json().unwrap())
+            .unwrap()
+            .permissions();
         assert_eq!(
             creds_perms.mode() & 0o777,
             0o600,
@@ -1012,8 +974,8 @@ plugins = []
             std::fs::Permissions::from_mode(0o644),
         )
         .unwrap();
-        let creds_path = state.claude_state_dir().unwrap().join(".credentials.json");
-        std::fs::set_permissions(&creds_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let creds_path = state.claude_credentials_json().unwrap();
+        std::fs::set_permissions(creds_path, std::fs::Permissions::from_mode(0o644)).unwrap();
 
         // Remove host auth so sync takes the preserve path
         std::fs::remove_file(temp.path().join(".claude.json")).unwrap();
@@ -1039,10 +1001,9 @@ plugins = []
             0o600,
             "sync should repair .claude.json permissions even when host auth is missing"
         );
-        let creds_perms =
-            std::fs::metadata(state2.claude_state_dir().unwrap().join(".credentials.json"))
-                .unwrap()
-                .permissions();
+        let creds_perms = std::fs::metadata(state2.claude_credentials_json().unwrap())
+            .unwrap()
+            .permissions();
         assert_eq!(
             creds_perms.mode() & 0o777,
             0o600,
@@ -1118,9 +1079,9 @@ plugins = []
         // Replace .credentials.json with a symlink
         let decoy = temp.path().join("decoy-creds.txt");
         std::fs::write(&decoy, "secret").unwrap();
-        let creds_path = state.claude_state_dir().unwrap().join(".credentials.json");
-        std::fs::remove_file(&creds_path).unwrap();
-        std::os::unix::fs::symlink(&decoy, &creds_path).unwrap();
+        let creds_path = state.claude_credentials_json().unwrap();
+        std::fs::remove_file(creds_path).unwrap();
+        std::os::unix::fs::symlink(&decoy, creds_path).unwrap();
 
         // Sync should refuse to write through the symlink
         let err = RoleState::prepare(

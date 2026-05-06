@@ -1,7 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 
-plugins_file="${JACKIN_PLUGINS_FILE:-/home/agent/.jackin/plugins.json}"
+# The plugins manifest path is required as the first argument. Production
+# callers pass `/jackin/claude/plugins.json` (the location jackin
+# bind-mounts the per-role manifest into); tests pass a temp-dir path.
+# Keeping it explicit avoids env-default-override complexity and makes
+# the data dependency obvious at the call site.
+if [ "$#" -ne 1 ]; then
+    echo "usage: install-claude-plugins.sh <plugins_file>" >&2
+    exit 2
+fi
+plugins_file="$1"
 
 run_maybe_quiet() {
     if [ "${JACKIN_DEBUG:-0}" = "1" ]; then

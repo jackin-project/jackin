@@ -103,8 +103,8 @@ printf '%s\n' "$*" >> '{}'
 
     let status = Command::new("bash")
         .arg("docker/construct/install-claude-plugins.sh")
+        .arg(&plugins_file)
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("JACKIN_PLUGINS_FILE", &plugins_file)
         .env(
             "PATH",
             format!("{}:{}", bin_dir.display(), std::env::var("PATH").unwrap()),
@@ -172,8 +172,8 @@ fi
 
     let output = Command::new("bash")
         .arg("docker/construct/install-claude-plugins.sh")
+        .arg(&plugins_file)
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("JACKIN_PLUGINS_FILE", &plugins_file)
         .env(
             "PATH",
             format!("{}:{}", bin_dir.display(), std::env::var("PATH").unwrap()),
