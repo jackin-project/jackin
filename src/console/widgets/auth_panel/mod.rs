@@ -11,5 +11,7 @@ pub mod render;
 pub mod state;
 
 pub use form::{AuthForm, AuthFormOutcome, CredentialInput};
-pub use render::{FormContext, agent_display, mode_str, render_form};
-pub use state::{CredentialBadge, ProvenanceTag, badge_for, classify_env_value};
+pub use render::{FormContext, render_form};
+pub(crate) use render::{DANGER_RED, PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE, agent_display, mode_str};
+pub use state::{CredentialBadge, ProvenanceTag};
+pub(crate) use state::badge_for;

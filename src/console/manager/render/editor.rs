@@ -985,6 +985,9 @@ fn render_secrets_key_line(
 /// merged with the (mostly read-only) global layer of the live config so
 /// in-flight edits are reflected immediately.
 fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
+    use crate::console::widgets::auth_panel::{PHOSPHOR_DARK, WHITE};
+    use ratatui::style::Modifier;
+    use ratatui::text::Span;
     use ratatui::widgets::{List, ListItem, ListState};
 
     let synthesized = synthesize_appconfig_for_auth(state, config);
@@ -999,7 +1002,14 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, confi
         .iter()
         .map(|r| ListItem::new(render_auth_row(r, &synthesized, &workspace_name)))
         .collect();
-    let block = Block::default().borders(Borders::ALL).title(" Auth ");
+    let title_span = Span::styled(
+        " Auth ",
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+    );
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(title_span);
     let list = List::new(items).block(block).highlight_symbol("▸ ");
     let mut list_state = ListState::default();
     list_state.select(Some(selected));
@@ -1100,11 +1110,11 @@ fn render_auth_row(
 fn badge_span(
     badge: crate::console::widgets::auth_panel::CredentialBadge,
 ) -> ratatui::text::Span<'static> {
-    use crate::console::widgets::auth_panel::CredentialBadge;
+    use crate::console::widgets::auth_panel::{CredentialBadge, DANGER_RED, PHOSPHOR_GREEN};
     match badge {
         CredentialBadge::Resolves => Span::styled("OK", Style::default().fg(PHOSPHOR_GREEN)),
         CredentialBadge::Unset => {
-            Span::styled("! unset", Style::default().fg(Color::Rgb(255, 94, 122)))
+            Span::styled("! unset", Style::default().fg(DANGER_RED))
         }
         CredentialBadge::NotApplicable => Span::raw(""),
     }

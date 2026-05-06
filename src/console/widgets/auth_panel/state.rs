@@ -8,6 +8,7 @@ use crate::agent::Agent;
 use crate::config::{AppConfig, AuthForwardMode};
 
 /// Which layer of the 3-layer resolver supplied this row's mode value.
+#[allow(dead_code)] // re-introduced as a footer hint in Task 13 of the auth-tab redesign
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProvenanceTag {
     /// Mode came from `[<agent>]` (global default).
@@ -40,7 +41,7 @@ pub enum CredentialBadge {
 /// `OpRef` entries report `Resolves` optimistically — the picker validated
 /// them at commit time, and verifying again here would require running
 /// `op read`, which the panel deliberately avoids.
-pub fn badge_for(
+pub(crate) fn badge_for(
     cfg: &AppConfig,
     workspace: &str,
     role: &str,
@@ -75,7 +76,7 @@ pub fn badge_for(
     CredentialBadge::Unset
 }
 
-pub const fn classify_env_value(value: &crate::operator_env::EnvValue) -> CredentialBadge {
+pub(crate) const fn classify_env_value(value: &crate::operator_env::EnvValue) -> CredentialBadge {
     use crate::operator_env::EnvValue;
     match value {
         // OpRef: assume the picker validated at commit time. The panel
@@ -86,5 +87,70 @@ pub const fn classify_env_value(value: &crate::operator_env::EnvValue) -> Creden
         // any non-empty persisted string is treated as `Resolves`.
         EnvValue::Plain(s) if !s.is_empty() => CredentialBadge::Resolves,
         EnvValue::Plain(_) => CredentialBadge::Unset,
+    }
+}
+
+#[cfg(test)]
+mod badge_for_tests {
+    use super::*;
+    use crate::config::{AgentAuthConfig, AppConfig};
+    use crate::operator_env::EnvValue;
+    use crate::workspace::WorkspaceConfig;
+
+    fn base_cfg_with_ws() -> AppConfig {
+        let mut cfg = AppConfig::default();
+        let ws = WorkspaceConfig {
+            workdir: "/tmp/proj".to_string(),
+            allowed_roles: vec!["smith".to_string()],
+            ..Default::default()
+        };
+        cfg.workspaces.insert("proj".into(), ws);
+        cfg
+    }
+
+    /// Sync mode has no required env var, so badge must be NotApplicable
+    /// regardless of what the operator env contains.
+    #[test]
+    fn credential_badge_not_applicable_for_sync() {
+        let cfg = base_cfg_with_ws();
+        let badge = badge_for(&cfg, "proj", "smith", Agent::Claude, AuthForwardMode::Sync);
+        assert_eq!(badge, CredentialBadge::NotApplicable);
+    }
+
+    /// ApiKey mode requires ANTHROPIC_API_KEY, which is absent at all 4
+    /// layers — badge must be Unset.
+    #[test]
+    fn credential_badge_unset_when_required_var_empty() {
+        let mut cfg = base_cfg_with_ws();
+        cfg.claude = Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::ApiKey,
+        });
+        // ANTHROPIC_API_KEY is not set anywhere in cfg.
+        let badge = badge_for(&cfg, "proj", "smith", Agent::Claude, AuthForwardMode::ApiKey);
+        assert_eq!(badge, CredentialBadge::Unset);
+    }
+
+    /// ApiKey mode with ANTHROPIC_API_KEY present at the workspace × role
+    /// layer (most specific) must yield Resolves.
+    #[test]
+    fn credential_badge_resolves_when_env_var_present() {
+        let mut cfg = base_cfg_with_ws();
+        cfg.claude = Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::ApiKey,
+        });
+        // Place the key at workspace × role — the most-specific layer.
+        cfg.workspaces
+            .get_mut("proj")
+            .unwrap()
+            .roles
+            .entry("smith".into())
+            .or_default()
+            .env
+            .insert(
+                "ANTHROPIC_API_KEY".into(),
+                EnvValue::Plain("sk-ant-test".into()),
+            );
+        let badge = badge_for(&cfg, "proj", "smith", Agent::Claude, AuthForwardMode::ApiKey);
+        assert_eq!(badge, CredentialBadge::Resolves);
     }
 }

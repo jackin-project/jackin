@@ -22,14 +22,14 @@ pub(crate) const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 pub(crate) const WHITE: Color = Color::Rgb(255, 255, 255);
 pub(crate) const DANGER_RED: Color = Color::Rgb(255, 94, 122);
 
-pub const fn agent_display(agent: Agent) -> &'static str {
+pub(crate) const fn agent_display(agent: Agent) -> &'static str {
     match agent {
         Agent::Claude => "Claude",
         Agent::Codex => "Codex",
     }
 }
 
-pub const fn mode_str(m: AuthForwardMode) -> &'static str {
+pub(crate) const fn mode_str(m: AuthForwardMode) -> &'static str {
     match m {
         AuthForwardMode::Sync => "sync",
         AuthForwardMode::ApiKey => "api_key",
