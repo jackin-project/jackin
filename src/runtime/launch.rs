@@ -967,7 +967,11 @@ fn pull_workspace_repos(workspace: &crate::workspace::ResolvedWorkspace, debug: 
             }
             Ok(out) => {
                 let stderr = String::from_utf8_lossy(&out.stderr);
-                eprintln!("  Warning: git pull failed in {}: {}", mount.src, stderr.trim());
+                eprintln!(
+                    "  Warning: git pull failed in {}: {}",
+                    mount.src,
+                    stderr.trim()
+                );
             }
             Err(e) => {
                 eprintln!("  Warning: could not run git pull in {}: {e}", mount.src);
