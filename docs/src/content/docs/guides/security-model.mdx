@@ -90,6 +90,35 @@ trusted = true
 <Aside type="note">
 Trust is tied to the agent selector (e.g., `org/agent-name`), not the git URL. If an agent's cached repo URL no longer matches the configured source, jackin' rejects it with a separate remote-mismatch error regardless of trust status.
 </Aside>
+### Branch trust gate
+
+Loading a role from an unmerged branch (`--role-branch`) triggers a separate, always-on confirmation prompt — even if the role is already trusted.
+
+The reason: `trusted = true` in your config records that you reviewed the role's **default branch**. An external contributor can open a pull request on that same role repository with a modified Dockerfile that runs arbitrary commands during the image build. If you loaded the branch without a prompt, you could unknowingly execute code you never reviewed, in a context where you expected the behaviour of the trusted default branch.
+
+The branch trust gate shows the role, source repository, and branch name, then asks you to confirm that you have reviewed the diff:
+
+```
+!! Unreviewed branch — verify before proceeding !!
+
+  role:   the-architect
+  source: https://github.com/jackin-project/jackin-the-architect.git
+  branch: feat/some-pr
+
+  This branch has not been merged to the default branch.
+  Its Dockerfile and scripts may differ from the trusted main branch.
+  A malicious contributor could introduce harmful code that runs
+  on your machine during the image build.
+
+  Review the branch diff in the role repository before continuing.
+
+Have you reviewed branch "feat/some-pr" and verified it is safe to build? [y/N]
+```
+
+This gate cannot be bypassed: there is no `--force-branch` flag, no config option to skip it, and non-interactive terminals bail with an error rather than defaulting to yes.
+
+The threat model entry for this is listed in the table below.
+
 ### 5. Per-agent network separation
 
 Each runtime gets its own Docker network. The agent container and its DinD sidecar share that network, but different agents do not share a network by default.
@@ -190,6 +219,7 @@ jackin' is designed to reduce the most common operator risks:
 | Agent interferes with another agent | Separate containers, networks, and state | Shared host kernel remains a common lower layer |
 | Agent persists random system changes | Runtime root filesystem is ephemeral | Persisted tool state and mounted files still survive |
 | Typosquatted or malicious role repo | Trust-on-first-use prompt before building | User must review the source; trusted flag persists |
+| Malicious code in an unmerged PR branch | Branch trust gate always fires for `--role-branch` | User must confirm they reviewed the branch diff; cannot be skipped |
 
 ## What jackin' does NOT protect against
 
@@ -209,6 +239,7 @@ This is where people often over-claim container isolation. Don't do that. jackin
 3. **Do not mount credential directories.** Avoid `~/.ssh`, `~/.aws`, `~/.gnupg`, and similar paths. jackin' warns and asks for confirmation when it detects these, but avoiding them entirely is the safest approach.
 4. **Treat runtime login as sensitive.** If you authenticate inside the runtime, assume the agent can read that state.
 5. **Review role repos before loading.** The Dockerfile defines what the runtime contains. jackin' prompts for trust confirmation on first use of third-party agents, but you should inspect the repository yourself before confirming.
-6. **Split roles by scope.** Keep frontend, backend, infra, and review workflows in separate environments when appropriate.
-7. **Use `jackin purge` when a runtime no longer needs its persisted state.**
-8. **Keep Docker updated.** Container isolation is only as strong as the Docker runtime underneath it.
+6. **Always review the branch diff before loading a role branch.** `--role-branch` always prompts for confirmation, but the prompt is only as useful as your review. Open the pull request, check the Dockerfile and any scripts, and confirm only after you understand what changed.
+7. **Split roles by scope.** Keep frontend, backend, infra, and review workflows in separate environments when appropriate.
+8. **Use `jackin purge` when a runtime no longer needs its persisted state.**
+9. **Keep Docker updated.** Container isolation is only as strong as the Docker runtime underneath it.

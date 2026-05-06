@@ -55,6 +55,14 @@ pub(super) fn image_name(selector: &RoleSelector) -> String {
     format!("jackin-{}", crate::instance::runtime_slug(selector))
 }
 
+/// Image tag for a branch-specific local build. Branch slashes become dashes
+/// so the tag is a valid Docker name and does not overwrite the stable image
+/// (e.g. `jackin-the-architect-feat-my-pr`).
+pub(super) fn image_name_for_branch(selector: &RoleSelector, branch: &str) -> String {
+    let slug = branch.replace('/', "-").to_ascii_lowercase();
+    format!("jackin-{}-{slug}", crate::instance::runtime_slug(selector))
+}
+
 /// Docker volume name for the TLS client certificates shared between the
 /// `DinD` sidecar (writer) and the role container (reader).
 pub(super) fn dind_certs_volume(container_name: &str) -> String {

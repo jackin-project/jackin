@@ -60,6 +60,7 @@ pub fn run(cli: Cli) -> Result<()> {
             debug,
             force,
             agent,
+            role_branch,
         }) => {
             runner.debug = debug;
             tui::set_debug_mode(debug);
@@ -113,6 +114,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     prompt_agent_choice_if_needed(&paths, &class, resolved_workspace.default_agent)?
                 }
             };
+            opts.role_branch = role_branch;
             // Pre-launch reconcile: if a previous role in a keep_awake
             // workspace already runs, ensure caffeinate is up before we
             // build/launch (so a long Docker build doesn't see the host

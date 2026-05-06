@@ -112,6 +112,7 @@ pub(super) fn resolve_agent_repo(
     git_url: &str,
     runner: &mut impl CommandRunner,
     debug: bool,
+    branch_override: Option<&str>,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo, std::fs::File)> {
     resolve_agent_repo_with(
         paths,
@@ -119,6 +120,7 @@ pub(super) fn resolve_agent_repo(
         git_url,
         runner,
         debug,
+        branch_override,
         confirm_repo_removal_interactive,
     )
 }
@@ -148,7 +150,7 @@ pub(super) fn register_agent_repo(
     let cached_repo = CachedRepo::new(paths, selector);
     if cached_repo.repo_dir.join(".git").is_dir() {
         let (cached_repo, validated_repo, _lock_file) =
-            resolve_agent_repo_with(paths, selector, git_url, runner, debug, || Ok(false))?;
+            resolve_agent_repo_with(paths, selector, git_url, runner, debug, None, || Ok(false))?;
         persist_registration()?;
         return Ok((cached_repo, validated_repo));
     }
@@ -217,15 +219,30 @@ pub(super) fn register_agent_repo(
     Ok((cached_repo, validated_repo))
 }
 
+/// Build the argument list for `git clone`, optionally scoped to a single branch.
+/// `git clone -b <branch>` fetches only that branch, making the clone faster and
+/// leaving the working tree on the right branch without a separate checkout step.
+fn clone_args<'a>(git_url: &'a str, dest: &'a str, branch: Option<&'a str>) -> Vec<&'a str> {
+    branch.map_or_else(
+        || vec!["clone", git_url, dest],
+        |b| vec!["clone", "-b", b, git_url, dest],
+    )
+}
+
+#[allow(clippy::too_many_lines)]
 pub(super) fn resolve_agent_repo_with(
     paths: &JackinPaths,
     selector: &RoleSelector,
     git_url: &str,
     runner: &mut impl CommandRunner,
     debug: bool,
+    branch_override: Option<&str>,
     confirm_removal: impl FnOnce() -> anyhow::Result<bool>,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo, std::fs::File)> {
-    let cached_repo = CachedRepo::new(paths, selector);
+    let cached_repo = branch_override.map_or_else(
+        || CachedRepo::new(paths, selector),
+        |branch| CachedRepo::for_branch(paths, selector, branch),
+    );
     let repo_parent = cached_repo.repo_dir.parent().ok_or_else(|| {
         anyhow::anyhow!(
             "role repo path has no parent: {}",
@@ -239,10 +256,33 @@ pub(super) fn resolve_agent_repo_with(
     // role class (spawning clones); the lock serializes only the git
     // clone/fetch/merge so they don't race on the same working tree.
     // The lock is released as soon as the git section completes.
-    let lock_path = paths
-        .data_dir
-        .join(format!("{}.repo.lock", primary_container_name(selector)));
-    std::fs::create_dir_all(&paths.data_dir)?;
+    //
+    // Lock path mirrors the repo_dir path under data_dir so that a branch
+    // named `feat/my-pr` and one named `feat-my-pr` (slug collision) always
+    // get distinct lock files. The roles_dir prefix is stripped to produce
+    // the relative path; `std::fs::create_dir_all` creates intermediate dirs.
+    let selector_base = selector.namespace.as_ref().map_or_else(
+        || paths.roles_dir.join(&selector.name),
+        |ns| paths.roles_dir.join(ns).join(&selector.name),
+    );
+    let rel = cached_repo
+        .repo_dir
+        .strip_prefix(&selector_base)
+        .unwrap_or_else(|_| std::path::Path::new(""));
+    // Build lock path: data_dir/<container>.locks/<rel>.repo.lock
+    let lock_path = {
+        let rel_str = rel.to_string_lossy();
+        let file_name = if rel_str.is_empty() {
+            "default.repo.lock".to_string()
+        } else {
+            format!("{rel_str}.repo.lock")
+        };
+        paths
+            .data_dir
+            .join(format!("{}.locks", primary_container_name(selector)))
+            .join(file_name)
+    };
+    std::fs::create_dir_all(lock_path.parent().unwrap_or(&paths.data_dir))?;
     let lock_file = std::fs::File::create(&lock_path)?;
     lock_file
         .lock_exclusive()
@@ -274,8 +314,9 @@ pub(super) fn resolve_agent_repo_with(
 
             if confirm_removal()? {
                 std::fs::remove_dir_all(&cached_repo.repo_dir)?;
+                let clone_args = clone_args(git_url, &repo_path, branch_override);
                 runner
-                    .run("git", &["clone", git_url, &repo_path], None, &git_run_opts)
+                    .run("git", &clone_args, None, &git_run_opts)
                     .map_err(RepoError::CloneFailed)?;
                 let validated_repo = validate_role_repo(&cached_repo.repo_dir)
                     .map_err(RepoError::InvalidRoleRepo)?;
@@ -305,13 +346,19 @@ pub(super) fn resolve_agent_repo_with(
 
         // Fetch + merge instead of pull to avoid "Cannot fast-forward to
         // multiple branches" errors that occur with `git pull` when the
-        // remote has multiple branches.
-        let branch = git_branch(&cached_repo.repo_dir, runner).ok_or_else(|| {
-            anyhow::anyhow!(
-                "could not determine current branch of cached role repo at {}",
-                cached_repo.repo_dir.display()
-            )
-        })?;
+        // remote has multiple branches. When a branch is pinned via
+        // `--branch`, use it directly; otherwise derive from HEAD.
+        let branch = branch_override.map_or_else(
+            || {
+                git_branch(&cached_repo.repo_dir, runner).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "could not determine current branch of cached role repo at {}",
+                        cached_repo.repo_dir.display()
+                    )
+                })
+            },
+            |b| Ok(b.to_string()),
+        )?;
         runner.run(
             "git",
             &["-C", &repo_path, "fetch", "origin", &branch],
@@ -325,8 +372,9 @@ pub(super) fn resolve_agent_repo_with(
             &git_run_opts,
         )?;
     } else {
+        let clone_args = clone_args(git_url, &repo_path, branch_override);
         runner
-            .run("git", &["clone", git_url, &repo_path], None, &git_run_opts)
+            .run("git", &clone_args, None, &git_run_opts)
             .map_err(RepoError::CloneFailed)?;
     }
 
@@ -406,6 +454,7 @@ plugins = []
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
             false,
+            None,
         )
         .unwrap_err();
 
@@ -476,6 +525,7 @@ plugins = []
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
             false,
+            None,
             || Ok(true), // user confirms removal
         );
 
@@ -516,6 +566,7 @@ plugins = []
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
             false,
+            None,
             || Ok(false), // user declines
         )
         .unwrap_err();
@@ -561,6 +612,7 @@ plugins = []
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
             false,
+            None,
         )
         .unwrap_err();
 
@@ -619,6 +671,7 @@ plugins = []
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
             false,
+            None,
             || Ok(true),
         );
 
@@ -662,6 +715,7 @@ plugins = []
             "https://github.com/jackin-project/jackin-agent-smith.git",
             &mut runner,
             false,
+            None,
         );
 
         assert!(

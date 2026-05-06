@@ -25,7 +25,8 @@ Examples:
   jackin load agent-smith ~/Projects/my-app:/app
   jackin load agent-smith big-monorepo
   jackin load agent-smith big-monorepo --mount ~/extra-data
-  jackin load agent-smith ~/app --mount ~/cache:/cache:ro"
+  jackin load agent-smith ~/app --mount ~/cache:/cache:ro
+  jackin load the-architect --role-branch feat/my-pr   # build + test a PR branch locally"
 )]
 pub struct LoadArgs {
     /// Role class selector (e.g. `agent-smith`, `chainargos/agent-brown`).
@@ -67,6 +68,12 @@ pub struct LoadArgs {
     /// neither is set, defaults to claude.
     #[arg(long, value_parser = parse_agent)]
     pub agent: Option<crate::agent::Agent>,
+    /// Check out a specific branch of the role repository for local testing.
+    /// The published image is ignored and the image is built from the branch's
+    /// Dockerfile using Docker's layer cache. Useful for verifying a PR before
+    /// it merges to the default branch.
+    #[arg(long)]
+    pub role_branch: Option<String>,
 }
 
 fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
@@ -176,6 +183,37 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(Command::Load(super::LoadArgs { agent: None, .. }))
+        ));
+    }
+
+    #[test]
+    fn load_args_parses_branch_flag() {
+        let cli = Cli::try_parse_from([
+            "jackin",
+            "load",
+            "the-architect",
+            "--role-branch",
+            "feat/my-pr",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Load(super::LoadArgs {
+                role_branch: Some(ref b),
+                ..
+            })) if b == "feat/my-pr"
+        ));
+    }
+
+    #[test]
+    fn load_args_branch_optional() {
+        let cli = Cli::try_parse_from(["jackin", "load", "the-architect"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Load(super::LoadArgs {
+                role_branch: None,
+                ..
+            }))
         ));
     }
 
