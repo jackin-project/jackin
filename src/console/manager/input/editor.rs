@@ -96,6 +96,18 @@ pub(super) fn handle_editor_key(
                     return Ok(InputOutcome::Continue);
                 }
             }
+            if key.code == KeyCode::Right && editor.active_tab == EditorTab::Auth {
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = super::super::render::editor::auth_flat_rows(editor);
+                if let Some(super::super::render::editor::AuthRow::RoleHeader { role, expanded }) =
+                    rows.get(n).cloned()
+                {
+                    if !expanded {
+                        editor.auth_expanded.insert(role);
+                    }
+                    return Ok(InputOutcome::Continue);
+                }
+            }
             let was_secrets = editor.active_tab == EditorTab::Secrets;
             editor.active_tab = match editor.active_tab {
                 EditorTab::General => EditorTab::Mounts,
@@ -118,6 +130,18 @@ pub(super) fn handle_editor_key(
                 if let Some(SecretsRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
                     if expanded {
                         editor.secrets_expanded.remove(&role);
+                    }
+                    return Ok(InputOutcome::Continue);
+                }
+            }
+            if editor.active_tab == EditorTab::Auth {
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = super::super::render::editor::auth_flat_rows(editor);
+                if let Some(super::super::render::editor::AuthRow::RoleHeader { role, expanded }) =
+                    rows.get(n).cloned()
+                {
+                    if expanded {
+                        editor.auth_expanded.remove(&role);
                     }
                     return Ok(InputOutcome::Continue);
                 }

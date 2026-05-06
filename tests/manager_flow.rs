@@ -2849,3 +2849,31 @@ fn auth_add_role_override_three_step_flow() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn auth_role_header_left_right_toggles_expansion() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
+    let mut over = WorkspaceRoleOverride::default();
+    over.claude = Some(jackin::config::AgentAuthConfig {
+        auth_forward: jackin::config::AuthForwardMode::Ignore,
+    });
+    ws.roles.insert("the-architect".into(), over);
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    let header_idx = auth_row_idx(&ed, |r| matches!(r, AuthRow::RoleHeader { .. }));
+    ed.active_field = FieldFocus::Row(header_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Right))?;
+    assert!(editor(&state).auth_expanded.contains("the-architect"));
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Left))?;
+    assert!(!editor(&state).auth_expanded.contains("the-architect"));
+    Ok(())
+}
