@@ -174,7 +174,6 @@ mod tests {
             crate::config::RoleSource {
                 git: "https://github.com/jackin-project/jackin-agent-smith.git".to_string(),
                 trusted: true,
-                claude: None,
                 env: std::collections::BTreeMap::new(),
             },
         );
@@ -195,6 +194,8 @@ mod tests {
                 env: std::collections::BTreeMap::new(),
                 roles: std::collections::BTreeMap::new(),
                 keep_awake: crate::workspace::KeepAwakeConfig::default(),
+                claude: None,
+                codex: None,
                 git_pull_on_entry: false,
             },
         );
@@ -216,7 +217,6 @@ mod tests {
         crate::config::RoleSource {
             git: "https://example.invalid/org/repo.git".to_string(),
             trusted: true,
-            claude: None,
             env: std::collections::BTreeMap::new(),
         }
     }
@@ -232,6 +232,8 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
+            claude: None,
+            codex: None,
             git_pull_on_entry: false,
         }
     }

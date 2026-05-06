@@ -86,14 +86,16 @@ Examples:
 pub enum AuthCommand {
     /// Set the authentication forwarding mode
     ///
-    /// Controls how the host's Claude Code authentication is made available
+    /// Controls how the host's agent authentication is made available
     /// to role containers.
     /// Modes: sync (default — overwrite container auth from host on each
     /// launch when host auth exists; preserve container auth when host auth
-    /// is absent), ignore (revoke and never forward), token (use a long-lived
-    /// `CLAUDE_CODE_OAUTH_TOKEN` resolved from the operator env — the token
-    /// itself is never written to disk; see `jackin` docs on auth forwarding
-    /// for setup).
+    /// is absent), ignore (revoke and never forward), `oauth_token` (use a
+    /// long-lived `CLAUDE_CODE_OAUTH_TOKEN` resolved from the operator env),
+    /// `api_key` (use a short-lived API key — e.g. `ANTHROPIC_API_KEY` /
+    /// `OPENAI_API_KEY` — resolved from the operator env). Tokens and keys
+    /// are never written to disk; see `jackin` docs on auth forwarding for
+    /// setup.
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -101,16 +103,12 @@ pub enum AuthCommand {
 Examples:
   jackin config auth set sync
   jackin config auth set ignore
-  jackin config auth set token
-  jackin config auth set sync --role agent-smith
-  jackin config auth set token --role chainargos/the-architect"
+  jackin config auth set oauth_token
+  jackin config auth set api_key"
     )]
     Set {
-        /// Authentication forwarding mode: sync, ignore, or token
+        /// Authentication forwarding mode: sync, ignore, `api_key`, or `oauth_token`
         mode: String,
-        /// Apply to a specific role instead of globally
-        #[arg(long)]
-        role: Option<String>,
     },
     /// Show the current authentication forwarding mode
     #[command(
@@ -118,14 +116,9 @@ Examples:
         styles = HELP_STYLES,
         after_long_help = "\
 Examples:
-  jackin config auth show
-  jackin config auth show --role agent-smith"
+  jackin config auth show"
     )]
-    Show {
-        /// Show mode for a specific role (including inheritance)
-        #[arg(long)]
-        role: Option<String>,
-    },
+    Show,
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
@@ -372,20 +365,23 @@ mod tests {
         let help = help_text(&["jackin", "config", "auth", "set", "--help"]);
         assert!(help.contains("Examples:"));
         assert!(help.contains("jackin config auth set sync"));
-        assert!(help.contains("jackin config auth set token"));
-        assert!(help.contains("--role"));
+        assert!(help.contains("jackin config auth set oauth_token"));
+        assert!(help.contains("jackin config auth set api_key"));
     }
 
     #[test]
     fn config_auth_set_help_lists_token_as_accepted_mode() {
         let help = help_text(&["jackin", "config", "auth", "set", "--help"]);
-        // Modes are listed in the subcommand doc comment. After this
-        // PR the accepted modes are sync, ignore, and token.
+        // Modes are listed in the subcommand doc comment.
         assert!(help.contains("sync"));
         assert!(help.contains("ignore"));
         assert!(
-            help.contains("token"),
-            "help text must advertise the token mode; got:\n{help}"
+            help.contains("oauth_token"),
+            "help text must advertise the oauth_token mode; got:\n{help}"
+        );
+        assert!(
+            help.contains("api_key"),
+            "help text must advertise the api_key mode; got:\n{help}"
         );
     }
 
@@ -403,41 +399,18 @@ mod tests {
             cli.command,
             Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
                         ref mode,
-                        role: None,
                     }))) if mode == "sync"
         ));
     }
 
     #[test]
-    fn parses_config_auth_set_token_global() {
-        let cli = Cli::try_parse_from(["jackin", "config", "auth", "set", "token"]).unwrap();
+    fn parses_config_auth_set_oauth_token_global() {
+        let cli = Cli::try_parse_from(["jackin", "config", "auth", "set", "oauth_token"]).unwrap();
         assert!(matches!(
             cli.command,
             Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
                         ref mode,
-                        role: None,
-                    }))) if mode == "token"
-        ));
-    }
-
-    #[test]
-    fn parses_config_auth_set_per_agent() {
-        let cli = Cli::try_parse_from([
-            "jackin",
-            "config",
-            "auth",
-            "set",
-            "sync",
-            "--role",
-            "agent-smith",
-        ])
-        .unwrap();
-        assert!(matches!(
-            cli.command,
-            Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
-                        ref mode,
-                        role: Some(ref role),
-                    }))) if mode == "sync" && role == "agent-smith"
+                    }))) if mode == "oauth_token"
         ));
     }
 
@@ -446,9 +419,7 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "config", "auth", "show"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Config(ConfigCommand::Auth(AuthCommand::Show {
-                role: None
-            })))
+            Some(Command::Config(ConfigCommand::Auth(AuthCommand::Show)))
         ));
     }
 }
