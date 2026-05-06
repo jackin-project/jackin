@@ -601,7 +601,6 @@ pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -
 /// per frame from `editor.pending` + `editor.auth_expanded`. Rendering
 /// and input both index into the same `Vec<AuthRow>` so cursor row
 /// numbers always agree with what's drawn.
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::console::manager) enum AuthRow {
     /// Bold "Global defaults" caption (read-only).
@@ -627,7 +626,6 @@ pub(in crate::console::manager) enum AuthRow {
     Divider,
 }
 
-#[allow(dead_code)]
 pub(in crate::console::manager) fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
     use crate::agent::Agent;
     let mut rows = vec![
@@ -1041,32 +1039,24 @@ pub(in crate::console::manager) fn workspace_name_for_panel(state: &EditorState<
     }
 }
 
-/// Map a flattened editable row index (the cursor) to a concrete
-/// `(scope, agent)` pair the form modal can target. The flattened layout
-/// is `[workspace × Claude, workspace × Codex, role0 × Claude, role0 × Codex, ...]`.
+/// Map a flattened editable row index (the cursor) into the
+/// `AuthFormTarget` the form modal should be opened against. Returns
+/// `None` for non-editable rows (headers, defaults, dividers, sentinel)
+/// so callers can branch on it before opening the form.
 pub(in crate::console::manager) fn resolve_auth_row_target(
     state: &EditorState<'_>,
     row: usize,
 ) -> Option<crate::console::manager::state::AuthFormTarget> {
-    use crate::agent::Agent;
     use crate::console::manager::state::AuthFormTarget;
-    let agents = [Agent::Claude, Agent::Codex];
-    if row < agents.len() {
-        return Some(AuthFormTarget::Workspace { agent: agents[row] });
+    let rows = auth_flat_rows(state);
+    match rows.get(row)? {
+        AuthRow::WorkspaceDefault { agent } => Some(AuthFormTarget::Workspace { agent: *agent }),
+        AuthRow::RoleAgentRow { role, agent } => Some(AuthFormTarget::WorkspaceRole {
+            role: role.clone(),
+            agent: *agent,
+        }),
+        _ => None,
     }
-    let mut idx = agents.len();
-    for role in &state.pending.allowed_roles {
-        for agent in agents {
-            if idx == row {
-                return Some(AuthFormTarget::WorkspaceRole {
-                    role: role.clone(),
-                    agent,
-                });
-            }
-            idx += 1;
-        }
-    }
-    None
 }
 
 #[cfg(test)]
@@ -2489,5 +2479,44 @@ mod auth_flat_rows_tests {
             rows[header_pos + 2],
             AuthRow::RoleAgentRow { ref role, agent: Agent::Codex } if role == "the-architect"
         ));
+    }
+
+    #[test]
+    fn resolve_auth_row_target_picks_workspace_default_for_workspacedefault_row() {
+        use crate::agent::Agent;
+        use crate::console::manager::state::AuthFormTarget;
+        use crate::workspace::WorkspaceConfig;
+
+        let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        let rows = auth_flat_rows(&editor);
+        let workspace_claude_idx = rows
+            .iter()
+            .position(|r| matches!(r, AuthRow::WorkspaceDefault { agent: Agent::Claude }))
+            .unwrap();
+        assert_eq!(
+            super::resolve_auth_row_target(&editor, workspace_claude_idx),
+            Some(AuthFormTarget::Workspace { agent: Agent::Claude }),
+        );
+    }
+
+    #[test]
+    fn resolve_auth_row_target_returns_none_for_global_or_header_or_sentinel() {
+        use crate::workspace::WorkspaceConfig;
+        let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        let rows = auth_flat_rows(&editor);
+        for (idx, row) in rows.iter().enumerate() {
+            match row {
+                AuthRow::GlobalHeader
+                | AuthRow::GlobalDefault { .. }
+                | AuthRow::WorkspaceHeader
+                | AuthRow::OverridesHeader { .. }
+                | AuthRow::AddSentinel { .. }
+                | AuthRow::Divider => assert!(
+                    super::resolve_auth_row_target(&editor, idx).is_none(),
+                    "row {idx} ({row:?}) must not resolve to an editable target"
+                ),
+                _ => {}
+            }
+        }
     }
 }
