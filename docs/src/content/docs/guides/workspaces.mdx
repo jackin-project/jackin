@@ -304,6 +304,10 @@ jackin workspace edit my-app --no-git-pull
 
 `jackin workspace show <name>` surfaces a `Git Pull: on entry` row when the flag is on.
 
+## Jackin development workspace
+
+When the saved workspace is named `jackin`, jackin automatically injects `MISE_TRUSTED_CONFIG_PATHS` into the role container. The value covers the workspace `workdir` and every mount destination, so mise trusts the Jackin project checkouts without requiring a manual `mise trust` inside the container. Other workspaces are not affected, and an explicitly configured `MISE_TRUSTED_CONFIG_PATHS` env var still wins.
+
 ## Workspace auto-detection
 
 When you open the operator console (`jackin console`), it checks whether your current directory falls under a saved workspace's host `workdir` or one of its mounted host paths. If it does, that workspace is preselected — saving you a selection step and reinforcing the value of naming project boundaries once. Container-only `workdir` values like `/workspace` can still be auto-detected as long as one of the workspace's mounted host paths contains your current directory. You can always override the preselection by choosing a different workspace or "Current directory."

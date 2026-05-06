@@ -57,6 +57,82 @@ pub(super) fn repo_matches(expected: &str, actual: &str) -> bool {
     }
 }
 
+fn role_cache_root(paths: &JackinPaths, selector: &RoleSelector) -> std::path::PathBuf {
+    selector.namespace.as_ref().map_or_else(
+        || paths.roles_dir.join(&selector.name),
+        |namespace| paths.roles_dir.join(namespace).join(&selector.name),
+    )
+}
+
+fn migrate_legacy_default_cache(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    cached_repo: &CachedRepo,
+) -> anyhow::Result<()> {
+    let root = role_cache_root(paths, selector);
+    if cached_repo.repo_dir != root.join("default")
+        || cached_repo.repo_dir.exists()
+        || !root.join(".git").is_dir()
+    {
+        return Ok(());
+    }
+
+    let parent = root
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("role cache path has no parent: {}", root.display()))?;
+    let root_name = root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("role");
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let legacy_root = parent.join(format!(".{root_name}.legacy-cache-{suffix}"));
+
+    std::fs::rename(&root, &legacy_root).with_context(|| {
+        format!(
+            "failed to move legacy role cache {} before migrating to default/",
+            root.display()
+        )
+    })?;
+    std::fs::create_dir_all(&root)?;
+
+    let legacy_branches = legacy_root.join("branches");
+    if legacy_branches.exists() {
+        std::fs::rename(&legacy_branches, root.join("branches")).with_context(|| {
+            format!(
+                "failed to move legacy branch cache {}",
+                legacy_branches.display()
+            )
+        })?;
+    }
+
+    std::fs::rename(&legacy_root, &cached_repo.repo_dir).with_context(|| {
+        format!(
+            "failed to move legacy role cache into {}",
+            cached_repo.repo_dir.display()
+        )
+    })?;
+
+    Ok(())
+}
+
+fn role_root_has_unexpected_entries(root: &std::path::Path) -> anyhow::Result<bool> {
+    if !root.exists() {
+        return Ok(false);
+    }
+
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        if entry.file_name() != "branches" {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
 /// Derive a short repository name from a git remote URL (e.g. `jackin-project/jackin`).
 pub(super) fn git_repo_name(
     dir: &std::path::Path,
@@ -148,7 +224,8 @@ pub(super) fn register_agent_repo(
     persist_registration: impl FnOnce() -> anyhow::Result<()>,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo)> {
     let cached_repo = CachedRepo::new(paths, selector);
-    if cached_repo.repo_dir.join(".git").is_dir() {
+    let legacy_root = role_cache_root(paths, selector);
+    if cached_repo.repo_dir.join(".git").is_dir() || legacy_root.join(".git").is_dir() {
         let (cached_repo, validated_repo, _lock_file) =
             resolve_agent_repo_with(paths, selector, git_url, runner, debug, None, || Ok(false))?;
         persist_registration()?;
@@ -163,6 +240,17 @@ pub(super) fn register_agent_repo(
     })?;
     std::fs::create_dir_all(repo_parent)?;
     std::fs::create_dir_all(&paths.data_dir)?;
+
+    let role_root = role_cache_root(paths, selector);
+    if !cached_repo.repo_dir.exists()
+        && !role_root.join(".git").is_dir()
+        && role_root_has_unexpected_entries(&role_root)?
+    {
+        anyhow::bail!(
+            "cached role path exists but is not a git repository: {}",
+            role_root.display()
+        );
+    }
 
     if cached_repo.repo_dir.exists() {
         anyhow::bail!(
@@ -261,10 +349,7 @@ pub(super) fn resolve_agent_repo_with(
     // named `feat/my-pr` and one named `feat-my-pr` (slug collision) always
     // get distinct lock files. The roles_dir prefix is stripped to produce
     // the relative path; `std::fs::create_dir_all` creates intermediate dirs.
-    let selector_base = selector.namespace.as_ref().map_or_else(
-        || paths.roles_dir.join(&selector.name),
-        |ns| paths.roles_dir.join(ns).join(&selector.name),
-    );
+    let selector_base = role_cache_root(paths, selector);
     let rel = cached_repo
         .repo_dir
         .strip_prefix(&selector_base)
@@ -292,6 +377,10 @@ pub(super) fn resolve_agent_repo_with(
         quiet: !debug,
         ..RunOptions::default()
     };
+
+    if branch_override.is_none() {
+        migrate_legacy_default_cache(paths, selector, &cached_repo)?;
+    }
 
     let repo_path = cached_repo.repo_dir.display().to_string();
     if cached_repo.repo_dir.join(".git").is_dir() {
@@ -429,7 +518,7 @@ mod tests {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -470,7 +559,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -541,7 +630,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -585,7 +674,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -624,7 +713,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -686,7 +775,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -737,6 +826,46 @@ plugins = []
                 .any(|call| call.contains("git -C") && call.contains("merge --ff-only")),
             "expected a git merge --ff-only: {:?}",
             runner.run_recorded
+        );
+    }
+
+    #[test]
+    fn resolve_agent_repo_migrates_legacy_root_repo_to_default_sibling_layout() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = RoleSelector::new(None, "agent-smith");
+        let legacy_root = paths.roles_dir.join("agent-smith");
+        seed_valid_role_repo(&legacy_root);
+        std::fs::create_dir_all(legacy_root.join("branches/feat/caveman-all-install")).unwrap();
+        std::fs::write(
+            legacy_root.join("branches/feat/caveman-all-install/README.md"),
+            "branch cache\n",
+        )
+        .unwrap();
+
+        let mut runner = FakeRunner::with_capture_queue([
+            "git@github.com:jackin-project/jackin-agent-smith.git".to_string(),
+            String::new(),      // git status --porcelain (clean)
+            "main".to_string(), // git rev-parse --abbrev-ref HEAD
+        ]);
+
+        let (cached_repo, _, _) = resolve_agent_repo(
+            &paths,
+            &selector,
+            "https://github.com/jackin-project/jackin-agent-smith.git",
+            &mut runner,
+            false,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(cached_repo.repo_dir, legacy_root.join("default"));
+        assert!(legacy_root.join("default/.git").is_dir());
+        assert!(!legacy_root.join(".git").exists());
+        assert!(
+            legacy_root
+                .join("branches/feat/caveman-all-install/README.md")
+                .is_file()
         );
     }
 
@@ -791,7 +920,7 @@ plugins = []
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
         let selector = RoleSelector::new(None, "agent-broken");
-        let cached_dir = paths.roles_dir.join("agent-broken");
+        let cached_dir = CachedRepo::new(&paths, &selector).repo_dir;
 
         let data_dir = paths.data_dir.clone();
         let mut runner = FakeRunner::default();
@@ -845,7 +974,7 @@ plugins = []
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
         let selector = RoleSelector::new(None, "agent-persist-fail");
-        let cached_dir = paths.roles_dir.join("agent-persist-fail");
+        let cached_dir = CachedRepo::new(&paths, &selector).repo_dir;
 
         let data_dir = paths.data_dir.clone();
         let mut runner = FakeRunner::default();
