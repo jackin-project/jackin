@@ -2639,6 +2639,19 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
     Ok(())
 }
 
+// ── Auth tab helpers ──────────────────────────────────────────────────
+
+use jackin::console::manager::render::editor::{AuthRow, auth_flat_rows};
+use jackin::agent::Agent;
+
+/// Return the flat-row index of the first `AuthRow` that matches `pred`.
+fn auth_row_idx(ed: &EditorState<'_>, pred: impl Fn(&AuthRow) -> bool) -> usize {
+    auth_flat_rows(ed)
+        .iter()
+        .position(pred)
+        .expect("required auth row not found")
+}
+
 // ── Auth tab integration test ─────────────────────────────────────────
 //
 // End-to-end coverage of the auth-form save path: open the form on a
@@ -2662,8 +2675,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     let mut config = seed_config(&paths, temp.path())?;
     let cwd = temp.path();
 
-    // Start the manager on the Auth tab, cursor on row 0 = workspace ×
-    // Claude.
+    // Start the manager on the Auth tab, cursor on the workspace × Claude row.
     let mut state = ManagerState::from_config(&config, cwd);
     let ws = config
         .workspaces
@@ -2672,14 +2684,17 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         .clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.active_field = FieldFocus::Row(0);
+    let ws_claude_idx = auth_row_idx(&ed, |r| {
+        matches!(r, AuthRow::WorkspaceDefault { agent: Agent::Claude })
+    });
+    ed.active_field = FieldFocus::Row(ws_claude_idx);
     state.stage = ManagerStage::Editor(ed);
 
     // Enter opens the auth-edit form modal on workspace × Claude.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(
         matches!(editor(&state).modal, Some(Modal::AuthForm { .. })),
-        "Enter on auth row 0 must open the auth-form modal; got {:?}",
+        "Enter on WorkspaceDefault/Claude must open AuthForm; got {:?}",
         editor(&state).modal
     );
 
@@ -2777,5 +2792,50 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         toml.contains(r#"ANTHROPIC_API_KEY = "sk-ant-test""#),
         "raw TOML must carry the credential env var; got:\n{toml}"
     );
+    Ok(())
+}
+
+#[test]
+fn auth_add_role_override_three_step_flow() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let ws = config
+        .workspaces
+        .get("big-monorepo")
+        .expect("seed must create big-monorepo")
+        .clone();
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+
+    let sentinel_idx = auth_row_idx(&ed, |r| matches!(r, AuthRow::AddSentinel { .. }));
+    ed.active_field = FieldFocus::Row(sentinel_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::AuthRolePicker { .. })),
+        "Enter on AddSentinel must open AuthRolePicker; got {:?}",
+        editor(&state).modal
+    );
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::AuthAgentPicker { .. })),
+        "Enter on AuthRolePicker must open AuthAgentPicker; got {:?}",
+        editor(&state).modal
+    );
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    match &editor(&state).modal {
+        Some(Modal::AuthForm {
+            target: jackin::console::manager::state::AuthFormTarget::WorkspaceRole { agent, .. },
+            ..
+        }) => assert_eq!(*agent, Agent::Claude),
+        other => panic!("expected AuthForm/WorkspaceRole, got {other:?}"),
+    }
     Ok(())
 }

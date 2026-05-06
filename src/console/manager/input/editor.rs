@@ -987,9 +987,28 @@ pub(super) fn handle_editor_modal(
             }
             ModalOutcome::Continue => {}
         },
-        #[allow(clippy::unimplemented)]
-        Modal::AuthAgentPicker { .. } => {
-            unimplemented!("wired in Task 9");
+        Modal::AuthAgentPicker { role, state } => {
+            let outcome = state.handle_key(key);
+            match outcome {
+                ModalOutcome::Commit(agent) => {
+                    let role = role.clone();
+                    let target = crate::console::manager::state::AuthFormTarget::WorkspaceRole {
+                        role,
+                        agent,
+                    };
+                    let form = crate::console::widgets::auth_panel::AuthForm::new(agent);
+                    editor.modal = Some(Modal::AuthForm {
+                        target,
+                        state: Box::new(form),
+                        focus: crate::console::manager::state::AuthFormFocus::Mode,
+                        literal_buffer: String::new(),
+                    });
+                }
+                ModalOutcome::Cancel => {
+                    editor.modal = None;
+                }
+                ModalOutcome::Continue => {}
+            }
         }
         Modal::OpPicker { state: picker } => {
             match picker.handle_key(key) {

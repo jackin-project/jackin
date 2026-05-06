@@ -1,6 +1,8 @@
-//! Editor-stage rendering: full-screen editor with header, tab bar,
-//! per-tab body renderers (General / Mounts / Roles / Secrets), and the
-//! contextual footer composition that varies with the active tab + cursor.
+//! Editor-stage rendering.
+//!
+//! Full-screen editor with header, tab bar, per-tab body renderers
+//! (General / Mounts / Roles / Secrets), and the contextual footer
+//! composition that varies with the active tab + cursor.
 
 use ratatui::{
     Frame,
@@ -597,12 +599,13 @@ pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -
     rows
 }
 
-/// Row-shape model for the Auth tab. `auth_flat_rows()` rebuilds this
-/// per frame from `editor.pending` + `editor.auth_expanded`. Rendering
-/// and input both index into the same `Vec<AuthRow>` so cursor row
-/// numbers always agree with what's drawn.
+/// Row-shape model for the Auth tab.
+///
+/// `auth_flat_rows()` rebuilds this per frame from `editor.pending` +
+/// `editor.auth_expanded`. Rendering and input both index into the same
+/// `Vec<AuthRow>` so cursor row numbers always agree with what's drawn.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(in crate::console::manager) enum AuthRow {
+pub enum AuthRow {
     /// Bold "Global defaults" caption (read-only).
     GlobalHeader,
     /// One row per agent under the Global header. Read-only.
@@ -626,7 +629,7 @@ pub(in crate::console::manager) enum AuthRow {
     Divider,
 }
 
-pub(in crate::console::manager) fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
+pub fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
     use crate::agent::Agent;
     let mut rows = vec![
         AuthRow::GlobalHeader,
