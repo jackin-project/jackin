@@ -1098,7 +1098,7 @@ fn render_auth_show(config: &AppConfig) -> String {
 /// Render the `workspace show <name>` output as a string. Includes the info
 /// table (name/workdir/allowed/default-role), and, when there are mounts, a
 /// trailing mounts table with one row per mount. The mounts table renders the
-/// canonical lowercase isolation name (`shared`/`worktree`) so the output
+/// canonical lowercase isolation name (`shared`/`worktree`/`clone`) so the output
 /// matches TOML/CLI input verbatim.
 fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
     use std::fmt::Write as _;

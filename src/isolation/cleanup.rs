@@ -22,6 +22,10 @@ pub fn force_cleanup_isolated(
     container_state_dir: &Path,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    if matches!(record.isolation, crate::isolation::MountIsolation::Clone) {
+        return force_cleanup_clone(record, container_state_dir);
+    }
+
     let host_repo_exists = std::path::Path::new(&record.original_src).exists();
     debug_log!(
         "isolation",
@@ -162,6 +166,35 @@ pub fn force_cleanup_isolated(
     Ok(())
 }
 
+fn force_cleanup_clone(record: &IsolationRecord, container_state_dir: &Path) -> anyhow::Result<()> {
+    debug_log!(
+        "isolation",
+        "force_cleanup_clone: container={c} mount={d} clone={w}",
+        c = record.container_name,
+        d = record.mount_dst,
+        w = record.worktree_path,
+    );
+    let clone_path = std::path::Path::new(&record.worktree_path);
+    if clone_path.exists() {
+        std::fs::remove_dir_all(clone_path).map_err(|e| {
+            anyhow::anyhow!(
+                "could not remove clone directory `{}`: {e}; record retained at `{}` so re-running `jackin purge` is possible after resolving the underlying issue",
+                record.worktree_path,
+                container_state_dir.display(),
+            )
+        })?;
+    }
+    if clone_path.exists() {
+        anyhow::bail!(
+            "clone directory `{}` still present after cleanup; record retained at `{}` so re-running `jackin purge` is possible.",
+            record.worktree_path,
+            container_state_dir.display(),
+        );
+    }
+    remove_record(container_state_dir, &record.mount_dst)?;
+    Ok(())
+}
+
 /// Best-effort check: is `branch` still present on `repo`? Returns
 /// `Some(true)` if confirmed present, `Some(false)` if confirmed absent,
 /// `None` if we couldn't tell (e.g., `git branch --list` itself errored).
@@ -264,6 +297,29 @@ mod tests {
                 .iter()
                 .any(|c| c.contains("branch -D jackin/scratch/x"))
         );
+        assert!(read_records(container_dir.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn force_cleanup_clone_removes_directory_without_host_git_ops() {
+        let repo_dir = TempDir::new().unwrap();
+        let container_dir = TempDir::new().unwrap();
+        let clone_dir = container_dir
+            .path()
+            .join("git/clone/repo/workspace/jackin/jackin-x");
+        std::fs::create_dir_all(clone_dir.join(".git")).unwrap();
+        let rec = IsolationRecord {
+            isolation: MountIsolation::Clone,
+            worktree_path: clone_dir.to_string_lossy().into(),
+            ..rec_for(repo_dir.path(), container_dir.path())
+        };
+        write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
+
+        let mut runner = FakeRunner::default();
+        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).unwrap();
+
+        assert!(runner.run_recorded.is_empty());
+        assert!(!clone_dir.exists());
         assert!(read_records(container_dir.path()).unwrap().is_empty());
     }
 
