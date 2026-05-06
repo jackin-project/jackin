@@ -291,7 +291,25 @@ fn contextual_row_items(
             if rows == 0 {
                 Vec::new()
             } else {
-                vec![FooterItem::Key("Enter"), FooterItem::Text("edit auth")]
+                let mut items = vec![FooterItem::Key("Enter"), FooterItem::Text("edit auth")];
+                // When the cursor sits on a RoleAgentRow, append a provenance
+                // hint describing the resolved mode and which config layer
+                // supplied it (variant 2B: footer-only, no inline badge).
+                let flat = auth_flat_rows(state);
+                if let Some(AuthRow::RoleAgentRow { role, agent }) = flat.get(cursor) {
+                    let synthesized = synthesize_appconfig_for_auth(state, config);
+                    let ws_name = workspace_name_for_panel(state);
+                    let mode = crate::config::resolve_mode(&synthesized, *agent, &ws_name, role);
+                    let label = provenance_label(&synthesized, &ws_name, role, *agent);
+                    let agent_name = crate::console::widgets::auth_panel::agent_display(*agent);
+                    let hint = format!(
+                        "{role} / {agent_name} \u{b7} {mode} ({label})",
+                        mode = crate::console::widgets::auth_panel::mode_str(mode),
+                    );
+                    items.push(FooterItem::Sep);
+                    items.push(FooterItem::Dyn(hint));
+                }
+                items
             }
         }
     }
@@ -1169,6 +1187,41 @@ pub(in crate::console::manager) fn workspace_name_for_panel(state: &EditorState<
             .pending_name
             .clone()
             .unwrap_or_else(|| "(new workspace)".to_string()),
+    }
+}
+
+/// Return a short human-readable provenance label for the given
+/// (workspace, role, agent) triple.
+///
+/// Checks presence at each config layer and returns the most specific
+/// description: role-level override beats workspace default beats global.
+fn provenance_label(
+    synthesized: &crate::config::AppConfig,
+    workspace_name: &str,
+    role: &str,
+    agent: crate::agent::Agent,
+) -> &'static str {
+    let role_explicit = synthesized
+        .workspaces
+        .get(workspace_name)
+        .and_then(|ws| ws.roles.get(role))
+        .and_then(|ro| match agent {
+            crate::agent::Agent::Claude => ro.claude.as_ref().map(|_| ()),
+            crate::agent::Agent::Codex => ro.codex.as_ref().map(|_| ()),
+        });
+    let ws_explicit = synthesized
+        .workspaces
+        .get(workspace_name)
+        .and_then(|ws| match agent {
+            crate::agent::Agent::Claude => ws.claude.as_ref().map(|_| ()),
+            crate::agent::Agent::Codex => ws.codex.as_ref().map(|_| ()),
+        });
+    if role_explicit.is_some() {
+        "overrides workspace default"
+    } else if ws_explicit.is_some() {
+        "inherits workspace default"
+    } else {
+        "inherits global default"
     }
 }
 
@@ -2638,6 +2691,27 @@ mod auth_flat_rows_tests {
             Some(AuthFormTarget::Workspace {
                 agent: Agent::Claude
             }),
+        );
+    }
+
+    #[test]
+    fn provenance_label_picks_overrides_when_role_explicit() {
+        use crate::agent::Agent;
+        use crate::config::{AgentAuthConfig, AppConfig, AuthForwardMode};
+        use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+
+        let mut cfg = AppConfig::default();
+        let mut ws = WorkspaceConfig::default();
+        let mut over = WorkspaceRoleOverride::default();
+        over.claude = Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::Ignore,
+        });
+        ws.roles.insert("the-architect".into(), over);
+        cfg.workspaces.insert("ws".into(), ws);
+
+        assert_eq!(
+            super::provenance_label(&cfg, "ws", "the-architect", Agent::Claude),
+            "overrides workspace default",
         );
     }
 

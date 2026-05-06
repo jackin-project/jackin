@@ -226,7 +226,6 @@ fn action_buttons_line(can_save: bool) -> Line<'static> {
     ])
 }
 
-
 #[cfg(test)]
 mod form_render_tests {
     use super::*;

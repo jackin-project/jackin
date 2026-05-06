@@ -152,6 +152,9 @@ mod tests {
     #[test]
     fn esc_cancels() {
         let mut s = AgentChoiceState::new();
-        assert!(matches!(s.handle_key(key(KeyCode::Esc)), ModalOutcome::Cancel));
+        assert!(matches!(
+            s.handle_key(key(KeyCode::Esc)),
+            ModalOutcome::Cancel
+        ));
     }
 }

@@ -1,27 +1,11 @@
 //! Pure data types for the Auth panel.
 //!
-//! Provides [`ProvenanceTag`], [`CredentialBadge`], [`badge_for`], and
+//! Provides [`CredentialBadge`], [`badge_for`], and
 //! [`classify_env_value`]. These are consumed by the flat-row renderer in
 //! `src/console/manager/render/editor.rs`.
 
 use crate::agent::Agent;
 use crate::config::{AppConfig, AuthForwardMode};
-
-/// Which layer of the 3-layer resolver supplied this row's mode value.
-#[allow(dead_code)] // re-introduced as a footer hint in Task 13 of the auth-tab redesign
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProvenanceTag {
-    /// Mode came from `[<agent>]` (global default).
-    Global,
-    /// Mode came from `[workspaces.<ws>.<agent>]`.
-    Workspace,
-    /// Mode came from `[workspaces.<ws>.roles.<role>.<agent>]`.
-    MostSpecific,
-    /// No layer at this level; inherited from a broader layer above.
-    /// Used for the `workspace_rows` section's display when only the
-    /// global default applies.
-    Inherited,
-}
 
 /// Status badge displayed on a row showing whether the credential resolves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,7 +110,13 @@ mod badge_for_tests {
             auth_forward: AuthForwardMode::ApiKey,
         });
         // ANTHROPIC_API_KEY is not set anywhere in cfg.
-        let badge = badge_for(&cfg, "proj", "smith", Agent::Claude, AuthForwardMode::ApiKey);
+        let badge = badge_for(
+            &cfg,
+            "proj",
+            "smith",
+            Agent::Claude,
+            AuthForwardMode::ApiKey,
+        );
         assert_eq!(badge, CredentialBadge::Unset);
     }
 
@@ -150,7 +140,13 @@ mod badge_for_tests {
                 "ANTHROPIC_API_KEY".into(),
                 EnvValue::Plain("sk-ant-test".into()),
             );
-        let badge = badge_for(&cfg, "proj", "smith", Agent::Claude, AuthForwardMode::ApiKey);
+        let badge = badge_for(
+            &cfg,
+            "proj",
+            "smith",
+            Agent::Claude,
+            AuthForwardMode::ApiKey,
+        );
         assert_eq!(badge, CredentialBadge::Resolves);
     }
 }

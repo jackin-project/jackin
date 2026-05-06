@@ -395,7 +395,9 @@ pub enum ConfirmTarget {
     },
     /// `D` on a `RoleHeader` on the Auth tab — clears both agent overrides
     /// for `role` after the operator confirms in the Confirm modal.
-    ClearAuthRoleOverride { role: String },
+    ClearAuthRoleOverride {
+        role: String,
+    },
 }
 
 /// Separate from [`crate::config::editor::EnvScope`].
