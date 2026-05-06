@@ -1,16 +1,15 @@
-//! Auth panel: lists role-agent auth modes for the active workspace.
+//! Auth panel: edit-form and supporting data types for the Auth tab.
 //!
-//! Splits state from rendering for unit-testability:
-//!   - `state.rs`   : pure data types and `AuthPanelState::compute_for`
-//!   - `render.rs`  : ratatui render path (Task 16)
-//!   - `form.rs`    : edit-form state (Task 17)
+//!   - `state.rs`   : `ProvenanceTag`, `CredentialBadge`, `badge_for`, `classify_env_value`
+//!   - `render.rs`  : `render_form`, `FormContext`, colour constants, `agent_display`, `mode_str`
+//!   - `form.rs`    : `AuthForm`, `AuthFormOutcome`, `CredentialInput`
 //!
-//! Mounted as a peer to the Secrets panel by Task 19.
+//! Flat-row Auth tab rendering lives in `src/console/manager/render/editor.rs`.
 
 pub mod form;
 pub mod render;
 pub mod state;
 
 pub use form::{AuthForm, AuthFormOutcome, CredentialInput};
-pub use render::{FormContext, render, render_form, render_with_selection};
-pub use state::{AuthPanelState, AuthRow, CredentialBadge, ProvenanceTag};
+pub use render::{FormContext, agent_display, mode_str, render_form};
+pub use state::{CredentialBadge, ProvenanceTag, badge_for, classify_env_value};

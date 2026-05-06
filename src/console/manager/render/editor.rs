@@ -979,28 +979,135 @@ fn render_secrets_key_line(
     Line::from(spans)
 }
 
-/// Render the Auth tab.
+/// Render the Auth tab directly from [`auth_flat_rows`].
 ///
 /// Materializes a synthetic [`AppConfig`] from the editor's pending workspace
-/// merged with the (mostly read-only) global layer of the live config so the
-/// panel's `AuthPanelState::compute_for` can render with the operator's
-/// in-flight edits reflected immediately.
+/// merged with the (mostly read-only) global layer of the live config so
+/// in-flight edits are reflected immediately.
 fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
-    use crate::console::widgets::auth_panel;
+    use ratatui::widgets::{List, ListItem, ListState};
 
     let synthesized = synthesize_appconfig_for_auth(state, config);
     let workspace_name = workspace_name_for_panel(state);
-    let panel_state = auth_panel::AuthPanelState::compute_for(&synthesized, &workspace_name);
+    let rows = auth_flat_rows(state);
 
     let FieldFocus::Row(cursor) = state.active_field;
-    let max_idx = auth_editable_row_count(state).saturating_sub(1);
-    let selected = if cursor > max_idx {
-        Some(max_idx)
-    } else {
-        Some(cursor)
-    };
+    let max_idx = rows.len().saturating_sub(1);
+    let selected = cursor.min(max_idx);
 
-    auth_panel::render_with_selection(frame, area, &panel_state, selected);
+    let items: Vec<ListItem> = rows
+        .iter()
+        .map(|r| ListItem::new(render_auth_row(r, &synthesized, &workspace_name)))
+        .collect();
+    let block = Block::default().borders(Borders::ALL).title(" Auth ");
+    let list = List::new(items).block(block).highlight_symbol("▸ ");
+    let mut list_state = ListState::default();
+    list_state.select(Some(selected));
+    frame.render_stateful_widget(list, area, &mut list_state);
+}
+
+fn render_auth_row(
+    row: &AuthRow,
+    synthesized: &AppConfig,
+    workspace_name: &str,
+) -> ratatui::text::Line<'static> {
+    use crate::config::resolve_mode;
+    use crate::console::widgets::auth_panel::{agent_display, badge_for, mode_str};
+
+    let bold_white = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let dim_green = Style::default().fg(PHOSPHOR_DIM);
+    let phosphor = Style::default().fg(PHOSPHOR_GREEN);
+
+    match row {
+        AuthRow::GlobalHeader => {
+            ratatui::text::Line::from(Span::styled("Global defaults", bold_white))
+        }
+        AuthRow::GlobalDefault { agent } => {
+            let mode = match agent {
+                crate::agent::Agent::Claude => synthesized
+                    .claude
+                    .as_ref()
+                    .map(|c| c.auth_forward)
+                    .unwrap_or_default(),
+                crate::agent::Agent::Codex => synthesized
+                    .codex
+                    .as_ref()
+                    .map(|c| c.auth_forward)
+                    .unwrap_or_default(),
+            };
+            ratatui::text::Line::from(vec![
+                Span::raw("  "),
+                Span::styled(format!("{}: ", agent_display(*agent)), bold_white),
+                Span::styled(mode_str(mode).to_string(), phosphor),
+            ])
+        }
+        AuthRow::WorkspaceHeader => {
+            ratatui::text::Line::from(Span::styled("Workspace defaults", bold_white))
+        }
+        AuthRow::WorkspaceDefault { agent } => {
+            let ws = synthesized.workspaces.get(workspace_name);
+            let explicit = ws.and_then(|ws| match agent {
+                crate::agent::Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
+                crate::agent::Agent::Codex => ws.codex.as_ref().map(|c| c.auth_forward),
+            });
+            let mode =
+                explicit.unwrap_or_else(|| resolve_mode(synthesized, *agent, workspace_name, ""));
+            let badge = badge_for(synthesized, workspace_name, "", *agent, mode);
+            ratatui::text::Line::from(vec![
+                Span::raw("  "),
+                Span::styled(format!("{}: ", agent_display(*agent)), bold_white),
+                Span::styled(mode_str(mode).to_string(), phosphor),
+                Span::raw("  "),
+                badge_span(badge),
+            ])
+        }
+        AuthRow::OverridesHeader { count } => ratatui::text::Line::from(vec![
+            Span::styled("Per-role overrides ", bold_white),
+            Span::styled(format!("({count})"), dim_green),
+        ]),
+        AuthRow::RoleHeader { role, expanded } => {
+            let glyph = if *expanded { "▾" } else { "▸" };
+            ratatui::text::Line::from(vec![
+                Span::raw("  "),
+                Span::styled(glyph.to_string(), phosphor),
+                Span::raw(" "),
+                Span::styled(role.clone(), bold_white),
+            ])
+        }
+        AuthRow::RoleAgentRow { role, agent } => {
+            let mode = resolve_mode(synthesized, *agent, workspace_name, role);
+            let badge = badge_for(synthesized, workspace_name, role, *agent, mode);
+            ratatui::text::Line::from(vec![
+                Span::raw("      "),
+                Span::styled(format!("{}: ", agent_display(*agent)), bold_white),
+                Span::styled(mode_str(mode).to_string(), phosphor),
+                Span::raw("  "),
+                badge_span(badge),
+            ])
+        }
+        AuthRow::AddSentinel { eligible } => ratatui::text::Line::from(vec![
+            Span::styled("  + Add per-role override", phosphor),
+            Span::raw("   "),
+            Span::styled(format!("({eligible} eligible)"), dim_green),
+        ]),
+        AuthRow::Divider => ratatui::text::Line::from(Span::styled(
+            "  ──────────────────────────────────────────",
+            dim_green,
+        )),
+    }
+}
+
+fn badge_span(
+    badge: crate::console::widgets::auth_panel::CredentialBadge,
+) -> ratatui::text::Span<'static> {
+    use crate::console::widgets::auth_panel::CredentialBadge;
+    match badge {
+        CredentialBadge::Resolves => Span::styled("OK", Style::default().fg(PHOSPHOR_GREEN)),
+        CredentialBadge::Unset => {
+            Span::styled("! unset", Style::default().fg(Color::Rgb(255, 94, 122)))
+        }
+        CredentialBadge::NotApplicable => Span::raw(""),
+    }
 }
 
 /// Synthesize an `AppConfig` whose `[claude]/[codex]` come from the live
