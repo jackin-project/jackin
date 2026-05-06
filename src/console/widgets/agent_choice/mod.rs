@@ -6,10 +6,14 @@ use crate::agent::Agent;
 use crate::console::widgets::ModalOutcome;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
-use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
+
+const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
+const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
+const WHITE: Color = Color::Rgb(255, 255, 255);
 
 #[derive(Debug, Clone)]
 pub struct AgentChoiceState {
@@ -23,8 +27,7 @@ impl AgentChoiceState {
         }
     }
 
-    #[allow(clippy::missing_const_for_fn)]
-    pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<Agent> {
+    pub const fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<Agent> {
         match key.code {
             KeyCode::Down | KeyCode::Char('j') => {
                 if matches!(self.focused, Agent::Claude) {
@@ -53,7 +56,7 @@ impl Default for AgentChoiceState {
 
 pub fn render(frame: &mut Frame, area: Rect, state: &AgentChoiceState) {
     let bold = Style::default().add_modifier(Modifier::BOLD);
-    let phosphor = Style::default().fg(ratatui::style::Color::Rgb(0, 255, 65));
+    let phosphor = Style::default().fg(PHOSPHOR_GREEN);
     let make_row = |agent: Agent, label: &str| {
         let prefix = if state.focused == agent { "▸ " } else { "  " };
         Line::from(vec![
@@ -61,14 +64,46 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentChoiceState) {
             Span::styled(label.to_string(), bold),
         ])
     };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            " Pick Agent ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+
+    let inner = block.inner(area);
+    frame.render_widget(ratatui::widgets::Clear, area);
+    frame.render_widget(block, area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(1),    // agent list
+            Constraint::Length(1), // spacer
+            Constraint::Length(1), // hint footer
+        ])
+        .split(inner);
+
     let lines = vec![
         make_row(Agent::Claude, "Claude"),
         make_row(Agent::Codex, "Codex"),
     ];
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Pick agent ");
-    frame.render_widget(Paragraph::new(lines).block(block), area);
+    frame.render_widget(Paragraph::new(lines), rows[0]);
+
+    let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let text_style = Style::default().fg(PHOSPHOR_GREEN);
+    let sep_style = Style::default().fg(PHOSPHOR_DARK);
+    let hint = Paragraph::new(Line::from(vec![
+        Span::styled("Enter", key_style),
+        Span::styled(" commit", text_style),
+        Span::styled(" \u{b7} ", sep_style),
+        Span::styled("Esc", key_style),
+        Span::styled(" cancel", text_style),
+    ]))
+    .alignment(Alignment::Center);
+    frame.render_widget(hint, rows[2]);
 }
 
 #[cfg(test)]

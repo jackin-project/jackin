@@ -273,6 +273,14 @@ mod consistency_tests {
         (buf, area)
     }
 
+    fn render_agent_choice() -> (Buffer, Rect) {
+        use super::agent_choice::{AgentChoiceState, render};
+        let area = Rect::new(0, 0, 50, 7);
+        let state = AgentChoiceState::new();
+        let buf = draw(area.width, area.height, |f| render(f, area, &state));
+        (buf, area)
+    }
+
     /// Every choice/list modal's title must start AND end with a space so
     /// `┌ Title ...` renders with breathing room around the label.
     #[test]
@@ -286,6 +294,7 @@ mod consistency_tests {
             ("GithubPicker", render_github_picker()),
             ("AgentPicker", render_role_picker()),
             ("ConfirmSave", render_confirm_save()),
+            ("AgentChoice", render_agent_choice()),
         ] {
             let title = top_border_title(&buf);
             assert!(
@@ -311,6 +320,7 @@ mod consistency_tests {
             ("GithubPicker", render_github_picker()),
             ("AgentPicker", render_role_picker()),
             ("ConfirmSave", render_confirm_save()),
+            ("AgentChoice", render_agent_choice()),
         ] {
             assert_border_is_phosphor_dark(&buf, area, name);
         }
@@ -329,6 +339,7 @@ mod consistency_tests {
             ("GithubPicker", render_github_picker()),
             ("AgentPicker", render_role_picker()),
             ("ConfirmSave", render_confirm_save()),
+            ("AgentChoice", render_agent_choice()),
         ] {
             assert_hint_row_present(&buf, area, name);
         }
