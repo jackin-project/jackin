@@ -11,15 +11,17 @@ pub struct CachedRepo {
 }
 
 impl CachedRepo {
-    pub fn new(paths: &JackinPaths, selector: &RoleSelector) -> Self {
-        let repo_dir = selector.namespace.as_ref().map_or_else(
+    fn role_cache_root(paths: &JackinPaths, selector: &RoleSelector) -> PathBuf {
+        selector.namespace.as_ref().map_or_else(
             || paths.roles_dir.join(&selector.name),
             |namespace| paths.roles_dir.join(namespace).join(&selector.name),
-        );
+        )
+    }
 
+    pub fn new(paths: &JackinPaths, selector: &RoleSelector) -> Self {
         Self {
             key: selector.key(),
-            repo_dir,
+            repo_dir: Self::role_cache_root(paths, selector).join("default"),
         }
     }
 
@@ -29,15 +31,13 @@ impl CachedRepo {
     /// named `feat-my-pr` (with a dash) would live at `…/branches/feat-my-pr`,
     /// which is a different path, eliminating any ambiguity.
     pub fn for_branch(paths: &JackinPaths, selector: &RoleSelector, branch: &str) -> Self {
-        let base = selector.namespace.as_ref().map_or_else(
-            || paths.roles_dir.join(&selector.name),
-            |namespace| paths.roles_dir.join(namespace).join(&selector.name),
-        );
         Self {
             key: format!("{}@{branch}", selector.key()),
             // Path::join handles forward slashes as directory separators, so
             // "feat/my-pr" naturally becomes …/branches/feat/my-pr on disk.
-            repo_dir: base.join("branches").join(branch),
+            repo_dir: Self::role_cache_root(paths, selector)
+                .join("branches")
+                .join(branch),
         }
     }
 }
@@ -180,7 +180,30 @@ mod tests {
 
         assert_eq!(
             repo.repo_dir,
-            paths.roles_dir.join("chainargos").join("the-architect")
+            paths
+                .roles_dir
+                .join("chainargos")
+                .join("the-architect")
+                .join("default")
+        );
+    }
+
+    #[test]
+    fn computes_branch_cache_path_as_sibling_of_default() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = RoleSelector::new(None, "the-architect");
+
+        let repo = CachedRepo::for_branch(&paths, &selector, "feat/caveman-all-install");
+
+        assert_eq!(
+            repo.repo_dir,
+            paths
+                .roles_dir
+                .join("the-architect")
+                .join("branches")
+                .join("feat")
+                .join("caveman-all-install")
         );
     }
 

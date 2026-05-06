@@ -70,7 +70,8 @@ trusted = true
     )
     .unwrap();
 
-    let repo_dir = paths.roles_dir.join("agent-smith");
+    let selector = RoleSelector::new(None, "agent-smith");
+    let repo_dir = jackin::repo::CachedRepo::new(&paths, &selector).repo_dir;
     std::fs::create_dir_all(&repo_dir).unwrap();
     std::fs::write(
         repo_dir.join("Dockerfile"),
@@ -98,7 +99,6 @@ model = "gpt-5"
     assert!(dockerfile.contains("openai/codex/releases"));
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
-    let selector = RoleSelector::new(None, "agent-smith");
     let workspace = ResolvedWorkspace {
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_string(),
@@ -179,7 +179,8 @@ trusted = true
     )
     .unwrap();
 
-    let repo_dir = paths.roles_dir.join("agent-smith");
+    let selector = RoleSelector::new(None, "agent-smith");
+    let repo_dir = jackin::repo::CachedRepo::new(&paths, &selector).repo_dir;
     std::fs::create_dir_all(&repo_dir).unwrap();
     std::fs::write(
         repo_dir.join("Dockerfile"),
@@ -200,7 +201,6 @@ plugins = []
     .unwrap();
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
-    let selector = RoleSelector::new(None, "agent-smith");
     let workspace = ResolvedWorkspace {
         label: repo_dir.display().to_string(),
         workdir: "/workspace".to_string(),

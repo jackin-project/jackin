@@ -943,7 +943,7 @@ mod tests {
         let paths = paths::JackinPaths::for_tests(temp.path());
         let selector = crate::selector::RoleSelector::parse("the-architect").unwrap();
         write_role_manifest(
-            &paths.roles_dir.join(&selector.name),
+            &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
             r#"dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
@@ -968,7 +968,7 @@ plugins = []
         let paths = paths::JackinPaths::for_tests(temp.path());
         let selector = crate::selector::RoleSelector::parse("the-architect").unwrap();
         write_role_manifest(
-            &paths.roles_dir.join(&selector.name),
+            &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
             r#"dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
@@ -993,7 +993,7 @@ plugins = []
         let paths = paths::JackinPaths::for_tests(temp.path());
         let selector = crate::selector::RoleSelector::parse("solo").unwrap();
         write_role_manifest(
-            &paths.roles_dir.join(&selector.name),
+            &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
             r#"dockerfile = "Dockerfile"
 agents = ["codex"]
 

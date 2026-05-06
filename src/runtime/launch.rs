@@ -20,6 +20,8 @@ use super::naming::{
 };
 use super::repo_cache::resolve_agent_repo;
 
+const MISE_TRUSTED_CONFIG_PATHS_ENV: &str = "MISE_TRUSTED_CONFIG_PATHS";
+
 // Four launch-time toggles (no_intro / debug / rebuild / force) all map
 // directly to CLI flags; bundling them into nested structs would obscure
 // rather than clarify the call sites.
@@ -281,6 +283,44 @@ fn build_workspace_mount_strings(
         }
     }
     out
+}
+
+fn jackin_workspace_mise_trusted_config_paths(
+    workspace_name: Option<&str>,
+    workspace: &crate::workspace::ResolvedWorkspace,
+) -> Option<String> {
+    if workspace_name != Some("jackin") {
+        return None;
+    }
+
+    let mut paths = std::collections::BTreeSet::new();
+    if !workspace.workdir.trim().is_empty() {
+        paths.insert(workspace.workdir.clone());
+    }
+    for mount in &workspace.mounts {
+        if !mount.dst.trim().is_empty() {
+            paths.insert(mount.dst.clone());
+        }
+    }
+
+    (!paths.is_empty()).then(|| paths.into_iter().collect::<Vec<_>>().join(":"))
+}
+
+fn inject_jackin_workspace_env(
+    vars: &mut Vec<(String, String)>,
+    workspace_name: Option<&str>,
+    workspace: &crate::workspace::ResolvedWorkspace,
+) {
+    if vars
+        .iter()
+        .any(|(key, _)| key == MISE_TRUSTED_CONFIG_PATHS_ENV)
+    {
+        return;
+    }
+
+    if let Some(value) = jackin_workspace_mise_trusted_config_paths(workspace_name, workspace) {
+        vars.push((MISE_TRUSTED_CONFIG_PATHS_ENV.to_string(), value));
+    }
 }
 
 /// Resolve the TERM value and an optional terminfo bind-mount for the
@@ -1180,6 +1220,7 @@ fn load_role_with(
             merged_vars.push((k.clone(), v.clone()));
         }
     }
+    inject_jackin_workspace_env(&mut merged_vars, workspace_name.as_deref(), workspace);
     let resolved_env = crate::env_resolver::ResolvedEnv { vars: merged_vars };
 
     // Launch-time diagnostic: emit a single compact line summarising
@@ -2475,6 +2516,60 @@ agents = ["codex"]
         assert_eq!(strings, vec!["/host/cache:/workspace/cache:ro".to_string()]);
     }
 
+    #[test]
+    fn jackin_workspace_mise_paths_cover_workdir_and_mount_destinations() {
+        let workspace = crate::workspace::ResolvedWorkspace {
+            label: "jackin".to_string(),
+            workdir: "/workspace".to_string(),
+            mounts: vec![
+                crate::workspace::MountConfig {
+                    src: "/host/jackin".to_string(),
+                    dst: "/workspace/jackin".to_string(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+                crate::workspace::MountConfig {
+                    src: "/host/homebrew-tap".to_string(),
+                    dst: "/workspace/homebrew-tap".to_string(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            ],
+            default_agent: None,
+            keep_awake_enabled: false,
+            git_pull_on_entry: false,
+        };
+
+        let value = jackin_workspace_mise_trusted_config_paths(Some("jackin"), &workspace).unwrap();
+
+        assert_eq!(
+            value,
+            "/workspace:/workspace/homebrew-tap:/workspace/jackin"
+        );
+        assert!(
+            jackin_workspace_mise_trusted_config_paths(Some("scentbird"), &workspace).is_none()
+        );
+    }
+
+    #[test]
+    fn jackin_workspace_mise_env_does_not_override_operator_value() {
+        let workspace = repo_workspace(std::path::Path::new("/host/repo"));
+        let mut vars = vec![(
+            MISE_TRUSTED_CONFIG_PATHS_ENV.to_string(),
+            "/operator/trusted".to_string(),
+        )];
+
+        inject_jackin_workspace_env(&mut vars, Some("jackin"), &workspace);
+
+        assert_eq!(
+            vars,
+            vec![(
+                MISE_TRUSTED_CONFIG_PATHS_ENV.to_string(),
+                "/operator/trusted".to_string()
+            )]
+        );
+    }
+
     fn repo_workspace(repo_dir: &std::path::Path) -> crate::workspace::ResolvedWorkspace {
         crate::workspace::ResolvedWorkspace {
             label: repo_dir.display().to_string(),
@@ -2587,7 +2682,7 @@ plugins = []
         let selector = RoleSelector::new(Some("chainargos"), "the-architect");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-        let repo_dir = paths.roles_dir.join("chainargos").join("the-architect");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2676,7 +2771,7 @@ plugins = ["code-review@claude-plugins-official"]
         let selector = RoleSelector::new(Some("evil-org"), "backdoor");
         let mut runner = FakeRunner::for_load_agent([String::new(), String::new()]);
 
-        let repo_dir = paths.roles_dir.join("evil-org").join("backdoor");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2728,7 +2823,7 @@ plugins = []
         let selector = RoleSelector::new(Some("chainargos"), "agent-brown");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-        let repo_dir = paths.roles_dir.join("chainargos").join("agent-brown");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2804,7 +2899,7 @@ trusted = true
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2888,7 +2983,7 @@ trusted = true
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -2968,7 +3063,7 @@ trusted = true
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3020,7 +3115,7 @@ agents = ["codex"]
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3091,7 +3186,7 @@ plugins = []
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3158,7 +3253,7 @@ plugins = []
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3204,7 +3299,7 @@ plugins = []
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3253,7 +3348,7 @@ plugins = []
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3302,7 +3397,7 @@ plugins = []
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3360,7 +3455,7 @@ plugins = []
             ..Default::default()
         };
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3433,7 +3528,7 @@ plugins = ["code-review@claude-plugins-official"]
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3502,7 +3597,7 @@ plugins = []
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3597,7 +3692,7 @@ plugins = []
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3650,7 +3745,7 @@ plugins = []
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3709,7 +3804,7 @@ plugins = []
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3767,7 +3862,7 @@ plugins = []
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3819,7 +3914,7 @@ plugins = []
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3922,7 +4017,7 @@ trusted = true
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -3958,6 +4053,100 @@ plugins = []
         assert!(
             run_cmd.contains("-e OPERATOR_SMOKE=smoke-literal"),
             "docker run must inject operator env; got: {run_cmd}"
+        );
+    }
+
+    #[test]
+    fn load_agent_injects_mise_trusted_paths_for_jackin_workspace_only() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        std::fs::write(
+            &paths.config_file,
+            r#"[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+
+[workspaces.jackin]
+workdir = "/workspace"
+
+[[workspaces.jackin.mounts]]
+src = "/tmp"
+dst = "/workspace"
+"#,
+        )
+        .unwrap();
+
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = crate::workspace::ResolvedWorkspace {
+            label: "jackin".to_string(),
+            workdir: "/workspace".to_string(),
+            mounts: vec![
+                crate::workspace::MountConfig {
+                    src: repo_dir.display().to_string(),
+                    dst: "/workspace/jackin".to_string(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+                crate::workspace::MountConfig {
+                    src: repo_dir.display().to_string(),
+                    dst: "/workspace/homebrew-tap".to_string(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            ],
+            default_agent: None,
+            keep_awake_enabled: false,
+            git_pull_on_entry: false,
+        };
+
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it"))
+            .unwrap();
+        assert!(
+            run_cmd.contains(
+                "-e MISE_TRUSTED_CONFIG_PATHS=/workspace:/workspace/homebrew-tap:/workspace/jackin"
+            ),
+            "jackin workspace must inject mise trusted paths; got: {run_cmd}"
         );
     }
 
@@ -4001,7 +4190,7 @@ trusted = true
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -4080,7 +4269,7 @@ trusted = true
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
@@ -4176,7 +4365,7 @@ trusted = true
             "jackin-agent-smith".to_string(),
         ]);
 
-        let repo_dir = paths.roles_dir.join("agent-smith");
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
