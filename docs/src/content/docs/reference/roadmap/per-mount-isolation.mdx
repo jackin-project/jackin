@@ -44,8 +44,8 @@ isolation = "shared"             # build cache, shared on purpose
 Modes:
 
 - **`shared`** — current behavior. Host path bind-mounted as-is.
-- **`worktree`** — jackin' runs `git worktree add` on the host against the configured `src`, then bind-mounts the worktree path into the container. Each agent gets its own working tree, HEAD, and index, but **refs and the object database are shared with the host repo** — this is fundamental to git worktrees, there's only one ref namespace per repo. Branches the agent creates appear immediately in the host's `git branch -a` without an explicit push step. To make git work inside the container, jackin' also bind-mounts the host repo's `.git/` directory into the container (see [Design Decision: Worktree Materialization Layout](#design-decision-worktree-materialization-layout) below); this means the agent has read-write access to that `.git/`. Use worktree mode for **trusted agents on personal projects** where immediate ref visibility is valuable; use clone mode (planned) for the untrusted-agent / fully-isolated case. Branch is hardcoded as `jackin/scratch/<container>` — an ephemeral scratch ref whose only job is to keep the agent's in-progress work reachable until it pushes. Agents (or external tooling such as the Superpowers plugin in Claude Code) rename the branch before pushing a PR. Base is always the host repo's current `HEAD`.
-- **`clone`** — planned for V1.1, **not part of the V1 enum vocabulary**. Will run `git clone --local --shared <src> <per-agent-copy>`, hardlinking objects for disk efficiency. Each agent will get a fully self-contained `.git/` with **independent refs** — the agent's branches won't appear on the host's `git branch -a` until `git push origin <branch>` is run from inside the container against the host clone path. The concrete operator situations clone mode targets:
+- **`worktree`** — jackin' runs `git worktree add` on the host against the configured `src`, then bind-mounts the worktree path into the container. Each agent gets its own working tree, HEAD, and index, but **refs and the object database are shared with the host repo** — this is fundamental to git worktrees, there's only one ref namespace per repo. Branches the agent creates appear immediately in the host's `git branch -a` without an explicit push step. To make git work inside the container, jackin' also bind-mounts the host repo's `.git/` directory into the container (see [Design Decision: Worktree Materialization Layout](#design-decision-worktree-materialization-layout) below); this means the agent has read-write access to that `.git/`. Use worktree mode for **trusted agents on personal projects** where immediate ref visibility is valuable. Branch is hardcoded as `jackin/scratch/<container>` — an ephemeral scratch ref whose only job is to keep the agent's in-progress work reachable until it pushes. Agents (or external tooling such as the Superpowers plugin in Claude Code) rename the branch before pushing a PR. Base is always the host repo's current `HEAD`.
+- **`clone`** — jackin' runs `git clone --local <src> <per-agent-copy>`, using local object hardlinks for disk efficiency while giving the agent a fully self-contained `.git/` with **independent refs**. The agent's branches don't appear on the host's `git branch -a` until `git push origin <branch>` is run from inside the container against the host clone path. The concrete operator situations clone mode targets:
   - **Untrusted or experimental agent.** Worktree mode gives the agent rw access to the host repo's `.git/` directory. A misbehaving agent can `git branch -D main`, rewrite refs, or corrupt the object database. Clone mode confines the blast radius to the per-agent `.git/` — the host's refs and objects are never touched by the agent's process.
   - **Many parallel agents fanning out scratch branches.** With 6 worktree agents running, the host's `git branch -a` shows 6 `jackin/scratch/...` lines mixed in with the operator's real branches. Clone mode keeps those refs invisible until an explicit `git push` makes one of them real.
   - **Editor / IDE noise.** VS Code, JetBrains, and `gitui` all watch `.git/refs/` for changes. Worktree-mode agents trigger refresh churn in every editor pointed at the host repo. Clone-mode agents don't.
@@ -53,7 +53,7 @@ Modes:
 
   Worktree mode (V1) covers the trusted-agent / immediate-visibility case (solo developer, want to `git diff jackin/scratch/...` from a host shell, agent is allowed to touch the local repo); clone mode is the complementary tool. See [Comparison with Other Tools](#comparison-with-other-tools) for how it will differ from worktree mode and from prior art (Docker Sandboxes, Conductor).
 
-V1's mode vocabulary is `shared | worktree`. `shared` is the canonical spelling, not `share`, because it describes the mount state and matches the persisted TOML value. `clone` is documented above as a planned future mode but is not in the enum today: V1 doesn't pre-add API for unimplemented features, and a value the runtime can't honor would only confuse operators (TOML linting tools accept it, the CLI accepts it, then materialization fails). When clone mode lands, `clone` is added back to the enum, the parser, and the docs in the same change.
+The mode vocabulary is `shared | worktree | clone`. `shared` is the canonical spelling, not `share`, because it describes the mount state and matches the persisted TOML value.
 
 Branch naming (Model B — full container name verbatim):
 
@@ -82,7 +82,7 @@ jackin workspace edit jackin \
   --mount-isolation /workspace/jackin=shared
 ```
 
-`--mount-isolation <dst>=<type>` is keyed by mount destination because destination is already the identity used by workspace upserts and removals. `<type>` uses the same canonical isolation enum as TOML (V1: `shared | worktree`). Keeping isolation out of the `--mount` string avoids overloading the existing `src:dst[:ro]` grammar and lets operators change only the isolation mode without retyping the mount source.
+`--mount-isolation <dst>=<type>` is keyed by mount destination because destination is already the identity used by workspace upserts and removals. `<type>` uses the same canonical isolation enum as TOML (`shared | worktree | clone`). Keeping isolation out of the `--mount` string avoids overloading the existing `src:dst[:ro]` grammar and lets operators change only the isolation mode without retyping the mount source.
 
 CLI behavior:
 
@@ -90,7 +90,7 @@ CLI behavior:
 - `workspace edit` can change isolation for an existing mount without also passing `--mount`. It can also set isolation for a mount being upserted in the same command. The same unknown-destination rule applies — the `<dst>` must match either an existing mount on the workspace or one being upserted in the same invocation.
 - `workspace show` adds an **Isolation** column. Omitted TOML fields display as `shared`.
 - `shared` is the canonical CLI/config spelling. Do not document `share` as an alias in V1; exact copy-paste between CLI output, TOML, and docs is more valuable than a second spelling.
-- `clone` is **not** part of V1's parser vocabulary. Passing `--mount-isolation /…=clone` falls through to the standard "invalid isolation `clone`; expected one of: shared, worktree" error. The keyword will be re-added when clone mode ships (V1.1) — V1 does not pre-add API for unimplemented modes.
+- `clone` is part of the parser vocabulary and can be set anywhere `worktree` can be set: `--mount-isolation /…=clone` or `isolation = "clone"`.
 - `workspace list` may stay count-only for V1; detailed per-mount isolation belongs in `workspace show`.
 - `config mount add` and global/scoped Docker mounts do **not** gain an isolation flag in V1. Isolation remains a workspace-mount concept.
 - Ad-hoc `jackin load --mount` mounts do **not** gain isolation support. They always remain `shared`; operators who want isolated source mounts should create or edit a saved workspace.
@@ -275,17 +275,17 @@ Cost: four mounts per isolated worktree instead of one, plus ~150 lines of mater
 
 ### Option C — Jackin-owned bare repo with worktrees branched off it
 
-Conceptually: `git clone --bare` the host repo into jackin's data dir, then `git worktree add` against that bare clone. The agent gets a fully isolated set of refs/objects (with `--shared` to hardlink object storage so disk overhead is negligible). To send work back to host, the agent runs `git push <host-path> <branch>`.
+Conceptually: `git clone --bare` the host repo into jackin's data dir, then `git worktree add` against that bare clone. The agent gets a fully isolated set of refs/objects. To send work back to host, the agent runs `git push <host-path> <branch>`.
 
 This gives **true ref isolation** — the agent's branches never touch the host's `.git/refs/`. The host's `git branch -a` doesn't show the agent's work until the agent (or operator) explicitly pushes.
 
-That's exactly **clone mode's** value proposition. Whether implemented with a bare clone + worktrees or with `git clone --local --shared`, the operator-facing semantics are identical: isolated refs, explicit push to share. Shipping Option C now while planning a separate `clone` mode for V1.1 would create two config values doing functionally the same thing — confusing for operators, doubled support burden, and "worktree" loses its only distinct property (shared refs).
+That's exactly **clone mode's** value proposition. Jackin implements it with `git clone --local`, giving the same operator-facing semantics: isolated refs and explicit push to share. `--shared` is intentionally avoided because it writes an alternates file pointing at the host repo's absolute `.git/objects` path, which is not mounted inside the container. Shipping Option C as a separate mode would create two config values doing functionally the same thing — confusing for operators, doubled support burden, and "worktree" loses its only distinct property (shared refs).
 
-Worktree mode in jackin' deliberately keeps the "shared refs" property and pays for it with the extra mount complexity in Option B. Clone mode (planned) is the right answer when the operator wants ref isolation; worktree mode is the right answer when they want immediate ref visibility on the host.
+Worktree mode in jackin' deliberately keeps the "shared refs" property and pays for it with the extra mount complexity in Option B. Clone mode is the right answer when the operator wants ref isolation; worktree mode is the right answer when they want immediate ref visibility on the host.
 
 ## Comparison with Other Tools
 
-| | jackin' worktree (V1) | jackin' clone (planned, V1.1) | Docker Sandboxes `--branch` | Conductor |
+| | jackin' worktree | jackin' clone | Docker Sandboxes `--branch` | Conductor |
 |---|---|---|---|---|
 | Sandbox runtime | Docker container (Linux namespaces) | Docker container (Linux namespaces) | microVM (hypervisor) | Native macOS process |
 | Host file exposure | Bind mount at operator-chosen `dst` | Bind mount at operator-chosen `dst` | Filesystem passthrough at *same* absolute path | None — same filesystem |
@@ -293,7 +293,7 @@ Worktree mode in jackin' deliberately keeps the "shared refs" property and pays 
 | Per-agent HEAD / index | ✓ | ✓ | ✓ | ✓ |
 | Branches visible on host without push | ✓ | ✗ (push required) | ✓ | ✓ |
 | Refs/objects shared with host repo | ✓ | ✗ (isolated) | ✓ | ✓ |
-| Worktree storage location | `<jackin_data>/<container>/git/worktree/repo/<dst>/<container>/` | `<jackin_data>/<container>/git/clone/...` (planned) | `<host_repo>/.sbx/<sandbox>-worktrees/<branch>/` | `<host_repo>/.conductor/<workspace>/` |
+| Worktree storage location | `<jackin_data>/<container>/git/worktree/repo/<dst>/<container>/` | `<jackin_data>/<container>/git/clone/repo/<dst>/<container>/` | `<host_repo>/.sbx/<sandbox>-worktrees/<branch>/` | `<host_repo>/.conductor/<workspace>/` |
 | Bind mounts per isolated mount | 4 (worktree, host `.git/`, two `:ro` `.git`/gitdir overrides) | 1 (clone is self-contained) | n/a (passthrough, not bind mount) | n/a (no sandbox) |
 | Host repo polluted with tool dirs | ✗ | ✗ | `.sbx/` (must be gitignored) | `.conductor/` |
 | Agent sees host main-tree files | ✗ (only the worktree) | ✗ | ✗ (worktree only; main tree explicitly hidden) | n/a (native process) |
@@ -305,9 +305,9 @@ Worktree mode in jackin' deliberately keeps the "shared refs" property and pays 
 
 We can't adopt Sandboxes' approach in jackin' because Docker containers don't provide hypervisor-level passthrough. Even if jackin' bind-mounted the host repo at the same absolute path inside the container (e.g., `/Users/foo/repo` → `/Users/foo/repo`), it would tie the operator's container layout to their host paths and break the `dst` abstraction every other mount in the workspace already uses. Sandboxes' approach is an elegant fit for their hypervisor model; ours is the corresponding fit for the container model — same problem, different cost (4 mounts + override files instead of "just works").
 
-**Jackin' clone mode (planned)** is the right tool when the operator wants ref isolation: the agent's experiments don't pollute the host's branch list, and an untrusted or experimental agent can't accidentally `git branch -D main` on the host. Cost is a `git push` step to share work and the agent's branches not appearing in editor git UIs until that push.
+**Jackin' clone mode** is the right tool when the operator wants ref isolation: the agent's experiments don't pollute the host's branch list, and an untrusted or experimental agent can't accidentally `git branch -D main` on the host. Cost is a `git push` step to share work and the agent's branches not appearing in editor git UIs until that push.
 
-The decision to ship worktree mode (Option B) **and** plan clone mode separately is deliberate: they serve different operator intents and both have legitimate use cases. Operators can pick per mount.
+The decision to support both worktree mode (Option B) and clone mode is deliberate: they serve different operator intents and both have legitimate use cases. Operators can pick per mount.
 
 ## Lifecycle
 
@@ -349,17 +349,17 @@ The decision to ship worktree mode (Option B) **and** plan clone mode separately
 
 Ship:
 
-- `isolation` field on workspace mounts, values `shared | worktree`. Absent → `shared` (backward-compatible; zero-migration for existing TOMLs). Global mounts reject the field at parse time.
+- `isolation` field on workspace mounts, values `shared | worktree | clone`. Absent → `shared` (backward-compatible; zero-migration for existing TOMLs). Global mounts reject the field at parse time.
 - CLI support for setting isolation on saved workspace mounts:
   - `workspace create --mount-isolation <dst>=<type>`
   - `workspace edit --mount-isolation <dst>=<type>`
   - `workspace show` displays each mount's effective isolation
-- A shared `MountIsolation` parser/model for TOML and CLI, with V1 canonical values `shared | worktree`. `clone` is documented as a planned V1.1 mode but is not in V1's enum/parser — the keyword is re-added when clone mode ships.
+- A shared `MountIsolation` parser/model for TOML and CLI, with canonical values `shared | worktree | clone`.
 - `jackin load --force` dirty-host acknowledgement for non-interactive worktree materialization; `jackin launch` gets an interactive confirmation path.
 - Dirty-host checks include staged changes, unstaged tracked changes, and untracked files; ignored files do not require acknowledgement.
 - Branch naming hardcoded as `jackin/scratch/<container>` (ephemeral scratch ref, Model B — full container name verbatim; see "Branch naming" earlier and the dedicated V1 Scope bullet below). Base is always host `HEAD`. No configurable template or base in V1.
 - Branch reuse is strict: first materialization branches from host `HEAD`; later loads reuse the existing worktree/branch without reset, rebase, or fast-forward.
-- Duplicate isolated mounts for the same repo root are allowed; each mount gets its own worktree, and branch names disambiguate by mount-destination slug when needed.
+- Duplicate clone mounts for the same repo root are allowed; each mount gets its own clone. Duplicate worktree mounts for the same repo root remain rejected because the host worktree admin entry is keyed by container name.
 - Runtime materialization happens after container-name claim, not inside `resolve_load_workspace`; introduce a materialized-workspace handoff into Docker launch.
 - Docker bind-mount emission preserves parent-before-child ordering so explicit shared cache child mounts overlay isolated source parents.
 - `.jackin/isolation.json` records materialized isolated mounts so `purge` and `cd` work even after config changes.
@@ -367,8 +367,9 @@ Ship:
 - Clean-exit cleanup deletes clean worktrees automatically when no commits would be lost, including clean branches whose local commits are already reachable from their upstream/remote tracking branch. Preserved states use `active | preserved_dirty | preserved_unpushed`; successful cleanup removes the state record.
 - `extensions.worktreeConfig` enabled on the host repo on first worktree creation.
 - For each isolated worktree, **four** bind mounts wired up at Docker run time so git works inside the container: the worktree at `<dst>` (rw), host's `.git/` at `/jackin/host/<dst-stripped>/.git` (rw, includes the per-worktree admin dir natively), plus two jackin-owned `:ro` override files (replacement `.git` pointer at `<dst>/.git`, replacement back-pointer at the admin's `gitdir`). The override files live at `<data_dir>/jackin-<container>/git/overrides/<dst-stripped>/{.git,gitdir}` with filenames matching their docker mount destinations. The materialized worktree lives at `<data_dir>/jackin-<container>/git/worktree/repo/<dst-stripped>/<container>/` — `repo/` marks the subtree as git-managed, `<container>` basename ensures globally unique admin entries in the host repo's `.git/worktrees/`. See [Container-side mount layout](#host-side-materialization) and [Design Decision: Worktree Materialization Layout](#design-decision-worktree-materialization-layout).
+- For each isolated clone, one bind mount is enough: the materialized clone at `<data_dir>/jackin-<container>/git/clone/repo/<dst-stripped>/<container>/` is mounted at `<dst>` (rw). The clone carries its own `.git/`, so no host `.git/` auxiliary mounts or override files are needed.
 - Branch naming uses the full container name verbatim: `jackin/scratch/<container>` (e.g. `jackin/scratch/jackin-the-architect-clone-1`). Globally unique by construction; trivial container → branch mapping; no instance-suffix derivation logic.
-- `validate_isolation_layout` rejects two isolated mounts that resolve to the same host repository within one workspace. V1 limitation; revisit when a real operator workflow surfaces.
+- `validate_isolation_layout` rejects two worktree mounts that resolve to the same host repository within one workspace. Clone mounts can share the same host repository because each has an independent `.git/`.
 - `load` materializes, foreground session finalization safely removes throwaway isolated worktrees when no work would be lost, unsafe clean-exit cleanup asks interactive operators whether to return to the agent, preserve recovery state, or force-delete, `eject` leaves worktrees alone, and `purge` force-deletes everything (container, DinD sidecar, the per-container `git/` tree, worktree, local branch).
 - `purge` refuses on running agents (also closes the pre-existing gap for `shared` mode).
 - Hooks inherit from host by default (no opt-out flag).
@@ -379,11 +380,10 @@ Known limitations for v1 (document, don't invest):
 
 - **Submodules and git-LFS.** Worktrees handle submodules the way the parent repo does; no extra jackin'-side orchestration. If a team hits an edge case, they'll tell us.
 - **Shared `.git/config` for remotes, credentials, and non-`--worktree` writes.** `extensions.worktreeConfig` closes the accidental-leak path for tools that use `git config --worktree`, but config written without that flag, plus `remote.*` and `credential.*`, still lands in shared `.git/config`. An agent that deliberately writes shared config can still affect the host — this is a trust question, not a boundary.
-- **Naming collision with existing `-clone-N` suffix.** <RepoFile path="src/instance/naming.rs" /> already uses `-clone-N` for collision-avoidance in container names (e.g. `jackin-the-architect-clone-1`). When `isolation = "clone"` lands, the word "clone" will have two meanings in the data-dir layout. To be resolved when clone mode ships — not a V1 blocker.
+- **Naming collision with existing `-clone-N` suffix.** <RepoFile path="src/instance/naming.rs" /> already uses `-clone-N` for collision-avoidance in container names (e.g. `jackin-the-architect-clone-1`). With `isolation = "clone"`, the word "clone" has two meanings in logs and paths: an instance suffix and a git-isolation mode. The mode's on-disk discriminator is explicit (`git/clone/repo/...`) so this is cosmetic.
 
 Defer:
 
-- `isolation = "clone"` mode (planned for V1.1). Each agent gets a fully self-contained `.git/` directory via `git clone --local --shared <src> <per-agent-copy>` — objects are hardlinked so disk overhead is negligible, but refs are independent. The agent's branches don't appear on the host's `git branch -a` until `git push origin <branch>` is run from inside the container against the host clone path. Right answer for parallel agents on shared/untrusted workloads, where ref isolation matters more than immediate visibility. Worktree mode (V1) covers the trusted-agent / immediate-visibility case; clone mode is planned for the complementary use case. See the [Comparison with Other Tools](#comparison-with-other-tools) table above for how worktree and clone differ across mount layout, ref visibility, and trust model.
 - Configurable `branch_template` / `base_branch`. The V1 branch name is ephemeral scratch; no user-facing use case has surfaced that a hardcoded name doesn't cover.
 - CLI override of isolation on ad-hoc `jackin load --mount` mounts. Isolation is intentionally a saved-workspace mount feature.
 - `--no-hooks` flag to skip host hooks per worktree.

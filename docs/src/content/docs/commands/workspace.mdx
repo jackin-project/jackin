@@ -30,7 +30,7 @@ Create a new workspace definition.
 | `--allowed-role <NAME>` | Restrict to these roles (repeatable) |
 | `--default-role <NAME>` | Role to auto-select |
 | `--default-agent <claude\|codex>` | Default agent for this workspace |
-| `--mount-isolation <DST>=<TYPE>` | Set per-mount isolation by container destination. Repeatable. `<TYPE>` is `shared` or `worktree`. The `<DST>` must match a mount destination present in the final mount plan; an unknown `<DST>` is a hard error. |
+| `--mount-isolation <DST>=<TYPE>` | Set per-mount isolation by container destination. Repeatable. `<TYPE>` is `shared`, `worktree`, or `clone`. The `<DST>` must match a mount destination present in the final mount plan; an unknown `<DST>` is a hard error. |
 | `--keep-awake` | macOS only: opt this workspace into the keep-awake reconciler. While any agent in the workspace is running, jackin keeps a single detached `caffeinate -imsu` alive so the host stays awake. No-op on Linux/Windows. See [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake). |
 | `--git-pull` | Run `git pull` on every mounted git repository from the host before the agent container starts. Failures are non-fatal — the launch continues even when offline or the working tree is dirty. See [Git pull on entry](/guides/workspaces/#git-pull-on-entry). |
 
@@ -66,7 +66,7 @@ jackin workspace show <NAME>
 
 Display details of a specific workspace including workdir, mounts, and role restrictions.
 
-The mount table includes an **Isolation** column showing each mount's effective isolation mode (`shared` or `worktree`). Mounts with no `isolation` field in TOML display as `shared`.
+The mount table includes an **Isolation** column showing each mount's effective isolation mode (`shared`, `worktree`, or `clone`). Mounts with no `isolation` field in TOML display as `shared`.
 
 ### `workspace edit`
 

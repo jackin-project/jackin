@@ -110,13 +110,14 @@ Setting `isolation = "worktree"` on a source mount tells jackin' to materialize 
 | Mode | Status | Behavior |
 |---|---|---|
 | `shared` | Default | Host path bind-mounted as-is. Today's behavior. |
-| `worktree` | V1 | Materialize a `git worktree` per container; bind-mount the worktree path. Branch defaults to `jackin/scratch/<container>`, base is host `HEAD`. |
+| `worktree` | Available | Materialize a `git worktree` per container; bind-mount the worktree path. Branch defaults to `jackin/scratch/<container>`, base is host `HEAD`. Refs are shared with the host repo. |
+| `clone` | Available | Materialize a per-container `git clone --local`; bind-mount the clone path. The clone has its own `.git/` and independent refs; branches appear on the host only after an explicit push. |
 
-A `clone` mode (per-agent `git clone --local --shared` for full ref isolation) is on the [roadmap for V1.1](/reference/roadmap/per-mount-isolation/) but is not part of the V1 vocabulary — passing `--mount-isolation /…=clone` today errors with the standard "invalid isolation" message.
+Use `worktree` when immediate host-side branch visibility is useful and the agent is trusted with the host repo's `.git/`. Use `clone` when ref isolation is more important than immediate host visibility.
 
 ### Validation
 
-`worktree` mounts have a few preconditions enforced before materialization:
+`worktree` and `clone` mounts have a few preconditions enforced before materialization:
 
 - `src` must be a git repository **root** (not a subdirectory).
 - The host repo must not be mid-rebase, mid-merge, or mid-cherry-pick.

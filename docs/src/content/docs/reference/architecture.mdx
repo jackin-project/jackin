@@ -108,9 +108,9 @@ Workspace mounts pass through three distinct shapes between operator intent and 
 |---|---|---|
 | `WorkspaceConfig` | `~/.config/jackin/config.toml` | Persisted operator intent — raw `src`/`dst`/`readonly`/`isolation` fields per mount. |
 | `ResolvedWorkspace` | `resolve_load_workspace` | Expanded host paths plus the merged composition of workspace, ad-hoc, and global mounts. Still independent of the actual container instance. |
-| `MaterializedWorkspace` | post-name-claim materializer | Final host paths Docker should bind-mount for *this* container. Worktrees have been created on disk; isolated `src` values point at the per-container worktree path. |
+| `MaterializedWorkspace` | post-name-claim materializer | Final host paths Docker should bind-mount for *this* container. Isolated checkouts have been created on disk; isolated `src` values point at the per-container worktree or clone path. |
 
-Materialization happens **after** jackin claims the final container name (e.g. resolves `-clone-N` collisions) and the per-container state directory exists. For each non-`shared` mount, materialization is idempotent: first load creates the scratch branch from host `HEAD` and records `base_commit`; later loads to the same container reuse the existing worktree as-is — no reset, no rebase, no fast-forward.
+Materialization happens **after** jackin claims the final container name (e.g. resolves `-clone-N` collisions) and the per-container state directory exists. For each non-`shared` mount, materialization is idempotent: first load creates the scratch branch from host `HEAD` and records `base_commit`; later loads to the same container reuse the existing checkout as-is — no reset, no rebase, no fast-forward.
 
 On first worktree creation for a host repo, jackin' enables `extensions.worktreeConfig` (bumping `core.repositoryformatversion` to 1 if needed) so per-worktree config writes via `git config --worktree` don't leak into the shared host `.git/config`.
 
