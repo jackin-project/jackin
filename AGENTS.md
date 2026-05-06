@@ -10,6 +10,14 @@ Do not memorialize old shapes in code comments ("formerly named X", "old locatio
 
 This rule retires when jackin ships its first tagged release.
 
+## Changelog (agent-only)
+
+**Do not add entries to `CHANGELOG.md` until the first tagged release.**
+
+The changelog exists to communicate breaking changes and new features to *users of released software*. Before a first release there are no such users, and every change is implicitly "unreleased" — adding entries now creates noise that will need to be cleaned up before the release and may give a false impression that the project follows a stable release cadence.
+
+When the first release is being cut, the operator will explicitly ask for the changelog to be populated. Until then, leave `CHANGELOG.md` unchanged.
+
 ## Pull Request Merging (agent-only)
 
 **Agents must never merge a pull request without explicit per-PR confirmation from the human operator.**
@@ -21,6 +29,20 @@ This rule retires when jackin ships its first tagged release.
 - Bounded authorization: if the operator says "merge all the PRs we just discussed" or similar, merge only the named set — not unrelated PRs that exist or that you open later.
 
 If you are uncertain whether authorization applies to the PR in front of you, ask. The cost of pausing is ~30 seconds; the cost of merging something the operator wasn't ready for is much higher.
+
+### CI must be green before merging
+
+**Never merge a pull request unless all required CI checks pass.** This is non-negotiable regardless of how the operator phrases the merge request.
+
+Before invoking the merge command:
+
+1. **Check CI status**: run `gh pr checks <PR> --repo <owner/repo>` and confirm every required check shows `pass`. A check in `pending` or `fail` state means do not merge — wait or fix first.
+2. **Do not force-merge to bypass failures**: do not use `--admin` or other bypass flags to override failing checks unless the operator explicitly names the specific failing check and states it is safe to bypass for an articulated reason.
+3. **Always use `gh` (GitHub CLI) for all GitHub interactions**: PR creation, review, status checks, and merging must go through `gh`, not raw `git push` to protected branches or direct API calls. This keeps the audit trail consistent and ensures branch-protection rules are respected.
+
+If CI is red when the operator says "merge it", respond: "CI is failing on `<check name>` — I won't merge until it's green. Fix the failure and then I'll merge." If the operator insists on merging anyway, ask them to explicitly acknowledge the specific failing check.
+
+Why this rule exists: a red main branch blocks the whole team. The cost of one bad merge far exceeds the cost of pausing to fix CI.
 
 ### Verify PR title and description before merging
 
