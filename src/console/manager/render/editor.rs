@@ -597,6 +597,72 @@ pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -
     rows
 }
 
+/// Row-shape model for the Auth tab. `auth_flat_rows()` rebuilds this
+/// per frame from `editor.pending` + `editor.auth_expanded`. Rendering
+/// and input both index into the same `Vec<AuthRow>` so cursor row
+/// numbers always agree with what's drawn.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::console::manager) enum AuthRow {
+    /// Bold "Global defaults" caption (read-only).
+    GlobalHeader,
+    /// One row per agent under the Global header. Read-only.
+    GlobalDefault { agent: crate::agent::Agent },
+    /// Bold "Workspace defaults" caption.
+    WorkspaceHeader,
+    /// Editable workspace-level row, one per agent.
+    WorkspaceDefault { agent: crate::agent::Agent },
+    /// "Per-role overrides (N)" caption.
+    OverridesHeader { count: usize },
+    /// Collapsible role override block. `expanded` toggles the agent rows.
+    RoleHeader { role: String, expanded: bool },
+    /// Agent row inside an expanded `RoleHeader`. Editable.
+    RoleAgentRow {
+        role: String,
+        agent: crate::agent::Agent,
+    },
+    /// `+ Add per-role override (N eligible)` sentinel — always last.
+    AddSentinel { eligible: usize },
+    /// Visual divider between sections; not focusable.
+    Divider,
+}
+
+#[allow(dead_code)]
+pub(in crate::console::manager) fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
+    use crate::agent::Agent;
+    let mut rows = vec![
+        AuthRow::GlobalHeader,
+        AuthRow::GlobalDefault { agent: Agent::Claude },
+        AuthRow::GlobalDefault { agent: Agent::Codex },
+        AuthRow::Divider,
+        AuthRow::WorkspaceHeader,
+        AuthRow::WorkspaceDefault { agent: Agent::Claude },
+        AuthRow::WorkspaceDefault { agent: Agent::Codex },
+        AuthRow::Divider,
+    ];
+
+    let override_roles: Vec<&String> = editor
+        .pending
+        .roles
+        .iter()
+        .filter(|(_, ro)| ro.claude.is_some() || ro.codex.is_some())
+        .map(|(name, _)| name)
+        .collect();
+    rows.push(AuthRow::OverridesHeader {
+        count: override_roles.len(),
+    });
+    let eligible_total = if editor.pending.allowed_roles.is_empty() {
+        0
+    } else {
+        editor.pending.allowed_roles.len()
+    };
+    let eligible_remaining = eligible_total.saturating_sub(override_roles.len());
+    rows.push(AuthRow::AddSentinel {
+        eligible: eligible_remaining,
+    });
+    rows
+}
+
 /// Mirrors launch-time semantics from
 /// [`crate::app::context::eligible_roles_for_workspace`]. Roles
 /// already carrying an override are NOT filtered — operators may add
@@ -2308,5 +2374,41 @@ mod parse_path_breadcrumb_tests {
     fn parse_path_breadcrumb_invalid_too_many_segments() {
         // 5+ segments is not a valid 1Password breadcrumb.
         assert!(parse_path_breadcrumb("a/b/c/d/e").is_none());
+    }
+}
+
+#[cfg(test)]
+mod auth_flat_rows_tests {
+    use super::{AuthRow, auth_flat_rows};
+    use crate::console::manager::state::EditorState;
+    use crate::workspace::WorkspaceConfig;
+
+    #[test]
+    fn empty_workspace_yields_defaults_overrides_header_and_sentinel() {
+        let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        let rows = auth_flat_rows(&editor);
+        assert_eq!(
+            rows,
+            vec![
+                AuthRow::GlobalHeader,
+                AuthRow::GlobalDefault {
+                    agent: crate::agent::Agent::Claude,
+                },
+                AuthRow::GlobalDefault {
+                    agent: crate::agent::Agent::Codex,
+                },
+                AuthRow::Divider,
+                AuthRow::WorkspaceHeader,
+                AuthRow::WorkspaceDefault {
+                    agent: crate::agent::Agent::Claude,
+                },
+                AuthRow::WorkspaceDefault {
+                    agent: crate::agent::Agent::Codex,
+                },
+                AuthRow::Divider,
+                AuthRow::OverridesHeader { count: 0 },
+                AuthRow::AddSentinel { eligible: 0 },
+            ],
+        );
     }
 }
