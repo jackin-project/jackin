@@ -483,6 +483,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 default_agent,
                 mount_isolation,
                 keep_awake,
+                git_pull,
             } => {
                 let expanded_workdir = workspace::resolve_path(&workdir);
                 let parsed_mounts = mounts
@@ -522,6 +523,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     keep_awake: crate::workspace::KeepAwakeConfig {
                         enabled: keep_awake,
                     },
+                    git_pull_on_entry: git_pull,
                 };
                 let mut editor = crate::config::ConfigEditor::open(&paths)?;
                 editor.create_workspace(&name, ws)?;
@@ -605,10 +607,19 @@ pub fn run(cli: Cli) -> Result<()> {
                 delete_isolated_state,
                 keep_awake,
                 no_keep_awake,
+                git_pull,
+                no_git_pull,
             } => {
                 // Map paired flags to Option<bool>: None = no change.
                 // Mutual exclusion is enforced at parse time by clap's
                 // `conflicts_with`, so at most one of the two is true.
+                let git_pull_change = if git_pull {
+                    Some(true)
+                } else if no_git_pull {
+                    Some(false)
+                } else {
+                    None
+                };
                 let keep_awake_change = if keep_awake {
                     Some(true)
                 } else if no_keep_awake {
@@ -747,6 +758,12 @@ pub fn run(cli: Cli) -> Result<()> {
                         if v { "enabled" } else { "disabled" }
                     ));
                 }
+                if let Some(v) = git_pull_change {
+                    changes.push(format!(
+                        "git_pull_on_entry → {}",
+                        if v { "enabled" } else { "disabled" }
+                    ));
+                }
 
                 // Build the prospective mount list (mirrors edit_workspace's
                 // merge order) so we can check for source drift on any mount
@@ -828,6 +845,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         },
                         mount_isolation_overrides: mount_isolation,
                         keep_awake_enabled: keep_awake_change,
+                        git_pull_on_entry_enabled: git_pull_change,
                     },
                 )?;
                 editor.save()?;
@@ -1125,6 +1143,9 @@ fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
     if workspace.keep_awake.enabled {
         info.push(("Keep Awake", "enabled (macOS only)"));
     }
+    if workspace.git_pull_on_entry {
+        info.push(("Git Pull", "on entry"));
+    }
     let mut info_table = Table::builder(info.iter().map(|(k, v)| [*k, *v])).build();
     info_table
         .with(Style::modern_rounded())
@@ -1208,6 +1229,7 @@ mod auth_set_tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
+            git_pull_on_entry: false,
         };
         let out = render_workspace_show("jackin", &ws);
         assert!(out.contains("Isolation"));

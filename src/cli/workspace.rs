@@ -71,6 +71,11 @@ Examples:
         /// no-op on Linux/Windows.
         #[arg(long = "keep-awake", default_value_t = false)]
         keep_awake: bool,
+        /// Run `git pull` on all mounted git repositories before starting the
+        /// agent. Executed on the host. Failures are warnings — the launch
+        /// continues even when offline.
+        #[arg(long = "git-pull", default_value_t = false)]
+        git_pull: bool,
     },
     /// List all saved workspaces
     #[command(before_help = BANNER, styles = HELP_STYLES)]
@@ -174,6 +179,18 @@ Examples:
             default_value_t = false
         )]
         no_keep_awake: bool,
+        /// Enable git pull on entry for this workspace. Mutually exclusive with
+        /// `--no-git-pull`.
+        #[arg(long = "git-pull", default_value_t = false)]
+        git_pull: bool,
+        /// Disable git pull on entry for this workspace. Mutually exclusive with
+        /// `--git-pull`.
+        #[arg(
+            long = "no-git-pull",
+            conflicts_with = "git_pull",
+            default_value_t = false
+        )]
+        no_git_pull: bool,
     },
     /// Remove redundant mounts (rule-C violations) from a saved workspace
     #[command(

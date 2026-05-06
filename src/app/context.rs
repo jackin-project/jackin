@@ -478,6 +478,7 @@ mod tests {
                 env: std::collections::BTreeMap::new(),
                 roles: std::collections::BTreeMap::new(),
                 keep_awake: workspace::KeepAwakeConfig::default(),
+                git_pull_on_entry: false,
             },
         );
 
@@ -522,6 +523,7 @@ mod tests {
                 env: std::collections::BTreeMap::new(),
                 roles: std::collections::BTreeMap::new(),
                 keep_awake: workspace::KeepAwakeConfig::default(),
+                git_pull_on_entry: false,
             },
         );
 
@@ -565,6 +567,7 @@ mod tests {
                 env: std::collections::BTreeMap::new(),
                 roles: std::collections::BTreeMap::new(),
                 keep_awake: workspace::KeepAwakeConfig::default(),
+                git_pull_on_entry: false,
             },
         );
 
@@ -617,6 +620,7 @@ mod tests {
                 env: std::collections::BTreeMap::new(),
                 roles: std::collections::BTreeMap::new(),
                 keep_awake: workspace::KeepAwakeConfig::default(),
+                git_pull_on_entry: false,
             },
         );
         config
