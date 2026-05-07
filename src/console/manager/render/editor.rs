@@ -1116,10 +1116,10 @@ fn render_auth_row(
     let phosphor = Style::default().fg(PHOSPHOR_GREEN);
 
     match row {
-        AuthRow::AuthKind { agent } => ratatui::text::Line::from(vec![
-            Span::raw("  "),
-            Span::styled(auth_kind_display(*agent).to_string(), bold_white),
-        ]),
+        AuthRow::AuthKind { agent } => ratatui::text::Line::from(Span::styled(
+            auth_kind_display(*agent).to_string(),
+            bold_white,
+        )),
         AuthRow::WorkspaceMode { agent } => {
             let ws = synthesized.workspaces.get(workspace_name);
             let explicit = ws.and_then(|ws| match agent {
@@ -1134,19 +1134,17 @@ fn render_auth_row(
                 " (inherited)"
             };
             ratatui::text::Line::from(vec![
-                Span::raw("  "),
                 Span::styled(format!("{:<14}", "Mode"), bold_white),
                 Span::styled(mode_str(mode).to_string(), phosphor),
                 Span::styled(suffix.to_string(), dim_green),
             ])
         }
         AuthRow::WorkspaceSource { agent } => {
-            render_auth_source_line("Source", synthesized, workspace_name, "", *agent, 2)
+            render_auth_source_line("Source", synthesized, workspace_name, "", *agent, 0)
         }
         AuthRow::RoleHeader { role, expanded } => {
             let glyph = if *expanded { "▼" } else { "▶" };
             ratatui::text::Line::from(vec![
-                Span::raw("  "),
                 Span::styled(glyph.to_string(), disclosure_style()),
                 Span::styled(format!(" Role: {role}"), disclosure_style()),
             ])
@@ -1174,7 +1172,7 @@ fn render_auth_row(
                 String::new()
             };
             ratatui::text::Line::from(vec![
-                Span::styled("  + Override for a role", label_style),
+                Span::styled("+ Override for a role", label_style),
                 Span::styled(suffix, dim_green),
             ])
         }
@@ -1194,7 +1192,7 @@ fn render_auth_source_line(
 
     let mode = crate::config::resolve_mode(synthesized, agent, workspace_name, role);
     let env_name = agent.required_env_var(mode);
-    let label_width = if indent == 2 { 14 } else { 12 };
+    let label_width = if indent == 0 { 14 } else { 12 };
     let mut spans = vec![
         Span::raw(" ".repeat(indent)),
         Span::styled(
