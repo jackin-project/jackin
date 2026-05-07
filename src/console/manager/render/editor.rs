@@ -815,10 +815,7 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                 let mut spans = vec![
                     Span::raw(format!("{cursor_col}     ")),
                     Span::styled(arrow, disclosure_style()),
-                    Span::styled(
-                        format!(" Role: {role}  ({count} vars)"),
-                        disclosure_style(),
-                    ),
+                    Span::styled(format!(" Role: {role}  ({count} vars)"), disclosure_style()),
                 ];
                 if !in_registry {
                     spans.push(Span::styled(
@@ -1897,28 +1894,32 @@ mod secrets_tab_render_tests {
         // Expected sequence:
         //  0  WorkspaceKeyRow("ALPHA")
         //  1  WorkspaceKeyRow("BETA")
-        //  2  WorkspaceAddSentinel
-        //  3  SectionSpacer
-        //  4  AgentHeader { role: "agent-a", expanded: true }
-        //  5  AgentKeyRow { role: "agent-a", key: "KEY" }
-        //  6  AgentAddSentinel("agent-a")
+        //  2  SectionSpacer
+        //  3  WorkspaceAddSentinel
+        //  4  SectionSpacer
+        //  5  AgentHeader { role: "agent-a", expanded: true }
+        //  6  AgentKeyRow { role: "agent-a", key: "KEY" }
         //  7  SectionSpacer
-        //  8  AgentHeader { role: "agent-b", expanded: false }
-        assert_eq!(rows.len(), 9, "unexpected row count: {rows:?}");
+        //  8  AgentAddSentinel("agent-a")
+        //  9  SectionSpacer
+        // 10  AgentHeader { role: "agent-b", expanded: false }
+        assert_eq!(rows.len(), 11, "unexpected row count: {rows:?}");
         assert!(matches!(&rows[0], super::SecretsRow::WorkspaceKeyRow(k) if k == "ALPHA"));
         assert!(matches!(&rows[1], super::SecretsRow::WorkspaceKeyRow(k) if k == "BETA"));
-        assert!(matches!(&rows[2], super::SecretsRow::WorkspaceAddSentinel));
-        assert!(matches!(&rows[3], super::SecretsRow::SectionSpacer));
+        assert!(matches!(&rows[2], super::SecretsRow::SectionSpacer));
+        assert!(matches!(&rows[3], super::SecretsRow::WorkspaceAddSentinel));
+        assert!(matches!(&rows[4], super::SecretsRow::SectionSpacer));
         assert!(
-            matches!(&rows[4], super::SecretsRow::RoleHeader { role, expanded: true } if role == "agent-a")
+            matches!(&rows[5], super::SecretsRow::RoleHeader { role, expanded: true } if role == "agent-a")
         );
         assert!(
-            matches!(&rows[5], super::SecretsRow::RoleKeyRow { role, key } if role == "agent-a" && key == "KEY")
+            matches!(&rows[6], super::SecretsRow::RoleKeyRow { role, key } if role == "agent-a" && key == "KEY")
         );
-        assert!(matches!(&rows[6], super::SecretsRow::RoleAddSentinel(a) if a == "agent-a"));
         assert!(matches!(&rows[7], super::SecretsRow::SectionSpacer));
+        assert!(matches!(&rows[8], super::SecretsRow::RoleAddSentinel(a) if a == "agent-a"));
+        assert!(matches!(&rows[9], super::SecretsRow::SectionSpacer));
         assert!(
-            matches!(&rows[8], super::SecretsRow::RoleHeader { role, expanded: false } if role == "agent-b")
+            matches!(&rows[10], super::SecretsRow::RoleHeader { role, expanded: false } if role == "agent-b")
         );
     }
 
@@ -2200,16 +2201,16 @@ mod secrets_tab_render_tests {
         let editor = EditorState::new_edit("ws".into(), ws);
         let rows = super::secrets_flat_rows(&editor);
         assert!(
-            matches!(rows.get(2), Some(super::SecretsRow::SectionSpacer)),
-            "row 2 must be a SectionSpacer between workspace section \
+            matches!(rows.get(3), Some(super::SecretsRow::SectionSpacer)),
+            "row 3 must be a SectionSpacer between workspace add row \
              and first role header; got {:?}",
-            rows.get(2)
+            rows.get(3)
         );
         assert!(
-            matches!(rows.get(3), Some(super::SecretsRow::RoleHeader { .. })),
-            "row 3 must be the role header right after the spacer; \
+            matches!(rows.get(4), Some(super::SecretsRow::RoleHeader { .. })),
+            "row 4 must be the role header right after the spacer; \
              got {:?}",
-            rows.get(3)
+            rows.get(4)
         );
     }
 
@@ -2736,8 +2737,9 @@ mod auth_flat_rows_tests {
             rows[header_idx],
             AuthRow::RoleHeader { ref role, expanded: false } if role == "the-architect"
         ));
+        assert!(matches!(rows[header_idx + 1], AuthRow::Spacer));
         assert!(matches!(
-            rows[header_idx + 1],
+            rows[header_idx + 2],
             AuthRow::AddSentinel { eligible: 1 }
         ));
     }

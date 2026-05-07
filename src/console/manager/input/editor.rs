@@ -3436,10 +3436,17 @@ plugins = []
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
         editor.secrets_expanded.insert("smith".into());
-        // Rows: WorkspaceKeyRow(0), WorkspaceAddSentinel(1),
-        // SectionSpacer(2), AgentHeader(3), AgentKeyRow(4),
-        // AgentAddSentinel(5). Focus the role key row.
-        editor.active_field = FieldFocus::Row(4);
+        let role_key_row = super::super::super::render::editor::secrets_flat_rows(&editor)
+            .iter()
+            .position(|row| {
+                matches!(
+                    row,
+                    super::super::super::render::editor::SecretsRow::RoleKeyRow { role, key }
+                        if role == "smith" && key == "API_TOKEN"
+                )
+            })
+            .expect("role API_TOKEN row");
+        editor.active_field = FieldFocus::Row(role_key_row);
         state.stage = ManagerStage::Editor(editor);
 
         handle_key(

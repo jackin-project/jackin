@@ -153,7 +153,6 @@ fn credential_env_line(env_var: &str, cred: &CredentialInput, selected: bool) ->
     } else {
         Style::default().fg(WHITE)
     };
-    let value_width = 18;
     let mut spans = vec![
         cursor_span(selected),
         Span::styled(format!("{env_var:<22}"), label_style),
