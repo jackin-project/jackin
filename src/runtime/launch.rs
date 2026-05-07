@@ -1004,37 +1004,75 @@ pub fn inspect_attach_outcome(
     }
 }
 
+enum GitPullResult {
+    Success { stdout: String },
+    Failure { src: String, stderr: String },
+    SpawnError { src: String, error: std::io::Error },
+    JoinError { src: String },
+}
+
 fn pull_workspace_repos(workspace: &crate::workspace::ResolvedWorkspace, debug: bool) {
+    pull_workspace_repos_with_git(workspace, debug, std::path::Path::new("git"));
+}
+
+fn pull_workspace_repos_with_git(
+    workspace: &crate::workspace::ResolvedWorkspace,
+    debug: bool,
+    git_program: &std::path::Path,
+) {
+    let mut pulls = Vec::new();
+    let mut seen_srcs = std::collections::HashSet::new();
+
     for mount in &workspace.mounts {
         let src = std::path::Path::new(&mount.src);
         if !src.join(".git").exists() {
+            continue;
+        }
+        let src = mount.src.clone();
+        if !seen_srcs.insert(src.clone()) {
             continue;
         }
         if debug {
             eprintln!("[jackin debug] git pull in {}", mount.src);
         }
         eprintln!("  Pulling {} …", crate::tui::shorten_home(&mount.src));
-        match std::process::Command::new("git")
-            .args(["-C", &mount.src, "pull"])
-            .output()
-        {
-            Ok(out) if out.status.success() => {
-                let stdout = String::from_utf8_lossy(&out.stdout);
+        let git_program = git_program.to_path_buf();
+        pulls.push((
+            src.clone(),
+            std::thread::spawn(move || {
+                match std::process::Command::new(git_program)
+                    .args(["-C", &src, "pull"])
+                    .output()
+                {
+                    Ok(out) if out.status.success() => GitPullResult::Success {
+                        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+                    },
+                    Ok(out) => GitPullResult::Failure {
+                        src,
+                        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+                    },
+                    Err(error) => GitPullResult::SpawnError { src, error },
+                }
+            }),
+        ));
+    }
+
+    for (src, handle) in pulls {
+        match handle.join().unwrap_or(GitPullResult::JoinError { src }) {
+            GitPullResult::Success { stdout } => {
                 let trimmed = stdout.trim();
                 if !trimmed.is_empty() {
                     eprintln!("    {trimmed}");
                 }
             }
-            Ok(out) => {
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                eprintln!(
-                    "  Warning: git pull failed in {}: {}",
-                    mount.src,
-                    stderr.trim()
-                );
+            GitPullResult::Failure { src, stderr } => {
+                eprintln!("  Warning: git pull failed in {}: {}", src, stderr.trim());
             }
-            Err(e) => {
-                eprintln!("  Warning: could not run git pull in {}: {e}", mount.src);
+            GitPullResult::SpawnError { src, error } => {
+                eprintln!("  Warning: could not run git pull in {src}: {error}");
+            }
+            GitPullResult::JoinError { src } => {
+                eprintln!("  Warning: git pull thread panicked in {src}");
             }
         }
     }
@@ -2664,6 +2702,71 @@ agents = ["codex"]
                 "/operator/trusted".to_string()
             )]
         );
+    }
+
+    #[test]
+    fn git_pull_on_entry_starts_all_repo_pulls_before_waiting() {
+        let temp = tempdir().unwrap();
+        let bin_dir = temp.path().join("bin");
+        let marker_dir = temp.path().join("markers");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        std::fs::create_dir_all(&marker_dir).unwrap();
+
+        let git_script = bin_dir.join("git");
+        std::fs::write(
+            &git_script,
+            r#"#!/bin/sh
+set -eu
+marker_dir="$(dirname "$0")/../markers"
+touch "$marker_dir/$(basename "$2").started"
+i=0
+while [ "$(find "$marker_dir" -name '*.started' | wc -l | tr -d ' ')" -lt 2 ]; do
+  i=$((i + 1))
+  if [ "$i" -gt 80 ]; then
+    echo "timed out waiting for peer pull" >&2
+    exit 42
+  fi
+  sleep 0.025
+done
+echo "pulled $2"
+"#,
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&git_script).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+        std::fs::set_permissions(&git_script, perms).unwrap();
+
+        let repo_a = temp.path().join("repo-a");
+        let repo_b = temp.path().join("repo-b");
+        std::fs::create_dir_all(repo_a.join(".git")).unwrap();
+        std::fs::create_dir_all(repo_b.join(".git")).unwrap();
+
+        let workspace = crate::workspace::ResolvedWorkspace {
+            label: "parallel".to_string(),
+            workdir: "/workspace".to_string(),
+            mounts: vec![
+                crate::workspace::MountConfig {
+                    src: repo_a.display().to_string(),
+                    dst: "/workspace/a".to_string(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+                crate::workspace::MountConfig {
+                    src: repo_b.display().to_string(),
+                    dst: "/workspace/b".to_string(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            ],
+            default_agent: None,
+            keep_awake_enabled: false,
+            git_pull_on_entry: true,
+        };
+
+        pull_workspace_repos_with_git(&workspace, false, &git_script);
+
+        assert!(marker_dir.join("repo-a.started").is_file());
+        assert!(marker_dir.join("repo-b.started").is_file());
     }
 
     fn repo_workspace(repo_dir: &std::path::Path) -> crate::workspace::ResolvedWorkspace {
