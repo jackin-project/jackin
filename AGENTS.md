@@ -209,6 +209,28 @@ When walking the operator through manual validation of a jackin feature (smoke t
 
 The `--debug` flag prints every external command jackin issues (`docker`, `git`, `id`, etc.) along with their captured output, plus jackin's own `[jackin debug ...]` instrumentation. This makes the operator's terminal output triage-able by the agent: when something doesn't behave as expected, the operator can paste the full debug log and the agent can localize the issue without guessing.
 
+Do not list `git diff --check` as PR verification. It is not a meaningful
+acceptance check for jackin PRs; prefer targeted commands that exercise the
+changed behavior plus CI.
+
+For user smoke tests, suggest `jackin console` first, and prefer the
+`the-architect` role over `agent-smith` when a role choice is needed. From a
+checkout, the usual operator-facing smoke command is:
+
+```bash
+cargo run --bin jackin -- console --debug
+```
+
+Use `jackin load` only when the PR specifically needs the load CLI path. In
+that case, prefer:
+
+```bash
+cargo run --bin jackin -- load the-architect . --debug
+```
+
+Do not add `--no-intro` to debug smoke commands. Debug mode already suppresses
+the intro by design, so `--debug --no-intro` is redundant noise.
+
 If the operator reports unexpected behavior from a clean (non-debug) run, the FIRST follow-up should be to ask them to rerun with `--debug` and paste the full output before proposing fixes.
 
 This does not apply to:
