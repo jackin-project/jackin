@@ -1161,10 +1161,11 @@ fn render_auth_source_line(
 
     let mode = crate::config::resolve_mode(synthesized, agent, workspace_name, role);
     let env_name = agent.required_env_var(mode);
+    let label_width = if indent == 2 { 14 } else { 12 };
     let mut spans = vec![
         Span::raw(" ".repeat(indent)),
         Span::styled(
-            format!("{label:<12}"),
+            format!("{label:<label_width$}"),
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ),
     ];
