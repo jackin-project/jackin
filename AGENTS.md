@@ -34,9 +34,13 @@ If you are uncertain whether authorization applies to the PR in front of you, as
 
 Every pull request created by an agent must include a copy-pasteable "Verify locally" section in the PR body, and the agent's final response should repeat the same commands after sharing the PR URL.
 
-Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a separate test directory so the operator can inspect the PR without disturbing their normal working tree. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it.
+Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a separate test directory so the operator can inspect the PR without disturbing their normal working tree. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
+
+Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Tests only when there is a relevant automated test command. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. If the PR has no narrower manual path, use the console as the baseline smoke command: `cargo run --bin jackin -- console --debug`. For launch/runtime flows, prefer a command that hits the changed path, such as `cargo run --bin jackin -- load <role> <target> --debug`. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
 
 Template:
+
+#### Checkout
 
 ```sh
 mkdir -p "$HOME/Projects/jackin-project/test"
@@ -48,13 +52,29 @@ fi
 
 cd jackin
 mise trust
-git fetch origin pull/<PR_NUMBER>/head:pr-<PR_NUMBER>
-git checkout pr-<PR_NUMBER>
+git fetch origin <BRANCH_NAME>
+git checkout <BRANCH_NAME>
+git pull --ff-only origin <BRANCH_NAME>
+```
 
-# Run the checks relevant to this PR, for example:
-# cd docs
-# bun install --frozen-lockfile
-# bun run dev
+#### Static Checks
+
+```sh
+cargo fmt --check
+cargo clippy --lib
+```
+
+#### Tests
+
+```sh
+cargo test <RELEVANT_TEST>
+```
+
+#### User Smoke
+
+```sh
+# Adapt this to the behavior changed by the PR.
+cargo run --bin jackin -- console --debug
 ```
 
 If the PR needs a different validation flow, replace the final example commands with the exact commands the operator should run. When those commands invoke `jackin`, include `--debug` as required by "Walking the operator through local validation".
