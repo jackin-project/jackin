@@ -409,10 +409,12 @@ pub(super) fn open_op_picker_from_auth_source(
 /// Secrets tab).
 ///
 /// On `try_commit_op_ref` failure (vault read error), the form is
-/// re-opened with the credential left unchanged and an `ErrorPopup`
-/// modal is layered on top so the operator sees what went wrong. The
-/// `read-then-commit` invariant from Task 18 guarantees a broken
-/// reference never lands in `editor.pending`.
+/// re-stashed into `pending_auth_form_return` and `Modal::ErrorPopup`
+/// is mounted; dismissing the popup invokes
+/// `restore_auth_form_after_op_picker_cancel` so the operator lands
+/// back on the form with the prior credential unchanged. The
+/// `read-then-commit` invariant on `try_commit_op_ref` guarantees a
+/// broken reference never lands in `editor.pending`.
 pub(super) fn apply_op_picker_to_auth_form(
     editor: &mut EditorState<'_>,
     op_ref: crate::operator_env::OpRef,
@@ -471,28 +473,31 @@ fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?
         return;
     };
     let read_result = state.try_commit_op_ref(runner, op_ref);
-    let new_focus = if read_result.is_ok() {
-        // On success, drop the cursor onto Save so Enter commits.
-        AuthFormFocus::Save
-    } else {
-        // On failure, keep the cursor on the credential row so the
-        // operator can retry through the same source picker flow.
-        focus
-    };
-    editor.modal = Some(Modal::AuthForm {
-        target,
-        state,
-        focus: new_focus,
-        literal_buffer,
-    });
     if let Err(e) = read_result {
-        // Layer the error popup on top of the re-mounted auth form.
-        // The popup's commit closes only itself, returning the
-        // operator to the form with the credential field unchanged.
+        // Mount the error popup directly and re-stash the form into
+        // `pending_auth_form_return` so the popup's dismiss handler
+        // (in `editor.rs`'s `Modal::ErrorPopup` branch) can re-mount
+        // the auth form via `restore_auth_form_after_op_picker_cancel`.
+        // The credential is left unchanged because `try_commit_op_ref`
+        // mutates `state` only on Ok (read-then-commit invariant).
+        editor.pending_auth_form_return = Some(AuthFormReturnPath {
+            target,
+            state,
+            focus,
+            literal_buffer,
+        });
         editor.modal = Some(Modal::ErrorPopup {
             state: ErrorPopupState::new("1Password read failed", e.to_string()),
         });
+        return;
     }
+    editor.modal = Some(Modal::AuthForm {
+        target,
+        state,
+        // Drop the cursor onto Save so Enter commits.
+        focus: AuthFormFocus::Save,
+        literal_buffer,
+    });
 }
 
 fn handle_mode_key(focus: &mut AuthFormFocus, form: &mut AuthForm, key: KeyEvent) {
@@ -1076,10 +1081,10 @@ mod tests {
     }
 
     /// A failed vault read (e.g. biometric timeout) must NOT corrupt
-    /// the form's credential — the read-then-commit invariant from
-    /// Task 18 is what stops a broken reference reaching disk. The
-    /// form re-opens with the credential unchanged and an
-    /// `ErrorPopup` layered on top.
+    /// the form's credential — `try_commit_op_ref` only mutates state
+    /// on Ok. The form is re-stashed into `pending_auth_form_return`
+    /// and `Modal::ErrorPopup` is mounted; dismissing the popup must
+    /// restore the form with the prior credential intact.
     #[test]
     fn auth_form_op_ref_picker_failed_read_does_not_apply_op_ref() {
         struct FailRunner;
@@ -1106,14 +1111,26 @@ mod tests {
         };
         super::apply_op_picker_to_auth_form_with_runner(editor, picked, &FailRunner);
 
-        // Top modal must be the ErrorPopup; credential must remain
-        // the empty OpRef (or whatever the toggle seeded), NOT the
-        // attempted reference.
+        // ErrorPopup mounted; form re-stashed for the popup dismissal
+        // path to re-open via restore_auth_form_after_op_picker_cancel.
         assert!(
             matches!(editor.modal, Some(Modal::ErrorPopup { .. })),
             "failed vault read must surface an error popup"
         );
-        assert!(editor.pending_auth_form_return.is_none());
+        assert!(
+            editor.pending_auth_form_return.is_some(),
+            "form must be re-stashed so popup dismiss can restore it"
+        );
+
+        // Simulate ErrorPopup dismiss → form restored.
+        restore_auth_form_after_op_picker_cancel(editor);
+        let Some(Modal::AuthForm { state, .. }) = &editor.modal else {
+            panic!("popup dismiss must restore the auth form");
+        };
+        assert!(
+            !matches!(state.credential, CredentialInput::OpRef(ref r) if r.path == "Vault/Missing/field"),
+            "failed OpRef must not land in form credential"
+        );
     }
 
     /// Esc on an open auth form must drain `pending_auth_form_return`
@@ -1159,9 +1176,9 @@ mod tests {
 
     /// `Enter` on the Save focus when `can_save` is false (e.g. an
     /// `OpRef` credential with empty `op` and `path`) must NOT dismiss
-    /// the modal NOR mutate `editor.pending`. The Task 18 fixup made
-    /// `can_save` reject empty `OpRef`s; this test pins that the input
-    /// layer honours the guard rather than ignoring it.
+    /// the modal NOR mutate `editor.pending`. `can_save` rejects empty
+    /// `OpRef`s; this test pins that the input layer honours the guard
+    /// rather than ignoring it.
     #[test]
     fn auth_form_save_disabled_blocks_enter() {
         let (cfg, mut state) = build_state();

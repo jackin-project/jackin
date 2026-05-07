@@ -1001,6 +1001,15 @@ pub(super) fn handle_editor_modal(
             ModalOutcome::Cancel | ModalOutcome::Commit(()) => {
                 editor.modal = None;
                 editor.save_flow = EditorSaveFlow::Idle;
+                // If the popup was raised by a failed OpPicker commit
+                // for the auth form, the form's state was re-stashed
+                // into `pending_auth_form_return` instead of being
+                // re-mounted directly — restore it now so the operator
+                // lands back on the form with the prior credential
+                // unchanged, ready to retry through the source picker.
+                if editor.pending_auth_form_return.is_some() {
+                    super::auth::restore_auth_form_after_op_picker_cancel(editor);
+                }
             }
             ModalOutcome::Continue => {}
         },

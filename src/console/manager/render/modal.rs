@@ -8,7 +8,7 @@ use super::super::super::widgets::{
     auth_panel, confirm, confirm_save, error_popup, file_browser, github_picker, mount_dst_choice,
     op_picker, role_picker, save_discard, scope_picker, source_picker, text_input, workdir_pick,
 };
-use super::super::state::{AuthFormTarget, Modal};
+use super::super::state::Modal;
 use super::centered_rect_fixed;
 
 // ── Modal dispatcher ────────────────────────────────────────────────
@@ -66,7 +66,11 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
         Modal::SourcePicker { .. } | Modal::AuthSourcePicker { .. } | Modal::ScopePicker { .. } => {
             (50, 7)
         }
-        Modal::AuthForm { .. } => (80, 9),
+        // 11 = 2 borders + 9 inner rows. Matches the credential-bearing
+        // form layout (mode + blank + cred row + blank + actions + blank
+        // + hint + 2 padding blanks). Modes that hide the credential
+        // row leave the bottom rows blank, which is fine.
+        Modal::AuthForm { .. } => (80, 11),
     };
     centered_rect_fixed(outer, pct_w, height_rows)
 }
@@ -101,18 +105,8 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &mut Modal<'_>) {
             source_picker::render(frame, modal_area, state);
         }
         Modal::ScopePicker { state } => scope_picker::render(frame, modal_area, state),
-        Modal::AuthForm {
-            target,
-            state,
-            focus,
-            ..
-        } => {
-            let (workspace, role) = match target {
-                AuthFormTarget::Workspace { .. } => ("(workspace)", "(workspace-default)"),
-                AuthFormTarget::WorkspaceRole { role, .. } => ("(workspace)", role.as_str()),
-            };
-            let ctx = auth_panel::FormContext { workspace, role };
-            auth_panel::render_form(frame, modal_area, state.as_ref(), &ctx, *focus);
+        Modal::AuthForm { state, focus, .. } => {
+            auth_panel::render_form(frame, modal_area, state.as_ref(), *focus);
         }
     }
 }

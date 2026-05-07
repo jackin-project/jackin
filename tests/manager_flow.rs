@@ -3223,3 +3223,130 @@ fn auth_workspace_source_d_clears_workspace_mode() -> Result<()> {
     );
     Ok(())
 }
+
+/// Cancelling the credential `Modal::TextInput` (the literal-text leg
+/// of the source-picker round trip) must restore `Modal::AuthForm` and
+/// drain `pending_auth_form_return` — not silently leave the operator
+/// on a blank Auth tab.
+#[test]
+fn auth_credential_text_input_cancel_restores_form() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let ws = config.workspaces.get("big-monorepo").unwrap().clone();
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    ed.auth_selected_agent = Some(Agent::Claude);
+    let ws_claude_idx = auth_row_idx(&ed, &config, |r| {
+        matches!(
+            r,
+            AuthRow::WorkspaceMode {
+                agent: Agent::Claude
+            }
+        )
+    });
+    ed.active_field = FieldFocus::Row(ws_claude_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    // Open form → cycle to api_key → Tab to credential row → Enter →
+    // SourcePicker → Enter (Plain) → TextInput → Esc.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char(' ')),
+    )?;
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char(' ')),
+    )?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(matches!(
+        editor(&state).modal,
+        Some(Modal::AuthSourcePicker { .. })
+    ));
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(matches!(
+        editor(&state).modal,
+        Some(Modal::TextInput { .. })
+    ));
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::AuthForm { .. })),
+        "TextInput cancel must restore AuthForm; got {:?}",
+        editor(&state).modal
+    );
+    assert!(
+        editor(&state).pending_auth_form_return.is_none(),
+        "TextInput cancel must drain pending_auth_form_return"
+    );
+    Ok(())
+}
+
+/// `op_available = false` must propagate through the auth-form ↔
+/// `AuthSourcePicker` handoff, so operators on hosts without `op` see
+/// the picker with the 1Password choice disabled.
+#[test]
+fn auth_source_picker_op_disabled_when_op_missing() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    state.op_available = false;
+    let ws = config.workspaces.get("big-monorepo").unwrap().clone();
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    ed.auth_selected_agent = Some(Agent::Claude);
+    let ws_claude_idx = auth_row_idx(&ed, &config, |r| {
+        matches!(
+            r,
+            AuthRow::WorkspaceMode {
+                agent: Agent::Claude
+            }
+        )
+    });
+    ed.active_field = FieldFocus::Row(ws_claude_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char(' ')),
+    )?;
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char(' ')),
+    )?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    let Some(Modal::AuthSourcePicker { state: picker }) = &editor(&state).modal else {
+        panic!(
+            "Enter on credential source must open AuthSourcePicker; got {:?}",
+            editor(&state).modal
+        );
+    };
+    assert!(
+        !picker.op_available,
+        "op_available must propagate from ManagerState through to the picker"
+    );
+    Ok(())
+}

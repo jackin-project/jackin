@@ -1,8 +1,7 @@
 //! Render helpers for the auth edit form.
 //!
-//! `render_form` renders the auth-edit modal for a single (workspace, role,
-//! agent) combination. The flat-row Auth tab rendering lives in
-//! `src/console/manager/render/editor.rs`.
+//! `render_form` renders the auth-edit modal. The flat-row Auth tab
+//! rendering lives in `src/console/manager/render/editor.rs`.
 
 use ratatui::{
     Frame,
@@ -32,13 +31,6 @@ pub(crate) const fn mode_str(m: AuthForwardMode) -> &'static str {
     }
 }
 
-/// Identification context passed alongside the form's mutable state so the
-/// render can title the modal with the workspace and role being edited.
-pub struct FormContext<'a> {
-    pub workspace: &'a str,
-    pub role: &'a str,
-}
-
 /// Render the auth-edit modal for `form` into `area`.
 ///
 /// Lays out, top-to-bottom:
@@ -50,15 +42,7 @@ pub struct FormContext<'a> {
 ///
 /// Pure render — no input handling. Keystrokes are routed by
 /// `super::super::manager::input::auth::handle_auth_form_key`.
-///
-/// `_ctx` is currently unused.
-pub fn render_form(
-    frame: &mut Frame,
-    area: Rect,
-    form: &AuthForm,
-    _ctx: &FormContext,
-    focus: AuthFormFocus,
-) {
+pub fn render_form(frame: &mut Frame, area: Rect, form: &AuthForm, focus: AuthFormFocus) {
     frame.render_widget(ratatui::widgets::Clear, area);
     let title_span = Span::styled(
         " Edit auth ",
@@ -277,12 +261,12 @@ mod form_render_tests {
     use crate::operator_env::OpRef;
     use ratatui::{Terminal, backend::TestBackend};
 
-    fn dump_form(form: &AuthForm, ctx: &FormContext) -> String {
+    fn dump_form(form: &AuthForm) -> String {
         let backend = TestBackend::new(100, 20);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
             let area = f.area();
-            render_form(f, area, form, ctx, AuthFormFocus::Mode);
+            render_form(f, area, form, AuthFormFocus::Mode);
         })
         .unwrap();
         let buf = term.backend().buffer();
@@ -296,17 +280,10 @@ mod form_render_tests {
         s
     }
 
-    fn ctx() -> FormContext<'static> {
-        FormContext {
-            workspace: "proj",
-            role: "smith",
-        }
-    }
-
     #[test]
     fn form_header_is_short() {
         let form = AuthForm::new(Agent::Claude);
-        let s = dump_form(&form, &ctx());
+        let s = dump_form(&form);
         assert!(s.contains("Edit auth"), "missing header; dump:\n{s}");
         assert!(
             !s.contains("workspace"),
@@ -317,7 +294,7 @@ mod form_render_tests {
     #[test]
     fn form_with_unset_mode_hides_credential_block_and_dims_save() {
         let form = AuthForm::new(Agent::Claude);
-        let s = dump_form(&form, &ctx());
+        let s = dump_form(&form);
         assert!(s.contains("Mode:"), "missing mode line; dump:\n{s}");
         assert!(
             s.contains("(unset)"),
@@ -338,7 +315,7 @@ mod form_render_tests {
     fn form_with_sync_mode_hides_credential_block_and_enables_save() {
         let mut form = AuthForm::new(Agent::Claude);
         form.set_mode(AuthForwardMode::Sync);
-        let s = dump_form(&form, &ctx());
+        let s = dump_form(&form);
         assert!(s.contains("sync"), "missing sync mode label; dump:\n{s}");
         // Sync requires no credential.
         assert!(
@@ -353,7 +330,7 @@ mod form_render_tests {
         let mut form = AuthForm::new(Agent::Claude);
         form.set_mode(AuthForwardMode::ApiKey);
         form.set_literal("sk-ant-test".into());
-        let s = dump_form(&form, &ctx());
+        let s = dump_form(&form);
         assert!(s.contains("api_key"), "missing api_key mode; dump:\n{s}");
         assert!(
             s.contains("ANTHROPIC_API_KEY"),
@@ -377,7 +354,7 @@ mod form_render_tests {
             op: "op://uuid/anthropic".into(),
             path: "Work/Anthropic/api-key".into(),
         });
-        let s = dump_form(&form, &ctx());
+        let s = dump_form(&form);
         assert!(
             !s.contains("1Password"),
             "1Password source label should be omitted; dump:\n{s}"
@@ -396,7 +373,7 @@ mod form_render_tests {
             op: "op://uuid/oauth".into(),
             path: "Boris/Roblox/token".into(),
         });
-        let s = dump_form(&form, &ctx());
+        let s = dump_form(&form);
         assert!(
             s.contains("CLAUDE_CODE_OAUTH_TOKEN  Boris / Roblox → token"),
             "env var and breadcrumb should have a visible gap; dump:\n{s}"

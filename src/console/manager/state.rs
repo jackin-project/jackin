@@ -363,7 +363,7 @@ pub enum Modal<'a> {
 /// credential-related focus (`CredentialSource`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthFormFocus {
-    /// Mode picker line — Space cycles, Enter commits selection.
+    /// Mode picker line — Space cycles modes; Tab/Down advances focus.
     Mode,
     /// Required credential row — Enter opens the shared source picker.
     CredentialSource,

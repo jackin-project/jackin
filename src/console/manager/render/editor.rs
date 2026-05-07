@@ -874,11 +874,8 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
 
 /// Display-side breadcrumb parser for `OpRef.path`.
 /// Grammar: `<Vault>/<Item>[<subtitle>?]/[<Section>/]<Field>[?<query>]`
-///
-/// Shared with the auth-form widget so all op-ref breadcrumbs render
-/// from the same parse tree.
 #[derive(Debug, PartialEq, Eq)]
-pub(in crate::console) struct PathBreadcrumb {
+pub(super) struct PathBreadcrumb {
     pub vault: String,
     pub item: String,
     pub item_subtitle: Option<String>,
@@ -888,7 +885,7 @@ pub(in crate::console) struct PathBreadcrumb {
 }
 
 /// Parse a snapshot breadcrumb. Returns `None` on empty input or non-3-/4-segment counts.
-pub(in crate::console) fn parse_path_breadcrumb(path: &str) -> Option<PathBreadcrumb> {
+pub(super) fn parse_path_breadcrumb(path: &str) -> Option<PathBreadcrumb> {
     if path.is_empty() {
         return None;
     }
