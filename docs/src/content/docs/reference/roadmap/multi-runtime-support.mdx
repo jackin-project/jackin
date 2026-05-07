@@ -42,9 +42,9 @@ The current implementation is Claude-shaped in concrete, not just in naming:
 
 - <RepoFile path="src/manifest/mod.rs" /> requires a `[claude]` table.
 - <RepoFile path="src/derived_image.rs" /> appends `curl -fsSL https://claude.ai/install.sh | bash` and bakes in a Claude entrypoint.
-- <RepoFile path="docker/runtime/entrypoint.sh" /> installs Claude plugins, registers Claude MCP servers, then launches `claude`.
+- <RepoFile path="src/derived_image.rs" /> installs Claude plugins in the generated image layer.
+- <RepoFile path="docker/runtime/entrypoint.sh" /> registers Claude MCP servers, then launches `claude`.
 - <RepoFile path="src/instance/auth.rs" /> provisions only Claude auth state (`.claude.json`, `.claude/.credentials.json`).
-- <RepoFile path="src/instance/plugins.rs" /> serializes only Claude marketplace/plugin data.
 - <RepoFile path="src/runtime/launch.rs" /> mounts only Claude state files and prints Claude-specific auth diagnostics.
 - <RepoFile path="src/runtime/image.rs" /> and <RepoFile path="src/version_check.rs" /> only know how to detect and refresh Claude versions.
 
@@ -164,7 +164,6 @@ In practice that means the current Claude-specific logic in these files needs on
 - <RepoFile path="docker/runtime/entrypoint.sh" />
 - <RepoFile path="src/instance/mod.rs" />
 - <RepoFile path="src/instance/auth.rs" />
-- <RepoFile path="src/instance/plugins.rs" />
 - <RepoFile path="src/runtime/launch.rs" />
 - <RepoFile path="src/runtime/image.rs" />
 - <RepoFile path="src/version_check.rs" />
@@ -351,7 +350,6 @@ If a later pass proves that Amp skills or Codex-specific config deserve first-cl
 - <RepoFile path="docker/runtime/entrypoint.sh" />
 - <RepoFile path="src/instance/mod.rs" />
 - <RepoFile path="src/instance/auth.rs" />
-- <RepoFile path="src/instance/plugins.rs" />
 - <RepoFile path="src/runtime/launch.rs" />
 - <RepoFile path="src/runtime/image.rs" />
 - <RepoFile path="src/version_check.rs" />

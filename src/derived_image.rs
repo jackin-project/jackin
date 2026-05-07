@@ -15,6 +15,7 @@ pub fn render_derived_dockerfile(
     base_dockerfile: &str,
     pre_launch_hook: Option<&str>,
     supported: &[crate::agent::Agent],
+    claude_config: Option<&crate::manifest::ClaudeConfig>,
 ) -> String {
     let hook_section = pre_launch_hook.map_or_else(String::new, |hook_path| {
         format!(
@@ -43,6 +44,9 @@ USER agent
     });
     for h in sorted {
         install_blocks.push_str(h.install_block());
+        if h == crate::agent::Agent::Claude {
+            install_blocks.push_str(&render_claude_plugin_install_block(claude_config));
+        }
     }
 
     format!(
@@ -68,6 +72,62 @@ USER agent
 ENTRYPOINT [\"/home/agent/entrypoint.sh\"]
 "
     )
+}
+
+fn render_claude_plugin_install_block(
+    claude_config: Option<&crate::manifest::ClaudeConfig>,
+) -> String {
+    let Some(config) = claude_config else {
+        return String::new();
+    };
+    if config.marketplaces.is_empty() && config.plugins.is_empty() {
+        return String::new();
+    }
+
+    let mut block = String::from(
+        "\
+# Install Claude plugins declared by jackin.role.toml at image-build time.
+RUN claude plugin marketplace add anthropics/claude-plugins-official || true
+",
+    );
+
+    for marketplace in &config.marketplaces {
+        block.push_str("RUN claude plugin marketplace add ");
+        block.push_str(&shell_quote(&marketplace.source));
+        if !marketplace.sparse.is_empty() {
+            block.push_str(" --sparse");
+            for path in &marketplace.sparse {
+                block.push(' ');
+                block.push_str(&shell_quote(path));
+            }
+        }
+        block.push('\n');
+    }
+
+    for plugin in &config.plugins {
+        block.push_str("RUN claude plugin install ");
+        block.push_str(&shell_quote(plugin));
+        block.push('\n');
+    }
+
+    block
+}
+
+fn shell_quote(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_string();
+    }
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('\'');
+    for ch in value.chars() {
+        if ch == '\'' {
+            quoted.push_str("'\"'\"'");
+        } else {
+            quoted.push(ch);
+        }
+    }
+    quoted.push('\'');
+    quoted
 }
 
 pub fn create_derived_build_context(
@@ -100,7 +160,12 @@ pub fn create_derived_build_context(
     let dockerfile_path = context_dir.join(".jackin-runtime/DerivedDockerfile");
     std::fs::write(
         &dockerfile_path,
-        render_derived_dockerfile(&base_dockerfile, pre_launch_hook, &supported),
+        render_derived_dockerfile(
+            &base_dockerfile,
+            pre_launch_hook,
+            &supported,
+            validated.manifest.claude.as_ref(),
+        ),
     )?;
     ensure_runtime_assets_are_included(&context_dir, pre_launch_hook)?;
 
@@ -181,6 +246,7 @@ mod tests {
             "FROM projectjackin/construct:trixie\n",
             None,
             &[Agent::Claude],
+            None,
         );
 
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
@@ -197,6 +263,7 @@ mod tests {
             "FROM projectjackin/construct:trixie\n",
             None,
             &[Agent::Claude],
+            None,
         );
 
         assert!(dockerfile.contains("USER agent\n"));
@@ -214,6 +281,7 @@ mod tests {
             "FROM projectjackin/construct:trixie\n",
             None,
             &[Agent::Claude],
+            None,
         );
 
         assert!(dockerfile.contains("ARG JACKIN_HOST_UID=1000"));
@@ -229,6 +297,7 @@ mod tests {
             "FROM projectjackin/construct:trixie\n",
             Some("hooks/pre-launch.sh"),
             &[Agent::Claude],
+            None,
         );
 
         assert!(
@@ -244,6 +313,7 @@ mod tests {
             "FROM projectjackin/construct:trixie\n",
             None,
             &[Agent::Claude],
+            None,
         );
 
         assert!(!dockerfile.contains("pre-launch.sh"));
@@ -255,6 +325,7 @@ mod tests {
             "FROM projectjackin/construct:trixie\n",
             None,
             &[Agent::Claude, Agent::Codex],
+            None,
         );
 
         assert!(dockerfile.contains("https://claude.ai/install.sh"));
@@ -271,6 +342,7 @@ mod tests {
             "FROM projectjackin/construct:trixie\n",
             None,
             &[Agent::Codex],
+            None,
         );
 
         let codex_block_pos = dockerfile.find("ASSET=\"codex-${ARCH}\"").unwrap();
@@ -290,6 +362,7 @@ mod tests {
             "FROM projectjackin/construct:trixie\n",
             None,
             &[Agent::Codex],
+            None,
         );
         let last_user = dockerfile
             .lines()
@@ -305,6 +378,7 @@ mod tests {
             "FROM projectjackin/construct:trixie\n",
             None,
             &[Agent::Codex],
+            None,
         );
 
         assert!(!dockerfile.contains("https://claude.ai/install.sh"));
@@ -317,6 +391,7 @@ mod tests {
             "FROM projectjackin/construct:trixie\n",
             None,
             &[Agent::Claude],
+            None,
         );
 
         assert!(dockerfile.contains("/home/agent"));
@@ -331,6 +406,7 @@ mod tests {
             "FROM projectjackin/construct:trixie\n",
             None,
             &[Agent::Claude, Agent::Codex],
+            None,
         );
 
         assert!(!dockerfile.contains("ENV JACKIN_AGENT"));
@@ -349,8 +425,8 @@ mod tests {
     }
 
     #[test]
-    fn entrypoint_claude_branch_invokes_install_claude_plugins() {
-        assert!(ENTRYPOINT_SH.contains("/home/agent/install-claude-plugins.sh"));
+    fn entrypoint_does_not_install_claude_plugins_at_runtime() {
+        assert!(!ENTRYPOINT_SH.contains("install-claude-plugins.sh"));
     }
 
     #[test]
@@ -363,6 +439,42 @@ mod tests {
             .next()
             .unwrap();
         assert!(!codex_section.contains("install-claude-plugins.sh"));
+    }
+
+    #[test]
+    fn renders_claude_plugin_installs_after_claude_cli() {
+        let config = crate::manifest::ClaudeConfig {
+            marketplaces: vec![crate::manifest::ClaudeMarketplaceConfig {
+                source: "obra/superpowers-marketplace".to_string(),
+                sparse: vec!["plugins".to_string(), ".claude-plugin".to_string()],
+            }],
+            plugins: vec![
+                "superpowers@superpowers-marketplace".to_string(),
+                "quote'plugin@market".to_string(),
+            ],
+        };
+        let dockerfile = render_derived_dockerfile(
+            "FROM projectjackin/construct:trixie\n",
+            None,
+            &[Agent::Claude],
+            Some(&config),
+        );
+
+        let version_pos = dockerfile.find("RUN claude --version").unwrap();
+        let official_pos = dockerfile
+            .find("RUN claude plugin marketplace add anthropics/claude-plugins-official || true")
+            .unwrap();
+        let custom_pos = dockerfile
+            .find("RUN claude plugin marketplace add 'obra/superpowers-marketplace' --sparse 'plugins' '.claude-plugin'")
+            .unwrap();
+        let plugin_pos = dockerfile
+            .find("RUN claude plugin install 'superpowers@superpowers-marketplace'")
+            .unwrap();
+
+        assert!(version_pos < official_pos);
+        assert!(official_pos < custom_pos);
+        assert!(custom_pos < plugin_pos);
+        assert!(dockerfile.contains("RUN claude plugin install 'quote'\"'\"'plugin@market'"));
     }
 
     #[test]

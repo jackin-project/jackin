@@ -58,8 +58,6 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
         chmod 600 /home/agent/.claude/.credentials.json
     fi
 
-    run_maybe_quiet /home/agent/install-claude-plugins.sh /jackin/claude/plugins.json
-
     # Register security tool MCP servers (ignore "already exists" on subsequent runs)
     if [[ "${JACKIN_DISABLE_TIRITH:-0}" != "1" ]]; then
         run_maybe_quiet claude mcp add tirith -- tirith mcp-server || true

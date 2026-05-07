@@ -136,9 +136,8 @@ Maps 1:1 with the published site sidebar:
 |---|---|
 | `docker/construct/Dockerfile` | Shared base image all agents extend |
 | `docker/construct/README.md` | Construct image documentation |
-| `docker/construct/install-claude-plugins.sh` | Claude-plugin installation script for the base image |
 | `docker/construct/zshrc` | Shell config injected into containers |
-| `docker/runtime/entrypoint.sh` | Container entrypoint at runtime — git identity setup, `gh auth setup-git` when gh is already authenticated (never performs login itself), plugin install, MCP server registration, pre-launch hook, then `exec claude`. UID/GID remapping happens during the derived-image build (`src/derived_image.rs`), not here. |
+| `docker/runtime/entrypoint.sh` | Container entrypoint at runtime — git identity setup, `gh auth setup-git` when gh is already authenticated (never performs login itself), MCP server registration, pre-launch hook, then `exec claude` or `exec codex`. UID/GID remapping and Claude plugin installation happen during the derived-image build (`src/derived_image.rs`), not here. |
 
 ## CI/CD — `.github/workflows/`
 

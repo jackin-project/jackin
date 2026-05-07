@@ -84,7 +84,7 @@ model = "gpt-5"
 
 | Field | Required | Description |
 |---|---|---|
-| `plugins` | No | List of Claude plugin identifiers to install at runtime |
+| `plugins` | No | List of Claude plugin identifiers to install in the derived image |
 | `marketplaces` | No | List of marketplace registrations to add before plugin installation |
 
 Example values:
@@ -168,7 +168,7 @@ When omitted, jackin' uses the role selector name.
 |---|---|---|
 | `pre_launch` | No | Relative path to a bash script run before the agent (Claude or Codex) starts |
 
-The pre-launch hook runs inside the container after plugin installation but before the agent (Claude Code or Codex) launches. It has access to all resolved environment variables.
+The pre-launch hook runs inside the container before the agent (Claude Code or Codex) launches. It has access to all resolved environment variables. Claude plugins declared in the manifest are already baked into the derived image by this point.
 
 The script path must:
 

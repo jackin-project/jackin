@@ -131,8 +131,8 @@ When you load an agent, jackin' doesn't use the construct directly. It generates
 
 1. **User remapping** — adjusts the `agent` user's UID/GID to match your host user
 2. **Agent installation** — installs every agent declared in the role manifest
-3. **Runtime entrypoint** — the script that configures git, wires up GitHub if `gh` is already authenticated (it does not perform `gh auth login` — an unauthenticated `gh` is left alone with a notice), dispatches agent setup, and launches the selected agent
-4. **Plugin installation** — any Claude plugins declared in the role manifest when launching the Claude agent
+3. **Plugin installation** — any Claude plugins declared in the role manifest
+4. **Runtime entrypoint** — the script that configures git, wires up GitHub if `gh` is already authenticated (it does not perform `gh auth login` — an unauthenticated `gh` is left alone with a notice), dispatches agent setup, and launches the selected agent
 
 <Aside type="note">
 Every load re-runs `docker build` on the derived Dockerfile. Docker's layer cache makes most subsequent loads fast, but there is no separate "skip build if image exists" shortcut. Passing `--rebuild` additionally invalidates agent installation layers so the build picks up newer agent CLI downloads.

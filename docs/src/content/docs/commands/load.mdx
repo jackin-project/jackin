@@ -73,7 +73,7 @@ jackin load the-architect --role-branch feat/my-pr
 4. **If `--role-branch` is set**, always prompts to confirm the branch is safe to build, regardless of the role's trust status (see [Branch trust gate](/guides/security-model#branch-trust-gate))
 5. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
 6. Prompts for interactive environment variables declared in the manifest
-7. Generates and builds a derived Docker image (cached if unchanged; branch builds ignore `published_image` and always build from source)
+7. Generates and builds a derived Docker image, including declared Claude plugins (cached if unchanged; branch builds ignore `published_image` and always build from source)
 8. Creates a per-agent Docker network and DinD sidecar
 9. Launches the agent container with all resolved mounts and environment variables
 10. Runs the pre-launch hook if declared
