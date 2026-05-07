@@ -36,7 +36,7 @@ Every pull request created by an agent must include a copy-pasteable "Verify loc
 
 Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a separate test directory so the operator can inspect the PR without disturbing their normal working tree. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
 
-Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Tests only when there is a relevant automated test command. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. If the PR has no narrower manual path, use the console as the baseline smoke command: `cargo run --bin jackin -- console --debug`. For launch/runtime flows, prefer a command that hits the changed path, such as `cargo run --bin jackin -- load <role> <target> --debug`. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
+Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Tests only when there is a relevant automated test command. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For documentation-only PRs where the meaningful review is reading the file diff, say to review the Files changed tab in GitHub instead of adding commands like `git diff origin/main...HEAD -- <file>`. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. If the PR has no narrower manual path, use the console as the baseline smoke command: `cargo run --bin jackin -- console --debug`. For launch/runtime flows, prefer a command that hits the changed path, such as `cargo run --bin jackin -- load <role> <target> --debug`. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
 
 Template:
 
@@ -87,7 +87,7 @@ Before invoking the merge command:
 
 1. **Check CI status**: run `gh pr checks <PR> --repo <owner/repo>` and confirm every required check shows `pass`. A check in `pending` or `fail` state means do not merge — wait or fix first.
 2. **Do not force-merge to bypass failures**: do not use `--admin` or other bypass flags to override failing checks unless the operator explicitly names the specific failing check and states it is safe to bypass for an articulated reason.
-3. **Always use `gh` (GitHub CLI) for all GitHub interactions**: PR creation, review, status checks, and merging must go through `gh`, not raw `git push` to protected branches or direct API calls. This keeps the audit trail consistent and ensures branch-protection rules are respected.
+3. **Always use `gh` (GitHub CLI) for all GitHub interactions**: PR creation, review, status checks, and merging must go through `gh`, not GitHub connectors, raw `git push` to protected branches, or direct API calls. This keeps the audit trail consistent and ensures branch-protection rules are respected.
 
 If CI is red when the operator says "merge it", respond: "CI is failing on `<check name>` — I won't merge until it's green. Fix the failure and then I'll merge." If the operator insists on merging anyway, ask them to explicitly acknowledge the specific failing check.
 
@@ -110,13 +110,26 @@ Why this rule exists: the operator relies on PR titles and bodies as the long-te
 
 When an agent merges a pull request, the resulting squash commit must preserve the GitHub PR reference and enough attribution to make the shipped history auditable.
 
-- Always use squash merge unless the human operator explicitly requests a different merge method for that specific PR.
+- Always use squash merge. Agents must not use merge commits or rebase merges for jackin pull requests.
+- Use `gh pr merge <PR> --squash --body-file <file>` for the merge operation; never use a GitHub connector or direct API call to merge.
 - The squash commit title must be the final PR title with the PR number suffix: `type(scope): summary (#PR_NUMBER)`.
 - Prefer GitHub's default squash title when it already matches that format.
 - If overriding the commit title, manually append `(#PR_NUMBER)`.
-- For Codex/GitHub connector merges: do not pass a custom `commit_title` unless necessary; if one is passed, it must include `(#PR_NUMBER)`.
-- The squash commit body must retain the PR details and a direct link to the original pull request. At minimum, include `Pull request: https://github.com/<owner>/<repo>/pull/<PR_NUMBER>` before trailers if GitHub's generated body does not already include the PR URL.
-- The squash commit trailers must include the operator's `Signed-off-by` trailer when present/required and one `Co-authored-by` trailer for each AI agent that materially contributed to the PR. Include multiple agent trailers when multiple agents contributed.
+- For Codex `gh` merges: do not pass a custom title unless necessary; if one is passed, it must include `(#PR_NUMBER)`.
+- Generate the squash commit body at merge time in a temporary file. Do not pollute the visible PR description with commit-only trailer footers just to influence GitHub's default squash message.
+- The generated squash commit body must summarize what actually shipped in clear prose. Use the PR title/body, diff, and commit messages as source material, but do not paste the full PR body, local verification instructions, checklists, or raw commit list into the final commit.
+- The generated body can be one paragraph for small PRs or a few concise paragraphs for larger PRs. It should be detailed enough to explain the change when reading `git log`, but free of process noise.
+- Extract trailers from the PR commits with `gh pr view <PR> --json commits` and carry them into the generated squash body. Include the operator's `Signed-off-by` trailer when present/required and one `Co-authored-by` trailer for each AI agent that materially contributed to the PR. Include multiple agent trailers when multiple agents contributed.
+- Keep trailers at the very end of the generated squash body so Git parses them as trailers. De-duplicate repeated trailers from multi-commit PRs.
+
+Good squash body:
+
+```text
+Prefer real branch names for same-repo PR verification, omit placeholder verification sections, and require meaningful local jackin --debug smoke commands for CLI/runtime behavior changes.
+
+Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
+Co-authored-by: Codex <codex@openai.com>
+```
 
 Good squash titles:
 
@@ -195,6 +208,28 @@ When the operator asks for code review fixes on a PR that has **not yet been mer
 When walking the operator through manual validation of a jackin feature (smoke testing a PR, reproducing a bug, executing a PR test plan), every `jackin <subcommand>` invocation in the recipe MUST include `--debug`. That includes `cargo run --bin jackin -- <subcommand> --debug` while iterating from a checkout.
 
 The `--debug` flag prints every external command jackin issues (`docker`, `git`, `id`, etc.) along with their captured output, plus jackin's own `[jackin debug ...]` instrumentation. This makes the operator's terminal output triage-able by the agent: when something doesn't behave as expected, the operator can paste the full debug log and the agent can localize the issue without guessing.
+
+Do not list `git diff --check` as PR verification. It is not a meaningful
+acceptance check for jackin PRs; prefer targeted commands that exercise the
+changed behavior plus CI.
+
+For user smoke tests, suggest `jackin console` first, and prefer the
+`the-architect` role over `agent-smith` when a role choice is needed. From a
+checkout, the usual operator-facing smoke command is:
+
+```bash
+cargo run --bin jackin -- console --debug
+```
+
+Use `jackin load` only when the PR specifically needs the load CLI path. In
+that case, prefer:
+
+```bash
+cargo run --bin jackin -- load the-architect . --debug
+```
+
+Do not add `--no-intro` to debug smoke commands. Debug mode already suppresses
+the intro by design, so `--debug --no-intro` is redundant noise.
 
 If the operator reports unexpected behavior from a clean (non-debug) run, the FIRST follow-up should be to ask them to rerun with `--debug` and paste the full output before proposing fixes.
 
