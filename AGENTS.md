@@ -228,9 +228,16 @@ verification, merge preparation, or review handoff.
 During iteration:
 
 - Make the requested code changes on the PR branch.
-- Prefer the smallest relevant verification needed to catch obvious local
-  breakage for the touched path. Do not run the full formatting + clippy + full
-  test suite by default.
+- It is okay to run a narrow, targeted test or command that directly exercises
+  the code just changed, especially when it catches obvious local breakage
+  cheaply.
+- Do **not** run broad/final verification by default during iteration. In
+  particular, do not run `cargo fmt -- --check`, `cargo clippy -- -D warnings`,
+  `cargo nextest run`, or GitHub Actions polling unless the operator explicitly
+  asks for verification/final prep or the PR is moving to merge-readiness.
+- If a small targeted run reveals a formatting or clippy issue, fix the obvious
+  local cause when it is part of the changed code, but do not escalate into the
+  full formatting + clippy + full-suite pipeline unless the operator asks.
 - Do not update the PR body after every iteration unless the operator asks for
   it or the PR description has become actively misleading for someone reviewing
   right now.
@@ -245,6 +252,11 @@ Move to merge-readiness only when the operator gives a clear signal such as
 "this is correct", "prepare it", "ready for review", "run the full checks", or
 "now we can merge". At that point run the full verification suite, reconcile the
 PR body with the final diff, push/update the branch, and check CI.
+
+Why this rule exists: the operator often needs several UI/behavior iterations
+before deciding the shape is right. Running formatting, clippy, the full test
+suite, PR body updates, and CI checks on every intermediate pass wastes time and
+tokens before the operator has validated the design.
 
 ## Walking the operator through local validation (agent-only)
 
