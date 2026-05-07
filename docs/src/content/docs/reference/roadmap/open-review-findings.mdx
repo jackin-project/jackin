@@ -35,11 +35,18 @@ record of what was reviewed and when.
    behavior, config schema coverage, runtime behavior, and some
    security-model details.
 
-3. **Runtime startup still triggers `gh auth login` automatically.**
-   The runtime entrypoint starts a GitHub CLI login flow when `gh` is
-   present but unauthenticated. Public docs mostly frame GitHub
-   authentication as a persistence behavior after the operator chooses
-   to authenticate, not as a default startup interaction.
+3. **GitHub CLI auth is persistence-only — no host-to-container
+   forwarding.** The runtime entrypoint runs `gh auth setup-git`
+   only when `gh auth status` already succeeds inside the
+   container; it does **not** start a `gh auth login` flow. The
+   first time an operator opens a (workspace × role) they have
+   to run `gh auth login` manually inside the container. Public
+   docs and the roadmap overview historically described this as
+   "GitHub CLI authentication passthrough", which overstates the
+   behaviour. Layered host forwarding (`auth_forward = "sync"`),
+   least-privilege scoped tokens (`auth_forward = "token"`), and
+   the matching `[github]` config block are tracked under
+   [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/).
 
 4. **Command failures and debug logs can still leak secrets.**
    `ShellRunner` still logs and reports raw argv strings, while the
