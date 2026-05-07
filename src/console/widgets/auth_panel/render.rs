@@ -117,10 +117,6 @@ fn build_form_lines(form: &AuthForm, focus: AuthFormFocus) -> Vec<FormLine> {
         cursor_span(focus == AuthFormFocus::Mode),
         Span::styled("Mode: ", label_style()),
         Span::styled(mode_text.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
-        Span::styled(
-            "  (Space to cycle)".to_string(),
-            Style::default().fg(PHOSPHOR_DIM),
-        ),
     ])));
 
     if form.shows_credential_block() {

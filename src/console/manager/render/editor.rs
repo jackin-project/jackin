@@ -1182,6 +1182,7 @@ fn render_auth_source_line(
 
     match value {
         Some(EnvValue::OpRef(r)) => {
+            spans.push(Span::styled("[op] ", Style::default().fg(PHOSPHOR_DIM)));
             push_op_breadcrumb_spans(&mut spans, &r.path);
         }
         Some(EnvValue::Plain(s)) if !s.is_empty() => {
