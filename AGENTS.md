@@ -79,6 +79,23 @@ cargo run --bin jackin -- console --debug
 
 If the PR needs a different validation flow, replace the final example commands with the exact commands the operator should run. When those commands invoke `jackin`, include `--debug` as required by "Walking the operator through local validation".
 
+For non-trivial code changes, structure the PR's "Verify locally" section by intent:
+
+- **Checkout** — copy-pasteable commands to fetch and check out the PR.
+- **Static Checks** — only checks that are relevant and expected to be run locally.
+- **Tests** — focused or full test commands that validate the changed behavior.
+- **User Smoke** — manual validation steps when behavior is visible in the CLI/TUI/runtime.
+
+Do not add generic commands that do not materially validate the PR. In particular, do not include `git diff --check` unless the PR is specifically about whitespace, patch hygiene, generated diffs, or another issue that command is meant to catch.
+
+For console/TUI changes that can be manually verified in jackin itself, prefer:
+
+```sh
+cargo run --bin jackin -- console --debug
+```
+
+Do not combine `--debug` with `--no-intro`; debug mode already disables the intro.
+
 ### CI must be green before merging
 
 **Never merge a pull request unless all required CI checks pass.** This is non-negotiable regardless of how the operator phrases the merge request.
