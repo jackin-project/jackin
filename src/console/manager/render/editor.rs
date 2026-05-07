@@ -26,6 +26,7 @@ use crate::operator_env::EnvValue;
 // ── Editor stage ────────────────────────────────────────────────────
 
 const ACTION_ACCENT: Color = Color::Rgb(180, 255, 180);
+const DISCLOSURE_ACCENT: Color = Color::Rgb(255, 208, 102);
 
 fn action_row_style(selected: bool) -> Style {
     let style = Style::default().fg(ACTION_ACCENT);
@@ -34,6 +35,12 @@ fn action_row_style(selected: bool) -> Style {
     } else {
         style
     }
+}
+
+fn disclosure_style() -> Style {
+    Style::default()
+        .fg(DISCLOSURE_ACCENT)
+        .add_modifier(Modifier::BOLD)
 }
 
 pub fn render_editor(
@@ -807,10 +814,10 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                 let count = state.pending.roles.get(role).map_or(0, |o| o.env.len());
                 let mut spans = vec![
                     Span::raw(format!("{cursor_col}     ")),
-                    Span::styled(arrow, Style::default().fg(PHOSPHOR_GREEN)),
+                    Span::styled(arrow, disclosure_style()),
                     Span::styled(
                         format!(" Role: {role}  ({count} vars)"),
-                        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                        disclosure_style(),
                     ),
                 ];
                 if !in_registry {
@@ -1132,8 +1139,8 @@ fn render_auth_row(
             let glyph = if *expanded { "▼" } else { "▶" };
             ratatui::text::Line::from(vec![
                 Span::raw("     "),
-                Span::styled(glyph.to_string(), phosphor),
-                Span::styled(format!(" Role: {role}"), bold_white),
+                Span::styled(glyph.to_string(), disclosure_style()),
+                Span::styled(format!(" Role: {role}"), disclosure_style()),
             ])
         }
         AuthRow::RoleMode { role, agent } => {
