@@ -78,6 +78,26 @@ cargo run --bin jackin -- console --debug
 
 If the PR needs a different validation flow, replace the final example commands with the exact commands the operator should run. When those commands invoke `jackin`, include `--debug` as required by "Walking the operator through local validation".
 
+#### Author the PR body so it renders correctly on GitHub
+
+The PR body is Markdown — what the operator sees on GitHub is what matters. Two recurring failure modes when an agent constructs the body inside a shell command:
+
+1. **Do not escape backticks or `$`.** Triple-backtick fences must be literal `` ``` ``, not `\`\`\``. Variable references inside fenced code blocks (e.g. `$HOME`, `$PR_NUMBER`) must be literal `$`, not `\$`. Escaping them produces visibly broken output like `\`\`\`sh` and `\$HOME` in the rendered PR.
+2. **Use `gh pr create --body-file <file>` (not `--body "..."`)** when the body contains code fences, dollar signs, or anything else that interacts with shell quoting. Write the body to a temp file with a single-quoted `<<'EOF'` heredoc — single quotes already disable shell expansion and command substitution, so no manual escaping is needed inside the heredoc. The pattern is:
+
+   ~~~sh
+   cat > /tmp/pr-body.md <<'EOF'
+   ## Summary
+
+   ```sh
+   echo "$HOME"
+   ```
+   EOF
+   gh pr create --body-file /tmp/pr-body.md ...
+   ~~~
+
+   Then immediately verify the rendered body with `gh pr view <PR> --json body -q .body`. If you see `\`` or `\$` anywhere, the body is broken — fix it with `gh pr edit <PR> --body-file <file>` before moving on.
+
 For non-trivial code changes, structure the PR's "Verify locally" section by intent:
 
 - **Checkout** — copy-pasteable commands to fetch and check out the PR.
