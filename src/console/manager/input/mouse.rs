@@ -164,10 +164,12 @@ fn list_content_row_index(
     if mouse.row < content_top || mouse.row >= content_bottom {
         return None;
     }
-    // Row index into the list: items start at y = content_top (the first
-    // row below the top border).
+    // Visual row index into the rendered list: items start at y = content_top
+    // (the first row below the top border). The rendered list may contain a
+    // blank spacer before "+ New workspace"; clicking that spacer selects
+    // nothing.
     let idx = usize::from(mouse.row - content_top);
-    state.row_at(idx)
+    state.row_at_visual_index(idx)
 }
 
 /// Compute the seam column (0-based) for a given split percentage and
@@ -574,7 +576,7 @@ mod mouse_drag_tests {
         }
     }
 
-    /// Build a list state with `n` saved workspaces (row 0 + n + sentinel).
+    /// Build a list state with `n` saved workspaces (row 0 + n + spacer + sentinel).
     fn list_state_with_saved(n: usize) -> ManagerState<'static> {
         let mut config = crate::config::AppConfig::default();
         for i in 0..n {
@@ -615,11 +617,20 @@ mod mouse_drag_tests {
         // 3 saved workspaces ⇒ rows are:
         //   y=4  → index 0 ("Current directory")
         //   y=5,6,7 → indices 1, 2, 3 (saved)
-        //   y=8  → index 4 (sentinel "+ New workspace")
+        //   y=8  → visual spacer
+        //   y=9  → visual index 5 (sentinel "+ New workspace")
         let mut state = list_state_with_saved(3);
         state.selected = 0;
-        handle_mouse(&mut state, mouse_at(10, 8), term(100));
+        handle_mouse(&mut state, mouse_at(10, 9), term(100));
         assert_eq!(state.selected, 4, "sentinel_idx = saved_count + 1 = 4");
+    }
+
+    #[test]
+    fn click_on_workspace_list_spacer_does_not_change_selected() {
+        let mut state = list_state_with_saved(3);
+        state.selected = 2;
+        handle_mouse(&mut state, mouse_at(10, 8), term(100));
+        assert_eq!(state.selected, 2);
     }
 
     #[test]

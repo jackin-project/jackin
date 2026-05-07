@@ -55,10 +55,14 @@ pub(super) fn render_list_body(
         }
     }
 
-    // Left: [Current directory] + saved workspaces + [+ New workspace].
+    // Left: [Current directory] + saved workspaces + blank spacer +
+    // [+ New workspace]. The spacer is visual-only; state keeps logical row
+    // indices without it.
     // The cwd path itself is shown on the right-pane `workdir` line; keep the
     // list row label short to avoid duplicate visual load.
-    let mut items: Vec<ListItem> = Vec::with_capacity(saved_count + 2);
+    let has_saved_workspaces = saved_count > 0;
+    let mut items: Vec<ListItem> =
+        Vec::with_capacity(saved_count + 2 + usize::from(has_saved_workspaces));
     items.push(ListItem::new(Line::from(Span::styled(
         "Current directory",
         Style::default().fg(WHITE),
@@ -69,6 +73,9 @@ pub(super) fn render_list_body(
             .iter()
             .map(|w| ListItem::new(Line::from(w.name.as_str()))),
     );
+    if has_saved_workspaces {
+        items.push(ListItem::new(Line::from("")));
+    }
     items.push(ListItem::new(Line::from(Span::styled(
         "+ New workspace",
         Style::default().fg(WHITE),
@@ -85,7 +92,7 @@ pub(super) fn render_list_body(
         .highlight_symbol("▸ ");
 
     let mut ls = ListState::default();
-    ls.select(Some(state.selected));
+    ls.select(Some(state.visual_selected()));
     frame.render_stateful_widget(list, list_area, &mut ls);
 
     // Toast overlay — rendered last so it appears on top.

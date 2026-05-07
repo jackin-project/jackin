@@ -35,6 +35,21 @@ impl ManagerListRow {
             Self::NewWorkspace => saved_count + 1,
         }
     }
+
+    #[must_use]
+    pub const fn to_visual_index(self, saved_count: usize) -> usize {
+        match self {
+            Self::CurrentDirectory => 0,
+            Self::SavedWorkspace(i) => i + 1,
+            Self::NewWorkspace => {
+                if saved_count > 0 {
+                    saved_count + 2
+                } else {
+                    saved_count + 1
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -554,6 +569,34 @@ impl ManagerState<'_> {
         } else {
             None
         }
+    }
+
+    /// Decode a visual list row into a logical row. The rendered list keeps a
+    /// blank spacer before "+ New workspace" when saved workspaces exist; that
+    /// spacer is intentionally not selectable.
+    #[must_use]
+    pub const fn row_at_visual_index(&self, idx: usize) -> Option<ManagerListRow> {
+        let saved_count = self.workspaces.len();
+        if idx == 0 {
+            Some(ManagerListRow::CurrentDirectory)
+        } else if idx <= saved_count {
+            Some(ManagerListRow::SavedWorkspace(idx - 1))
+        } else if idx == saved_count + 1 && saved_count > 0 {
+            None
+        } else if (saved_count > 0 && idx == saved_count + 2)
+            || (saved_count == 0 && idx == saved_count + 1)
+        {
+            Some(ManagerListRow::NewWorkspace)
+        } else {
+            None
+        }
+    }
+
+    /// Selected index in rendered-list coordinates. Differs from `selected`
+    /// only when the blank spacer before "+ New workspace" is present.
+    #[must_use]
+    pub fn visual_selected(&self) -> usize {
+        self.selected_row().to_visual_index(self.workspaces.len())
     }
 
     /// What the operator currently has highlighted.
@@ -1224,6 +1267,16 @@ mod tests {
             state.selected = idx;
             assert_eq!(state.selected_row(), row, "selected_row for idx={idx}");
         }
+
+        assert_eq!(
+            ManagerListRow::NewWorkspace.to_visual_index(saved_count),
+            saved_count + 2
+        );
+        assert_eq!(state.row_at_visual_index(saved_count + 1), None);
+        assert_eq!(
+            state.row_at_visual_index(saved_count + 2),
+            Some(ManagerListRow::NewWorkspace)
+        );
 
         // Out-of-range index returns None.
         assert_eq!(state.row_at(saved_count + 2), None);
