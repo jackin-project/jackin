@@ -3,7 +3,6 @@
 
 use super::super::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerListRow, ManagerStage, ManagerState, Modal,
-    Toast, ToastKind,
 };
 use crate::config::AppConfig;
 use crate::config::editor::EnvScope;
@@ -388,7 +387,6 @@ pub(super) fn commit_editor_save_with_runner(
                 if let Some(new_name) = pending_rename {
                     editor.mode = EditorMode::Edit { name: new_name };
                 }
-                let change_count = editor.change_count();
                 if let EditorMode::Edit { name } = &editor.mode
                     && let Some(ws) = config.workspaces.get(name)
                 {
@@ -396,11 +394,6 @@ pub(super) fn commit_editor_save_with_runner(
                     editor.pending = ws.clone();
                 }
                 editor.save_flow = EditorSaveFlow::Idle;
-                state.toast = Some(Toast {
-                    message: format!("saved · {change_count} changes written"),
-                    kind: ToastKind::Success,
-                    shown_at: std::time::Instant::now(),
-                });
             }
             if exit_on_success
                 || matches!(
@@ -411,15 +404,10 @@ pub(super) fn commit_editor_save_with_runner(
                     })
                 )
             {
-                // Carry the toast across `from_config_with_cache_and_op`
-                // (which would otherwise discard it) so create-save and
-                // Esc→Save keep positive feedback parity with direct `s`.
-                let carry_toast = state.toast.take();
                 let cache = state.op_cache.clone();
                 let op_available = state.op_available;
                 *state =
                     ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
-                state.toast = carry_toast;
                 // Land on the workspace that was just saved.
                 let saved_count = state.workspaces.len();
                 if let Some(idx) = state.workspaces.iter().position(|w| w.name == current_name) {
@@ -972,7 +960,7 @@ pub(super) fn build_workspace_edit(
 #[allow(clippy::too_many_lines)]
 mod tests {
     use super::super::super::state::{
-        EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal, ToastKind,
+        EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal,
     };
     use super::super::test_support::{key, mount};
     use super::{begin_editor_save, commit_editor_save};
@@ -1468,13 +1456,7 @@ mod tests {
     }
 
     #[test]
-    fn exit_on_success_save_preserves_success_toast_across_state_refresh() {
-        // Finding #3: when `commit_editor_save` exits to the list view,
-        // it reinitialises the whole `ManagerState` via
-        // `ManagerState::from_config` — which allocates `toast: None`.
-        // That discarded the success toast the same function had just
-        // set. Verify the carry-across keeps it intact so the operator
-        // still sees the positive feedback after the reset.
+    fn exit_on_success_save_does_not_show_success_toast() {
         let ws = WorkspaceConfig {
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
@@ -1496,14 +1478,10 @@ mod tests {
             "exit_on_success should land us in the list; got {:?}",
             state.stage,
         );
-        let toast = state
-            .toast
-            .as_ref()
-            .expect("success toast must survive the exit-to-list reset");
         assert!(
-            matches!(toast.kind, ToastKind::Success),
-            "carried-across toast must be the Success kind; got {:?}",
-            toast.kind,
+            state.toast.is_none(),
+            "saving should not show a success toast; got {:?}",
+            state.toast,
         );
     }
 
@@ -1580,9 +1558,7 @@ mod tests {
     }
 
     #[test]
-    fn create_mode_save_preserves_success_toast_across_state_refresh() {
-        // Create mode also goes through the `ManagerState::from_config`
-        // reset. Same regression guard as the Edit-with-exit flow above.
+    fn create_mode_save_does_not_show_success_toast() {
         let (tmp, paths, mut config) = {
             let tmp = tempfile::tempdir().unwrap();
             let paths = JackinPaths::for_tests(tmp.path());
@@ -1609,11 +1585,11 @@ mod tests {
             "create save should return to the list; got {:?}",
             state.stage,
         );
-        let toast = state
-            .toast
-            .as_ref()
-            .expect("create-save success toast must survive the reset");
-        assert!(matches!(toast.kind, ToastKind::Success));
+        assert!(
+            state.toast.is_none(),
+            "create save should not show a success toast; got {:?}",
+            state.toast,
+        );
     }
 
     #[test]
