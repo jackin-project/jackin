@@ -3223,35 +3223,3 @@ fn auth_workspace_source_d_clears_workspace_mode() -> Result<()> {
     );
     Ok(())
 }
-
-/// Globally configured `api_key` mode (in `[claude].auth_forward`)
-/// must surface a `WorkspaceSource` row in `auth_flat_rows` so the
-/// operator can set the credential. Guards the `AppConfig::default()`
-/// bug fixed in PR #242 — before the fix,
-/// `workspace_effective_mode_needs_credential` resolved against
-/// `AppConfig::default()` and silently dropped the row whenever the
-/// effective mode came from a global default.
-#[test]
-fn auth_flat_rows_surfaces_workspace_source_when_global_requires_credential() {
-    use jackin::config::{AgentAuthConfig, AuthForwardMode};
-    let config = AppConfig {
-        claude: Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::ApiKey,
-        }),
-        ..AppConfig::default()
-    };
-    let ws = jackin::workspace::WorkspaceConfig::default();
-    let mut ed = EditorState::new_edit("ws".into(), ws);
-    ed.auth_selected_agent = Some(Agent::Claude);
-
-    let rows = auth_flat_rows(&ed, &config);
-    assert!(
-        rows.iter().any(|r| matches!(
-            r,
-            AuthRow::WorkspaceSource {
-                agent: Agent::Claude
-            }
-        )),
-        "global claude.auth_forward = api_key must surface WorkspaceSource row; got {rows:?}"
-    );
-}

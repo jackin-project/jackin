@@ -46,14 +46,10 @@ pub(super) fn handle_editor_key(
         }
         KeyCode::Esc => {
             if let ManagerStage::Editor(editor) = &state.stage {
-                // Auth tab two-screen navigation: Esc on the focused
-                // auth-kind view pops back to the kind picker WITHOUT
-                // routing through the dirty-modal flow. This is
-                // intentional — the pop is in-tab navigation, not an
-                // editor exit, and the operator's pending edits stay
-                // in `editor.pending`. A subsequent Esc with the
-                // editor still dirty will fall through to the dirty
-                // check below.
+                // Auth-tab in-tab pop: clears the focused-kind
+                // selection without dirty check (see EditorState
+                // field doc). A subsequent Esc on the picker view
+                // falls through to the dirty branch below.
                 if editor.active_tab == EditorTab::Auth && editor.auth_selected_agent.is_some() {
                     if let ManagerStage::Editor(editor) = &mut state.stage {
                         editor.auth_selected_agent = None;
@@ -839,8 +835,10 @@ pub(super) fn handle_editor_modal(
                         editor.pending_picker_value = None;
                     }
                     if matches!(target, TextInputTarget::AuthCredential) {
+                        // Plain-text leg of the source-picker round trip
+                        // recovers identically to the OpPicker leg.
                         editor.modal = None;
-                        super::auth::restore_auth_form_after_plain_cancel(editor);
+                        super::auth::restore_auth_form_after_op_picker_cancel(editor);
                         return;
                     }
                     editor.modal = None;

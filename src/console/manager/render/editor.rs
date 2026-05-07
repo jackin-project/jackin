@@ -680,9 +680,10 @@ pub enum AuthRow {
 ///
 /// `config` provides the live `[claude]`/`[codex]` globals so the
 /// "does this mode need a credential?" check runs against the
-/// operator's actual configuration — using `AppConfig::default()` here
-/// would silently hide the workspace/role source rows whenever the
-/// effective mode came from a global (e.g. `claude.auth_forward = "api_key"`).
+/// operator's actual configuration. The synthesized config (workspace
+/// pending merged onto the live globals) is built once here and
+/// reused for every credential-row check, regardless of how many
+/// roles are expanded.
 pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthRow> {
     use crate::agent::Agent;
     let Some(agent) = editor.auth_selected_agent else {
@@ -707,8 +708,11 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
         .map(|(name, _)| name.clone())
         .collect();
 
+    let synthesized = synthesize_appconfig_for_auth(editor, config);
+    let ws_name = workspace_name_for_panel(editor);
+
     let mut rows = vec![AuthRow::WorkspaceMode { agent }];
-    if workspace_effective_mode_needs_credential(editor, config, agent) {
+    if effective_mode_needs_credential(&synthesized, &ws_name, "", agent) {
         rows.push(AuthRow::WorkspaceSource { agent });
     }
     rows.push(AuthRow::Spacer);
@@ -723,7 +727,7 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
                 role: role.clone(),
                 agent,
             });
-            if role_effective_mode_needs_credential(editor, config, role, agent) {
+            if effective_mode_needs_credential(&synthesized, &ws_name, role, agent) {
                 rows.push(AuthRow::RoleSource {
                     role: role.clone(),
                     agent,
@@ -745,26 +749,16 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
     rows
 }
 
-fn workspace_effective_mode_needs_credential(
-    editor: &EditorState<'_>,
-    config: &AppConfig,
-    agent: crate::agent::Agent,
-) -> bool {
-    let synthesized = synthesize_appconfig_for_auth(editor, config);
-    let ws = workspace_name_for_panel(editor);
-    let mode = crate::config::resolve_mode(&synthesized, agent, &ws, "");
-    agent.required_env_var(mode).is_some()
-}
-
-fn role_effective_mode_needs_credential(
-    editor: &EditorState<'_>,
-    config: &AppConfig,
+/// Whether the (workspace, role, agent) triple's effective mode (after
+/// merging globals + workspace + role overrides) requires a credential.
+/// `role = ""` checks the workspace-level effective mode.
+fn effective_mode_needs_credential(
+    synthesized: &AppConfig,
+    ws_name: &str,
     role: &str,
     agent: crate::agent::Agent,
 ) -> bool {
-    let synthesized = synthesize_appconfig_for_auth(editor, config);
-    let ws = workspace_name_for_panel(editor);
-    let mode = crate::config::resolve_mode(&synthesized, agent, &ws, role);
+    let mode = crate::config::resolve_mode(synthesized, agent, ws_name, role);
     agent.required_env_var(mode).is_some()
 }
 
@@ -881,10 +875,8 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
 /// Display-side breadcrumb parser for `OpRef.path`.
 /// Grammar: `<Vault>/<Item>[<subtitle>?]/[<Section>/]<Field>[?<query>]`
 ///
-/// Visibility is `pub(in crate::console)` so the auth-form widget
-/// (`crate::console::widgets::auth_panel::render`) shares the parser
-/// — without it, that widget would carry its own ad-hoc `path.split('/')`
-/// fallback that drops `?attribute=...` queries and `[subtitle]` syntax.
+/// Shared with the auth-form widget so all op-ref breadcrumbs render
+/// from the same parse tree.
 #[derive(Debug, PartialEq, Eq)]
 pub(in crate::console) struct PathBreadcrumb {
     pub vault: String,
@@ -1285,7 +1277,10 @@ fn auth_source_value<'a>(
     synthesized.env.get(env_name)
 }
 
-fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
+/// Render an `OpRef.path` as a `vault / item [subtitle] / section → field ?query`
+/// breadcrumb. Shared between the Auth tab, the Secrets tab, and the
+/// auth-edit form so all three render the same path identically.
+pub(in crate::console) fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
     let dim = Style::default().fg(PHOSPHOR_DIM);
     let white_style = Style::default().fg(WHITE);
     let green = Style::default().fg(PHOSPHOR_GREEN);
@@ -2845,5 +2840,34 @@ mod auth_flat_rows_tests {
                 _ => {}
             }
         }
+    }
+
+    /// Globally configured `api_key` mode (in `[claude].auth_forward`)
+    /// must surface a `WorkspaceSource` row so the operator can set
+    /// the credential — even when the workspace has no explicit
+    /// `claude` block of its own.
+    #[test]
+    fn workspace_source_surfaces_when_global_requires_credential() {
+        use crate::config::{AgentAuthConfig, AuthForwardMode};
+        use crate::workspace::WorkspaceConfig;
+        let config = AppConfig {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::ApiKey,
+            }),
+            ..AppConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.auth_selected_agent = Some(Agent::Claude);
+
+        let rows = auth_flat_rows(&editor, &config);
+        assert!(
+            rows.iter().any(|r| matches!(
+                r,
+                AuthRow::WorkspaceSource {
+                    agent: Agent::Claude
+                }
+            )),
+            "global claude.auth_forward = api_key must surface WorkspaceSource row; got {rows:?}"
+        );
     }
 }

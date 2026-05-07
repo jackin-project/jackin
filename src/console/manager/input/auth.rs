@@ -232,9 +232,7 @@ pub(super) fn handle_auth_form_key(
 /// - `Enter` → open the shared source picker (literal vs. 1Password).
 /// - `Down/j` → focus `Save`.
 /// - `Up/k` → focus `Mode`.
-/// - Anything else → no-op (Tab is intentionally NOT handled here so
-///   future bindings can add Tab cycling without colliding with the
-///   row-level navigation rule).
+/// - Anything else → no-op. Tab is reserved for row-level navigation.
 fn handle_credential_source_key(
     editor: &mut EditorState<'_>,
     key: KeyEvent,
@@ -278,23 +276,17 @@ fn open_auth_source_picker_from_form(editor: &mut EditorState<'_>, op_available:
         return false;
     };
 
-    let Some(mode) = state.mode else {
-        editor.modal = Some(Modal::AuthForm {
-            target,
-            state,
-            focus,
-            literal_buffer,
-        });
-        return false;
-    };
-    let Some(env_var) = state.agent.required_env_var(mode) else {
-        editor.modal = Some(Modal::AuthForm {
-            target,
-            state,
-            focus,
-            literal_buffer,
-        });
-        return false;
+    let env_var = match state.mode.and_then(|m| state.agent.required_env_var(m)) {
+        Some(v) => v,
+        None => {
+            editor.modal = Some(Modal::AuthForm {
+                target,
+                state,
+                focus,
+                literal_buffer,
+            });
+            return false;
+        }
     };
 
     editor.pending_auth_form_return = Some(AuthFormReturnPath {
@@ -312,16 +304,30 @@ fn open_auth_source_picker_from_form(editor: &mut EditorState<'_>, op_available:
     true
 }
 
+/// Stash-miss debug-log codes. Emitted when a side modal commits or
+/// cancels and the auth form's `pending_auth_form_return` slot is
+/// unexpectedly empty — the side handler fired without a paired
+/// open. Codes are stable so grepping `--debug` output stays cheap.
+const AUTH_MISSING_PLAIN_SOURCE: &str = "AUTH001";
+const AUTH_MISSING_PLAIN_TEXT: &str = "AUTH002";
+const AUTH_MISSING_OP_SOURCE: &str = "AUTH003";
+const AUTH_MISSING_OP_CANCEL: &str = "AUTH004";
+const AUTH_MISSING_OP_COMMIT: &str = "AUTH005";
+
+fn log_missing_return_path(code: &'static str, fn_name: &'static str, suffix: &str) {
+    crate::debug_log!(
+        "auth",
+        "{} {}: pending_auth_form_return missing{}",
+        code,
+        fn_name,
+        suffix
+    );
+}
+
 /// Commit branch for `Modal::AuthSourcePicker` when the operator picks
 /// the plain-text source. Re-stashes the auth form's context with the
 /// focus pinned to `CredentialSource`, then mounts a `Modal::TextInput`
 /// pre-filled from the round-trip's literal buffer.
-///
-/// If `pending_auth_form_return` is unexpectedly empty the round-trip
-/// can't continue — log loudly and leave `editor.modal` untouched so
-/// the next dispatch tick can reset cleanly. This shouldn't be
-/// reachable in practice (see `open_auth_source_picker_from_form`),
-/// hence the AUTH001 error code for grepping debug output.
 pub(super) fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_>) {
     let Some(AuthFormReturnPath {
         target,
@@ -330,9 +336,10 @@ pub(super) fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_
         ..
     }) = editor.pending_auth_form_return.take()
     else {
-        crate::debug_log!(
-            "auth",
-            "AUTH001 apply_plain_source_picker_to_auth_form: pending_auth_form_return missing"
+        log_missing_return_path(
+            AUTH_MISSING_PLAIN_SOURCE,
+            "apply_plain_source_picker_to_auth_form",
+            "",
         );
         return;
     };
@@ -351,18 +358,15 @@ pub(super) fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_
 /// Commit branch for the credential `Modal::TextInput`. Lifts the
 /// stashed auth form back, applies the typed value via `set_literal`,
 /// and re-mounts the form with focus on Save.
-///
-/// If `pending_auth_form_return` is empty the typed credential cannot
-/// be applied to the form — log AUTH002 with the reason rather than
-/// silently dropping the operator's input.
 pub(super) fn apply_plain_text_to_auth_form(editor: &mut EditorState<'_>, value: &str) {
     let Some(AuthFormReturnPath {
         target, mut state, ..
     }) = editor.pending_auth_form_return.take()
     else {
-        crate::debug_log!(
-            "auth",
-            "AUTH002 apply_plain_text_to_auth_form: pending_auth_form_return missing — typed credential dropped"
+        log_missing_return_path(
+            AUTH_MISSING_PLAIN_TEXT,
+            "apply_plain_text_to_auth_form",
+            " — typed credential dropped",
         );
         return;
     };
@@ -375,32 +379,19 @@ pub(super) fn apply_plain_text_to_auth_form(editor: &mut EditorState<'_>, value:
     });
 }
 
-/// Cancel branch for the credential `Modal::TextInput`. Restores the
-/// auth form unchanged from the stashed return path. Aliases
-/// [`restore_auth_form_after_op_picker_cancel`] because the recovery
-/// step is identical for the literal-text and 1Password legs of the
-/// source-picker round trip — separate names exist purely so each
-/// call site reads as its own intent.
-pub(super) fn restore_auth_form_after_plain_cancel(editor: &mut EditorState<'_>) {
-    restore_auth_form_after_op_picker_cancel(editor);
-}
-
 /// Commit branch for `Modal::AuthSourcePicker` when the operator picks
 /// the 1Password source. Pins the stashed return-path focus to
 /// `CredentialSource` (so cancel/error paths land back on the source
 /// row) and mounts a fresh `Modal::OpPicker`.
-///
-/// If `pending_auth_form_return` is unexpectedly empty there is no
-/// form to return to — clear `editor.modal` and log AUTH003 so the
-/// state desync is visible in `--debug` output.
 pub(super) fn open_op_picker_from_auth_source(
     editor: &mut EditorState<'_>,
     op_cache: std::rc::Rc<std::cell::RefCell<OpCache>>,
 ) {
     let Some(return_path) = editor.pending_auth_form_return.as_mut() else {
-        crate::debug_log!(
-            "auth",
-            "AUTH003 open_op_picker_from_auth_source: pending_auth_form_return missing — closing modal"
+        log_missing_return_path(
+            AUTH_MISSING_OP_SOURCE,
+            "open_op_picker_from_auth_source",
+            " — closing modal",
         );
         editor.modal = None;
         return;
@@ -430,12 +421,8 @@ pub(super) fn apply_op_picker_to_auth_form(
 }
 
 /// Restore the auth-form modal unchanged after the operator cancels
-/// the `OpPicker`. Called from the `OpPicker` cancel branch in
-/// `editor.rs` when `pending_auth_form_return` was set.
-///
-/// Empty stash means the cancel handler fired without a paired open
-/// — log AUTH004 and leave the modal stack alone so the editor can
-/// recover on the next dispatch.
+/// the `OpPicker` or the literal `TextInput`. Both side modals share
+/// the same recovery shape, so the same helper handles both.
 pub(super) fn restore_auth_form_after_op_picker_cancel(editor: &mut EditorState<'_>) {
     let Some(AuthFormReturnPath {
         target,
@@ -444,9 +431,10 @@ pub(super) fn restore_auth_form_after_op_picker_cancel(editor: &mut EditorState<
         literal_buffer,
     }) = editor.pending_auth_form_return.take()
     else {
-        crate::debug_log!(
-            "auth",
-            "AUTH004 restore_auth_form_after_op_picker_cancel: pending_auth_form_return missing"
+        log_missing_return_path(
+            AUTH_MISSING_OP_CANCEL,
+            "restore_auth_form_after_op_picker_cancel",
+            "",
         );
         return;
     };
@@ -475,9 +463,10 @@ fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?
         literal_buffer,
     }) = editor.pending_auth_form_return.take()
     else {
-        crate::debug_log!(
-            "auth",
-            "AUTH005 apply_op_picker_to_auth_form: pending_auth_form_return missing — OpRef commit dropped"
+        log_missing_return_path(
+            AUTH_MISSING_OP_COMMIT,
+            "apply_op_picker_to_auth_form",
+            " — OpRef commit dropped",
         );
         return;
     };
@@ -706,10 +695,8 @@ mod tests {
         std::rc::Rc::new(std::cell::RefCell::new(OpCache::default()))
     }
 
-    /// Test wrapper around `handle_auth_form_key`. The form no longer
-    /// owns the op-cache (the `Modal::OpPicker` opens with its own,
-    /// supplied by the dispatcher) so this helper only needs the
-    /// `op_available` gate, which most tests want set to `true`.
+    /// Test wrapper around `handle_auth_form_key` with
+    /// `op_available = true`.
     fn drive_key(editor: &mut EditorState<'_>, k: KeyEvent) -> bool {
         handle_auth_form_key(editor, k, true)
     }

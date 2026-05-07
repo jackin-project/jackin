@@ -14,6 +14,7 @@ use ratatui::{
 
 use super::form::{AuthForm, CredentialInput};
 use crate::config::AuthForwardMode;
+use crate::console::manager::render::editor::push_op_breadcrumb_spans;
 use crate::console::manager::state::AuthFormFocus;
 
 pub(crate) const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
@@ -50,9 +51,7 @@ pub struct FormContext<'a> {
 /// Pure render — no input handling. Keystrokes are routed by
 /// `super::super::manager::input::auth::handle_auth_form_key`.
 ///
-/// `_ctx` is currently unused; retained in the signature so a future
-/// header rev can re-introduce the workspace/role breadcrumb without
-/// a public-API change at every call site.
+/// `_ctx` is currently unused.
 pub fn render_form(
     frame: &mut Frame,
     area: Rect,
@@ -183,44 +182,6 @@ fn credential_env_line(env_var: &str, cred: &CredentialInput, selected: bool) ->
         }
     }
     Line::from(spans)
-}
-
-/// Render an `OpRef.path` as a `vault / item [subtitle] / section → field ?query`
-/// breadcrumb. Delegates parsing to the shared
-/// [`parse_path_breadcrumb`](crate::console::manager::render::editor::parse_path_breadcrumb)
-/// so the auth form, the Auth tab, and the Secrets tab agree on what
-/// counts as a valid path — including optional `[subtitle]` annotations
-/// and `?attribute=...` queries.
-fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
-    let dim = Style::default().fg(PHOSPHOR_DIM);
-    let white = Style::default().fg(WHITE);
-    let green = Style::default().fg(PHOSPHOR_GREEN);
-    let green_bold = Style::default()
-        .fg(PHOSPHOR_GREEN)
-        .add_modifier(Modifier::BOLD);
-
-    let Some(parts) = crate::console::manager::render::editor::parse_path_breadcrumb(path) else {
-        spans.push(Span::styled("<unparseable path - re-pick>", dim));
-        return;
-    };
-
-    spans.push(Span::styled(parts.vault, white));
-    spans.push(Span::styled(" / ".to_string(), dim));
-    spans.push(Span::styled(parts.item, green));
-    if let Some(subtitle) = parts.item_subtitle {
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(subtitle, dim));
-    }
-    if let Some(section) = parts.section {
-        spans.push(Span::styled(" / ".to_string(), dim));
-        spans.push(Span::styled(section, green));
-    }
-    spans.push(Span::styled(" \u{2192} ".to_string(), dim));
-    spans.push(Span::styled(parts.field, green_bold));
-    if let Some(query) = parts.attribute_query {
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(query, dim));
-    }
 }
 
 fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {

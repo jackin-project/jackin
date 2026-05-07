@@ -357,11 +357,10 @@ pub enum Modal<'a> {
 
 /// Where in the auth-edit form the cursor currently sits.
 ///
-/// The credential value is no longer typed inline in the form — it is
-/// always collected via `Modal::AuthSourcePicker` → `Modal::TextInput`
-/// (literal) or `Modal::OpPicker` (1Password). The form therefore has
-/// only one credential-related focus (`CredentialSource`); the legacy
-/// `LiteralValue` / `OpRefValue` states were removed in PR #242.
+/// The credential value is collected through
+/// `Modal::AuthSourcePicker` → `Modal::TextInput` (literal) or
+/// `Modal::OpPicker` (1Password), so the form carries only one
+/// credential-related focus (`CredentialSource`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthFormFocus {
     /// Mode picker line — Space cycles, Enter commits selection.
