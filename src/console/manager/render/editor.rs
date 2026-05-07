@@ -1138,7 +1138,7 @@ fn render_auth_row(
         AuthRow::RoleHeader { role, expanded } => {
             let glyph = if *expanded { "▼" } else { "▶" };
             ratatui::text::Line::from(vec![
-                Span::raw("     "),
+                Span::raw("  "),
                 Span::styled(glyph.to_string(), disclosure_style()),
                 Span::styled(format!(" Role: {role}"), disclosure_style()),
             ])
