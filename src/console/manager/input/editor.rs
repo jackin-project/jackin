@@ -46,6 +46,17 @@ pub(super) fn handle_editor_key(
         }
         KeyCode::Esc => {
             if let ManagerStage::Editor(editor) = &state.stage {
+                // Auth-tab in-tab pop: clears the focused-kind
+                // selection without dirty check (see EditorState
+                // field doc). A subsequent Esc on the picker view
+                // falls through to the dirty branch below.
+                if editor.active_tab == EditorTab::Auth && editor.auth_selected_agent.is_some() {
+                    if let ManagerStage::Editor(editor) = &mut state.stage {
+                        editor.auth_selected_agent = None;
+                        editor.active_field = FieldFocus::Row(0);
+                    }
+                    return Ok(InputOutcome::Continue);
+                }
                 let dirty = editor.is_dirty();
                 if dirty {
                     if let ManagerStage::Editor(editor) = &mut state.stage {
@@ -98,7 +109,7 @@ pub(super) fn handle_editor_key(
             }
             if key.code == KeyCode::Right && editor.active_tab == EditorTab::Auth {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = super::super::render::editor::auth_flat_rows(editor);
+                let rows = super::super::render::editor::auth_flat_rows(editor, config);
                 if let Some(super::super::render::editor::AuthRow::RoleHeader { role, expanded }) =
                     rows.get(n).cloned()
                 {
@@ -117,6 +128,9 @@ pub(super) fn handle_editor_key(
                 EditorTab::Auth => EditorTab::General,
             };
             editor.active_field = FieldFocus::Row(0);
+            if editor.active_tab != EditorTab::Auth {
+                editor.auth_selected_agent = None;
+            }
             if was_secrets {
                 reset_secrets_view(editor);
             }
@@ -136,7 +150,7 @@ pub(super) fn handle_editor_key(
             }
             if editor.active_tab == EditorTab::Auth {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = super::super::render::editor::auth_flat_rows(editor);
+                let rows = super::super::render::editor::auth_flat_rows(editor, config);
                 if let Some(super::super::render::editor::AuthRow::RoleHeader { role, expanded }) =
                     rows.get(n).cloned()
                 {
@@ -155,6 +169,9 @@ pub(super) fn handle_editor_key(
                 EditorTab::Auth => EditorTab::Secrets,
             };
             editor.active_field = FieldFocus::Row(0);
+            if editor.active_tab != EditorTab::Auth {
+                editor.auth_selected_agent = None;
+            }
             if was_secrets {
                 reset_secrets_view(editor);
             }
@@ -167,6 +184,9 @@ pub(super) fn handle_editor_key(
             let next = if editor.active_tab == EditorTab::Secrets {
                 let rows = secrets_flat_rows(editor);
                 step_secrets_cursor_up(&rows, candidate)
+            } else if editor.active_tab == EditorTab::Auth {
+                let rows = super::super::render::editor::auth_flat_rows(editor, config);
+                step_auth_cursor_up(&rows, candidate)
             } else {
                 candidate
             };
@@ -182,7 +202,14 @@ pub(super) fn handle_editor_key(
                     FieldFocus::Row(step_secrets_cursor_down(&rows, candidate, max));
             } else {
                 let max = max_row_for_tab(editor, config);
-                editor.active_field = FieldFocus::Row((n + 1).min(max));
+                let candidate = (n + 1).min(max);
+                if editor.active_tab == EditorTab::Auth {
+                    let rows = super::super::render::editor::auth_flat_rows(editor, config);
+                    editor.active_field =
+                        FieldFocus::Row(step_auth_cursor_down(&rows, candidate, max));
+                } else {
+                    editor.active_field = FieldFocus::Row(candidate);
+                }
             }
         }
         KeyCode::Enter => match editor.active_tab {
@@ -207,8 +234,12 @@ pub(super) fn handle_editor_key(
             }
             EditorTab::Auth => {
                 let FieldFocus::Row(n) = editor.active_field;
-                let rows = super::super::render::editor::auth_flat_rows(editor);
+                let rows = super::super::render::editor::auth_flat_rows(editor, config);
                 match rows.get(n) {
+                    Some(super::super::render::editor::AuthRow::AuthKind { agent }) => {
+                        editor.auth_selected_agent = Some(*agent);
+                        editor.active_field = FieldFocus::Row(0);
+                    }
                     Some(super::super::render::editor::AuthRow::AddSentinel { .. }) => {
                         super::auth::open_auth_role_picker(editor, config);
                     }
@@ -216,10 +247,12 @@ pub(super) fn handle_editor_key(
                         super::auth::toggle_role_expand(editor, role.clone());
                     }
                     Some(
-                        super::super::render::editor::AuthRow::WorkspaceDefault { .. }
-                        | super::super::render::editor::AuthRow::RoleAgentRow { .. },
+                        super::super::render::editor::AuthRow::WorkspaceMode { .. }
+                        | super::super::render::editor::AuthRow::WorkspaceSource { .. }
+                        | super::super::render::editor::AuthRow::RoleMode { .. }
+                        | super::super::render::editor::AuthRow::RoleSource { .. },
                     ) => {
-                        super::auth::open_auth_form_modal(editor);
+                        super::auth::open_auth_form_modal(editor, config);
                     }
                     _ => {}
                 }
@@ -227,6 +260,11 @@ pub(super) fn handle_editor_key(
         },
         KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Roles => {
             open_role_input(editor, config);
+        }
+        KeyCode::Char('a' | 'A')
+            if editor.active_tab == EditorTab::Auth && editor.auth_selected_agent.is_some() =>
+        {
+            super::auth::open_auth_role_picker(editor, config);
         }
         KeyCode::Char(' ') if editor.active_tab == EditorTab::Roles => {
             toggle_agent_allowed_at_cursor(editor, config);
@@ -254,7 +292,7 @@ pub(super) fn handle_editor_key(
             remove_mount_at_cursor(editor);
         }
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Auth => {
-            super::auth::handle_d_on_auth_row(editor);
+            super::auth::handle_d_on_auth_row(editor, config);
         }
         // M toggles per-row masking on the focused Secrets-tab key row.
         // Operator feedback (commit 32): the global mask flag was too
@@ -353,7 +391,7 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         // Secrets tab is handled inline in the Down key arm; never reached here.
         EditorTab::Secrets => 0,
         EditorTab::Auth => {
-            super::super::render::editor::auth_editable_row_count(editor).saturating_sub(1)
+            super::super::render::editor::auth_row_count(editor, config).saturating_sub(1)
         }
     }
 }
@@ -386,6 +424,38 @@ fn step_secrets_cursor_up(
     loop {
         match rows.get(idx) {
             Some(SecretsRow::SectionSpacer) => {
+                if idx == 0 {
+                    return 0;
+                }
+                idx -= 1;
+            }
+            _ => return idx,
+        }
+    }
+}
+
+fn step_auth_cursor_down(
+    rows: &[super::super::render::editor::AuthRow],
+    candidate: usize,
+    max: usize,
+) -> usize {
+    use super::super::render::editor::AuthRow;
+    let mut idx = candidate;
+    while idx <= max {
+        match rows.get(idx) {
+            Some(AuthRow::Spacer) => idx += 1,
+            _ => return idx,
+        }
+    }
+    candidate
+}
+
+fn step_auth_cursor_up(rows: &[super::super::render::editor::AuthRow], candidate: usize) -> usize {
+    use super::super::render::editor::AuthRow;
+    let mut idx = candidate;
+    loop {
+        match rows.get(idx) {
+            Some(AuthRow::Spacer) => {
                 if idx == 0 {
                     return 0;
                 }
@@ -753,15 +823,23 @@ pub(super) fn handle_editor_modal(
                     }
                 }
                 ModalOutcome::Cancel => {
+                    let target = target.clone();
                     // Cancel of EnvKey/EnvValue must drop both the
                     // stashed key and any picker value — otherwise a
                     // later sentinel-picker commit silently applies
                     // the path to an unrelated key.
                     if let TextInputTarget::EnvKey { .. } | TextInputTarget::EnvValue { .. } =
-                        target
+                        &target
                     {
                         editor.pending_env_key = None;
                         editor.pending_picker_value = None;
+                    }
+                    if matches!(target, TextInputTarget::AuthCredential) {
+                        // Plain-text leg of the source-picker round trip
+                        // recovers identically to the OpPicker leg.
+                        editor.modal = None;
+                        super::auth::restore_auth_form_after_op_picker_cancel(editor);
+                        return;
                     }
                     editor.modal = None;
                 }
@@ -923,6 +1001,15 @@ pub(super) fn handle_editor_modal(
             ModalOutcome::Cancel | ModalOutcome::Commit(()) => {
                 editor.modal = None;
                 editor.save_flow = EditorSaveFlow::Idle;
+                // If the popup was raised by a failed OpPicker commit
+                // for the auth form, the form's state was re-stashed
+                // into `pending_auth_form_return` instead of being
+                // re-mounted directly — restore it now so the operator
+                // lands back on the form with the prior credential
+                // unchanged, ready to retry through the source picker.
+                if editor.pending_auth_form_return.is_some() {
+                    super::auth::restore_auth_form_after_op_picker_cancel(editor);
+                }
             }
             ModalOutcome::Continue => {}
         },
@@ -1002,28 +1089,29 @@ pub(super) fn handle_editor_modal(
                 ModalOutcome::Continue => {}
             }
         }
+        Modal::AuthSourcePicker { state: source } => {
+            use crate::console::widgets::source_picker::SourceChoice;
+            match source.handle_key(key) {
+                ModalOutcome::Commit(SourceChoice::Plain) => {
+                    super::auth::apply_plain_source_picker_to_auth_form(editor);
+                }
+                ModalOutcome::Commit(SourceChoice::Op) => {
+                    super::auth::open_op_picker_from_auth_source(editor, op_cache);
+                }
+                ModalOutcome::Cancel => {
+                    super::auth::restore_auth_form_after_op_picker_cancel(editor);
+                }
+                ModalOutcome::Continue => {}
+            }
+        }
         Modal::AuthForm { .. } => {
-            super::auth::handle_auth_form_key(editor, key, op_cache);
+            super::auth::handle_auth_form_key(editor, key, op_available);
         }
         Modal::AuthRolePicker { state: picker } => match picker.handle_key(key) {
             ModalOutcome::Commit(role) => {
-                editor.modal = Some(Modal::AuthAgentPicker {
-                    role: role.key(),
-                    state: crate::console::widgets::agent_choice::AgentChoiceState::new(),
-                });
-            }
-            ModalOutcome::Cancel => {
-                editor.modal = None;
-            }
-            ModalOutcome::Continue => {}
-        },
-        Modal::AuthAgentPicker { role, state } => {
-            let outcome = state.handle_key(key);
-            match outcome {
-                ModalOutcome::Commit(agent) => {
-                    let role = role.clone();
+                if let Some(agent) = editor.auth_selected_agent {
                     let target = crate::console::manager::state::AuthFormTarget::WorkspaceRole {
-                        role,
+                        role: role.key(),
                         agent,
                     };
                     let form = crate::console::widgets::auth_panel::AuthForm::new(agent);
@@ -1033,13 +1121,15 @@ pub(super) fn handle_editor_modal(
                         focus: crate::console::manager::state::AuthFormFocus::Mode,
                         literal_buffer: String::new(),
                     });
-                }
-                ModalOutcome::Cancel => {
+                } else {
                     editor.modal = None;
                 }
-                ModalOutcome::Continue => {}
             }
-        }
+            ModalOutcome::Cancel => {
+                editor.modal = None;
+            }
+            ModalOutcome::Continue => {}
+        },
         Modal::OpPicker { state: picker } => {
             match picker.handle_key(key) {
                 ModalOutcome::Commit(op_ref) => {
@@ -1305,6 +1395,9 @@ pub(super) fn apply_text_input_to_pending(
             set_pending_env_value(editor, scope, key, value);
             editor.pending_env_key = None;
         }
+        TextInputTarget::AuthCredential => {
+            super::auth::apply_plain_text_to_auth_form(editor, value);
+        }
     }
 }
 
@@ -1556,12 +1649,6 @@ fn apply_editor_confirm(
         // site because it consumes `plan` and routes through
         // `EditorSaveFlow::PendingCommit`. No-op here.
         ConfirmTarget::DeleteIsolatedAndSave { .. } => {}
-        ConfirmTarget::ClearAuthRoleOverride { role } => {
-            if let Some(ro) = editor.pending.roles.get_mut(role) {
-                ro.claude = None;
-                ro.codex = None;
-            }
-        }
     }
     Ok(())
 }
@@ -3337,10 +3424,17 @@ plugins = []
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
         editor.secrets_expanded.insert("smith".into());
-        // Rows: WorkspaceKeyRow(0), WorkspaceAddSentinel(1),
-        // SectionSpacer(2), AgentHeader(3), AgentKeyRow(4),
-        // AgentAddSentinel(5). Focus the role key row.
-        editor.active_field = FieldFocus::Row(4);
+        let role_key_row = super::super::super::render::editor::secrets_flat_rows(&editor)
+            .iter()
+            .position(|row| {
+                matches!(
+                    row,
+                    super::super::super::render::editor::SecretsRow::RoleKeyRow { role, key }
+                        if role == "smith" && key == "API_TOKEN"
+                )
+            })
+            .expect("role API_TOKEN row");
+        editor.active_field = FieldFocus::Row(role_key_row);
         state.stage = ManagerStage::Editor(editor);
 
         handle_key(
@@ -3612,5 +3706,88 @@ plugins = []
             !matches!(stored, crate::operator_env::EnvValue::OpRef(_)),
             "text entry must never produce EnvValue::OpRef"
         );
+    }
+}
+
+#[cfg(test)]
+mod auth_cursor_step_tests {
+    //! Spacer-skip tests for the Auth-tab cursor stepping helpers.
+    //! `Spacer` rows are intentionally non-selectable so the cursor
+    //! never lands on a blank line in the rendered list.
+    use super::super::super::render::editor::AuthRow;
+    use super::{step_auth_cursor_down, step_auth_cursor_up};
+    use crate::agent::Agent;
+
+    fn rows() -> Vec<AuthRow> {
+        // Mirrors the focused-mode shape: WorkspaceMode → Spacer →
+        // RoleHeader → Spacer → AddSentinel.
+        vec![
+            AuthRow::WorkspaceMode {
+                agent: Agent::Claude,
+            },
+            AuthRow::Spacer,
+            AuthRow::RoleHeader {
+                role: "smith".into(),
+                expanded: false,
+            },
+            AuthRow::Spacer,
+            AuthRow::AddSentinel { eligible: 1 },
+        ]
+    }
+
+    #[test]
+    fn down_skips_spacer_after_workspace_mode() {
+        // From WorkspaceMode (idx 0) the candidate becomes 1 = Spacer.
+        // Step must walk forward to the RoleHeader at idx 2.
+        let r = rows();
+        assert_eq!(step_auth_cursor_down(&r, 1, r.len() - 1), 2);
+    }
+
+    #[test]
+    fn down_skips_spacer_before_sentinel() {
+        // From RoleHeader (idx 2) candidate becomes 3 = Spacer; step
+        // must reach the AddSentinel at idx 4.
+        let r = rows();
+        assert_eq!(step_auth_cursor_down(&r, 3, r.len() - 1), 4);
+    }
+
+    #[test]
+    fn down_at_max_with_only_spacer_remaining_returns_candidate() {
+        // No non-spacer past the candidate: helper returns the
+        // candidate verbatim (caller already clamped to `max`).
+        let r = vec![
+            AuthRow::WorkspaceMode {
+                agent: Agent::Claude,
+            },
+            AuthRow::Spacer,
+        ];
+        assert_eq!(step_auth_cursor_down(&r, 1, 1), 1);
+    }
+
+    #[test]
+    fn up_skips_spacer_to_workspace_mode() {
+        let r = rows();
+        // candidate=1 = Spacer; step up returns 0 = WorkspaceMode.
+        assert_eq!(step_auth_cursor_up(&r, 1), 0);
+    }
+
+    #[test]
+    fn up_skips_spacer_to_role_header() {
+        let r = rows();
+        // candidate=3 = Spacer; step up returns 2 = RoleHeader.
+        assert_eq!(step_auth_cursor_up(&r, 3), 2);
+    }
+
+    #[test]
+    fn up_at_zero_spacer_clamps_to_zero() {
+        // First row a Spacer (degenerate fixture): step up clamps
+        // to idx 0 rather than wrapping.
+        let r = vec![
+            AuthRow::Spacer,
+            AuthRow::WorkspaceMode {
+                agent: Agent::Claude,
+            },
+        ];
+        assert_eq!(step_auth_cursor_up(&r, 0), 0);
     }
 }

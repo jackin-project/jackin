@@ -52,9 +52,8 @@ fi
 
 cd jackin
 mise trust
-git fetch origin <BRANCH_NAME>
-git checkout <BRANCH_NAME>
-git pull --ff-only origin <BRANCH_NAME>
+git fetch origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
+git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
 ```
 
 #### Static Checks
@@ -78,6 +77,24 @@ cargo run --bin jackin -- console --debug
 ```
 
 If the PR needs a different validation flow, replace the final example commands with the exact commands the operator should run. When those commands invoke `jackin`, include `--debug` as required by "Walking the operator through local validation".
+
+For non-trivial code changes, structure the PR's "Verify locally" section by intent:
+
+- **Checkout** — copy-pasteable commands to fetch and check out the PR.
+- **Static Checks** — only checks that are relevant and expected to be run locally.
+- **Tests** — focused or full test commands that validate the changed behavior.
+- **User Smoke** — manual validation steps when behavior is visible in the CLI/TUI/runtime.
+
+Do not add generic commands that do not materially validate the PR. In particular, do not include `git diff --check` unless the PR is specifically about whitespace, patch hygiene, generated diffs, or another issue that command is meant to catch.
+
+For console/TUI changes that can be manually verified in jackin itself, prefer:
+
+```sh
+cargo run --bin jackin -- console --debug
+```
+
+The `--debug` / `--no-intro` flag interaction is documented in full
+under "Walking the operator through local validation" below.
 
 ### CI must be green before merging
 
@@ -202,6 +219,45 @@ When the operator asks for code review fixes on a PR that has **not yet been mer
 - Check out the PR branch (`gh pr checkout <PR>` or `git checkout <branch>`) before making changes.
 - Commit fixes to that branch and push; the open PR picks up the new commits automatically.
 - Creating a separate PR on top of an unmerged PR fragments review history and forces an extra merge step — avoid it.
+
+### Iterating on operator feedback for an open PR
+
+When the operator gives design or behavior feedback on an open PR, treat it as
+an iteration step unless they explicitly say the PR is ready for final
+verification, merge preparation, or review handoff.
+
+During iteration:
+
+- Make the requested code changes on the PR branch.
+- It is okay to run a narrow, targeted test or command that directly exercises
+  the code just changed, especially when it catches obvious local breakage
+  cheaply.
+- Do **not** run broad/final verification by default during iteration. In
+  particular, do not run `cargo fmt -- --check`, `cargo clippy -- -D warnings`,
+  `cargo nextest run`, or GitHub Actions polling unless the operator explicitly
+  asks for verification/final prep or the PR is moving to merge-readiness.
+- If a small targeted run reveals a formatting or clippy issue, fix the obvious
+  local cause when it is part of the changed code, but do not escalate into the
+  full formatting + clippy + full-suite pipeline unless the operator asks.
+- Do not update the PR body after every iteration unless the operator asks for
+  it or the PR description has become actively misleading for someone reviewing
+  right now.
+- Do not amend, force-push, or wait for GitHub Actions as a reflex after every
+  small feedback pass. If the branch already has a PR open, a normal follow-up
+  commit is acceptable during review unless the operator asked to keep the PR as
+  one amended commit.
+- Summarize what changed and tell the operator what lightweight local check, if
+  any, was run. Then stop so the operator can validate the UI/behavior.
+
+Move to merge-readiness only when the operator gives a clear signal such as
+"this is correct", "prepare it", "ready for review", "run the full checks", or
+"now we can merge". At that point run the full verification suite, reconcile the
+PR body with the final diff, push/update the branch, and check CI.
+
+Why this rule exists: the operator often needs several UI/behavior iterations
+before deciding the shape is right. Running formatting, clippy, the full test
+suite, PR body updates, and CI checks on every intermediate pass wastes time and
+tokens before the operator has validated the design.
 
 ## Walking the operator through local validation (agent-only)
 

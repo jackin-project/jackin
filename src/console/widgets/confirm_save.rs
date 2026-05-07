@@ -72,9 +72,10 @@ impl ConfirmSaveState {
         match key.code {
             KeyCode::Char('s' | 'S') => ModalOutcome::Commit(SaveChoice::Save),
             KeyCode::Char('c' | 'C') | KeyCode::Esc => ModalOutcome::Cancel,
-            // Tab / Right / l-h / Left — only two buttons, so every
-            // "move focus" key just toggles between them.
+            // Tab / BackTab / Right / l-h / Left — only two buttons,
+            // so every "move focus" key just toggles between them.
             KeyCode::Tab
+            | KeyCode::BackTab
             | KeyCode::Right
             | KeyCode::Left
             | KeyCode::Char('l' | 'L' | 'h' | 'H') => {

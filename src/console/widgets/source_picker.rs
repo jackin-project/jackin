@@ -37,6 +37,7 @@ impl SourcePickerState {
             KeyCode::Char('p' | 'P') => ModalOutcome::Commit(SourceChoice::Plain),
             KeyCode::Char('o' | 'O') if self.op_available => ModalOutcome::Commit(SourceChoice::Op),
             KeyCode::Tab
+            | KeyCode::BackTab
             | KeyCode::Right
             | KeyCode::Left
             | KeyCode::Char('l' | 'L' | 'h' | 'H') => {

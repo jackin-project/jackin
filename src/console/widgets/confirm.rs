@@ -61,8 +61,12 @@ impl ConfirmState {
             // Direct shortcuts (case-insensitive).
             KeyCode::Char('y' | 'Y') => ModalOutcome::Commit(true),
             KeyCode::Char('n' | 'N') => ModalOutcome::Commit(false),
-            // Focus-based interaction — Tab/←→/h/l all toggle focus.
-            KeyCode::Tab | KeyCode::Right | KeyCode::Left | KeyCode::Char('l' | 'h') => {
+            // Focus-based interaction — Tab/BackTab/←→/h/l all toggle focus.
+            KeyCode::Tab
+            | KeyCode::BackTab
+            | KeyCode::Right
+            | KeyCode::Left
+            | KeyCode::Char('l' | 'h') => {
                 self.focus = match self.focus {
                     ConfirmFocus::Yes => ConfirmFocus::No,
                     ConfirmFocus::No => ConfirmFocus::Yes,
