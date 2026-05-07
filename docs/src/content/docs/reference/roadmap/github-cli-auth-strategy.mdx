@@ -263,37 +263,205 @@ right host with the right token.
 ## Console UX
 
 This builds on the kind-picker Auth tab introduced in
-[PR #242](https://github.com/jackin-project/jackin/pull/242).
+[PR #242](https://github.com/jackin-project/jackin/pull/242). The
+goal is **strict parity** with the Claude / Codex flow: same
+two-level shape, same edit modal, same keystrokes, same Save
+invariant. GitHub CLI is one more entry in a UI operators already
+know — there are no new screens, no new modes of interaction, no
+new mental model. What changes is small and entirely additive.
 
-The Auth tab today has a two-level shape:
+### Today's shape (Claude / Codex)
 
-1. **Root view** — pick which auth kind to manage. Today: **Claude
-   Code** and **Codex**.
-2. **Detail view** — for the picked kind, edit workspace mode +
-   credential source + per-role overrides.
+The Auth tab is two-level:
 
-This roadmap item adds a third kind to the root picker:
-**GitHub CLI**. Selecting it opens the same detail-view shape:
+1. **Root view** — a vertical list of auth kinds. Today: two rows,
+   `Claude Code` and `Codex`. The selected kind is highlighted
+   with the standard cursor symbol (`▸`). `Enter` enters the
+   detail view for that kind.
+2. **Detail view** — bordered panel titled with the kind name.
+   Rows, top to bottom:
+   - `Workspace mode: <mode>` — current effective mode for that
+     kind in the active workspace, with ` (inherited)` suffix when
+     no explicit workspace-level override exists.
+   - `Workspace source: …` — only when the resolved mode requires
+     a credential (Claude `api_key`/`oauth_token`, Codex
+     `api_key`). Renders the credential source: 1Password
+     breadcrumb, host-env reference, or literal indicator.
+   - Spacer + per-role override blocks. Each block is a
+     `RoleHeader` (collapsed by default); `→`/`←` expands or
+     collapses, revealing `RoleMode` and (if needed) `RoleSource`
+     rows.
+   - `+ Override for a role` sentinel at the bottom — opens the
+     `AuthRolePicker` modal that lists the eligible roles in the
+     workspace whose roster does **not** already carry an
+     override for the selected kind.
 
-- Workspace-level mode: `sync` / `token` / `ignore`.
-- Credential source row, shown only when the resolved mode is
-  `token`. Same `SourcePicker` widget the existing Auth tab uses
-  for Claude/Codex (1Password picker → structured
-  `EnvValue::OpRef`, host env passthrough, literal). The 1Password
-  picker writes the structured inline-table form by default; the
-  deprecated bare `op://...` string form is never produced by the
-  TUI.
-- Per-role overrides list, same expand/collapse behaviour as
-  Claude/Codex.
+`Enter` on `WorkspaceMode` / `WorkspaceSource` / `RoleMode` /
+`RoleSource` opens the **edit modal** (`AuthForm`):
 
-The same disabled-Save invariant the existing Auth-tab forms use
-applies: Save stays inert until `GH_TOKEN` resolves to a non-empty
-value when `token` is selected.
+- Title bar: `Edit auth`.
+- Mode picker row (label width 12 chars). Picks from the kind's
+  supported modes — Claude shows `sync` / `api_key` /
+  `oauth_token` / `ignore`, Codex omits `oauth_token`.
+- Credential block (label width 22 chars), only shown when the
+  picked mode requires one. One row that opens the shared
+  `SourcePicker` widget (1Password picker → structured
+  `EnvValue::OpRef`, host-env passthrough, literal).
+- `Save` / `Cancel` / `Reset` buttons. The **Save invariant**:
+  Save stays disabled (greyed out) until both `mode` is set
+  **and**, when the mode requires a credential, the credential is
+  non-empty. Both fields of an `EnvValue::OpRef` (`op` + `path`)
+  must be non-empty so a partial picker round-trip cannot land a
+  broken reference on disk.
 
-Footer hints surface the resolved mode and where it came from
-(global / workspace / role override). Nothing new for operators
-to learn — GitHub CLI is one more entry in a picker they already
-know.
+Outside the modal, `D` / `d` clears overrides at the row's level:
+on a `RoleHeader` it clears the role's override for the selected
+kind; on a `WorkspaceMode` / `WorkspaceSource` row it clears the
+workspace-level override and lets resolution fall through to the
+global default.
+
+### What changes for the GitHub kind
+
+Pure addition; no existing surface re-shapes. Specifically:
+
+1. **Root view grows by one row.** The kind list becomes
+   `Claude Code` / `Codex` / `GitHub CLI`, in that order. Same
+   row style, same cursor, same `Enter`-to-enter behaviour. No
+   tabs, no nesting, no visual weight beyond what Claude / Codex
+   already carry.
+2. **Detail view structure is identical.** Selecting `GitHub CLI`
+   opens a panel titled `GitHub CLI` with the same row sequence
+   as Claude / Codex: workspace mode → workspace source (when
+   mode is `token`) → spacer → role overrides → `+ Override for a
+   role`.
+3. **Mode picker shows three options:** `sync` / `token` /
+   `ignore`. There is no GitHub equivalent of `oauth_token` and
+   no `api_key` (`token` is the canonical name for `gh` PATs).
+4. **Credential block** appears only when `token` is picked. The
+   single row binds to `GH_TOKEN`. Same `SourcePicker` modal as
+   Claude / Codex — including the **1Password picker writes
+   structured `EnvValue::OpRef`, never the deprecated bare
+   `op://...` string** rule.
+5. **Save invariant unchanged.** Save stays disabled until
+   `mode` is set and, for `token`, until `GH_TOKEN` resolves to a
+   non-empty value (literal or both `op` + `path` populated).
+6. **Role-override picker** filters out roles that already carry
+   a `[workspaces.<ws>.roles.<role>.github]` override — the same
+   "no duplicate override" rule the existing picker applies for
+   `claude` / `codex`.
+7. **`D` / `d` semantics map directly:** clearing a `RoleHeader`
+   clears the role's `[…].github` override; clearing
+   `WorkspaceMode` / `WorkspaceSource` clears
+   `[workspaces.<ws>.github]`.
+8. **Footer hints** surface the resolved mode + provenance
+   (`global` / `workspace` / `role override`) for whichever row
+   is focused — same shape as today.
+
+### Wireframes
+
+Root view, after the change:
+
+```text
+┌──────────────────────────────────────────────┐
+│ Auth                                         │
+│                                              │
+│ ▸ Claude Code                                │
+│   Codex                                      │
+│   GitHub CLI                                 │  ← new
+│                                              │
+│ ↑/↓ select   Enter open   q back             │
+└──────────────────────────────────────────────┘
+```
+
+Detail view for `GitHub CLI` with `token` mode at the workspace
+level and a per-role `ignore` override on `scratch`:
+
+```text
+┌ GitHub CLI ──────────────────────────────────┐
+│                                              │
+│ ▸ Workspace mode:    token                   │
+│   Workspace source:  op  Work/ACME/gh-pat    │
+│                                              │
+│   ▾ scratch                                  │
+│       Mode:           ignore (role override) │
+│                                              │
+│   + Override for a role                      │
+│                                              │
+│ Resolved: token (workspace)   GH_TOKEN: set  │
+│ Enter edit   D clear   →/← expand   q back   │
+└──────────────────────────────────────────────┘
+```
+
+Edit modal for the workspace mode row above:
+
+```text
+┌ Edit auth ─────────────────────────────┐
+│                                        │
+│ Mode:        ( ) sync                  │
+│              (•) token                 │
+│              ( ) ignore                │
+│                                        │
+│ GH_TOKEN:    op  Work/ACME/gh-pat  […] │
+│                                        │
+│              [  Save  ] [Cancel] [Rst] │
+│                                        │
+│ Tab next   Enter act   Esc cancel      │
+└────────────────────────────────────────┘
+```
+
+`Save` is enabled here because `mode` is set **and** `GH_TOKEN`
+resolves to a non-empty `EnvValue::OpRef`. Switching to `sync` or
+`ignore` hides the credential row and keeps Save enabled
+(no credential needed). Switching to `token` while the row is
+empty disables Save until the operator picks a source.
+
+### Where the underlying types need to widen
+
+The detail-view machinery is keyed off the `Agent` enum today
+(`AuthRow::AuthKind { agent: Agent }`,
+`editor.auth_selected_agent: Option<Agent>`,
+`agent.required_env_var(mode)`, `agent.supported_modes()`,
+`pending.roles[*].claude` / `.codex` lookups).
+GitHub is **not** an agent — it has no install block, no launch
+entrypoint, no version probe. Adding `Agent::Github` would force
+fake arms across the runtime layer.
+
+The right move is to introduce an `AuthKind` enum at the
+auth-panel layer (variants `Claude`, `Codex`, `Github`) and
+rename the kind axis: `auth_selected_agent` →
+`auth_selected_kind`, `AuthRow::AuthKind { agent }` →
+`{ kind }`, and so on. `AuthKind::for_agent(Agent) -> AuthKind`
+keeps the runtime → kind mapping explicit. The `Agent` enum
+itself stays as it is.
+
+This is a mechanical rename across the auth panel + manager
+input/render layer, not a UX change.
+
+### Parity table
+
+What the operator sees today vs after this lands:
+
+| Surface | Claude / Codex (today) | GitHub CLI (after) |
+|---|---|---|
+| Root view row | ✓ | ✓ (third row) |
+| Detail view title bar | ` Claude Code ` / ` Codex ` | ` GitHub CLI ` |
+| Workspace mode row | ✓ | ✓ |
+| Workspace source row (when mode needs credential) | `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` / `OPENAI_API_KEY` | `GH_TOKEN` |
+| Per-role overrides (`RoleHeader` / `RoleMode` / `RoleSource`) | ✓ | ✓ |
+| `+ Override for a role` sentinel | ✓ | ✓ |
+| `→` / `←` expand/collapse role | ✓ | ✓ |
+| `Enter` opens edit modal | ✓ | ✓ |
+| `D` / `d` clears at row level | ✓ | ✓ |
+| Edit modal (`AuthForm`) | ✓ | ✓ (same widget) |
+| Mode picker contents | `sync` / `api_key` / `oauth_token` / `ignore` (Claude); `sync` / `api_key` / `ignore` (Codex) | `sync` / `token` / `ignore` |
+| Source picker (`SourcePicker`) | ✓ | ✓ (same widget; structured `EnvValue::OpRef`, never bare `op://...`) |
+| Save invariant | mode set + (no credential needed OR credential non-empty) | identical |
+| Footer hints | resolved mode + provenance | identical |
+| Color theme | `PHOSPHOR_GREEN` / `PHOSPHOR_DIM` / `WHITE` / `DANGER_RED` | identical |
+
+Nothing in the table is "different" for GitHub except the
+specific mode-picker contents and the env-var name. Everything
+else is reused as-is.
 
 ## CLI
 
