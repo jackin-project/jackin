@@ -25,6 +25,17 @@ use crate::operator_env::EnvValue;
 
 // ── Editor stage ────────────────────────────────────────────────────
 
+const ACTION_ACCENT: Color = Color::Rgb(180, 255, 180);
+
+fn action_row_style(selected: bool) -> Style {
+    let style = Style::default().fg(ACTION_ACCENT);
+    if selected {
+        style.add_modifier(Modifier::BOLD)
+    } else {
+        style
+    }
+}
+
 pub fn render_editor(
     frame: &mut Frame,
     state: &EditorState<'_>,
@@ -436,8 +447,6 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         .border_style(Style::default().fg(PHOSPHOR_DARK));
     let FieldFocus::Row(cursor) = state.active_field;
 
-    let white = WHITE;
-
     // Build aligned table rows for all mounts.
     let rows = format_mount_rows(&state.pending.mounts);
     let path_w = mount_path_width(&rows);
@@ -481,17 +490,12 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     let sentinel_idx = state.pending.mounts.len();
     let sentinel_selected = cursor == sentinel_idx;
     let sentinel_prefix = if sentinel_selected { "▸ " } else { "  " };
-    let sentinel_style = if sentinel_selected {
-        Style::default().fg(white).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(white)
-    };
     if !state.pending.mounts.is_empty() {
         lines.push(Line::from(""));
     }
     lines.push(Line::from(Span::styled(
         format!("{sentinel_prefix}+ Add mount"),
-        sentinel_style,
+        action_row_style(sentinel_selected),
     )));
 
     frame.render_widget(Paragraph::new(lines).block(block), area);
@@ -566,17 +570,12 @@ fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, conf
     let sentinel_idx = config.roles.len();
     let sentinel_selected = cursor == sentinel_idx;
     let sentinel_prefix = if sentinel_selected { "▸ " } else { "  " };
-    let sentinel_style = if sentinel_selected {
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(WHITE)
-    };
     if !config.roles.is_empty() {
         lines.push(Line::from(""));
     }
     lines.push(Line::from(Span::styled(
         format!("{sentinel_prefix}+ Add role"),
-        sentinel_style,
+        action_row_style(sentinel_selected),
     )));
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
@@ -797,24 +796,23 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                 ));
             }
             SecretsRow::WorkspaceAddSentinel => {
-                let style = if selected {
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(WHITE)
-                };
                 lines.push(Line::from(Span::styled(
                     format!("{cursor_col}     + Add environment variable"),
-                    style,
+                    action_row_style(selected),
                 )));
             }
             SecretsRow::RoleHeader { role, expanded } => {
                 let arrow = if *expanded { "▼" } else { "▶" };
                 let in_registry = config.roles.contains_key(role);
                 let count = state.pending.roles.get(role).map_or(0, |o| o.env.len());
-                let mut spans = vec![Span::styled(
-                    format!("{cursor_col}     {arrow} Role: {role}  ({count} vars)"),
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                )];
+                let mut spans = vec![
+                    Span::raw(format!("{cursor_col}     ")),
+                    Span::styled(arrow, Style::default().fg(PHOSPHOR_GREEN)),
+                    Span::styled(
+                        format!(" Role: {role}  ({count} vars)"),
+                        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                    ),
+                ];
                 if !in_registry {
                     spans.push(Span::styled(
                         "  (not in registry)",
@@ -845,14 +843,9 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                 ));
             }
             SecretsRow::RoleAddSentinel(role) => {
-                let style = if selected {
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(WHITE)
-                };
                 lines.push(Line::from(Span::styled(
                     format!("{cursor_col}     + Add {role} environment variable"),
-                    style,
+                    action_row_style(selected),
                 )));
             }
             SecretsRow::SectionSpacer => {
@@ -1068,7 +1061,15 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, confi
 
     let items: Vec<ListItem> = rows
         .iter()
-        .map(|r| ListItem::new(render_auth_row(r, &synthesized, &workspace_name)))
+        .enumerate()
+        .map(|(i, r)| {
+            ListItem::new(render_auth_row(
+                i == selected,
+                r,
+                &synthesized,
+                &workspace_name,
+            ))
+        })
         .collect();
     let mut block = Block::default()
         .borders(Borders::ALL)
@@ -1087,6 +1088,7 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, confi
 }
 
 fn render_auth_row(
+    selected: bool,
     row: &AuthRow,
     synthesized: &AppConfig,
     workspace_name: &str,
@@ -1127,12 +1129,11 @@ fn render_auth_row(
             render_auth_source_line("Source", synthesized, workspace_name, "", *agent, 2)
         }
         AuthRow::RoleHeader { role, expanded } => {
-            let glyph = if *expanded { "▾" } else { "▸" };
+            let glyph = if *expanded { "▼" } else { "▶" };
             ratatui::text::Line::from(vec![
-                Span::raw("  "),
+                Span::raw("     "),
                 Span::styled(glyph.to_string(), phosphor),
-                Span::raw(" "),
-                Span::styled(role.clone(), bold_white),
+                Span::styled(format!(" Role: {role}"), bold_white),
             ])
         }
         AuthRow::RoleMode { role, agent } => {
@@ -1150,7 +1151,7 @@ fn render_auth_row(
             let label_style = if *eligible == 0 {
                 dim_green
             } else {
-                Style::default().fg(WHITE)
+                action_row_style(selected)
             };
             let suffix = if *eligible == 0 {
                 "   (all roles overridden)".to_string()
