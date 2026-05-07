@@ -129,14 +129,14 @@ fn build_form_lines(form: &AuthForm, focus: AuthFormFocus) -> Vec<FormLine> {
         Span::styled(mode_text.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
     ])));
 
-    if form.shows_credential_block() {
-        if let Some(env_var) = form.mode.and_then(|mode| form.agent.required_env_var(mode)) {
-            lines.push(FormLine::left(credential_env_line(
-                env_var,
-                &form.credential,
-                matches!(focus, AuthFormFocus::CredentialSource),
-            )));
-        }
+    if form.shows_credential_block()
+        && let Some(env_var) = form.mode.and_then(|mode| form.agent.required_env_var(mode))
+    {
+        lines.push(FormLine::left(credential_env_line(
+            env_var,
+            &form.credential,
+            matches!(focus, AuthFormFocus::CredentialSource),
+        )));
     }
 
     lines.push(FormLine::left(Line::from("")));
