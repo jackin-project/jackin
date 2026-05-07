@@ -36,7 +36,22 @@ Every pull request created by an agent must include a copy-pasteable "Verify loc
 
 Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a separate test directory so the operator can inspect the PR without disturbing their normal working tree. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
 
-Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Tests only when there is a relevant automated test command. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For documentation-only PRs where the meaningful review is reading the file diff, say to review the Files changed tab in GitHub instead of adding commands like `git diff origin/main...HEAD -- <file>`. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. If the PR has no narrower manual path, use the console as the baseline smoke command: `cargo run --bin jackin -- console --debug`. For launch/runtime flows, prefer a command that hits the changed path, such as `cargo run --bin jackin -- load <role> <target> --debug`. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
+Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Tests only when there is a relevant automated test command. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. If the PR has no narrower manual path, use the console as the baseline smoke command: `cargo run --bin jackin -- console --debug`. For launch/runtime flows, prefer a command that hits the changed path, such as `cargo run --bin jackin -- load <role> <target> --debug`. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
+
+#### Documentation-only PRs
+
+Documentation PRs (changes under `docs/**` only — `.mdx` files, `astro.config.ts` sidebar, theme/CSS) must verify by running the docs site **locally** in addition to checkout, not by pointing the operator at the GitHub Files-changed tab.
+
+The Files-changed tab shows raw MDX. It does not show how Starlight renders the page, whether `<RepoFile />` resolves, whether the sidebar entry lands in the right group, whether internal `[link](/path/)` references resolve, whether tables and Asides render correctly, or whether the page is even reachable through navigation. A docs PR that "looks right in the diff" can render visibly broken on the site.
+
+Required pattern for docs-only PRs:
+
+1. **Checkout block** — same as any other PR.
+2. **Run the docs site locally** — `cd docs && bun install --frozen-lockfile && bun run dev`. Astro serves at `http://localhost:4321/`.
+3. **Direct links to every changed page** — for each affected MDX file, include a localhost URL the operator can click straight into. Map `docs/src/content/docs/<path>.mdx` to `http://localhost:4321/<path>/`. For new pages, also tell the operator which sidebar group the entry should appear under, so they can confirm the navigation lands in the right place.
+4. **Sidebar audit** (when `astro.config.ts` or any roadmap MDX changed) — the diff command from `docs/AGENTS.md` → "Roadmap sidebar discipline".
+
+A `.mdx`-only PR that omits the local-render step is incomplete. The Files-changed tab is the operator's last-resort fallback, not the primary review surface.
 
 Template:
 
