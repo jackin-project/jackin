@@ -162,12 +162,8 @@ fn credential_env_line(env_var: &str, cred: &CredentialInput, selected: bool) ->
     match cred {
         CredentialInput::None => {
             spans.push(Span::styled(
-                format!("{:<value_width$}", "required"),
+                "required".to_string(),
                 Style::default().fg(DANGER_RED).add_modifier(Modifier::BOLD),
-            ));
-            spans.push(Span::styled(
-                "Enter set".to_string(),
-                Style::default().fg(PHOSPHOR_DIM),
             ));
         }
         CredentialInput::Literal(s) => {
