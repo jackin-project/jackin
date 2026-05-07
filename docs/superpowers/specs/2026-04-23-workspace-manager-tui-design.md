@@ -49,7 +49,7 @@ The launcher gains a third stage, `LaunchStage::Manager`, reached via `m` from t
   - Mounts are added by pressing `a`, which opens a **file browser** rooted at `$HOME`. After picking a host folder, a follow-up modal collects `dst` (pre-filled with the same absolute path as host `src`) and `readonly` (single checkbox, off by default).
   - Agents tab: `Space` toggles `allowed`, `*` sets `default_role`. Checkbox-style UI.
   - Edits stage in a pending `WorkspaceConfig`; dirty markers (`● unsaved`) appear on changed rows. The footer save prompt shows the count of pending changes (`s save (3 changes)`).
-  - `s` persists through `ConfigEditor::edit_workspace` + `editor.save()?`. On success, the editor redraws with a `✓ saved · N changes written` banner; dirty markers clear.
+  - `s` persists through `ConfigEditor::edit_workspace` + `editor.save()?`. On success, dirty markers clear without showing a separate saved-status banner.
   - `Esc` with pending changes opens a **Y/N/C confirm modal**: Discard / Save+leave / Cancel.
 - **Act 3 — create new.** From the manager list, `Enter` on `[+ New workspace]` (or pressing `n`) starts the **mounts-first create wizard**:
   1. File browser for the first mount's host source.
