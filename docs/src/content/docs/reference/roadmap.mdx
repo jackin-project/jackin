@@ -3,6 +3,7 @@ title: Roadmap
 description: What's done and what's coming next
 ---
 import { Aside } from '@astrojs/starlight/components'
+import RepoFile from '../../../components/RepoFile.astro'
 
 
 ## Current status
@@ -21,7 +22,7 @@ jackin' is a functional proof of concept with Claude Code as its first supported
 - State persistence across sessions
 - Agent identity (display names)
 - UID/GID host user mapping
-- GitHub CLI authentication passthrough
+- GitHub CLI authentication state persists across container restarts (forwarding host login on launch is tracked separately under [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/))
 - Homebrew installation
 - Namespaced roles (e.g., `chainargos/frontend-engineer`)
 - Last-agent memory per workspace
@@ -32,15 +33,24 @@ jackin' is a functional proof of concept with Claude Code as its first supported
 - [`JACKIN_DIND_HOSTNAME` environment variable](/reference/roadmap/dind-hostname-env-var/) for agents to discover the DinD sidecar hostname
 - [Agent source trust model](/reference/roadmap/agent-source-trust/) (trust-on-first-use verification for third-party role repos)
 - [DinD TLS authentication](/reference/roadmap/dind-tls/) with auto-generated certificates
+- [`JACKIN_DEBUG` environment variable](/reference/roadmap/jackin-debug-env-var/) — verbose tracing for shell commands and jackin internals
+- [MSRV toolchain pin](/reference/roadmap/msrv-toolchain/) — `rust-toolchain.toml` enforced in CI
+- [Worktree cleanup on container removal](/reference/roadmap/worktree-cleanup-assessment/) — orphaned host-side worktrees no longer accumulate
+- [Per-mount isolation for parallel agents](/reference/roadmap/per-mount-isolation/) — `shared | worktree | clone` modes implemented in V1
+
+## Partially implemented
+
+- [1Password integration](/reference/roadmap/onepassword-integration/) — workspace-managed `op://` env references shipped; file-mount generation (option 4) still deferred
+- [Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/) — Codex foundation slice shipped; Amp and full feature parity still in flight
 
 ## Planned
 
 ### Agent runtimes
 
 <Aside type="note">
-The current implementation is Claude-specific end-to-end (manifest schema, derived-image build, runtime entrypoint, persisted state, auth handling, and version probing all reference Claude Code directly). The linked roadmap item below tracks the concrete foundation work needed before Codex and Amp can be treated as first-class runtimes.
+The Codex foundation slice is in (see Partially implemented above). The remaining work to reach `claude` / `codex` / `amp` parity — runtime-specific auth, config, state, entrypoint behavior, and Amp itself — continues under the same roadmap item.
 </Aside>
-- **[Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/)** — introduce a small built-in runtime abstraction so one role can launch under `claude`, `codex`, or `amp`, with runtime-specific auth, config, state, and entrypoint behavior. Phase 1 focuses on secure local usability, not full Claude-feature parity.
+- **[Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/)** — finish the runtime abstraction so one role can launch under `claude`, `codex`, or `amp` interchangeably. Phase 1 focuses on secure local usability, not full Claude-feature parity.
 
 ### Platform expansion
 
@@ -50,23 +60,31 @@ The current implementation is Claude-specific end-to-end (manifest schema, deriv
 
 - **Network policy controls** — outbound domain filtering per role, similar to Docker Sandboxes' network policies. See [devcontainer parity](/reference/roadmap/devcontainer-parity/) for a comparison with the upstream `anthropics/claude-code` devcontainer's `iptables`/`ipset` egress-allowlist approach.
 - **Credential proxy** — proxy-based credential injection to avoid storing tokens inside containers
-- **[Agent version pinning](/reference/roadmap/reproducibility-pinning/)** — pin role repos to tagged versions for reproducible builds, with explicit `--update` to advance (design in progress)
-- **[Alternative isolation tiers](/reference/roadmap/selectable-sandbox-backends/)** — explore stronger backends beyond plain container isolation for users who need them, including [rootless DinD](/reference/roadmap/rootless-dind/) as a lighter-weight option
+- **[Agent version pinning](/reference/roadmap/reproducibility-pinning/)** — pin role repos to tagged versions for reproducible builds, with explicit `--update` to advance (status: needs design — brainstorming required before implementation)
+- **[GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/)** — extend the layered `auth_forward` model from agent runtimes to the GitHub CLI, so each (workspace × role) can use either the host login or a least-privilege token (e.g. a fine-grained PAT) instead of one broad `gh` identity for everything
+- **[Reliable Claude authentication strategy](/reference/roadmap/claude-auth-strategy/)** — move beyond copied session auth toward clearer, more durable modes for long-lived and concurrent agent runtimes (status: deferred — needs design work)
+- **[Alternative isolation tiers](/reference/roadmap/selectable-sandbox-backends/)** — explore stronger backends beyond plain container isolation for users who need them, including [rootless DinD](/reference/roadmap/rootless-dind/) as a lighter-weight option (status: deferred — requires a dedicated design pass)
+- **[Devcontainer parity](/reference/roadmap/devcontainer-parity/)** — comparison with the upstream `anthropics/claude-code` devcontainer setup; informs network policy + reproducibility decisions (status: proposed — research captured, no implementation committed)
 
 ### Infrastructure improvements
 
-- **[Construct user creation optimization](/reference/roadmap/construct-user-creation/)** — move user creation to the derived layer to eliminate UID/GID remapping
-- **[Docker API migration](/reference/roadmap/bollard-migration/)** — incremental migration from CLI string-matching to the Bollard typed API client for more robust error handling
-- **[1Password integration](/reference/roadmap/onepassword-integration/)** — inject secrets from 1Password vaults without exposing them as files in the container
-- **[Reliable Claude authentication strategy](/reference/roadmap/claude-auth-strategy/)** — move beyond copied session auth toward clearer, more durable modes for long-lived and concurrent agent runtimes
-
-### Workflow improvements
-
-- **[Per-mount isolation for parallel agents](/reference/roadmap/per-mount-isolation/)** — declarative `shared | worktree | clone` mode per mount so parallel agents stop sharing one working tree
+- **[Docker API migration](/reference/roadmap/bollard-migration/)** — incremental migration from CLI string-matching to the Bollard typed API client for more robust error handling (status: deferred — incremental migration is the pragmatic path)
+- **[Construct user creation optimization](/reference/roadmap/construct-user-creation/)** — move user creation to the derived layer to eliminate UID/GID remapping (status: deferred — needs design work)
 
 ### Operator surface and fleet operations
 
-- **[Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)** — phased program of 18 leaf items closing the gap between jackin's primitives and the operator surface that adjacent tools (notably [`multicode`](https://github.com/yawkat/multicode)) ship today. Covers live agent observability, per-instance persistent storage, declarative resource limits, autonomous task queue, remote operation, and skill mounts — the missing pieces that prevent jackin' from being the canonical orchestrator teams compose on instead of building their own.
+- **[Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)** — phased program of 18 leaf items closing the gap between jackin's primitives and the operator surface that adjacent tools (notably [`multicode`](https://github.com/yawkat/multicode)) ship today. Covers live agent observability, per-instance persistent storage, declarative resource limits, autonomous task queue, remote operation, and skill mounts — the missing pieces that prevent jackin' from being the canonical orchestrator teams compose on instead of building their own. The full list of 18 leaves lives in the program doc and the sidebar under **Reference → Roadmap → Active programs → Universal Orchestrator Program**.
+
+### Codebase health
+
+- **[Codebase readability program](/reference/roadmap/codebase-readability/)** — multi-phase internal-quality work covering documentation/setup, behavioral specs, module-contract refactors, and test coverage. The full leaf list lives in the program doc and in the sidebar under **Reference → Roadmap → Codebase health**.
+- **[Open review findings catalog](/reference/roadmap/open-review-findings/)** — living backlog of review findings with accepted-exception annotations. Code review and automated scanning consult this catalog (see <RepoFile path="AGENTS.md" /> → "Code review & automated scanning").
+
+### Documentation infrastructure
+
+- **[Greenfield workspace pattern](/reference/roadmap/greenfield-workspace/)** — workspace-onboarding pattern for empty projects (status: deferred to Phase 3 — trigger not yet met, but architecture is ready)
+- **[Markdown linting for docs](/reference/roadmap/docs-markdown-linting/)** — uniform Markdown lint pipeline for the docs site (status: proposed — design captured, no implementation committed)
+- **[Rustdoc → Starlight integration](/reference/roadmap/rustdoc-json-starlight/)** — surface rustdoc JSON inside the Starlight docs site (status: deferred — Phase 3)
 
 <Aside type="tip">
 Detailed design documents for individual TODO items are linked from the sidebar under **Roadmap → Open items** and **Roadmap → Resolved**. Each page is a self-contained proposal with problem statement, options, and related files.

@@ -109,6 +109,7 @@ Docs rot silently. Every PR must include a one-pass verification that structure-
 - [ ] If the PR resolves or advances an item under `docs/src/content/docs/reference/roadmap/`, update that item's `Status` field (`Open | Deferred | Resolved`) and `Related Files` section in the same PR.
 - [ ] If the PR references `src/` paths that have since moved (e.g., a roadmap doc mentions `src/runtime.rs` which is now `src/runtime/`), fix those path references.
 - [ ] If the PR adds, renames, deletes, or moves a roadmap MDX file between status sections, update [`docs/astro.config.ts`](docs/astro.config.ts) so `Reference → Roadmap` (Open / Resolved / Codebase health) matches the directory. Run the audit command in `docs/AGENTS.md` → "Content Notes" → "Roadmap sidebar discipline" to confirm the diff is empty.
+- [ ] If the PR adds a new roadmap item, or changes any item's `**Status**` (e.g. Open → Resolved, Open → Deferred, Open → Partially implemented), update [`docs/src/content/docs/reference/roadmap.mdx`](docs/src/content/docs/reference/roadmap.mdx) so the item lands in the correct section (Completed / Partially implemented / Planned with the right `(status: …)` suffix). Run the overview audit command in `docs/AGENTS.md` → "Content Notes" → "Roadmap overview discipline" to confirm no items are missing.
 
 ### How to verify
 

@@ -153,6 +153,47 @@ bun install --frozen-lockfile
   ```
 
   The diff must be empty.
+- **Roadmap overview discipline.** `src/content/docs/reference/roadmap.mdx`
+  is the entry point operators land on when they want a single
+  picture of *what shipped, what is partial, what is planned, what
+  is deferred, and what is on hold*. The sidebar lists every item
+  alphabetically/by phase; the overview is what tells the reader
+  the **status story**. The two surfaces have different jobs and
+  must be maintained together, not folded into one.
+
+  Whenever you add, rename, delete, or change the `**Status**`
+  field of a roadmap item, also update `roadmap.mdx` so the item
+  lands in the section that matches its new status:
+
+  | `**Status**` value | Section in `roadmap.mdx` |
+  |---|---|
+  | `Resolved` / `Implemented in V1` | **Completed** |
+  | `Partially implemented` | **Partially implemented** |
+  | `Open` (active design / Phase work) | **Planned** (under the right subsection) |
+  | `Deferred` / `Proposed` / `Needs design` | **Planned** with a `(status: …)` suffix on the bullet |
+
+  An item that exists in `roadmap/` but is not reachable from
+  `roadmap.mdx` is half-hidden: an operator who only reads the
+  overview thinks the work does not exist, and an operator who
+  only browses the sidebar sees the title without status context.
+  Both must agree.
+
+  To audit which roadmap items are missing from the overview:
+
+  ```sh
+  ls docs/src/content/docs/reference/roadmap/*.mdx \
+    | xargs -n1 basename -s .mdx | sort > /tmp/roadmap-files
+  grep -oE 'reference/roadmap/[a-z0-9-]+' docs/src/content/docs/reference/roadmap.mdx \
+    | sed 's|reference/roadmap/||' | sort -u > /tmp/roadmap-overview
+  comm -23 /tmp/roadmap-files /tmp/roadmap-overview
+  ```
+
+  The output lists items present in the directory but missing from
+  the overview. It must be empty *unless* the missing items are
+  intentionally umbrella-covered by a parent program entry (e.g.
+  Universal Orchestrator Program leaves, Codebase readability
+  program leaves) — in which case the program entry itself must
+  appear in the overview and explicitly say it covers them.
 - Use Starlight components for callouts (`<Aside type="note|tip|caution">`),
   steps (`<Steps>` around an `<ol>`), and tabs (`<Tabs><TabItem>`). Import from
   `@astrojs/starlight/components`.
