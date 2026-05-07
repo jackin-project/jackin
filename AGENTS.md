@@ -67,9 +67,11 @@ fi
 
 cd jackin
 mise trust
-git fetch origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
+git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
 git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
 ```
+
+The `-f` (`--force`) on `git fetch` is required, not optional. Agent-authored PR branches are routinely force-pushed during iteration (review-fix amend, rebase onto fresh `main`, body-only fix-ups). Without `-f`, every force-push breaks the operator's verify recipe with `! [rejected] <branch> -> origin/<branch> (non-fast-forward)`, and the local `refs/remotes/origin/<branch>` stays pinned to the pre-force-push tip. The `git checkout -B` rewrites the local branch unconditionally, but only against whatever the remote-tracking ref points at — so the fetch must update that ref through force-pushes to be useful. Equivalent recipe: `git fetch origin '+<BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>'`. Prefer the `-f` form for readability.
 
 #### Static Checks
 
