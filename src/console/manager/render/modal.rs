@@ -66,11 +66,10 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
         Modal::SourcePicker { .. } | Modal::AuthSourcePicker { .. } | Modal::ScopePicker { .. } => {
             (50, 7)
         }
-        // 11 = 2 borders + 9 inner rows. Matches the credential-bearing
-        // form layout (mode + blank + cred row + blank + actions + blank
-        // + hint + 2 padding blanks). Modes that hide the credential
-        // row leave the bottom rows blank, which is fine.
-        Modal::AuthForm { .. } => (80, 11),
+        // Hug the content: hide the credential block when the mode
+        // doesn't need one so the dialog doesn't leave dead rows
+        // below the hint line.
+        Modal::AuthForm { state, .. } => (80, auth_panel::required_height(state.as_ref())),
     };
     centered_rect_fixed(outer, pct_w, height_rows)
 }

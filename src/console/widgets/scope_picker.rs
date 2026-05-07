@@ -33,6 +33,7 @@ impl ScopePickerState {
         match key.code {
             KeyCode::Esc => ModalOutcome::Cancel,
             KeyCode::Tab
+            | KeyCode::BackTab
             | KeyCode::Right
             | KeyCode::Left
             | KeyCode::Char('l' | 'L' | 'h' | 'H') => {

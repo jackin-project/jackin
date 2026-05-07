@@ -230,9 +230,8 @@ pub(super) fn handle_auth_form_key(
 /// Keystroke router for the `CredentialSource` row.
 ///
 /// - `Enter` → open the shared source picker (literal vs. 1Password).
-/// - `Down/j` → focus `Save`.
-/// - `Up/k` → focus `Mode`.
-/// - Anything else → no-op. Tab is reserved for row-level navigation.
+/// - `Down/j`/`Tab` → focus `Save` (forward through the cycle).
+/// - `Up/k`/`BackTab` → focus `Mode` (backward through the cycle).
 fn handle_credential_source_key(
     editor: &mut EditorState<'_>,
     key: KeyEvent,
@@ -244,11 +243,11 @@ fn handle_credential_source_key(
 
     match key.code {
         KeyCode::Enter => open_auth_source_picker_from_form(editor, op_available),
-        KeyCode::Down | KeyCode::Char('j') => {
+        KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
             *focus = AuthFormFocus::Save;
             false
         }
-        KeyCode::Up | KeyCode::Char('k') => {
+        KeyCode::Up | KeyCode::Char('k') | KeyCode::BackTab => {
             *focus = AuthFormFocus::Mode;
             false
         }
@@ -501,6 +500,10 @@ fn handle_mode_key(focus: &mut AuthFormFocus, form: &mut AuthForm, key: KeyEvent
     match key.code {
         KeyCode::Char(' ') => cycle_mode(form),
         KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => *focus = next_focus_after_mode(form),
+        // BackTab wraps backward through the cycle to Reset (the last
+        // focusable control). Forward Tab from Reset wraps to Mode in
+        // `handle_reset_key`.
+        KeyCode::BackTab => *focus = AuthFormFocus::Reset,
         _ => {}
     }
 }
@@ -520,7 +523,9 @@ fn handle_save_key(editor: &mut EditorState<'_>, key: KeyEvent) -> bool {
             *focus = AuthFormFocus::Cancel;
             false
         }
-        KeyCode::Up => {
+        // BackTab walks backward through the cycle to the credential
+        // row (when shown) or Mode (otherwise); Up mirrors that.
+        KeyCode::Up | KeyCode::BackTab => {
             *focus = if state.shows_credential_block() {
                 AuthFormFocus::CredentialSource
             } else {
@@ -548,7 +553,7 @@ fn handle_cancel_key(editor: &mut EditorState<'_>, key: KeyEvent) -> bool {
         return false;
     };
     match key.code {
-        KeyCode::Left => {
+        KeyCode::Left | KeyCode::BackTab => {
             *focus = AuthFormFocus::Save;
             false
         }
@@ -569,8 +574,13 @@ fn handle_reset_key(editor: &mut EditorState<'_>, key: KeyEvent) -> bool {
         return false;
     };
     match key.code {
-        KeyCode::Left => {
+        KeyCode::Left | KeyCode::BackTab => {
             *focus = AuthFormFocus::Cancel;
+            false
+        }
+        // Tab from the last focusable control wraps to Mode (first).
+        KeyCode::Right | KeyCode::Tab => {
+            *focus = AuthFormFocus::Mode;
             false
         }
         KeyCode::Enter => {
@@ -879,6 +889,48 @@ mod tests {
             *focus,
             AuthFormFocus::CredentialSource,
             "Tab on mode must move to the credential row"
+        );
+    }
+
+    /// Tab from the last focusable control wraps back to the first.
+    /// Mirrors the convention used by every other modal in the TUI.
+    #[test]
+    fn auth_form_tab_wraps_around_at_reset() {
+        let (cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        open_auth_form_modal(editor, &cfg);
+        // Walk to Reset (last focusable):
+        // Mode → Tab → Save → Tab → Cancel → Tab → Reset.
+        drive_key(editor, key(KeyCode::Tab));
+        drive_key(editor, key(KeyCode::Tab));
+        drive_key(editor, key(KeyCode::Tab));
+        let Some(Modal::AuthForm { focus, .. }) = &editor.modal else {
+            panic!("auth form must still be open")
+        };
+        assert_eq!(*focus, AuthFormFocus::Reset);
+
+        // Tab from Reset wraps to Mode.
+        drive_key(editor, key(KeyCode::Tab));
+        let Some(Modal::AuthForm { focus, .. }) = &editor.modal else {
+            panic!("auth form must still be open")
+        };
+        assert_eq!(
+            *focus,
+            AuthFormFocus::Mode,
+            "Tab on Reset must wrap to Mode"
+        );
+
+        // BackTab from Mode wraps to Reset (last).
+        drive_key(editor, key(KeyCode::BackTab));
+        let Some(Modal::AuthForm { focus, .. }) = &editor.modal else {
+            panic!("auth form must still be open")
+        };
+        assert_eq!(
+            *focus,
+            AuthFormFocus::Reset,
+            "BackTab on Mode must wrap to Reset"
         );
     }
 

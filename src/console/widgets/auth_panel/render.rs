@@ -96,6 +96,20 @@ impl FormLine {
     }
 }
 
+/// Total rendered rows the auth-edit modal needs.
+///
+/// Inner content + 2 borders. Used by `render::modal` to size the
+/// modal so its vertical layout hugs the content rather than leaving
+/// dead space below the hint line.
+#[must_use]
+pub const fn required_height(form: &AuthForm) -> u16 {
+    // Layout (without credential block):
+    //   blank, Mode, blank, buttons, blank, hint = 6 inner rows
+    // With credential block, +2 (blank + cred row) = 8 inner rows.
+    let inner: u16 = if form.shows_credential_block() { 8 } else { 6 };
+    inner + 2
+}
+
 fn build_form_lines(form: &AuthForm, focus: AuthFormFocus) -> Vec<FormLine> {
     let mut lines: Vec<FormLine> = Vec::new();
 
