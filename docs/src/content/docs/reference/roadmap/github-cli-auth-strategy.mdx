@@ -195,7 +195,7 @@ auth_forward = "ignore"
 ```
 
 <Aside type="caution">
-**Never use the bare-string `op://...` form for env values.** It has been deprecated since 2026-04-27 (see [`DEPRECATED.md`](https://github.com/jackin-project/jackin/blob/main/DEPRECATED.md) → "Bare `op://...` strings as env values"). Bare strings flow through as literals — `op read` is **not** invoked, so the container receives the unresolved URI rather than the secret. Always use the structured inline-table form `{ op = "op://uuid/uuid/uuid", path = "Vault/Item/Field" }` shown above. The `op` field stores the UUID-form `op://` URI; `path` holds the human-readable Vault/Item/Field snapshot at pin time. Operator-facing entry points are `jackin workspace env set <NAME> "op://..."` (the CLI auto-resolves to the pinned UUID form) and the TUI 1Password picker.
+**Never use the bare-string `op://...` form for env values.** It has been deprecated since 2026-04-27 (see <RepoFile path="DEPRECATED.md" /> → "Bare `op://...` strings as env values"). Bare strings flow through as literals — `op read` is **not** invoked, so the container receives the unresolved URI rather than the secret. Always use the structured inline-table form `{ op = "op://uuid/uuid/uuid", path = "Vault/Item/Field" }` shown above. The `op` field stores the UUID-form `op://` URI; `path` holds the human-readable Vault/Item/Field snapshot at pin time. Operator-facing entry points are `jackin workspace env set <NAME> "op://..."` (the CLI auto-resolves to the pinned UUID form) and the TUI 1Password picker.
 </Aside>
 
 ### Walkthrough — what wins?
