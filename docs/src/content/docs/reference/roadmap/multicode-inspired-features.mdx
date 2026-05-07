@@ -64,7 +64,7 @@ program.
 | Remote orchestration | Yes — `multicode-remote` SSH bridge + rsync | *Gap — see [jackin-remote](/reference/roadmap/jackin-remote/)* |
 | Workspace skills mount | Yes — `add-skills-from` mounts to `~/.config/<provider>/skills/` | *Gap — see [Workspace skills mount](/reference/roadmap/workspace-skills-mount/)* |
 | Credential source plurality | Three backends — `env`, `command`, keychain | Partial — `op://` and `${env.VAR}` shipped; *see [Credential source pattern](/reference/roadmap/credential-source-pattern/)* |
-| GitHub CLI auth passthrough | Yes (read-only mount) | Have |
+| GitHub CLI auth passthrough | Yes (read-only mount) | Partial — auth state persists across container restarts via the bind-mounted role-state `.config/gh`, but no host-to-container forwarding today; first launch needs in-container `gh auth login`. Layered host-forwarding + scoped tokens tracked under [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/) |
 | Operator console / TUI | Yes — ratatui, full-time | Have — `jackin console` (less feature-rich than CLI on purpose) |
 | Role repo contract | Implicit via `add-skills-from` | Have — `jackin.role.toml` + `Dockerfile` |
 | Sensitive mount warnings | No | Have |
