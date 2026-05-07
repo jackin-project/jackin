@@ -87,7 +87,7 @@ Before invoking the merge command:
 
 1. **Check CI status**: run `gh pr checks <PR> --repo <owner/repo>` and confirm every required check shows `pass`. A check in `pending` or `fail` state means do not merge — wait or fix first.
 2. **Do not force-merge to bypass failures**: do not use `--admin` or other bypass flags to override failing checks unless the operator explicitly names the specific failing check and states it is safe to bypass for an articulated reason.
-3. **Always use `gh` (GitHub CLI) for all GitHub interactions**: PR creation, review, status checks, and merging must go through `gh`, not raw `git push` to protected branches or direct API calls. This keeps the audit trail consistent and ensures branch-protection rules are respected.
+3. **Always use `gh` (GitHub CLI) for all GitHub interactions**: PR creation, review, status checks, and merging must go through `gh`, not GitHub connectors, raw `git push` to protected branches, or direct API calls. This keeps the audit trail consistent and ensures branch-protection rules are respected.
 
 If CI is red when the operator says "merge it", respond: "CI is failing on `<check name>` — I won't merge until it's green. Fix the failure and then I'll merge." If the operator insists on merging anyway, ask them to explicitly acknowledge the specific failing check.
 
@@ -110,13 +110,26 @@ Why this rule exists: the operator relies on PR titles and bodies as the long-te
 
 When an agent merges a pull request, the resulting squash commit must preserve the GitHub PR reference and enough attribution to make the shipped history auditable.
 
-- Always use squash merge unless the human operator explicitly requests a different merge method for that specific PR.
+- Always use squash merge. Agents must not use merge commits or rebase merges for jackin pull requests.
+- Use `gh pr merge <PR> --squash --body-file <file>` for the merge operation; never use a GitHub connector or direct API call to merge.
 - The squash commit title must be the final PR title with the PR number suffix: `type(scope): summary (#PR_NUMBER)`.
 - Prefer GitHub's default squash title when it already matches that format.
 - If overriding the commit title, manually append `(#PR_NUMBER)`.
-- For Codex/GitHub connector merges: do not pass a custom `commit_title` unless necessary; if one is passed, it must include `(#PR_NUMBER)`.
-- The squash commit body must retain the PR details and a direct link to the original pull request. At minimum, include `Pull request: https://github.com/<owner>/<repo>/pull/<PR_NUMBER>` before trailers if GitHub's generated body does not already include the PR URL.
-- The squash commit trailers must include the operator's `Signed-off-by` trailer when present/required and one `Co-authored-by` trailer for each AI agent that materially contributed to the PR. Include multiple agent trailers when multiple agents contributed.
+- For Codex `gh` merges: do not pass a custom title unless necessary; if one is passed, it must include `(#PR_NUMBER)`.
+- Generate the squash commit body at merge time in a temporary file. Do not pollute the visible PR description with commit-only trailer footers just to influence GitHub's default squash message.
+- The generated squash commit body must summarize what actually shipped in clear prose. Use the PR title/body, diff, and commit messages as source material, but do not paste the full PR body, local verification instructions, checklists, or raw commit list into the final commit.
+- The generated body can be one paragraph for small PRs or a few concise paragraphs for larger PRs. It should be detailed enough to explain the change when reading `git log`, but free of process noise.
+- Extract trailers from the PR commits with `gh pr view <PR> --json commits` and carry them into the generated squash body. Include the operator's `Signed-off-by` trailer when present/required and one `Co-authored-by` trailer for each AI agent that materially contributed to the PR. Include multiple agent trailers when multiple agents contributed.
+- Keep trailers at the very end of the generated squash body so Git parses them as trailers. De-duplicate repeated trailers from multi-commit PRs.
+
+Good squash body:
+
+```text
+Prefer real branch names for same-repo PR verification, omit placeholder verification sections, and require meaningful local jackin --debug smoke commands for CLI/runtime behavior changes.
+
+Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
+Co-authored-by: Codex <codex@openai.com>
+```
 
 Good squash titles:
 
