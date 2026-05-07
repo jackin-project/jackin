@@ -165,6 +165,7 @@ const fn modal_debug_name(modal: &crate::console::manager::state::Modal<'_>) -> 
         Modal::RolePicker { .. } => "RolePicker",
         Modal::RoleOverridePicker { .. } => "RoleOverridePicker",
         Modal::SourcePicker { .. } => "SourcePicker",
+        Modal::AuthSourcePicker { .. } => "AuthSourcePicker",
         Modal::ScopePicker { .. } => "ScopePicker",
         Modal::AuthForm { .. } => "AuthForm",
         Modal::AuthRolePicker { .. } => "AuthRolePicker",

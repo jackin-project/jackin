@@ -133,9 +133,9 @@ pub struct EditorState<'a> {
     /// (wrapped as `EnvValue::OpRef`) until the operator names the key
     /// and the `EnvKey` modal commits both fields at once.
     pub pending_picker_value: Option<crate::operator_env::EnvValue>,
-    /// Stash for the auth-form → `OpPicker` → auth-form round trip.
-    /// Set when the operator presses Enter at `AuthFormFocus::OpRefValue`,
-    /// and consumed when `OpPicker` commits or cancels: on commit we
+    /// Stash for the auth-form → source picker / `OpPicker` → auth-form
+    /// round trip. Set when the operator presses Enter on the credential
+    /// row, and consumed when the picker commits or cancels: on commit we
     /// reconstruct the `Modal::AuthForm` with the picked `OpRef`
     /// applied; on cancel we reconstruct it pristine. Threading the
     /// auth-form context through this field (rather than via a
@@ -304,6 +304,9 @@ pub enum Modal<'a> {
     SourcePicker {
         state: SourcePickerState,
     },
+    AuthSourcePicker {
+        state: SourcePickerState,
+    },
     ScopePicker {
         state: ScopePickerState,
     },
@@ -326,15 +329,15 @@ pub enum Modal<'a> {
 /// Where in the auth-edit form the cursor currently sits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthFormFocus {
-    /// Mode picker line — Space/Tab cycles, Enter commits selection.
+    /// Mode picker line — Space cycles, Enter commits selection.
     Mode,
-    /// Credential source radio (Literal / 1Password) — Space toggles.
+    /// Required credential row — Enter opens the shared source picker.
     CredentialSource,
     /// Literal value text input — operator types into `literal_buffer`.
     LiteralValue,
     /// 1Password value display — Enter opens the `OpPicker`.
     OpRefValue,
-    /// `[ Save ]` action button.
+    /// Save action button.
     Save,
     /// `[ Cancel ]` action button.
     Cancel,
@@ -368,6 +371,7 @@ pub enum TextInputTarget {
     Role,
     EnvKey { scope: SecretsScopeTag },
     EnvValue { scope: SecretsScopeTag, key: String },
+    AuthCredential,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

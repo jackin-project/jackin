@@ -2718,16 +2718,28 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         cwd,
         key(KeyCode::Char(' ')),
     )?;
-    // Enter advances to credential block (CredentialSource).
+    // Tab advances to credential row; Enter opens the source picker;
+    // Enter picks the default Plain text source.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
-    // Enter again moves into LiteralValue (default credential is Literal).
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::AuthSourcePicker { .. })),
+        "credential row Enter must open AuthSourcePicker; got {:?}",
+        editor(&state).modal
+    );
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::TextInput { .. })),
+        "Plain source must open credential text input; got {:?}",
+        editor(&state).modal
+    );
     // Type "sk-ant-test".
     for ch in "sk-ant-test".chars() {
         handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
     }
-    // Tab to Save, Enter to commit the form.
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
+    // Enter confirms text input, returning to the auth form Save button.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    // Enter commits the form.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(
         editor(&state).modal.is_none(),
@@ -2797,6 +2809,68 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         toml.contains(r#"ANTHROPIC_API_KEY = "sk-ant-test""#),
         "raw TOML must carry the credential env var; got:\n{toml}"
     );
+    Ok(())
+}
+
+#[test]
+fn auth_credential_source_enter_opens_source_picker() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let ws = config
+        .workspaces
+        .get("big-monorepo")
+        .expect("seed must create big-monorepo")
+        .clone();
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    ed.auth_selected_agent = Some(Agent::Claude);
+    let ws_claude_idx = auth_row_idx(&ed, |r| {
+        matches!(
+            r,
+            AuthRow::WorkspaceMode {
+                agent: Agent::Claude
+            }
+        )
+    });
+    ed.active_field = FieldFocus::Row(ws_claude_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char(' ')),
+    )?;
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char(' ')),
+    )?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    let Some(Modal::AuthSourcePicker { state: picker }) = &editor(&state).modal else {
+        panic!(
+            "Enter on auth credential source must open AuthSourcePicker; got {:?}",
+            editor(&state).modal
+        );
+    };
+    assert_eq!(picker.key, "ANTHROPIC_API_KEY");
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::AuthForm { .. })),
+        "Esc from AuthSourcePicker must restore the auth form"
+    );
+
     Ok(())
 }
 

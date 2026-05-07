@@ -310,7 +310,7 @@ fn contextual_row_items(
                 Some(AuthRow::WorkspaceSource { .. } | AuthRow::RoleSource { .. }) => {
                     vec![FooterItem::Key("Enter"), FooterItem::Text("edit source")]
                 }
-                Some(AuthRow::OverridesHeader | AuthRow::Spacer) | None => Vec::new(),
+                Some(AuthRow::Spacer) | None => Vec::new(),
             }
         }
     }
@@ -634,8 +634,6 @@ pub enum AuthRow {
     WorkspaceMode { agent: crate::agent::Agent },
     /// Selected auth kind's workspace credential source row.
     WorkspaceSource { agent: crate::agent::Agent },
-    /// "Role overrides" caption.
-    OverridesHeader,
     /// Collapsible role override block. `expanded` toggles the agent rows.
     RoleHeader { role: String, expanded: bool },
     /// Mode row inside an expanded `RoleHeader`. Editable.
@@ -683,7 +681,6 @@ pub fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
         rows.push(AuthRow::WorkspaceSource { agent });
     }
     rows.push(AuthRow::Spacer);
-    rows.push(AuthRow::OverridesHeader);
     for role in &override_roles {
         let expanded = editor.auth_expanded.contains(role);
         rows.push(AuthRow::RoleHeader {
@@ -1060,18 +1057,16 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, confi
         .iter()
         .map(|r| ListItem::new(render_auth_row(r, &synthesized, &workspace_name)))
         .collect();
-    let title = state.auth_selected_agent.map_or_else(
-        || " Auth ".to_string(),
-        |agent| format!(" Auth / {} ", auth_kind_display(agent)),
-    );
-    let title_span = Span::styled(
-        title,
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-    );
-    let block = Block::default()
+    let mut block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(title_span);
+        .border_style(Style::default().fg(PHOSPHOR_DARK));
+    if let Some(agent) = state.auth_selected_agent {
+        let title_span = Span::styled(
+            format!(" {} ", auth_kind_display(agent)),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        );
+        block = block.title(title_span);
+    }
     let list = List::new(items).block(block).highlight_symbol("▸ ");
     let mut list_state = ListState::default();
     list_state.select(Some(selected));
@@ -1103,21 +1098,23 @@ fn render_auth_row(
             });
             let mode =
                 explicit.unwrap_or_else(|| resolve_mode(synthesized, *agent, workspace_name, ""));
-            let prefix = if explicit.is_some() { "" } else { "inherited " };
+            let suffix = if explicit.is_some() {
+                ""
+            } else {
+                " (inherited)"
+            };
             let badge = badge_for(synthesized, workspace_name, "", *agent, mode);
             ratatui::text::Line::from(vec![
                 Span::raw("  "),
                 Span::styled(format!("{:<14}", "Mode"), bold_white),
-                Span::styled(format!("{prefix}{}", mode_str(mode)), phosphor),
+                Span::styled(mode_str(mode).to_string(), phosphor),
+                Span::styled(suffix.to_string(), dim_green),
                 Span::raw("  "),
                 badge_span(badge),
             ])
         }
         AuthRow::WorkspaceSource { agent } => {
             render_auth_source_line("Source", synthesized, workspace_name, "", *agent, 2)
-        }
-        AuthRow::OverridesHeader => {
-            ratatui::text::Line::from(Span::styled("  Role overrides", bold_white))
         }
         AuthRow::RoleHeader { role, expanded } => {
             let glyph = if *expanded { "▾" } else { "▸" };
@@ -2719,14 +2716,22 @@ mod auth_flat_rows_tests {
 
         let header_idx = rows
             .iter()
-            .position(|r| matches!(r, AuthRow::OverridesHeader))
-            .expect("overrides header expected");
+            .position(|r| {
+                matches!(
+                    r,
+                    AuthRow::RoleHeader {
+                        role,
+                        expanded: false
+                    } if role == "the-architect"
+                )
+            })
+            .expect("role override header expected");
         assert!(matches!(
-            rows[header_idx + 1],
+            rows[header_idx],
             AuthRow::RoleHeader { ref role, expanded: false } if role == "the-architect"
         ));
         assert!(matches!(
-            rows[header_idx + 2],
+            rows[header_idx + 1],
             AuthRow::AddSentinel { eligible: 1 }
         ));
     }
@@ -2797,7 +2802,6 @@ mod auth_flat_rows_tests {
         for (idx, row) in rows.iter().enumerate() {
             match row {
                 AuthRow::AuthKind { .. }
-                | AuthRow::OverridesHeader
                 | AuthRow::AddSentinel { .. }
                 | AuthRow::Spacer
                 | AuthRow::RoleHeader { .. } => assert!(

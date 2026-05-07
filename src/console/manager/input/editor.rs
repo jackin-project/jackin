@@ -817,15 +817,21 @@ pub(super) fn handle_editor_modal(
                     }
                 }
                 ModalOutcome::Cancel => {
+                    let target = target.clone();
                     // Cancel of EnvKey/EnvValue must drop both the
                     // stashed key and any picker value — otherwise a
                     // later sentinel-picker commit silently applies
                     // the path to an unrelated key.
                     if let TextInputTarget::EnvKey { .. } | TextInputTarget::EnvValue { .. } =
-                        target
+                        &target
                     {
                         editor.pending_env_key = None;
                         editor.pending_picker_value = None;
+                    }
+                    if matches!(target, TextInputTarget::AuthCredential) {
+                        editor.modal = None;
+                        super::auth::restore_auth_form_after_plain_cancel(editor);
+                        return;
                     }
                     editor.modal = None;
                 }
@@ -1066,8 +1072,23 @@ pub(super) fn handle_editor_modal(
                 ModalOutcome::Continue => {}
             }
         }
+        Modal::AuthSourcePicker { state: source } => {
+            use crate::console::widgets::source_picker::SourceChoice;
+            match source.handle_key(key) {
+                ModalOutcome::Commit(SourceChoice::Plain) => {
+                    super::auth::apply_plain_source_picker_to_auth_form(editor);
+                }
+                ModalOutcome::Commit(SourceChoice::Op) => {
+                    super::auth::open_op_picker_from_auth_source(editor, op_cache);
+                }
+                ModalOutcome::Cancel => {
+                    super::auth::restore_auth_form_after_op_picker_cancel(editor);
+                }
+                ModalOutcome::Continue => {}
+            }
+        }
         Modal::AuthForm { .. } => {
-            super::auth::handle_auth_form_key(editor, key, op_cache);
+            super::auth::handle_auth_form_key(editor, key, op_cache, op_available);
         }
         Modal::AuthRolePicker { state: picker } => match picker.handle_key(key) {
             ModalOutcome::Commit(role) => {
@@ -1379,6 +1400,9 @@ pub(super) fn apply_text_input_to_pending(
         TextInputTarget::EnvValue { scope, key } => {
             set_pending_env_value(editor, scope, key, value);
             editor.pending_env_key = None;
+        }
+        TextInputTarget::AuthCredential => {
+            super::auth::apply_plain_text_to_auth_form(editor, value);
         }
     }
 }
