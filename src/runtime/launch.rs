@@ -211,18 +211,11 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
 
     match &state.agent_runtime {
         AgentRuntimeState::Claude {
-            plugins_json,
             account_json,
             credentials_json,
             forward_auth,
         } => {
-            // Plugins manifest is always mounted read-only; the runtime
-            // entrypoint reads it from `/jackin/claude/plugins.json` to
-            // drive `claude plugin install` on every launch.
-            let mut mounts = vec![format!(
-                "{}:/jackin/claude/plugins.json:ro",
-                plugins_json.display()
-            )];
+            let mut mounts = Vec::new();
             // Auth files only flow into the container under sync mode
             // (`forward_auth = true`) AND only when the file exists on
             // disk. Env-driven modes (api_key/oauth_token/ignore) leave
@@ -2178,10 +2171,10 @@ mod tests {
     }
 
     #[test]
-    fn agent_mounts_for_claude_ignore_mode_only_has_plugins_json() {
+    fn agent_mounts_for_claude_ignore_mode_has_no_agent_mounts() {
         // Ignore mode is env-driven (no env var, just no auth) — auth
-        // files must NOT flow into the container, so the only Claude
-        // mount is the read-only plugins manifest.
+        // files must NOT flow into the container, and Claude plugins are
+        // installed at image-build time rather than mounted at runtime.
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -2217,13 +2210,8 @@ plugins = []
         let mounts = agent_mounts(&state);
         assert_eq!(
             mounts.len(),
-            1,
-            "ignore mode → plugins.json only: {mounts:?}"
-        );
-        assert!(
-            mounts
-                .iter()
-                .any(|m| m.contains("/jackin/claude/plugins.json:ro"))
+            0,
+            "ignore mode should not mount Claude runtime state: {mounts:?}"
         );
         // No legacy `/home/agent/.claude*` mounts should leak through —
         // the agent home is image-baked, not bind-mounted.
@@ -2236,8 +2224,8 @@ plugins = []
     #[test]
     fn agent_mounts_for_claude_sync_mode_forwards_auth_files() {
         // Sync mode + host auth present → both account.json and
-        // credentials.json flow under /jackin/claude/. The plugins.json
-        // mount is unconditional and read-only.
+        // credentials.json flow under /jackin/claude/. Plugins are baked
+        // into the image and do not need a runtime mount.
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -2285,12 +2273,6 @@ plugins = []
         .unwrap();
 
         let mounts = agent_mounts(&state);
-        assert!(
-            mounts
-                .iter()
-                .any(|m| m.contains("/jackin/claude/plugins.json:ro")),
-            "plugins.json mount missing: {mounts:?}",
-        );
         assert!(
             mounts
                 .iter()
@@ -2933,12 +2915,6 @@ plugins = ["code-review@claude-plugins-official"]
             call.contains("docker run -d -it --name jackin-chainargos__the-architect")
         }));
         assert!(
-            runner
-                .recorded
-                .iter()
-                .any(|call| call.contains("/jackin/claude/plugins.json:ro"))
-        );
-        assert!(
             !runner
                 .recorded
                 .iter()
@@ -3091,7 +3067,7 @@ trusted = true
     }
 
     #[test]
-    fn load_agent_runs_attached_with_plugins_mount() {
+    fn load_agent_runs_attached_without_runtime_plugins_mount() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -3149,7 +3125,7 @@ plugins = ["code-review@claude-plugins-official"]
                 .any(|call| call.contains("docker run -d -it --name jackin-agent-smith"))
         );
         assert!(
-            runner
+            !runner
                 .recorded
                 .iter()
                 .any(|call| call.contains("/jackin/claude/plugins.json:ro"))
