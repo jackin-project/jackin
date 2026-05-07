@@ -111,6 +111,8 @@ impl FormLine {
 fn build_form_lines(form: &AuthForm, focus: AuthFormFocus) -> Vec<FormLine> {
     let mut lines: Vec<FormLine> = Vec::new();
 
+    lines.push(FormLine::left(Line::from("")));
+
     // Mode picker line.
     let mode_text = form.mode.map_or("(unset)", mode_str);
     lines.push(FormLine::left(Line::from(vec![
