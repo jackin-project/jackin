@@ -814,8 +814,13 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                 ));
             }
             SecretsRow::WorkspaceAddSentinel => {
+                let marker_col = if state.pending.env.is_empty() {
+                    ""
+                } else {
+                    "     "
+                };
                 lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}     + Add environment variable"),
+                    format!("{cursor_col}{marker_col}+ Add environment variable"),
                     action_row_style(selected),
                 )));
             }
