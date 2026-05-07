@@ -1079,7 +1079,7 @@ fn render_auth_row(
     workspace_name: &str,
 ) -> ratatui::text::Line<'static> {
     use crate::config::resolve_mode;
-    use crate::console::widgets::auth_panel::{badge_for, mode_str};
+    use crate::console::widgets::auth_panel::mode_str;
 
     let bold_white = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let dim_green = Style::default().fg(PHOSPHOR_DIM);
@@ -1103,14 +1103,11 @@ fn render_auth_row(
             } else {
                 " (inherited)"
             };
-            let badge = badge_for(synthesized, workspace_name, "", *agent, mode);
             ratatui::text::Line::from(vec![
                 Span::raw("  "),
                 Span::styled(format!("{:<14}", "Mode"), bold_white),
                 Span::styled(mode_str(mode).to_string(), phosphor),
                 Span::styled(suffix.to_string(), dim_green),
-                Span::raw("  "),
-                badge_span(badge),
             ])
         }
         AuthRow::WorkspaceSource { agent } => {
@@ -1127,13 +1124,10 @@ fn render_auth_row(
         }
         AuthRow::RoleMode { role, agent } => {
             let mode = resolve_mode(synthesized, *agent, workspace_name, role);
-            let badge = badge_for(synthesized, workspace_name, role, *agent, mode);
             ratatui::text::Line::from(vec![
                 Span::raw("      "),
                 Span::styled(format!("{:<12}", "Mode"), bold_white),
                 Span::styled(mode_str(mode).to_string(), phosphor),
-                Span::raw("  "),
-                badge_span(badge),
             ])
         }
         AuthRow::RoleSource { role, agent } => {
@@ -1187,16 +1181,12 @@ fn render_auth_source_line(
 
     match value {
         Some(EnvValue::OpRef(r)) => {
-            spans.push(Span::styled(
-                "1Password  ",
-                Style::default().fg(PHOSPHOR_DIM),
-            ));
             push_op_breadcrumb_spans(&mut spans, &r.path);
         }
         Some(EnvValue::Plain(s)) if !s.is_empty() => {
             spans.push(Span::styled(
-                "literal  OK",
-                Style::default().fg(PHOSPHOR_GREEN),
+                "●".repeat(s.chars().count().clamp(1, 12)),
+                Style::default().fg(PHOSPHOR_DIM),
             ));
         }
         _ => {
@@ -1271,22 +1261,11 @@ fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
         spans.push(Span::styled(" / ", dim));
         spans.push(Span::styled(section, green));
     }
-    spans.push(Span::styled(" -> ", dim));
+    spans.push(Span::styled(" \u{2192} ", dim));
     spans.push(Span::styled(parts.field, green_bold));
     if let Some(query) = parts.attribute_query {
         spans.push(Span::raw(" "));
         spans.push(Span::styled(query, dim));
-    }
-}
-
-fn badge_span(
-    badge: crate::console::widgets::auth_panel::CredentialBadge,
-) -> ratatui::text::Span<'static> {
-    use crate::console::widgets::auth_panel::{CredentialBadge, DANGER_RED, PHOSPHOR_GREEN};
-    match badge {
-        CredentialBadge::Resolves => Span::styled("OK", Style::default().fg(PHOSPHOR_GREEN)),
-        CredentialBadge::Unset => Span::styled("! unset", Style::default().fg(DANGER_RED)),
-        CredentialBadge::NotApplicable => Span::raw(""),
     }
 }
 

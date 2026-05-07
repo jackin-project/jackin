@@ -183,24 +183,42 @@ fn credential_env_line(env_var: &str, cred: &CredentialInput, selected: bool) ->
             } else {
                 Style::default().fg(PHOSPHOR_GREEN)
             };
-            spans.push(Span::styled(format!("{masked:<value_width$}"), style));
-            spans.push(Span::styled(
-                "plain text".to_string(),
-                Style::default().fg(PHOSPHOR_DIM),
-            ));
+            spans.push(Span::styled(masked, style));
         }
         CredentialInput::OpRef(r) => {
-            spans.push(Span::styled(
-                format!("{:<value_width$}", "1Password"),
-                Style::default().fg(PHOSPHOR_GREEN),
-            ));
-            spans.push(Span::styled(
-                r.path.clone(),
-                Style::default().fg(PHOSPHOR_DIM),
-            ));
+            push_op_breadcrumb_spans(&mut spans, &r.path);
         }
     }
     Line::from(spans)
+}
+
+fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
+    let dim = Style::default().fg(PHOSPHOR_DIM);
+    let white = Style::default().fg(WHITE);
+    let green = Style::default().fg(PHOSPHOR_GREEN);
+    let green_bold = Style::default()
+        .fg(PHOSPHOR_GREEN)
+        .add_modifier(Modifier::BOLD);
+
+    let parts: Vec<&str> = path.split('/').collect();
+    let (vault, item, section, field) = match parts.as_slice() {
+        [vault, item, field] => (*vault, *item, None, *field),
+        [vault, item, section, field] => (*vault, *item, Some(*section), *field),
+        _ => {
+            spans.push(Span::styled("<unparseable path - re-pick>", dim));
+            return;
+        }
+    };
+
+    spans.push(Span::styled(vault.to_string(), white));
+    spans.push(Span::styled(" / ".to_string(), dim));
+    spans.push(Span::styled(item.to_string(), green));
+    if let Some(section) = section {
+        spans.push(Span::styled(" / ".to_string(), dim));
+        spans.push(Span::styled(section.to_string(), green));
+    }
+    spans.push(Span::styled(" \u{2192} ".to_string(), dim));
+    spans.push(Span::styled(field.to_string(), green_bold));
 }
 
 fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {
@@ -385,8 +403,8 @@ mod form_render_tests {
             "literal credential should be masked; dump:\n{s}"
         );
         assert!(
-            s.contains("plain text"),
-            "missing plain text source label; dump:\n{s}"
+            !s.contains("plain text"),
+            "plain text source label should be omitted; dump:\n{s}"
         );
     }
 
@@ -400,12 +418,12 @@ mod form_render_tests {
         });
         let s = dump_form(&form, &ctx());
         assert!(
-            s.contains("1Password"),
-            "missing 1Password source label; dump:\n{s}"
+            !s.contains("1Password"),
+            "1Password source label should be omitted; dump:\n{s}"
         );
         assert!(
-            s.contains("Work/Anthropic/api-key"),
-            "missing op-ref path display; dump:\n{s}"
+            s.contains("Work / Anthropic → api-key"),
+            "missing op-ref breadcrumb display; dump:\n{s}"
         );
     }
 
@@ -419,8 +437,8 @@ mod form_render_tests {
         });
         let s = dump_form(&form, &ctx());
         assert!(
-            s.contains("CLAUDE_CODE_OAUTH_TOKEN  1Password"),
-            "env var and source label should not run together; dump:\n{s}"
+            s.contains("CLAUDE_CODE_OAUTH_TOKEN  Boris / Roblox → token"),
+            "env var and breadcrumb should have a visible gap; dump:\n{s}"
         );
     }
 }
