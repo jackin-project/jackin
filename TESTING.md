@@ -28,12 +28,14 @@ cargo nextest run -E 'test(/module::tests/)'
 
 Do **not** use `cargo test` — always use `cargo nextest run`.
 
-## Pre-commit Verification
+## Merge-readiness Verification
 
-Before committing any changes, **always** run formatting, clippy, and tests:
+Do not run formatting, clippy, and the full test suite before every commit by
+default. Run the full verification suite when a pull request is ready to be
+merged, or earlier only when the operator explicitly asks for it:
 
 ```sh
-cargo fmt -- --check && cargo clippy && cargo nextest run
+cargo fmt -- --check && cargo clippy -- -D warnings && cargo nextest run
 ```
 
 All three must pass with zero warnings and zero failures.

@@ -71,9 +71,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full DCO v1.1 text.
 
 Agent-specific attribution trailer requirements (e.g., for the Codex agent) are in [AGENTS.md](AGENTS.md).
 
-## Pre-commit Verification
+## Merge-readiness Verification
 
-Before committing **any** change, run all three checks and ensure zero warnings and zero failures:
+Do not run the full verification suite before every commit by default. Run it
+when a pull request is ready to be merged, or earlier only when the operator
+explicitly asks for it. The merge-readiness check is:
 
 ```sh
 cargo fmt -- --check && cargo clippy -- -D warnings && cargo nextest run
