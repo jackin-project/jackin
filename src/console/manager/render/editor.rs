@@ -486,6 +486,9 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     } else {
         Style::default().fg(white)
     };
+    if !state.pending.mounts.is_empty() {
+        lines.push(Line::from(""));
+    }
     lines.push(Line::from(Span::styled(
         format!("{sentinel_prefix}+ Add mount"),
         sentinel_style,
@@ -568,6 +571,9 @@ fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, conf
     } else {
         Style::default().fg(WHITE)
     };
+    if !config.roles.is_empty() {
+        lines.push(Line::from(""));
+    }
     lines.push(Line::from(Span::styled(
         format!("{sentinel_prefix}+ Add role"),
         sentinel_style,
@@ -598,6 +604,9 @@ pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -
     for key in editor.pending.env.keys() {
         rows.push(SecretsRow::WorkspaceKeyRow(key.clone()));
     }
+    if !editor.pending.env.is_empty() {
+        rows.push(SecretsRow::SectionSpacer);
+    }
     rows.push(SecretsRow::WorkspaceAddSentinel);
     for role in editor.pending.roles.keys() {
         rows.push(SecretsRow::SectionSpacer);
@@ -615,6 +624,7 @@ pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -
                     });
                 }
             }
+            rows.push(SecretsRow::SectionSpacer);
             rows.push(SecretsRow::RoleAddSentinel(role.clone()));
         }
     }
@@ -705,6 +715,9 @@ pub fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
         .allowed_roles
         .len()
         .saturating_sub(override_roles.len());
+    if !override_roles.is_empty() {
+        rows.push(AuthRow::Spacer);
+    }
     rows.push(AuthRow::AddSentinel {
         eligible: eligible_remaining,
     });
@@ -1134,7 +1147,11 @@ fn render_auth_row(
             render_auth_source_line("Source", synthesized, workspace_name, role, *agent, 6)
         }
         AuthRow::AddSentinel { eligible } => {
-            let label_style = if *eligible == 0 { dim_green } else { phosphor };
+            let label_style = if *eligible == 0 {
+                dim_green
+            } else {
+                Style::default().fg(WHITE)
+            };
             let suffix = if *eligible == 0 {
                 "   (all roles overridden)".to_string()
             } else {
