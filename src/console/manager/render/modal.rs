@@ -5,9 +5,8 @@
 use ratatui::{Frame, layout::Rect};
 
 use super::super::super::widgets::{
-    agent_choice, auth_panel, confirm, confirm_save, error_popup, file_browser, github_picker,
-    mount_dst_choice, op_picker, role_picker, save_discard, scope_picker, source_picker,
-    text_input, workdir_pick,
+    auth_panel, confirm, confirm_save, error_popup, file_browser, github_picker, mount_dst_choice,
+    op_picker, role_picker, save_discard, scope_picker, source_picker, text_input, workdir_pick,
 };
 use super::super::state::{AuthFormTarget, Modal};
 use super::centered_rect_fixed;
@@ -64,10 +63,9 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
             let rows = (state.filtered.len() as u16).saturating_add(6).min(15);
             (50, rows)
         }
-        Modal::SourcePicker { .. }
-        | Modal::AuthSourcePicker { .. }
-        | Modal::ScopePicker { .. }
-        | Modal::AuthAgentPicker { .. } => (50, 7),
+        Modal::SourcePicker { .. } | Modal::AuthSourcePicker { .. } | Modal::ScopePicker { .. } => {
+            (50, 7)
+        }
         Modal::AuthForm { .. } => (80, 9),
     };
     centered_rect_fixed(outer, pct_w, height_rows)
@@ -115,9 +113,6 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &mut Modal<'_>) {
             };
             let ctx = auth_panel::FormContext { workspace, role };
             auth_panel::render_form(frame, modal_area, state.as_ref(), &ctx, *focus);
-        }
-        Modal::AuthAgentPicker { state, .. } => {
-            agent_choice::render(frame, modal_area, state);
         }
     }
 }

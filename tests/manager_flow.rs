@@ -2644,8 +2644,12 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
 // ── Auth tab helpers ──────────────────────────────────────────────────
 
 /// Return the flat-row index of the first `AuthRow` that matches `pred`.
-fn auth_row_idx(ed: &EditorState<'_>, pred: impl Fn(&AuthRow) -> bool) -> usize {
-    auth_flat_rows(ed)
+fn auth_row_idx(
+    ed: &EditorState<'_>,
+    config: &AppConfig,
+    pred: impl Fn(&AuthRow) -> bool,
+) -> usize {
+    auth_flat_rows(ed, config)
         .iter()
         .position(pred)
         .expect("required auth row not found")
@@ -2684,7 +2688,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
     ed.auth_selected_agent = Some(Agent::Claude);
-    let ws_claude_idx = auth_row_idx(&ed, |r| {
+    let ws_claude_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::WorkspaceMode {
@@ -2828,7 +2832,7 @@ fn auth_credential_source_enter_opens_source_picker() -> Result<()> {
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
     ed.auth_selected_agent = Some(Agent::Claude);
-    let ws_claude_idx = auth_row_idx(&ed, |r| {
+    let ws_claude_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::WorkspaceMode {
@@ -2891,7 +2895,7 @@ fn auth_add_role_override_flow_uses_selected_auth_kind() -> Result<()> {
     ed.active_tab = EditorTab::Auth;
     ed.auth_selected_agent = Some(Agent::Claude);
 
-    let sentinel_idx = auth_row_idx(&ed, |r| matches!(r, AuthRow::AddSentinel { .. }));
+    let sentinel_idx = auth_row_idx(&ed, &config, |r| matches!(r, AuthRow::AddSentinel { .. }));
     ed.active_field = FieldFocus::Row(sentinel_idx);
     state.stage = ManagerStage::Editor(ed);
 
@@ -2943,7 +2947,7 @@ fn auth_role_header_left_right_toggles_expansion() -> Result<()> {
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
     ed.auth_selected_agent = Some(Agent::Claude);
-    let header_idx = auth_row_idx(&ed, |r| matches!(r, AuthRow::RoleHeader { .. }));
+    let header_idx = auth_row_idx(&ed, &config, |r| matches!(r, AuthRow::RoleHeader { .. }));
     ed.active_field = FieldFocus::Row(header_idx);
     state.stage = ManagerStage::Editor(ed);
 
@@ -2977,7 +2981,7 @@ fn auth_role_header_d_clears_selected_auth_kind_override() -> Result<()> {
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
     ed.auth_selected_agent = Some(Agent::Claude);
-    let header_idx = auth_row_idx(&ed, |r| matches!(r, AuthRow::RoleHeader { .. }));
+    let header_idx = auth_row_idx(&ed, &config, |r| matches!(r, AuthRow::RoleHeader { .. }));
     ed.active_field = FieldFocus::Row(header_idx);
     state.stage = ManagerStage::Editor(ed);
 
@@ -3029,7 +3033,7 @@ fn auth_role_agent_row_d_silently_clears_single_agent() -> Result<()> {
     ed.active_tab = EditorTab::Auth;
     ed.auth_selected_agent = Some(jackin::agent::Agent::Claude);
     ed.auth_expanded.insert("the-architect".into());
-    let claude_idx = auth_row_idx(&ed, |r| {
+    let claude_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::RoleMode {
@@ -3056,4 +3060,198 @@ fn auth_role_agent_row_d_silently_clears_single_agent() -> Result<()> {
     assert!(ro.claude.is_none());
     assert!(ro.codex.is_some(), "Codex override must be untouched");
     Ok(())
+}
+
+/// Pressing Enter on an `AuthKind` row sets `auth_selected_agent` and
+/// resets the cursor to row 0. Drives the kind picker → focused-view
+/// transition through the real keystroke dispatcher (every other auth
+/// integration test pre-seeds `auth_selected_agent`, which would mask
+/// a regression in the input-layer wiring).
+#[test]
+fn auth_enter_on_auth_kind_focuses_selected_agent() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let ws = config.workspaces.get("big-monorepo").unwrap().clone();
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    // No `auth_selected_agent` set — picker view.
+    let codex_kind_idx = auth_row_idx(&ed, &config, |r| {
+        matches!(
+            r,
+            AuthRow::AuthKind {
+                agent: Agent::Codex
+            }
+        )
+    });
+    ed.active_field = FieldFocus::Row(codex_kind_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    let ed = editor(&state);
+    assert_eq!(ed.auth_selected_agent, Some(Agent::Codex));
+    assert!(
+        matches!(ed.active_field, FieldFocus::Row(0)),
+        "Enter on AuthKind must reset cursor to Row(0); got {:?}",
+        ed.active_field
+    );
+    Ok(())
+}
+
+/// Esc on the focused auth view pops back to the kind picker WITHOUT
+/// triggering the dirty-modal flow even when `editor.is_dirty()`.
+/// Pending edits stay in `editor.pending`; a subsequent Esc on the
+/// picker would fall through to the dirty check.
+#[test]
+fn auth_esc_from_focused_view_pops_to_picker_without_dirty_modal() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let ws = config.workspaces.get("big-monorepo").unwrap().clone();
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    ed.auth_selected_agent = Some(Agent::Claude);
+    // Mutate `pending` so `is_dirty()` is true — this is what would
+    // otherwise route Esc through `Modal::SaveDiscardCancel`.
+    ed.pending.git_pull_on_entry = !ed.pending.git_pull_on_entry;
+    ed.active_field = FieldFocus::Row(0);
+    state.stage = ManagerStage::Editor(ed);
+    assert!(editor(&state).is_dirty(), "fixture must be dirty");
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
+
+    let ed = editor(&state);
+    assert!(
+        ed.auth_selected_agent.is_none(),
+        "Esc on focused view must clear auth_selected_agent"
+    );
+    assert!(
+        ed.modal.is_none(),
+        "Esc must not open the dirty SaveDiscardCancel modal mid-tab"
+    );
+    assert!(
+        ed.is_dirty(),
+        "pending edits must survive the in-tab navigation pop"
+    );
+    Ok(())
+}
+
+/// Tab/BackTab leaving the Auth tab clears `auth_selected_agent` so
+/// re-entering the tab returns to the kind picker rather than a
+/// stale focused view.
+#[test]
+fn auth_tab_cycle_off_auth_clears_selected_agent() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let ws = config.workspaces.get("big-monorepo").unwrap().clone();
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    ed.auth_selected_agent = Some(Agent::Claude);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
+    let ed = editor(&state);
+    assert_ne!(ed.active_tab, EditorTab::Auth);
+    assert!(
+        ed.auth_selected_agent.is_none(),
+        "leaving the Auth tab must drop the focused-kind selection"
+    );
+    Ok(())
+}
+
+/// Pressing D on a `WorkspaceSource` row clears the workspace-level
+/// auth-forward override for the focused kind. Mirrors the existing
+/// `RoleSource` clear test but for the workspace layer.
+#[test]
+fn auth_workspace_source_d_clears_workspace_mode() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
+    ws.claude = Some(jackin::config::AgentAuthConfig {
+        auth_forward: jackin::config::AuthForwardMode::ApiKey,
+    });
+    ws.env.insert(
+        "ANTHROPIC_API_KEY".into(),
+        jackin::operator_env::EnvValue::Plain("k".into()),
+    );
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    ed.auth_selected_agent = Some(Agent::Claude);
+    let source_idx = auth_row_idx(&ed, &config, |r| {
+        matches!(
+            r,
+            AuthRow::WorkspaceSource {
+                agent: Agent::Claude
+            }
+        )
+    });
+    ed.active_field = FieldFocus::Row(source_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('d')),
+    )?;
+
+    let ed = editor(&state);
+    assert!(
+        ed.modal.is_none(),
+        "workspace source clear must be silent (no modal)"
+    );
+    assert!(
+        ed.pending.claude.is_none(),
+        "D on WorkspaceSource must drop the workspace-level claude override"
+    );
+    Ok(())
+}
+
+/// Globally configured `api_key` mode (in `[claude].auth_forward`)
+/// must surface a `WorkspaceSource` row in `auth_flat_rows` so the
+/// operator can set the credential. Guards the `AppConfig::default()`
+/// bug fixed in PR #242 — before the fix,
+/// `workspace_effective_mode_needs_credential` resolved against
+/// `AppConfig::default()` and silently dropped the row whenever the
+/// effective mode came from a global default.
+#[test]
+fn auth_flat_rows_surfaces_workspace_source_when_global_requires_credential() {
+    use jackin::config::{AgentAuthConfig, AuthForwardMode};
+    let config = AppConfig {
+        claude: Some(AgentAuthConfig {
+            auth_forward: AuthForwardMode::ApiKey,
+        }),
+        ..AppConfig::default()
+    };
+    let ws = jackin::workspace::WorkspaceConfig::default();
+    let mut ed = EditorState::new_edit("ws".into(), ws);
+    ed.auth_selected_agent = Some(Agent::Claude);
+
+    let rows = auth_flat_rows(&ed, &config);
+    assert!(
+        rows.iter().any(|r| matches!(
+            r,
+            AuthRow::WorkspaceSource {
+                agent: Agent::Claude
+            }
+        )),
+        "global claude.auth_forward = api_key must surface WorkspaceSource row; got {rows:?}"
+    );
 }

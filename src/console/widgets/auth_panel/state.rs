@@ -1,8 +1,12 @@
-//! Pure data types for the Auth panel.
+//! Pure data types for the Auth panel — test-only since PR #242.
 //!
 //! Provides [`CredentialBadge`], [`badge_for`], and
-//! [`classify_env_value`]. These are consumed by the flat-row renderer in
-//! `src/console/manager/render/editor.rs`.
+//! [`classify_env_value`]. The flat-row renderer no longer renders
+//! inline credential badges (the Auth tab moved to a kind-first
+//! picker with explicit `WorkspaceSource`/`RoleSource` rows), so the
+//! whole module is `#[cfg(test)]` and exists only to keep the
+//! parity-style unit tests around in case the badge model is
+//! revisited.
 
 use crate::agent::Agent;
 use crate::config::{AppConfig, AuthForwardMode};

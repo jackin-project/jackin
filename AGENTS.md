@@ -93,7 +93,8 @@ For console/TUI changes that can be manually verified in jackin itself, prefer:
 cargo run --bin jackin -- console --debug
 ```
 
-Do not combine `--debug` with `--no-intro`; debug mode already disables the intro.
+The `--debug` / `--no-intro` flag interaction is documented in full
+under "Walking the operator through local validation" below.
 
 ### CI must be green before merging
 

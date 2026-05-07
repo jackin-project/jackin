@@ -1,7 +1,10 @@
 //! Auth panel: edit-form and supporting data types for the Auth tab.
 //!
-//!   - `render.rs`  : `render_form`, `FormContext`, colour constants, `mode_str`
-//!   - `form.rs`    : `AuthForm`, `AuthFormOutcome`, `CredentialInput`
+//!   - `render.rs` : `render_form`, `FormContext`, colour constants, `mode_str`
+//!   - `form.rs`   : `AuthForm`, `AuthFormOutcome`, `CredentialInput`
+//!   - `state.rs`  : test-only fixtures (`CredentialBadge` etc.); the
+//!     runtime no longer renders inline credential badges — the Auth
+//!     tab uses explicit `WorkspaceSource`/`RoleSource` rows instead.
 //!
 //! Flat-row Auth tab rendering lives in `src/console/manager/render/editor.rs`.
 

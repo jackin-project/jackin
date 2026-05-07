@@ -304,7 +304,7 @@ fn contextual_row_items(
             }
         }
         EditorTab::Auth => {
-            let flat = auth_flat_rows(state);
+            let flat = auth_flat_rows(state, config);
             match flat.get(cursor) {
                 Some(AuthRow::AuthKind { .. }) => {
                     vec![FooterItem::Key("Enter"), FooterItem::Text("manage auth")]
@@ -334,9 +334,15 @@ fn contextual_row_items(
     }
 }
 
-/// Number of rows in the auth panel that the operator can navigate / edit.
-pub(in crate::console::manager) fn auth_row_count(state: &EditorState<'_>) -> usize {
-    auth_flat_rows(state).len()
+/// Total number of rendered rows in the auth panel, including spacers.
+/// Cursor stepping in the input layer skips spacer rows; callers using
+/// this for `max_row_for_tab` should be aware the result includes
+/// non-selectable rows.
+pub(in crate::console::manager) fn auth_row_count(
+    state: &EditorState<'_>,
+    config: &AppConfig,
+) -> usize {
+    auth_flat_rows(state, config).len()
 }
 
 fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
@@ -640,8 +646,9 @@ pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -
 /// Row-shape model for the Auth tab.
 ///
 /// `auth_flat_rows()` rebuilds this per frame from `editor.pending` +
-/// `editor.auth_expanded`. Rendering and input both index into the same
-/// `Vec<AuthRow>` so cursor row numbers always agree with what's drawn.
+/// `editor.auth_expanded` + the live `AppConfig`. Rendering and input
+/// both index into the same `Vec<AuthRow>` so cursor row numbers always
+/// agree with what's drawn.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthRow {
     /// Root picker row: choose which auth kind to manage.
@@ -650,7 +657,8 @@ pub enum AuthRow {
     WorkspaceMode { agent: crate::agent::Agent },
     /// Selected auth kind's workspace credential source row.
     WorkspaceSource { agent: crate::agent::Agent },
-    /// Collapsible role override block. `expanded` toggles the agent rows.
+    /// Collapsible role override block. `expanded` toggles the mode (and
+    /// credential source, when required) for the selected auth kind.
     RoleHeader { role: String, expanded: bool },
     /// Mode row inside an expanded `RoleHeader`. Editable.
     RoleMode {
@@ -668,7 +676,14 @@ pub enum AuthRow {
     Spacer,
 }
 
-pub fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
+/// Build the row-shape vector for the Auth tab.
+///
+/// `config` provides the live `[claude]`/`[codex]` globals so the
+/// "does this mode need a credential?" check runs against the
+/// operator's actual configuration — using `AppConfig::default()` here
+/// would silently hide the workspace/role source rows whenever the
+/// effective mode came from a global (e.g. `claude.auth_forward = "api_key"`).
+pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthRow> {
     use crate::agent::Agent;
     let Some(agent) = editor.auth_selected_agent else {
         return vec![
@@ -693,7 +708,7 @@ pub fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
         .collect();
 
     let mut rows = vec![AuthRow::WorkspaceMode { agent }];
-    if workspace_effective_mode_needs_credential(editor, agent) {
+    if workspace_effective_mode_needs_credential(editor, config, agent) {
         rows.push(AuthRow::WorkspaceSource { agent });
     }
     rows.push(AuthRow::Spacer);
@@ -708,7 +723,7 @@ pub fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
                 role: role.clone(),
                 agent,
             });
-            if role_effective_mode_needs_credential(editor, role, agent) {
+            if role_effective_mode_needs_credential(editor, config, role, agent) {
                 rows.push(AuthRow::RoleSource {
                     role: role.clone(),
                     agent,
@@ -732,9 +747,10 @@ pub fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
 
 fn workspace_effective_mode_needs_credential(
     editor: &EditorState<'_>,
+    config: &AppConfig,
     agent: crate::agent::Agent,
 ) -> bool {
-    let synthesized = synthesize_appconfig_for_auth(editor, &AppConfig::default());
+    let synthesized = synthesize_appconfig_for_auth(editor, config);
     let ws = workspace_name_for_panel(editor);
     let mode = crate::config::resolve_mode(&synthesized, agent, &ws, "");
     agent.required_env_var(mode).is_some()
@@ -742,10 +758,11 @@ fn workspace_effective_mode_needs_credential(
 
 fn role_effective_mode_needs_credential(
     editor: &EditorState<'_>,
+    config: &AppConfig,
     role: &str,
     agent: crate::agent::Agent,
 ) -> bool {
-    let synthesized = synthesize_appconfig_for_auth(editor, &AppConfig::default());
+    let synthesized = synthesize_appconfig_for_auth(editor, config);
     let ws = workspace_name_for_panel(editor);
     let mode = crate::config::resolve_mode(&synthesized, agent, &ws, role);
     agent.required_env_var(mode).is_some()
@@ -863,8 +880,13 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
 
 /// Display-side breadcrumb parser for `OpRef.path`.
 /// Grammar: `<Vault>/<Item>[<subtitle>?]/[<Section>/]<Field>[?<query>]`
+///
+/// Visibility is `pub(in crate::console)` so the auth-form widget
+/// (`crate::console::widgets::auth_panel::render`) shares the parser
+/// — without it, that widget would carry its own ad-hoc `path.split('/')`
+/// fallback that drops `?attribute=...` queries and `[subtitle]` syntax.
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct PathBreadcrumb {
+pub(in crate::console) struct PathBreadcrumb {
     pub vault: String,
     pub item: String,
     pub item_subtitle: Option<String>,
@@ -874,7 +896,7 @@ pub(super) struct PathBreadcrumb {
 }
 
 /// Parse a snapshot breadcrumb. Returns `None` on empty input or non-3-/4-segment counts.
-pub(super) fn parse_path_breadcrumb(path: &str) -> Option<PathBreadcrumb> {
+pub(in crate::console) fn parse_path_breadcrumb(path: &str) -> Option<PathBreadcrumb> {
     if path.is_empty() {
         return None;
     }
@@ -1057,7 +1079,7 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, confi
 
     let synthesized = synthesize_appconfig_for_auth(state, config);
     let workspace_name = workspace_name_for_panel(state);
-    let rows = auth_flat_rows(state);
+    let rows = auth_flat_rows(state, config);
 
     let FieldFocus::Row(cursor) = state.active_field;
     let max_idx = rows.len().saturating_sub(1);
@@ -1329,16 +1351,17 @@ pub(in crate::console::manager) fn workspace_name_for_panel(state: &EditorState<
     }
 }
 
-/// Map a flattened editable row index (the cursor) into the
+/// Map a flattened auth row index (the cursor) into the
 /// `AuthFormTarget` the form modal should be opened against. Returns
-/// `None` for non-editable rows (headers, defaults, dividers, sentinel)
-/// so callers can branch on it before opening the form.
+/// `None` for non-form rows (`AuthKind`, `RoleHeader`, `AddSentinel`,
+/// `Spacer`) so callers can dispatch them separately.
 pub(in crate::console::manager) fn resolve_auth_row_target(
     state: &EditorState<'_>,
+    config: &AppConfig,
     row: usize,
 ) -> Option<crate::console::manager::state::AuthFormTarget> {
     use crate::console::manager::state::AuthFormTarget;
-    let rows = auth_flat_rows(state);
+    let rows = auth_flat_rows(state, config);
     match rows.get(row)? {
         AuthRow::WorkspaceMode { agent } | AuthRow::WorkspaceSource { agent } => {
             Some(AuthFormTarget::Workspace { agent: *agent })
@@ -2685,13 +2708,14 @@ mod parse_path_breadcrumb_tests {
 mod auth_flat_rows_tests {
     use super::{AuthRow, auth_flat_rows};
     use crate::agent::Agent;
+    use crate::config::AppConfig;
     use crate::console::manager::state::EditorState;
     use crate::workspace::WorkspaceConfig;
 
     #[test]
     fn root_view_lists_auth_kinds_only() {
         let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        let rows = auth_flat_rows(&editor);
+        let rows = auth_flat_rows(&editor, &AppConfig::default());
         assert_eq!(
             rows,
             vec![
@@ -2719,7 +2743,7 @@ mod auth_flat_rows_tests {
 
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.auth_selected_agent = Some(Agent::Claude);
-        let rows = auth_flat_rows(&editor);
+        let rows = auth_flat_rows(&editor, &AppConfig::default());
 
         let header_idx = rows
             .iter()
@@ -2762,7 +2786,7 @@ mod auth_flat_rows_tests {
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.auth_selected_agent = Some(Agent::Claude);
         editor.auth_expanded.insert("the-architect".into());
-        let rows = auth_flat_rows(&editor);
+        let rows = auth_flat_rows(&editor, &AppConfig::default());
 
         let header_pos = rows
             .iter()
@@ -2781,7 +2805,8 @@ mod auth_flat_rows_tests {
 
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.auth_selected_agent = Some(Agent::Claude);
-        let rows = auth_flat_rows(&editor);
+        let cfg = AppConfig::default();
+        let rows = auth_flat_rows(&editor, &cfg);
         let workspace_claude_idx = rows
             .iter()
             .position(|r| {
@@ -2794,7 +2819,7 @@ mod auth_flat_rows_tests {
             })
             .unwrap();
         assert_eq!(
-            super::resolve_auth_row_target(&editor, workspace_claude_idx),
+            super::resolve_auth_row_target(&editor, &cfg, workspace_claude_idx),
             Some(AuthFormTarget::Workspace {
                 agent: Agent::Claude
             }),
@@ -2806,14 +2831,15 @@ mod auth_flat_rows_tests {
         use crate::workspace::WorkspaceConfig;
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.auth_selected_agent = Some(Agent::Claude);
-        let rows = auth_flat_rows(&editor);
+        let cfg = AppConfig::default();
+        let rows = auth_flat_rows(&editor, &cfg);
         for (idx, row) in rows.iter().enumerate() {
             match row {
                 AuthRow::AuthKind { .. }
                 | AuthRow::AddSentinel { .. }
                 | AuthRow::Spacer
                 | AuthRow::RoleHeader { .. } => assert!(
-                    super::resolve_auth_row_target(&editor, idx).is_none(),
+                    super::resolve_auth_row_target(&editor, &cfg, idx).is_none(),
                     "row {idx} ({row:?}) must not resolve to an editable target"
                 ),
                 _ => {}

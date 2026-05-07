@@ -47,7 +47,12 @@ pub struct FormContext<'a> {
 ///     - one required env-var row that opens the shared source picker
 ///   - action buttons and a compact key hint row
 ///
-/// Pure render — no input handling. Task 19 wires the keystroke router.
+/// Pure render — no input handling. Keystrokes are routed by
+/// `super::super::manager::input::auth::handle_auth_form_key`.
+///
+/// `_ctx` is currently unused; retained in the signature so a future
+/// header rev can re-introduce the workspace/role breadcrumb without
+/// a public-API change at every call site.
 pub fn render_form(
     frame: &mut Frame,
     area: Rect,
@@ -127,12 +132,7 @@ fn build_form_lines(form: &AuthForm, focus: AuthFormFocus) -> Vec<FormLine> {
             lines.push(FormLine::left(credential_env_line(
                 env_var,
                 &form.credential,
-                matches!(
-                    focus,
-                    AuthFormFocus::CredentialSource
-                        | AuthFormFocus::LiteralValue
-                        | AuthFormFocus::OpRefValue
-                ),
+                matches!(focus, AuthFormFocus::CredentialSource),
             )));
         }
     }
@@ -185,6 +185,12 @@ fn credential_env_line(env_var: &str, cred: &CredentialInput, selected: bool) ->
     Line::from(spans)
 }
 
+/// Render an `OpRef.path` as a `vault / item [subtitle] / section → field ?query`
+/// breadcrumb. Delegates parsing to the shared
+/// [`parse_path_breadcrumb`](crate::console::manager::render::editor::parse_path_breadcrumb)
+/// so the auth form, the Auth tab, and the Secrets tab agree on what
+/// counts as a valid path — including optional `[subtitle]` annotations
+/// and `?attribute=...` queries.
 fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
     let dim = Style::default().fg(PHOSPHOR_DIM);
     let white = Style::default().fg(WHITE);
@@ -193,25 +199,28 @@ fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
         .fg(PHOSPHOR_GREEN)
         .add_modifier(Modifier::BOLD);
 
-    let parts: Vec<&str> = path.split('/').collect();
-    let (vault, item, section, field) = match parts.as_slice() {
-        [vault, item, field] => (*vault, *item, None, *field),
-        [vault, item, section, field] => (*vault, *item, Some(*section), *field),
-        _ => {
-            spans.push(Span::styled("<unparseable path - re-pick>", dim));
-            return;
-        }
+    let Some(parts) = crate::console::manager::render::editor::parse_path_breadcrumb(path) else {
+        spans.push(Span::styled("<unparseable path - re-pick>", dim));
+        return;
     };
 
-    spans.push(Span::styled(vault.to_string(), white));
+    spans.push(Span::styled(parts.vault, white));
     spans.push(Span::styled(" / ".to_string(), dim));
-    spans.push(Span::styled(item.to_string(), green));
-    if let Some(section) = section {
+    spans.push(Span::styled(parts.item, green));
+    if let Some(subtitle) = parts.item_subtitle {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(subtitle, dim));
+    }
+    if let Some(section) = parts.section {
         spans.push(Span::styled(" / ".to_string(), dim));
-        spans.push(Span::styled(section.to_string(), green));
+        spans.push(Span::styled(section, green));
     }
     spans.push(Span::styled(" \u{2192} ".to_string(), dim));
-    spans.push(Span::styled(field.to_string(), green_bold));
+    spans.push(Span::styled(parts.field, green_bold));
+    if let Some(query) = parts.attribute_query {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(query, dim));
+    }
 }
 
 fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {
@@ -257,9 +266,7 @@ fn form_hint_line(form: &AuthForm, focus: AuthFormFocus) -> Line<'static> {
             Span::styled("Space", key_style),
             Span::styled(" cycle mode", text_style),
         ],
-        AuthFormFocus::CredentialSource
-        | AuthFormFocus::LiteralValue
-        | AuthFormFocus::OpRefValue => vec![
+        AuthFormFocus::CredentialSource => vec![
             Span::styled("Enter", key_style),
             Span::styled(" set credential", text_style),
         ],

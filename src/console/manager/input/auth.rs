@@ -27,9 +27,9 @@ use crate::workspace::WorkspaceRoleOverride;
 /// cursor on the Auth tab. Pre-populates the form from the row's
 /// effective mode + credential so editing an existing entry shows
 /// what's there.
-pub(super) fn open_auth_form_modal(editor: &mut EditorState<'_>) {
+pub(super) fn open_auth_form_modal(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
-    let Some(target) = resolve_auth_row_target(editor, n) else {
+    let Some(target) = resolve_auth_row_target(editor, config, n) else {
         return;
     };
     let agent = match &target {
@@ -99,11 +99,14 @@ pub(super) fn toggle_role_expand(editor: &mut EditorState<'_>, role: String) {
 /// Handle `D`/`d` on the Auth tab.
 ///
 /// - `RoleHeader` → clear the selected auth kind's role override.
-/// - `RoleMode` / `RoleSource` → silently clear that selected auth kind's override.
-/// - Anything else → no-op.
-pub(super) fn handle_d_on_auth_row(editor: &mut EditorState<'_>) {
+/// - `RoleMode` / `RoleSource` → silently clear the selected auth kind's
+///   role-level override.
+/// - `WorkspaceMode` / `WorkspaceSource` → clear the workspace-level
+///   override for the selected auth kind.
+/// - Anything else (`AuthKind`, `AddSentinel`, `Spacer`) → no-op.
+pub(super) fn handle_d_on_auth_row(editor: &mut EditorState<'_>, config: &AppConfig) {
     let FieldFocus::Row(n) = editor.active_field;
-    let rows = super::super::render::editor::auth_flat_rows(editor);
+    let rows = super::super::render::editor::auth_flat_rows(editor, config);
     match rows.get(n).cloned() {
         Some(super::super::render::editor::AuthRow::RoleHeader { role, .. }) => {
             if let Some(agent) = editor.auth_selected_agent {
@@ -167,17 +170,18 @@ fn current_mode_and_credential(
 
 /// Drive a single keystroke into an open `Modal::AuthForm`. Returns
 /// `true` when the modal was closed (committed, cancelled, or
-/// transitioned to `Modal::OpPicker` for credential selection).
+/// transitioned away from the form via `Modal::AuthSourcePicker`).
 ///
-/// `op_cache` is consumed when the operator chooses 1Password from the
-/// credential source picker; the auth-form's context is stashed in
-/// `editor.pending_auth_form_return` so the picker's commit handler in
-/// `editor.rs` can re-mount the form with the picked `OpRef` applied
-/// (or unchanged on cancel).
+/// `op_available` gates the 1Password choice rendered inside
+/// `Modal::AuthSourcePicker` — passed through from `EditorState` so
+/// the form doesn't reprobe the `op` binary on every keypress. The
+/// `OpPicker` itself is opened by `open_op_picker_from_auth_source`
+/// after the operator selects 1Password from the source picker; that
+/// helper takes its own `op_cache` so this entry point doesn't have
+/// to.
 pub(super) fn handle_auth_form_key(
     editor: &mut EditorState<'_>,
     key: KeyEvent,
-    op_cache: std::rc::Rc<std::cell::RefCell<OpCache>>,
     op_available: bool,
 ) -> bool {
     if !matches!(editor.modal, Some(Modal::AuthForm { .. })) {
@@ -203,30 +207,13 @@ pub(super) fn handle_auth_form_key(
         return handle_credential_source_key(editor, key, op_available);
     }
 
-    let Some(Modal::AuthForm {
-        state,
-        focus,
-        literal_buffer,
-        ..
-    }) = editor.modal.as_mut()
-    else {
+    let Some(Modal::AuthForm { state, focus, .. }) = editor.modal.as_mut() else {
         return false;
     };
 
     match current_focus {
         AuthFormFocus::Mode => handle_mode_key(focus, state.as_mut(), key),
         AuthFormFocus::CredentialSource => unreachable!("handled above"),
-        AuthFormFocus::LiteralValue => {
-            handle_literal_value_key(focus, state.as_mut(), literal_buffer, key);
-        }
-        AuthFormFocus::OpRefValue => match key.code {
-            KeyCode::Enter => {
-                return open_op_picker_from_auth_form(editor, op_cache);
-            }
-            KeyCode::Down | KeyCode::Tab => *focus = AuthFormFocus::Save,
-            KeyCode::Up => *focus = AuthFormFocus::CredentialSource,
-            _ => {}
-        },
         AuthFormFocus::Save => {
             return handle_save_key(editor, key);
         }
@@ -240,6 +227,14 @@ pub(super) fn handle_auth_form_key(
     false
 }
 
+/// Keystroke router for the `CredentialSource` row.
+///
+/// - `Enter` → open the shared source picker (literal vs. 1Password).
+/// - `Down/j` → focus `Save`.
+/// - `Up/k` → focus `Mode`.
+/// - Anything else → no-op (Tab is intentionally NOT handled here so
+///   future bindings can add Tab cycling without colliding with the
+///   row-level navigation rule).
 fn handle_credential_source_key(
     editor: &mut EditorState<'_>,
     key: KeyEvent,
@@ -263,6 +258,15 @@ fn handle_credential_source_key(
     }
 }
 
+/// Detach the open `Modal::AuthForm` into `pending_auth_form_return`
+/// and mount a `Modal::AuthSourcePicker` for the form's required env
+/// var. Returns `true` when the swap happened (the picker took over).
+///
+/// Three early-returns put the form back unchanged when the swap
+/// can't proceed: no form open, mode not yet picked, or selected
+/// mode requires no credential. The form is restored verbatim so
+/// the operator's keypress on the credential row is a quiet no-op
+/// rather than a state desync.
 fn open_auth_source_picker_from_form(editor: &mut EditorState<'_>, op_available: bool) -> bool {
     let Some(Modal::AuthForm {
         target,
@@ -308,6 +312,16 @@ fn open_auth_source_picker_from_form(editor: &mut EditorState<'_>, op_available:
     true
 }
 
+/// Commit branch for `Modal::AuthSourcePicker` when the operator picks
+/// the plain-text source. Re-stashes the auth form's context with the
+/// focus pinned to `CredentialSource`, then mounts a `Modal::TextInput`
+/// pre-filled from the round-trip's literal buffer.
+///
+/// If `pending_auth_form_return` is unexpectedly empty the round-trip
+/// can't continue — log loudly and leave `editor.modal` untouched so
+/// the next dispatch tick can reset cleanly. This shouldn't be
+/// reachable in practice (see `open_auth_source_picker_from_form`),
+/// hence the AUTH001 error code for grepping debug output.
 pub(super) fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_>) {
     let Some(AuthFormReturnPath {
         target,
@@ -316,6 +330,10 @@ pub(super) fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_
         ..
     }) = editor.pending_auth_form_return.take()
     else {
+        crate::debug_log!(
+            "auth",
+            "AUTH001 apply_plain_source_picker_to_auth_form: pending_auth_form_return missing"
+        );
         return;
     };
     editor.pending_auth_form_return = Some(AuthFormReturnPath {
@@ -330,11 +348,22 @@ pub(super) fn apply_plain_source_picker_to_auth_form(editor: &mut EditorState<'_
     });
 }
 
+/// Commit branch for the credential `Modal::TextInput`. Lifts the
+/// stashed auth form back, applies the typed value via `set_literal`,
+/// and re-mounts the form with focus on Save.
+///
+/// If `pending_auth_form_return` is empty the typed credential cannot
+/// be applied to the form — log AUTH002 with the reason rather than
+/// silently dropping the operator's input.
 pub(super) fn apply_plain_text_to_auth_form(editor: &mut EditorState<'_>, value: &str) {
     let Some(AuthFormReturnPath {
         target, mut state, ..
     }) = editor.pending_auth_form_return.take()
     else {
+        crate::debug_log!(
+            "auth",
+            "AUTH002 apply_plain_text_to_auth_form: pending_auth_form_return missing — typed credential dropped"
+        );
         return;
     };
     state.set_literal(value.to_string());
@@ -346,15 +375,33 @@ pub(super) fn apply_plain_text_to_auth_form(editor: &mut EditorState<'_>, value:
     });
 }
 
+/// Cancel branch for the credential `Modal::TextInput`. Restores the
+/// auth form unchanged from the stashed return path. Aliases
+/// [`restore_auth_form_after_op_picker_cancel`] because the recovery
+/// step is identical for the literal-text and 1Password legs of the
+/// source-picker round trip — separate names exist purely so each
+/// call site reads as its own intent.
 pub(super) fn restore_auth_form_after_plain_cancel(editor: &mut EditorState<'_>) {
     restore_auth_form_after_op_picker_cancel(editor);
 }
 
+/// Commit branch for `Modal::AuthSourcePicker` when the operator picks
+/// the 1Password source. Pins the stashed return-path focus to
+/// `CredentialSource` (so cancel/error paths land back on the source
+/// row) and mounts a fresh `Modal::OpPicker`.
+///
+/// If `pending_auth_form_return` is unexpectedly empty there is no
+/// form to return to — clear `editor.modal` and log AUTH003 so the
+/// state desync is visible in `--debug` output.
 pub(super) fn open_op_picker_from_auth_source(
     editor: &mut EditorState<'_>,
     op_cache: std::rc::Rc<std::cell::RefCell<OpCache>>,
 ) {
     let Some(return_path) = editor.pending_auth_form_return.as_mut() else {
+        crate::debug_log!(
+            "auth",
+            "AUTH003 open_op_picker_from_auth_source: pending_auth_form_return missing — closing modal"
+        );
         editor.modal = None;
         return;
     };
@@ -362,38 +409,6 @@ pub(super) fn open_op_picker_from_auth_source(
     editor.modal = Some(Modal::OpPicker {
         state: Box::new(OpPickerState::new_with_cache(op_cache)),
     });
-}
-
-/// Detach the auth-form context into `editor.pending_auth_form_return`
-/// and replace `editor.modal` with a fresh `Modal::OpPicker`. The
-/// picker's commit handler (in `editor.rs`) is responsible for
-/// reading `pending_auth_form_return.take()` and re-mounting the form.
-///
-/// Returns `true` so the caller treats the auth-form modal as closed
-/// (it's been swapped out for the picker).
-fn open_op_picker_from_auth_form(
-    editor: &mut EditorState<'_>,
-    op_cache: std::rc::Rc<std::cell::RefCell<OpCache>>,
-) -> bool {
-    let Some(Modal::AuthForm {
-        target,
-        state,
-        focus,
-        literal_buffer,
-    }) = editor.modal.take()
-    else {
-        return false;
-    };
-    editor.pending_auth_form_return = Some(AuthFormReturnPath {
-        target,
-        state,
-        focus,
-        literal_buffer,
-    });
-    editor.modal = Some(Modal::OpPicker {
-        state: Box::new(OpPickerState::new_with_cache(op_cache)),
-    });
-    true
 }
 
 /// Re-mount the auth-form modal with a freshly-picked `OpRef` applied
@@ -417,6 +432,10 @@ pub(super) fn apply_op_picker_to_auth_form(
 /// Restore the auth-form modal unchanged after the operator cancels
 /// the `OpPicker`. Called from the `OpPicker` cancel branch in
 /// `editor.rs` when `pending_auth_form_return` was set.
+///
+/// Empty stash means the cancel handler fired without a paired open
+/// — log AUTH004 and leave the modal stack alone so the editor can
+/// recover on the next dispatch.
 pub(super) fn restore_auth_form_after_op_picker_cancel(editor: &mut EditorState<'_>) {
     let Some(AuthFormReturnPath {
         target,
@@ -425,6 +444,10 @@ pub(super) fn restore_auth_form_after_op_picker_cancel(editor: &mut EditorState<
         literal_buffer,
     }) = editor.pending_auth_form_return.take()
     else {
+        crate::debug_log!(
+            "auth",
+            "AUTH004 restore_auth_form_after_op_picker_cancel: pending_auth_form_return missing"
+        );
         return;
     };
     editor.modal = Some(Modal::AuthForm {
@@ -452,6 +475,10 @@ fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?
         literal_buffer,
     }) = editor.pending_auth_form_return.take()
     else {
+        crate::debug_log!(
+            "auth",
+            "AUTH005 apply_op_picker_to_auth_form: pending_auth_form_return missing — OpRef commit dropped"
+        );
         return;
     };
     let read_result = state.try_commit_op_ref(runner, op_ref);
@@ -483,27 +510,6 @@ fn handle_mode_key(focus: &mut AuthFormFocus, form: &mut AuthForm, key: KeyEvent
     match key.code {
         KeyCode::Char(' ') => cycle_mode(form),
         KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => *focus = next_focus_after_mode(form),
-        _ => {}
-    }
-}
-
-fn handle_literal_value_key(
-    focus: &mut AuthFormFocus,
-    form: &mut AuthForm,
-    literal_buffer: &mut String,
-    key: KeyEvent,
-) {
-    match key.code {
-        KeyCode::Char(c) => {
-            literal_buffer.push(c);
-            form.set_literal(literal_buffer.clone());
-        }
-        KeyCode::Backspace => {
-            literal_buffer.pop();
-            form.set_literal(literal_buffer.clone());
-        }
-        KeyCode::Down | KeyCode::Tab | KeyCode::Enter => *focus = AuthFormFocus::Save,
-        KeyCode::Up => *focus = AuthFormFocus::CredentialSource,
         _ => {}
     }
 }
@@ -700,18 +706,19 @@ mod tests {
         std::rc::Rc::new(std::cell::RefCell::new(OpCache::default()))
     }
 
-    /// Test wrapper around `handle_auth_form_key` that allocates a
-    /// throwaway op-cache. Most existing tests don't care about
-    /// op-picker plumbing — this keeps their bodies short.
+    /// Test wrapper around `handle_auth_form_key`. The form no longer
+    /// owns the op-cache (the `Modal::OpPicker` opens with its own,
+    /// supplied by the dispatcher) so this helper only needs the
+    /// `op_available` gate, which most tests want set to `true`.
     fn drive_key(editor: &mut EditorState<'_>, k: KeyEvent) -> bool {
-        handle_auth_form_key(editor, k, fresh_op_cache(), true)
+        handle_auth_form_key(editor, k, true)
     }
 
     /// Return the flat-row index for `WorkspaceMode { Claude }`.
     /// Panics if the row doesn't exist (which would indicate a broken
     /// fixture, not a test-under-test failure).
-    fn workspace_claude_row_idx(editor: &EditorState<'_>) -> usize {
-        auth_flat_rows(editor)
+    fn workspace_claude_row_idx(editor: &EditorState<'_>, config: &AppConfig) -> usize {
+        auth_flat_rows(editor, config)
             .iter()
             .position(|r| {
                 matches!(
@@ -754,7 +761,7 @@ mod tests {
         let mut editor = EditorState::new_edit("proj".into(), ws);
         editor.active_tab = crate::console::manager::state::EditorTab::Auth;
         editor.auth_selected_agent = Some(Agent::Claude);
-        let ws_claude_idx = workspace_claude_row_idx(&editor);
+        let ws_claude_idx = workspace_claude_row_idx(&editor, &cfg);
         editor.active_field = FieldFocus::Row(ws_claude_idx);
         state.stage = ManagerStage::Editor(editor);
         (cfg, state)
@@ -767,12 +774,12 @@ mod tests {
     /// in-memory `pending.claude` and `pending.env` reflect the change.
     #[test]
     fn auth_form_save_persists_workspace_layer_into_pending() {
-        let (_cfg, mut state) = build_state();
+        let (cfg, mut state) = build_state();
         // Open form (Enter) on row 0 → workspace × Claude.
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
         };
-        open_auth_form_modal(editor);
+        open_auth_form_modal(editor, &cfg);
         assert!(matches!(editor.modal, Some(Modal::AuthForm { .. })));
 
         // Cycle mode: None → first available (sync) → ApiKey is two cycles.
@@ -814,14 +821,14 @@ mod tests {
     /// produces the "drop down to inherited" behavior.
     #[test]
     fn auth_form_reset_clears_workspace_layer_mode() {
-        let (_cfg, mut state) = build_state();
+        let (cfg, mut state) = build_state();
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
         };
         editor.pending.claude = Some(AgentAuthConfig {
             auth_forward: AuthForwardMode::ApiKey,
         });
-        open_auth_form_modal(editor);
+        open_auth_form_modal(editor, &cfg);
         // Tab through to Reset and Enter.
         // From Mode → Down → Cred → Down → Save → Tab → Cancel → Tab → Reset.
         drive_key(editor, key(KeyCode::Down)); // Mode → CredentialSource
@@ -840,11 +847,11 @@ mod tests {
     /// stays untouched.
     #[test]
     fn auth_form_cancel_does_not_mutate_pending() {
-        let (_cfg, mut state) = build_state();
+        let (cfg, mut state) = build_state();
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
         };
-        open_auth_form_modal(editor);
+        open_auth_form_modal(editor, &cfg);
         drive_key(editor, key(KeyCode::Char(' '))); // cycle to sync
         // Esc cancels at any focus.
         let closed = drive_key(editor, key(KeyCode::Esc));
@@ -857,11 +864,11 @@ mod tests {
 
     #[test]
     fn auth_form_enter_on_mode_does_not_navigate_tab_does() {
-        let (_cfg, mut state) = build_state();
+        let (cfg, mut state) = build_state();
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
         };
-        open_auth_form_modal(editor);
+        open_auth_form_modal(editor, &cfg);
         drive_key(editor, key(KeyCode::Char(' ')));
         drive_key(editor, key(KeyCode::Char(' ')));
 
@@ -888,11 +895,11 @@ mod tests {
 
     #[test]
     fn auth_form_typing_on_credential_row_does_not_set_plain_text() {
-        let (_cfg, mut state) = build_state();
+        let (cfg, mut state) = build_state();
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
         };
-        open_auth_form_modal(editor);
+        open_auth_form_modal(editor, &cfg);
         drive_key(editor, key(KeyCode::Char(' ')));
         drive_key(editor, key(KeyCode::Char(' ')));
         drive_key(editor, key(KeyCode::Tab));
@@ -915,7 +922,7 @@ mod tests {
     /// `pending.roles[role].env`.
     #[test]
     fn auth_form_save_persists_role_layer_into_pending() {
-        let (_cfg, mut state) = build_state();
+        let (cfg, mut state) = build_state();
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
         };
@@ -933,7 +940,7 @@ mod tests {
         // Expand the role so the RoleMode child is emitted.
         editor.auth_expanded.insert("smith".into());
         // Dynamically locate the smith × Claude agent row.
-        let smith_claude_idx = auth_flat_rows(editor)
+        let smith_claude_idx = auth_flat_rows(editor, &cfg)
             .iter()
             .position(|r| {
                 matches!(
@@ -946,7 +953,7 @@ mod tests {
             })
             .expect("RoleMode smith × Claude must exist after override insertion");
         editor.active_field = FieldFocus::Row(smith_claude_idx);
-        open_auth_form_modal(editor);
+        open_auth_form_modal(editor, &cfg);
         let Some(Modal::AuthForm { target, .. }) = &editor.modal else {
             panic!("form must be open");
         };
@@ -995,11 +1002,11 @@ mod tests {
     /// round-trip wiring.
     #[test]
     fn auth_form_op_ref_picker_invocation_opens_op_picker_modal() {
-        let (_cfg, mut state) = build_state();
+        let (cfg, mut state) = build_state();
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
         };
-        open_auth_form_modal(editor);
+        open_auth_form_modal(editor, &cfg);
         // Mode → ApiKey (two cycles past `None → sync`).
         drive_key(editor, key(KeyCode::Char(' ')));
         drive_key(editor, key(KeyCode::Char(' ')));
@@ -1033,13 +1040,13 @@ mod tests {
             }
         }
 
-        let (_cfg, mut state) = build_state();
+        let (cfg, mut state) = build_state();
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
         };
         // Open the auth form on workspace × Claude and choose
         // 1Password from the source picker.
-        open_auth_form_modal(editor);
+        open_auth_form_modal(editor, &cfg);
         drive_key(editor, key(KeyCode::Char(' ')));
         drive_key(editor, key(KeyCode::Char(' ')));
         drive_key(editor, key(KeyCode::Tab));
@@ -1095,11 +1102,11 @@ mod tests {
             }
         }
 
-        let (_cfg, mut state) = build_state();
+        let (cfg, mut state) = build_state();
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
         };
-        open_auth_form_modal(editor);
+        open_auth_form_modal(editor, &cfg);
         drive_key(editor, key(KeyCode::Char(' ')));
         drive_key(editor, key(KeyCode::Char(' ')));
         drive_key(editor, key(KeyCode::Tab));
@@ -1131,7 +1138,7 @@ mod tests {
     fn auth_form_esc_clears_pending_auth_form_return() {
         use crate::console::manager::state::AuthFormReturnPath;
 
-        let (_cfg, mut state) = build_state();
+        let (cfg, mut state) = build_state();
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
         };
@@ -1150,7 +1157,7 @@ mod tests {
         });
         // Open the auth form modal so handle_auth_form_key can be
         // entered.
-        open_auth_form_modal(editor);
+        open_auth_form_modal(editor, &cfg);
         assert!(matches!(editor.modal, Some(Modal::AuthForm { .. })));
 
         let closed = drive_key(editor, key(KeyCode::Esc));
@@ -1170,12 +1177,12 @@ mod tests {
     /// layer honours the guard rather than ignoring it.
     #[test]
     fn auth_form_save_disabled_blocks_enter() {
-        let (_cfg, mut state) = build_state();
+        let (cfg, mut state) = build_state();
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
         };
         let pending_before = editor.pending.clone();
-        open_auth_form_modal(editor);
+        open_auth_form_modal(editor, &cfg);
         // Build a form state with mode = ApiKey and credential = empty
         // OpRef so `can_save` returns false.
         drive_key(editor, key(KeyCode::Char(' ')));
