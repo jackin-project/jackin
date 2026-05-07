@@ -64,7 +64,7 @@ missing piece is somewhere in jackin to say *"this role uses
 | First launch needs interactive `gh auth login` inside the container. | First launch reuses the host login automatically. `sync` is the default — same as Claude / Codex `sync` today, no extra setup required. |
 | Every (workspace × role) needs its own login the first time. | One host login covers them all by default. |
 | Every container shares the host's broad GitHub identity. | Workspaces and roles can opt into a scoped token instead. |
-| No way to point a role at a fine-grained PAT. | `auth_forward = "token"` + `GH_TOKEN` from operator-env (`op://`, host env, …). |
+| No way to point a role at a fine-grained PAT. | `auth_forward = "token"` + `GH_TOKEN` from operator-env (structured `{ op = "op://uuid/...", path = "..." }` reference, host env, …). |
 | No way to deny `gh` to a specific role. | `auth_forward = "ignore"` wipes and refuses to forward. |
 | GitHub story disconnected from Claude / Codex auth UX. | Same modes, same layered config, same Auth tab in the console. |
 
@@ -82,8 +82,10 @@ missing piece is somewhere in jackin to say *"this role uses
    (workspace × role) to bind a specific role to a specific
    least-privilege token.
 3. The `gh` token source plugs into the same operator-env layer
-   already used for Claude/Codex auth (`op://`, host env, future
-   `keychain` and `command` sources from
+   already used for Claude/Codex auth (structured 1Password
+   `{ op = "op://uuid/uuid/uuid", path = "Vault/Item/Field" }`
+   references, host env passthrough, future `keychain` and
+   `command` sources from
    [credential source pattern](/reference/roadmap/credential-source-pattern/)).
 4. The launch summary tells the operator unambiguously which `gh`
    identity is active and where it came from.
@@ -177,19 +179,23 @@ auth_forward = "sync"
 auth_forward = "token"
 
 [workspaces.customer-acme.github.env]
-GH_TOKEN = "op://Work/ACME/github-fine-grained-pat"
+GH_TOKEN = { op = "op://abc.../def.../fld...", path = "Work/ACME/github-fine-grained-pat" }
 
 # Per-role — release-bot in the same workspace, push-to-tags-only token
 [workspaces.customer-acme.roles.release-bot.github]
 auth_forward = "token"
 
 [workspaces.customer-acme.roles.release-bot.github.env]
-GH_TOKEN = "op://Work/ACME/github-release-pat"
+GH_TOKEN = { op = "op://abc.../def.../fld...", path = "Work/ACME/github-release-pat" }
 
 # Per-role — throwaway scratch role, no GitHub at all
 [workspaces.customer-acme.roles.scratch.github]
 auth_forward = "ignore"
 ```
+
+<Aside type="caution">
+**Never use the bare-string `op://...` form for env values.** It has been deprecated since 2026-04-27 (see [`DEPRECATED.md`](https://github.com/jackin-project/jackin/blob/main/DEPRECATED.md) → "Bare `op://...` strings as env values"). Bare strings flow through as literals — `op read` is **not** invoked, so the container receives the unresolved URI rather than the secret. Always use the structured inline-table form `{ op = "op://uuid/uuid/uuid", path = "Vault/Item/Field" }` shown above. The `op` field stores the UUID-form `op://` URI; `path` holds the human-readable Vault/Item/Field snapshot at pin time. Operator-facing entry points are `jackin workspace env set <NAME> "op://..."` (the CLI auto-resolves to the pinned UUID form) and the TUI 1Password picker.
+</Aside>
 
 ### Walkthrough — what wins?
 
@@ -206,9 +212,11 @@ For `customer-acme` workspace with the config above:
   falls back to global `sync` → host login flows in.
 
 Tokens come from the same operator-env layers used everywhere else
-in jackin' (`op://...`, host env, future `keychain` / `command`
-sources from
-[credential source pattern](/reference/roadmap/credential-source-pattern/)).
+in jackin' — structured 1Password `EnvValue::OpRef` inline tables,
+host-env passthrough, and the future `keychain` / `command` sources
+from [credential source pattern](/reference/roadmap/credential-source-pattern/).
+Bare `op://...` strings are deprecated and resolve to literals — see
+the warning under the example above.
 
 ## Use Cases
 
@@ -270,7 +278,11 @@ This roadmap item adds a third kind to the root picker:
 - Workspace-level mode: `sync` / `token` / `ignore`.
 - Credential source row, shown only when the resolved mode is
   `token`. Same `SourcePicker` widget the existing Auth tab uses
-  for Claude/Codex (`op://`, host env, literal).
+  for Claude/Codex (1Password picker → structured
+  `EnvValue::OpRef`, host env passthrough, literal). The 1Password
+  picker writes the structured inline-table form by default; the
+  deprecated bare `op://...` string form is never produced by the
+  TUI.
 - Per-role overrides list, same expand/collapse behaviour as
   Claude/Codex.
 
@@ -302,7 +314,7 @@ Every launch already prints which Claude/Codex auth mode is active.
 A parallel line for `gh`:
 
 - `gh auth: forwarded host token (sync)`
-- `gh auth: scoped token from op://Work/ACME/github-fine-grained-pat (token)`
+- `gh auth: scoped token from Work/ACME/github-fine-grained-pat (token)` — the human-readable `path` field of the resolved `EnvValue::OpRef` is rendered, never the bare URI
 - `gh auth: none (manual gh auth login required)` — for `ignore`
 
 When two or more containers share the same forwarded host token,
@@ -460,7 +472,7 @@ The clean shape is:
 ```toml
 [workspaces.acme.github.env]
 GH_HOST = "ghe.acme.com"
-GH_ENTERPRISE_TOKEN = "op://Work/ACME/ghe-pat"
+GH_ENTERPRISE_TOKEN = { op = "op://abc.../def.../fld...", path = "Work/ACME/ghe-pat" }
 ```
 
 Doc the GHE recipe explicitly so operators do not file
