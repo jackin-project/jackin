@@ -5,11 +5,7 @@ use std::path::{Path, PathBuf};
 
 mod auth;
 pub mod naming;
-mod plugins;
-
 pub use naming::{class_family_matches, next_container_name, primary_container_name, runtime_slug};
-
-use plugins::PluginState;
 
 /// Outcome of the `.claude.json` provisioning step, so callers can surface
 /// a one-time notice when host credentials are forwarded.
@@ -55,8 +51,6 @@ pub enum AuthProvisionOutcome {
 #[non_exhaustive]
 pub enum AgentRuntimeState {
     Claude {
-        /// Host path mounted at `/jackin/claude/plugins.json:ro`.
-        plugins_json: PathBuf,
         /// Host path to Claude's account-metadata file. Always
         /// populated by `prepare` (as `{}` for non-sync modes); only
         /// bind-mounted when `forward_auth` is `true` *and* the file
@@ -139,17 +133,6 @@ impl RoleState {
         )
     }
 
-    /// Host path to the Claude plugins manifest (mounted at
-    /// `/jackin/claude/plugins.json` in the container). `None` if
-    /// this state was not prepared for `Agent::Claude`.
-    #[must_use]
-    pub fn claude_plugins_json(&self) -> Option<&Path> {
-        match &self.agent_runtime {
-            AgentRuntimeState::Claude { plugins_json, .. } => Some(plugins_json),
-            AgentRuntimeState::Codex { .. } => None,
-        }
-    }
-
     /// Host path to Codex's `config.toml` (mounted at
     /// `/jackin/codex/config.toml` in the container). `None`
     /// if this state was not prepared for `Agent::Codex`.
@@ -196,8 +179,6 @@ impl RoleState {
 
                 let account_json = claude_dir.join("account.json");
                 let credentials_json = claude_dir.join("credentials.json");
-                let plugins_json = claude_dir.join("plugins.json");
-
                 let (outcome, forward_auth) = Self::provision_claude_auth(
                     &account_json,
                     &credentials_json,
@@ -205,18 +186,8 @@ impl RoleState {
                     host_home,
                 )?;
 
-                if let Some(claude_cfg) = manifest.claude.as_ref() {
-                    std::fs::write(
-                        &plugins_json,
-                        serde_json::to_string_pretty(&PluginState {
-                            marketplaces: &claude_cfg.marketplaces,
-                            plugins: &claude_cfg.plugins,
-                        })?,
-                    )?;
-                }
                 (
                     AgentRuntimeState::Claude {
-                        plugins_json,
                         account_json,
                         credentials_json,
                         forward_auth,
@@ -310,8 +281,8 @@ plugins = []
         assert!(state.codex_config_toml().is_none());
 
         // Pin the host-side grouped layout: a regression to the legacy
-        // flat shape (`.claude/state/.credentials.json`, `.jackin/plugins.json`
-        // at the data-dir root) would still satisfy the accessor checks
+        // flat shape (`.claude/state/.credentials.json` at the data-dir
+        // root) would still satisfy the accessor checks
         // above, since they only look up paths through the enum. These
         // assertions verify the actual host paths under
         // `<container>/claude/`.
@@ -324,14 +295,10 @@ plugins = []
             state.claude_credentials_json().unwrap(),
             container_root.join("claude").join("credentials.json"),
         );
-        assert_eq!(
-            state.claude_plugins_json().unwrap(),
-            container_root.join("claude").join("plugins.json"),
-        );
     }
 
     #[test]
-    fn prepares_codex_state_writes_config_toml_and_skips_plugins_json() {
+    fn prepares_codex_state_writes_config_toml() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
 
@@ -365,11 +332,10 @@ agents = ["codex"]
         assert_eq!(outcome, AuthProvisionOutcome::Skipped);
         assert!(state.codex_config_toml().is_some());
         assert!(state.codex_config_toml().unwrap().is_file());
-        // Codex state carries no claude/plugins paths — the typed enum
+        // Codex state carries no Claude auth paths — the typed enum
         // makes the absence structural rather than a runtime nil.
         assert!(state.claude_account_json().is_none());
         assert!(state.claude_credentials_json().is_none());
-        assert!(state.claude_plugins_json().is_none());
         assert!(!state.claude_forwards_auth());
     }
 }

@@ -125,5 +125,3 @@ RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 COPY --chown=agent:agent zshrc /home/agent/.zshrc
-COPY --chown=agent:agent install-claude-plugins.sh /home/agent/install-claude-plugins.sh
-RUN chmod +x /home/agent/install-claude-plugins.sh
