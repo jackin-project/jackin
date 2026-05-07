@@ -66,7 +66,7 @@ impl MountDstChoiceState {
                 };
                 ModalOutcome::Continue
             }
-            KeyCode::Left | KeyCode::Char('h' | 'H') => {
+            KeyCode::BackTab | KeyCode::Left | KeyCode::Char('h' | 'H') => {
                 self.focus = match self.focus {
                     MountDstFocus::SamePath => MountDstFocus::Cancel,
                     MountDstFocus::Edit => MountDstFocus::SamePath,

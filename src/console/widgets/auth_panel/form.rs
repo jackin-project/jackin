@@ -1,7 +1,8 @@
 //! Auth-form state and save invariants.
 //!
-//! State-only — rendering and op-picker integration land in Task 18.
-//! The form is mounted by the workspace-manager TUI in Task 19.
+//! State for the workspace Auth-tab edit modal. Rendered by
+//! `super::render::render_form`; mounted and driven by
+//! `crate::console::manager::input::auth::handle_auth_form_key`.
 
 use crate::agent::Agent;
 use crate::config::AuthForwardMode;
@@ -103,7 +104,8 @@ impl AuthForm {
         matches!(self.mode, Some(m) if mode_requires_credential(self.agent, m))
     }
 
-    /// Modes the user can pick. Codex omits `OAuthToken` (parser-rejected by Task 6).
+    /// Modes the user can pick. Codex omits `OAuthToken`
+    /// (parser-rejected for that agent).
     pub const fn available_modes(&self) -> &'static [AuthForwardMode] {
         self.agent.supported_modes()
     }
@@ -117,12 +119,13 @@ impl AuthForm {
         match &self.credential {
             CredentialInput::None => false,
             CredentialInput::Literal(s) => !s.is_empty(),
-            // Both fields must be non-empty: the empty `OpRef { op: "",
-            // path: "" }` seeded by the credential-source toggle would
-            // otherwise pass the save gate and write a broken reference
-            // into `[workspaces.X.roles.Y.env]`. The launcher would then
-            // fail with "credential is unset" only after the operator
-            // had already committed the corrupt config to disk.
+            // Both fields must be non-empty: an empty `OpRef { op: "",
+            // path: "" }` reachable via partial picker round-trips or
+            // programmatic state injection would otherwise pass the
+            // save gate and write a broken reference into
+            // `[workspaces.X.roles.Y.env]`. The launcher would only
+            // surface "credential is unset" after the corrupt config
+            // had already landed on disk.
             CredentialInput::OpRef(r) => !r.op.is_empty() && !r.path.is_empty(),
         }
     }
@@ -222,7 +225,7 @@ mod tests {
     fn save_disabled_for_api_key_with_empty_op_ref() {
         let mut f = AuthForm::new(Agent::Claude);
         f.set_mode(AuthForwardMode::ApiKey);
-        // Both fields empty (the toggle-radio seed): rejected.
+        // Both fields empty: rejected.
         f.set_op_ref(OpRef {
             op: String::new(),
             path: String::new(),

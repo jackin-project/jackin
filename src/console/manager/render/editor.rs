@@ -25,6 +25,24 @@ use crate::operator_env::EnvValue;
 
 // ── Editor stage ────────────────────────────────────────────────────
 
+const ACTION_ACCENT: Color = Color::Rgb(180, 255, 180);
+const DISCLOSURE_ACCENT: Color = Color::Rgb(255, 208, 102);
+
+fn action_row_style(selected: bool) -> Style {
+    let style = Style::default().fg(ACTION_ACCENT);
+    if selected {
+        style.add_modifier(Modifier::BOLD)
+    } else {
+        style
+    }
+}
+
+fn disclosure_style() -> Style {
+    Style::default()
+        .fg(DISCLOSURE_ACCENT)
+        .add_modifier(Modifier::BOLD)
+}
+
 pub fn render_editor(
     frame: &mut Frame,
     state: &EditorState<'_>,
@@ -286,43 +304,45 @@ fn contextual_row_items(
             }
         }
         EditorTab::Auth => {
-            // Auth tab rows are editable workspace + workspace × role
-            // entries; the global section is read-only.
-            let rows = auth_editable_row_count(state);
-            if rows == 0 {
-                Vec::new()
-            } else {
-                let mut items = vec![FooterItem::Key("Enter"), FooterItem::Text("edit auth")];
-                // When the cursor sits on a RoleAgentRow, append a provenance
-                // hint describing the resolved mode and which config layer
-                // supplied it (variant 2B: footer-only, no inline badge).
-                let flat = auth_flat_rows(state);
-                if let Some(AuthRow::RoleAgentRow { role, agent }) = flat.get(cursor) {
-                    let synthesized = synthesize_appconfig_for_auth(state, config);
-                    let ws_name = workspace_name_for_panel(state);
-                    let mode = crate::config::resolve_mode(&synthesized, *agent, &ws_name, role);
-                    let label = provenance_label(&synthesized, &ws_name, role, *agent);
-                    let agent_name = crate::console::widgets::auth_panel::agent_display(*agent);
-                    let hint = format!(
-                        "{role} / {agent_name} \u{b7} {mode} ({label})",
-                        mode = crate::console::widgets::auth_panel::mode_str(mode),
-                    );
-                    items.push(FooterItem::Sep);
-                    items.push(FooterItem::Dyn(hint));
+            let flat = auth_flat_rows(state, config);
+            match flat.get(cursor) {
+                Some(AuthRow::AuthKind { .. }) => {
+                    vec![FooterItem::Key("Enter"), FooterItem::Text("manage auth")]
                 }
-                items
+                Some(AuthRow::WorkspaceMode { .. } | AuthRow::RoleMode { .. }) => {
+                    vec![FooterItem::Key("Enter"), FooterItem::Text("edit mode")]
+                }
+                Some(AuthRow::RoleHeader { .. }) => vec![
+                    FooterItem::Key("Enter"),
+                    FooterItem::Text("expand"),
+                    FooterItem::Sep,
+                    FooterItem::Key("←/→"),
+                    FooterItem::Text("collapse/expand"),
+                    FooterItem::Sep,
+                    FooterItem::Key("D"),
+                    FooterItem::Text("reset"),
+                ],
+                Some(AuthRow::AddSentinel { .. }) => {
+                    vec![FooterItem::Key("Enter/A"), FooterItem::Text("add override")]
+                }
+                Some(AuthRow::WorkspaceSource { .. } | AuthRow::RoleSource { .. }) => {
+                    vec![FooterItem::Key("Enter"), FooterItem::Text("edit source")]
+                }
+                Some(AuthRow::Spacer) | None => Vec::new(),
             }
         }
     }
 }
 
-/// Number of rows in the auth panel that the operator can navigate / edit.
-/// Workspace rows (one per agent) plus role × agent rows. The global
-/// section is read-only and not part of the editable count.
-pub(in crate::console::manager) const fn auth_editable_row_count(state: &EditorState<'_>) -> usize {
-    // 2 agents (Claude + Codex) at the workspace layer; another 2 per role.
-    let agents = 2;
-    agents + state.pending.allowed_roles.len() * agents
+/// Total number of rendered rows in the auth panel, including spacers.
+/// Cursor stepping in the input layer skips spacer rows; callers using
+/// this for `max_row_for_tab` should be aware the result includes
+/// non-selectable rows.
+pub(in crate::console::manager) fn auth_row_count(
+    state: &EditorState<'_>,
+    config: &AppConfig,
+) -> usize {
+    auth_flat_rows(state, config).len()
 }
 
 fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
@@ -440,8 +460,6 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         .border_style(Style::default().fg(PHOSPHOR_DARK));
     let FieldFocus::Row(cursor) = state.active_field;
 
-    let white = WHITE;
-
     // Build aligned table rows for all mounts.
     let rows = format_mount_rows(&state.pending.mounts);
     let path_w = mount_path_width(&rows);
@@ -485,14 +503,12 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     let sentinel_idx = state.pending.mounts.len();
     let sentinel_selected = cursor == sentinel_idx;
     let sentinel_prefix = if sentinel_selected { "▸ " } else { "  " };
-    let sentinel_style = if sentinel_selected {
-        Style::default().fg(white).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(white)
-    };
+    if !state.pending.mounts.is_empty() {
+        lines.push(Line::from(""));
+    }
     lines.push(Line::from(Span::styled(
         format!("{sentinel_prefix}+ Add mount"),
-        sentinel_style,
+        action_row_style(sentinel_selected),
     )));
 
     frame.render_widget(Paragraph::new(lines).block(block), area);
@@ -567,14 +583,12 @@ fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, conf
     let sentinel_idx = config.roles.len();
     let sentinel_selected = cursor == sentinel_idx;
     let sentinel_prefix = if sentinel_selected { "▸ " } else { "  " };
-    let sentinel_style = if sentinel_selected {
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(WHITE)
-    };
+    if !config.roles.is_empty() {
+        lines.push(Line::from(""));
+    }
     lines.push(Line::from(Span::styled(
         format!("{sentinel_prefix}+ Add role"),
-        sentinel_style,
+        action_row_style(sentinel_selected),
     )));
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
@@ -602,6 +616,9 @@ pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -
     for key in editor.pending.env.keys() {
         rows.push(SecretsRow::WorkspaceKeyRow(key.clone()));
     }
+    if !editor.pending.env.is_empty() {
+        rows.push(SecretsRow::SectionSpacer);
+    }
     rows.push(SecretsRow::WorkspaceAddSentinel);
     for role in editor.pending.roles.keys() {
         rows.push(SecretsRow::SectionSpacer);
@@ -619,6 +636,7 @@ pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -
                     });
                 }
             }
+            rows.push(SecretsRow::SectionSpacer);
             rows.push(SecretsRow::RoleAddSentinel(role.clone()));
         }
     }
@@ -628,64 +646,76 @@ pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -
 /// Row-shape model for the Auth tab.
 ///
 /// `auth_flat_rows()` rebuilds this per frame from `editor.pending` +
-/// `editor.auth_expanded`. Rendering and input both index into the same
-/// `Vec<AuthRow>` so cursor row numbers always agree with what's drawn.
+/// `editor.auth_expanded` + the live `AppConfig`. Rendering and input
+/// both index into the same `Vec<AuthRow>` so cursor row numbers always
+/// agree with what's drawn.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthRow {
-    /// Bold "Global defaults" caption (read-only).
-    GlobalHeader,
-    /// One row per agent under the Global header. Read-only.
-    GlobalDefault { agent: crate::agent::Agent },
-    /// Bold "Workspace defaults" caption.
-    WorkspaceHeader,
-    /// Editable workspace-level row, one per agent.
-    WorkspaceDefault { agent: crate::agent::Agent },
-    /// "Per-role overrides (N)" caption.
-    OverridesHeader { count: usize },
-    /// Collapsible role override block. `expanded` toggles the agent rows.
+    /// Root picker row: choose which auth kind to manage.
+    AuthKind { agent: crate::agent::Agent },
+    /// Selected auth kind's workspace-level mode row.
+    WorkspaceMode { agent: crate::agent::Agent },
+    /// Selected auth kind's workspace credential source row.
+    WorkspaceSource { agent: crate::agent::Agent },
+    /// Collapsible role override block. `expanded` toggles the mode (and
+    /// credential source, when required) for the selected auth kind.
     RoleHeader { role: String, expanded: bool },
-    /// Agent row inside an expanded `RoleHeader`. Editable.
-    RoleAgentRow {
+    /// Mode row inside an expanded `RoleHeader`. Editable.
+    RoleMode {
         role: String,
         agent: crate::agent::Agent,
     },
-    /// `+ Add per-role override (N eligible)` sentinel — always last.
+    /// Credential source row inside an expanded `RoleHeader`.
+    RoleSource {
+        role: String,
+        agent: crate::agent::Agent,
+    },
+    /// `+ Override for a role` sentinel.
     AddSentinel { eligible: usize },
-    /// Visual divider between sections; not focusable.
-    Divider,
+    /// Visual spacer.
+    Spacer,
 }
 
-pub fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
+/// Build the row-shape vector for the Auth tab.
+///
+/// `config` provides the live `[claude]`/`[codex]` globals so the
+/// "does this mode need a credential?" check runs against the
+/// operator's actual configuration. The synthesized config (workspace
+/// pending merged onto the live globals) is built once here and
+/// reused for every credential-row check, regardless of how many
+/// roles are expanded.
+pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthRow> {
     use crate::agent::Agent;
-    let mut rows = vec![
-        AuthRow::GlobalHeader,
-        AuthRow::GlobalDefault {
-            agent: Agent::Claude,
-        },
-        AuthRow::GlobalDefault {
-            agent: Agent::Codex,
-        },
-        AuthRow::Divider,
-        AuthRow::WorkspaceHeader,
-        AuthRow::WorkspaceDefault {
-            agent: Agent::Claude,
-        },
-        AuthRow::WorkspaceDefault {
-            agent: Agent::Codex,
-        },
-        AuthRow::Divider,
-    ];
+    let Some(agent) = editor.auth_selected_agent else {
+        return vec![
+            AuthRow::AuthKind {
+                agent: Agent::Claude,
+            },
+            AuthRow::AuthKind {
+                agent: Agent::Codex,
+            },
+        ];
+    };
 
     let override_roles: Vec<String> = editor
         .pending
         .roles
         .iter()
-        .filter(|(_, ro)| ro.has_auth_override())
+        .filter(|(_, ro)| match agent {
+            Agent::Claude => ro.claude.is_some(),
+            Agent::Codex => ro.codex.is_some(),
+        })
         .map(|(name, _)| name.clone())
         .collect();
-    rows.push(AuthRow::OverridesHeader {
-        count: override_roles.len(),
-    });
+
+    let synthesized = synthesize_appconfig_for_auth(editor, config);
+    let ws_name = workspace_name_for_panel(editor);
+
+    let mut rows = vec![AuthRow::WorkspaceMode { agent }];
+    if effective_mode_needs_credential(&synthesized, &ws_name, "", agent) {
+        rows.push(AuthRow::WorkspaceSource { agent });
+    }
+    rows.push(AuthRow::Spacer);
     for role in &override_roles {
         let expanded = editor.auth_expanded.contains(role);
         rows.push(AuthRow::RoleHeader {
@@ -693,14 +723,16 @@ pub fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
             expanded,
         });
         if expanded {
-            rows.push(AuthRow::RoleAgentRow {
+            rows.push(AuthRow::RoleMode {
                 role: role.clone(),
-                agent: crate::agent::Agent::Claude,
+                agent,
             });
-            rows.push(AuthRow::RoleAgentRow {
-                role: role.clone(),
-                agent: crate::agent::Agent::Codex,
-            });
+            if effective_mode_needs_credential(&synthesized, &ws_name, role, agent) {
+                rows.push(AuthRow::RoleSource {
+                    role: role.clone(),
+                    agent,
+                });
+            }
         }
     }
     let eligible_remaining = editor
@@ -708,10 +740,26 @@ pub fn auth_flat_rows(editor: &EditorState<'_>) -> Vec<AuthRow> {
         .allowed_roles
         .len()
         .saturating_sub(override_roles.len());
+    if !override_roles.is_empty() {
+        rows.push(AuthRow::Spacer);
+    }
     rows.push(AuthRow::AddSentinel {
         eligible: eligible_remaining,
     });
     rows
+}
+
+/// Whether the (workspace, role, agent) triple's effective mode (after
+/// merging globals + workspace + role overrides) requires a credential.
+/// `role = ""` checks the workspace-level effective mode.
+fn effective_mode_needs_credential(
+    synthesized: &AppConfig,
+    ws_name: &str,
+    role: &str,
+    agent: crate::agent::Agent,
+) -> bool {
+    let mode = crate::config::resolve_mode(synthesized, agent, ws_name, role);
+    agent.required_env_var(mode).is_some()
 }
 
 /// Mirrors launch-time semantics from
@@ -766,24 +814,25 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                 ));
             }
             SecretsRow::WorkspaceAddSentinel => {
-                let style = if selected {
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
+                let marker_col = if state.pending.env.is_empty() {
+                    ""
                 } else {
-                    Style::default().fg(WHITE)
+                    "     "
                 };
                 lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}     + Add environment variable"),
-                    style,
+                    format!("{cursor_col}{marker_col}+ Add environment variable"),
+                    action_row_style(selected),
                 )));
             }
             SecretsRow::RoleHeader { role, expanded } => {
                 let arrow = if *expanded { "▼" } else { "▶" };
                 let in_registry = config.roles.contains_key(role);
                 let count = state.pending.roles.get(role).map_or(0, |o| o.env.len());
-                let mut spans = vec![Span::styled(
-                    format!("{cursor_col}     {arrow} Role: {role}  ({count} vars)"),
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                )];
+                let mut spans = vec![
+                    Span::raw(format!("{cursor_col}     ")),
+                    Span::styled(arrow, disclosure_style()),
+                    Span::styled(format!(" Role: {role}  ({count} vars)"), disclosure_style()),
+                ];
                 if !in_registry {
                     spans.push(Span::styled(
                         "  (not in registry)",
@@ -814,14 +863,9 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                 ));
             }
             SecretsRow::RoleAddSentinel(role) => {
-                let style = if selected {
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(WHITE)
-                };
                 lines.push(Line::from(Span::styled(
                     format!("{cursor_col}     + Add {role} environment variable"),
-                    style,
+                    action_row_style(selected),
                 )));
             }
             SecretsRow::SectionSpacer => {
@@ -1029,7 +1073,7 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, confi
 
     let synthesized = synthesize_appconfig_for_auth(state, config);
     let workspace_name = workspace_name_for_panel(state);
-    let rows = auth_flat_rows(state);
+    let rows = auth_flat_rows(state, config);
 
     let FieldFocus::Row(cursor) = state.active_field;
     let max_idx = rows.len().saturating_sub(1);
@@ -1037,16 +1081,26 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, confi
 
     let items: Vec<ListItem> = rows
         .iter()
-        .map(|r| ListItem::new(render_auth_row(r, &synthesized, &workspace_name)))
+        .enumerate()
+        .map(|(i, r)| {
+            ListItem::new(render_auth_row(
+                i == selected,
+                r,
+                &synthesized,
+                &workspace_name,
+            ))
+        })
         .collect();
-    let title_span = Span::styled(
-        " Auth ",
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-    );
-    let block = Block::default()
+    let mut block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(title_span);
+        .border_style(Style::default().fg(PHOSPHOR_DARK));
+    if let Some(agent) = state.auth_selected_agent {
+        let title_span = Span::styled(
+            format!(" {} ", auth_kind_display(agent)),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        );
+        block = block.title(title_span);
+    }
     let list = List::new(items).block(block).highlight_symbol("▸ ");
     let mut list_state = ListState::default();
     list_state.select(Some(selected));
@@ -1054,44 +1108,24 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, confi
 }
 
 fn render_auth_row(
+    selected: bool,
     row: &AuthRow,
     synthesized: &AppConfig,
     workspace_name: &str,
 ) -> ratatui::text::Line<'static> {
     use crate::config::resolve_mode;
-    use crate::console::widgets::auth_panel::{agent_display, badge_for, mode_str};
+    use crate::console::widgets::auth_panel::mode_str;
 
     let bold_white = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let dim_green = Style::default().fg(PHOSPHOR_DIM);
     let phosphor = Style::default().fg(PHOSPHOR_GREEN);
 
     match row {
-        AuthRow::GlobalHeader => {
-            ratatui::text::Line::from(Span::styled("Global defaults", bold_white))
-        }
-        AuthRow::GlobalDefault { agent } => {
-            let mode = match agent {
-                crate::agent::Agent::Claude => synthesized
-                    .claude
-                    .as_ref()
-                    .map(|c| c.auth_forward)
-                    .unwrap_or_default(),
-                crate::agent::Agent::Codex => synthesized
-                    .codex
-                    .as_ref()
-                    .map(|c| c.auth_forward)
-                    .unwrap_or_default(),
-            };
-            ratatui::text::Line::from(vec![
-                Span::raw("  "),
-                Span::styled(format!("{}: ", agent_display(*agent)), bold_white),
-                Span::styled(mode_str(mode).to_string(), phosphor),
-            ])
-        }
-        AuthRow::WorkspaceHeader => {
-            ratatui::text::Line::from(Span::styled("Workspace defaults", bold_white))
-        }
-        AuthRow::WorkspaceDefault { agent } => {
+        AuthRow::AuthKind { agent } => ratatui::text::Line::from(Span::styled(
+            auth_kind_display(*agent).to_string(),
+            bold_white,
+        )),
+        AuthRow::WorkspaceMode { agent } => {
             let ws = synthesized.workspaces.get(workspace_name);
             let explicit = ws.and_then(|ws| match agent {
                 crate::agent::Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
@@ -1099,66 +1133,180 @@ fn render_auth_row(
             });
             let mode =
                 explicit.unwrap_or_else(|| resolve_mode(synthesized, *agent, workspace_name, ""));
-            let badge = badge_for(synthesized, workspace_name, "", *agent, mode);
+            let suffix = if explicit.is_some() {
+                ""
+            } else {
+                " (inherited)"
+            };
             ratatui::text::Line::from(vec![
-                Span::raw("  "),
-                Span::styled(format!("{}: ", agent_display(*agent)), bold_white),
+                Span::styled(format!("{:<14}", "Mode"), bold_white),
                 Span::styled(mode_str(mode).to_string(), phosphor),
-                Span::raw("  "),
-                badge_span(badge),
+                Span::styled(suffix.to_string(), dim_green),
             ])
         }
-        AuthRow::OverridesHeader { count } => ratatui::text::Line::from(vec![
-            Span::styled("Per-role overrides ", bold_white),
-            Span::styled(format!("({count})"), dim_green),
-        ]),
+        AuthRow::WorkspaceSource { agent } => {
+            render_auth_source_line("Source", synthesized, workspace_name, "", *agent, 0)
+        }
         AuthRow::RoleHeader { role, expanded } => {
-            let glyph = if *expanded { "▾" } else { "▸" };
+            let glyph = if *expanded { "▼" } else { "▶" };
             ratatui::text::Line::from(vec![
-                Span::raw("  "),
-                Span::styled(glyph.to_string(), phosphor),
-                Span::raw(" "),
-                Span::styled(role.clone(), bold_white),
+                Span::styled(glyph.to_string(), disclosure_style()),
+                Span::styled(format!(" Role: {role}"), disclosure_style()),
             ])
         }
-        AuthRow::RoleAgentRow { role, agent } => {
+        AuthRow::RoleMode { role, agent } => {
             let mode = resolve_mode(synthesized, *agent, workspace_name, role);
-            let badge = badge_for(synthesized, workspace_name, role, *agent, mode);
             ratatui::text::Line::from(vec![
                 Span::raw("      "),
-                Span::styled(format!("{}: ", agent_display(*agent)), bold_white),
+                Span::styled(format!("{:<12}", "Mode"), bold_white),
                 Span::styled(mode_str(mode).to_string(), phosphor),
-                Span::raw("  "),
-                badge_span(badge),
             ])
         }
+        AuthRow::RoleSource { role, agent } => {
+            render_auth_source_line("Source", synthesized, workspace_name, role, *agent, 6)
+        }
         AuthRow::AddSentinel { eligible } => {
-            let label_style = if *eligible == 0 { dim_green } else { phosphor };
+            let label_style = if *eligible == 0 {
+                dim_green
+            } else {
+                action_row_style(selected)
+            };
             let suffix = if *eligible == 0 {
                 "   (all roles overridden)".to_string()
             } else {
-                format!("   ({eligible} eligible)")
+                String::new()
             };
             ratatui::text::Line::from(vec![
-                Span::styled("  + Add per-role override", label_style),
+                Span::styled("+ Override for a role", label_style),
                 Span::styled(suffix, dim_green),
             ])
         }
-        AuthRow::Divider => ratatui::text::Line::from(Span::styled(
-            "  ──────────────────────────────────────────",
-            dim_green,
-        )),
+        AuthRow::Spacer => ratatui::text::Line::from(""),
     }
 }
 
-fn badge_span(
-    badge: crate::console::widgets::auth_panel::CredentialBadge,
-) -> ratatui::text::Span<'static> {
-    use crate::console::widgets::auth_panel::{CredentialBadge, DANGER_RED, PHOSPHOR_GREEN};
-    match badge {
-        CredentialBadge::Resolves => Span::styled("OK", Style::default().fg(PHOSPHOR_GREEN)),
-        CredentialBadge::Unset => Span::styled("! unset", Style::default().fg(DANGER_RED)),
-        CredentialBadge::NotApplicable => Span::raw(""),
+fn render_auth_source_line(
+    label: &str,
+    synthesized: &AppConfig,
+    workspace_name: &str,
+    role: &str,
+    agent: crate::agent::Agent,
+    indent: usize,
+) -> ratatui::text::Line<'static> {
+    use crate::console::widgets::auth_panel::mode_str;
+
+    let mode = crate::config::resolve_mode(synthesized, agent, workspace_name, role);
+    let env_name = agent.required_env_var(mode);
+    let label_width = if indent == 0 { 14 } else { 12 };
+    let mut spans = vec![
+        Span::raw(" ".repeat(indent)),
+        Span::styled(
+            format!("{label:<label_width$}"),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ),
+    ];
+
+    let Some(env_name) = env_name else {
+        spans.push(Span::styled(
+            "not required",
+            Style::default().fg(PHOSPHOR_DIM),
+        ));
+        return ratatui::text::Line::from(spans);
+    };
+
+    let value = auth_source_value(synthesized, workspace_name, role, env_name);
+
+    match value {
+        Some(EnvValue::OpRef(r)) => {
+            spans.push(Span::styled("[op] ", Style::default().fg(PHOSPHOR_DIM)));
+            push_op_breadcrumb_spans(&mut spans, &r.path);
+        }
+        Some(EnvValue::Plain(s)) if !s.is_empty() => {
+            spans.push(Span::styled(
+                "●".repeat(s.chars().count().clamp(1, 12)),
+                Style::default().fg(PHOSPHOR_DIM),
+            ));
+        }
+        _ => {
+            spans.push(Span::styled(
+                format!("unset  ({env_name} for {})", mode_str(mode)),
+                Style::default().fg(crate::console::widgets::auth_panel::DANGER_RED),
+            ));
+        }
+    }
+    ratatui::text::Line::from(spans)
+}
+
+const fn auth_kind_display(agent: crate::agent::Agent) -> &'static str {
+    match agent {
+        crate::agent::Agent::Claude => "Claude Code",
+        crate::agent::Agent::Codex => "Codex",
+    }
+}
+
+fn auth_source_value<'a>(
+    synthesized: &'a AppConfig,
+    workspace_name: &str,
+    role: &str,
+    env_name: &str,
+) -> Option<&'a EnvValue> {
+    if !role.is_empty()
+        && let Some(value) = synthesized
+            .workspaces
+            .get(workspace_name)
+            .and_then(|ws| ws.roles.get(role))
+            .and_then(|ro| ro.env.get(env_name))
+    {
+        return Some(value);
+    }
+    if let Some(value) = synthesized
+        .workspaces
+        .get(workspace_name)
+        .and_then(|ws| ws.env.get(env_name))
+    {
+        return Some(value);
+    }
+    if !role.is_empty()
+        && let Some(value) = synthesized
+            .roles
+            .get(role)
+            .and_then(|r| r.env.get(env_name))
+    {
+        return Some(value);
+    }
+    synthesized.env.get(env_name)
+}
+
+/// Render an `OpRef.path` as a `vault / item [subtitle] / section → field ?query`
+/// breadcrumb. Shared between the Auth tab, the Secrets tab, and the
+/// auth-edit form so all three render the same path identically.
+pub(in crate::console) fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>>, path: &str) {
+    let dim = Style::default().fg(PHOSPHOR_DIM);
+    let white_style = Style::default().fg(WHITE);
+    let green = Style::default().fg(PHOSPHOR_GREEN);
+    let green_bold = Style::default()
+        .fg(PHOSPHOR_GREEN)
+        .add_modifier(Modifier::BOLD);
+    let Some(parts) = parse_path_breadcrumb(path) else {
+        spans.push(Span::styled("<unparseable path - re-pick>", dim));
+        return;
+    };
+    spans.push(Span::styled(parts.vault, white_style));
+    spans.push(Span::styled(" / ", dim));
+    spans.push(Span::styled(parts.item, green));
+    if let Some(subtitle) = parts.item_subtitle {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(subtitle, dim));
+    }
+    if let Some(section) = parts.section {
+        spans.push(Span::styled(" / ", dim));
+        spans.push(Span::styled(section, green));
+    }
+    spans.push(Span::styled(" \u{2192} ", dim));
+    spans.push(Span::styled(parts.field, green_bold));
+    if let Some(query) = parts.attribute_query {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(query, dim));
     }
 }
 
@@ -1198,57 +1346,27 @@ pub(in crate::console::manager) fn workspace_name_for_panel(state: &EditorState<
     }
 }
 
-/// Return a short human-readable provenance label for the given
-/// (workspace, role, agent) triple.
-///
-/// Checks presence at each config layer and returns the most specific
-/// description: role-level override beats workspace default beats global.
-fn provenance_label(
-    synthesized: &crate::config::AppConfig,
-    workspace_name: &str,
-    role: &str,
-    agent: crate::agent::Agent,
-) -> &'static str {
-    let role_explicit = synthesized
-        .workspaces
-        .get(workspace_name)
-        .and_then(|ws| ws.roles.get(role))
-        .and_then(|ro| match agent {
-            crate::agent::Agent::Claude => ro.claude.as_ref().map(|_| ()),
-            crate::agent::Agent::Codex => ro.codex.as_ref().map(|_| ()),
-        });
-    let ws_explicit = synthesized
-        .workspaces
-        .get(workspace_name)
-        .and_then(|ws| match agent {
-            crate::agent::Agent::Claude => ws.claude.as_ref().map(|_| ()),
-            crate::agent::Agent::Codex => ws.codex.as_ref().map(|_| ()),
-        });
-    if role_explicit.is_some() {
-        "overrides workspace default"
-    } else if ws_explicit.is_some() {
-        "inherits workspace default"
-    } else {
-        "inherits global default"
-    }
-}
-
-/// Map a flattened editable row index (the cursor) into the
+/// Map a flattened auth row index (the cursor) into the
 /// `AuthFormTarget` the form modal should be opened against. Returns
-/// `None` for non-editable rows (headers, defaults, dividers, sentinel)
-/// so callers can branch on it before opening the form.
+/// `None` for non-form rows (`AuthKind`, `RoleHeader`, `AddSentinel`,
+/// `Spacer`) so callers can dispatch them separately.
 pub(in crate::console::manager) fn resolve_auth_row_target(
     state: &EditorState<'_>,
+    config: &AppConfig,
     row: usize,
 ) -> Option<crate::console::manager::state::AuthFormTarget> {
     use crate::console::manager::state::AuthFormTarget;
-    let rows = auth_flat_rows(state);
+    let rows = auth_flat_rows(state, config);
     match rows.get(row)? {
-        AuthRow::WorkspaceDefault { agent } => Some(AuthFormTarget::Workspace { agent: *agent }),
-        AuthRow::RoleAgentRow { role, agent } => Some(AuthFormTarget::WorkspaceRole {
-            role: role.clone(),
-            agent: *agent,
-        }),
+        AuthRow::WorkspaceMode { agent } | AuthRow::WorkspaceSource { agent } => {
+            Some(AuthFormTarget::Workspace { agent: *agent })
+        }
+        AuthRow::RoleMode { role, agent } | AuthRow::RoleSource { role, agent } => {
+            Some(AuthFormTarget::WorkspaceRole {
+                role: role.clone(),
+                agent: *agent,
+            })
+        }
         _ => None,
     }
 }
@@ -1794,28 +1912,32 @@ mod secrets_tab_render_tests {
         // Expected sequence:
         //  0  WorkspaceKeyRow("ALPHA")
         //  1  WorkspaceKeyRow("BETA")
-        //  2  WorkspaceAddSentinel
-        //  3  SectionSpacer
-        //  4  AgentHeader { role: "agent-a", expanded: true }
-        //  5  AgentKeyRow { role: "agent-a", key: "KEY" }
-        //  6  AgentAddSentinel("agent-a")
+        //  2  SectionSpacer
+        //  3  WorkspaceAddSentinel
+        //  4  SectionSpacer
+        //  5  AgentHeader { role: "agent-a", expanded: true }
+        //  6  AgentKeyRow { role: "agent-a", key: "KEY" }
         //  7  SectionSpacer
-        //  8  AgentHeader { role: "agent-b", expanded: false }
-        assert_eq!(rows.len(), 9, "unexpected row count: {rows:?}");
+        //  8  AgentAddSentinel("agent-a")
+        //  9  SectionSpacer
+        // 10  AgentHeader { role: "agent-b", expanded: false }
+        assert_eq!(rows.len(), 11, "unexpected row count: {rows:?}");
         assert!(matches!(&rows[0], super::SecretsRow::WorkspaceKeyRow(k) if k == "ALPHA"));
         assert!(matches!(&rows[1], super::SecretsRow::WorkspaceKeyRow(k) if k == "BETA"));
-        assert!(matches!(&rows[2], super::SecretsRow::WorkspaceAddSentinel));
-        assert!(matches!(&rows[3], super::SecretsRow::SectionSpacer));
+        assert!(matches!(&rows[2], super::SecretsRow::SectionSpacer));
+        assert!(matches!(&rows[3], super::SecretsRow::WorkspaceAddSentinel));
+        assert!(matches!(&rows[4], super::SecretsRow::SectionSpacer));
         assert!(
-            matches!(&rows[4], super::SecretsRow::RoleHeader { role, expanded: true } if role == "agent-a")
+            matches!(&rows[5], super::SecretsRow::RoleHeader { role, expanded: true } if role == "agent-a")
         );
         assert!(
-            matches!(&rows[5], super::SecretsRow::RoleKeyRow { role, key } if role == "agent-a" && key == "KEY")
+            matches!(&rows[6], super::SecretsRow::RoleKeyRow { role, key } if role == "agent-a" && key == "KEY")
         );
-        assert!(matches!(&rows[6], super::SecretsRow::RoleAddSentinel(a) if a == "agent-a"));
         assert!(matches!(&rows[7], super::SecretsRow::SectionSpacer));
+        assert!(matches!(&rows[8], super::SecretsRow::RoleAddSentinel(a) if a == "agent-a"));
+        assert!(matches!(&rows[9], super::SecretsRow::SectionSpacer));
         assert!(
-            matches!(&rows[8], super::SecretsRow::RoleHeader { role, expanded: false } if role == "agent-b")
+            matches!(&rows[10], super::SecretsRow::RoleHeader { role, expanded: false } if role == "agent-b")
         );
     }
 
@@ -2097,16 +2219,16 @@ mod secrets_tab_render_tests {
         let editor = EditorState::new_edit("ws".into(), ws);
         let rows = super::secrets_flat_rows(&editor);
         assert!(
-            matches!(rows.get(2), Some(super::SecretsRow::SectionSpacer)),
-            "row 2 must be a SectionSpacer between workspace section \
+            matches!(rows.get(3), Some(super::SecretsRow::SectionSpacer)),
+            "row 3 must be a SectionSpacer between workspace add row \
              and first role header; got {:?}",
-            rows.get(2)
+            rows.get(3)
         );
         assert!(
-            matches!(rows.get(3), Some(super::SecretsRow::RoleHeader { .. })),
-            "row 3 must be the role header right after the spacer; \
+            matches!(rows.get(4), Some(super::SecretsRow::RoleHeader { .. })),
+            "row 4 must be the role header right after the spacer; \
              got {:?}",
-            rows.get(3)
+            rows.get(4)
         );
     }
 
@@ -2580,34 +2702,24 @@ mod parse_path_breadcrumb_tests {
 #[cfg(test)]
 mod auth_flat_rows_tests {
     use super::{AuthRow, auth_flat_rows};
+    use crate::agent::Agent;
+    use crate::config::AppConfig;
     use crate::console::manager::state::EditorState;
     use crate::workspace::WorkspaceConfig;
 
     #[test]
-    fn empty_workspace_yields_defaults_overrides_header_and_sentinel() {
+    fn root_view_lists_auth_kinds_only() {
         let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        let rows = auth_flat_rows(&editor);
+        let rows = auth_flat_rows(&editor, &AppConfig::default());
         assert_eq!(
             rows,
             vec![
-                AuthRow::GlobalHeader,
-                AuthRow::GlobalDefault {
-                    agent: crate::agent::Agent::Claude,
+                AuthRow::AuthKind {
+                    agent: Agent::Claude,
                 },
-                AuthRow::GlobalDefault {
-                    agent: crate::agent::Agent::Codex,
+                AuthRow::AuthKind {
+                    agent: Agent::Codex,
                 },
-                AuthRow::Divider,
-                AuthRow::WorkspaceHeader,
-                AuthRow::WorkspaceDefault {
-                    agent: crate::agent::Agent::Claude,
-                },
-                AuthRow::WorkspaceDefault {
-                    agent: crate::agent::Agent::Codex,
-                },
-                AuthRow::Divider,
-                AuthRow::OverridesHeader { count: 0 },
-                AuthRow::AddSentinel { eligible: 0 },
             ],
         );
     }
@@ -2624,17 +2736,27 @@ mod auth_flat_rows_tests {
         });
         ws.roles.insert("the-architect".into(), over);
 
-        let editor = EditorState::new_edit("ws".into(), ws);
-        let rows = auth_flat_rows(&editor);
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.auth_selected_agent = Some(Agent::Claude);
+        let rows = auth_flat_rows(&editor, &AppConfig::default());
 
         let header_idx = rows
             .iter()
-            .position(|r| matches!(r, AuthRow::OverridesHeader { count: 1 }))
-            .expect("overrides header with count=1 expected");
+            .position(|r| {
+                matches!(
+                    r,
+                    AuthRow::RoleHeader {
+                        role,
+                        expanded: false
+                    } if role == "the-architect"
+                )
+            })
+            .expect("role override header expected");
         assert!(matches!(
-            rows[header_idx + 1],
+            rows[header_idx],
             AuthRow::RoleHeader { ref role, expanded: false } if role == "the-architect"
         ));
+        assert!(matches!(rows[header_idx + 1], AuthRow::Spacer));
         assert!(matches!(
             rows[header_idx + 2],
             AuthRow::AddSentinel { eligible: 1 }
@@ -2643,7 +2765,6 @@ mod auth_flat_rows_tests {
 
     #[test]
     fn role_with_override_when_expanded_emits_agent_rows() {
-        use crate::agent::Agent;
         use crate::config::{AgentAuthConfig, AuthForwardMode, CodexAuthConfig};
         use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
         let mut ws = WorkspaceConfig::default();
@@ -2658,8 +2779,9 @@ mod auth_flat_rows_tests {
         ws.roles.insert("the-architect".into(), over);
 
         let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.auth_selected_agent = Some(Agent::Claude);
         editor.auth_expanded.insert("the-architect".into());
-        let rows = auth_flat_rows(&editor);
+        let rows = auth_flat_rows(&editor, &AppConfig::default());
 
         let header_pos = rows
             .iter()
@@ -2667,35 +2789,32 @@ mod auth_flat_rows_tests {
             .expect("expanded role header missing");
         assert!(matches!(
             rows[header_pos + 1],
-            AuthRow::RoleAgentRow { ref role, agent: Agent::Claude } if role == "the-architect"
-        ));
-        assert!(matches!(
-            rows[header_pos + 2],
-            AuthRow::RoleAgentRow { ref role, agent: Agent::Codex } if role == "the-architect"
+            AuthRow::RoleMode { ref role, agent: Agent::Claude } if role == "the-architect"
         ));
     }
 
     #[test]
     fn resolve_auth_row_target_picks_workspace_default_for_workspacedefault_row() {
-        use crate::agent::Agent;
         use crate::console::manager::state::AuthFormTarget;
         use crate::workspace::WorkspaceConfig;
 
-        let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        let rows = auth_flat_rows(&editor);
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.auth_selected_agent = Some(Agent::Claude);
+        let cfg = AppConfig::default();
+        let rows = auth_flat_rows(&editor, &cfg);
         let workspace_claude_idx = rows
             .iter()
             .position(|r| {
                 matches!(
                     r,
-                    AuthRow::WorkspaceDefault {
+                    AuthRow::WorkspaceMode {
                         agent: Agent::Claude
                     }
                 )
             })
             .unwrap();
         assert_eq!(
-            super::resolve_auth_row_target(&editor, workspace_claude_idx),
+            super::resolve_auth_row_target(&editor, &cfg, workspace_claude_idx),
             Some(AuthFormTarget::Workspace {
                 agent: Agent::Claude
             }),
@@ -2703,44 +2822,52 @@ mod auth_flat_rows_tests {
     }
 
     #[test]
-    fn provenance_label_picks_overrides_when_role_explicit() {
-        use crate::agent::Agent;
-        use crate::config::{AgentAuthConfig, AppConfig, AuthForwardMode};
-        use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
-
-        let mut cfg = AppConfig::default();
-        let mut ws = WorkspaceConfig::default();
-        let mut over = WorkspaceRoleOverride::default();
-        over.claude = Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::Ignore,
-        });
-        ws.roles.insert("the-architect".into(), over);
-        cfg.workspaces.insert("ws".into(), ws);
-
-        assert_eq!(
-            super::provenance_label(&cfg, "ws", "the-architect", Agent::Claude),
-            "overrides workspace default",
-        );
-    }
-
-    #[test]
-    fn resolve_auth_row_target_returns_none_for_global_or_header_or_sentinel() {
+    fn resolve_auth_row_target_returns_none_for_navigation_and_header_rows() {
         use crate::workspace::WorkspaceConfig;
-        let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        let rows = auth_flat_rows(&editor);
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.auth_selected_agent = Some(Agent::Claude);
+        let cfg = AppConfig::default();
+        let rows = auth_flat_rows(&editor, &cfg);
         for (idx, row) in rows.iter().enumerate() {
             match row {
-                AuthRow::GlobalHeader
-                | AuthRow::GlobalDefault { .. }
-                | AuthRow::WorkspaceHeader
-                | AuthRow::OverridesHeader { .. }
+                AuthRow::AuthKind { .. }
                 | AuthRow::AddSentinel { .. }
-                | AuthRow::Divider => assert!(
-                    super::resolve_auth_row_target(&editor, idx).is_none(),
+                | AuthRow::Spacer
+                | AuthRow::RoleHeader { .. } => assert!(
+                    super::resolve_auth_row_target(&editor, &cfg, idx).is_none(),
                     "row {idx} ({row:?}) must not resolve to an editable target"
                 ),
                 _ => {}
             }
         }
+    }
+
+    /// Globally configured `api_key` mode (in `[claude].auth_forward`)
+    /// must surface a `WorkspaceSource` row so the operator can set
+    /// the credential — even when the workspace has no explicit
+    /// `claude` block of its own.
+    #[test]
+    fn workspace_source_surfaces_when_global_requires_credential() {
+        use crate::config::{AgentAuthConfig, AuthForwardMode};
+        use crate::workspace::WorkspaceConfig;
+        let config = AppConfig {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::ApiKey,
+            }),
+            ..AppConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.auth_selected_agent = Some(Agent::Claude);
+
+        let rows = auth_flat_rows(&editor, &config);
+        assert!(
+            rows.iter().any(|r| matches!(
+                r,
+                AuthRow::WorkspaceSource {
+                    agent: Agent::Claude
+                }
+            )),
+            "global claude.auth_forward = api_key must surface WorkspaceSource row; got {rows:?}"
+        );
     }
 }

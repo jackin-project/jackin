@@ -5,11 +5,10 @@
 use ratatui::{Frame, layout::Rect};
 
 use super::super::super::widgets::{
-    agent_choice, auth_panel, confirm, confirm_save, error_popup, file_browser, github_picker,
-    mount_dst_choice, op_picker, role_picker, save_discard, scope_picker, source_picker,
-    text_input, workdir_pick,
+    auth_panel, confirm, confirm_save, error_popup, file_browser, github_picker, mount_dst_choice,
+    op_picker, role_picker, save_discard, scope_picker, source_picker, text_input, workdir_pick,
 };
-use super::super::state::{AuthFormTarget, Modal};
+use super::super::state::Modal;
 use super::centered_rect_fixed;
 
 // ── Modal dispatcher ────────────────────────────────────────────────
@@ -64,10 +63,13 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
             let rows = (state.filtered.len() as u16).saturating_add(6).min(15);
             (50, rows)
         }
-        Modal::SourcePicker { .. } | Modal::ScopePicker { .. } | Modal::AuthAgentPicker { .. } => {
+        Modal::SourcePicker { .. } | Modal::AuthSourcePicker { .. } | Modal::ScopePicker { .. } => {
             (50, 7)
         }
-        Modal::AuthForm { .. } => (70, 14),
+        // Hug the content: hide the credential block when the mode
+        // doesn't need one so the dialog doesn't leave dead rows
+        // below the hint line.
+        Modal::AuthForm { state, .. } => (80, auth_panel::required_height(state.as_ref())),
     };
     centered_rect_fixed(outer, pct_w, height_rows)
 }
@@ -98,18 +100,12 @@ pub(super) fn render_modal(frame: &mut Frame, modal: &mut Modal<'_>) {
         | Modal::AuthRolePicker { state } => {
             role_picker::render(frame, modal_area, state);
         }
-        Modal::SourcePicker { state } => source_picker::render(frame, modal_area, state),
-        Modal::ScopePicker { state } => scope_picker::render(frame, modal_area, state),
-        Modal::AuthForm { target, state, .. } => {
-            let (workspace, role) = match target {
-                AuthFormTarget::Workspace { .. } => ("(workspace)", "(workspace-default)"),
-                AuthFormTarget::WorkspaceRole { role, .. } => ("(workspace)", role.as_str()),
-            };
-            let ctx = auth_panel::FormContext { workspace, role };
-            auth_panel::render_form(frame, modal_area, state.as_ref(), &ctx);
+        Modal::SourcePicker { state } | Modal::AuthSourcePicker { state } => {
+            source_picker::render(frame, modal_area, state);
         }
-        Modal::AuthAgentPicker { state, .. } => {
-            agent_choice::render(frame, modal_area, state);
+        Modal::ScopePicker { state } => scope_picker::render(frame, modal_area, state),
+        Modal::AuthForm { state, focus, .. } => {
+            auth_panel::render_form(frame, modal_area, state.as_ref(), *focus);
         }
     }
 }

@@ -35,6 +35,21 @@ impl ManagerListRow {
             Self::NewWorkspace => saved_count + 1,
         }
     }
+
+    #[must_use]
+    pub const fn to_visual_index(self, saved_count: usize) -> usize {
+        match self {
+            Self::CurrentDirectory => 0,
+            Self::SavedWorkspace(i) => i + 1,
+            Self::NewWorkspace => {
+                if saved_count > 0 {
+                    saved_count + 2
+                } else {
+                    saved_count + 1
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -118,6 +133,14 @@ pub struct EditorState<'a> {
     pub unmasked_rows: BTreeSet<(SecretsScopeTag, String)>,
     pub secrets_expanded: BTreeSet<String>,
     pub auth_expanded: BTreeSet<String>,
+    /// Auth tab two-screen state: `None` renders the auth-kind
+    /// picker; `Some(agent)` renders the focused editor for that
+    /// auth kind. Cleared by Esc on the focused screen (see the Auth
+    /// branch in `input::editor::handle_editor_key`'s `KeyCode::Esc`
+    /// arm) and by Tab/BackTab leaving the Auth tab. The Esc-pop
+    /// is in-tab navigation and intentionally bypasses the
+    /// dirty-modal flow — pending edits stay in `editor.pending`.
+    pub auth_selected_agent: Option<crate::agent::Agent>,
     /// Scratch for the two-step add flow: set on `EnvKey` commit,
     /// cleared on `EnvValue` commit/cancel.
     pub pending_env_key: Option<(SecretsScopeTag, String)>,
@@ -130,22 +153,32 @@ pub struct EditorState<'a> {
     /// (wrapped as `EnvValue::OpRef`) until the operator names the key
     /// and the `EnvKey` modal commits both fields at once.
     pub pending_picker_value: Option<crate::operator_env::EnvValue>,
-    /// Stash for the auth-form → `OpPicker` → auth-form round trip.
-    /// Set when the operator presses Enter at `AuthFormFocus::OpRefValue`,
-    /// and consumed when `OpPicker` commits or cancels: on commit we
-    /// reconstruct the `Modal::AuthForm` with the picked `OpRef`
-    /// applied; on cancel we reconstruct it pristine. Threading the
-    /// auth-form context through this field (rather than via a
-    /// payload on `Modal::OpPicker`) keeps the picker variant
-    /// orthogonal to its caller.
+    /// Stash for the auth-form ↔ side-modal round trips. Set when the
+    /// operator presses Enter on the credential row, and consumed when
+    /// the side modal commits or cancels:
+    ///
+    ///   - `AuthSourcePicker` (literal) → `TextInput` → `AuthForm`
+    ///   - `AuthSourcePicker` (1Password) → `OpPicker` → `AuthForm`
+    ///
+    /// On commit the form is reconstructed with the new credential
+    /// applied (literal text via `set_literal`, `OpRef` via
+    /// `try_commit_op_ref`); on cancel it's reconstructed pristine.
+    /// Threading the auth-form context through this single field
+    /// (rather than via a payload on each side variant) keeps the
+    /// picker/text-input variants orthogonal to their caller, at the
+    /// cost of an invariant that only the side-modal handlers
+    /// touch this slot — see `AUTH00x` debug tags in
+    /// `input::auth` for the recovery path on stash desync.
     pub pending_auth_form_return: Option<AuthFormReturnPath>,
 }
 
-/// Captured auth-form context to re-mount the form after the
-/// `OpPicker` commits or cancels.
+/// Captured auth-form context to re-mount the form after a side
+/// modal (`AuthSourcePicker`, `TextInput`, or `OpPicker`) commits or
+/// cancels.
 ///
 /// `state` and `literal_buffer` are stashed so a half-typed literal
-/// isn't lost when the operator detours into the picker.
+/// isn't lost when the operator detours through the source picker
+/// → text-input round trip and cancels back.
 #[derive(Debug)]
 pub struct AuthFormReturnPath {
     pub target: AuthFormTarget,
@@ -219,9 +252,12 @@ pub enum EditorTab {
     Mounts,
     Roles,
     Secrets,
-    /// Auth panel: workspace-level + per-(workspace × role) auth-forward
-    /// modes and credentials, with a global-defaults preview at the top.
-    /// Mounts the `auth_panel` widget (Tasks 15-18) inside the editor.
+    /// Auth panel: opens on a kind-first picker (`Claude Code` /
+    /// `Codex`); selecting a kind drops into a focused view with the
+    /// workspace-level mode + optional credential source plus
+    /// per-role overrides for that kind only. The form modal lives in
+    /// `auth_panel`; the row enumeration is `auth_flat_rows` in
+    /// `render::editor`.
     Auth,
 }
 
@@ -285,20 +321,17 @@ pub enum Modal<'a> {
     RoleOverridePicker {
         state: RolePickerState,
     },
-    /// Auth-tab role picker — the first step in the 3-step add flow
-    /// (sentinel → role → agent → `AuthForm`). Reuses the existing
-    /// `RolePickerState` widget; commit hands off to `AuthAgentPicker`.
+    /// Auth-tab role picker — opened from the `+ Override for a role`
+    /// sentinel when an auth kind is already focused. Commit reads
+    /// `editor.auth_selected_agent` to build the `AuthFormTarget`
+    /// directly, then hands off to `Modal::AuthForm`.
     AuthRolePicker {
         state: RolePickerState,
     },
-    /// Auth-tab agent picker — second step. Carries the role chosen in
-    /// `AuthRolePicker` so commit can build the `AuthFormTarget`
-    /// directly without another round-trip.
-    AuthAgentPicker {
-        role: String,
-        state: crate::console::widgets::agent_choice::AgentChoiceState,
-    },
     SourcePicker {
+        state: SourcePickerState,
+    },
+    AuthSourcePicker {
         state: SourcePickerState,
     },
     ScopePicker {
@@ -311,31 +344,34 @@ pub enum Modal<'a> {
     AuthForm {
         target: AuthFormTarget,
         state: Box<AuthForm>,
-        /// Active focus inside the form (mode picker / cred radio / cred value / buttons).
+        /// Active focus inside the form: mode picker, credential
+        /// source row, or one of the Save/Cancel/Reset buttons.
         focus: AuthFormFocus,
-        /// Scratch text-input buffer when the credential value is being
-        /// typed inline in the form. Cleared on Esc; committed to
-        /// `state.set_literal` on Enter.
+        /// Buffer used to round-trip a previously-typed literal
+        /// credential through the source-picker → text-input detour
+        /// so the value isn't lost on cancel and the text-input
+        /// modal can re-open pre-populated.
         literal_buffer: String,
     },
 }
 
 /// Where in the auth-edit form the cursor currently sits.
+///
+/// The credential value is collected through
+/// `Modal::AuthSourcePicker` → `Modal::TextInput` (literal) or
+/// `Modal::OpPicker` (1Password), so the form carries only one
+/// credential-related focus (`CredentialSource`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthFormFocus {
-    /// Mode picker line — Space/Tab cycles, Enter commits selection.
+    /// Mode picker line — Space cycles modes; Tab/Down advances focus.
     Mode,
-    /// Credential source radio (Literal / 1Password) — Space toggles.
+    /// Required credential row — Enter opens the shared source picker.
     CredentialSource,
-    /// Literal value text input — operator types into `literal_buffer`.
-    LiteralValue,
-    /// 1Password value display — Enter opens the `OpPicker`.
-    OpRefValue,
-    /// `[ Save ]` action button.
+    /// Save action button.
     Save,
-    /// `[ Cancel ]` action button.
+    /// Cancel action button.
     Cancel,
-    /// `[ Reset ]` action button — clears the layer's mode/credential.
+    /// Reset action button — clears the layer's mode/credential.
     Reset,
 }
 
@@ -365,6 +401,7 @@ pub enum TextInputTarget {
     Role,
     EnvKey { scope: SecretsScopeTag },
     EnvValue { scope: SecretsScopeTag, key: String },
+    AuthCredential,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -392,11 +429,6 @@ pub enum ConfirmTarget {
         plan: PendingSaveCommit,
         exit_on_success: bool,
         affected_containers: Vec<String>,
-    },
-    /// `D` on a `RoleHeader` on the Auth tab — clears both agent overrides
-    /// for `role` after the operator confirms in the Confirm modal.
-    ClearAuthRoleOverride {
-        role: String,
     },
 }
 
@@ -549,6 +581,34 @@ impl ManagerState<'_> {
         }
     }
 
+    /// Decode a visual list row into a logical row. The rendered list keeps a
+    /// blank spacer before "+ New workspace" when saved workspaces exist; that
+    /// spacer is intentionally not selectable.
+    #[must_use]
+    pub const fn row_at_visual_index(&self, idx: usize) -> Option<ManagerListRow> {
+        let saved_count = self.workspaces.len();
+        if idx == 0 {
+            Some(ManagerListRow::CurrentDirectory)
+        } else if idx <= saved_count {
+            Some(ManagerListRow::SavedWorkspace(idx - 1))
+        } else if idx == saved_count + 1 && saved_count > 0 {
+            None
+        } else if (saved_count > 0 && idx == saved_count + 2)
+            || (saved_count == 0 && idx == saved_count + 1)
+        {
+            Some(ManagerListRow::NewWorkspace)
+        } else {
+            None
+        }
+    }
+
+    /// Selected index in rendered-list coordinates. Differs from `selected`
+    /// only when the blank spacer before "+ New workspace" is present.
+    #[must_use]
+    pub fn visual_selected(&self) -> usize {
+        self.selected_row().to_visual_index(self.workspaces.len())
+    }
+
     /// What the operator currently has highlighted.
     #[must_use]
     pub fn selected_row(&self) -> ManagerListRow {
@@ -611,6 +671,7 @@ impl EditorState<'_> {
             unmasked_rows: BTreeSet::default(),
             secrets_expanded: BTreeSet::default(),
             auth_expanded: BTreeSet::default(),
+            auth_selected_agent: None,
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
@@ -633,6 +694,7 @@ impl EditorState<'_> {
             unmasked_rows: BTreeSet::default(),
             secrets_expanded: BTreeSet::default(),
             auth_expanded: BTreeSet::default(),
+            auth_selected_agent: None,
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
@@ -1215,6 +1277,16 @@ mod tests {
             state.selected = idx;
             assert_eq!(state.selected_row(), row, "selected_row for idx={idx}");
         }
+
+        assert_eq!(
+            ManagerListRow::NewWorkspace.to_visual_index(saved_count),
+            saved_count + 2
+        );
+        assert_eq!(state.row_at_visual_index(saved_count + 1), None);
+        assert_eq!(
+            state.row_at_visual_index(saved_count + 2),
+            Some(ManagerListRow::NewWorkspace)
+        );
 
         // Out-of-range index returns None.
         assert_eq!(state.row_at(saved_count + 2), None);
