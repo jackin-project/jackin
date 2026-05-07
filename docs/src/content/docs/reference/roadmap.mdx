@@ -59,6 +59,7 @@ The current implementation is Claude-specific end-to-end (manifest schema, deriv
 - **[Docker API migration](/reference/roadmap/bollard-migration/)** — incremental migration from CLI string-matching to the Bollard typed API client for more robust error handling
 - **[1Password integration](/reference/roadmap/onepassword-integration/)** — inject secrets from 1Password vaults without exposing them as files in the container
 - **[Reliable Claude authentication strategy](/reference/roadmap/claude-auth-strategy/)** — move beyond copied session auth toward clearer, more durable modes for long-lived and concurrent agent runtimes
+- **[GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/)** — extend the layered `auth_forward` model from agent runtimes to the GitHub CLI, so each (workspace × role) can use either the host login or a least-privilege token (e.g. a fine-grained PAT) instead of one broad `gh` identity for everything
 
 ### Workflow improvements
 
