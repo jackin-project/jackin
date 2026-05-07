@@ -118,6 +118,9 @@ pub struct EditorState<'a> {
     pub unmasked_rows: BTreeSet<(SecretsScopeTag, String)>,
     pub secrets_expanded: BTreeSet<String>,
     pub auth_expanded: BTreeSet<String>,
+    /// Auth tab: `None` renders the auth-kind picker; `Some(agent)`
+    /// renders the focused editor for that auth kind.
+    pub auth_selected_agent: Option<crate::agent::Agent>,
     /// Scratch for the two-step add flow: set on `EnvKey` commit,
     /// cleared on `EnvValue` commit/cancel.
     pub pending_env_key: Option<(SecretsScopeTag, String)>,
@@ -611,6 +614,7 @@ impl EditorState<'_> {
             unmasked_rows: BTreeSet::default(),
             secrets_expanded: BTreeSet::default(),
             auth_expanded: BTreeSet::default(),
+            auth_selected_agent: None,
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
@@ -633,6 +637,7 @@ impl EditorState<'_> {
             unmasked_rows: BTreeSet::default(),
             secrets_expanded: BTreeSet::default(),
             auth_expanded: BTreeSet::default(),
+            auth_selected_agent: None,
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,

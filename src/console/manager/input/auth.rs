@@ -60,12 +60,18 @@ pub(super) fn open_auth_form_modal(editor: &mut EditorState<'_>) {
 /// duplicate the existing rows. Silent no-op when no candidates remain
 /// (the row is rendered dimmed in that state).
 pub(super) fn open_auth_role_picker(editor: &mut EditorState<'_>, config: &AppConfig) {
+    let Some(agent) = editor.auth_selected_agent else {
+        return;
+    };
     let eligible = super::super::render::editor::eligible_agents_for_override(editor, config);
     let already_overridden: std::collections::BTreeSet<String> = editor
         .pending
         .roles
         .iter()
-        .filter(|(_, ro)| ro.has_auth_override())
+        .filter(|(_, ro)| match agent {
+            Agent::Claude => ro.claude.is_some(),
+            Agent::Codex => ro.codex.is_some(),
+        })
         .map(|(name, _)| name.clone())
         .collect();
     let candidates: Vec<crate::selector::RoleSelector> = eligible
@@ -90,25 +96,29 @@ pub(super) fn toggle_role_expand(editor: &mut EditorState<'_>, role: String) {
 
 /// Handle `D`/`d` on the Auth tab.
 ///
-/// - `RoleHeader` → open a `Confirm` modal targeting `ClearAuthRoleOverride`.
-/// - `RoleAgentRow` → silently clear that single agent's override (no modal).
+/// - `RoleHeader` → clear the selected auth kind's role override.
+/// - `RoleMode` / `RoleSource` → silently clear that selected auth kind's override.
 /// - Anything else → no-op.
 pub(super) fn handle_d_on_auth_row(editor: &mut EditorState<'_>) {
     let FieldFocus::Row(n) = editor.active_field;
     let rows = super::super::render::editor::auth_flat_rows(editor);
     match rows.get(n).cloned() {
         Some(super::super::render::editor::AuthRow::RoleHeader { role, .. }) => {
-            editor.modal = Some(Modal::Confirm {
-                target: crate::console::manager::state::ConfirmTarget::ClearAuthRoleOverride {
-                    role: role.clone(),
-                },
-                state: crate::console::widgets::confirm::ConfirmState::new(format!(
-                    "Clear all auth overrides for '{role}'?"
-                )),
-            });
+            if let Some(agent) = editor.auth_selected_agent {
+                clear_role_agent(editor, &role, agent);
+            }
         }
-        Some(super::super::render::editor::AuthRow::RoleAgentRow { role, agent }) => {
+        Some(
+            super::super::render::editor::AuthRow::RoleMode { role, agent }
+            | super::super::render::editor::AuthRow::RoleSource { role, agent },
+        ) => {
             clear_role_agent(editor, &role, agent);
+        }
+        Some(
+            super::super::render::editor::AuthRow::WorkspaceMode { agent }
+            | super::super::render::editor::AuthRow::WorkspaceSource { agent },
+        ) => {
+            set_workspace_mode(&mut editor.pending, agent, None);
         }
         _ => {}
     }
@@ -605,7 +615,7 @@ mod tests {
         handle_auth_form_key(editor, k, fresh_op_cache())
     }
 
-    /// Return the flat-row index for `WorkspaceDefault { Claude }`.
+    /// Return the flat-row index for `WorkspaceMode { Claude }`.
     /// Panics if the row doesn't exist (which would indicate a broken
     /// fixture, not a test-under-test failure).
     fn workspace_claude_row_idx(editor: &EditorState<'_>) -> usize {
@@ -614,12 +624,12 @@ mod tests {
             .position(|r| {
                 matches!(
                     r,
-                    AuthRow::WorkspaceDefault {
+                    AuthRow::WorkspaceMode {
                         agent: Agent::Claude,
                     }
                 )
             })
-            .expect("WorkspaceDefault × Claude row must exist in auth_flat_rows")
+            .expect("WorkspaceMode × Claude row must exist in auth_flat_rows")
     }
 
     fn build_state() -> (AppConfig, ManagerState<'static>) {
@@ -651,6 +661,7 @@ mod tests {
         let ws = cfg.workspaces.get("proj").unwrap().clone();
         let mut editor = EditorState::new_edit("proj".into(), ws);
         editor.active_tab = crate::console::manager::state::EditorTab::Auth;
+        editor.auth_selected_agent = Some(Agent::Claude);
         let ws_claude_idx = workspace_claude_row_idx(&editor);
         editor.active_field = FieldFocus::Row(ws_claude_idx);
         state.stage = ManagerStage::Editor(editor);
@@ -765,24 +776,18 @@ mod tests {
         let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!()
         };
-        // Insert an override entry for "smith" so it materialises as a
-        // RoleHeader in auth_flat_rows (the row only appears when
-        // claude.is_some() || codex.is_some()). We seed codex only so
-        // the claude field stays None — the auth form then opens fresh
-        // (None mode) and the two-Space cycle reaches ApiKey as the
-        // test expects.
+        // Insert a Claude override entry for "smith" so it materialises
+        // in the focused Claude auth view.
         editor.pending.roles.insert(
             "smith".into(),
             WorkspaceRoleOverride {
-                codex: Some(crate::config::CodexAuthConfig(
-                    crate::config::AgentAuthConfig {
-                        auth_forward: AuthForwardMode::Sync,
-                    },
-                )),
+                claude: Some(crate::config::AgentAuthConfig {
+                    auth_forward: AuthForwardMode::Sync,
+                }),
                 ..Default::default()
             },
         );
-        // Expand the role so the RoleAgentRow children are emitted.
+        // Expand the role so the RoleMode child is emitted.
         editor.auth_expanded.insert("smith".into());
         // Dynamically locate the smith × Claude agent row.
         let smith_claude_idx = auth_flat_rows(editor)
@@ -790,13 +795,13 @@ mod tests {
             .position(|r| {
                 matches!(
                     r,
-                    AuthRow::RoleAgentRow {
+                    AuthRow::RoleMode {
                         role,
                         agent: Agent::Claude,
                     } if role == "smith"
                 )
             })
-            .expect("RoleAgentRow smith × Claude must exist after override insertion");
+            .expect("RoleMode smith × Claude must exist after override insertion");
         editor.active_field = FieldFocus::Row(smith_claude_idx);
         open_auth_form_modal(editor);
         let Some(Modal::AuthForm { target, .. }) = &editor.modal else {
@@ -810,8 +815,7 @@ mod tests {
             }
         );
 
-        // Cycle to api_key, enter cred, type, tab to save, enter.
-        drive_key(editor, key(KeyCode::Char(' ')));
+        // Cycle sync to api_key, enter cred, type, tab to save, enter.
         drive_key(editor, key(KeyCode::Char(' ')));
         drive_key(editor, key(KeyCode::Enter));
         drive_key(editor, key(KeyCode::Enter));

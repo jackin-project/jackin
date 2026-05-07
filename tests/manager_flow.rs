@@ -2683,10 +2683,11 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         .clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
+    ed.auth_selected_agent = Some(Agent::Claude);
     let ws_claude_idx = auth_row_idx(&ed, |r| {
         matches!(
             r,
-            AuthRow::WorkspaceDefault {
+            AuthRow::WorkspaceMode {
                 agent: Agent::Claude
             }
         )
@@ -2698,7 +2699,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(
         matches!(editor(&state).modal, Some(Modal::AuthForm { .. })),
-        "Enter on WorkspaceDefault/Claude must open AuthForm; got {:?}",
+        "Enter on WorkspaceMode/Claude must open AuthForm; got {:?}",
         editor(&state).modal
     );
 
@@ -2800,7 +2801,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
 }
 
 #[test]
-fn auth_add_role_override_three_step_flow() -> Result<()> {
+fn auth_add_role_override_flow_uses_selected_auth_kind() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config(&paths, temp.path())?;
@@ -2814,6 +2815,7 @@ fn auth_add_role_override_three_step_flow() -> Result<()> {
         .clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
+    ed.auth_selected_agent = Some(Agent::Claude);
 
     let sentinel_idx = auth_row_idx(&ed, |r| matches!(r, AuthRow::AddSentinel { .. }));
     ed.active_field = FieldFocus::Row(sentinel_idx);
@@ -2828,25 +2830,24 @@ fn auth_add_role_override_three_step_flow() -> Result<()> {
 
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
     assert!(
-        matches!(editor(&state).modal, Some(Modal::AuthAgentPicker { .. })),
-        "Enter on AuthRolePicker must open AuthAgentPicker; got {:?}",
+        match &editor(&state).modal {
+            Some(Modal::AuthForm {
+                target:
+                    jackin::console::manager::state::AuthFormTarget::WorkspaceRole { role, agent },
+                ..
+            }) => {
+                assert_eq!(*agent, Agent::Claude);
+                assert!(
+                    !role.is_empty(),
+                    "role must propagate from AuthRolePicker → AuthForm"
+                );
+                true
+            }
+            _ => false,
+        },
+        "Enter on AuthRolePicker must open AuthForm for selected auth kind; got {:?}",
         editor(&state).modal
     );
-
-    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
-    match &editor(&state).modal {
-        Some(Modal::AuthForm {
-            target: jackin::console::manager::state::AuthFormTarget::WorkspaceRole { role, agent },
-            ..
-        }) => {
-            assert_eq!(*agent, Agent::Claude);
-            assert!(
-                !role.is_empty(),
-                "role must propagate from AuthRolePicker → AuthAgentPicker → AuthForm"
-            );
-        }
-        other => panic!("expected AuthForm/WorkspaceRole, got {other:?}"),
-    }
     Ok(())
 }
 
@@ -2867,6 +2868,7 @@ fn auth_role_header_left_right_toggles_expansion() -> Result<()> {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
+    ed.auth_selected_agent = Some(Agent::Claude);
     let header_idx = auth_row_idx(&ed, |r| matches!(r, AuthRow::RoleHeader { .. }));
     ed.active_field = FieldFocus::Row(header_idx);
     state.stage = ManagerStage::Editor(ed);
@@ -2879,7 +2881,7 @@ fn auth_role_header_left_right_toggles_expansion() -> Result<()> {
 }
 
 #[test]
-fn auth_role_header_d_opens_confirm_then_clears_overrides() -> Result<()> {
+fn auth_role_header_d_clears_selected_auth_kind_override() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config(&paths, temp.path())?;
@@ -2900,6 +2902,7 @@ fn auth_role_header_d_opens_confirm_then_clears_overrides() -> Result<()> {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
+    ed.auth_selected_agent = Some(Agent::Claude);
     let header_idx = auth_row_idx(&ed, |r| matches!(r, AuthRow::RoleHeader { .. }));
     ed.active_field = FieldFocus::Row(header_idx);
     state.stage = ManagerStage::Editor(ed);
@@ -2911,29 +2914,20 @@ fn auth_role_header_d_opens_confirm_then_clears_overrides() -> Result<()> {
         cwd,
         key(KeyCode::Char('d')),
     )?;
-    assert!(matches!(
-        editor(&state).modal,
-        Some(Modal::Confirm {
-            target: jackin::console::manager::state::ConfirmTarget::ClearAuthRoleOverride { .. },
-            ..
-        })
-    ));
-
-    // Confirm with 'y' (default focus is No; Enter would dismiss without action).
-    handle_key(
-        &mut state,
-        &mut config,
-        &paths,
-        cwd,
-        key(KeyCode::Char('y')),
-    )?;
+    assert!(
+        editor(&state).modal.is_none(),
+        "selected auth-kind clear should not open a confirm modal"
+    );
     let role_over = editor(&state)
         .pending
         .roles
         .get("the-architect")
         .expect("override entry stays even after clear");
     assert!(role_over.claude.is_none());
-    assert!(role_over.codex.is_none());
+    assert!(
+        role_over.codex.is_some(),
+        "hidden Codex override must be untouched"
+    );
     Ok(())
 }
 
@@ -2959,11 +2953,12 @@ fn auth_role_agent_row_d_silently_clears_single_agent() -> Result<()> {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
+    ed.auth_selected_agent = Some(jackin::agent::Agent::Claude);
     ed.auth_expanded.insert("the-architect".into());
     let claude_idx = auth_row_idx(&ed, |r| {
         matches!(
             r,
-            AuthRow::RoleAgentRow {
+            AuthRow::RoleMode {
                 agent: jackin::agent::Agent::Claude,
                 ..
             }
