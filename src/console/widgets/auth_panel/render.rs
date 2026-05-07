@@ -21,7 +21,7 @@ pub(crate) const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
 pub(crate) const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 pub(crate) const WHITE: Color = Color::Rgb(255, 255, 255);
 pub(crate) const DANGER_RED: Color = Color::Rgb(255, 94, 122);
-const AUTH_FORM_LABEL_WIDTH: usize = 22;
+const AUTH_FORM_LABEL_WIDTH: usize = 18;
 
 pub(crate) const fn mode_str(m: AuthForwardMode) -> &'static str {
     match m {
@@ -106,8 +106,8 @@ impl FormLine {
 pub const fn required_height(form: &AuthForm) -> u16 {
     // Layout (without credential block):
     //   blank, Mode, blank, buttons, blank, hint = 6 inner rows
-    // With credential block, +2 (blank + cred row) = 8 inner rows.
-    let inner: u16 = if form.shows_credential_block() { 8 } else { 6 };
+    // With credential block, +1 (cred row) = 7 inner rows.
+    let inner: u16 = if form.shows_credential_block() { 7 } else { 6 };
     inner + 2
 }
 
@@ -126,7 +126,6 @@ fn build_form_lines(form: &AuthForm, focus: AuthFormFocus) -> Vec<FormLine> {
     ])));
 
     if form.shows_credential_block() {
-        lines.push(FormLine::left(Line::from("")));
         if let Some(env_var) = form.mode.and_then(|mode| form.agent.required_env_var(mode)) {
             lines.push(FormLine::left(credential_env_line(
                 env_var,
