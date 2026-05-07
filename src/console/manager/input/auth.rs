@@ -276,17 +276,14 @@ fn open_auth_source_picker_from_form(editor: &mut EditorState<'_>, op_available:
         return false;
     };
 
-    let env_var = match state.mode.and_then(|m| state.agent.required_env_var(m)) {
-        Some(v) => v,
-        None => {
-            editor.modal = Some(Modal::AuthForm {
-                target,
-                state,
-                focus,
-                literal_buffer,
-            });
-            return false;
-        }
+    let Some(env_var) = state.mode.and_then(|m| state.agent.required_env_var(m)) else {
+        editor.modal = Some(Modal::AuthForm {
+            target,
+            state,
+            focus,
+            literal_buffer,
+        });
+        return false;
     };
 
     editor.pending_auth_form_return = Some(AuthFormReturnPath {
