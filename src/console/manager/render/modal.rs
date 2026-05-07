@@ -68,7 +68,7 @@ pub(in crate::console::manager) fn modal_outer_rect(modal: &Modal<'_>, outer: Re
         | Modal::AuthSourcePicker { .. }
         | Modal::ScopePicker { .. }
         | Modal::AuthAgentPicker { .. } => (50, 7),
-        Modal::AuthForm { .. } => (60, 9),
+        Modal::AuthForm { .. } => (80, 9),
     };
     centered_rect_fixed(outer, pct_w, height_rows)
 }

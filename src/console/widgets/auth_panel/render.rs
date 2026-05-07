@@ -159,6 +159,7 @@ fn credential_env_line(env_var: &str, cred: &CredentialInput, selected: bool) ->
     let mut spans = vec![
         cursor_span(selected),
         Span::styled(format!("{env_var:<22}"), label_style),
+        Span::raw("  "),
     ];
     match cred {
         CredentialInput::None => {
@@ -405,6 +406,21 @@ mod form_render_tests {
         assert!(
             s.contains("Work/Anthropic/api-key"),
             "missing op-ref path display; dump:\n{s}"
+        );
+    }
+
+    #[test]
+    fn long_credential_env_name_has_gap_before_source_label() {
+        let mut form = AuthForm::new(Agent::Claude);
+        form.set_mode(AuthForwardMode::OAuthToken);
+        form.set_op_ref(OpRef {
+            op: "op://uuid/oauth".into(),
+            path: "Boris/Roblox/token".into(),
+        });
+        let s = dump_form(&form, &ctx());
+        assert!(
+            s.contains("CLAUDE_CODE_OAUTH_TOKEN  1Password"),
+            "env var and source label should not run together; dump:\n{s}"
         );
     }
 }
