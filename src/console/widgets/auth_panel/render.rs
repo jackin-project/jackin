@@ -21,6 +21,7 @@ pub(crate) const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
 pub(crate) const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 pub(crate) const WHITE: Color = Color::Rgb(255, 255, 255);
 pub(crate) const DANGER_RED: Color = Color::Rgb(255, 94, 122);
+const AUTH_FORM_LABEL_WIDTH: usize = 22;
 
 pub(crate) const fn mode_str(m: AuthForwardMode) -> &'static str {
     match m {
@@ -119,7 +120,8 @@ fn build_form_lines(form: &AuthForm, focus: AuthFormFocus) -> Vec<FormLine> {
     let mode_text = form.mode.map_or("(unset)", mode_str);
     lines.push(FormLine::left(Line::from(vec![
         cursor_span(focus == AuthFormFocus::Mode),
-        Span::styled("Mode: ", label_style()),
+        Span::styled(format!("{:<AUTH_FORM_LABEL_WIDTH$}", "Mode"), label_style()),
+        Span::raw("  "),
         Span::styled(mode_text.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
     ])));
 
@@ -152,7 +154,7 @@ fn credential_env_line(env_var: &str, cred: &CredentialInput, selected: bool) ->
     };
     let mut spans = vec![
         cursor_span(selected),
-        Span::styled(format!("{env_var:<22}"), label_style),
+        Span::styled(format!("{env_var:<AUTH_FORM_LABEL_WIDTH$}"), label_style),
         Span::raw("  "),
     ];
     match cred {
@@ -309,7 +311,11 @@ mod form_render_tests {
     fn form_with_unset_mode_hides_credential_block_and_dims_save() {
         let form = AuthForm::new(Agent::Claude);
         let s = dump_form(&form);
-        assert!(s.contains("Mode:"), "missing mode line; dump:\n{s}");
+        assert!(s.contains("Mode"), "missing mode line; dump:\n{s}");
+        assert!(
+            !s.contains("Mode:"),
+            "mode label should not use punctuation; dump:\n{s}"
+        );
         assert!(
             s.contains("(unset)"),
             "expected (unset) mode label; dump:\n{s}"
