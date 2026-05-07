@@ -67,6 +67,9 @@ is not set to the expected personal address, correct it **before**
 committing — do not paper over a wrong-author commit with an unrelated
 sign-off.
 
+Do not add `Signed-off-by` trailers for AI agents. Agent involvement is recorded
+only with the `Co-authored-by` trailer required by [AGENTS.md](AGENTS.md).
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full DCO v1.1 text.
 
 Agent-specific attribution trailer requirements (e.g., for the Codex agent) are in [AGENTS.md](AGENTS.md).
