@@ -61,7 +61,7 @@ missing piece is somewhere in jackin to say *"this role uses
 
 | Today | After this lands |
 |---|---|
-| First launch needs interactive `gh auth login` inside the container. | First launch reuses the host login automatically (`sync` default). |
+| First launch needs interactive `gh auth login` inside the container. | First launch reuses the host login automatically. `sync` is the default — same as Claude / Codex `sync` today, no extra setup required. |
 | Every (workspace × role) needs its own login the first time. | One host login covers them all by default. |
 | Every container shares the host's broad GitHub identity. | Workspaces and roles can opt into a scoped token instead. |
 | No way to point a role at a fine-grained PAT. | `auth_forward = "token"` + `GH_TOKEN` from operator-env (`op://`, host env, …). |
@@ -70,9 +70,14 @@ missing piece is somewhere in jackin to say *"this role uses
 
 ## Goals
 
-1. Keep the beginner-friendly path: when the operator is already
-   logged in to `gh` on the host, a freshly launched role works
-   without any in-container login step.
+1. **`sync` is the default — same parity Claude and Codex already
+   ship.** When the operator is already logged in to `gh` on the
+   host, every freshly launched role uses that login automatically,
+   with no in-container login step. This is non-negotiable: the
+   GitHub CLI must not regress the "host auth flows in by default"
+   experience that operators already expect from agent runtimes.
+   `token` and `ignore` are explicit opt-ins on top of that
+   default, not replacements for it.
 2. Operators can override the default per workspace and per
    (workspace × role) to bind a specific role to a specific
    least-privilege token.
@@ -104,7 +109,7 @@ Three modes, mirroring the agent-auth shape:
 
 | Mode | Behaviour |
 |---|---|
-| `sync` (default) | When the host has a usable `gh` token, materialize it into the role-state's `.config/gh/` on each launch. When the host is logged out, leave any existing container-side login alone. |
+| `sync` (**default — must stay default to match Claude / Codex parity**) | When the host has a usable `gh` token, materialize it into the role-state's `.config/gh/` on each launch. When the host is logged out, leave any existing container-side login alone. |
 | `token` | Provision empty `.config/gh/`; inject `GH_TOKEN` (and `GH_HOST` when non-default) into the container's process env from the operator-env layer. `gh` reads the token directly — perfect for fine-grained PATs scoped to one repo or org. |
 | `ignore` | Wipe any forwarded `gh` state and never forward host auth. The agent must `gh auth login` inside the container if it needs `gh`. |
 
