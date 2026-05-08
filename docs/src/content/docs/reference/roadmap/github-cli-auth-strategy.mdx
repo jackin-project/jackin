@@ -5,7 +5,269 @@ import { Aside } from '@astrojs/starlight/components'
 import RepoFile from '../../../../components/RepoFile.astro'
 
 
-**Status**: Open — design proposal
+**Status**: Partially implemented — sync + token modes shipped; console UX, CLI subcommand, scope pre-flight pending
+
+## Design principle — never mutate the host
+
+**Hard rule, repo-wide (see <RepoFile path="AGENTS.md" />): jackin makes
+the container fit the operator, not the other way around.** Every
+piece of "auth smoothing" this design specifies happens on the
+container side — `git config --global` inside the container, role-state
+under `~/.jackin/data/<role>/.config/gh/hosts.yml`, container-only
+`insteadOf` rewrites — never on the operator's host repo or host
+dotfiles.
+
+This rules out a tempting but wrong shortcut. When a host repo is
+cloned via SSH and the container can't push because it has no SSH
+key, it would be one line to add `git config --global
+url.https://...insteadOf git@github.com:` to the *host*. We don't.
+That would surprise the operator the next time they run a `git`
+command in their own terminal — the host's remote would now resolve
+through HTTPS even when they prefer SSH for their normal flow.
+Instead, the rewrite lives **only** inside the container's writable
+layer, scoped to `~/.gitconfig` of the in-container `agent` user.
+Same logic for the gh credential helper and the
+`hosts.yml` materialization: container-only.
+
+Read paths against the host are fine — `gh auth token --hostname
+github.com`, parsing `~/.config/gh/hosts.yml`, the macOS Keychain
+lookup for Claude's credentials. The forbidden direction is
+**host-side writes** triggered silently by jackin.
+
+For each host-side effect a future addition (e.g. bidirectional
+sync) wants to introduce, it must be opt-in, surfaced in the launch
+summary, and documented under a dedicated "Host-side effects"
+heading in the proposal that adds it. PRs that mutate the host
+without the operator's explicit opt-in must be rejected at review.
+
+Why this matters here specifically: a "fix the user's git remote
+for them" approach would have looked like a smaller diff, but it
+would have been a regression from the operator's perspective —
+exactly the surprise jackin is designed to avoid.
+
+## Implemented in this slice
+
+- `[github]` schema added at the same three layers as `[claude]` and
+  `[codex]` — global, workspace, workspace × role — with three modes:
+  `sync` (default), `token`, and `ignore`. Role manifests cannot set
+  `[github]` (operator-only, same rule as Claude / Codex auth).
+- Layered resolver `(workspace × role) > workspace > global > sync`
+  selects the effective mode at launch time.
+- `sync` mode materializes `~/.config/gh/hosts.yml` inside the
+  container from `gh auth token --hostname github.com` (with hosts.yml
+  file fallback when `gh` isn't installed on the host). When the host
+  is logged out, any pre-existing in-container `hosts.yml` is
+  preserved.
+- `token` mode wipes any prior `hosts.yml` from role state and
+  injects `GH_TOKEN` (and `GITHUB_TOKEN` — Known Gap 3) into the
+  container's process env from the `[github.env]` operator-env layer.
+  Pre-flight aborts launch when `GH_TOKEN` is missing or empty.
+- `ignore` mode wipes any forwarded `hosts.yml` and exports nothing.
+- Launch-time summary line surfaces the active GitHub mode and (for
+  `token`) the operator-env breadcrumb of the resolved `GH_TOKEN`.
+- Container entrypoint runs the SSH→HTTPS `git config insteadOf`
+  rewrite unconditionally (both `git@github.com:` and
+  `ssh://git@github.com/` forms) and registers
+  `!gh auth git-credential` as the credential helper so HTTPS pushes
+  authenticate automatically once `GH_TOKEN` or `hosts.yml` is
+  present.
+- Role-repo clones normalize `git@github.com:owner/repo` (and the
+  `ssh://` URL form) to `https://github.com/owner/repo` at clone
+  time so SSH-form URLs in `[roles.X]` config don't infect
+  containers without an SSH key. Non-GitHub URLs pass through
+  unchanged.
+- **Console UX kind-axis rename** — the auth panel's `Agent`-keyed
+  internals (`auth_selected_agent`, `AuthRow::AuthKind { agent }`,
+  `AuthFormTarget::Workspace { agent }`, …) widened to an
+  `AuthKind` enum (`Claude` / `Codex` / `Github`) plus a unified
+  `AuthMode` enum that subsumes both `AuthForwardMode` and
+  `GithubAuthMode`. `Agent::Github` was deliberately not added —
+  GitHub is a non-runtime kind (no install block, no launch
+  entrypoint) and forcing it into the runtime axis would have
+  cascaded fake arms across launch / planner / image-derivation
+  code. See <RepoFile path="src/console/manager/auth_kind.rs" /> for
+  the new module.
+- **Console UX** — the operator console's Auth tab now lists three
+  rows in fixed order: Claude Code, Codex, GitHub CLI. Selecting
+  the GitHub CLI row opens a detail view that mirrors the Claude /
+  Codex shape (workspace mode, workspace source row when the mode
+  needs `GH_TOKEN`, per-role `RoleHeader` blocks, `+ Override for
+  a role` sentinel). The shared `AuthForm` widget drives the edit
+  modal — mode picker shows `sync` / `token` / `ignore` for
+  GitHub, the credential block binds to `GH_TOKEN` only under
+  `token` mode, and the Save invariant is identical to the existing
+  flow (mode set + non-empty credential when required). `D` clears
+  at the row's level (`RoleHeader` clears
+  `[workspaces.<ws>.roles.<role>.github]`; workspace rows clear
+  `[workspaces.<ws>.github]`). The role-override picker filters
+  out roles that already carry a `[…github]` override, parallel
+  to the Claude / Codex "no duplicate override" rule.
+
+  Persistence is layered to match the resolver: `auth_forward`
+  flips reach disk through new `ConfigEditor::set_workspace_github_auth_forward`
+  / `set_workspace_role_github_auth_forward` setters, and the
+  `[github.env]` map (`GH_TOKEN` / `GH_HOST` /
+  `GH_ENTERPRISE_TOKEN`) lands on the kind-scoped env block via
+  two new `EnvScope` variants (`WorkspaceGithub`,
+  `WorkspaceRoleGithub`) — `GH_TOKEN` deliberately does NOT leak
+  into the regular `[workspaces.<ws>.env]` map so launch-time
+  resolution goes through `build_github_env_layers` rather than
+  the agent-facing operator-env merge.
+
+## How the feature lands at runtime — under-the-hood walkthrough
+
+Audience: contributors reading this page to understand *what the
+code actually does* on every container launch. Operators don't need
+this section — see the user-facing
+[Authentication guide](/guides/authentication/) instead.
+
+### End-to-end flow on `jackin load <role>` / `jackin console`
+
+```
+host machine                     jackin process                    container
+─────────────                    ──────────────                    ─────────
+~/.config/gh/hosts.yml      →    config::resolve_github_mode()
+  (or macOS Keychain)            config::build_github_env_layers()
+                                 launch::resolve_github_env_map()
+                                 RoleState::provision_github_auth()  →  /home/agent/.config/gh/
+                                   ├─ read_host_gh_token() ─ priority      hosts.yml (0o600)
+                                   │   1. gh auth token                    (skip-write when content unchanged)
+                                   │   2. parse host hosts.yml
+                                   ├─ render_hosts_yml()
+                                   └─ write_private_file() ─ atomic
+                                                              
+                                 docker run -e GH_TOKEN=…       →  process env
+                                            -e GITHUB_TOKEN=…
+                                            -e GH_HOST=…  (when set)
+                                            -e GH_ENTERPRISE_TOKEN=…  (when set)
+                                                              
+                                                                  entrypoint.sh:
+                                                                    git config --global url.https…insteadOf
+                                                                      git@github.com:
+                                                                      ssh://git@github.com/
+                                                                    git config --global credential.helper
+                                                                      '!gh auth git-credential'
+                                                                    [ "$GH_TOKEN" -o gh auth status ] && gh auth setup-git
+                                                              
+                                                                  agent runs → git push HTTPS just works
+```
+
+### Key entry points
+
+- <RepoFile path="src/config/mod.rs" /> — `GithubAuthMode` enum
+  (`Sync` / `Token` / `Ignore`), `GithubAuthConfig` struct
+  (`auth_forward` + `env`), `pub github: Option<GithubAuthConfig>`
+  on `AppConfig`, `WorkspaceConfig`, `WorkspaceRoleOverride`.
+- <RepoFile path="src/config/roles.rs" /> — `resolve_github_mode`
+  (3-layer: global → workspace → workspace × role) and
+  `build_github_env_layers` (3-layer env merge).
+- <RepoFile path="src/instance/mod.rs" /> —
+  `GithubProvisionOutcome` (variant data:
+  `Synced { token, source }`, `TokenMode { token }`,
+  `HostMissing { reason }`, `Skipped`), `GithubAuthContext`,
+  `GithubTokenSource`, `HostMissingReason`. Manual `Debug` impls
+  redact tokens.
+- <RepoFile path="src/instance/auth.rs" /> —
+  `provision_github_auth` (mirrors `provision_codex_auth` /
+  `provision_claude_auth` shape: symlink-reject prelude, mode
+  match, helper-driven wipes, atomic 0o600 write with content-skip
+  guard).
+- <RepoFile path="src/runtime/launch.rs" /> — `resolve_github_env_map`
+  (operator-env resolution), token-mode pre-flight, `docker run`
+  env injection via `push_env_if_present`, launch-summary line.
+- <RepoFile path="src/runtime/repo_cache.rs" /> —
+  `normalize_github_url` (SCP-form + `ssh://` URL → HTTPS), called
+  at the single chokepoint in `resolve_agent_repo_with`.
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — unconditional
+  SSH→HTTPS `insteadOf` rewrites + `gh auth git-credential`
+  credential helper, all `--global` inside the container only.
+- <RepoFile path="src/tui/output.rs" /> — `github_auth_notice`
+  formatter for the launch-summary line, derives body from the
+  outcome variant + token source / missing reason.
+
+### Type-level invariants encoded by the implementation
+
+- **Token `Some` iff outcome is `Synced` or `TokenMode`.** Folding the
+  token into the variants (`Synced { token, source }`,
+  `TokenMode { token }`) makes `(Skipped, Some(t))` and
+  `(Synced, None)` unrepresentable. `GithubProvisionOutcome::token()`
+  is the only accessor; no parallel `Option<String>` field exists.
+- **`Sync` does not consume the operator-supplied `Token`-mode
+  token.** The `token` field on `GithubAuthContext` is only read in
+  the `Token` arm of the match; `Sync` sources its token strictly
+  from the host (gh CLI or hosts.yml file fallback).
+- **Manual redacting `Debug` on `GithubAuthContext` and
+  `GithubProvisionOutcome`.** Both types print `<redacted>` for
+  the token field so a future
+  `tracing::debug!("{ctx:?}")` cannot leak the value.
+  Pinned by unit tests
+  (`github_auth_context_debug_redacts_token`,
+  `github_provision_outcome_debug_redacts_token`).
+- **Hermetic-test gate on host-binary shellouts.**
+  `read_host_gh_token` consults `gh auth token` only when
+  `host_home_is_real(host_home)` returns true, so tests with a
+  temp-dir `host_home` cannot leak to the operator's real `gh`.
+
+### Host-mutation audit (hard rule enforcement)
+
+Every write goes to one of:
+
+1. The container's writable layer (entrypoint `git config --global`
+   targets `~/.gitconfig` of the in-container `agent` user).
+2. The role-state directory under jackin's own
+   `~/.jackin/data/<role>/.config/gh/hosts.yml` (or wiped).
+3. The container's process env via `docker run -e KEY=VALUE`.
+
+Reads against the host (`gh auth token`, `~/.config/gh/hosts.yml`
+parse, macOS Keychain for Claude credentials) are read-only. No
+code path writes to `~/.gitconfig`, host repo `.git/config`,
+`~/.config/gh/`, `~/.claude/`, or `~/.codex/`. PRs that introduce
+host-side writes must opt them in explicitly per the hard rule in
+<RepoFile path="AGENTS.md" />.
+
+### Operational visibility
+
+Every launch prints one line via `tui::github_auth_notice` so the
+operator can audit the active mode and the source of the token.
+The launch-summary shapes:
+
+```
+gh auth: forwarded host token (sync, via gh CLI)
+gh auth: forwarded host token (sync, via ~/.config/gh/hosts.yml)
+gh auth: scoped token from <breadcrumb> (token)
+gh auth: none — host has no gh login, container preserves prior login
+gh auth: none — gh auth token failed: <stderr>; container preserves prior login
+gh auth: none — gh auth token returned empty (broken host login); container preserves prior login
+gh auth: none — ~/.config/gh/hosts.yml present but unparseable; container preserves prior login
+gh auth: disabled (ignore)
+```
+
+The `Sync` source attribution distinguishes live `gh` CLI (current,
+Keychain-aware on macOS) from a parse of the host's
+`~/.config/gh/hosts.yml` (file-based fallback, potentially stale)
+so drift between intended and actual auth source is auditable on
+every container start. The `HostMissing` reasons are typed enum
+variants (`NoGhAndNoHostsFile`, `GhCliFailed { stderr }`,
+`GhCliEmpty`, `HostsFileMalformed`) — no generic
+"host logged out" catch-all that would mask a broken host gh.
+
+## Still pending
+
+These are explicit follow-ups, not part of the first slice:
+
+- **`jackin config auth set --target github` CLI subcommand** —
+  parity with the existing Claude / Codex CLI flag layout.
+- **Scope pre-flight** — surfacing a token's GitHub scopes (and
+  expiry) at launch time when `gh auth status` exposes them, so
+  `token` mode warns about overly broad scopes and Known Gap 2
+  (token expiry mid-session) becomes visible.
+- **Bidirectional shared-store sync** — `sync` currently flows
+  host → container only. A future PR will let the operator opt
+  into the reverse direction so an in-container login refresh can
+  surface back to the host.
+- **GHE coverage** — `GH_HOST` / `GH_ENTERPRISE_TOKEN` are wired
+  through env injection, but there's no end-to-end test or
+  documented recipe yet.
 
 ## Problem
 
@@ -263,13 +525,20 @@ right host with the right token.
 
 ## Console UX
 
-This builds on the kind-picker Auth tab introduced in
-[PR #242](https://github.com/jackin-project/jackin/pull/242). The
-goal is **strict parity** with the Claude / Codex flow: same
-two-level shape, same edit modal, same keystrokes, same Save
-invariant. GitHub CLI is one more entry in a UI operators already
-know — there are no new screens, no new modes of interaction, no
-new mental model. What changes is small and entirely additive.
+**Status: implemented as designed below** — the GitHub CLI row,
+detail view, edit modal, role-override picker, footer hints, and
+the `D` clear semantics all landed in the same slice that
+introduced the `AuthKind` axis. The remainder of this section is
+preserved as the design narrative; what shipped matches it
+1:1, with no UX-visible deltas.
+
+This builds on the kind-picker Auth tab already shipped for
+Claude / Codex. The goal is **strict parity** with that flow:
+same two-level shape, same edit modal, same keystrokes, same
+Save invariant. GitHub CLI is one more entry in a UI operators
+already know — there are no new screens, no new modes of
+interaction, no new mental model. What changes is small and
+entirely additive.
 
 ### Today's shape (Claude / Codex)
 
@@ -765,6 +1034,4 @@ container's gh version). Doc the boundary explicitly.
   — future unified credential resolver
 - [1Password integration](/reference/roadmap/onepassword-integration/)
   — operator-env source for `GH_TOKEN`
-- [PR #242 — `feat(console): focus auth tab by kind`](https://github.com/jackin-project/jackin/pull/242)
-  — Auth-tab UX this item builds on
 - [`gh auth login` upstream manual](https://cli.github.com/manual/gh_auth_login)

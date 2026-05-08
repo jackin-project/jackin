@@ -8,6 +8,10 @@
 
 use crate::agent::Agent;
 use crate::config::{AppConfig, AuthForwardMode};
+// `Agent`-keyed badge probe predates the `AuthKind` widening; it
+// covers Claude / Codex agent runtimes only (the GitHub kind has no
+// `Agent` peer). This module is `#[cfg(test)]`, so the narrower
+// surface here doesn't leak into production.
 
 /// Status badge displayed on a row showing whether the credential resolves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

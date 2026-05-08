@@ -5,12 +5,13 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin::{
-    agent::Agent,
     config::{AppConfig, ConfigEditor},
     console::{
         ConsoleStage, ConsoleState,
         manager::{
-            ManagerStage, ManagerState, handle_key,
+            ManagerStage, ManagerState,
+            auth_kind::AuthKind,
+            handle_key,
             render::editor::{AuthRow, auth_flat_rows},
             state::{EditorState, EditorTab, FieldFocus, Modal, TextInputTarget},
         },
@@ -421,6 +422,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
             env: role_env,
             claude: None,
             codex: None,
+            github: None,
         },
     );
     let ws = WorkspaceConfig {
@@ -1610,6 +1612,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
             env: role_env,
             claude: None,
             codex: None,
+            github: None,
         },
     );
     let ws = WorkspaceConfig {
@@ -1767,6 +1770,7 @@ fn seed_override_picker_workspace(
                 env,
                 claude: None,
                 codex: None,
+                github: None,
             },
         );
     }
@@ -2687,12 +2691,12 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         .clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_agent = Some(Agent::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Claude);
     let ws_claude_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::WorkspaceMode {
-                agent: Agent::Claude
+                kind: AuthKind::Claude
             }
         )
     });
@@ -2831,12 +2835,12 @@ fn auth_credential_source_enter_opens_source_picker() -> Result<()> {
         .clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_agent = Some(Agent::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Claude);
     let ws_claude_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::WorkspaceMode {
-                agent: Agent::Claude
+                kind: AuthKind::Claude
             }
         )
     });
@@ -2893,7 +2897,7 @@ fn auth_add_role_override_flow_uses_selected_auth_kind() -> Result<()> {
         .clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_agent = Some(Agent::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Claude);
 
     let sentinel_idx = auth_row_idx(&ed, &config, |r| matches!(r, AuthRow::AddSentinel { .. }));
     ed.active_field = FieldFocus::Row(sentinel_idx);
@@ -2911,10 +2915,10 @@ fn auth_add_role_override_flow_uses_selected_auth_kind() -> Result<()> {
         match &editor(&state).modal {
             Some(Modal::AuthForm {
                 target:
-                    jackin::console::manager::state::AuthFormTarget::WorkspaceRole { role, agent },
+                    jackin::console::manager::state::AuthFormTarget::WorkspaceRole { role, kind },
                 ..
             }) => {
-                assert_eq!(*agent, Agent::Claude);
+                assert_eq!(*kind, AuthKind::Claude);
                 assert!(
                     !role.is_empty(),
                     "role must propagate from AuthRolePicker → AuthForm"
@@ -2946,7 +2950,7 @@ fn auth_role_header_left_right_toggles_expansion() -> Result<()> {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_agent = Some(Agent::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Claude);
     let header_idx = auth_row_idx(&ed, &config, |r| matches!(r, AuthRow::RoleHeader { .. }));
     ed.active_field = FieldFocus::Row(header_idx);
     state.stage = ManagerStage::Editor(ed);
@@ -2980,7 +2984,7 @@ fn auth_role_header_d_clears_selected_auth_kind_override() -> Result<()> {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_agent = Some(Agent::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Claude);
     let header_idx = auth_row_idx(&ed, &config, |r| matches!(r, AuthRow::RoleHeader { .. }));
     ed.active_field = FieldFocus::Row(header_idx);
     state.stage = ManagerStage::Editor(ed);
@@ -3031,13 +3035,13 @@ fn auth_role_agent_row_d_silently_clears_single_agent() -> Result<()> {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_agent = Some(jackin::agent::Agent::Claude);
+    ed.auth_selected_kind = Some(jackin::console::manager::auth_kind::AuthKind::Claude);
     ed.auth_expanded.insert("the-architect".into());
     let claude_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::RoleMode {
-                agent: jackin::agent::Agent::Claude,
+                kind: AuthKind::Claude,
                 ..
             }
         )
@@ -3062,10 +3066,10 @@ fn auth_role_agent_row_d_silently_clears_single_agent() -> Result<()> {
     Ok(())
 }
 
-/// Pressing Enter on an `AuthKind` row sets `auth_selected_agent` and
+/// Pressing Enter on an `AuthKind` row sets `auth_selected_kind` and
 /// resets the cursor to row 0. Drives the kind picker → focused-view
 /// transition through the real keystroke dispatcher (every other auth
-/// integration test pre-seeds `auth_selected_agent`, which would mask
+/// integration test pre-seeds `auth_selected_kind`, which would mask
 /// a regression in the input-layer wiring).
 #[test]
 fn auth_enter_on_auth_kind_focuses_selected_agent() -> Result<()> {
@@ -3078,12 +3082,12 @@ fn auth_enter_on_auth_kind_focuses_selected_agent() -> Result<()> {
     let ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    // No `auth_selected_agent` set — picker view.
+    // No `auth_selected_kind` set — picker view.
     let codex_kind_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
-            AuthRow::AuthKind {
-                agent: Agent::Codex
+            AuthRow::AuthKindRow {
+                kind: AuthKind::Codex
             }
         )
     });
@@ -3093,7 +3097,7 @@ fn auth_enter_on_auth_kind_focuses_selected_agent() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
     let ed = editor(&state);
-    assert_eq!(ed.auth_selected_agent, Some(Agent::Codex));
+    assert_eq!(ed.auth_selected_kind, Some(AuthKind::Codex));
     assert!(
         matches!(ed.active_field, FieldFocus::Row(0)),
         "Enter on AuthKind must reset cursor to Row(0); got {:?}",
@@ -3117,7 +3121,7 @@ fn auth_esc_from_focused_view_pops_to_picker_without_dirty_modal() -> Result<()>
     let ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_agent = Some(Agent::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Claude);
     // Mutate `pending` so `is_dirty()` is true — this is what would
     // otherwise route Esc through `Modal::SaveDiscardCancel`.
     ed.pending.git_pull_on_entry = !ed.pending.git_pull_on_entry;
@@ -3129,8 +3133,8 @@ fn auth_esc_from_focused_view_pops_to_picker_without_dirty_modal() -> Result<()>
 
     let ed = editor(&state);
     assert!(
-        ed.auth_selected_agent.is_none(),
-        "Esc on focused view must clear auth_selected_agent"
+        ed.auth_selected_kind.is_none(),
+        "Esc on focused view must clear auth_selected_kind"
     );
     assert!(
         ed.modal.is_none(),
@@ -3143,7 +3147,7 @@ fn auth_esc_from_focused_view_pops_to_picker_without_dirty_modal() -> Result<()>
     Ok(())
 }
 
-/// Tab/BackTab leaving the Auth tab clears `auth_selected_agent` so
+/// Tab/BackTab leaving the Auth tab clears `auth_selected_kind` so
 /// re-entering the tab returns to the kind picker rather than a
 /// stale focused view.
 #[test]
@@ -3157,14 +3161,14 @@ fn auth_tab_cycle_off_auth_clears_selected_agent() -> Result<()> {
     let ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_agent = Some(Agent::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Claude);
     state.stage = ManagerStage::Editor(ed);
 
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     let ed = editor(&state);
     assert_ne!(ed.active_tab, EditorTab::Auth);
     assert!(
-        ed.auth_selected_agent.is_none(),
+        ed.auth_selected_kind.is_none(),
         "leaving the Auth tab must drop the focused-kind selection"
     );
     Ok(())
@@ -3192,12 +3196,12 @@ fn auth_workspace_source_d_clears_workspace_mode() -> Result<()> {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_agent = Some(Agent::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Claude);
     let source_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::WorkspaceSource {
-                agent: Agent::Claude
+                kind: AuthKind::Claude
             }
         )
     });
@@ -3239,12 +3243,12 @@ fn auth_credential_text_input_cancel_restores_form() -> Result<()> {
     let ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_agent = Some(Agent::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Claude);
     let ws_claude_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::WorkspaceMode {
-                agent: Agent::Claude
+                kind: AuthKind::Claude
             }
         )
     });
@@ -3308,12 +3312,12 @@ fn auth_source_picker_op_disabled_when_op_missing() -> Result<()> {
     let ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_agent = Some(Agent::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Claude);
     let ws_claude_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::WorkspaceMode {
-                agent: Agent::Claude
+                kind: AuthKind::Claude
             }
         )
     });
@@ -3347,6 +3351,273 @@ fn auth_source_picker_op_disabled_when_op_missing() -> Result<()> {
     assert!(
         !picker.op_available,
         "op_available must propagate from ManagerState through to the picker"
+    );
+    Ok(())
+}
+
+// ── GitHub auth-tab integration tests ────────────────────────────────
+//
+// End-to-end coverage of the new GitHub kind on the Auth tab.
+// Mirror-shape with `auth_form_save_persists_mode_and_credential_to_disk`
+// for Claude — open the form on the workspace × Github row, set mode =
+// token + a literal `GH_TOKEN`, commit, save, reload from disk, and
+// assert the persisted TOML carries BOTH the
+// `[workspaces.<ws>.github] auth_forward = "token"` block AND the
+// `GH_TOKEN` env var on the matching `[github.env]` block.
+#[allow(clippy::too_many_lines)]
+#[test]
+fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let ws = config
+        .workspaces
+        .get("big-monorepo")
+        .expect("seed must create big-monorepo")
+        .clone();
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    ed.auth_selected_kind = Some(AuthKind::Github);
+    let ws_github_idx = auth_row_idx(&ed, &config, |r| {
+        matches!(
+            r,
+            AuthRow::WorkspaceMode {
+                kind: AuthKind::Github
+            }
+        )
+    });
+    ed.active_field = FieldFocus::Row(ws_github_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    // Enter opens the auth-edit form on workspace × Github.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::AuthForm { .. })),
+        "Enter on WorkspaceMode/Github must open AuthForm; got {:?}",
+        editor(&state).modal
+    );
+
+    // Cycle mode: None → Sync → Token (two presses through the
+    // [Sync, Token, Ignore] cycle).
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char(' ')),
+    )?;
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char(' ')),
+    )?;
+    // Tab → credential row, Enter → source picker, Enter → plain text.
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::AuthSourcePicker { .. })),
+        "credential row Enter must open AuthSourcePicker; got {:?}",
+        editor(&state).modal
+    );
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        matches!(editor(&state).modal, Some(Modal::TextInput { .. })),
+        "Plain source must open credential text input; got {:?}",
+        editor(&state).modal
+    );
+    for ch in "ghp_round_trip".chars() {
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Char(ch)))?;
+    }
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    assert!(
+        editor(&state).modal.is_none(),
+        "auth-form save must close the modal"
+    );
+
+    // pending.github reflects Token + GH_TOKEN landed on the github
+    // env block (NOT the regular workspace env).
+    let pending = &editor(&state).pending;
+    let github = pending
+        .github
+        .as_ref()
+        .expect("workspace github block must be set in pending");
+    assert_eq!(github.auth_forward, jackin::config::GithubAuthMode::Token);
+    let value = github
+        .env
+        .get("GH_TOKEN")
+        .expect("GH_TOKEN must land on the workspace github env block");
+    match value {
+        jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
+        jackin::operator_env::EnvValue::OpRef(_) => panic!("expected literal credential"),
+    }
+    assert!(
+        !pending.env.contains_key("GH_TOKEN"),
+        "GH_TOKEN must not leak into the regular workspace env map"
+    );
+
+    // Save the editor (s opens ConfirmSave, Enter commits).
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('s')),
+    )?;
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+
+    // Reload AppConfig from disk and assert the round-trip.
+    let reloaded = AppConfig::load_or_init(&paths)?;
+    let ws_on_disk = reloaded
+        .workspaces
+        .get("big-monorepo")
+        .expect("workspace must still exist on disk");
+    let github_on_disk = ws_on_disk
+        .github
+        .as_ref()
+        .expect("[workspaces.big-monorepo.github] block must be on disk after save");
+    assert_eq!(
+        github_on_disk.auth_forward,
+        jackin::config::GithubAuthMode::Token
+    );
+    let env_value = github_on_disk
+        .env
+        .get("GH_TOKEN")
+        .expect("reload must see GH_TOKEN on the github env block");
+    match env_value {
+        jackin::operator_env::EnvValue::Plain(s) => assert_eq!(s, "ghp_round_trip"),
+        jackin::operator_env::EnvValue::OpRef(_) => panic!("expected literal credential"),
+    }
+    // GH_TOKEN must NOT leak into the regular workspace env map after
+    // reload (the kind-scoped layer is the only place it should live).
+    assert!(
+        !ws_on_disk.env.contains_key("GH_TOKEN"),
+        "GH_TOKEN must not appear in [workspaces.<ws>.env]; only in [workspaces.<ws>.github.env]"
+    );
+
+    // Belt-and-braces: read the raw TOML and confirm the literal text
+    // landed on `[workspaces.big-monorepo.github]` and
+    // `[workspaces.big-monorepo.github.env]`, not on
+    // `[workspaces.big-monorepo.env]`.
+    let toml = std::fs::read_to_string(&paths.config_file)?;
+    assert!(
+        toml.contains("[workspaces.big-monorepo.github]"),
+        "raw TOML must carry the workspace github block; got:\n{toml}"
+    );
+    assert!(
+        toml.contains(r#"auth_forward = "token""#),
+        "raw TOML must carry auth_forward = \"token\"; got:\n{toml}"
+    );
+    assert!(
+        toml.contains(r#"GH_TOKEN = "ghp_round_trip""#),
+        "raw TOML must carry GH_TOKEN; got:\n{toml}"
+    );
+    Ok(())
+}
+
+/// `D` on a Github `RoleHeader` clears the role's
+/// `[workspaces.<ws>.roles.<role>.github]` override end-to-end through
+/// the input dispatcher (in addition to the unit-level coverage in
+/// `src/console/manager/input/auth.rs`).
+#[test]
+fn github_role_header_d_clears_github_role_override() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
+    let over = WorkspaceRoleOverride {
+        github: Some(jackin::config::GithubAuthConfig {
+            auth_forward: jackin::config::GithubAuthMode::Ignore,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    ws.roles.insert("the-architect".into(), over);
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    ed.auth_selected_kind = Some(AuthKind::Github);
+    let header_idx = auth_row_idx(&ed, &config, |r| {
+        matches!(
+            r,
+            AuthRow::RoleHeader { role, .. } if role == "the-architect"
+        )
+    });
+    ed.active_field = FieldFocus::Row(header_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(
+        &mut state,
+        &mut config,
+        &paths,
+        cwd,
+        key(KeyCode::Char('d')),
+    )?;
+    let role_entry = editor(&state)
+        .pending
+        .roles
+        .get("the-architect")
+        .expect("override entry must remain after D");
+    assert!(
+        role_entry.github.is_none(),
+        "D on github RoleHeader must clear the role's github override"
+    );
+    Ok(())
+}
+
+/// Integration counterpart for the unit-level
+/// `github_role_override_picker_filters_already_overridden_roles` —
+/// drives the picker open through the keystroke dispatcher with the
+/// github kind selected and asserts the candidate list filters out a
+/// role that already carries a `[…github]` override.
+#[test]
+fn github_role_override_picker_filters_already_overridden_roles_via_dispatcher() -> Result<()> {
+    let temp = tempdir()?;
+    let paths = JackinPaths::for_tests(temp.path());
+    let mut config = seed_config(&paths, temp.path())?;
+    let cwd = temp.path();
+
+    // Pre-seed a workspace × role × github override on `the-architect`
+    // so the picker should filter it out and only offer other roles.
+    let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
+    ws.roles.insert(
+        "the-architect".into(),
+        WorkspaceRoleOverride {
+            github: Some(jackin::config::GithubAuthConfig {
+                auth_forward: jackin::config::GithubAuthMode::Ignore,
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    );
+
+    let mut state = ManagerState::from_config(&config, cwd);
+    let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
+    ed.active_tab = EditorTab::Auth;
+    ed.auth_selected_kind = Some(AuthKind::Github);
+    let sentinel_idx = auth_row_idx(&ed, &config, |r| matches!(r, AuthRow::AddSentinel { .. }));
+    ed.active_field = FieldFocus::Row(sentinel_idx);
+    state.stage = ManagerStage::Editor(ed);
+
+    handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
+    let Some(Modal::AuthRolePicker { state: picker }) = &editor(&state).modal else {
+        panic!(
+            "Enter on AddSentinel must open AuthRolePicker for github kind; got {:?}",
+            editor(&state).modal
+        );
+    };
+    let labels: Vec<String> = picker.roles.iter().map(|c| c.key()).collect();
+    assert!(
+        !labels.iter().any(|s| s == "the-architect"),
+        "the-architect already has a github override and must be filtered out; got {labels:?}"
     );
     Ok(())
 }

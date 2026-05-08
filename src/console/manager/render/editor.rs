@@ -306,7 +306,7 @@ fn contextual_row_items(
         EditorTab::Auth => {
             let flat = auth_flat_rows(state, config);
             match flat.get(cursor) {
-                Some(AuthRow::AuthKind { .. }) => {
+                Some(AuthRow::AuthKindRow { .. }) => {
                     vec![FooterItem::Key("Enter"), FooterItem::Text("manage auth")]
                 }
                 Some(AuthRow::WorkspaceMode { .. } | AuthRow::RoleMode { .. }) => {
@@ -649,26 +649,40 @@ pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -
 /// `editor.auth_expanded` + the live `AppConfig`. Rendering and input
 /// both index into the same `Vec<AuthRow>` so cursor row numbers always
 /// agree with what's drawn.
+///
+/// Keyed off [`AuthKind`] (Claude / Codex / Github), wider than the
+/// runtime `Agent` enum so the GitHub CLI row sits alongside the agent
+/// rows without forcing a synthetic `Agent::Github` variant.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthRow {
     /// Root picker row: choose which auth kind to manage.
-    AuthKind { agent: crate::agent::Agent },
+    ///
+    /// The variant is named `AuthKindRow` (rather than `AuthKind`) to
+    /// avoid colliding with the [`AuthKind`] enum itself; the trailing
+    /// `Row` keeps the disambiguation visible at every match site.
+    AuthKindRow {
+        kind: crate::console::manager::auth_kind::AuthKind,
+    },
     /// Selected auth kind's workspace-level mode row.
-    WorkspaceMode { agent: crate::agent::Agent },
+    WorkspaceMode {
+        kind: crate::console::manager::auth_kind::AuthKind,
+    },
     /// Selected auth kind's workspace credential source row.
-    WorkspaceSource { agent: crate::agent::Agent },
+    WorkspaceSource {
+        kind: crate::console::manager::auth_kind::AuthKind,
+    },
     /// Collapsible role override block. `expanded` toggles the mode (and
     /// credential source, when required) for the selected auth kind.
     RoleHeader { role: String, expanded: bool },
     /// Mode row inside an expanded `RoleHeader`. Editable.
     RoleMode {
         role: String,
-        agent: crate::agent::Agent,
+        kind: crate::console::manager::auth_kind::AuthKind,
     },
     /// Credential source row inside an expanded `RoleHeader`.
     RoleSource {
         role: String,
-        agent: crate::agent::Agent,
+        kind: crate::console::manager::auth_kind::AuthKind,
     },
     /// `+ Override for a role` sentinel.
     AddSentinel { eligible: usize },
@@ -678,21 +692,27 @@ pub enum AuthRow {
 
 /// Build the row-shape vector for the Auth tab.
 ///
-/// `config` provides the live `[claude]`/`[codex]` globals so the
-/// "does this mode need a credential?" check runs against the
-/// operator's actual configuration. The synthesized config (workspace
-/// pending merged onto the live globals) is built once here and
-/// reused for every credential-row check, regardless of how many
+/// `config` provides the live `[claude]` / `[codex]` / `[github]`
+/// globals so the "does this mode need a credential?" check runs
+/// against the operator's actual configuration. The synthesized config
+/// (workspace pending merged onto the live globals) is built once here
+/// and reused for every credential-row check, regardless of how many
 /// roles are expanded.
 pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthRow> {
-    use crate::agent::Agent;
-    let Some(agent) = editor.auth_selected_agent else {
+    use crate::console::manager::auth_kind::AuthKind;
+    let Some(kind) = editor.auth_selected_kind else {
+        // Root view — three rows in fixed order. `Github` is purely a
+        // panel-layer kind (no `Agent` peer); see
+        // `crate::console::manager::auth_kind` for the design notes.
         return vec![
-            AuthRow::AuthKind {
-                agent: Agent::Claude,
+            AuthRow::AuthKindRow {
+                kind: AuthKind::Claude,
             },
-            AuthRow::AuthKind {
-                agent: Agent::Codex,
+            AuthRow::AuthKindRow {
+                kind: AuthKind::Codex,
+            },
+            AuthRow::AuthKindRow {
+                kind: AuthKind::Github,
             },
         ];
     };
@@ -701,19 +721,16 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
         .pending
         .roles
         .iter()
-        .filter(|(_, ro)| match agent {
-            Agent::Claude => ro.claude.is_some(),
-            Agent::Codex => ro.codex.is_some(),
-        })
+        .filter(|(_, ro)| kind.role_override_present(ro))
         .map(|(name, _)| name.clone())
         .collect();
 
     let synthesized = synthesize_appconfig_for_auth(editor, config);
     let ws_name = workspace_name_for_panel(editor);
 
-    let mut rows = vec![AuthRow::WorkspaceMode { agent }];
-    if effective_mode_needs_credential(&synthesized, &ws_name, "", agent) {
-        rows.push(AuthRow::WorkspaceSource { agent });
+    let mut rows = vec![AuthRow::WorkspaceMode { kind }];
+    if effective_mode_needs_credential(&synthesized, &ws_name, "", kind) {
+        rows.push(AuthRow::WorkspaceSource { kind });
     }
     rows.push(AuthRow::Spacer);
     for role in &override_roles {
@@ -725,12 +742,12 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
         if expanded {
             rows.push(AuthRow::RoleMode {
                 role: role.clone(),
-                agent,
+                kind,
             });
-            if effective_mode_needs_credential(&synthesized, &ws_name, role, agent) {
+            if effective_mode_needs_credential(&synthesized, &ws_name, role, kind) {
                 rows.push(AuthRow::RoleSource {
                     role: role.clone(),
-                    agent,
+                    kind,
                 });
             }
         }
@@ -749,17 +766,42 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
     rows
 }
 
-/// Whether the (workspace, role, agent) triple's effective mode (after
+/// Whether the (workspace, role, kind) triple's effective mode (after
 /// merging globals + workspace + role overrides) requires a credential.
 /// `role = ""` checks the workspace-level effective mode.
 fn effective_mode_needs_credential(
     synthesized: &AppConfig,
     ws_name: &str,
     role: &str,
-    agent: crate::agent::Agent,
+    kind: crate::console::manager::auth_kind::AuthKind,
 ) -> bool {
-    let mode = crate::config::resolve_mode(synthesized, agent, ws_name, role);
-    agent.required_env_var(mode).is_some()
+    let mode = resolve_panel_mode(synthesized, kind, ws_name, role);
+    kind.required_env_var(mode).is_some()
+}
+
+/// Resolve the effective auth mode for the panel, tunnelling through
+/// the kind-specific resolver in `crate::config`. Claude / Codex still
+/// go through `resolve_mode`; Github routes through `resolve_github_mode`.
+fn resolve_panel_mode(
+    cfg: &AppConfig,
+    kind: crate::console::manager::auth_kind::AuthKind,
+    workspace: &str,
+    role: &str,
+) -> crate::console::manager::auth_kind::AuthMode {
+    use crate::console::manager::auth_kind::{AuthKind, AuthMode};
+    match kind {
+        AuthKind::Claude | AuthKind::Codex => {
+            // `kind.agent()` returns `Some` for Claude/Codex; the
+            // GitHub arm above means the unwrap is unreachable here.
+            let agent = kind.agent().expect("Claude/Codex kinds map to an Agent");
+            let mode = crate::config::resolve_mode(cfg, agent, workspace, role);
+            AuthMode::from_auth_forward(mode)
+        }
+        AuthKind::Github => {
+            let mode = crate::config::resolve_github_mode(cfg, workspace, role);
+            AuthMode::from_github(mode)
+        }
+    }
 }
 
 /// Mirrors launch-time semantics from
@@ -1093,9 +1135,9 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, confi
     let mut block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK));
-    if let Some(agent) = state.auth_selected_agent {
+    if let Some(kind) = state.auth_selected_kind {
         let title_span = Span::styled(
-            format!(" {} ", auth_kind_display(agent)),
+            format!(" {} ", kind.label()),
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         );
         block = block.title(title_span);
@@ -1112,7 +1154,6 @@ fn render_auth_row(
     synthesized: &AppConfig,
     workspace_name: &str,
 ) -> ratatui::text::Line<'static> {
-    use crate::config::resolve_mode;
     use crate::console::widgets::auth_panel::mode_str;
 
     let bold_white = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
@@ -1120,18 +1161,14 @@ fn render_auth_row(
     let phosphor = Style::default().fg(PHOSPHOR_GREEN);
 
     match row {
-        AuthRow::AuthKind { agent } => ratatui::text::Line::from(Span::styled(
-            auth_kind_display(*agent).to_string(),
-            bold_white,
-        )),
-        AuthRow::WorkspaceMode { agent } => {
+        AuthRow::AuthKindRow { kind } => {
+            ratatui::text::Line::from(Span::styled(kind.label().to_string(), bold_white))
+        }
+        AuthRow::WorkspaceMode { kind } => {
             let ws = synthesized.workspaces.get(workspace_name);
-            let explicit = ws.and_then(|ws| match agent {
-                crate::agent::Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
-                crate::agent::Agent::Codex => ws.codex.as_ref().map(|c| c.auth_forward),
-            });
-            let mode =
-                explicit.unwrap_or_else(|| resolve_mode(synthesized, *agent, workspace_name, ""));
+            let explicit = ws.and_then(|ws| explicit_workspace_mode(ws, *kind));
+            let mode = explicit
+                .unwrap_or_else(|| resolve_panel_mode(synthesized, *kind, workspace_name, ""));
             let suffix = if explicit.is_some() {
                 ""
             } else {
@@ -1143,8 +1180,8 @@ fn render_auth_row(
                 Span::styled(suffix.to_string(), dim_green),
             ])
         }
-        AuthRow::WorkspaceSource { agent } => {
-            render_auth_source_line("Source", synthesized, workspace_name, "", *agent, 0)
+        AuthRow::WorkspaceSource { kind } => {
+            render_auth_source_line("Source", synthesized, workspace_name, "", *kind, 0)
         }
         AuthRow::RoleHeader { role, expanded } => {
             let glyph = if *expanded { "▼" } else { "▶" };
@@ -1153,16 +1190,16 @@ fn render_auth_row(
                 Span::styled(format!(" Role: {role}"), disclosure_style()),
             ])
         }
-        AuthRow::RoleMode { role, agent } => {
-            let mode = resolve_mode(synthesized, *agent, workspace_name, role);
+        AuthRow::RoleMode { role, kind } => {
+            let mode = resolve_panel_mode(synthesized, *kind, workspace_name, role);
             ratatui::text::Line::from(vec![
                 Span::raw("      "),
                 Span::styled(format!("{:<12}", "Mode"), bold_white),
                 Span::styled(mode_str(mode).to_string(), phosphor),
             ])
         }
-        AuthRow::RoleSource { role, agent } => {
-            render_auth_source_line("Source", synthesized, workspace_name, role, *agent, 6)
+        AuthRow::RoleSource { role, kind } => {
+            render_auth_source_line("Source", synthesized, workspace_name, role, *kind, 6)
         }
         AuthRow::AddSentinel { eligible } => {
             let label_style = if *eligible == 0 {
@@ -1189,13 +1226,13 @@ fn render_auth_source_line(
     synthesized: &AppConfig,
     workspace_name: &str,
     role: &str,
-    agent: crate::agent::Agent,
+    kind: crate::console::manager::auth_kind::AuthKind,
     indent: usize,
 ) -> ratatui::text::Line<'static> {
     use crate::console::widgets::auth_panel::mode_str;
 
-    let mode = crate::config::resolve_mode(synthesized, agent, workspace_name, role);
-    let env_name = agent.required_env_var(mode);
+    let mode = resolve_panel_mode(synthesized, kind, workspace_name, role);
+    let env_name = kind.required_env_var(mode);
     let label_width = if indent == 0 { 14 } else { 12 };
     let mut spans = vec![
         Span::raw(" ".repeat(indent)),
@@ -1213,7 +1250,7 @@ fn render_auth_source_line(
         return ratatui::text::Line::from(spans);
     };
 
-    let value = auth_source_value(synthesized, workspace_name, role, env_name);
+    let value = auth_source_value(synthesized, workspace_name, role, env_name, kind);
 
     match value {
         Some(EnvValue::OpRef(r)) => {
@@ -1236,14 +1273,55 @@ fn render_auth_source_line(
     ratatui::text::Line::from(spans)
 }
 
-const fn auth_kind_display(agent: crate::agent::Agent) -> &'static str {
-    match agent {
-        crate::agent::Agent::Claude => "Claude Code",
-        crate::agent::Agent::Codex => "Codex",
+/// Pull the explicit workspace-level mode for a kind, if any.
+///
+/// Mirrors the existing Claude / Codex branches — Github uses its own
+/// mode enum so it threads through [`AuthMode::from_github`].
+fn explicit_workspace_mode(
+    ws: &crate::workspace::WorkspaceConfig,
+    kind: crate::console::manager::auth_kind::AuthKind,
+) -> Option<crate::console::manager::auth_kind::AuthMode> {
+    use crate::console::manager::auth_kind::{AuthKind, AuthMode};
+    match kind {
+        AuthKind::Claude => ws
+            .claude
+            .as_ref()
+            .map(|c| AuthMode::from_auth_forward(c.auth_forward)),
+        AuthKind::Codex => ws
+            .codex
+            .as_ref()
+            .map(|c| AuthMode::from_auth_forward(c.auth_forward)),
+        AuthKind::Github => ws
+            .github
+            .as_ref()
+            .map(|g| AuthMode::from_github(g.auth_forward)),
     }
 }
 
+/// Walk the env layers for a credential lookup.
+///
+/// For Claude / Codex the env map lives directly on
+/// `[workspaces.<ws>(.roles.<role>).env]`. For Github the env map
+/// lives on `[workspaces.<ws>(.roles.<role>).github.env]` (parallel to
+/// the global `[github.env]`). The kind decides which family of layers
+/// the panel reads from.
 fn auth_source_value<'a>(
+    synthesized: &'a AppConfig,
+    workspace_name: &str,
+    role: &str,
+    env_name: &str,
+    kind: crate::console::manager::auth_kind::AuthKind,
+) -> Option<&'a EnvValue> {
+    use crate::console::manager::auth_kind::AuthKind;
+    match kind {
+        AuthKind::Github => github_source_value(synthesized, workspace_name, role, env_name),
+        AuthKind::Claude | AuthKind::Codex => {
+            claude_codex_source_value(synthesized, workspace_name, role, env_name)
+        }
+    }
+}
+
+fn claude_codex_source_value<'a>(
     synthesized: &'a AppConfig,
     workspace_name: &str,
     role: &str,
@@ -1274,6 +1352,39 @@ fn auth_source_value<'a>(
         return Some(value);
     }
     synthesized.env.get(env_name)
+}
+
+/// Lookup an env value for the GitHub kind, layered most-specific first
+/// across the `[github.env]` blocks. Mirrors
+/// [`crate::config::build_github_env_layers`] precedence.
+fn github_source_value<'a>(
+    synthesized: &'a AppConfig,
+    workspace_name: &str,
+    role: &str,
+    env_name: &str,
+) -> Option<&'a EnvValue> {
+    if !role.is_empty()
+        && let Some(value) = synthesized
+            .workspaces
+            .get(workspace_name)
+            .and_then(|ws| ws.roles.get(role))
+            .and_then(|ro| ro.github.as_ref())
+            .and_then(|g| g.env.get(env_name))
+    {
+        return Some(value);
+    }
+    if let Some(value) = synthesized
+        .workspaces
+        .get(workspace_name)
+        .and_then(|ws| ws.github.as_ref())
+        .and_then(|g| g.env.get(env_name))
+    {
+        return Some(value);
+    }
+    synthesized
+        .github
+        .as_ref()
+        .and_then(|g| g.env.get(env_name))
 }
 
 /// Render an `OpRef.path` as a `vault / item [subtitle] / section → field ?query`
@@ -1309,10 +1420,11 @@ pub(in crate::console) fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>
     }
 }
 
-/// Synthesize an `AppConfig` whose `[claude]/[codex]` come from the live
-/// global config and whose `[workspaces.<ws>]` mirrors `editor.pending`.
-/// The Auth panel reads from this so changes the operator makes via the
-/// auth-edit form show up immediately, before save.
+/// Synthesize an `AppConfig` whose `[claude]` / `[codex]` / `[github]`
+/// come from the live global config and whose `[workspaces.<ws>]`
+/// mirrors `editor.pending`. The Auth panel reads from this so changes
+/// the operator makes via the auth-edit form show up immediately,
+/// before save.
 pub(in crate::console::manager) fn synthesize_appconfig_for_auth(
     state: &EditorState<'_>,
     config: &AppConfig,
@@ -1320,6 +1432,7 @@ pub(in crate::console::manager) fn synthesize_appconfig_for_auth(
     let mut synthesized = AppConfig {
         claude: config.claude.clone(),
         codex: config.codex.clone(),
+        github: config.github.clone(),
         env: config.env.clone(),
         roles: config.roles.clone(),
         ..AppConfig::default()
@@ -1347,7 +1460,7 @@ pub(in crate::console::manager) fn workspace_name_for_panel(state: &EditorState<
 
 /// Map a flattened auth row index (the cursor) into the
 /// `AuthFormTarget` the form modal should be opened against. Returns
-/// `None` for non-form rows (`AuthKind`, `RoleHeader`, `AddSentinel`,
+/// `None` for non-form rows (`AuthKindRow`, `RoleHeader`, `AddSentinel`,
 /// `Spacer`) so callers can dispatch them separately.
 pub(in crate::console::manager) fn resolve_auth_row_target(
     state: &EditorState<'_>,
@@ -1357,13 +1470,13 @@ pub(in crate::console::manager) fn resolve_auth_row_target(
     use crate::console::manager::state::AuthFormTarget;
     let rows = auth_flat_rows(state, config);
     match rows.get(row)? {
-        AuthRow::WorkspaceMode { agent } | AuthRow::WorkspaceSource { agent } => {
-            Some(AuthFormTarget::Workspace { agent: *agent })
+        AuthRow::WorkspaceMode { kind } | AuthRow::WorkspaceSource { kind } => {
+            Some(AuthFormTarget::Workspace { kind: *kind })
         }
-        AuthRow::RoleMode { role, agent } | AuthRow::RoleSource { role, agent } => {
+        AuthRow::RoleMode { role, kind } | AuthRow::RoleSource { role, kind } => {
             Some(AuthFormTarget::WorkspaceRole {
                 role: role.clone(),
-                agent: *agent,
+                kind: *kind,
             })
         }
         _ => None,
@@ -1743,6 +1856,7 @@ mod secrets_tab_render_tests {
                 env: role_env,
                 claude: None,
                 codex: None,
+                github: None,
             },
         );
         let ws = WorkspaceConfig {
@@ -1887,6 +2001,7 @@ mod secrets_tab_render_tests {
                 env: role_env,
                 claude: None,
                 codex: None,
+                github: None,
             },
         );
         roles.insert(
@@ -1895,6 +2010,7 @@ mod secrets_tab_render_tests {
                 env: std::collections::BTreeMap::new(),
                 claude: None,
                 codex: None,
+                github: None,
             },
         );
 
@@ -2208,6 +2324,7 @@ mod secrets_tab_render_tests {
                 env: role_env,
                 claude: None,
                 codex: None,
+                github: None,
             },
         );
         let ws = WorkspaceConfig {
@@ -2244,6 +2361,7 @@ mod secrets_tab_render_tests {
                 env: a_env,
                 claude: None,
                 codex: None,
+                github: None,
             },
         );
         roles.insert(
@@ -2252,6 +2370,7 @@ mod secrets_tab_render_tests {
                 env: b_env,
                 claude: None,
                 codex: None,
+                github: None,
             },
         );
         let ws = WorkspaceConfig {
@@ -2560,6 +2679,7 @@ mod eligible_agents_for_override_tests {
                     env,
                     claude: None,
                     codex: None,
+                    github: None,
                 },
             );
         }
@@ -2701,25 +2821,29 @@ mod parse_path_breadcrumb_tests {
 #[cfg(test)]
 mod auth_flat_rows_tests {
     use super::{AuthRow, auth_flat_rows};
-    use crate::agent::Agent;
     use crate::config::AppConfig;
+    use crate::console::manager::auth_kind::AuthKind;
     use crate::console::manager::state::EditorState;
     use crate::workspace::WorkspaceConfig;
 
     #[test]
-    fn root_view_lists_auth_kinds_only() {
+    fn root_view_lists_three_kinds_in_design_order() {
         let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         let rows = auth_flat_rows(&editor, &AppConfig::default());
         assert_eq!(
             rows,
             vec![
-                AuthRow::AuthKind {
-                    agent: Agent::Claude,
+                AuthRow::AuthKindRow {
+                    kind: AuthKind::Claude,
                 },
-                AuthRow::AuthKind {
-                    agent: Agent::Codex,
+                AuthRow::AuthKindRow {
+                    kind: AuthKind::Codex,
+                },
+                AuthRow::AuthKindRow {
+                    kind: AuthKind::Github,
                 },
             ],
+            "root view must list Claude / Codex / Github in this order"
         );
     }
 
@@ -2736,7 +2860,7 @@ mod auth_flat_rows_tests {
         ws.roles.insert("the-architect".into(), over);
 
         let mut editor = EditorState::new_edit("ws".into(), ws);
-        editor.auth_selected_agent = Some(Agent::Claude);
+        editor.auth_selected_kind = Some(AuthKind::Claude);
         let rows = auth_flat_rows(&editor, &AppConfig::default());
 
         let header_idx = rows
@@ -2763,7 +2887,7 @@ mod auth_flat_rows_tests {
     }
 
     #[test]
-    fn role_with_override_when_expanded_emits_agent_rows() {
+    fn role_with_override_when_expanded_emits_kind_rows() {
         use crate::config::{AgentAuthConfig, AuthForwardMode, CodexAuthConfig};
         use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
         let mut ws = WorkspaceConfig::default();
@@ -2778,7 +2902,7 @@ mod auth_flat_rows_tests {
         ws.roles.insert("the-architect".into(), over);
 
         let mut editor = EditorState::new_edit("ws".into(), ws);
-        editor.auth_selected_agent = Some(Agent::Claude);
+        editor.auth_selected_kind = Some(AuthKind::Claude);
         editor.auth_expanded.insert("the-architect".into());
         let rows = auth_flat_rows(&editor, &AppConfig::default());
 
@@ -2788,7 +2912,7 @@ mod auth_flat_rows_tests {
             .expect("expanded role header missing");
         assert!(matches!(
             rows[header_pos + 1],
-            AuthRow::RoleMode { ref role, agent: Agent::Claude } if role == "the-architect"
+            AuthRow::RoleMode { ref role, kind: AuthKind::Claude } if role == "the-architect"
         ));
     }
 
@@ -2798,7 +2922,7 @@ mod auth_flat_rows_tests {
         use crate::workspace::WorkspaceConfig;
 
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        editor.auth_selected_agent = Some(Agent::Claude);
+        editor.auth_selected_kind = Some(AuthKind::Claude);
         let cfg = AppConfig::default();
         let rows = auth_flat_rows(&editor, &cfg);
         let workspace_claude_idx = rows
@@ -2807,7 +2931,7 @@ mod auth_flat_rows_tests {
                 matches!(
                     r,
                     AuthRow::WorkspaceMode {
-                        agent: Agent::Claude
+                        kind: AuthKind::Claude
                     }
                 )
             })
@@ -2815,7 +2939,7 @@ mod auth_flat_rows_tests {
         assert_eq!(
             super::resolve_auth_row_target(&editor, &cfg, workspace_claude_idx),
             Some(AuthFormTarget::Workspace {
-                agent: Agent::Claude
+                kind: AuthKind::Claude
             }),
         );
     }
@@ -2824,12 +2948,12 @@ mod auth_flat_rows_tests {
     fn resolve_auth_row_target_returns_none_for_navigation_and_header_rows() {
         use crate::workspace::WorkspaceConfig;
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        editor.auth_selected_agent = Some(Agent::Claude);
+        editor.auth_selected_kind = Some(AuthKind::Claude);
         let cfg = AppConfig::default();
         let rows = auth_flat_rows(&editor, &cfg);
         for (idx, row) in rows.iter().enumerate() {
             match row {
-                AuthRow::AuthKind { .. }
+                AuthRow::AuthKindRow { .. }
                 | AuthRow::AddSentinel { .. }
                 | AuthRow::Spacer
                 | AuthRow::RoleHeader { .. } => assert!(
@@ -2856,17 +2980,103 @@ mod auth_flat_rows_tests {
             ..AppConfig::default()
         };
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        editor.auth_selected_agent = Some(Agent::Claude);
+        editor.auth_selected_kind = Some(AuthKind::Claude);
 
         let rows = auth_flat_rows(&editor, &config);
         assert!(
             rows.iter().any(|r| matches!(
                 r,
                 AuthRow::WorkspaceSource {
-                    agent: Agent::Claude
+                    kind: AuthKind::Claude
                 }
             )),
             "global claude.auth_forward = api_key must surface WorkspaceSource row; got {rows:?}"
+        );
+    }
+
+    /// Selecting the GitHub kind opens a detail view that mirrors the
+    /// Claude / Codex shape: workspace mode → spacer → add-sentinel.
+    /// The agent dimension is intentionally absent (Github has no per-
+    /// agent split).
+    #[test]
+    fn github_detail_view_emits_workspace_mode_then_sentinel() {
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.auth_selected_kind = Some(AuthKind::Github);
+        let rows = auth_flat_rows(&editor, &AppConfig::default());
+        // Sync mode (the global default) requires no credential — no
+        // WorkspaceSource row.
+        assert!(
+            matches!(
+                rows.first(),
+                Some(AuthRow::WorkspaceMode {
+                    kind: AuthKind::Github
+                })
+            ),
+            "first row must be the GitHub workspace mode; got {rows:?}"
+        );
+        assert!(
+            rows.iter()
+                .any(|r| matches!(r, AuthRow::AddSentinel { .. })),
+            "+ Override sentinel must be present; got {rows:?}"
+        );
+    }
+
+    /// Globally configured `token` mode must surface a `WorkspaceSource`
+    /// row for `GH_TOKEN` so the operator can set the credential without
+    /// chasing an explicit workspace-level `[github]` block.
+    #[test]
+    fn github_workspace_source_surfaces_for_global_token_mode() {
+        use crate::config::{GithubAuthConfig, GithubAuthMode};
+        let config = AppConfig {
+            github: Some(GithubAuthConfig {
+                auth_forward: GithubAuthMode::Token,
+                ..Default::default()
+            }),
+            ..AppConfig::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.auth_selected_kind = Some(AuthKind::Github);
+
+        let rows = auth_flat_rows(&editor, &config);
+        assert!(
+            rows.iter().any(|r| matches!(
+                r,
+                AuthRow::WorkspaceSource {
+                    kind: AuthKind::Github
+                }
+            )),
+            "global github.auth_forward = token must surface WorkspaceSource row; got {rows:?}"
+        );
+    }
+
+    /// A workspace × role override on the Github kind shows up as a
+    /// collapsed `RoleHeader` in the detail view, exactly like Claude /
+    /// Codex overrides do.
+    #[test]
+    fn github_role_override_emits_role_header_when_override_present() {
+        use crate::config::{GithubAuthConfig, GithubAuthMode};
+        use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+        let mut ws = WorkspaceConfig::default();
+        ws.allowed_roles = vec!["the-architect".into()];
+        let mut over = WorkspaceRoleOverride::default();
+        over.github = Some(GithubAuthConfig {
+            auth_forward: GithubAuthMode::Ignore,
+            ..Default::default()
+        });
+        ws.roles.insert("the-architect".into(), over);
+
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.auth_selected_kind = Some(AuthKind::Github);
+        let rows = auth_flat_rows(&editor, &AppConfig::default());
+
+        assert!(
+            rows.iter().any(|r| {
+                matches!(
+                    r,
+                    AuthRow::RoleHeader { role, .. } if role == "the-architect"
+                )
+            }),
+            "github role override must surface a RoleHeader; got {rows:?}"
         );
     }
 }

@@ -23,17 +23,32 @@ if [ -n "${GIT_AUTHOR_EMAIL:-}" ]; then
     git config --global user.email "$GIT_AUTHOR_EMAIL"
 fi
 
-# Authenticate with GitHub if gh is installed in the container
+# Run unconditionally — works whether gh is authed or not. Container
+# git push needs HTTPS and the gh credential helper, even on first
+# launch when gh has nothing to forward yet. Both `git@github.com:`
+# (SCP-style) and `ssh://git@github.com/` forms are caught so a repo
+# the operator originally cloned via SSH on the host can still be
+# pushed from inside the container without an SSH key.
+# Use --add so both insteadOf patterns coexist on the same key. Plain
+# `git config <key> <value>` is single-valued — the second invocation
+# would overwrite the first and silently drop one of the two forms.
+git config --global --add url."https://github.com/".insteadOf "git@github.com:"
+git config --global --add url."https://github.com/".insteadOf "ssh://git@github.com/"
+
 if [ -x /usr/bin/gh ]; then
-    if gh auth status &>/dev/null; then
-        echo "[entrypoint] GitHub CLI already authenticated"
+    # Credential helper resolves to either GH_TOKEN env (preferred) or
+    # the configured hosts.yml. Either way, git push/fetch over HTTPS
+    # uses the gh-resolved token without prompting.
+    git config --global credential.helper '!gh auth git-credential'
+
+    if [ -n "${GH_TOKEN:-}" ] || gh auth status &>/dev/null; then
+        echo "[entrypoint] GitHub CLI authenticated (host: github.com)"
         gh auth setup-git
-        git config --global url."https://github.com/".insteadOf "git@github.com:"
     else
-        echo "[entrypoint] GitHub CLI not authenticated — skipping login (run 'gh auth login' inside the runtime if needed)"
+        echo "[entrypoint] GitHub CLI not authenticated — run 'gh auth login' inside the runtime if needed"
     fi
 else
-    echo "[entrypoint] GitHub CLI not installed — skipping auth"
+    echo "[entrypoint] GitHub CLI not installed — skipping gh setup"
 fi
 
 # ── agent-specific setup ───────────────────────────────────────────

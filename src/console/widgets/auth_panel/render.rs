@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use super::form::{AuthForm, CredentialInput};
-use crate::config::AuthForwardMode;
+use crate::console::manager::auth_kind::AuthMode;
 use crate::console::manager::render::editor::push_op_breadcrumb_spans;
 use crate::console::manager::state::AuthFormFocus;
 
@@ -24,13 +24,11 @@ pub(crate) const DANGER_RED: Color = Color::Rgb(255, 94, 122);
 const AUTH_FORM_MODE_LABEL_WIDTH: usize = 12;
 const AUTH_FORM_CREDENTIAL_LABEL_WIDTH: usize = 22;
 
-pub(crate) const fn mode_str(m: AuthForwardMode) -> &'static str {
-    match m {
-        AuthForwardMode::Sync => "sync",
-        AuthForwardMode::ApiKey => "api_key",
-        AuthForwardMode::OAuthToken => "oauth_token",
-        AuthForwardMode::Ignore => "ignore",
-    }
+/// Operator-facing slug for an [`AuthMode`]. Wraps
+/// [`AuthMode::as_str`] so the panel keeps a single re-export point
+/// for the auth-tab renderers and the form modal.
+pub(crate) const fn mode_str(m: AuthMode) -> &'static str {
+    m.as_str()
 }
 
 /// Render the auth-edit modal for `form` into `area`.
@@ -130,7 +128,7 @@ fn build_form_lines(form: &AuthForm, focus: AuthFormFocus) -> Vec<FormLine> {
     ])));
 
     if form.shows_credential_block()
-        && let Some(env_var) = form.mode.and_then(|mode| form.agent.required_env_var(mode))
+        && let Some(env_var) = form.mode.and_then(|mode| form.kind.required_env_var(mode))
     {
         lines.push(FormLine::left(credential_env_line(
             env_var,
@@ -279,7 +277,7 @@ const fn selected_button_style(selected: bool, style: Style) -> Style {
 #[cfg(test)]
 mod form_render_tests {
     use super::*;
-    use crate::agent::Agent;
+    use crate::console::manager::auth_kind::{AuthKind, AuthMode};
     use crate::operator_env::OpRef;
     use ratatui::{Terminal, backend::TestBackend};
 
@@ -304,7 +302,7 @@ mod form_render_tests {
 
     #[test]
     fn form_header_is_short() {
-        let form = AuthForm::new(Agent::Claude);
+        let form = AuthForm::new(AuthKind::Claude);
         let s = dump_form(&form);
         assert!(s.contains("Edit auth"), "missing header; dump:\n{s}");
         assert!(
@@ -315,7 +313,7 @@ mod form_render_tests {
 
     #[test]
     fn form_with_unset_mode_hides_credential_block_and_dims_save() {
-        let form = AuthForm::new(Agent::Claude);
+        let form = AuthForm::new(AuthKind::Claude);
         let s = dump_form(&form);
         assert!(s.contains("Mode"), "missing mode line; dump:\n{s}");
         assert!(
@@ -339,8 +337,8 @@ mod form_render_tests {
 
     #[test]
     fn form_with_sync_mode_hides_credential_block_and_enables_save() {
-        let mut form = AuthForm::new(Agent::Claude);
-        form.set_mode(AuthForwardMode::Sync);
+        let mut form = AuthForm::new(AuthKind::Claude);
+        form.set_mode(AuthMode::Sync);
         let s = dump_form(&form);
         assert!(s.contains("sync"), "missing sync mode label; dump:\n{s}");
         // Sync requires no credential.
@@ -353,8 +351,8 @@ mod form_render_tests {
 
     #[test]
     fn form_with_api_key_literal_shows_credential_block_and_resolves() {
-        let mut form = AuthForm::new(Agent::Claude);
-        form.set_mode(AuthForwardMode::ApiKey);
+        let mut form = AuthForm::new(AuthKind::Claude);
+        form.set_mode(AuthMode::ApiKey);
         form.set_literal("sk-ant-test".into());
         let s = dump_form(&form);
         assert!(s.contains("api_key"), "missing api_key mode; dump:\n{s}");
@@ -374,8 +372,8 @@ mod form_render_tests {
 
     #[test]
     fn form_with_op_ref_credential_shows_path_and_picker_button() {
-        let mut form = AuthForm::new(Agent::Claude);
-        form.set_mode(AuthForwardMode::ApiKey);
+        let mut form = AuthForm::new(AuthKind::Claude);
+        form.set_mode(AuthMode::ApiKey);
         form.set_op_ref(OpRef {
             op: "op://uuid/anthropic".into(),
             path: "Work/Anthropic/api-key".into(),
@@ -393,8 +391,8 @@ mod form_render_tests {
 
     #[test]
     fn long_credential_env_name_has_gap_before_source_label() {
-        let mut form = AuthForm::new(Agent::Claude);
-        form.set_mode(AuthForwardMode::OAuthToken);
+        let mut form = AuthForm::new(AuthKind::Claude);
+        form.set_mode(AuthMode::OAuthToken);
         form.set_op_ref(OpRef {
             op: "op://uuid/oauth".into(),
             path: "Boris/Roblox/token".into(),

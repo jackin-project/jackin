@@ -552,6 +552,12 @@ struct LaunchContext<'a> {
     debug: bool,
     agent: crate::agent::Agent,
     resolved_env: &'a crate::env_resolver::ResolvedEnv,
+    /// Resolved `[…github.env]` map (post `op://` + `$NAME`
+    /// resolution). `GH_TOKEN` carries the token in the launcher's
+    /// preferred env-injection path; `GH_HOST` and
+    /// `GH_ENTERPRISE_TOKEN` are forwarded as-is when set so GHE
+    /// targets work end to end.
+    github_env: &'a std::collections::BTreeMap<String, String>,
     cache_dir: &'a std::path::Path,
     /// Required so `launch_role_runtime` can fire the `keep_awake`
     /// reconciler between `docker run -d` and the foreground `docker
@@ -583,6 +589,7 @@ fn launch_role_runtime(
         debug,
         agent,
         resolved_env,
+        github_env,
         cache_dir,
         paths,
     } = ctx;
@@ -784,6 +791,40 @@ fn launch_role_runtime(
         }
         env_strings.push(format!("{key}={value}"));
     }
+
+    // GitHub auth env wiring. Token mode and Sync-with-host-token both
+    // export GH_TOKEN AND GITHUB_TOKEN from the same source — `gh`
+    // prefers GH_TOKEN, but the official github-mcp-server and most
+    // GitHub-Actions-style scripts read GITHUB_TOKEN. Exporting both
+    // closes Known Gap 3 in the roadmap doc. GH_HOST and
+    // GH_ENTERPRISE_TOKEN are passed through as-is when declared by
+    // the operator so GHE workspaces work end to end.
+    let gh_token = state.gh_provision_outcome.token();
+    push_env_if_present(
+        &mut env_strings,
+        crate::env_model::GH_TOKEN_ENV_NAME,
+        gh_token,
+    );
+    push_env_if_present(
+        &mut env_strings,
+        crate::env_model::GITHUB_TOKEN_ENV_NAME,
+        gh_token,
+    );
+    push_env_if_present(
+        &mut env_strings,
+        crate::env_model::GH_HOST_ENV_NAME,
+        github_env
+            .get(crate::env_model::GH_HOST_ENV_NAME)
+            .map(String::as_str),
+    );
+    push_env_if_present(
+        &mut env_strings,
+        crate::env_model::GH_ENTERPRISE_TOKEN_ENV_NAME,
+        github_env
+            .get(crate::env_model::GH_ENTERPRISE_TOKEN_ENV_NAME)
+            .map(String::as_str),
+    );
+
     for env_str in &env_strings {
         run_args.push("-e");
         run_args.push(env_str);
@@ -1361,11 +1402,49 @@ fn load_role_with(
             &role_key,
         )?;
 
+        // Resolve the GitHub-auth axis. The layered resolver mirrors
+        // the Claude/Codex one but has no agent dimension — `.config/gh/`
+        // is shared by every agent in the container.
+        let github_mode = crate::config::resolve_github_mode(config, workspace_name_str, &role_key);
+        let github_env_decls =
+            crate::config::build_github_env_layers(config, workspace_name_str, &role_key);
+        // Resolve `[…github.env]` only under modes that consume it.
+        // `Sync` and `Token` both seed `GH_TOKEN` / `GH_HOST` /
+        // `GH_ENTERPRISE_TOKEN` from the resolved map (Token also
+        // pre-flight-checks `GH_TOKEN`). `Ignore` exports nothing, so
+        // we skip the resolve to avoid unnecessary `op://` shellouts
+        // — note this also defers `op://` validation errors under
+        // Ignore until the operator flips back to a non-Ignore mode.
+        //
+        // Failures are aggregated and surfaced as a structured error
+        // so a missing op-CLI doesn't produce N parallel anyhows.
+        let github_resolved_env = if matches!(github_mode, crate::config::GithubAuthMode::Ignore) {
+            std::collections::BTreeMap::new()
+        } else {
+            resolve_github_env_map(&github_env_decls, opts)?
+        };
+        let github_ctx = crate::instance::GithubAuthContext {
+            mode: github_mode,
+            token: github_resolved_env
+                .get(crate::env_model::GH_TOKEN_ENV_NAME)
+                .cloned(),
+        };
+
+        // Token-mode pre-flight: GH_TOKEN must resolve to a non-empty
+        // value before we spend time starting DinD.
+        verify_github_token_present(
+            github_mode,
+            github_ctx.token.as_deref(),
+            workspace_name_str,
+            role_key.as_str(),
+        )?;
+
         let (state, auth_outcome) = RoleState::prepare(
             paths,
             &container_name,
             &validated_repo.manifest,
             auth_mode,
+            &github_ctx,
             &paths.home_dir,
             agent,
         )?;
@@ -1437,6 +1516,21 @@ fn load_role_with(
             tui::codex_auth_notice(resolved_source, (auth_mode, auth_outcome).into());
         }
 
+        // GitHub auth summary line — agent-neutral. The breadcrumb walks
+        // the [github.env] layers (NOT the regular operator-env tree)
+        // because the proposal documents [github.env] as the canonical
+        // place for GH_TOKEN. Falling back to lookup_operator_env_raw
+        // would render bare "GH_TOKEN" when the operator follows the
+        // docs.
+        {
+            let gh_token_key = crate::env_model::GH_TOKEN_ENV_NAME;
+            let token_breadcrumb = github_env_decls.get(gh_token_key).map_or_else(
+                || gh_token_key.to_string(),
+                |value| auth_token_source_reference(gh_token_key, Some(value.as_display_str())),
+            );
+            tui::github_auth_notice(&state.gh_provision_outcome, Some(&token_breadcrumb));
+        }
+
         // Materialize workspace mounts: shared mounts pass through;
         // worktree-isolated mounts get a per-container `git worktree`
         // staged on the host. Must run AFTER `RoleState::prepare` (so the
@@ -1484,6 +1578,7 @@ fn load_role_with(
             debug: opts.debug,
             agent,
             resolved_env: &resolved_env,
+            github_env: &github_resolved_env,
             cache_dir: &paths.cache_dir,
             paths,
         };
@@ -1867,6 +1962,82 @@ fn render_auth_credential_missing(
     out
 }
 
+/// Token-mode pre-flight for the `[github]` axis: `GH_TOKEN` must
+/// resolve to a non-empty value before launch proceeds. The other
+/// modes (`Sync` / `Ignore`) have nothing to verify here.
+///
+/// Extracted from `load_role_with` so the bail-message shape and
+/// trigger condition can be unit-pinned without orchestrating the
+/// full launch flow.
+fn verify_github_token_present(
+    github_mode: crate::config::GithubAuthMode,
+    resolved_token: Option<&str>,
+    workspace: &str,
+    role: &str,
+) -> anyhow::Result<()> {
+    if !matches!(github_mode, crate::config::GithubAuthMode::Token) {
+        return Ok(());
+    }
+    if resolved_token.is_some_and(|s| !s.is_empty()) {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "auth_forward = \"token\" for [github] in workspace '{workspace}' role '{role}' \
+         requires GH_TOKEN to resolve to a non-empty value, but it is unset.\n\n\
+         Fix one of:\n  \
+         - Add GH_TOKEN under [github.env] (or [workspaces.{workspace}.github.env], or \
+         [workspaces.{workspace}.roles.{role}.github.env]).\n  \
+         - Or change the mode: set auth_forward = \"sync\" or \"ignore\"."
+    );
+}
+
+/// Resolve the `[…github.env]` declarations through the same
+/// `op://` + host-env dispatch as regular operator env. Honors the
+/// `op_runner` / `host_env` test seams on `LoadOptions` so tests stay
+/// hermetic.
+fn resolve_github_env_map(
+    declarations: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    opts: &LoadOptions,
+) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
+    let mut resolved: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    if declarations.is_empty() {
+        return Ok(resolved);
+    }
+    let default_runner = crate::operator_env::OpCli::new();
+    let runner: &dyn crate::operator_env::OpRunner =
+        opts.op_runner.as_deref().unwrap_or(&default_runner);
+    let mut host_env_fn = |name: &str| -> Result<String, std::env::VarError> {
+        opts.host_env.as_ref().map_or_else(
+            || std::env::var(name),
+            |map| map.get(name).cloned().ok_or(std::env::VarError::NotPresent),
+        )
+    };
+    let mut errors: Vec<String> = Vec::new();
+    for (key, value) in declarations {
+        match crate::operator_env::resolve_env_value(
+            "[github.env]",
+            key,
+            value,
+            runner,
+            &mut host_env_fn,
+        ) {
+            Ok(v) => {
+                resolved.insert(key.clone(), v);
+            }
+            Err(e) => errors.push(format!("  - {e}")),
+        }
+    }
+    if !errors.is_empty() {
+        anyhow::bail!(
+            "github env resolution failed for {} var(s):\n{}",
+            errors.len(),
+            errors.join("\n")
+        );
+    }
+    Ok(resolved)
+}
+
 /// Verify that the credential env var required by the resolved
 /// `auth_forward` mode is present (and non-empty) in the merged
 /// operator-env map. Drives the per-(agent, mode) lookup through
@@ -2002,6 +2173,17 @@ fn build_env_layer_states(
 /// `"$CLAUDE_CODE_OAUTH_TOKEN"`). Produces the `"KEY ← value"` form
 /// consumed by `tui::auth_mode_notice`. When `raw` is `None` or the
 /// display string is empty, falls back to the bare env-var name.
+/// Append `KEY=value` to `env_strings` when `value` is `Some` and
+/// non-empty. Centralizes the "skip the env push when the value is
+/// missing or blank" check used by every optional env injection.
+fn push_env_if_present(env_strings: &mut Vec<String>, key: &str, value: Option<&str>) {
+    if let Some(v) = value
+        && !v.is_empty()
+    {
+        env_strings.push(format!("{key}={v}"));
+    }
+}
+
 fn auth_token_source_reference(env_var: &str, raw: Option<&str>) -> String {
     match raw {
         None | Some("") => env_var.to_string(),
@@ -2202,6 +2384,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             crate::config::AuthForwardMode::Ignore,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             Agent::Claude,
         )
@@ -2267,6 +2450,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             crate::config::AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             &host_home,
             Agent::Claude,
         )
@@ -2316,6 +2500,7 @@ agents = ["codex"]
             "jackin-agent-smith",
             &manifest,
             crate::config::AuthForwardMode::Ignore,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             Agent::Codex,
         )
@@ -2365,6 +2550,7 @@ agents = ["codex"]
             "jackin-agent-smith",
             &manifest,
             crate::config::AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             &host_home,
             Agent::Codex,
         )
@@ -2406,6 +2592,7 @@ agents = ["codex"]
             "jackin-agent-smith",
             &manifest,
             crate::config::AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path().join("empty_host_home").as_path(),
             Agent::Codex,
         )
@@ -5165,5 +5352,143 @@ plugins = []
         let s = err.to_string();
         assert!(s.contains("codex"), "got: {s}");
         assert!(s.contains("OPENAI_API_KEY"), "got: {s}");
+    }
+
+    // ── verify_github_token_present (Token-mode pre-flight) ──────
+
+    #[test]
+    fn verify_github_token_present_ok_when_token_resolves() {
+        let r = super::verify_github_token_present(
+            crate::config::GithubAuthMode::Token,
+            Some("ghp_real"),
+            "proj",
+            "smith",
+        );
+        assert!(r.is_ok());
+    }
+
+    #[test]
+    fn verify_github_token_present_ok_for_sync_and_ignore_regardless_of_token() {
+        // Sync / Ignore have no pre-flight invariant on GH_TOKEN —
+        // Sync sources its token from the host, Ignore exports nothing.
+        let r = super::verify_github_token_present(
+            crate::config::GithubAuthMode::Sync,
+            None,
+            "proj",
+            "smith",
+        );
+        assert!(r.is_ok());
+        let r = super::verify_github_token_present(
+            crate::config::GithubAuthMode::Ignore,
+            None,
+            "proj",
+            "smith",
+        );
+        assert!(r.is_ok());
+    }
+
+    #[test]
+    fn verify_github_token_present_errors_when_token_missing() {
+        let err = super::verify_github_token_present(
+            crate::config::GithubAuthMode::Token,
+            None,
+            "customer-acme",
+            "release-bot",
+        )
+        .unwrap_err();
+        let s = err.to_string();
+        assert!(s.contains("auth_forward = \"token\""), "got: {s}");
+        assert!(s.contains("workspace 'customer-acme'"), "got: {s}");
+        assert!(s.contains("role 'release-bot'"), "got: {s}");
+        assert!(s.contains("GH_TOKEN"), "got: {s}");
+        // Operator-actionable remediation suggestions.
+        assert!(s.contains("[github.env]"), "got: {s}");
+        assert!(
+            s.contains("[workspaces.customer-acme.github.env]"),
+            "got: {s}"
+        );
+        assert!(
+            s.contains("[workspaces.customer-acme.roles.release-bot.github.env]"),
+            "got: {s}"
+        );
+        assert!(s.contains("auth_forward = \"sync\""), "got: {s}");
+        assert!(s.contains("\"ignore\""), "got: {s}");
+    }
+
+    #[test]
+    fn verify_github_token_present_errors_when_token_empty_string() {
+        // Empty string must be rejected the same as missing — `gh`
+        // reads `GH_TOKEN=""` as no token, and we don't want to
+        // launch DinD just for the agent to fail at first push.
+        let err = super::verify_github_token_present(
+            crate::config::GithubAuthMode::Token,
+            Some(""),
+            "proj",
+            "smith",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("GH_TOKEN"));
+    }
+
+    // ── resolve_github_env_map ───────────────────────────────────
+
+    #[test]
+    fn resolve_github_env_map_returns_empty_for_no_declarations() {
+        use std::collections::BTreeMap;
+        let decls: BTreeMap<String, crate::operator_env::EnvValue> = BTreeMap::new();
+        let resolved = super::resolve_github_env_map(&decls, &LoadOptions::default()).unwrap();
+        assert!(resolved.is_empty());
+    }
+
+    #[test]
+    fn resolve_github_env_map_resolves_plain_values() {
+        use std::collections::BTreeMap;
+        let mut decls: BTreeMap<String, crate::operator_env::EnvValue> = BTreeMap::new();
+        decls.insert(
+            "GH_TOKEN".into(),
+            crate::operator_env::EnvValue::Plain("ghp_test".into()),
+        );
+        decls.insert(
+            "GH_HOST".into(),
+            crate::operator_env::EnvValue::Plain("ghe.acme.com".into()),
+        );
+        let resolved = super::resolve_github_env_map(&decls, &LoadOptions::default()).unwrap();
+        assert_eq!(
+            resolved.get("GH_TOKEN").map(String::as_str),
+            Some("ghp_test")
+        );
+        assert_eq!(
+            resolved.get("GH_HOST").map(String::as_str),
+            Some("ghe.acme.com"),
+        );
+    }
+
+    #[test]
+    fn resolve_github_env_map_aggregates_failures() {
+        use std::collections::BTreeMap;
+        // Two host-env references, both unset → both reported in
+        // one structured error rather than aborting on the first.
+        let mut decls: BTreeMap<String, crate::operator_env::EnvValue> = BTreeMap::new();
+        decls.insert(
+            "GH_TOKEN".into(),
+            crate::operator_env::EnvValue::Plain("$JACKIN_TEST_MISSING_TOKEN".into()),
+        );
+        decls.insert(
+            "GH_HOST".into(),
+            crate::operator_env::EnvValue::Plain("$JACKIN_TEST_MISSING_HOST".into()),
+        );
+        let opts = LoadOptions {
+            // Empty host-env map so `$NAME` references fail to resolve.
+            host_env: Some(BTreeMap::new()),
+            ..LoadOptions::default()
+        };
+        let err = super::resolve_github_env_map(&decls, &opts).unwrap_err();
+        let s = err.to_string();
+        assert!(
+            s.contains("github env resolution failed for 2 var(s)"),
+            "expected aggregated count, got: {s}"
+        );
+        assert!(s.contains("GH_TOKEN"), "got: {s}");
+        assert!(s.contains("GH_HOST"), "got: {s}");
     }
 }

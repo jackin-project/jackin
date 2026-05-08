@@ -18,7 +18,23 @@ pub enum EnvScope {
     Global,
     Role(String),
     Workspace(String),
-    WorkspaceRole { workspace: String, role: String },
+    WorkspaceRole {
+        workspace: String,
+        role: String,
+    },
+    /// `[workspaces.<workspace>.github.env]` — the github-kind env
+    /// block, parallel to the regular workspace `env` map but read by
+    /// [`crate::config::build_github_env_layers`] instead of the
+    /// regular launch-time env merge. Used to thread `GH_TOKEN` /
+    /// `GH_HOST` / `GH_ENTERPRISE_TOKEN` without polluting the
+    /// agent-facing env map.
+    WorkspaceGithub(String),
+    /// `[workspaces.<workspace>.roles.<role>.github.env]` — most-
+    /// specific layer of the github env layering.
+    WorkspaceRoleGithub {
+        workspace: String,
+        role: String,
+    },
 }
 
 pub struct ConfigEditor {
@@ -304,6 +320,63 @@ impl ConfigEditor {
         }
     }
 
+    /// Write or clear `[workspaces.<workspace>.github].auth_forward`.
+    ///
+    /// Mirrors [`Self::set_workspace_auth_forward`] but threads the
+    /// GitHub kind's `[github]` block instead of an `Agent`-keyed
+    /// child block. `mode = None` removes the `auth_forward` field
+    /// (and the `github` block if it becomes empty), letting the
+    /// resolver fall back to the next layer.
+    pub fn set_workspace_github_auth_forward(
+        &mut self,
+        workspace: &str,
+        mode: Option<crate::config::GithubAuthMode>,
+    ) {
+        let github_path = vec![
+            "workspaces".to_string(),
+            workspace.to_string(),
+            "github".to_string(),
+        ];
+        match mode {
+            Some(m) => {
+                let table = table_path_mut(&mut self.doc, &github_path);
+                table.insert("auth_forward", toml_edit::value(github_mode_str(m)));
+            }
+            None => {
+                clear_auth_forward_field(&mut self.doc, &github_path);
+            }
+        }
+    }
+
+    /// Write or clear `[workspaces.<workspace>.roles.<role>.github].auth_forward`.
+    ///
+    /// Mirrors [`Self::set_workspace_role_auth_forward`] one kind
+    /// dimension wider — `github` lives at the same three layers as
+    /// `claude` / `codex`, but with no per-agent split.
+    pub fn set_workspace_role_github_auth_forward(
+        &mut self,
+        workspace: &str,
+        role: &str,
+        mode: Option<crate::config::GithubAuthMode>,
+    ) {
+        let github_path = vec![
+            "workspaces".to_string(),
+            workspace.to_string(),
+            "roles".to_string(),
+            role.to_string(),
+            "github".to_string(),
+        ];
+        match mode {
+            Some(m) => {
+                let table = table_path_mut(&mut self.doc, &github_path);
+                table.insert("auth_forward", toml_edit::value(github_mode_str(m)));
+            }
+            None => {
+                clear_auth_forward_field(&mut self.doc, &github_path);
+            }
+        }
+    }
+
     pub fn upsert_builtin_agent(&mut self, agent_key: &str, git_url: &str) {
         // Touch only git + trusted. Leave [roles.X.env] alone —
         // operator-owned.
@@ -340,9 +413,19 @@ impl ConfigEditor {
                 None => return false,
             }
         }
-        current
+        let removed = current
             .as_table_mut()
-            .is_some_and(|table| table.remove(key).is_some())
+            .is_some_and(|table| table.remove(key).is_some());
+        if removed {
+            // Avoid leaving an empty `[…env]` (and its now-empty kind
+            // parent like `[…github]`) behind on disk after the last
+            // key is removed. `max_prune = 2` lets the walk peel both
+            // the `env` segment and its kind parent, but no further —
+            // workspace / role identifier slots stay untouched even
+            // when an operator names them "env" / "github" / etc.
+            prune_empty_trailing_tables(&mut self.doc, &path, 2);
+        }
+        removed
     }
 
     pub fn set_last_agent(&mut self, workspace: &str, agent_key: &str) {
@@ -479,6 +562,14 @@ const fn auth_forward_str(mode: crate::config::AuthForwardMode) -> &'static str 
     }
 }
 
+const fn github_mode_str(mode: crate::config::GithubAuthMode) -> &'static str {
+    match mode {
+        crate::config::GithubAuthMode::Sync => "sync",
+        crate::config::GithubAuthMode::Token => "token",
+        crate::config::GithubAuthMode::Ignore => "ignore",
+    }
+}
+
 fn env_scope_path(scope: &EnvScope) -> Vec<String> {
     match scope {
         EnvScope::Global => vec!["env".to_string()],
@@ -489,6 +580,20 @@ fn env_scope_path(scope: &EnvScope) -> Vec<String> {
             workspace.clone(),
             "roles".to_string(),
             role.clone(),
+            "env".to_string(),
+        ],
+        EnvScope::WorkspaceGithub(w) => vec![
+            "workspaces".to_string(),
+            w.clone(),
+            "github".to_string(),
+            "env".to_string(),
+        ],
+        EnvScope::WorkspaceRoleGithub { workspace, role } => vec![
+            "workspaces".to_string(),
+            workspace.clone(),
+            "roles".to_string(),
+            role.clone(),
+            "github".to_string(),
             "env".to_string(),
         ],
     }
@@ -505,12 +610,16 @@ fn validate_candidate(contents: &str) -> anyhow::Result<AppConfig> {
     Ok(config)
 }
 
-/// Remove the `auth_forward` field at `agent_path`. If the agent block
-/// is left empty afterwards, removes the agent block too. Walks without
-/// creating, so a reset on a layer that was already empty is a no-op.
-fn clear_auth_forward_field(doc: &mut DocumentMut, agent_path: &[String]) {
+/// Remove the `auth_forward` field at `kind_path` (a `[…claude]` /
+/// `[…codex]` / `[…github]` block). If the kind block is left empty
+/// afterwards, the now-empty kind segment is peeled off too. Empty
+/// `[…env]` subtables are removed by [`Self::remove_env_var`] when
+/// the operator's env diff goes through; this helper does not touch
+/// them itself. Walks without creating, so a reset on a layer that
+/// was already empty is a no-op.
+fn clear_auth_forward_field(doc: &mut DocumentMut, kind_path: &[String]) {
     let mut current: &mut Item = doc.as_item_mut();
-    for segment in agent_path {
+    for segment in kind_path {
         match current.as_table_mut().and_then(|t| t.get_mut(segment)) {
             Some(next) => current = next,
             None => return,
@@ -518,21 +627,59 @@ fn clear_auth_forward_field(doc: &mut DocumentMut, agent_path: &[String]) {
     }
     if let Some(table) = current.as_table_mut() {
         table.remove("auth_forward");
-        if table.is_empty()
-            && let Some((last, parent_path)) = agent_path.split_last()
-        {
-            // Walk to the parent and remove the now-empty agent block.
-            let mut walker: &mut Item = doc.as_item_mut();
-            for segment in parent_path {
-                match walker.as_table_mut().and_then(|t| t.get_mut(segment)) {
-                    Some(next) => walker = next,
-                    None => return,
-                }
-            }
-            if let Some(parent_table) = walker.as_table_mut() {
-                parent_table.remove(last.as_str());
+    }
+    // Peel off only the trailing kind segment if it's now empty.
+    // Caller passes `max_prune = 1` to bound the walk so a workspace
+    // or role identifier — even one literally named "github" /
+    // "claude" / "codex" / "env" — is never reached.
+    prune_empty_trailing_tables(doc, kind_path, 1);
+}
+
+/// Walk `path` from leaf back toward root, peeling off **at most
+/// `max_prune` trailing segments** whose corresponding tables are
+/// empty after prior removals. Stops on the first segment whose
+/// table is still non-empty.
+///
+/// `max_prune` is an absolute bound on how many trailing segments may
+/// be removed. Callers set it based on the path's known structure so
+/// the walk is bounded by *position* rather than by segment name —
+/// this is what prevents the helper from stripping an operator's
+/// workspace or role override, even when they happen to use a name
+/// like "github" or "env" for the workspace / role identifier.
+///
+/// Typical bounds:
+///   * `max_prune = 1` — peel only the kind segment (called from
+///     [`clear_auth_forward_field`] with paths like
+///     `[…, ws, "claude"]` or `[…, ws, "roles", role, "github"]`).
+///   * `max_prune = 2` — peel `[…env]` and its kind parent (called
+///     from [`Self::remove_env_var`] with paths like
+///     `[…, ws, "env"]` or `[…, ws, "github", "env"]`).
+fn prune_empty_trailing_tables(doc: &mut DocumentMut, path: &[String], max_prune: usize) {
+    let stop_at = path.len().saturating_sub(max_prune);
+    for i in (stop_at..path.len()).rev() {
+        let segment = &path[i];
+        let parent_path = &path[..i];
+        let mut walker: &mut Item = doc.as_item_mut();
+        for parent_segment in parent_path {
+            match walker
+                .as_table_mut()
+                .and_then(|t| t.get_mut(parent_segment))
+            {
+                Some(next) => walker = next,
+                None => return,
             }
         }
+        let Some(parent_table) = walker.as_table_mut() else {
+            return;
+        };
+        let still_empty = parent_table
+            .get(segment.as_str())
+            .and_then(Item::as_table)
+            .is_some_and(toml_edit::Table::is_empty);
+        if !still_empty {
+            return;
+        }
+        parent_table.remove(segment.as_str());
     }
 }
 
@@ -1683,6 +1830,276 @@ workdir = "/b"
         assert!(
             serialized.contains(r#"DB_URL = "postgres://localhost""#),
             "expected scalar-string emit, got:\n{serialized}"
+        );
+    }
+
+    /// Pin the cleanup path for the github kind: clearing both the
+    /// `auth_forward` field and the `[github.env]` keys at workspace
+    /// scope must leave NO empty `[workspaces.<ws>.github]` or
+    /// `[workspaces.<ws>.github.env]` tables on disk. Regression guard
+    /// for the orphan-table I1 finding.
+    #[test]
+    fn clearing_workspace_github_prunes_empty_tables() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[workspaces.prod]
+workdir = "/workspace/prod"
+"#,
+        )
+        .unwrap();
+
+        // Seed: `[workspaces.prod.github]` with auth_forward + a
+        // GH_TOKEN env entry.
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor
+            .set_workspace_github_auth_forward("prod", Some(crate::config::GithubAuthMode::Token));
+        let env_scope = EnvScope::WorkspaceGithub("prod".to_string());
+        editor
+            .set_env_var(&env_scope, "GH_TOKEN", "op://Work/gh/pat".into())
+            .unwrap();
+        editor.save().unwrap();
+
+        // Sanity: both the kind block and its env subtable land on disk.
+        let after_save = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(after_save.contains("[workspaces.prod.github]"));
+        assert!(after_save.contains("auth_forward"));
+        assert!(after_save.contains("GH_TOKEN"));
+
+        // Operator presses `D` on github WorkspaceMode (mode → None)
+        // and the env diff drops GH_TOKEN.
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_workspace_github_auth_forward("prod", None);
+        assert!(editor.remove_env_var(&env_scope, "GH_TOKEN"));
+        editor.save().unwrap();
+
+        let cleaned = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            !cleaned.contains("github"),
+            "stale [github] / [github.env] table left on disk:\n{cleaned}"
+        );
+        assert!(
+            cleaned.contains("[workspaces.prod]"),
+            "workspace block was wrongly removed by the cascade:\n{cleaned}"
+        );
+        assert!(
+            cleaned.contains("workdir"),
+            "sibling workdir field was wrongly stripped:\n{cleaned}"
+        );
+    }
+
+    /// Same cascade contract for the per-(workspace × role) layer.
+    #[test]
+    fn clearing_workspace_role_github_prunes_empty_tables() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[workspaces.prod]
+workdir = "/workspace/prod"
+
+[workspaces.prod.roles.scratch]
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_workspace_role_github_auth_forward(
+            "prod",
+            "scratch",
+            Some(crate::config::GithubAuthMode::Token),
+        );
+        let env_scope = EnvScope::WorkspaceRoleGithub {
+            workspace: "prod".to_string(),
+            role: "scratch".to_string(),
+        };
+        editor
+            .set_env_var(&env_scope, "GH_TOKEN", "op://Work/gh/pat".into())
+            .unwrap();
+        editor.save().unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_workspace_role_github_auth_forward("prod", "scratch", None);
+        assert!(editor.remove_env_var(&env_scope, "GH_TOKEN"));
+        editor.save().unwrap();
+
+        let cleaned = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            !cleaned.contains("github"),
+            "stale [github] / [github.env] table left on disk:\n{cleaned}"
+        );
+    }
+
+    /// Clearing `[…github] auth_forward` while sibling kinds (`[…claude]` /
+    /// `[…codex]`) are still set must NOT cascade-prune the siblings.
+    #[test]
+    fn clearing_one_kind_preserves_sibling_kinds() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[workspaces.prod]
+workdir = "/workspace/prod"
+
+[workspaces.prod.claude]
+auth_forward = "ignore"
+
+[workspaces.prod.codex]
+auth_forward = "ignore"
+
+[workspaces.prod.github]
+auth_forward = "ignore"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_workspace_github_auth_forward("prod", None);
+        editor.save().unwrap();
+
+        let cleaned = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            !cleaned.contains("[workspaces.prod.github]"),
+            "github block should be removed:\n{cleaned}"
+        );
+        assert!(
+            cleaned.contains("[workspaces.prod.claude]"),
+            "claude block must survive:\n{cleaned}"
+        );
+        assert!(
+            cleaned.contains("[workspaces.prod.codex]"),
+            "codex block must survive:\n{cleaned}"
+        );
+    }
+
+    /// Removing the last `[…github.env]` key while `[…github]` still
+    /// has `auth_forward` set must prune ONLY `[…env]`. The kind block
+    /// stays.
+    #[test]
+    fn pruning_empty_env_preserves_kind_block_with_auth_forward() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[workspaces.prod]
+workdir = "/workspace/prod"
+
+[workspaces.prod.github]
+auth_forward = "token"
+
+[workspaces.prod.github.env]
+GH_TOKEN = "ghp_real"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        let env_scope = EnvScope::WorkspaceGithub("prod".to_string());
+        assert!(editor.remove_env_var(&env_scope, "GH_TOKEN"));
+        editor.save().unwrap();
+
+        let cleaned = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            !cleaned.contains("[workspaces.prod.github.env]"),
+            "empty env subtable must be pruned:\n{cleaned}"
+        );
+        assert!(
+            cleaned.contains("[workspaces.prod.github]"),
+            "kind block must survive (still has auth_forward):\n{cleaned}"
+        );
+        assert!(
+            cleaned.contains("auth_forward = \"token\""),
+            "auth_forward value must survive:\n{cleaned}"
+        );
+    }
+
+    /// Workspace with sibling content (allowed_roles, mounts) must
+    /// survive a github clear. Position-based prune bound prevents
+    /// the walker from reaching the workspace identifier slot.
+    #[test]
+    fn clearing_github_preserves_workspace_sibling_content() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[workspaces.prod]
+workdir = "/workspace/prod"
+allowed_roles = ["agent-smith", "the-architect"]
+
+[workspaces.prod.github]
+auth_forward = "token"
+
+[workspaces.prod.github.env]
+GH_TOKEN = "ghp_real"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_workspace_github_auth_forward("prod", None);
+        let env_scope = EnvScope::WorkspaceGithub("prod".to_string());
+        assert!(editor.remove_env_var(&env_scope, "GH_TOKEN"));
+        editor.save().unwrap();
+
+        let cleaned = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            !cleaned.contains("[workspaces.prod.github"),
+            "github / github.env tables should be pruned:\n{cleaned}"
+        );
+        assert!(
+            cleaned.contains("[workspaces.prod]"),
+            "workspace block must survive:\n{cleaned}"
+        );
+        assert!(
+            cleaned.contains("workdir"),
+            "workdir field must survive:\n{cleaned}"
+        );
+        assert!(
+            cleaned.contains("allowed_roles"),
+            "allowed_roles must survive:\n{cleaned}"
+        );
+    }
+
+    /// Position-based prune protects against an operator workspace
+    /// literally named "github" / "claude" / "codex" / "env" — the
+    /// walk depth is bounded so the workspace identifier slot at
+    /// path[1] is never reached.
+    #[test]
+    fn workspace_named_github_survives_github_clear() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[workspaces.github]
+workdir = "/workspace/edge-case"
+
+[workspaces.github.github]
+auth_forward = "ignore"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_workspace_github_auth_forward("github", None);
+        editor.save().unwrap();
+
+        let cleaned = std::fs::read_to_string(&paths.config_file).unwrap();
+        // Inner [workspaces.github.github] gone (kind block); outer
+        // [workspaces.github] (workspace identifier) preserved.
+        assert!(
+            cleaned.contains("[workspaces.github]"),
+            "workspace named 'github' must survive:\n{cleaned}"
+        );
+        assert!(
+            cleaned.contains("workdir"),
+            "workdir on workspace 'github' must survive:\n{cleaned}"
         );
     }
 }

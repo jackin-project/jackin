@@ -806,18 +806,17 @@ fn build_prospective_mounts(
     out
 }
 
-/// Diff `claude` / `codex` and per-role `claude` / `codex` mode fields
-/// between `original` and `pending`, propagating each change to disk via
-/// `ConfigEditor::set_workspace_auth_forward` /
-/// `set_workspace_role_auth_forward`.
+/// Diff `claude` / `codex` / `github` and per-role variants between
+/// `original` and `pending`, propagating each change to disk via the
+/// matching `ConfigEditor::set_*_auth_forward` setter.
 ///
 /// `WorkspaceEdit` does not (yet) carry the auth-forward fields, so
 /// `edit_workspace` re-renders the entire workspace table from the parsed
 /// in-memory config — preserving whatever was on disk, NOT what the
 /// auth-form mutated in `editor.pending`. Calling this helper after
-/// `edit_workspace` resolves that drift: the typed auth-forward setters
-/// reach into the freshly-rewritten `[workspaces.<name>.<agent>]` /
-/// `[workspaces.<name>.roles.<role>.<agent>]` blocks and apply the diff.
+/// `edit_workspace` resolves that drift: the typed setters reach into
+/// the freshly-rewritten `[workspaces.<name>.<kind>]` /
+/// `[workspaces.<name>.roles.<role>.<kind>]` blocks and apply the diff.
 ///
 /// Roles present only in `original` get their auth blocks cleared. Roles
 /// present only in `pending` get their auth blocks written.
@@ -837,6 +836,13 @@ fn apply_auth_forward_diff(
     let pending_codex = pending.codex.as_ref().map(|c| c.0.auth_forward);
     if original_codex != pending_codex {
         ce.set_workspace_auth_forward(workspace_name, Agent::Codex, pending_codex);
+    }
+    // Github has no `Agent` peer — its `[github]` block is parallel to
+    // `[claude]` / `[codex]` but agent-neutral by design.
+    let original_github = original.github.as_ref().map(|g| g.auth_forward);
+    let pending_github = pending.github.as_ref().map(|g| g.auth_forward);
+    if original_github != pending_github {
+        ce.set_workspace_github_auth_forward(workspace_name, pending_github);
     }
 
     // Union so roles on only one side are caught.
@@ -863,10 +869,24 @@ fn apply_auth_forward_diff(
         if orig_codex != pend_codex {
             ce.set_workspace_role_auth_forward(workspace_name, role, Agent::Codex, pend_codex);
         }
+        let orig_github = orig_override
+            .and_then(|o| o.github.as_ref())
+            .map(|g| g.auth_forward);
+        let pend_github = pend_override
+            .and_then(|p| p.github.as_ref())
+            .map(|g| g.auth_forward);
+        if orig_github != pend_github {
+            ce.set_workspace_role_github_auth_forward(workspace_name, role, pend_github);
+        }
     }
 }
 
 /// Roles present only in `original` get all keys removed.
+///
+/// Also diffs the kind-scoped `[github.env]` blocks at both the
+/// workspace and workspace × role layers so `GH_TOKEN` /
+/// `GH_HOST` / `GH_ENTERPRISE_TOKEN` set via the auth-form Github kind
+/// land on disk alongside the corresponding `[github]` block.
 fn apply_env_diff(
     ce: &mut crate::config::ConfigEditor,
     workspace_name: &str,
@@ -876,10 +896,16 @@ fn apply_env_diff(
     let ws_scope = EnvScope::Workspace(workspace_name.to_string());
     apply_env_map_diff(ce, &ws_scope, &original.env, &pending.env)?;
 
+    // Workspace github env (`[workspaces.<ws>.github.env]`).
+    let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
+    let orig_ws_github_env = original.github.as_ref().map_or(&empty, |g| &g.env);
+    let pend_ws_github_env = pending.github.as_ref().map_or(&empty, |g| &g.env);
+    let ws_github_scope = EnvScope::WorkspaceGithub(workspace_name.to_string());
+    apply_env_map_diff(ce, &ws_github_scope, orig_ws_github_env, pend_ws_github_env)?;
+
     // Union so roles on only one side are caught.
     let agent_keys: std::collections::BTreeSet<&String> =
         original.roles.keys().chain(pending.roles.keys()).collect();
-    let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
     for role in agent_keys {
         let orig_env = original.roles.get(role).map_or(&empty, |o| &o.env);
         let pend_env = pending.roles.get(role).map_or(&empty, |p| &p.env);
@@ -888,6 +914,29 @@ fn apply_env_diff(
             role: role.clone(),
         };
         apply_env_map_diff(ce, &scope, orig_env, pend_env)?;
+
+        // Per-(workspace × role) github env block
+        // (`[workspaces.<ws>.roles.<role>.github.env]`).
+        let orig_role_github_env = original
+            .roles
+            .get(role)
+            .and_then(|o| o.github.as_ref())
+            .map_or(&empty, |g| &g.env);
+        let pend_role_github_env = pending
+            .roles
+            .get(role)
+            .and_then(|p| p.github.as_ref())
+            .map_or(&empty, |g| &g.env);
+        let role_github_scope = EnvScope::WorkspaceRoleGithub {
+            workspace: workspace_name.to_string(),
+            role: role.clone(),
+        };
+        apply_env_map_diff(
+            ce,
+            &role_github_scope,
+            orig_role_github_env,
+            pend_role_github_env,
+        )?;
     }
     Ok(())
 }
@@ -1914,6 +1963,7 @@ mod tests {
             keep_awake: KeepAwakeConfig::default(),
             claude: None,
             codex: None,
+            github: None,
             git_pull_on_entry: false,
         };
         let (tmp, paths, config) = setup_with_workspace(ws_name, ws.clone()).unwrap();
