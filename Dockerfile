@@ -11,15 +11,17 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # pin baked into `projectjackin/construct:trixie`. There is no automated
 # check enforcing this; it is an out-of-band contract.
 #
-# CAVEMAN_REF pins the upstream caveman repo to a specific commit so a
-# `docker build --no-cache` can't pick up a hijacked `main`. Bump after
-# auditing https://github.com/JuliusBrussee/caveman/commits/main .
+# CAVEMAN_REF pins the upstream caveman repo to a tagged release so a
+# `docker build --no-cache` can't pick up a hijacked `main`. Always use
+# a release tag from https://github.com/JuliusBrussee/caveman/releases
+# — never `main` and never a raw commit SHA. Bump after reading the
+# release notes for the new tag.
 ARG RUST_VERSION=1.95.0
 ARG NODE_VERSION=lts
 ARG JAVA_VERSION=oracle-graalvm-25.0.1
 ARG PROTOC_VERSION=latest
 ARG TESSL_VERSION=0.77.0
-ARG CAVEMAN_REF=ef6050c5e1848b6880ff47c32ade1a608a64f85e
+ARG CAVEMAN_REF=v1.7.0
 
 # Install additional system packages. `libclang-dev` is required by Rust
 # crates with `bindgen` build-deps (rdkafka-sys et al.) used in the
@@ -86,13 +88,13 @@ RUN curl -fsSL https://get.tessl.io | TESSL_VERSION="$TESSL_VERSION" sh
 RUN mise exec "node@${NODE_VERSION}" -- npm install -g ctx7
 
 # Caveman install for the agents this image supports (claude + codex).
-# We bypass the root caveman `install.sh` because its per-agent detection
-# probes (`command:claude`, `command:codex`) fail at image-build time —
-# both agent CLIs are injected per-container by jackin's derived-image
-# build (Agent::install_block in jackin's src/agent/mod.rs), not baked
-# into this image, so the root installer sees "nothing detected" and
-# exits 0 with no files written. Calling each component installer
-# directly skips detection and lands the files in the image layer.
+# We bypass the root caveman `install.sh` because its per-agent
+# detection probes (`command:claude`, `command:codex`) fail at
+# image-build time — jackin injects both agent CLIs per-container at
+# launch time rather than baking them into this published image, so
+# the root installer sees "nothing detected" and exits 0 with no
+# files written. Calling each component installer directly skips
+# detection and lands the files in the image layer.
 #
 # Two components from the root installer are intentionally NOT run here:
 #   * `--with-mcp-shrink`: `claude mcp add …` needs the runtime-injected
@@ -104,21 +106,18 @@ RUN mise exec "node@${NODE_VERSION}" -- npm install -g ctx7
 #
 # `--yes` makes `npx skills add` non-interactive (build context has no
 # TTY); `--global` selects home-scoped installs over `$PWD/.agents`
-# (which would be `/.agents` at build time and EACCES). `cd /home/agent`
+# (which would be `/.agents` at build time and EACCES). `cd ${HOME}`
 # is defensive against any future relative-path fallback in the skills
 # CLI.
 #
-# CAVEMAN_REF pins the install.sh URL to a specific commit so a
-# `docker build --no-cache` can't pick up a hijacked `main`. The skills
-# install is intentionally NOT pinned via `JuliusBrussee/caveman#<ref>`
-# — passing a ref makes the `skills` CLI invoke `git clone` of an
-# arbitrary commit, which fails on the build runner ("Failed to clone
-# https://github.com/JuliusBrussee/caveman.git"; the CLI does the
-# equivalent of a shallow clone of the default branch tip and then
-# tries to check out the SHA, which the shallow clone doesn't have).
-# We accept that the skills source tracks `main` at install time; the
-# install.sh URL pin is the meaningful hijack-`main` defense because
-# the install.sh is what writes the executable hooks into the image.
+# CAVEMAN_REF (defined in the ARG block at the top of the file) pins
+# both the install.sh fetch URL and the skills CLI source ref to the
+# same upstream release tag, so `main` is never used at any point in
+# this build. Tag refs (vs. raw SHAs) work with the `skills` CLI's
+# git-clone-and-checkout strategy because git's clone protocol
+# advertises tags by default; an arbitrary SHA does not appear on the
+# default-branch shallow clone the CLI does, which is why an earlier
+# `JuliusBrussee/caveman#<sha>` attempt failed in CI.
 #
 # `bash -e` forces fail-fast on the upstream installer regardless of
 # its own error-handling. The trailing `test -f` lines fail the RUN
@@ -130,7 +129,7 @@ RUN . ~/.profile && \
     test -f "${HOME}/.claude/hooks/caveman-activate.js" && \
     test -f "${HOME}/.claude/hooks/caveman-mode-tracker.js" && \
     cd "${HOME}" && \
-    npx -y skills add JuliusBrussee/caveman -a codex --yes --global && \
+    npx -y skills add "JuliusBrussee/caveman#${CAVEMAN_REF}" -a codex --yes --global && \
     test -f "${HOME}/.agents/skills/caveman/SKILL.md"
 
 # Docker convenience functions

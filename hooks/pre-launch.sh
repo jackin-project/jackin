@@ -5,11 +5,10 @@
 # itself launches.
 #
 # Why a runtime hook and not an image-build step: the Claude MCP
-# registration needs the claude CLI, and the claude CLI is injected per
-# container by jackin's derived-image build (Agent::install_block in
-# jackin's src/agent/mod.rs), not baked into the published agent image.
-# Trying to run `claude mcp add …` at image build time silently no-ops
-# because the binary is not on PATH yet.
+# registration needs the claude CLI, which jackin injects per container
+# at launch time rather than baking into this published image. Trying
+# to run `claude mcp add …` at image-build time silently no-ops because
+# the binary is not on PATH yet.
 set -euo pipefail
 
 # Line-numbered ERR trap so a future maintainer who wraps a function
@@ -71,10 +70,10 @@ fi
 # Reference: https://github.com/JuliusBrussee/caveman/tree/main/mcp-servers/caveman-shrink
 register_caveman_shrink() {
     # The script header documents the runtime contract: when JACKIN_AGENT=claude,
-    # jackin's derived-image build guarantees the claude CLI is on PATH before
-    # this hook runs. A missing CLI here means that contract was violated.
+    # jackin guarantees the claude CLI is on PATH before this hook runs. A
+    # missing CLI here means that contract was violated.
     if ! command -v claude >/dev/null 2>&1; then
-        err "JACKIN_AGENT=claude but claude CLI not on PATH — jackin install_block failed"
+        err "JACKIN_AGENT=claude but claude CLI not on PATH — jackin runtime contract violated"
         exit 1
     fi
 
