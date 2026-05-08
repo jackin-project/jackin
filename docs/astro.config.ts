@@ -241,13 +241,35 @@ export default defineConfig({
                   ],
                 },
                 {
+                  label: 'Reactive daemon program',
+                  collapsed: true,
+                  items: [
+                    { label: 'Overview', slug: 'reference/roadmap/jackin-daemon' },
+                    {
+                      label: 'Phase 2 — First reactive adapters',
+                      collapsed: false,
+                      items: [
+                        { label: 'Live bidirectional auth sync', slug: 'reference/roadmap/live-auth-sync' },
+                        { label: 'Agent attention prompts', slug: 'reference/roadmap/agent-attention-prompts' },
+                      ],
+                    },
+                    {
+                      label: 'Phase 3 — Operator-mediated host bridge',
+                      collapsed: false,
+                      items: [
+                        { label: 'Host bridge — secrets and approved host actions', slug: 'reference/roadmap/host-bridge' },
+                        { label: 'Container credential exposure — beyond env injection', slug: 'reference/roadmap/container-credential-exposure' },
+                      ],
+                    },
+                  ],
+                },
+                {
                   label: 'Agent runtimes & authentication',
                   collapsed: true,
                   items: [
                     { label: 'Multi-runtime support (Codex & Amp)', slug: 'reference/roadmap/multi-runtime-support' },
                     { label: 'Reliable Claude authentication strategy', slug: 'reference/roadmap/claude-auth-strategy' },
                     { label: 'GitHub CLI authentication strategy', slug: 'reference/roadmap/github-cli-auth-strategy' },
-                    { label: 'Live bidirectional auth sync', slug: 'reference/roadmap/live-auth-sync' },
                     { label: '1Password integration', slug: 'reference/roadmap/onepassword-integration' },
                   ],
                 },
@@ -266,10 +288,6 @@ export default defineConfig({
                   label: 'Infrastructure',
                   collapsed: true,
                   items: [
-                    { label: 'jackin daemon', slug: 'reference/roadmap/jackin-daemon' },
-                    { label: 'Agent attention prompts', slug: 'reference/roadmap/agent-attention-prompts' },
-                    { label: 'Host bridge — secrets and approved host actions', slug: 'reference/roadmap/host-bridge' },
-                    { label: 'Container credential exposure — beyond env injection', slug: 'reference/roadmap/container-credential-exposure' },
                     { label: 'Bollard migration', slug: 'reference/roadmap/bollard-migration' },
                     { label: 'Construct user creation', slug: 'reference/roadmap/construct-user-creation' },
                   ],
