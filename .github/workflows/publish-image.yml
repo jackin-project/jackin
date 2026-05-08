@@ -1,0 +1,36 @@
+name: Publish Image
+
+# IMPORTANT: image MUST be private. See AGENTS.md § Hard rules.
+
+on:
+  push:
+    branches: [main]
+    # `hooks/` is intentionally omitted — the Dockerfile does not COPY
+    # it; jackin reads `hooks/pre-launch.sh` from this repo at runtime
+    # so a hooks-only commit produces a byte-identical image.
+    paths:
+      - 'Dockerfile'
+      - 'jackin.role.toml'
+      - 'zshrc.d/**'
+      - '.github/workflows/publish-image.yml'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    permissions:
+      contents: read
+      id-token: write
+    uses: docker/github-builder/.github/workflows/build.yml@5840c33ab36c6ca11100edbe78f02b178309ff4e
+    with:
+      output: image
+      push: true
+      platforms: linux/amd64,linux/arm64
+      meta-images: docker.io/chainargos/jackin-agent-brown
+      meta-tags: |
+        type=raw,value=latest
+        type=sha,prefix=
+    secrets:
+      registry-auths: |
+        - registry: https://index.docker.io/v1/
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
