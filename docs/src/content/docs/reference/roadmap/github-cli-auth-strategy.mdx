@@ -261,10 +261,12 @@ These are explicit follow-ups, not part of the first slice:
   expiry) at launch time when `gh auth status` exposes them, so
   `token` mode warns about overly broad scopes and Known Gap 2
   (token expiry mid-session) becomes visible.
-- **Bidirectional shared-store sync** — `sync` currently flows
-  host → container only. A future PR will let the operator opt
-  into the reverse direction so an in-container login refresh can
-  surface back to the host.
+- **Bidirectional shared-store sync** — moved to the dedicated
+  [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/)
+  roadmap item. `sync` today flows host → container only; the
+  reverse direction lands as a per-axis adapter against the
+  [jackin daemon](/reference/roadmap/jackin-daemon/), not as a
+  follow-up under this strategy doc.
 - **GHE coverage** — `GH_HOST` / `GH_ENTERPRISE_TOKEN` are wired
   through env injection, but there's no end-to-end test or
   documented recipe yet.
