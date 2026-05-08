@@ -1,0 +1,14 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":pinDigests"
+  ],
+  "schedule": ["before 9am on Monday"],
+  "timezone": "UTC",
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 20,
+  "dependencyDashboard": true,
+  "labels": ["dependencies"],
+  "commitBody": "Signed-off-by: Renovate Bot <renovate@whitesourcesoftware.com>"
+}

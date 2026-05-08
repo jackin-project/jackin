@@ -23,6 +23,8 @@ jobs:
     uses: docker/github-builder/.github/workflows/build.yml@5840c33ab36c6ca11100edbe78f02b178309ff4e
     with:
       output: image
+      sign: true
+      sbom: true
       push: true
       platforms: linux/amd64,linux/arm64
       meta-images: docker.io/chainargos/jackin-agent-brown
