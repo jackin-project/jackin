@@ -51,12 +51,3 @@ The `hooks/pre-launch.sh` script runs before the agent CLI starts:
 2. **Context7 MCP** — configures the MCP server if `CONTEXT7_API_KEY` is provided (prompted at launch, skippable)
 3. **caveman-shrink MCP** — registers caveman-shrink as a Claude MCP middleware (claude agent only, idempotent; fails launch if the claude CLI is missing — see hook header for the contract)
 4. **Codex caveman skills check** — fails launch if `~/.agents/skills/caveman/SKILL.md` is missing (codex agent only); a missing file means the image was built wrong
-
-## Migration gaps from claude-code-docker
-
-The following features from the custom `claude-code-docker/` setup cannot yet be ported:
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Cloudflare CA cert (system + Java truststore) | **Blocked** | Requires build-time secrets (`--mount=type=secret`) |
-| GitHub token for `protoc` install | **Blocked** | Requires build-time secrets |

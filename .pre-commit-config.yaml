@@ -1,0 +1,14 @@
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: jackin-marketplace-audit
+        name: jackin.role.toml plugin marketplace audit
+        entry: scripts/marketplace-audit.sh
+        language: script
+        files: ^jackin\.role\.toml$
+        pass_filenames: false

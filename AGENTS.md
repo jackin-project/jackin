@@ -27,33 +27,21 @@ Threat surface for this image:
 
 ## Required pre-commit checks
 
-Do not list `git diff --check` as PR verification for this repo. Prefer the targeted checks below plus CI.
+Pre-commit checks run via [prek](https://github.com/j178/prek), a Rust drop-in replacement for the `pre-commit` framework that reads the same `.pre-commit-config.yaml`. One-time setup:
 
 ```bash
-# 1. What's staged? Anything surprising?
-git status --porcelain
-
-# 2. Dockerfile sanity: no secret-shaped ARGs/ENVs, no un-locked cargo install
-if git diff --cached --name-only | grep -qx Dockerfile; then
-  grep -iE '^(ARG|ENV)\s+[A-Z_]*(TOKEN|KEY|SECRET|PASSWORD|CREDENTIAL)' Dockerfile \
-    && { echo "SECRET-SHAPED ARG/ENV in Dockerfile"; exit 1; } || true
-  grep -E 'cargo install' Dockerfile | grep -v -- '--locked' \
-    && { echo "UN-LOCKED cargo install in Dockerfile"; exit 1; } || true
-fi
-
-# 3. jackin.role.toml plugin-source audit — flag non-default marketplaces
-if git diff --cached --name-only | grep -qx jackin.role.toml; then
-  grep -E '"[^@]+@[^"]+"' jackin.role.toml \
-    | grep -Ev '@(claude-plugins-official|tailrocks-marketplace|caveman)' \
-    && echo "NOTE: plugin from undocumented marketplace — document trust rationale in PR body" || true
-fi
-
-# 4. Credential scan (defense-in-depth)
-git diff --cached --name-only -z | xargs -0 -r \
-  grep -l -iE "ghp_|gho_|ghs_|ghr_|github_pat_|BEGIN [A-Z ]*PRIVATE KEY|aws_access_key_id|aws_secret_access_key|bearer [a-z0-9-]{20,}" 2>/dev/null
+brew install prek  # or: cargo install --locked prek
+prek install
 ```
 
-The third check is advisory (prints a note, doesn't exit non-zero) — a non-default marketplace isn't necessarily wrong, but the PR reviewer should see a trust rationale.
+`.pre-commit-config.yaml` declares two hooks that run on every commit:
+
+1. **gitleaks** ([gitleaks/gitleaks](https://github.com/gitleaks/gitleaks)) — credential scanner. Catches GitHub PATs, AWS keys, private keys, bearer tokens, and ~150 other patterns in staged files. Hard-fails the commit on any match.
+2. **jackin-marketplace-audit** (local hook) — flags any plugin in `jackin.role.toml` whose marketplace isn't in the documented allow-list (`claude-plugins-official`, `tailrocks-marketplace`, `caveman`). Hard-fails the commit; if you intentionally add a plugin from a new marketplace, update the allow-list in this hook and document the trust rationale in the PR body.
+
+The same hooks also run server-side in `.github/workflows/precommit.yml` (via [prek-action](https://github.com/j178/prek-action)) on every push and PR — a tripwire for anything that bypasses local hooks (`--no-verify`, web edits, etc.). A separate weekly cron in `.github/workflows/gitleaks-history.yml` scans the full git history with the gitleaks binary directly.
+
+The remaining hard rules (no un-locked `cargo install`, no secret-shaped `ARG`/`ENV`) are eyeballed at PR review time — gitleaks catches the credential leakage that those rules exist to prevent.
 
 ## Conventions
 
