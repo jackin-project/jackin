@@ -10,6 +10,53 @@ Do not memorialize old shapes in code comments ("formerly named X", "old locatio
 
 This rule retires when jackin ships its first tagged release.
 
+## Never mutate the host machine silently (hard rule)
+
+**The operator's host machine is their property. Jackin must never write to host-side state — files, git config, repo `.git/config`, `.git/refs`, `~/.gitconfig`, `~/.config/gh/`, `~/.claude/`, `~/.codex/`, the host's git remotes, or any user repository — without an explicit, opt-in, surfaced-in-the-launch-summary action. All "smoothing" jackin does to make a container work belongs *inside the container*.**
+
+This is non-negotiable across schemas, design proposals, roadmap items, runtime behavior, and PR descriptions. Examples of what this rule blocks:
+
+- Rewriting a host repository's `origin` remote from SSH to HTTPS because "the container can't push via SSH." The fix belongs in the container's `--global` git config and credential helper, not the host repo's `.git/config`.
+- Running `gh auth setup-git` on the host as part of a `jackin` command. The container can run it; the host stays untouched.
+- Editing `~/.gitconfig`, `~/.ssh/config`, or any user dotfile during a launch, refresh, or "fix it for me" path. Suggest the change in the launch summary; do not apply it.
+- Force-pushing, fetching, pulling, or pruning on the host's git repo as a side effect of provisioning. The only host-side git commands jackin runs today are the ones the operator explicitly opted into (`git_pull_on_entry`, `worktree add` under `isolation = "worktree"`), and those stay scoped to the workspace's mounted repos.
+- Writing the host's `~/.config/gh/hosts.yml` from the container's in-session `gh auth login`. In-container token rotation must not flow back to the host without an explicit operator-controlled bidirectional-sync opt-in (tracked under the [GitHub CLI auth strategy](docs/src/content/docs/reference/roadmap/github-cli-auth-strategy.mdx) follow-ups).
+
+**Read paths against the host are fine.** `gh auth token --hostname github.com`, parsing `~/.config/gh/hosts.yml`, reading `~/.claude.json`, looking up the host's git user.email — all read-only. The forbidden direction is host-side *writes* triggered by jackin without explicit operator opt-in.
+
+When a design proposal or roadmap item mentions doing anything to the host, the proposal must call it out under a "Host-side effects" section, the implementing PR must surface the action in the launch summary, and the change must be opt-in (config flag, CLI flag, or operator confirmation prompt). PRs that touch the host silently must be rejected at review.
+
+The reason: the host machine is where the operator works. Surprise mutations break their flow, surface as inexplicable bugs in their non-jackin terminals, and erode trust in the orchestrator. The whole point of jackin is to absorb the messiness inside containers so the host stays clean.
+
+## Prefer libraries over hand-rolled parsers / serializers / format handlers
+
+**Default to a maintained crate. Only hand-roll when the crate is unmaintained, the API is awkward for the call site, or the usage is so trivially small that adding a dependency is overkill.**
+
+Concrete examples that must use a crate, not a hand-rolled implementation:
+
+- YAML parsing → `serde_yaml_ng` (or whichever fork the workspace already depends on). Do not write a line-by-line YAML scanner.
+- TOML parsing → `toml` / `toml_edit` (already in the workspace).
+- JSON parsing → `serde_json` (already in the workspace).
+- Date/time, base64, semver, URL parsing, hex, regex — pick the maintained ecosystem crate.
+- Cryptographic primitives — never roll your own; use `ring`, `rustls`, `argon2`, etc.
+
+The "trivially small" carve-out is real but narrow: a single five-line helper that splits one fixed-format string is fine. A multi-state line-by-line scanner with quote handling, comment stripping, indent rules, or anything that smells like "I am reimplementing a parser" is not.
+
+When choosing a crate, prefer:
+- **the popular, canonical option** — check crates.io download counts (recent + total), GitHub stars, and how widely the crate is depended on by other ecosystem crates. Famous, broadly-used crates get the most bug reports, the most fixes, and the most security review. Niche / low-download crates only when there is no maintained alternative;
+- **active recent maintenance** — commits / releases within the last ~12 months, ideally less. Open issues being triaged. Multiple contributors, not a single-person effort;
+- **a stable major version** (1.x or higher) where possible — pre-1.0 is acceptable when the crate is still the canonical choice (e.g. `clap`'s subcommand derive history) but flag it in the PR;
+- **continuity with the workspace** — if a sibling dependency is already in `Cargo.lock`, prefer it over an alternative that adds a new transitive tree;
+- **panic-free / error-result-returning APIs** over panic-on-bad-input ones (matters at trust boundaries — host config, network responses, untrusted user input).
+
+Anti-pattern to avoid: pulling in a fresh-but-obscure crate just because it appeared in search results. A crate with 30 GitHub stars, no recent commits, and one author is *worse* than the canonical-but-deprecated alternative — at least the deprecated alternative is battle-tested. Prefer (in order): popular + maintained → popular but stale → write the few lines yourself. Do not pick fringe crates.
+
+When the canonical crate is *deprecated* but no clear successor has emerged, document the choice in the PR: name the deprecation, name the candidate forks evaluated, name the criterion that picked the winner. Future-you re-debating the same crate choice 6 months later is a tax this short paragraph eliminates.
+
+Rationale: Rust's ecosystem is one of the project's leverage points. The community ships small, focused, well-tested crates; pulling one in is usually 50–200 KB of compiled code and a single `Cargo.toml` line. Reinventing parsers and format handlers wastes review attention, multiplies bug surface, and creates code paths that don't get the upstream's bug fixes.
+
+When you do hand-roll something this rule covers, leave a comment explaining why (crate unavailable, scope tiny, dependency cost specifically rejected) so a later maintainer can replace it without re-debating the decision.
+
 ## Changelog (agent-only)
 
 **Do not add entries to `CHANGELOG.md` until the first tagged release.**
@@ -18,198 +65,19 @@ The changelog exists to communicate breaking changes and new features to *users 
 
 When the first release is being cut, the operator will explicitly ask for the changelog to be populated. Until then, leave `CHANGELOG.md` unchanged.
 
-## Pull Request Merging (agent-only)
+## Pull requests (agent-only) — see `PULL_REQUESTS.md`
 
-**Agents must never merge a pull request without explicit per-PR confirmation from the human operator.**
+All rules for opening, iterating on, refreshing, reviewing, and merging pull requests live in [`PULL_REQUESTS.md`](PULL_REQUESTS.md). **Read that file before opening any PR.** It covers:
 
-- Open the PR, share the URL, and stop. The default response after creating a PR is "PR URL — ready for your review" — not a merge command in the same turn.
-- Prior "just do it" / "don't wait for me" / "proceed autonomously" / "merge silently" authorizations apply only to the specific workstream the operator was discussing when they issued them. They do not carry forward to later PRs in the same session or to new sessions. Treat each PR as a fresh approval gate.
-- `--admin` / branch-protection bypass is a privilege, not a default. Use it only when the operator explicitly authorizes merging *this specific PR*.
-- Phrasing that does NOT authorize merge (ask anyway): "proceed", "don't wait for me", "do everything autonomously", "looks good". Phrasing that does: "merge it", "merge this one", "you can merge now", "ship it" (still prefer to confirm "ship = merge now?" for high-blast-radius PRs).
-- Bounded authorization: if the operator says "merge all the PRs we just discussed" or similar, merge only the named set — not unrelated PRs that exist or that you open later.
+- Per-PR merge authorization (agents never merge without explicit "merge it" confirmation).
+- Required PR body shape (Summary / hard-rule callout / What's deferred / Verify locally / Migration notes).
+- "Verify locally" templates, including the `export TIRITH=0` line that lets multi-line pastes survive the `tirith` paste scanner.
+- PR-body authoring rules — no hard-wrap, no verbosity / duplication, no deployed-docs links, no mechanical CI-shaped checks.
+- PR-body refresh policy: refresh **on operator request** or at merge-readiness, not after every iteration commit.
+- Documentation-only PR requirements (run the docs site locally + bold-URL-per-page format).
+- CI-must-be-green-before-merge, title/description reconciliation, squash-merge messages with PR-number + trailers.
 
-If you are uncertain whether authorization applies to the PR in front of you, ask. The cost of pausing is ~30 seconds; the cost of merging something the operator wasn't ready for is much higher.
-
-### Include local checkout instructions in every PR
-
-Every pull request created by an agent must include a copy-pasteable "Verify locally" section in the PR body, and the agent's final response should repeat the same commands after sharing the PR URL.
-
-Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a separate test directory so the operator can inspect the PR without disturbing their normal working tree. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
-
-Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Tests only when there is a relevant automated test command. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. If the PR has no narrower manual path, use the console as the baseline smoke command: `cargo run --bin jackin -- console --debug`. For launch/runtime flows, prefer a command that hits the changed path, such as `cargo run --bin jackin -- load <role> <target> --debug`. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
-
-#### Documentation-only PRs
-
-Documentation PRs (changes under `docs/**` only — `.mdx` files, `astro.config.ts` sidebar, theme/CSS) must verify by running the docs site **locally** in addition to checkout, not by pointing the operator at the GitHub Files-changed tab.
-
-The Files-changed tab shows raw MDX. It does not show how Starlight renders the page, whether `<RepoFile />` resolves, whether the sidebar entry lands in the right group, whether internal `[link](/path/)` references resolve, whether tables and Asides render correctly, or whether the page is even reachable through navigation. A docs PR that "looks right in the diff" can render visibly broken on the site.
-
-Required pattern for docs-only PRs:
-
-1. **Checkout block** — same as any other PR.
-2. **Run the docs site locally** — `cd docs && bun install --frozen-lockfile && bun run dev`. Astro serves at `http://localhost:4321/`.
-3. **Direct links to every changed page** — for each affected MDX file, include a localhost URL the operator can click straight into. Map `docs/src/content/docs/<path>.mdx` to `http://localhost:4321/<path>/`. For new pages, also tell the operator which sidebar group the entry should appear under, so they can confirm the navigation lands in the right place.
-4. **Sidebar audit** (when `astro.config.ts` or any roadmap MDX changed) — the diff command from `docs/AGENTS.md` → "Roadmap sidebar discipline".
-
-A `.mdx`-only PR that omits the local-render step is incomplete. The Files-changed tab is the operator's last-resort fallback, not the primary review surface.
-
-Template:
-
-#### Checkout
-
-```sh
-mkdir -p "$HOME/Projects/jackin-project/test"
-cd "$HOME/Projects/jackin-project/test"
-
-if [ ! -d jackin/.git ]; then
-  git clone https://github.com/jackin-project/jackin.git
-fi
-
-cd jackin
-mise trust
-git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
-git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
-```
-
-The `-f` (`--force`) on `git fetch` is required, not optional. Agent-authored PR branches are routinely force-pushed during iteration (review-fix amend, rebase onto fresh `main`, body-only fix-ups). Without `-f`, every force-push breaks the operator's verify recipe with `! [rejected] <branch> -> origin/<branch> (non-fast-forward)`, and the local `refs/remotes/origin/<branch>` stays pinned to the pre-force-push tip. The `git checkout -B` rewrites the local branch unconditionally, but only against whatever the remote-tracking ref points at — so the fetch must update that ref through force-pushes to be useful. Equivalent recipe: `git fetch origin '+<BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>'`. Prefer the `-f` form for readability.
-
-#### Static Checks
-
-```sh
-cargo fmt --check
-cargo clippy --lib
-```
-
-#### Tests
-
-```sh
-cargo test <RELEVANT_TEST>
-```
-
-#### User Smoke
-
-```sh
-# Adapt this to the behavior changed by the PR.
-cargo run --bin jackin -- console --debug
-```
-
-If the PR needs a different validation flow, replace the final example commands with the exact commands the operator should run. When those commands invoke `jackin`, include `--debug` as required by "Walking the operator through local validation".
-
-#### Author the PR body so it renders correctly on GitHub
-
-The PR body is Markdown — what the operator sees on GitHub is what matters. Two recurring failure modes when an agent constructs the body inside a shell command:
-
-1. **Do not escape backticks or `$`.** Triple-backtick fences must be literal `` ``` ``, not `\`\`\``. Variable references inside fenced code blocks (e.g. `$HOME`, `$PR_NUMBER`) must be literal `$`, not `\$`. Escaping them produces visibly broken output like `\`\`\`sh` and `\$HOME` in the rendered PR.
-2. **Use `gh pr create --body-file <file>` (not `--body "..."`)** when the body contains code fences, dollar signs, or anything else that interacts with shell quoting. Write the body to a temp file with a single-quoted `<<'EOF'` heredoc — single quotes already disable shell expansion and command substitution, so no manual escaping is needed inside the heredoc. The pattern is:
-
-   ~~~sh
-   cat > /tmp/pr-body.md <<'EOF'
-   ## Summary
-
-   ```sh
-   echo "$HOME"
-   ```
-   EOF
-   gh pr create --body-file /tmp/pr-body.md ...
-   ~~~
-
-   Then immediately verify the rendered body with `gh pr view <PR> --json body -q .body`. If you see `\`` or `\$` anywhere, the body is broken — fix it with `gh pr edit <PR> --body-file <file>` before moving on.
-
-For non-trivial code changes, structure the PR's "Verify locally" section by intent:
-
-- **Checkout** — copy-pasteable commands to fetch and check out the PR.
-- **Static Checks** — only checks that are relevant and expected to be run locally.
-- **Tests** — focused or full test commands that validate the changed behavior.
-- **User Smoke** — manual validation steps when behavior is visible in the CLI/TUI/runtime.
-
-Do not add generic commands that do not materially validate the PR. In particular, do not include `git diff --check` unless the PR is specifically about whitespace, patch hygiene, generated diffs, or another issue that command is meant to catch.
-
-For console/TUI changes that can be manually verified in jackin itself, prefer:
-
-```sh
-cargo run --bin jackin -- console --debug
-```
-
-The `--debug` / `--no-intro` flag interaction is documented in full
-under "Walking the operator through local validation" below.
-
-### CI must be green before merging
-
-**Never merge a pull request unless all required CI checks pass.** This is non-negotiable regardless of how the operator phrases the merge request.
-
-Before invoking the merge command:
-
-1. **Check CI status**: run `gh pr checks <PR> --repo <owner/repo>` and confirm every required check shows `pass`. A check in `pending` or `fail` state means do not merge — wait or fix first.
-2. **Do not force-merge to bypass failures**: do not use `--admin` or other bypass flags to override failing checks unless the operator explicitly names the specific failing check and states it is safe to bypass for an articulated reason.
-3. **Always use `gh` (GitHub CLI) for all GitHub interactions**: PR creation, review, status checks, and merging must go through `gh`, not GitHub connectors, raw `git push` to protected branches, or direct API calls. This keeps the audit trail consistent and ensures branch-protection rules are respected.
-
-If CI is red when the operator says "merge it", respond: "CI is failing on `<check name>` — I won't merge until it's green. Fix the failure and then I'll merge." If the operator insists on merging anyway, ask them to explicitly acknowledge the specific failing check.
-
-Why this rule exists: a red main branch blocks the whole team. The cost of one bad merge far exceeds the cost of pausing to fix CI.
-
-### Verify PR title and description before merging
-
-When the operator confirms a PR can be merged, verify the PR's title and description still match the actual code being merged **before invoking the merge**.
-
-- Read the current metadata: `gh pr view <PR>`.
-- Read the actual diff being merged: `gh pr diff <PR>` (and `git log` on the PR branch if the diff is large).
-- Compare. The metadata is stale if any of these are true: commits added scope that the title/body doesn't reflect; a feature was descoped after the PR opened; the test plan is wrong relative to what was actually verified; file paths cited in the body have moved or been renamed; the title still says "design doc only" / "WIP" / etc. while the PR now contains implementation.
-- If stale, update the title and/or body via `gh pr edit <PR>` *before* running the merge. Squash-merge writes the PR title verbatim into the commit message; merging with stale metadata bakes the drift into history permanently.
-
-Don't ask the operator for permission to bring the metadata into agreement with the diff — they've authorized merging the *content*, and reconciling the description is part of finishing the merge cleanly. *Do* surface the discrepancy briefly in your reply ("title was 'docs(specs):' but the PR now ships the feature too — updated to 'feat(cli):' before merging") so the operator can object if your interpretation is wrong. Only pause for confirmation if the metadata rewrite would represent a meaningful change the operator might not have noticed (e.g. the PR has grown from "fix bug" into "rewrite module" — flag it and confirm before both updating and merging).
-
-Why this rule exists: the operator relies on PR titles and bodies as the long-term navigable record of what shipped. Drift between description and diff is the single most common cause of "what does this PR actually do?" archaeology after the fact.
-
-### PR squash merge messages
-
-When an agent merges a pull request, the resulting squash commit must preserve the GitHub PR reference and enough attribution to make the shipped history auditable.
-
-- Always use squash merge. Agents must not use merge commits or rebase merges for jackin pull requests.
-- Use `gh pr merge <PR> --squash --body-file <file>` for the merge operation; never use a GitHub connector or direct API call to merge.
-- The squash commit title must be the final PR title with the PR number suffix: `type(scope): summary (#PR_NUMBER)`.
-- Prefer GitHub's default squash title when it already matches that format.
-- If overriding the commit title, manually append `(#PR_NUMBER)`.
-- For Codex `gh` merges: do not pass a custom title unless necessary; if one is passed, it must include `(#PR_NUMBER)`.
-- Generate the squash commit body at merge time in a temporary file. Do not pollute the visible PR description with commit-only trailer footers just to influence GitHub's default squash message.
-- The generated squash commit body must summarize what actually shipped in clear prose. Use the PR title/body, diff, and commit messages as source material, but do not paste the full PR body, local verification instructions, checklists, or raw commit list into the final commit.
-- The generated body can be one paragraph for small PRs or a few concise paragraphs for larger PRs. It should be detailed enough to explain the change when reading `git log`, but free of process noise.
-- Extract trailers from the PR commits with `gh pr view <PR> --json commits` and carry them into the generated squash body. Include the operator's `Signed-off-by` trailer when present/required and one `Co-authored-by` trailer for each AI agent that materially contributed to the PR. Include multiple agent trailers when multiple agents contributed.
-- Keep trailers at the very end of the generated squash body so Git parses them as trailers. De-duplicate repeated trailers from multi-commit PRs.
-
-Good squash body:
-
-```text
-Prefer real branch names for same-repo PR verification, omit placeholder verification sections, and require meaningful local jackin --debug smoke commands for CLI/runtime behavior changes.
-
-Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
-Co-authored-by: Codex <codex@openai.com>
-```
-
-Good squash titles:
-
-```text
-docs: include mise trust in PR verification (#232)
-docs: improve landing hero nav and PR guidance (#231)
-chore(deps): update taiki-e/install-action action to v2.77.1 (#222)
-refactor!: relocate host→container handoff under /jackin/, drop ~/.claude bind mount (#229)
-```
-
-Good squash trailers for a Codex-authored PR:
-
-```text
-Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
-Co-authored-by: Codex <codex@openai.com>
-```
-
-Good squash trailers for a PR with multiple AI agents:
-
-```text
-Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
-Co-authored-by: Codex <codex@openai.com>
-Co-authored-by: Claude <noreply@anthropic.com>
-```
-
-This keeps commit history, GitHub commit pages, and local `git log --oneline` visibly linked back to the PR.
+[`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) is the canonical body shape with inline guidance. Copy it as the starting point and fill in the placeholders.
 
 ## Commit Attribution (agent-only)
 
@@ -243,58 +111,9 @@ Amp may additionally emit an `Amp-Thread-ID:` metadata trailer; that is acceptab
 
 If you are uncertain which agent is creating the commit, ask — the trailer is how the operator tracks which agent produced which change, and wrong attribution is worse than no attribution.
 
-## Code review & automated scanning (agent-only)
+## Code review & automated scanning (agent-only) — see `PULL_REQUESTS.md`
 
-When performing code review or automated scanning on this repository, do not flag items listed under "Accepted exceptions" on the [Open review findings](docs/src/content/docs/reference/roadmap/open-review-findings.mdx) roadmap catalog. Those items are retained intentionally and have been reviewed.
-
-The catalog itself is a forward-looking backlog — consult it on demand when a review task calls for it. It is not operational context and should not be loaded at session start.
-
-### Applying review fixes to an open PR
-
-When the operator asks for code review fixes on a PR that has **not yet been merged**, commit the fixes directly to the PR's existing branch — do not create a new branch or open a new PR unless the operator explicitly requests it.
-
-- Check out the PR branch (`gh pr checkout <PR>` or `git checkout <branch>`) before making changes.
-- Commit fixes to that branch and push; the open PR picks up the new commits automatically.
-- Creating a separate PR on top of an unmerged PR fragments review history and forces an extra merge step — avoid it.
-
-### Iterating on operator feedback for an open PR
-
-When the operator gives design or behavior feedback on an open PR, treat it as
-an iteration step unless they explicitly say the PR is ready for final
-verification, merge preparation, or review handoff.
-
-During iteration:
-
-- Make the requested code changes on the PR branch.
-- It is okay to run a narrow, targeted test or command that directly exercises
-  the code just changed, especially when it catches obvious local breakage
-  cheaply.
-- Do **not** run broad/final verification by default during iteration. In
-  particular, do not run `cargo fmt -- --check`, `cargo clippy -- -D warnings`,
-  `cargo nextest run`, or GitHub Actions polling unless the operator explicitly
-  asks for verification/final prep or the PR is moving to merge-readiness.
-- If a small targeted run reveals a formatting or clippy issue, fix the obvious
-  local cause when it is part of the changed code, but do not escalate into the
-  full formatting + clippy + full-suite pipeline unless the operator asks.
-- Do not update the PR body after every iteration unless the operator asks for
-  it or the PR description has become actively misleading for someone reviewing
-  right now.
-- Do not amend, force-push, or wait for GitHub Actions as a reflex after every
-  small feedback pass. If the branch already has a PR open, a normal follow-up
-  commit is acceptable during review unless the operator asked to keep the PR as
-  one amended commit.
-- Summarize what changed and tell the operator what lightweight local check, if
-  any, was run. Then stop so the operator can validate the UI/behavior.
-
-Move to merge-readiness only when the operator gives a clear signal such as
-"this is correct", "prepare it", "ready for review", "run the full checks", or
-"now we can merge". At that point run the full verification suite, reconcile the
-PR body with the final diff, push/update the branch, and check CI.
-
-Why this rule exists: the operator often needs several UI/behavior iterations
-before deciding the shape is right. Running formatting, clippy, the full test
-suite, PR body updates, and CI checks on every intermediate pass wastes time and
-tokens before the operator has validated the design.
+All review-time rules — accepted-exception catalog, design-principles check, applying review fixes, iterating on operator feedback — live in [`PULL_REQUESTS.md`](PULL_REQUESTS.md). Read that file before reviewing or iterating on any PR.
 
 ## Walking the operator through local validation (agent-only)
 
@@ -335,6 +154,7 @@ This does not apply to:
 
 Rules in the files below apply to everyone working in the repo — human and agent:
 
+- [PULL_REQUESTS.md](PULL_REQUESTS.md) — pull-request shape, body authoring rules, iteration / refresh / merge policy, docs-only PR requirements.
 - [RULES.md](RULES.md) — documentation-location convention (no project rules in tool-specific files).
 - [BRANCHING.md](BRANCHING.md) — branch naming, feature-branch policy, what never to commit to `main`.
 - [COMMITS.md](COMMITS.md) — Conventional Commits format, DCO sign-off, pre-commit verification commands.

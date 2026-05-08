@@ -45,6 +45,37 @@ pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
 /// scripts can identify which role they are running as.
 pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
 
+// ── GitHub CLI / GitHub-tooling env-var names ──────────────────────
+//
+// jackin reads / forwards these names in the `[github]` auth-forward
+// flow. Operators declare `GH_TOKEN` / `GH_HOST` / `GH_ENTERPRISE_TOKEN`
+// under `[…github.env]`; jackin mirrors `GH_TOKEN` into `GITHUB_TOKEN`
+// at launch so every consumer (`gh`, the official `github-mcp-server`,
+// GitHub Actions-style scripts) sees a token regardless of which name
+// it reads. The constants live here as the single source of truth so
+// the launcher, the auth-panel, the launch summary, and tests all
+// reference the same identifiers instead of repeating the literals.
+
+/// Primary GitHub token env var. `gh` reads this preferentially.
+pub const GH_TOKEN_ENV_NAME: &str = "GH_TOKEN";
+
+/// Secondary GitHub token env var.
+///
+/// The official `github-mcp-server` and many GitHub-Actions-style
+/// scripts read this name; jackin exports the same value under both
+/// names from one source so every consumer sees the token regardless
+/// of which it reads.
+pub const GITHUB_TOKEN_ENV_NAME: &str = "GITHUB_TOKEN";
+
+/// GitHub Enterprise host name (used when targeting a non-`github.com`
+/// host). Operator-set under `[…github.env]`; passed through to the
+/// container unchanged.
+pub const GH_HOST_ENV_NAME: &str = "GH_HOST";
+
+/// GHE-specific token env var. Some `gh` versions honor this when the
+/// active host is the enterprise one; pass-through.
+pub const GH_ENTERPRISE_TOKEN_ENV_NAME: &str = "GH_ENTERPRISE_TOKEN";
+
 /// Environment variables reserved by the jackin runtime.
 ///
 /// Each entry is `(name, default)`.  `Some(value)` indicates a fixed value

@@ -1,5 +1,8 @@
-use super::{AuthProvisionOutcome, RoleState};
-use crate::config::AuthForwardMode;
+use super::{
+    AuthProvisionOutcome, GithubAuthContext, GithubProvisionOutcome, GithubTokenSource,
+    HostMissingReason, RoleState,
+};
+use crate::config::{AuthForwardMode, GithubAuthMode};
 use std::path::Path;
 
 impl RoleState {
@@ -139,6 +142,273 @@ impl RoleState {
         };
         Ok((outcome, mounted_auth_json))
     }
+}
+
+impl RoleState {
+    /// Provision GitHub CLI auth state for the role-state directory.
+    ///
+    /// `hosts_yml` is the role-state location of `.config/gh/hosts.yml`
+    /// (the directory itself is bind-mounted RW into the container under
+    /// `/home/agent/.config/gh`, so writing the file directly into that
+    /// directory is enough — no separate file mount).
+    ///
+    ///   * **Sync** + host token resolved → write `hosts.yml` 0o600,
+    ///     return `Synced { token, source }` with `source` naming
+    ///     which host path produced the token (`gh` CLI vs file
+    ///     fallback).
+    ///   * **Sync** + host token absent → leave any existing
+    ///     `hosts.yml` untouched (preserves in-container login from a
+    ///     prior run), return `HostMissing { reason }` with the typed
+    ///     reason (`NoGhAndNoHostsFile` / `GhCliFailed { stderr }` /
+    ///     `GhCliEmpty` / `HostsFileMalformed`).
+    ///   * **Token** → wipe any prior `hosts.yml` (so a stale
+    ///     file-based login can't shadow the env token), return
+    ///     `TokenMode { token }` with the operator-resolved value.
+    ///   * **Ignore** → wipe any prior `hosts.yml`, return `Skipped`.
+    ///
+    /// On `Sync`-host-missing the existing in-container login is
+    /// preserved deliberately — otherwise an operator who logged out
+    /// on the host would lose the container's login on the next
+    /// launch.
+    pub(super) fn provision_github_auth(
+        hosts_yml: &Path,
+        github: &GithubAuthContext,
+        host_home: &Path,
+    ) -> anyhow::Result<GithubProvisionOutcome> {
+        // Reject pre-existing symlinks before branching on mode. The
+        // role-state dir is bind-mounted RW, so a compromised role could
+        // plant a symlink between launches; calling reject_symlink
+        // unconditionally is fine — it lstat's and no-ops on ENOENT.
+        reject_symlink(hosts_yml)?;
+
+        match github.mode {
+            GithubAuthMode::Ignore => {
+                wipe_file_if_present(hosts_yml)?;
+                Ok(GithubProvisionOutcome::Skipped)
+            }
+            GithubAuthMode::Token => {
+                wipe_file_if_present(hosts_yml)?;
+                let token = github.token.clone().unwrap_or_default();
+                Ok(GithubProvisionOutcome::TokenMode { token })
+            }
+            GithubAuthMode::Sync => match read_host_gh_token(host_home)? {
+                HostGhResolution::Resolved(resolved) => {
+                    let content = render_hosts_yml(&resolved.token, resolved.user.as_deref());
+                    // Skip the write when content matches what's already
+                    // on disk — avoids touching mtime + atomic-rename on
+                    // every launch when nothing changed. Mirrors the
+                    // codex provisioner's no-churn guard.
+                    let needs_write = !std::fs::read_to_string(hosts_yml)
+                        .is_ok_and(|existing| existing == content);
+                    if needs_write {
+                        write_private_file(hosts_yml, &content)?;
+                    } else {
+                        repair_permissions(hosts_yml);
+                    }
+                    Ok(GithubProvisionOutcome::Synced {
+                        token: resolved.token,
+                        source: resolved.source,
+                    })
+                }
+                HostGhResolution::Missing(reason) => {
+                    repair_permissions(hosts_yml);
+                    Ok(GithubProvisionOutcome::HostMissing { reason })
+                }
+            },
+        }
+    }
+}
+
+/// Render a minimal `hosts.yml` body for the `github.com` host. `user`
+/// is optional and falls back to a placeholder — gh accepts hosts.yml
+/// without it, but writing a value keeps the file shape uniform.
+fn render_hosts_yml(token: &str, user: Option<&str>) -> String {
+    let user_field = user.filter(|s| !s.trim().is_empty()).unwrap_or("git");
+    format!(
+        "github.com:\n    oauth_token: {token}\n    git_protocol: https\n    user: {user_field}\n",
+    )
+}
+
+/// Resolved host-side `gh` auth + which source produced it, so the
+/// caller can attribute the value in the launch summary.
+struct HostGhAuth {
+    token: String,
+    user: Option<String>,
+    source: GithubTokenSource,
+}
+
+/// Result of the host-side resolver. `Missing` carries the typed
+/// reason so the launch-summary line can render the actual cause
+/// instead of guessing "host logged out".
+enum HostGhResolution {
+    Resolved(HostGhAuth),
+    Missing(HostMissingReason),
+}
+
+/// Wipe a file if it exists, ignoring `NotFound` so the call is
+/// idempotent without a pre-stat that races with the unlink.
+fn wipe_file_if_present(path: &Path) -> anyhow::Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// True when `host_home` is the operator's real home directory. Gates
+/// the host-binary shellouts so hermetic tests with a temp-dir
+/// `host_home` cannot leak to the real `gh` binary.
+fn host_home_is_real(host_home: &Path) -> bool {
+    let real_home = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf());
+    real_home.as_deref() == Some(host_home)
+}
+
+/// Read the host's `gh` token, returning a typed reason when neither
+/// source resolves so the launch-summary line can render an accurate
+/// cause. Priority order:
+///
+/// 1. `gh auth token --hostname github.com` — Keychain-aware, only
+///    consulted when `host_home` is the real home directory.
+/// 2. `~/.config/gh/hosts.yml` parse — works without `gh` on PATH.
+fn read_host_gh_token(host_home: &Path) -> anyhow::Result<HostGhResolution> {
+    // Read hosts.yml once up front so both the CLI-success path (which
+    // reads it for the `user` field) and the file-fallback path share
+    // one IO.
+    let hosts_path = host_home.join(".config/gh/hosts.yml");
+    let hosts_yml = match std::fs::read_to_string(&hosts_path) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            return Err(anyhow::anyhow!(
+                "failed to read host {}: {e} (run with --debug to capture the underlying error)",
+                hosts_path.display()
+            ));
+        }
+    };
+
+    let mut cli_failure: Option<HostMissingReason> = None;
+
+    if host_home_is_real(host_home) {
+        match std::process::Command::new("gh")
+            .args(["auth", "token", "--hostname", "github.com"])
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !token.is_empty() {
+                    let user = hosts_yml
+                        .as_deref()
+                        .and_then(parse_gh_hosts_yml)
+                        .and_then(|parsed| parsed.user);
+                    return Ok(HostGhResolution::Resolved(HostGhAuth {
+                        token,
+                        user,
+                        source: GithubTokenSource::GhCli,
+                    }));
+                }
+                cli_failure = Some(HostMissingReason::GhCliEmpty);
+                crate::debug_log!(
+                    "github_auth",
+                    "gh auth token returned empty stdout; falling back to hosts.yml parse"
+                );
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                crate::debug_log!(
+                    "github_auth",
+                    "gh auth token exited non-zero ({}); stderr={stderr}",
+                    output.status,
+                );
+                cli_failure = Some(HostMissingReason::GhCliFailed {
+                    stderr: stderr.trim().to_string(),
+                });
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                crate::debug_log!("github_auth", "gh not on PATH: {e}");
+            }
+            Err(e) => {
+                crate::debug_log!(
+                    "github_auth",
+                    "gh auth token spawn failed ({:?}): {e}",
+                    e.kind()
+                );
+                // Treat any non-NotFound spawn error as a CLI failure
+                // signal too — the operator's gh is in a broken state
+                // and the launch notice should say so.
+                cli_failure = Some(HostMissingReason::GhCliFailed {
+                    stderr: e.to_string(),
+                });
+            }
+        }
+    }
+
+    let Some(text) = hosts_yml else {
+        return Ok(HostGhResolution::Missing(
+            cli_failure.unwrap_or(HostMissingReason::NoGhAndNoHostsFile),
+        ));
+    };
+    if let Some(mut parsed) = parse_gh_hosts_yml(&text) {
+        parsed.source = GithubTokenSource::HostsFile;
+        return Ok(HostGhResolution::Resolved(parsed));
+    }
+    crate::debug_log!(
+        "github_auth",
+        "hosts.yml at {} did not yield a github.com oauth_token",
+        hosts_path.display()
+    );
+    // CLI failure (when known) is the more actionable signal than
+    // "file malformed" — surface it instead.
+    Ok(HostGhResolution::Missing(
+        cli_failure.unwrap_or(HostMissingReason::HostsFileMalformed),
+    ))
+}
+
+/// Parse `gh`'s `hosts.yml`, extracting the `github.com.oauth_token`
+/// and (best-effort) `github.com.user` fields via `serde_yaml_ng` so
+/// quoting, escapes, comments, and indent rules track the YAML 1.x
+/// spec rather than a hand-rolled scanner.
+///
+/// Returns `None` when the document doesn't carry a `github.com` block
+/// with a non-empty `oauth_token` field, or when the document is
+/// malformed. Malformed input must NOT yield a partial result —
+/// silently accepting half-parsed scalars would land bogus credentials
+/// in `hosts.yml` and surface as unrelated 401s mid-session.
+fn parse_gh_hosts_yml(text: &str) -> Option<HostGhAuth> {
+    #[derive(serde::Deserialize)]
+    struct HostsFile {
+        // `gh` writes the host header literally as `github.com:`, so
+        // the top-level map key is `github.com`.
+        #[serde(default, rename = "github.com")]
+        github_com: Option<HostEntry>,
+    }
+    #[derive(serde::Deserialize)]
+    struct HostEntry {
+        #[serde(default)]
+        oauth_token: Option<String>,
+        #[serde(default)]
+        user: Option<String>,
+    }
+
+    let parsed: HostsFile = match serde_yaml_ng::from_str(text) {
+        Ok(p) => p,
+        Err(e) => {
+            crate::debug_log!(
+                "github_auth",
+                "hosts.yml YAML parse failed: {e}; will fall through to HostsFileMalformed"
+            );
+            return None;
+        }
+    };
+    let entry = parsed.github_com?;
+    let token = entry.oauth_token.filter(|s| !s.trim().is_empty())?;
+    Some(HostGhAuth {
+        token,
+        user: entry.user.filter(|s| !s.trim().is_empty()),
+        // Caller (`read_host_gh_token` file-fallback path) overwrites
+        // this with the right `GithubTokenSource` variant; the field
+        // gets a placeholder so the struct literal compiles.
+        source: GithubTokenSource::HostsFile,
+    })
 }
 
 impl RoleState {
@@ -459,6 +729,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Ignore,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -484,6 +755,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -513,6 +785,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -539,6 +812,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -562,6 +836,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -589,6 +864,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -601,6 +877,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Ignore,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -625,6 +902,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::OAuthToken,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -663,6 +941,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -677,6 +956,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::ApiKey,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -707,6 +987,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -721,6 +1002,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::OAuthToken,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -746,6 +1028,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::OAuthToken,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -761,6 +1044,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -790,6 +1074,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::OAuthToken,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -801,6 +1086,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Ignore,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -826,6 +1112,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -845,6 +1132,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -871,6 +1159,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -909,6 +1198,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Ignore,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -932,6 +1222,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -963,6 +1254,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -987,6 +1279,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -1027,6 +1320,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -1044,6 +1338,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -1071,6 +1366,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -1089,6 +1385,7 @@ plugins = []
             "jackin-agent-smith",
             &manifest,
             AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
         )
@@ -1644,6 +1941,461 @@ agents = ["codex"]
         assert!(
             !msg.to_lowercase().contains("not found"),
             "EACCES must not be reported as not-found: {msg}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod github_auth_tests {
+    // The `gh auth token` shellout in `read_host_gh_token` is gated on
+    // `host_home_is_real(host_home)` — every test in this module passes
+    // a temp-dir `host_home` so the shellout is skipped and the real
+    // host's `gh` binary cannot leak into hermetic tests. The file
+    // fallback is the only path exercised here. See
+    // `read_host_gh_token` source for the gate.
+    use super::{
+        GithubAuthContext, GithubAuthMode, GithubProvisionOutcome, GithubTokenSource,
+        HostMissingReason, parse_gh_hosts_yml,
+    };
+    use crate::instance::{GithubProvisionKind, RoleState};
+    use tempfile::tempdir;
+
+    /// Stage a fake host home with a populated `~/.config/gh/hosts.yml`
+    /// so the file-fallback path can be exercised hermetically.
+    fn stage_host_hosts_yml(temp: &tempfile::TempDir, token: &str) -> std::path::PathBuf {
+        let host_home = temp.path().join("host_home");
+        let gh_dir = host_home.join(".config/gh");
+        std::fs::create_dir_all(&gh_dir).unwrap();
+        std::fs::write(
+            gh_dir.join("hosts.yml"),
+            format!(
+                "github.com:\n    oauth_token: {token}\n    git_protocol: https\n    user: alice\n",
+            ),
+        )
+        .unwrap();
+        host_home
+    }
+
+    fn ctx(mode: GithubAuthMode, token: Option<&str>) -> GithubAuthContext {
+        GithubAuthContext {
+            mode,
+            token: token.map(str::to_string),
+        }
+    }
+
+    // ── parse_gh_hosts_yml ────────────────────────────────────────────────
+
+    #[test]
+    fn parse_hosts_yml_extracts_oauth_token_and_user() {
+        let text = "github.com:\n    oauth_token: ghp_xxx\n    user: alice\n";
+        let parsed = parse_gh_hosts_yml(text).expect("must parse");
+        assert_eq!(parsed.token, "ghp_xxx");
+        assert_eq!(parsed.user.as_deref(), Some("alice"));
+    }
+
+    #[test]
+    fn parse_hosts_yml_handles_quoted_values() {
+        let text = "github.com:\n    oauth_token: \"ghp_xxx\"\n    user: \'bob\'\n";
+        let parsed = parse_gh_hosts_yml(text).expect("must parse");
+        assert_eq!(parsed.token, "ghp_xxx");
+        assert_eq!(parsed.user.as_deref(), Some("bob"));
+    }
+
+    #[test]
+    fn parse_hosts_yml_returns_none_when_github_block_missing() {
+        let text = "ghe.acme.com:\n    oauth_token: ghp_acme\n";
+        assert!(parse_gh_hosts_yml(text).is_none());
+    }
+
+    #[test]
+    fn parse_hosts_yml_returns_none_without_oauth_token() {
+        let text = "github.com:\n    user: alice\n";
+        assert!(parse_gh_hosts_yml(text).is_none());
+    }
+
+    #[test]
+    fn parse_hosts_yml_ignores_other_hosts() {
+        let text = concat!(
+            "ghe.acme.com:\n    oauth_token: ghp_acme\n    user: bob\n",
+            "github.com:\n    oauth_token: ghp_real\n    user: alice\n",
+        );
+        let parsed = parse_gh_hosts_yml(text).expect("must parse");
+        assert_eq!(parsed.token, "ghp_real");
+        assert_eq!(parsed.user.as_deref(), Some("alice"));
+    }
+
+    /// Per YAML 1.x spec, a `#` inside a bare scalar is part of the
+    /// value (only `#` preceded by whitespace starts a comment). A
+    /// real-world `gh` token will never contain `#`, but pinning this
+    /// behavior protects against regressions in the YAML parser
+    /// dependency.
+    #[test]
+    fn parse_hosts_yml_preserves_hash_inside_token_value() {
+        let text = "github.com:\n    oauth_token: ghp_real#segment\n";
+        let parsed = parse_gh_hosts_yml(text).expect("must parse");
+        assert_eq!(parsed.token, "ghp_real#segment");
+    }
+
+    /// Trailing-whitespace `#` IS a comment per YAML and must be
+    /// stripped from the parsed value.
+    #[test]
+    fn parse_hosts_yml_strips_trailing_whitespace_comment() {
+        let text = "github.com:\n    oauth_token: ghp_real # rotated 2026-01\n";
+        let parsed = parse_gh_hosts_yml(text).expect("must parse");
+        assert_eq!(parsed.token, "ghp_real");
+    }
+
+    /// Malformed YAML (e.g. mismatched quotes) must NOT yield a
+    /// partial result. The serde_yaml_ng parser returns an error;
+    /// `parse_gh_hosts_yml` maps that to `None` so callers fall
+    /// through to `HostMissing` instead of writing a bogus token.
+    #[test]
+    fn parse_hosts_yml_rejects_malformed_yaml() {
+        let text = "github.com:\n    oauth_token: \'broken\"\n";
+        assert!(parse_gh_hosts_yml(text).is_none());
+    }
+
+    // ── provision_github_auth ────────────────────────────────────────────
+
+    #[test]
+    fn sync_falls_back_to_hosts_yml_file_when_gh_binary_absent() {
+        let temp = tempdir().unwrap();
+        let host_home = stage_host_hosts_yml(&temp, "ghp_filebased");
+        let hosts_yml = temp.path().join("role-state-hosts.yml");
+
+        let outcome = RoleState::provision_github_auth(
+            &hosts_yml,
+            &ctx(GithubAuthMode::Sync, None),
+            &host_home,
+        )
+        .unwrap();
+
+        match &outcome {
+            GithubProvisionOutcome::Synced { token, source } => {
+                assert_eq!(token, "ghp_filebased");
+                assert_eq!(*source, GithubTokenSource::HostsFile);
+            }
+            other => panic!("expected Synced, got {other:?}"),
+        }
+        assert_eq!(outcome.token(), Some("ghp_filebased"));
+        assert_eq!(outcome.kind(), GithubProvisionKind::Synced);
+        let written = std::fs::read_to_string(&hosts_yml).unwrap();
+        assert!(written.contains("oauth_token: ghp_filebased"));
+        assert!(written.contains("git_protocol: https"));
+        assert!(written.contains("user: alice"));
+    }
+
+    #[test]
+    fn sync_returns_host_missing_when_neither_source_resolves() {
+        let temp = tempdir().unwrap();
+        let host_home = temp.path().join("host_home_with_no_gh_state");
+        let hosts_yml = temp.path().join("role-state-hosts.yml");
+
+        let outcome = RoleState::provision_github_auth(
+            &hosts_yml,
+            &ctx(GithubAuthMode::Sync, None),
+            &host_home,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outcome,
+            GithubProvisionOutcome::HostMissing {
+                reason: HostMissingReason::NoGhAndNoHostsFile
+            }
+        );
+        assert!(outcome.token().is_none());
+        assert!(!hosts_yml.exists());
+    }
+
+    #[test]
+    fn sync_preserves_existing_role_hosts_yml_when_host_lacks_token() {
+        let temp = tempdir().unwrap();
+        let host_home = temp.path().join("empty_host_home");
+        let hosts_yml = temp.path().join("role-state-hosts.yml");
+        std::fs::write(&hosts_yml, "github.com:\n    oauth_token: in_container\n").unwrap();
+
+        let outcome = RoleState::provision_github_auth(
+            &hosts_yml,
+            &ctx(GithubAuthMode::Sync, None),
+            &host_home,
+        )
+        .unwrap();
+
+        assert_eq!(outcome.kind(), GithubProvisionKind::HostMissing);
+        let preserved = std::fs::read_to_string(&hosts_yml).unwrap();
+        assert!(
+            preserved.contains("in_container"),
+            "in-container login state must survive sync-with-no-host"
+        );
+    }
+
+    #[test]
+    fn token_mode_wipes_role_hosts_yml() {
+        let temp = tempdir().unwrap();
+        let host_home = temp.path().join("host_home");
+        let hosts_yml = temp.path().join("role-state-hosts.yml");
+        std::fs::write(&hosts_yml, "github.com:\n    oauth_token: stale\n").unwrap();
+
+        let outcome = RoleState::provision_github_auth(
+            &hosts_yml,
+            &ctx(GithubAuthMode::Token, Some("ghp_token")),
+            &host_home,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outcome,
+            GithubProvisionOutcome::TokenMode {
+                token: "ghp_token".to_string()
+            }
+        );
+        assert_eq!(outcome.token(), Some("ghp_token"));
+        assert!(
+            !hosts_yml.exists(),
+            "token mode must wipe role-state hosts.yml"
+        );
+    }
+
+    #[test]
+    fn ignore_mode_wipes_role_hosts_yml() {
+        let temp = tempdir().unwrap();
+        let host_home = temp.path().join("host_home");
+        let hosts_yml = temp.path().join("role-state-hosts.yml");
+        std::fs::write(&hosts_yml, "github.com:\n    oauth_token: stale\n").unwrap();
+
+        let outcome = RoleState::provision_github_auth(
+            &hosts_yml,
+            &ctx(GithubAuthMode::Ignore, None),
+            &host_home,
+        )
+        .unwrap();
+
+        assert_eq!(outcome, GithubProvisionOutcome::Skipped);
+        assert!(outcome.token().is_none());
+        assert!(!hosts_yml.exists());
+    }
+
+    #[test]
+    fn switching_from_sync_to_token_wipes_synced_hosts_yml() {
+        let temp = tempdir().unwrap();
+        let host_home = stage_host_hosts_yml(&temp, "ghp_synced");
+        let hosts_yml = temp.path().join("role-state-hosts.yml");
+
+        let outcome = RoleState::provision_github_auth(
+            &hosts_yml,
+            &ctx(GithubAuthMode::Sync, None),
+            &host_home,
+        )
+        .unwrap();
+        assert_eq!(outcome.kind(), GithubProvisionKind::Synced);
+        assert!(hosts_yml.exists());
+
+        let outcome = RoleState::provision_github_auth(
+            &hosts_yml,
+            &ctx(GithubAuthMode::Token, Some("ghp_scoped")),
+            &host_home,
+        )
+        .unwrap();
+        assert_eq!(outcome.kind(), GithubProvisionKind::TokenMode);
+        assert!(!hosts_yml.exists());
+    }
+
+    #[test]
+    fn switching_from_sync_to_ignore_wipes_synced_hosts_yml() {
+        let temp = tempdir().unwrap();
+        let host_home = stage_host_hosts_yml(&temp, "ghp_synced");
+        let hosts_yml = temp.path().join("role-state-hosts.yml");
+
+        let outcome = RoleState::provision_github_auth(
+            &hosts_yml,
+            &ctx(GithubAuthMode::Sync, None),
+            &host_home,
+        )
+        .unwrap();
+        assert_eq!(outcome.kind(), GithubProvisionKind::Synced);
+
+        let outcome = RoleState::provision_github_auth(
+            &hosts_yml,
+            &ctx(GithubAuthMode::Ignore, None),
+            &host_home,
+        )
+        .unwrap();
+        assert_eq!(outcome, GithubProvisionOutcome::Skipped);
+        assert!(!hosts_yml.exists());
+    }
+
+    /// Round-trip across all four modes — pins state cleanliness on
+    /// every transition so a regression in `wipe_file_if_present`
+    /// (e.g. leaving a 0o600 stub) gets caught here.
+    #[test]
+    fn round_trip_ignore_sync_token_ignore_state_clean() {
+        let temp = tempdir().unwrap();
+        let host_home = stage_host_hosts_yml(&temp, "ghp_round");
+        let hosts_yml = temp.path().join("role-state-hosts.yml");
+
+        let outcome = RoleState::provision_github_auth(
+            &hosts_yml,
+            &ctx(GithubAuthMode::Ignore, None),
+            &host_home,
+        )
+        .unwrap();
+        assert_eq!(outcome.kind(), GithubProvisionKind::Skipped);
+        assert!(!hosts_yml.exists());
+
+        let outcome = RoleState::provision_github_auth(
+            &hosts_yml,
+            &ctx(GithubAuthMode::Sync, None),
+            &host_home,
+        )
+        .unwrap();
+        assert_eq!(outcome.kind(), GithubProvisionKind::Synced);
+        assert!(hosts_yml.exists());
+
+        let outcome = RoleState::provision_github_auth(
+            &hosts_yml,
+            &ctx(GithubAuthMode::Token, Some("scoped")),
+            &host_home,
+        )
+        .unwrap();
+        assert_eq!(outcome.kind(), GithubProvisionKind::TokenMode);
+        assert!(!hosts_yml.exists());
+
+        let outcome = RoleState::provision_github_auth(
+            &hosts_yml,
+            &ctx(GithubAuthMode::Ignore, None),
+            &host_home,
+        )
+        .unwrap();
+        assert_eq!(outcome.kind(), GithubProvisionKind::Skipped);
+        assert!(!hosts_yml.exists());
+    }
+
+    /// Two consecutive Sync calls with the same host token must not
+    /// re-write `hosts.yml` — mtime stable. Mirrors the codex no-churn
+    /// guard; a regression that drops the content-equal check would
+    /// fire `write_private_file` (atomic rename) on every launch.
+    #[test]
+    fn sync_skips_write_when_content_unchanged() {
+        let temp = tempdir().unwrap();
+        let host_home = stage_host_hosts_yml(&temp, "ghp_unchanged");
+        let hosts_yml = temp.path().join("role-state-hosts.yml");
+
+        RoleState::provision_github_auth(&hosts_yml, &ctx(GithubAuthMode::Sync, None), &host_home)
+            .unwrap();
+        let mtime_first = std::fs::metadata(&hosts_yml).unwrap().modified().unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        RoleState::provision_github_auth(&hosts_yml, &ctx(GithubAuthMode::Sync, None), &host_home)
+            .unwrap();
+        let mtime_second = std::fs::metadata(&hosts_yml).unwrap().modified().unwrap();
+
+        assert_eq!(
+            mtime_first, mtime_second,
+            "no-op Sync provisioning must not touch hosts.yml mtime"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_at_hosts_yml_under_sync_and_token_and_ignore() {
+        for mode in [
+            GithubAuthMode::Sync,
+            GithubAuthMode::Token,
+            GithubAuthMode::Ignore,
+        ] {
+            let temp = tempdir().unwrap();
+            let host_home = temp.path().join("host_home");
+            let hosts_yml = temp.path().join("role-state-hosts.yml");
+
+            let decoy = temp.path().join("decoy.yml");
+            std::fs::write(&decoy, "secret").unwrap();
+            std::os::unix::fs::symlink(&decoy, &hosts_yml).unwrap();
+
+            let token = matches!(mode, GithubAuthMode::Token).then_some("tok");
+            let err = RoleState::provision_github_auth(&hosts_yml, &ctx(mode, token), &host_home)
+                .unwrap_err();
+
+            assert!(
+                err.to_string().contains("symlink"),
+                "mode {mode:?} did not reject symlink: {err}"
+            );
+            assert_eq!(
+                std::fs::read_to_string(&decoy).unwrap(),
+                "secret",
+                "mode {mode:?} clobbered decoy"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn synced_hosts_yml_has_0600_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempdir().unwrap();
+        let host_home = stage_host_hosts_yml(&temp, "ghp_perm");
+        let hosts_yml = temp.path().join("role-state-hosts.yml");
+
+        RoleState::provision_github_auth(&hosts_yml, &ctx(GithubAuthMode::Sync, None), &host_home)
+            .unwrap();
+
+        let mode = std::fs::metadata(&hosts_yml).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "synced hosts.yml must be 0o600, got {mode:o}");
+    }
+
+    /// Sync mode does not consume the operator-supplied `Token`-mode
+    /// token. Strengthened from a bare `is_none()` to also assert the
+    /// outcome doesn't carry the supplied value via any other path.
+    #[test]
+    fn sync_does_not_consume_supplied_token() {
+        let temp = tempdir().unwrap();
+        let host_home = temp.path().join("empty_host_home");
+        let hosts_yml = temp.path().join("role-state-hosts.yml");
+
+        let outcome = RoleState::provision_github_auth(
+            &hosts_yml,
+            &ctx(GithubAuthMode::Sync, Some("operator_supplied")),
+            &host_home,
+        )
+        .unwrap();
+
+        assert_eq!(outcome.kind(), GithubProvisionKind::HostMissing);
+        assert!(outcome.token().is_none());
+        assert_ne!(outcome.token(), Some("operator_supplied"));
+    }
+
+    /// Manual `Debug` impl on `GithubAuthContext` must redact the
+    /// token so `tracing::debug!("{ctx:?}")` cannot leak it.
+    #[test]
+    fn github_auth_context_debug_redacts_token() {
+        let ctx = ctx(GithubAuthMode::Token, Some("ghp_secret_value"));
+        let s = format!("{ctx:?}");
+        assert!(
+            !s.contains("ghp_secret_value"),
+            "token leaked in Debug: {s}"
+        );
+        assert!(s.contains("<redacted>"));
+    }
+
+    /// Manual `Debug` impl on `GithubProvisionOutcome` must redact the
+    /// token in `Synced` and `TokenMode` variants.
+    #[test]
+    fn github_provision_outcome_debug_redacts_token() {
+        let synced = GithubProvisionOutcome::Synced {
+            token: "ghp_synced_secret".to_string(),
+            source: GithubTokenSource::GhCli,
+        };
+        let s = format!("{synced:?}");
+        assert!(!s.contains("ghp_synced_secret"), "Synced token leaked: {s}");
+
+        let tok = GithubProvisionOutcome::TokenMode {
+            token: "ghp_token_secret".to_string(),
+        };
+        let s = format!("{tok:?}");
+        assert!(
+            !s.contains("ghp_token_secret"),
+            "TokenMode token leaked: {s}"
         );
     }
 }

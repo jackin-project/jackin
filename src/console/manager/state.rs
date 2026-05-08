@@ -134,13 +134,16 @@ pub struct EditorState<'a> {
     pub secrets_expanded: BTreeSet<String>,
     pub auth_expanded: BTreeSet<String>,
     /// Auth tab two-screen state: `None` renders the auth-kind
-    /// picker; `Some(agent)` renders the focused editor for that
+    /// picker; `Some(kind)` renders the focused editor for that
     /// auth kind. Cleared by Esc on the focused screen (see the Auth
     /// branch in `input::editor::handle_editor_key`'s `KeyCode::Esc`
     /// arm) and by Tab/BackTab leaving the Auth tab. The Esc-pop
     /// is in-tab navigation and intentionally bypasses the
     /// dirty-modal flow — pending edits stay in `editor.pending`.
-    pub auth_selected_agent: Option<crate::agent::Agent>,
+    ///
+    /// Widened from `Agent` to [`AuthKind`] so `Github` can sit on
+    /// the panel without forcing a runtime `Agent::Github` variant.
+    pub auth_selected_kind: Option<crate::console::manager::auth_kind::AuthKind>,
     /// Scratch for the two-step add flow: set on `EnvKey` commit,
     /// cleared on `EnvValue` commit/cancel.
     pub pending_env_key: Option<(SecretsScopeTag, String)>,
@@ -323,7 +326,7 @@ pub enum Modal<'a> {
     },
     /// Auth-tab role picker — opened from the `+ Override for a role`
     /// sentinel when an auth kind is already focused. Commit reads
-    /// `editor.auth_selected_agent` to build the `AuthFormTarget`
+    /// `editor.auth_selected_kind` to build the `AuthFormTarget`
     /// directly, then hands off to `Modal::AuthForm`.
     AuthRolePicker {
         state: RolePickerState,
@@ -338,9 +341,9 @@ pub enum Modal<'a> {
         state: ScopePickerState,
     },
     /// Auth-form modal opened from the Auth tab. `target` identifies
-    /// which scope (workspace or workspace × role) and which agent the
-    /// form is editing so commit can write back to the correct slot
-    /// on `editor.pending`.
+    /// which scope (workspace or workspace × role) and which auth
+    /// kind (Claude / Codex / Github) the form is editing so commit
+    /// can write back to the correct slot on `editor.pending`.
     AuthForm {
         target: AuthFormTarget,
         state: Box<AuthForm>,
@@ -375,21 +378,34 @@ pub enum AuthFormFocus {
     Reset,
 }
 
-/// Identifies the (scope, agent) pair an open `AuthForm` modal is editing.
+/// Identifies the (scope, kind) pair an open `AuthForm` modal is editing.
 ///
 /// Committing the form writes back into the matching slot on
-/// `editor.pending` (workspace `claude/codex` field, or workspace-role
-/// override `claude/codex` field, plus the credential env var).
+/// `editor.pending`:
+///
+///   - workspace `claude` / `codex` / `github` field, or
+///   - workspace-role override `claude` / `codex` / `github` field,
+///
+/// plus the credential env var when the chosen mode requires one.
+///
+/// Widened from `Agent` to [`AuthKind`] so the GitHub kind (which has
+/// no agent dimension because `.config/gh/` is shared by every agent
+/// in the container) can target the same modal flow.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthFormTarget {
-    /// `[workspaces.<ws>.<agent>].auth_forward` slot, with the credential
-    /// env var landing in `[workspaces.<ws>.env]`.
-    Workspace { agent: crate::agent::Agent },
-    /// `[workspaces.<ws>.roles.<role>.<agent>].auth_forward` slot, with
-    /// the credential env var landing in `[workspaces.<ws>.roles.<role>.env]`.
+    /// `[workspaces.<ws>.<kind>].auth_forward` slot, with the credential
+    /// env var landing in `[workspaces.<ws>.env]` (Claude / Codex) or
+    /// `[workspaces.<ws>.github.env]` (Github).
+    Workspace {
+        kind: crate::console::manager::auth_kind::AuthKind,
+    },
+    /// `[workspaces.<ws>.roles.<role>.<kind>].auth_forward` slot, with
+    /// the credential env var landing in
+    /// `[workspaces.<ws>.roles.<role>.env]` (Claude / Codex) or
+    /// `[workspaces.<ws>.roles.<role>.github.env]` (Github).
     WorkspaceRole {
         role: String,
-        agent: crate::agent::Agent,
+        kind: crate::console::manager::auth_kind::AuthKind,
     },
 }
 
@@ -671,7 +687,7 @@ impl EditorState<'_> {
             unmasked_rows: BTreeSet::default(),
             secrets_expanded: BTreeSet::default(),
             auth_expanded: BTreeSet::default(),
-            auth_selected_agent: None,
+            auth_selected_kind: None,
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
@@ -694,7 +710,7 @@ impl EditorState<'_> {
             unmasked_rows: BTreeSet::default(),
             secrets_expanded: BTreeSet::default(),
             auth_expanded: BTreeSet::default(),
-            auth_selected_agent: None,
+            auth_selected_kind: None,
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
@@ -732,6 +748,19 @@ impl EditorState<'_> {
         if self.pending.git_pull_on_entry != self.original.git_pull_on_entry {
             n += 1;
         }
+        if self.pending.claude != self.original.claude {
+            n += 1;
+        }
+        if self.pending.codex != self.original.codex {
+            n += 1;
+        }
+        // The Github kind is single-entry at the workspace and role
+        // layers (no agent dimension). A whole-block diff lights up
+        // the save counter for both `auth_forward` flips and
+        // `[github.env]` mutations like setting `GH_TOKEN`.
+        if self.pending.github != self.original.github {
+            n += 1;
+        }
         // Rename in Edit mode counts as a change.
         if let EditorMode::Edit { name } = &self.mode
             && self.pending_name.as_deref().is_some_and(|pn| pn != name)
@@ -744,7 +773,8 @@ impl EditorState<'_> {
             .count();
         n += env_change_count(&self.original.env, &self.pending.env);
         // Per-role overrides: union the keys; an role present on
-        // only one side counts its whole env map as added/removed.
+        // only one side counts its whole env map / claude / codex /
+        // github block as added/removed.
         let agent_keys: std::collections::BTreeSet<&String> = self
             .original
             .roles
@@ -752,12 +782,24 @@ impl EditorState<'_> {
             .chain(self.pending.roles.keys())
             .collect();
         for role in agent_keys {
-            let orig = self.original.roles.get(role).map(|o| &o.env);
-            let pend = self.pending.roles.get(role).map(|p| &p.env);
+            let orig = self.original.roles.get(role);
+            let pend = self.pending.roles.get(role);
             let empty = std::collections::BTreeMap::<String, crate::operator_env::EnvValue>::new();
-            let orig_env = orig.unwrap_or(&empty);
-            let pend_env = pend.unwrap_or(&empty);
+            let orig_env = orig.map_or(&empty, |o| &o.env);
+            let pend_env = pend.map_or(&empty, |p| &p.env);
             n += env_change_count(orig_env, pend_env);
+            // Per-role auth-forward overrides count as one change
+            // each so a role × github mode flip with no env edit
+            // still wakes the save button.
+            if orig.map(|o| &o.claude) != pend.map(|p| &p.claude) {
+                n += 1;
+            }
+            if orig.map(|o| &o.codex) != pend.map(|p| &p.codex) {
+                n += 1;
+            }
+            if orig.map(|o| &o.github) != pend.map(|p| &p.github) {
+                n += 1;
+            }
         }
         n
     }
@@ -1140,6 +1182,7 @@ mod tests {
                 env: role_x_env,
                 claude: None,
                 codex: None,
+                github: None,
             },
         );
         let mut e = EditorState::new_edit("a".into(), ws);
@@ -1190,6 +1233,7 @@ mod tests {
                 },
                 claude: None,
                 codex: None,
+                github: None,
             },
         );
         assert!(e2.is_dirty(), "role env set must make state dirty");
@@ -1345,6 +1389,7 @@ mod tests {
             keep_awake: KeepAwakeConfig::default(),
             claude: None,
             codex: None,
+            github: None,
             git_pull_on_entry: false,
         };
         let mut e = EditorState::new_edit("ws".into(), ws);

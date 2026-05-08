@@ -260,6 +260,73 @@ impl
     }
 }
 
+/// One-line GitHub CLI auth state diagnostic.
+///
+/// Body is derived from `outcome`: each variant carries its own
+/// attribution — `Synced` names the source (gh CLI vs `hosts.yml`),
+/// `HostMissing` names the reason (logged out vs gh failed vs file
+/// malformed), and `TokenMode` shows the operator-env breadcrumb.
+pub fn github_auth_notice(
+    outcome: &crate::instance::GithubProvisionOutcome,
+    token_breadcrumb: Option<&str>,
+) {
+    eprintln!(
+        "  {}",
+        format_github_auth_notice_for_test(outcome, token_breadcrumb)
+    );
+}
+
+fn format_github_auth_notice_for_test(
+    outcome: &crate::instance::GithubProvisionOutcome,
+    token_breadcrumb: Option<&str>,
+) -> String {
+    use crate::instance::{GithubProvisionOutcome as O, GithubTokenSource, HostMissingReason};
+    let label = "gh auth:".color(rgb(PHOSPHOR_GREEN)).bold().to_string();
+    let body = match outcome {
+        O::Synced { source, .. } => {
+            let via = match source {
+                GithubTokenSource::GhCli => "via gh CLI",
+                GithubTokenSource::HostsFile => "via ~/.config/gh/hosts.yml",
+            };
+            format!("forwarded host token (sync, {via})")
+        }
+        O::HostMissing { reason } => match reason {
+            HostMissingReason::NoGhAndNoHostsFile => {
+                "none — host has no gh login, container preserves prior login".to_string()
+            }
+            HostMissingReason::GhCliFailed { stderr } => {
+                let trimmed = stderr.lines().next().unwrap_or("").trim();
+                if trimmed.is_empty() {
+                    "none — gh auth token failed (run with --debug for stderr); \
+                     container preserves prior login"
+                        .to_string()
+                } else {
+                    format!(
+                        "none — gh auth token failed: {trimmed}; \
+                         container preserves prior login"
+                    )
+                }
+            }
+            HostMissingReason::GhCliEmpty => {
+                "none — gh auth token returned empty (broken host login); \
+                 container preserves prior login"
+                    .to_string()
+            }
+            HostMissingReason::HostsFileMalformed => {
+                "none — ~/.config/gh/hosts.yml present but unparseable; \
+                 container preserves prior login"
+                    .to_string()
+            }
+        },
+        O::TokenMode { .. } => {
+            let src = token_breadcrumb.unwrap_or(crate::env_model::GH_TOKEN_ENV_NAME);
+            format!("scoped token from {src} (token)")
+        }
+        O::Skipped => "disabled (ignore)".to_string(),
+    };
+    format!("{label} {}", body.color(rgb(PHOSPHOR_DIM)))
+}
+
 /// Render the one-line launch diagnostic for Codex auth state.
 ///
 /// `api_key_source` wins display when present — Codex CLI prefers
@@ -404,6 +471,109 @@ mod tests {
         ));
         assert!(clean.contains("ignore"));
         assert!(clean.contains("login required"));
+    }
+
+    // ── github_auth_notice formatter ─────────────────────────────
+
+    #[test]
+    fn github_auth_notice_synced_via_gh_cli_mentions_source() {
+        use crate::instance::{GithubProvisionOutcome, GithubTokenSource};
+        let outcome = GithubProvisionOutcome::Synced {
+            token: "ghp_test".into(),
+            source: GithubTokenSource::GhCli,
+        };
+        let clean = strip_ansi(&format_github_auth_notice_for_test(&outcome, None));
+        assert!(clean.contains("gh auth:"), "got: {clean}");
+        assert!(clean.contains("forwarded host token"), "got: {clean}");
+        assert!(clean.contains("via gh CLI"), "got: {clean}");
+        // Token must not appear verbatim — formatter never echoes the
+        // resolved value into the notice.
+        assert!(!clean.contains("ghp_test"), "token leaked: {clean}");
+    }
+
+    #[test]
+    fn github_auth_notice_synced_via_hosts_file_mentions_source() {
+        use crate::instance::{GithubProvisionOutcome, GithubTokenSource};
+        let outcome = GithubProvisionOutcome::Synced {
+            token: "ghp_test".into(),
+            source: GithubTokenSource::HostsFile,
+        };
+        let clean = strip_ansi(&format_github_auth_notice_for_test(&outcome, None));
+        assert!(clean.contains("via ~/.config/gh/hosts.yml"), "got: {clean}");
+    }
+
+    #[test]
+    fn github_auth_notice_token_mode_uses_breadcrumb() {
+        use crate::instance::GithubProvisionOutcome;
+        let outcome = GithubProvisionOutcome::TokenMode {
+            token: "ghp_secret".into(),
+        };
+        let clean = strip_ansi(&format_github_auth_notice_for_test(
+            &outcome,
+            Some("GH_TOKEN ← op://Work/ACME/gh-pat"),
+        ));
+        assert!(clean.contains("scoped token"), "got: {clean}");
+        assert!(
+            clean.contains("op://Work/ACME/gh-pat"),
+            "breadcrumb missing: {clean}"
+        );
+        assert!(clean.contains("(token)"), "got: {clean}");
+        assert!(!clean.contains("ghp_secret"), "token leaked: {clean}");
+    }
+
+    #[test]
+    fn github_auth_notice_token_mode_falls_back_to_bare_env_var_name() {
+        use crate::instance::GithubProvisionOutcome;
+        let outcome = GithubProvisionOutcome::TokenMode {
+            token: "ghp_secret".into(),
+        };
+        let clean = strip_ansi(&format_github_auth_notice_for_test(&outcome, None));
+        // Without a breadcrumb, formatter renders the bare env-var
+        // name so the operator at least knows the source key.
+        assert!(clean.contains("GH_TOKEN"), "got: {clean}");
+    }
+
+    #[test]
+    fn github_auth_notice_host_missing_renders_each_typed_reason() {
+        use crate::instance::{GithubProvisionOutcome, HostMissingReason};
+
+        let cases: &[(HostMissingReason, &[&str])] = &[
+            (
+                HostMissingReason::NoGhAndNoHostsFile,
+                &["host has no gh login", "preserves prior login"],
+            ),
+            (
+                HostMissingReason::GhCliFailed {
+                    stderr: "you must run `gh auth login`".into(),
+                },
+                &["gh auth token failed", "gh auth login"],
+            ),
+            (HostMissingReason::GhCliEmpty, &["returned empty"]),
+            (HostMissingReason::HostsFileMalformed, &["unparseable"]),
+        ];
+        for (reason, needles) in cases {
+            let outcome = GithubProvisionOutcome::HostMissing {
+                reason: reason.clone(),
+            };
+            let clean = strip_ansi(&format_github_auth_notice_for_test(&outcome, None));
+            for needle in *needles {
+                assert!(
+                    clean.contains(needle),
+                    "reason {reason:?}: missing needle {needle:?} in {clean}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn github_auth_notice_skipped_renders_disabled() {
+        use crate::instance::GithubProvisionOutcome;
+        let clean = strip_ansi(&format_github_auth_notice_for_test(
+            &GithubProvisionOutcome::Skipped,
+            None,
+        ));
+        assert!(clean.contains("disabled"), "got: {clean}");
+        assert!(clean.contains("(ignore)"), "got: {clean}");
     }
 
     /// Pin the (`AuthForwardMode`, `AuthProvisionOutcome`) → `CodexSyncState`

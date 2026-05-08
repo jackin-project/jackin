@@ -50,9 +50,9 @@ pub(super) fn handle_editor_key(
                 // selection without dirty check (see EditorState
                 // field doc). A subsequent Esc on the picker view
                 // falls through to the dirty branch below.
-                if editor.active_tab == EditorTab::Auth && editor.auth_selected_agent.is_some() {
+                if editor.active_tab == EditorTab::Auth && editor.auth_selected_kind.is_some() {
                     if let ManagerStage::Editor(editor) = &mut state.stage {
-                        editor.auth_selected_agent = None;
+                        editor.auth_selected_kind = None;
                         editor.active_field = FieldFocus::Row(0);
                     }
                     return Ok(InputOutcome::Continue);
@@ -129,7 +129,7 @@ pub(super) fn handle_editor_key(
             };
             editor.active_field = FieldFocus::Row(0);
             if editor.active_tab != EditorTab::Auth {
-                editor.auth_selected_agent = None;
+                editor.auth_selected_kind = None;
             }
             if was_secrets {
                 reset_secrets_view(editor);
@@ -170,7 +170,7 @@ pub(super) fn handle_editor_key(
             };
             editor.active_field = FieldFocus::Row(0);
             if editor.active_tab != EditorTab::Auth {
-                editor.auth_selected_agent = None;
+                editor.auth_selected_kind = None;
             }
             if was_secrets {
                 reset_secrets_view(editor);
@@ -236,8 +236,8 @@ pub(super) fn handle_editor_key(
                 let FieldFocus::Row(n) = editor.active_field;
                 let rows = super::super::render::editor::auth_flat_rows(editor, config);
                 match rows.get(n) {
-                    Some(super::super::render::editor::AuthRow::AuthKind { agent }) => {
-                        editor.auth_selected_agent = Some(*agent);
+                    Some(super::super::render::editor::AuthRow::AuthKindRow { kind }) => {
+                        editor.auth_selected_kind = Some(*kind);
                         editor.active_field = FieldFocus::Row(0);
                     }
                     Some(super::super::render::editor::AuthRow::AddSentinel { .. }) => {
@@ -262,7 +262,7 @@ pub(super) fn handle_editor_key(
             open_role_input(editor, config);
         }
         KeyCode::Char('a' | 'A')
-            if editor.active_tab == EditorTab::Auth && editor.auth_selected_agent.is_some() =>
+            if editor.active_tab == EditorTab::Auth && editor.auth_selected_kind.is_some() =>
         {
             super::auth::open_auth_role_picker(editor, config);
         }
@@ -1109,12 +1109,12 @@ pub(super) fn handle_editor_modal(
         }
         Modal::AuthRolePicker { state: picker } => match picker.handle_key(key) {
             ModalOutcome::Commit(role) => {
-                if let Some(agent) = editor.auth_selected_agent {
+                if let Some(kind) = editor.auth_selected_kind {
                     let target = crate::console::manager::state::AuthFormTarget::WorkspaceRole {
                         role: role.key(),
-                        agent,
+                        kind,
                     };
-                    let form = crate::console::widgets::auth_panel::AuthForm::new(agent);
+                    let form = crate::console::widgets::auth_panel::AuthForm::new(kind);
                     editor.modal = Some(Modal::AuthForm {
                         target,
                         state: Box::new(form),
@@ -3141,6 +3141,7 @@ plugins = []
                 env: ag_env,
                 claude: None,
                 codex: None,
+                github: None,
             },
         );
 
@@ -3418,6 +3419,7 @@ plugins = []
                 env: ag_env,
                 claude: None,
                 codex: None,
+                github: None,
             },
         );
         let mut state = ManagerState::from_config(&config, tmp.path());
@@ -3483,6 +3485,7 @@ plugins = []
                 env: ag_env,
                 claude: None,
                 codex: None,
+                github: None,
             },
         );
 
@@ -3714,16 +3717,16 @@ mod auth_cursor_step_tests {
     //! Spacer-skip tests for the Auth-tab cursor stepping helpers.
     //! `Spacer` rows are intentionally non-selectable so the cursor
     //! never lands on a blank line in the rendered list.
+    use super::super::super::auth_kind::AuthKind;
     use super::super::super::render::editor::AuthRow;
     use super::{step_auth_cursor_down, step_auth_cursor_up};
-    use crate::agent::Agent;
 
     fn rows() -> Vec<AuthRow> {
         // Mirrors the focused-mode shape: WorkspaceMode → Spacer →
         // RoleHeader → Spacer → AddSentinel.
         vec![
             AuthRow::WorkspaceMode {
-                agent: Agent::Claude,
+                kind: AuthKind::Claude,
             },
             AuthRow::Spacer,
             AuthRow::RoleHeader {
@@ -3757,7 +3760,7 @@ mod auth_cursor_step_tests {
         // candidate verbatim (caller already clamped to `max`).
         let r = vec![
             AuthRow::WorkspaceMode {
-                agent: Agent::Claude,
+                kind: AuthKind::Claude,
             },
             AuthRow::Spacer,
         ];
@@ -3785,7 +3788,7 @@ mod auth_cursor_step_tests {
         let r = vec![
             AuthRow::Spacer,
             AuthRow::WorkspaceMode {
-                agent: Agent::Claude,
+                kind: AuthKind::Claude,
             },
         ];
         assert_eq!(step_auth_cursor_up(&r, 0), 0);

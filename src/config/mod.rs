@@ -14,7 +14,7 @@ mod workspaces;
 pub use editor::{ConfigEditor, EnvScope};
 pub use mounts::DockerMounts;
 pub(crate) use mounts::MountEntry;
-pub use roles::resolve_mode;
+pub use roles::{build_github_env_layers, resolve_github_mode, resolve_mode};
 pub use workspaces::{DriftDetection, detect_workspace_edit_drift};
 
 /// Serde helper: `skip_serializing_if` requires `fn(&T) -> bool`.
@@ -93,6 +93,72 @@ pub struct AgentAuthConfig {
     pub auth_forward: AuthForwardMode,
 }
 
+/// Controls how the host's `gh` auth state reaches role containers.
+///
+/// Distinct from [`AuthForwardMode`] because GitHub has no `api_key`
+/// / `oauth_token` distinction — `gh` PATs are uniform regardless of
+/// how the operator obtained them.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GithubAuthMode {
+    /// Materialize `~/.config/gh/hosts.yml` from the host's `gh` login on
+    /// each launch. When the host is logged out, the container's existing
+    /// login (if any) is preserved.
+    #[default]
+    #[serde(rename = "sync")]
+    Sync,
+    /// Inject `GH_TOKEN` (and `GITHUB_TOKEN`) into the container's process
+    /// env from the resolved operator-env layer. Any prior `hosts.yml`
+    /// in role state is wiped so a stale file-based login cannot shadow
+    /// the env token.
+    #[serde(rename = "token")]
+    Token,
+    /// Wipe any forwarded `gh` state and never forward host auth.
+    #[serde(rename = "ignore")]
+    Ignore,
+}
+
+impl std::fmt::Display for GithubAuthMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sync => write!(f, "sync"),
+            Self::Token => write!(f, "token"),
+            Self::Ignore => write!(f, "ignore"),
+        }
+    }
+}
+
+impl std::str::FromStr for GithubAuthMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "sync" => Ok(Self::Sync),
+            "token" => Ok(Self::Token),
+            "ignore" => Ok(Self::Ignore),
+            other => Err(format!(
+                "invalid github auth_forward mode {other:?}; expected one of: sync, token, ignore"
+            )),
+        }
+    }
+}
+
+/// Operator-only `[github]` configuration block. Lives at the same
+/// three layers as `[claude]` and `[codex]` (global, workspace,
+/// workspace × role); role manifests cannot set or override it.
+///
+/// `env` is the operator env map for `token` mode and must contain
+/// `GH_TOKEN`. Optionally also `GH_HOST` (for GHE) and
+/// `GH_ENTERPRISE_TOKEN`. Values resolve through the same
+/// `operator_env` dispatch as Claude / Codex auth env.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct GithubAuthConfig {
+    #[serde(default)]
+    pub auth_forward: GithubAuthMode,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, crate::operator_env::EnvValue>,
+}
+
 /// Newtype around `AgentAuthConfig` that rejects `oauth_token` at parse time.
 ///
 /// Codex does not support `AuthForwardMode::OAuthToken` (the CLI uses a
@@ -150,6 +216,11 @@ pub struct AppConfig {
     pub claude: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex: Option<CodexAuthConfig>,
+    /// Global `[github]` block — bottom layer of the layered resolver
+    /// (global → workspace → workspace × role). Operator-only; role
+    /// manifests cannot set or override it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github: Option<GithubAuthConfig>,
     /// Global operator env map — the bottom layer. Merged under
     /// per-role, per-workspace, and per-(workspace × role) layers.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -839,6 +910,190 @@ auth_forward = "ignore"
         assert!(
             msg.contains("unknown field `claude`") || msg.contains("unknown field \"claude\""),
             "expected unknown-field error for legacy [roles.X.claude] block, got: {msg}"
+        );
+    }
+
+    // ── GitHub auth schema ──────────────────────────────────────────────
+
+    #[test]
+    fn parse_app_config_with_global_github_block() {
+        let toml = r#"
+[github]
+auth_forward = "sync"
+"#;
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        let g = cfg.github.as_ref().expect("[github] must parse");
+        assert_eq!(g.auth_forward, super::GithubAuthMode::Sync);
+        assert!(g.env.is_empty());
+    }
+
+    #[test]
+    fn parse_app_config_with_github_token_and_env() {
+        let toml = r#"
+[github]
+auth_forward = "token"
+
+[github.env]
+GH_TOKEN = "$GH_TOKEN"
+GH_HOST = "ghe.acme.com"
+"#;
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        let g = cfg.github.as_ref().unwrap();
+        assert_eq!(g.auth_forward, super::GithubAuthMode::Token);
+        assert!(g.env.contains_key("GH_TOKEN"));
+        assert!(g.env.contains_key("GH_HOST"));
+    }
+
+    #[test]
+    fn parse_workspace_github_block() {
+        let toml = r#"
+[roles.smith]
+git = "https://github.com/example/smith.git"
+
+[workspaces.acme]
+workdir = "/workspace/proj"
+
+[[workspaces.acme.mounts]]
+src = "/tmp/proj"
+dst = "/workspace/proj"
+
+[workspaces.acme.github]
+auth_forward = "token"
+
+[workspaces.acme.github.env]
+GH_TOKEN = "op://Work/ACME/gh-pat"
+"#;
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        let ws = cfg.workspaces.get("acme").unwrap();
+        let g = ws.github.as_ref().unwrap();
+        assert_eq!(g.auth_forward, super::GithubAuthMode::Token);
+        assert!(g.env.contains_key("GH_TOKEN"));
+    }
+
+    #[test]
+    fn parse_workspace_role_override_github_block() {
+        let toml = r#"
+[roles.smith]
+git = "https://github.com/example/smith.git"
+
+[workspaces.acme]
+workdir = "/workspace/proj"
+
+[[workspaces.acme.mounts]]
+src = "/tmp/proj"
+dst = "/workspace/proj"
+
+[workspaces.acme.roles.smith.github]
+auth_forward = "ignore"
+"#;
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        let ov = cfg
+            .workspaces
+            .get("acme")
+            .and_then(|ws| ws.roles.get("smith"))
+            .expect("override must exist");
+        let g = ov.github.as_ref().unwrap();
+        assert_eq!(g.auth_forward, super::GithubAuthMode::Ignore);
+    }
+
+    #[test]
+    fn github_auth_mode_default_is_sync() {
+        assert_eq!(
+            super::GithubAuthMode::default(),
+            super::GithubAuthMode::Sync
+        );
+    }
+
+    #[test]
+    fn github_auth_mode_from_str_round_trips() {
+        use std::str::FromStr;
+        assert_eq!(
+            super::GithubAuthMode::from_str("sync").unwrap(),
+            super::GithubAuthMode::Sync
+        );
+        assert_eq!(
+            super::GithubAuthMode::from_str("token").unwrap(),
+            super::GithubAuthMode::Token
+        );
+        assert_eq!(
+            super::GithubAuthMode::from_str("ignore").unwrap(),
+            super::GithubAuthMode::Ignore
+        );
+        assert!(super::GithubAuthMode::from_str("api_key").is_err());
+        assert!(super::GithubAuthMode::from_str("oauth_token").is_err());
+        assert!(super::GithubAuthMode::from_str("nope").is_err());
+    }
+
+    #[test]
+    fn github_auth_mode_display_emits_canonical_names() {
+        assert_eq!(super::GithubAuthMode::Sync.to_string(), "sync");
+        assert_eq!(super::GithubAuthMode::Token.to_string(), "token");
+        assert_eq!(super::GithubAuthMode::Ignore.to_string(), "ignore");
+    }
+
+    #[test]
+    fn github_auth_config_rejects_unknown_field() {
+        let toml = r#"
+auth_forward = "sync"
+bogus = true
+"#;
+        let err =
+            toml::from_str::<super::GithubAuthConfig>(toml).expect_err("unknown field must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown field `bogus`") || msg.contains("unknown field \"bogus\""),
+            "expected unknown-field error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn resolve_github_mode_layered_precedence() {
+        use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+        let mut cfg = AppConfig::default();
+        // Default — Sync
+        assert_eq!(
+            super::resolve_github_mode(&cfg, "proj", "smith"),
+            super::GithubAuthMode::Sync
+        );
+        // Global only
+        cfg.github = Some(super::GithubAuthConfig {
+            auth_forward: super::GithubAuthMode::Ignore,
+            env: BTreeMap::new(),
+        });
+        assert_eq!(
+            super::resolve_github_mode(&cfg, "proj", "smith"),
+            super::GithubAuthMode::Ignore
+        );
+        // Workspace overrides global
+        let ws = WorkspaceConfig {
+            workdir: "/x".into(),
+            github: Some(super::GithubAuthConfig {
+                auth_forward: super::GithubAuthMode::Token,
+                env: BTreeMap::new(),
+            }),
+            ..Default::default()
+        };
+        cfg.workspaces.insert("proj".into(), ws);
+        assert_eq!(
+            super::resolve_github_mode(&cfg, "proj", "smith"),
+            super::GithubAuthMode::Token
+        );
+        // Role override wins
+        let ov = WorkspaceRoleOverride {
+            github: Some(super::GithubAuthConfig {
+                auth_forward: super::GithubAuthMode::Sync,
+                env: BTreeMap::new(),
+            }),
+            ..WorkspaceRoleOverride::default()
+        };
+        cfg.workspaces
+            .get_mut("proj")
+            .unwrap()
+            .roles
+            .insert("smith".into(), ov);
+        assert_eq!(
+            super::resolve_github_mode(&cfg, "proj", "smith"),
+            super::GithubAuthMode::Sync
         );
     }
 
