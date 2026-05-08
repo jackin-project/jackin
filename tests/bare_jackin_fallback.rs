@@ -1,5 +1,4 @@
-//! Integration coverage for the bare-`jackin` / `jackin console` /
-//! `jackin launch` dispatch.
+//! Integration coverage for the bare-`jackin` / `jackin console` dispatch.
 //!
 //! Each test spawns the real binary with a pipe (guaranteeing a
 //! non-TTY stdout) and checks that the fallback behaviour matches the
@@ -7,8 +6,6 @@
 //!
 //! - bare `jackin` on a non-TTY prints help and exits 0
 //! - `jackin console` on a non-TTY errors and exits 1
-//! - `jackin launch` on a non-TTY emits the deprecation warning first
-//!   and then the same TTY-required error
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -39,19 +36,6 @@ fn console_subcommand_without_tty_errors() {
         .arg("console")
         .assert()
         .failure()
-        .stderr(predicate::str::contains(
-            "jackin' console requires an interactive terminal",
-        ));
-}
-
-#[test]
-fn launch_subcommand_without_tty_emits_deprecation_then_errors() {
-    Command::cargo_bin("jackin")
-        .unwrap()
-        .arg("launch")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("`jackin launch` is deprecated"))
         .stderr(predicate::str::contains(
             "jackin' console requires an interactive terminal",
         ));

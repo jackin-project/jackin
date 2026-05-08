@@ -104,9 +104,6 @@ bun install --frozen-lockfile
   detail-level options land on the CLI first, and often exclusively.
   When comparing the two, make that relationship explicit — do not
   imply they are feature-equivalent front-ends.
-- **`jackin launch`** is the deprecated pre-console spelling. Mention it
-  only in a deprecation context; never recommend it for new users or
-  use it in new examples.
 
 ## Content Notes
 

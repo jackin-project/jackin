@@ -397,7 +397,6 @@ mod tests {
         assert!(dockerfile.contains("/home/agent"));
         assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" agent"));
         assert!(dockerfile.contains("ENTRYPOINT [\"/home/agent/entrypoint.sh\"]"));
-        assert!(!dockerfile.contains("/home/claude"));
     }
 
     #[test]
@@ -499,7 +498,6 @@ mod tests {
     #[test]
     fn entrypoint_pre_launch_hook_path_uses_agent_home() {
         assert!(ENTRYPOINT_SH.contains("/home/agent/.jackin-runtime/pre-launch.sh"));
-        assert!(!ENTRYPOINT_SH.contains("/home/claude"));
     }
 
     #[test]

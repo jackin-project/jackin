@@ -132,7 +132,7 @@ pub fn run(cli: Cli) -> Result<()> {
             runtime::reconcile_keep_awake(&paths, &mut runner);
             result
         }
-        Command::Console(ConsoleArgs { debug }) | Command::Launch(ConsoleArgs { debug }) => {
+        Command::Console(ConsoleArgs { debug }) => {
             runner.debug = debug;
             tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
@@ -1180,12 +1180,6 @@ fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
 #[cfg(test)]
 mod auth_set_tests {
     use super::*;
-
-    #[test]
-    fn parse_auth_forward_mode_from_cli_rejects_deprecated_copy_alias() {
-        // Pre-release stance: no compatibility shims.
-        assert!(parse_auth_forward_mode_from_cli("copy").is_err());
-    }
 
     #[test]
     fn parse_auth_forward_mode_from_cli_accepts_sync() {

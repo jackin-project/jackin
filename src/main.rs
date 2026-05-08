@@ -7,14 +7,7 @@ fn main() {
     let cli = Cli::parse();
 
     match dispatch::classify(cli, dispatch::is_tui_capable()) {
-        Action::RunConsole {
-            args,
-            explicit: _,
-            deprecated_alias,
-        } => {
-            if deprecated_alias {
-                eprintln!("{}", dispatch::LAUNCH_DEPRECATION_WARNING);
-            }
+        Action::RunConsole { args, explicit: _ } => {
             let cli = Cli {
                 command: Some(jackin::cli::Command::Console(args)),
                 console_args: ConsoleArgs::default(),
@@ -49,10 +42,7 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Action::ErrorNotTtyCapable { deprecated_alias } => {
-            if deprecated_alias {
-                eprintln!("{}", dispatch::LAUNCH_DEPRECATION_WARNING);
-            }
+        Action::ErrorNotTtyCapable => {
             eprintln!("error: {}", dispatch::CONSOLE_REQUIRES_TTY_ERROR);
             std::process::exit(1);
         }
