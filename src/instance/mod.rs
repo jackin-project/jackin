@@ -205,6 +205,17 @@ pub enum AgentRuntimeState {
         /// writable layer (lost on `docker rm`).
         auth_json: Option<PathBuf>,
     },
+    Amp {
+        /// Host path to Amp's settings file (`settings.json`).
+        /// Always assigned by `prepare`; only bind-mounted when
+        /// `forward_auth` is `true` and the file exists on disk.
+        settings_json: PathBuf,
+        /// Whether `settings_json` should be bind-mounted under
+        /// `/jackin/amp/`. `false` for `ignore`/`api_key` (env-driven
+        /// authentication via `AMP_API_KEY` — no host filesystem state
+        /// must reach the container).
+        forward_auth: bool,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -230,7 +241,7 @@ impl RoleState {
     pub fn claude_account_json(&self) -> Option<&Path> {
         match &self.agent_runtime {
             AgentRuntimeState::Claude { account_json, .. } => Some(account_json),
-            AgentRuntimeState::Codex { .. } => None,
+            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp { .. } => None,
         }
     }
 
@@ -246,7 +257,7 @@ impl RoleState {
             AgentRuntimeState::Claude {
                 credentials_json, ..
             } => Some(credentials_json),
-            AgentRuntimeState::Codex { .. } => None,
+            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp { .. } => None,
         }
     }
 
@@ -272,7 +283,7 @@ impl RoleState {
     pub fn codex_config_toml(&self) -> Option<&Path> {
         match &self.agent_runtime {
             AgentRuntimeState::Codex { config_toml, .. } => Some(config_toml),
-            AgentRuntimeState::Claude { .. } => None,
+            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp { .. } => None,
         }
     }
 
@@ -285,8 +296,34 @@ impl RoleState {
     pub fn codex_auth_json(&self) -> Option<&Path> {
         match &self.agent_runtime {
             AgentRuntimeState::Codex { auth_json, .. } => auth_json.as_deref(),
-            AgentRuntimeState::Claude { .. } => None,
+            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp { .. } => None,
         }
+    }
+
+    /// Host path to Amp's `settings.json` (mounted at
+    /// `/jackin/amp/settings.json` in the container when
+    /// [`Self::amp_forwards_auth`] is `true`). `None` if this state
+    /// was not prepared for `Agent::Amp`.
+    #[must_use]
+    pub fn amp_settings_json(&self) -> Option<&Path> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Amp { settings_json, .. } => Some(settings_json),
+            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Codex { .. } => None,
+        }
+    }
+
+    /// Whether Amp's `settings.json` should flow into the container
+    /// under `/jackin/amp/`. `false` for env-driven modes
+    /// (`ignore`/`api_key`) and for non-Amp states.
+    #[must_use]
+    pub const fn amp_forwards_auth(&self) -> bool {
+        matches!(
+            &self.agent_runtime,
+            AgentRuntimeState::Amp {
+                forward_auth: true,
+                ..
+            }
+        )
     }
 }
 
@@ -373,6 +410,20 @@ impl RoleState {
                     AgentRuntimeState::Codex {
                         config_toml,
                         auth_json,
+                    },
+                    outcome,
+                )
+            }
+            crate::agent::Agent::Amp => {
+                let amp_dir = root.join("amp");
+                std::fs::create_dir_all(&amp_dir)?;
+                let settings_json = amp_dir.join("settings.json");
+                let (outcome, forward_auth) =
+                    Self::provision_amp_auth(&settings_json, auth_forward, host_home)?;
+                (
+                    AgentRuntimeState::Amp {
+                        settings_json,
+                        forward_auth,
                     },
                     outcome,
                 )

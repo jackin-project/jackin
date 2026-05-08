@@ -5,7 +5,7 @@
 //! fake `Agent::Github` variant on the runtime layer.
 //!
 //! `AuthKind` names which auth section the operator is editing in the
-//! workspace-manager Auth tab. Claude and Codex map 1:1 onto the
+//! workspace-manager Auth tab. Claude, Codex, and Amp map 1:1 onto the
 //! `Agent` enum (they are runtimes); Github is a non-runtime kind —
 //! no install block, no launch entrypoint, no version probe — but it
 //! still has its own `auth_forward` axis at three layers (global,
@@ -28,6 +28,7 @@ use crate::config::{AuthForwardMode, GithubAuthMode};
 pub enum AuthKind {
     Claude,
     Codex,
+    Amp,
     Github,
 }
 
@@ -39,6 +40,7 @@ impl AuthKind {
         match self {
             Self::Claude => "Claude Code",
             Self::Codex => "Codex",
+            Self::Amp => "Amp",
             Self::Github => "GitHub CLI",
         }
     }
@@ -56,7 +58,7 @@ impl AuthKind {
                 AuthMode::OAuthToken,
                 AuthMode::Ignore,
             ],
-            Self::Codex => &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore],
+            Self::Codex | Self::Amp => &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore],
             Self::Github => &[AuthMode::Sync, AuthMode::Token, AuthMode::Ignore],
         }
     }
@@ -71,6 +73,7 @@ impl AuthKind {
             (Self::Claude, AuthMode::ApiKey) => Some("ANTHROPIC_API_KEY"),
             (Self::Claude, AuthMode::OAuthToken) => Some("CLAUDE_CODE_OAUTH_TOKEN"),
             (Self::Codex, AuthMode::ApiKey) => Some("OPENAI_API_KEY"),
+            (Self::Amp, AuthMode::ApiKey) => Some("AMP_API_KEY"),
             (Self::Github, AuthMode::Token) => Some(crate::env_model::GH_TOKEN_ENV_NAME),
             _ => None,
         }
@@ -84,6 +87,7 @@ impl AuthKind {
         match agent {
             Agent::Claude => Self::Claude,
             Agent::Codex => Self::Codex,
+            Agent::Amp => Self::Amp,
         }
     }
 
@@ -96,6 +100,7 @@ impl AuthKind {
         match self {
             Self::Claude => Some(Agent::Claude),
             Self::Codex => Some(Agent::Codex),
+            Self::Amp => Some(Agent::Amp),
             Self::Github => None,
         }
     }
@@ -109,6 +114,7 @@ impl AuthKind {
         match self {
             Self::Claude => ro.claude.is_some(),
             Self::Codex => ro.codex.is_some(),
+            Self::Amp => ro.amp.is_some(),
             Self::Github => ro.github.is_some(),
         }
     }

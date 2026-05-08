@@ -42,7 +42,7 @@ jackin' is a functional proof of concept. **`Claude Code` and `Codex` ship today
 ## Partially implemented
 
 - [1Password integration](/reference/roadmap/onepassword-integration/) — workspace-managed `op://` env references shipped; file-mount generation (option 4) still deferred
-- [Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/) — Codex shipped as a fully integrated runtime; Amp runtime integration is under active development; full feature parity across `claude` / `codex` / `amp` still ongoing
+- [Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/) — `Claude Code`, `Codex`, and `Amp` all shipped as built-in runtimes; full feature parity across `claude` / `codex` / `amp` still in flight
 - [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/) — three-mode auth-forward (`sync` / `token` / `ignore`) at all three layers shipped, plus container HTTPS-normalize, `gh` credential helper wiring, and the auth-tab GitHub CLI row in `jackin console`; dedicated CLI subcommand, scope pre-flight, and bidirectional shared-store sync still pending
 
 ## Planned
@@ -50,9 +50,9 @@ jackin' is a functional proof of concept. **`Claude Code` and `Codex` ship today
 ### Agent runtimes
 
 <Aside type="note">
-`Claude Code` and `Codex` are fully integrated runtimes today (see Partially implemented above). `Amp` is under active development. The remaining work to reach full `claude` / `codex` / `amp` feature parity — runtime-specific auth, config, state, and entrypoint behaviour — continues under the same roadmap item.
+`Claude Code`, `Codex`, and `Amp` are all built-in runtimes today (see Partially implemented above). The remaining work to reach full `claude` / `codex` / `amp` feature parity — runtime-specific auth, config, state, and entrypoint behaviour — continues under the same roadmap item.
 </Aside>
-- **[Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/)** — finish the runtime abstraction so one role can launch under `claude`, `codex`, or `amp` interchangeably. Phase 1 focuses on secure local usability, not full Claude-feature parity.
+- **[Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/)** — finish deeper runtime parity beyond basic launch/auth support. Phase 1 focuses on secure local usability, not full Claude-feature parity.
 
 ### Platform expansion
 

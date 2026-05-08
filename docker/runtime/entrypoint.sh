@@ -99,6 +99,14 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     fi
     LAUNCH=(codex)
     ;;
+  amp)
+    mkdir -p /home/agent/.config/amp
+    if [ -f /jackin/amp/settings.json ]; then
+        cp /jackin/amp/settings.json /home/agent/.config/amp/settings.json
+        chmod 600 /home/agent/.config/amp/settings.json
+    fi
+    LAUNCH=(amp)
+    ;;
   *)
     echo "[entrypoint] unknown JACKIN_AGENT: $JACKIN_AGENT" >&2
     exit 2

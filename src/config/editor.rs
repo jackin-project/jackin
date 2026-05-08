@@ -265,9 +265,8 @@ impl ConfigEditor {
     /// dropping that layer of the resolver back to the workspace's
     /// inheritance from the global default.
     ///
-    /// The agent block is keyed by `agent.slug()` (`"claude"` /
-    /// `"codex"`), keeping the on-disk shape parallel to
-    /// `set_global_auth_forward`.
+    /// The agent block is keyed by `agent.slug()`, keeping the on-disk
+    /// shape parallel to `set_global_auth_forward`.
     pub fn set_workspace_auth_forward(
         &mut self,
         workspace: &str,

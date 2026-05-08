@@ -346,7 +346,7 @@ pub(super) fn commit_editor_save_with_runner(
 
             // `edit_workspace` re-renders the entire `[workspaces.<name>]`
             // table from the parsed in-memory config — which preserves
-            // whatever `claude` / `codex` / `roles[*].{claude,codex}` blocks
+            // whatever per-agent auth blocks
             // already lived on disk, NOT what's in `editor.pending`. Apply
             // the diff against `editor.original` AFTER the table rewrite so
             // mode changes survive the round-trip.
@@ -364,7 +364,7 @@ pub(super) fn commit_editor_save_with_runner(
                 return Ok(());
             }
             // `create_workspace` serializes `editor.pending` whole, which
-            // already carries `claude` / `codex` / `roles[*].{claude,codex}`
+            // already carries per-agent auth blocks
             // — no separate diff needed for the create path.
             (None, name)
         }
@@ -806,9 +806,9 @@ fn build_prospective_mounts(
     out
 }
 
-/// Diff `claude` / `codex` / `github` and per-role variants between
-/// `original` and `pending`, propagating each change to disk via the
-/// matching `ConfigEditor::set_*_auth_forward` setter.
+/// Diff `claude` / `codex` / `amp` / `github` and per-role variants
+/// between `original` and `pending`, propagating each change to disk via
+/// the matching `ConfigEditor::set_*_auth_forward` setter.
 ///
 /// `WorkspaceEdit` does not (yet) carry the auth-forward fields, so
 /// `edit_workspace` re-renders the entire workspace table from the parsed
@@ -836,6 +836,11 @@ fn apply_auth_forward_diff(
     let pending_codex = pending.codex.as_ref().map(|c| c.0.auth_forward);
     if original_codex != pending_codex {
         ce.set_workspace_auth_forward(workspace_name, Agent::Codex, pending_codex);
+    }
+    let original_amp = original.amp.as_ref().map(|c| c.0.auth_forward);
+    let pending_amp = pending.amp.as_ref().map(|c| c.0.auth_forward);
+    if original_amp != pending_amp {
+        ce.set_workspace_auth_forward(workspace_name, Agent::Amp, pending_amp);
     }
     // Github has no `Agent` peer — its `[github]` block is parallel to
     // `[claude]` / `[codex]` but agent-neutral by design.
@@ -868,6 +873,15 @@ fn apply_auth_forward_diff(
             .map(|c| c.0.auth_forward);
         if orig_codex != pend_codex {
             ce.set_workspace_role_auth_forward(workspace_name, role, Agent::Codex, pend_codex);
+        }
+        let orig_amp = orig_override
+            .and_then(|o| o.amp.as_ref())
+            .map(|c| c.0.auth_forward);
+        let pend_amp = pend_override
+            .and_then(|p| p.amp.as_ref())
+            .map(|c| c.0.auth_forward);
+        if orig_amp != pend_amp {
+            ce.set_workspace_role_auth_forward(workspace_name, role, Agent::Amp, pend_amp);
         }
         let orig_github = orig_override
             .and_then(|o| o.github.as_ref())
@@ -1012,7 +1026,7 @@ mod tests {
         EditorMode, EditorSaveFlow, EditorState, ManagerStage, ManagerState, Modal,
     };
     use super::super::test_support::{key, mount};
-    use super::{begin_editor_save, commit_editor_save};
+    use super::{apply_auth_forward_diff, begin_editor_save, commit_editor_save};
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
     use crate::paths::JackinPaths;
@@ -1053,6 +1067,52 @@ mod tests {
         cwd: &std::path::Path,
     ) {
         handle_key(state, config, paths, cwd, key(KeyCode::Char('s'))).unwrap();
+    }
+
+    #[test]
+    fn apply_auth_forward_diff_persists_amp_workspace_and_role_modes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        let original = WorkspaceConfig {
+            workdir: "/workspace/project".into(),
+            mounts: vec![mount(tmp.path().to_str().unwrap(), "/workspace/project")],
+            ..WorkspaceConfig::default()
+        };
+        let mut config = AppConfig::default();
+        config
+            .workspaces
+            .insert("proj".to_string(), original.clone());
+        std::fs::write(&paths.config_file, toml::to_string(&config).unwrap()).unwrap();
+
+        let mut pending = original.clone();
+        pending.amp = Some(crate::config::AmpAuthConfig(
+            crate::config::AgentAuthConfig {
+                auth_forward: crate::config::AuthForwardMode::ApiKey,
+            },
+        ));
+        pending.roles.insert(
+            "smith".into(),
+            crate::workspace::WorkspaceRoleOverride {
+                amp: Some(crate::config::AmpAuthConfig(
+                    crate::config::AgentAuthConfig {
+                        auth_forward: crate::config::AuthForwardMode::Ignore,
+                    },
+                )),
+                ..Default::default()
+            },
+        );
+
+        let mut editor = crate::config::ConfigEditor::open(&paths).unwrap();
+        apply_auth_forward_diff(&mut editor, "proj", &original, &pending);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("[workspaces.proj.amp]"), "{out}");
+        assert!(out.contains(r#"auth_forward = "api_key""#), "{out}");
+        assert!(out.contains("[workspaces.proj.roles.smith.amp]"), "{out}");
+        assert!(out.contains(r#"auth_forward = "ignore""#), "{out}");
     }
 
     #[test]
@@ -1963,6 +2023,7 @@ mod tests {
             keep_awake: KeepAwakeConfig::default(),
             claude: None,
             codex: None,
+            amp: None,
             github: None,
             git_pull_on_entry: false,
         };

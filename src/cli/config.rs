@@ -92,8 +92,8 @@ pub enum AuthCommand {
     /// launch when host auth exists; preserve container auth when host auth
     /// is absent), ignore (revoke and never forward), `oauth_token` (use a
     /// long-lived `CLAUDE_CODE_OAUTH_TOKEN` resolved from the operator env),
-    /// `api_key` (use a short-lived API key — e.g. `ANTHROPIC_API_KEY` /
-    /// `OPENAI_API_KEY` — resolved from the operator env). Tokens and keys
+    /// `api_key` (use a short-lived API key — e.g. `ANTHROPIC_API_KEY`,
+    /// `OPENAI_API_KEY`, or `AMP_API_KEY` — resolved from the operator env). Tokens and keys
     /// are never written to disk; see `jackin` docs on auth forwarding for
     /// setup.
     #[command(

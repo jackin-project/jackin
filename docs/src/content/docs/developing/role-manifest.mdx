@@ -22,7 +22,7 @@ jackin' enforces **strict parsing** — unknown fields are rejected with an erro
 
 ```toml title="jackin.role.toml"
 dockerfile = "Dockerfile"
-agents = ["claude", "codex"]
+agents = ["claude", "codex", "amp"]
 
 [identity]
 name = "The Architect"
@@ -45,6 +45,8 @@ source = "jackin-project/jackin-marketplace"
 [codex]
 model = "gpt-5"
 
+[amp]
+
 [hooks]
 pre_launch = "hooks/pre-launch.sh"
 
@@ -65,7 +67,7 @@ default = "feature/${env.PROJECT}"
 | Field | Required | Description |
 |---|---|---|
 | `dockerfile` | Yes | Relative path to the Dockerfile within the repo |
-| `agents` | No | Non-empty list of agent slugs this role supports: `"claude"` or `"codex"`. When omitted, jackin treats the manifest as Claude-only. |
+| `agents` | No | Non-empty list of agent slugs this role supports: `"claude"`, `"codex"`, or `"amp"`. When omitted, jackin treats the manifest as Claude-only. |
 
 The Dockerfile path must:
 
@@ -74,17 +76,19 @@ The Dockerfile path must:
 - Point to a valid Dockerfile
 - Have a final stage that starts with `FROM projectjackin/construct:trixie`
 
-Every agent listed in `agents` must have a matching `[<agent>]` table, even when that table is empty. A manifest with `agents = ["claude", "codex"]` needs both `[claude]` and `[codex]`.
+Every agent listed in `agents` must have a matching `[<agent>]` table, even when that table is empty. A manifest with `agents = ["claude", "codex", "amp"]` needs `[claude]`, `[codex]`, and `[amp]`.
 
 ```toml title="jackin.role.toml"
 dockerfile = "Dockerfile"
-agents = ["claude", "codex"]
+agents = ["claude", "codex", "amp"]
 
 [claude]
 plugins = []
 
 [codex]
 model = "gpt-5"
+
+[amp]
 ```
 
 ## `[claude]`
@@ -131,6 +135,17 @@ agents = ["codex"]
 
 [codex]
 model = "gpt-5"
+```
+
+## `[amp]`
+
+The `[amp]` table is required when `"amp"` appears in `agents`. It is empty today and reserved for future Amp-specific settings.
+
+```toml title="jackin.role.toml"
+dockerfile = "Dockerfile"
+agents = ["amp"]
+
+[amp]
 ```
 
 ### `[[claude.marketplaces]]`

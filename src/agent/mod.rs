@@ -7,6 +7,7 @@ use std::str::FromStr;
 pub enum Agent {
     Claude,
     Codex,
+    Amp,
 }
 
 impl Agent {
@@ -14,6 +15,7 @@ impl Agent {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
+            Self::Amp => "amp",
         }
     }
 
@@ -21,6 +23,7 @@ impl Agent {
         match self {
             Self::Claude => CLAUDE_INSTALL_BLOCK,
             Self::Codex => CODEX_INSTALL_BLOCK,
+            Self::Amp => AMP_INSTALL_BLOCK,
         }
     }
 
@@ -37,8 +40,9 @@ impl Agent {
             (Self::Claude, M::ApiKey) => Some("ANTHROPIC_API_KEY"),
             (Self::Claude, M::OAuthToken) => Some("CLAUDE_CODE_OAUTH_TOKEN"),
             (Self::Codex, M::ApiKey) => Some("OPENAI_API_KEY"),
+            (Self::Amp, M::ApiKey) => Some("AMP_API_KEY"),
             (Self::Claude, M::Sync | M::Ignore)
-            | (Self::Codex, M::Sync | M::Ignore | M::OAuthToken) => None,
+            | (Self::Codex | Self::Amp, M::Sync | M::Ignore | M::OAuthToken) => None,
         }
     }
 
@@ -50,7 +54,7 @@ impl Agent {
         use crate::config::AuthForwardMode as M;
         match self {
             Self::Claude => &[M::Sync, M::ApiKey, M::OAuthToken, M::Ignore],
-            Self::Codex => &[M::Sync, M::ApiKey, M::Ignore],
+            Self::Codex | Self::Amp => &[M::Sync, M::ApiKey, M::Ignore],
         }
     }
 }
@@ -60,6 +64,13 @@ USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN curl -fsSL https://claude.ai/install.sh | bash
 RUN claude --version
+";
+
+const AMP_INSTALL_BLOCK: &str = "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN curl -fsSL https://ampcode.com/install.sh | bash
+RUN amp --version
 ";
 
 const CODEX_INSTALL_BLOCK: &str = "\
@@ -99,7 +110,7 @@ impl fmt::Display for Agent {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("unknown agent: {got:?}; supported: claude, codex")]
+#[error("unknown agent: {got:?}; supported: claude, codex, amp")]
 pub struct ParseAgentError {
     got: String,
 }
@@ -110,6 +121,7 @@ impl FromStr for Agent {
         match s {
             "claude" => Ok(Self::Claude),
             "codex" => Ok(Self::Codex),
+            "amp" => Ok(Self::Amp),
             other => Err(ParseAgentError {
                 got: other.to_string(),
             }),
@@ -123,7 +135,7 @@ mod tests {
 
     #[test]
     fn slug_round_trip() {
-        for h in [Agent::Claude, Agent::Codex] {
+        for h in [Agent::Claude, Agent::Codex, Agent::Amp] {
             assert_eq!(Agent::from_str(h.slug()).unwrap(), h);
         }
     }
@@ -132,12 +144,13 @@ mod tests {
     fn display_matches_slug() {
         assert_eq!(format!("{}", Agent::Claude), "claude");
         assert_eq!(format!("{}", Agent::Codex), "codex");
+        assert_eq!(format!("{}", Agent::Amp), "amp");
     }
 
     #[test]
     fn rejects_unknown_agent() {
-        let err = Agent::from_str("amp").unwrap_err();
-        assert!(err.to_string().contains("amp"));
+        let err = Agent::from_str("foo").unwrap_err();
+        assert!(err.to_string().contains("foo"));
         assert!(err.to_string().contains("claude"));
     }
 
@@ -176,6 +189,14 @@ mod tests {
         assert!(block.contains("claude.ai/install.sh"));
         assert!(block.contains("claude --version"));
     }
+
+    #[test]
+    fn amp_install_block_installs_cli_via_official_script() {
+        let block = Agent::Amp.install_block();
+        assert!(block.starts_with("USER agent\n"));
+        assert!(block.contains("ampcode.com/install.sh"));
+        assert!(block.contains("amp --version"));
+    }
 }
 
 #[cfg(test)]
@@ -213,6 +234,19 @@ mod auth_table_tests {
             None
         );
         assert_eq!(Agent::Codex.required_env_var(AuthForwardMode::Ignore), None);
+
+        // Amp
+        assert_eq!(Agent::Amp.required_env_var(AuthForwardMode::Sync), None);
+        assert_eq!(
+            Agent::Amp.required_env_var(AuthForwardMode::ApiKey),
+            Some("AMP_API_KEY")
+        );
+        // OAuthToken for Amp is parser-rejected; method-level safety returns None.
+        assert_eq!(
+            Agent::Amp.required_env_var(AuthForwardMode::OAuthToken),
+            None
+        );
+        assert_eq!(Agent::Amp.required_env_var(AuthForwardMode::Ignore), None);
     }
 
     #[test]
@@ -232,6 +266,18 @@ mod auth_table_tests {
         assert!(
             !modes.contains(&AuthForwardMode::OAuthToken),
             "codex must not advertise oauth_token"
+        );
+        assert!(modes.contains(&AuthForwardMode::Ignore));
+    }
+
+    #[test]
+    fn supported_modes_amp_excludes_oauth_token() {
+        let modes = Agent::Amp.supported_modes();
+        assert!(modes.contains(&AuthForwardMode::Sync));
+        assert!(modes.contains(&AuthForwardMode::ApiKey));
+        assert!(
+            !modes.contains(&AuthForwardMode::OAuthToken),
+            "amp must not advertise oauth_token"
         );
         assert!(modes.contains(&AuthForwardMode::Ignore));
     }

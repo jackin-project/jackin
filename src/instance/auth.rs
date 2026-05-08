@@ -500,6 +500,89 @@ impl RoleState {
     }
 }
 
+impl RoleState {
+    /// Provision Amp's host-side `settings.json` according to the
+    /// chosen auth-forwarding strategy.
+    ///
+    ///   * **Sync** + host file present → copy `~/.config/amp/settings.json`
+    ///     to the role-state path with `0o600` perms,
+    ///     `forward_auth = true`. Returns `Synced`.
+    ///   * **Sync** + host file absent → leave any existing role-state
+    ///     `settings.json` untouched (it may carry forward an in-container
+    ///     login), `forward_auth = true`. Returns `HostMissing`.
+    ///   * **`ApiKey`** → wipe role-state `settings.json` (the agent
+    ///     authenticates via `AMP_API_KEY`), `forward_auth = false`.
+    ///     Returns `TokenMode`.
+    ///   * **`OAuthToken`** → unreachable in production (parser-rejected
+    ///     for Amp). Defensive arm: treated as `TokenMode` without
+    ///     touching role-state files.
+    ///   * **Ignore** → wipe role-state `settings.json`,
+    ///     `forward_auth = false`. Returns `Skipped`.
+    pub(super) fn provision_amp_auth(
+        settings_json: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
+        // Reject any pre-existing symlink at the role-state settings.json
+        // BEFORE branching on mode (same defensive check as Codex).
+        if settings_json.exists() {
+            reject_symlink(settings_json)?;
+        }
+
+        let host_settings = host_home.join(".config/amp/settings.json");
+        let outcome = match mode {
+            // Parser-rejected for Amp; defensive no-op.
+            AuthForwardMode::OAuthToken => AuthProvisionOutcome::TokenMode,
+            AuthForwardMode::ApiKey => {
+                wipe_amp_state(settings_json)?;
+                AuthProvisionOutcome::TokenMode
+            }
+            AuthForwardMode::Ignore => {
+                wipe_amp_state(settings_json)?;
+                AuthProvisionOutcome::Skipped
+            }
+            AuthForwardMode::Sync => match std::fs::read_to_string(&host_settings) {
+                Ok(content) => {
+                    write_private_file(settings_json, &content)?;
+                    AuthProvisionOutcome::Synced
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    if settings_json.exists() {
+                        repair_permissions(settings_json);
+                    }
+                    AuthProvisionOutcome::HostMissing
+                }
+                Err(e) => {
+                    anyhow::bail!(
+                        "failed to read host {}: {e} (run with --debug to capture the underlying error)",
+                        host_settings.display()
+                    );
+                }
+            },
+        };
+
+        let forward_auth = matches!(
+            outcome,
+            AuthProvisionOutcome::Synced | AuthProvisionOutcome::HostMissing
+        );
+        Ok((outcome, forward_auth))
+    }
+}
+
+/// Wipe the container's Amp settings to a clean empty shape.
+///
+/// Used by every non-Sync mode that owns the file (`Ignore`, `ApiKey`)
+/// — they must guarantee no stale `settings.json` from a prior Sync run
+/// survives so the agent inside the container authenticates via
+/// `AMP_API_KEY` (or fresh login) rather than re-using forwarded
+/// credentials.
+fn wipe_amp_state(settings_json: &Path) -> anyhow::Result<()> {
+    if settings_json.exists() {
+        std::fs::remove_file(settings_json)?;
+    }
+    Ok(())
+}
+
 /// Copy the host's `.claude.json` into the container state, or write `{}`
 /// if the host file doesn't exist.
 fn copy_host_claude_json(host_path: &Path, dest_path: &Path) -> anyhow::Result<()> {
@@ -2397,5 +2480,115 @@ mod github_auth_tests {
             !s.contains("ghp_token_secret"),
             "TokenMode token leaked: {s}"
         );
+    }
+}
+
+#[cfg(test)]
+mod amp_auth_tests {
+    use crate::config::AuthForwardMode;
+    use crate::instance::{AuthProvisionOutcome, RoleState};
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    fn stage_host_settings(temp: &tempfile::TempDir, content: &str) -> std::path::PathBuf {
+        let host_home = temp.path().join("host_home");
+        let amp_dir = host_home.join(".config/amp");
+        std::fs::create_dir_all(&amp_dir).unwrap();
+        std::fs::write(amp_dir.join("settings.json"), content).unwrap();
+        host_home
+    }
+
+    #[test]
+    fn sync_copies_host_settings_json_when_present() {
+        let temp = tempdir().unwrap();
+        let settings_json = temp.path().join("settings.json");
+        let host_home = stage_host_settings(&temp, "{\"amp\":true}");
+
+        let (outcome, forward_auth) =
+            RoleState::provision_amp_auth(&settings_json, AuthForwardMode::Sync, &host_home)
+                .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert!(forward_auth);
+        assert_eq!(
+            std::fs::read_to_string(&settings_json).unwrap(),
+            "{\"amp\":true}"
+        );
+    }
+
+    #[test]
+    fn sync_preserves_existing_settings_when_host_file_missing() {
+        let temp = tempdir().unwrap();
+        let settings_json = temp.path().join("settings.json");
+        std::fs::write(&settings_json, "{\"in_container_login\":true}").unwrap();
+        let host_home = temp.path().join("empty_host_home");
+
+        let (outcome, forward_auth) =
+            RoleState::provision_amp_auth(&settings_json, AuthForwardMode::Sync, &host_home)
+                .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+        assert!(forward_auth);
+        assert_eq!(
+            std::fs::read_to_string(&settings_json).unwrap(),
+            "{\"in_container_login\":true}"
+        );
+    }
+
+    #[test]
+    fn api_key_mode_wipes_role_settings_json() {
+        let temp = tempdir().unwrap();
+        let settings_json = temp.path().join("settings.json");
+        std::fs::write(&settings_json, "{\"stale\":\"creds\"}").unwrap();
+        let host_home = stage_host_settings(&temp, "{\"amp\":true}");
+
+        let (outcome, forward_auth) =
+            RoleState::provision_amp_auth(&settings_json, AuthForwardMode::ApiKey, &host_home)
+                .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
+        assert!(!forward_auth);
+        assert!(!settings_json.exists());
+    }
+
+    #[test]
+    fn ignore_mode_wipes_role_settings_json() {
+        let temp = tempdir().unwrap();
+        let settings_json = temp.path().join("settings.json");
+        std::fs::write(&settings_json, "{\"stale\":\"creds\"}").unwrap();
+
+        let (outcome, forward_auth) = RoleState::provision_amp_auth(
+            &settings_json,
+            AuthForwardMode::Ignore,
+            Path::new("/nonexistent"),
+        )
+        .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Skipped);
+        assert!(!forward_auth);
+        assert!(!settings_json.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_at_settings_json() {
+        let temp = tempdir().unwrap();
+        let settings_json = temp.path().join("settings.json");
+        let decoy = temp.path().join("decoy.txt");
+        std::fs::write(&decoy, "secret").unwrap();
+        std::os::unix::fs::symlink(&decoy, &settings_json).unwrap();
+
+        let err = RoleState::provision_amp_auth(
+            &settings_json,
+            AuthForwardMode::Ignore,
+            Path::new("/nonexistent"),
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string().contains("symlink"),
+            "expected symlink rejection, got: {err}"
+        );
+        assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "secret");
     }
 }

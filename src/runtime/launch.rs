@@ -251,6 +251,21 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
             }
             mounts
         }
+        AgentRuntimeState::Amp {
+            settings_json,
+            forward_auth,
+        } => {
+            let mut mounts = Vec::new();
+            // Same gate as Claude: settings only flow into the container
+            // under sync mode AND only when the file exists on disk.
+            if *forward_auth && settings_json.exists() {
+                mounts.push(format!(
+                    "{}:/jackin/amp/settings.json",
+                    settings_json.display()
+                ));
+            }
+            mounts
+        }
     }
 }
 
@@ -1514,6 +1529,45 @@ fn load_role_with(
                     .then(|| raw_source.as_deref().unwrap_or(v))
             });
             tui::codex_auth_notice(resolved_source, (auth_mode, auth_outcome).into());
+        } else if agent == crate::agent::Agent::Amp {
+            if let Some(env_var) = agent.required_env_var(auth_mode) {
+                let raw = lookup_operator_env_raw(
+                    config,
+                    Some(&role_key),
+                    workspace_name.as_deref(),
+                    env_var,
+                );
+                let source_ref = auth_token_source_reference(env_var, raw.as_deref());
+                tui::auth_mode_notice(&auth_mode.to_string(), Some(&source_ref));
+            } else {
+                tui::auth_mode_notice(&auth_mode.to_string(), None);
+            }
+
+            match auth_outcome {
+                crate::instance::AuthProvisionOutcome::Synced => {
+                    eprintln!(
+                        "[jackin] Synced host Amp authentication into role state \
+                         (auth_forward=sync)."
+                    );
+                }
+                crate::instance::AuthProvisionOutcome::TokenMode => {
+                    if let Some(env_var) = agent.required_env_var(auth_mode) {
+                        eprintln!(
+                            "[jackin] auth_forward={auth_mode} - role will use \
+                             {env_var} from the resolved env."
+                        );
+                    }
+                }
+                crate::instance::AuthProvisionOutcome::HostMissing => {
+                    if matches!(auth_mode, crate::config::AuthForwardMode::Sync) {
+                        eprintln!(
+                            "[jackin] auth_forward=sync but no host Amp settings found; \
+                             preserving existing container auth if present."
+                        );
+                    }
+                }
+                crate::instance::AuthProvisionOutcome::Skipped => {}
+            }
         }
 
         // GitHub auth summary line — agent-neutral. The breadcrumb walks
@@ -1831,7 +1885,7 @@ pub enum LaunchError {
         /// Resolved `auth_forward` mode that requires the credential.
         mode: crate::config::AuthForwardMode,
         /// Well-known credential env var (e.g. `ANTHROPIC_API_KEY`,
-        /// `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`) that must
+        /// `CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, `AMP_API_KEY`) that must
         /// resolve to a non-empty value for `mode`.
         env_var: &'static str,
         /// Workspace name the launch targets (for messaging).
@@ -1933,6 +1987,7 @@ fn render_auth_credential_missing(
     let agent_title = match agent {
         crate::agent::Agent::Claude => "Claude",
         crate::agent::Agent::Codex => "Codex",
+        crate::agent::Agent::Amp => "Amp",
     };
 
     let _ = writeln!(out);
@@ -2100,10 +2155,12 @@ fn build_mode_resolution(
     let agent_at_global = match agent {
         Agent::Claude => cfg.claude.as_ref().map(|c| c.auth_forward),
         Agent::Codex => cfg.codex.as_ref().map(|c| c.auth_forward),
+        Agent::Amp => cfg.amp.as_ref().map(|c| c.auth_forward),
     };
     let agent_at_workspace = cfg.workspaces.get(workspace).and_then(|ws| match agent {
         Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
         Agent::Codex => ws.codex.as_ref().map(|c| c.auth_forward),
+        Agent::Amp => ws.amp.as_ref().map(|c| c.auth_forward),
     });
     let agent_at_ws_role = cfg
         .workspaces
@@ -2112,6 +2169,7 @@ fn build_mode_resolution(
         .and_then(|ro| match agent {
             Agent::Claude => ro.claude.as_ref().map(|c| c.auth_forward),
             Agent::Codex => ro.codex.as_ref().map(|c| c.auth_forward),
+            Agent::Amp => ro.amp.as_ref().map(|c| c.auth_forward),
         });
     vec![
         (format!("workspace × role × {agent}"), agent_at_ws_role),
@@ -2605,6 +2663,97 @@ agents = ["codex"]
             "no auth.json bind when host has no ~/.codex/auth.json: {mounts:?}"
         );
         assert!(mounts[0].contains("/jackin/codex/config.toml"));
+    }
+
+    #[test]
+    fn agent_mounts_for_amp_synced_includes_settings_json() {
+        use crate::agent::Agent;
+        use crate::instance::RoleState;
+
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let manifest_temp = tempdir().unwrap();
+        std::fs::write(
+            manifest_temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+agents = ["amp"]
+
+[amp]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            manifest_temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
+
+        let host_home = temp.path().join("host_home");
+        std::fs::create_dir_all(host_home.join(".config/amp")).unwrap();
+        std::fs::write(
+            host_home.join(".config/amp/settings.json"),
+            "{\"amp\":true}",
+        )
+        .unwrap();
+
+        let (state, _) = RoleState::prepare(
+            &paths,
+            "jackin-the-architect",
+            &manifest,
+            crate::config::AuthForwardMode::Sync,
+            &crate::instance::GithubAuthContext::default(),
+            &host_home,
+            Agent::Amp,
+        )
+        .unwrap();
+
+        let mounts = agent_mounts(&state);
+        assert_eq!(mounts.len(), 1);
+        assert!(mounts[0].contains("/jackin/amp/settings.json"));
+        assert!(!mounts[0].ends_with(":ro"));
+    }
+
+    #[test]
+    fn agent_mounts_for_amp_ignore_has_no_agent_mounts() {
+        use crate::agent::Agent;
+        use crate::instance::RoleState;
+
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let manifest_temp = tempdir().unwrap();
+        std::fs::write(
+            manifest_temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+agents = ["amp"]
+
+[amp]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            manifest_temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
+
+        let (state, _) = RoleState::prepare(
+            &paths,
+            "jackin-the-architect",
+            &manifest,
+            crate::config::AuthForwardMode::Ignore,
+            &crate::instance::GithubAuthContext::default(),
+            temp.path(),
+            Agent::Amp,
+        )
+        .unwrap();
+
+        let mounts = agent_mounts(&state);
+        assert!(
+            mounts.is_empty(),
+            "ignore mode should not mount Amp settings: {mounts:?}"
+        );
     }
 
     #[test]
@@ -5072,6 +5221,30 @@ plugins = []
     }
 
     #[test]
+    fn verify_credential_amp_api_key_missing() {
+        use crate::agent::Agent;
+        use crate::config::AuthForwardMode;
+        let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+        let layers: Vec<(String, EnvLayerState)> = vec![];
+        let r = verify_credential_env_present(
+            Agent::Amp,
+            AuthForwardMode::ApiKey,
+            &merged,
+            &[],
+            &layers,
+            "proj",
+            "smith",
+        );
+        let err = r.unwrap_err();
+        match err {
+            LaunchError::AuthCredentialMissing { env_var, agent, .. } => {
+                assert_eq!(env_var, "AMP_API_KEY");
+                assert_eq!(agent, Agent::Amp);
+            }
+        }
+    }
+
+    #[test]
     fn build_mode_resolution_populates_all_3_layers() {
         use crate::agent::Agent;
         use crate::config::{AgentAuthConfig, AuthForwardMode};
@@ -5352,6 +5525,22 @@ plugins = []
         let s = err.to_string();
         assert!(s.contains("codex"), "got: {s}");
         assert!(s.contains("OPENAI_API_KEY"), "got: {s}");
+    }
+
+    #[test]
+    fn auth_credential_missing_amp_api_key_renders() {
+        let err = LaunchError::AuthCredentialMissing {
+            agent: crate::agent::Agent::Amp,
+            mode: crate::config::AuthForwardMode::ApiKey,
+            env_var: "AMP_API_KEY",
+            workspace: "proj".into(),
+            role: "smith".into(),
+            mode_resolution: vec![],
+            env_layers: vec![],
+        };
+        let s = err.to_string();
+        assert!(s.contains("amp"), "got: {s}");
+        assert!(s.contains("AMP_API_KEY"), "got: {s}");
     }
 
     // ── verify_github_token_present (Token-mode pre-flight) ──────

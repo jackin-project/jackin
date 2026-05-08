@@ -57,6 +57,11 @@ pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec
                     anyhow::bail!("[codex] table required when codex is in `agents`");
                 }
             }
+            Agent::Amp => {
+                if manifest.amp.is_none() {
+                    anyhow::bail!("[amp] table required when amp is in `agents`");
+                }
+            }
         }
     }
 
@@ -76,6 +81,12 @@ pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec
             warnings.push(ManifestWarning::new(
                 "[claude] table is present but `agents` does not include claude; \
                  the table is ignored — add claude to `agents` to enable it.",
+            ));
+        }
+        if manifest.amp.is_some() && !supported.contains(&Agent::Amp) {
+            warnings.push(ManifestWarning::new(
+                "[amp] table is present but `agents` does not include amp; \
+                 the table is ignored — add amp to `agents` to enable it.",
             ));
         }
     }
@@ -277,6 +288,24 @@ plugins = []
     }
 
     #[test]
+    fn rejects_amp_supported_without_amp_table() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+agents = ["claude", "amp"]
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let err = RoleManifest::load(temp.path()).unwrap_err();
+        assert!(err.to_string().contains("[amp]"));
+    }
+
+    #[test]
     fn legacy_manifest_with_claude_passes() {
         let temp = tempdir().unwrap();
         std::fs::write(
@@ -317,6 +346,28 @@ model = "gpt-5"
         let warnings = RoleManifest::load(temp.path()).unwrap().validate().unwrap();
         assert_eq!(warnings.len(), 1, "{warnings:?}");
         assert!(warnings[0].message.contains("[codex]"));
+        assert!(warnings[0].message.contains("ignored"));
+    }
+
+    #[test]
+    fn warns_when_amp_table_present_without_amp_in_supported() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+agents = ["claude"]
+
+[claude]
+plugins = []
+
+[amp]
+"#,
+        )
+        .unwrap();
+
+        let warnings = RoleManifest::load(temp.path()).unwrap().validate().unwrap();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].message.contains("[amp]"));
         assert!(warnings[0].message.contains("ignored"));
     }
 

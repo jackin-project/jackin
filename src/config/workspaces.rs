@@ -272,6 +272,7 @@ mod tests {
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
             claude: None,
             codex: None,
+            amp: None,
             github: None,
             git_pull_on_entry: false,
         };

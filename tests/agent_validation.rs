@@ -70,3 +70,25 @@ agents = ["codex"]
     let manifest = RoleManifest::load(temp.path()).unwrap();
     validate_agent_consistency(&manifest).unwrap();
 }
+
+#[test]
+fn amp_only_manifest_with_amp_table_passes() {
+    let temp = tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        r#"dockerfile = "Dockerfile"
+agents = ["amp"]
+
+[amp]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:trixie\n",
+    )
+    .unwrap();
+
+    let manifest = RoleManifest::load(temp.path()).unwrap();
+    validate_agent_consistency(&manifest).unwrap();
+}

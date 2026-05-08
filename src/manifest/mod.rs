@@ -28,6 +28,8 @@ pub struct RoleManifest {
     #[serde(default)]
     pub codex: Option<CodexConfig>,
     #[serde(default)]
+    pub amp: Option<AmpConfig>,
+    #[serde(default)]
     pub hooks: Option<HooksConfig>,
     #[serde(default)]
     pub env: BTreeMap<String, EnvVarDecl>,
@@ -41,6 +43,16 @@ pub struct CodexConfig {
     #[serde(default)]
     pub model: Option<String>,
 }
+
+/// Per-role Amp configuration.
+///
+/// Empty for now; reserved for future agent-specific knobs (e.g.
+/// settings overrides). Declared so manifests that list
+/// `agents = [..., "amp"]` can carry an `[amp]` table that satisfies
+/// the agent/table consistency check.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AmpConfig {}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -147,12 +159,14 @@ mod tests {
         std::fs::write(
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
-agents = ["claude", "codex"]
+agents = ["claude", "codex", "amp"]
 
 [claude]
 plugins = []
 
 [codex]
+
+[amp]
 "#,
         )
         .unwrap();
@@ -160,9 +174,14 @@ plugins = []
         let m = RoleManifest::load(temp.path()).unwrap();
         assert_eq!(
             m.supported_agents(),
-            vec![crate::agent::Agent::Claude, crate::agent::Agent::Codex]
+            vec![
+                crate::agent::Agent::Claude,
+                crate::agent::Agent::Codex,
+                crate::agent::Agent::Amp
+            ]
         );
         assert!(m.codex.is_some());
+        assert!(m.amp.is_some());
     }
 
     #[test]
@@ -207,7 +226,7 @@ model = "gpt-5"
         std::fs::write(
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
-agents = ["claude", "amp"]
+agents = ["claude", "foo"]
 
 [claude]
 plugins = []
@@ -216,7 +235,7 @@ plugins = []
         .unwrap();
 
         let err = RoleManifest::load(temp.path()).unwrap_err();
-        assert!(err.to_string().contains("amp") || err.to_string().contains("unknown"));
+        assert!(err.to_string().contains("foo") || err.to_string().contains("unknown"));
     }
 
     #[test]

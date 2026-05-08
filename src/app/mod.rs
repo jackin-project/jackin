@@ -504,6 +504,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     },
                     claude: None,
                     codex: None,
+                    amp: None,
                     github: None,
                     git_pull_on_entry: git_pull,
                 };
@@ -1083,16 +1084,17 @@ fn remove_data_dir_if_exists(path: &Path) -> Result<()> {
 
 /// Render the `config auth show` output as a string. Empty workspace + role
 /// names fall through to layer 1 (global), so this prints the global default
-/// for each agent. Printing both Claude and Codex avoids privileging either
-/// agent in the no-context output — until/unless an `--agent` flag is added,
-/// both-agents output is the honest bridge.
+/// for each agent. Printing every built-in agent avoids privileging any one
+/// runtime in the no-context output until/unless an `--agent` flag is added.
 fn render_auth_show(config: &AppConfig) -> String {
     use std::fmt::Write as _;
     let claude_mode = crate::config::resolve_mode(config, crate::agent::Agent::Claude, "", "");
     let codex_mode = crate::config::resolve_mode(config, crate::agent::Agent::Codex, "", "");
+    let amp_mode = crate::config::resolve_mode(config, crate::agent::Agent::Amp, "", "");
     let mut out = String::new();
     let _ = writeln!(out, "claude: {claude_mode}");
     let _ = writeln!(out, "codex:  {codex_mode}");
+    let _ = writeln!(out, "amp:    {amp_mode}");
     out
 }
 
@@ -1194,15 +1196,16 @@ mod auth_set_tests {
     }
 
     #[test]
-    fn auth_show_prints_both_agents() {
+    fn auth_show_prints_builtin_agents() {
         // No global override means each agent falls through to its
         // default-mode (Sync). The point of this test is the output shape:
-        // both agents are surfaced, so a Codex-primary operator running
-        // `jackin config auth show` is not silently shown only Claude.
+        // all built-in agents are surfaced, so a non-Claude-primary operator
+        // running `jackin config auth show` is not silently shown only Claude.
         let config = AppConfig::default();
         let out = render_auth_show(&config);
         assert!(out.contains("claude:"), "missing claude line: {out}");
         assert!(out.contains("codex:"), "missing codex line: {out}");
+        assert!(out.contains("amp:"), "missing amp line: {out}");
     }
 
     #[test]
@@ -1232,6 +1235,7 @@ mod auth_set_tests {
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
             claude: None,
             codex: None,
+            amp: None,
             github: None,
             git_pull_on_entry: false,
         };
