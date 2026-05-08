@@ -146,6 +146,28 @@ fn container_host_git_path(mount_dst: &str) -> String {
     format!("/jackin/host/{rel}/.git")
 }
 
+/// Drop an embedded `userinfo@` from an HTTP(S) URL so a host-side
+/// PAT in the operator's `origin` does not get copied into the
+/// per-container clone's `.git/config`. SCP / `ssh://` forms pass
+/// through unchanged — leading `git@` is an SSH identity, not a
+/// credential.
+fn strip_userinfo(url: String) -> String {
+    for scheme in ["https://", "http://"] {
+        if let Some(rest) = url.strip_prefix(scheme) {
+            let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
+            if let Some((_userinfo, host)) = authority.rsplit_once('@') {
+                return if path.is_empty() {
+                    format!("{scheme}{host}")
+                } else {
+                    format!("{scheme}{host}/{path}")
+                };
+            }
+            return url;
+        }
+    }
+    url
+}
+
 /// Write the two jackin-owned override files alongside the materialized
 /// worktree. Idempotent: rewrites both files on every call so reused
 /// worktrees pick up any topology changes (rare, but cheap).
@@ -946,6 +968,90 @@ fn materialize_clone(
         &crate::docker::RunOptions::default(),
     )?;
 
+    // `git clone --local <mount.src>` points the clone's `origin` at
+    // `mount.src` — on jackin's mount layout that path is identical
+    // inside and outside the container, so pushes loop back to a
+    // host-local working tree instead of the operator's upstream.
+    // Copy the host's own `origin` URL across (worktree mode inherits
+    // it via shared `.git/config`; clone mode has to do it by hand).
+    // GitHub SCP / `ssh://` forms run through `normalize_github_url`
+    // so the container's `gh` credential helper can authenticate
+    // without an SSH key; embedded `userinfo@` credentials are
+    // stripped so a host-side PAT does not leak into the per-container
+    // `.git/config`.
+    let host_origin = match runner.capture(
+        "git",
+        &["-C", &mount.src, "remote", "get-url", "origin"],
+        None,
+    ) {
+        Ok(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(strip_userinfo(crate::runtime::normalize_github_url(
+                    trimmed,
+                )))
+            }
+        }
+        Err(err) => {
+            // `error: No such remote 'origin'` (fresh init, never
+            // pushed) is a legitimate fall-through — agent has no
+            // upstream anyway. Anything else (permission denied,
+            // corrupt config) aborts the launch; silently landing on
+            // a loopback origin would misroute the operator's pushes.
+            let chain = format!("{err:#}");
+            if chain.contains("No such remote") || chain.contains("no such remote") {
+                debug_log!(
+                    "isolation",
+                    "mount {dst}: host repo has no `origin` remote; leaving clone origin at bind-mount path",
+                    dst = mount.dst,
+                );
+                None
+            } else {
+                return Err(err).with_context(|| {
+                    format!(
+                        "isolated mount `{}`: failed to read host repo `{}` origin URL — \
+                         refusing to launch with a loopback origin that would silently \
+                         misroute pushes. If the host repo legitimately has no origin, \
+                         add one (`git remote add origin <url>`) or switch this mount to \
+                         `isolation = \"shared\"` / `\"worktree\"`",
+                        mount.dst, mount.src,
+                    )
+                });
+            }
+        }
+    };
+
+    if let Some(url) = host_origin {
+        debug_log!(
+            "isolation",
+            "mount {dst}: rewriting clone origin from {src} to {url}",
+            dst = mount.dst,
+            src = mount.src,
+            url = url,
+        );
+        runner.run(
+            "git",
+            &[
+                "-C",
+                &clone_path.to_string_lossy(),
+                "remote",
+                "set-url",
+                "origin",
+                &url,
+            ],
+            None,
+            &crate::docker::RunOptions::default(),
+        )?;
+    } else {
+        debug_log!(
+            "isolation",
+            "mount {dst}: host repo has no origin remote — leaving clone origin at bind-mount path",
+            dst = mount.dst,
+        );
+    }
+
     upsert_record(
         container_state_dir,
         IsolationRecord {
@@ -1039,6 +1145,44 @@ mod tests {
             container_host_git_path("/workspace/jackin/"),
             "/jackin/host/workspace/jackin/.git",
             "trailing slash on dst is stripped",
+        );
+    }
+
+    #[test]
+    fn strip_userinfo_removes_pat_from_https_origin() {
+        assert_eq!(
+            strip_userinfo("https://x-access-token:ghp_xxx@github.com/owner/repo.git".into()),
+            "https://github.com/owner/repo.git",
+        );
+        assert_eq!(
+            strip_userinfo("https://oauth2:token@gitlab.example.com/team/repo".into()),
+            "https://gitlab.example.com/team/repo",
+        );
+        assert_eq!(
+            strip_userinfo("http://user:pass@example.com/path".into()),
+            "http://example.com/path",
+        );
+    }
+
+    #[test]
+    fn strip_userinfo_passes_clean_urls_through_unchanged() {
+        for url in [
+            "https://github.com/owner/repo",
+            "https://github.com/owner/repo.git",
+            "git@github.com:owner/repo.git",
+            "ssh://git@github.com/owner/repo",
+            "/host/local/path",
+        ] {
+            assert_eq!(strip_userinfo(url.into()), url);
+        }
+    }
+
+    #[test]
+    fn strip_userinfo_handles_authority_only_urls() {
+        // No path component after the authority — still strip userinfo.
+        assert_eq!(
+            strip_userinfo("https://user:pw@github.com".into()),
+            "https://github.com",
         );
     }
 
@@ -1477,6 +1621,7 @@ mod tests {
             &repo.path().to_string_lossy(), // rev-parse --show-toplevel
             "",                             // status --porcelain
             "deadbeef\n",                   // rev-parse HEAD
+            "https://github.com/jackin-project/jackin\n", // remote get-url origin
         ]);
 
         let mat = materialize_workspace(
@@ -1515,10 +1660,241 @@ mod tests {
                 .iter()
                 .any(|c| c.contains("checkout -B jackin/scratch/jackin-x deadbeef"))
         );
+        // Origin rewritten from bind-mount loopback to host's upstream.
+        assert!(
+            runner
+                .run_recorded
+                .iter()
+                .any(|c| c
+                    .contains("remote set-url origin https://github.com/jackin-project/jackin")),
+            "expected `git remote set-url origin <upstream>` in: {:?}",
+            runner.run_recorded
+        );
         let recs = read_records(&container_dir).unwrap();
         assert_eq!(recs.len(), 1);
         assert_eq!(recs[0].isolation, MountIsolation::Clone);
         assert_eq!(recs[0].base_commit, "deadbeef");
+    }
+
+    #[test]
+    fn clone_materialization_normalizes_ssh_origin_to_https() {
+        // SCP-form host origin would point the clone at an SSH endpoint
+        // the container has no key for; rewrite must land on HTTPS so
+        // `gh auth git-credential` can authenticate the push.
+        let repo = make_repo_root();
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-x");
+        std::fs::create_dir_all(&container_dir).unwrap();
+
+        let resolved = resolved_with_one_clone(repo.path(), "/workspace/jackin");
+        let mut runner = fake_with_outputs(&[
+            &repo.path().to_string_lossy(), // rev-parse --show-toplevel
+            "",                             // status --porcelain
+            "deadbeef\n",                   // rev-parse HEAD
+            "git@github.com:jackin-project/jackin.git\n", // remote get-url origin (SCP form)
+        ]);
+
+        materialize_workspace(
+            &resolved,
+            &container_dir,
+            "x",
+            "jackin-x",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .unwrap();
+
+        assert!(
+            runner.run_recorded.iter().any(|c| c
+                .contains("remote set-url origin https://github.com/jackin-project/jackin.git")),
+            "expected SCP-form origin to be normalized to HTTPS in: {:?}",
+            runner.run_recorded
+        );
+    }
+
+    #[test]
+    fn clone_materialization_skips_origin_rewrite_when_host_origin_is_empty() {
+        // Ok-arm with whitespace-only output: `trimmed.is_empty()`
+        // collapses to `None`, no rewrite emitted.
+        let repo = make_repo_root();
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-x");
+        std::fs::create_dir_all(&container_dir).unwrap();
+
+        let resolved = resolved_with_one_clone(repo.path(), "/workspace/jackin");
+        let mut runner = fake_with_outputs(&[
+            &repo.path().to_string_lossy(), // rev-parse --show-toplevel
+            "",                             // status --porcelain
+            "deadbeef\n",                   // rev-parse HEAD
+            "   \r\n\t  ",                  // remote get-url origin (whitespace-only)
+        ]);
+
+        materialize_workspace(
+            &resolved,
+            &container_dir,
+            "x",
+            "jackin-x",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .unwrap();
+
+        assert!(
+            !runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("remote set-url")),
+            "expected no `git remote set-url` when host origin is empty; got: {:?}",
+            runner.run_recorded
+        );
+    }
+
+    #[test]
+    fn clone_materialization_falls_through_when_host_has_no_origin_remote() {
+        // Err with `No such remote 'origin'` (fresh init, never pushed)
+        // — fall through to loopback, do not abort.
+        let repo = make_repo_root();
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-x");
+        std::fs::create_dir_all(&container_dir).unwrap();
+
+        let resolved = resolved_with_one_clone(repo.path(), "/workspace/jackin");
+        let mut runner = fake_with_outputs(&[
+            &repo.path().to_string_lossy(), // rev-parse --show-toplevel
+            "",                             // status --porcelain
+            "deadbeef\n",                   // rev-parse HEAD
+        ]);
+        runner.fail_with.push((
+            "remote get-url origin".into(),
+            "fatal: No such remote 'origin'".into(),
+        ));
+
+        materialize_workspace(
+            &resolved,
+            &container_dir,
+            "x",
+            "jackin-x",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .expect("legitimate `No such remote` should fall through, not abort");
+
+        assert!(
+            !runner
+                .run_recorded
+                .iter()
+                .any(|c| c.contains("remote set-url")),
+            "expected no `git remote set-url` when host has no origin; got: {:?}",
+            runner.run_recorded
+        );
+    }
+
+    #[test]
+    fn clone_materialization_aborts_when_get_url_fails_unexpectedly() {
+        // Permission denied / corrupt config — anything that isn't a
+        // `No such remote` signal — must abort the launch rather than
+        // silently fall through to a loopback origin and misroute the
+        // operator's pushes.
+        let repo = make_repo_root();
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-x");
+        std::fs::create_dir_all(&container_dir).unwrap();
+
+        let resolved = resolved_with_one_clone(repo.path(), "/workspace/jackin");
+        let mut runner = fake_with_outputs(&[
+            &repo.path().to_string_lossy(), // rev-parse --show-toplevel
+            "",                             // status --porcelain
+            "deadbeef\n",                   // rev-parse HEAD
+        ]);
+        runner.fail_with.push((
+            "remote get-url origin".into(),
+            "fatal: unable to read config: Permission denied".into(),
+        ));
+
+        let err = materialize_workspace(
+            &resolved,
+            &container_dir,
+            "x",
+            "jackin-x",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .expect_err("unexpected get-url failure should abort the launch");
+
+        let chain = format!("{err:#}");
+        assert!(
+            chain.contains("failed to read host repo")
+                && chain.contains("loopback origin")
+                && chain.contains("misroute pushes"),
+            "abort message should explain the failure mode and remediation; got: {chain}",
+        );
+    }
+
+    #[test]
+    fn clone_materialization_strips_embedded_credentials_from_host_origin() {
+        // Credentialed host origin (PAT baked into `.git/config`) must
+        // not land verbatim in the per-container clone.
+        let repo = make_repo_root();
+        let data = tempfile::TempDir::new().unwrap();
+        let container_dir = data.path().join("jackin-x");
+        std::fs::create_dir_all(&container_dir).unwrap();
+
+        let resolved = resolved_with_one_clone(repo.path(), "/workspace/jackin");
+        let mut runner = fake_with_outputs(&[
+            &repo.path().to_string_lossy(), // rev-parse --show-toplevel
+            "",                             // status --porcelain
+            "deadbeef\n",                   // rev-parse HEAD
+            "https://x-access-token:ghp_secretsecretsecret@github.com/jackin-project/jackin.git\n",
+        ]);
+
+        materialize_workspace(
+            &resolved,
+            &container_dir,
+            "x",
+            "jackin-x",
+            "jackin",
+            &PreflightContext {
+                workspace_name: "jackin".into(),
+                force: false,
+                interactive: false,
+            },
+            &mut runner,
+        )
+        .unwrap();
+
+        let setting = runner
+            .run_recorded
+            .iter()
+            .find(|c| c.contains("remote set-url"))
+            .expect("set-url should still run with a credential-stripped URL");
+        assert!(
+            setting.contains("https://github.com/jackin-project/jackin.git"),
+            "set-url should target the credential-stripped URL; got: {setting}",
+        );
+        assert!(
+            !setting.contains("ghp_secretsecretsecret") && !setting.contains("x-access-token"),
+            "credentials must not appear in the set-url command; got: {setting}",
+        );
     }
 
     #[test]
