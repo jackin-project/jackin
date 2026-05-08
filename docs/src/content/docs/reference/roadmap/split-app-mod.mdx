@@ -7,7 +7,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/app/mod.rs" /> is now 1109L total, ~1056L production (tests start at line 1057). Nearly all production code is the `run()` dispatch function with a large match on CLI commands. A reviewer auditing "does `jackin workspace create` correctly validate the workdir?" still has to scan a thousand-plus lines of mixed-command dispatch.
+<RepoFile path="src/app/mod.rs" /> is now 1243L total, ~1180L production (tests start at line 1181). Nearly all production code is the `run()` dispatch function with a large match on CLI commands. A reviewer auditing "does `jackin workspace create` correctly validate the workdir?" still has to scan a thousand-plus lines of mixed-command dispatch.
 
 ## Proposed split
 
@@ -34,4 +34,4 @@ Note: <RepoFile path="src/app/context.rs" /> already implements the impl-extensi
 
 ## Auditability gain
 
-To audit "does `jackin workspace create` correctly validate the workdir?", a reviewer reads `workspace_cmd.rs` (~150L) instead of scanning ~1056L of mixed-command dispatch.
+To audit "does `jackin workspace create` correctly validate the workdir?", a reviewer reads `workspace_cmd.rs` instead of scanning ~1180L of mixed-command dispatch.

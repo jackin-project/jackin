@@ -7,7 +7,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/console/manager/input/editor.rs" /> is still one of the biggest concentrated editor-state files: ~1188L production, 2440L total, with tests starting at line 1189. It handles keyboard dispatch for all 4 editor tabs (General, Mounts, Agents, Secrets). A reviewer auditing "did the AI correctly implement the Secrets tab?" still has to scan well over a thousand lines of mixed-tab production code.
+<RepoFile path="src/console/manager/input/editor.rs" /> is still one of the biggest concentrated editor-state files: ~1727L production, 3796L total, with tests starting at line 1728. It handles keyboard dispatch for all 4 editor tabs (General, Mounts, Agents, Secrets). A reviewer auditing "did the AI correctly implement the Secrets tab?" still has to scan well over a thousand lines of mixed-tab production code.
 
 ## Proposed split
 
@@ -33,7 +33,7 @@ Should `handle_editor_modal` stay in `mod.rs` or move to a `modal.rs` sub-file? 
 
 ## Auditability gain
 
-To audit "did the AI correctly implement the Secrets tab?", a reviewer reads only `secrets.rs` (~500L) instead of scanning ~1188L of mixed-tab production code.
+To audit "did the AI correctly implement the Secrets tab?", a reviewer reads only `secrets.rs` instead of scanning ~1727L of mixed-tab production code.
 
 ## Steps
 

@@ -7,7 +7,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/runtime/launch.rs" /> is now 3047L total, with tests starting at line 1320. It no longer mixes just 4 concerns: the file now owns the public load API, trust verification, terminal setup, operator-env / auth handling, container slot claiming, workspace materialization, launch orchestration, and attach/finalizer cleanup. It is still the hardest file to split safely because any error here blocks all runtime changes.
+<RepoFile path="src/runtime/launch.rs" /> is now 5494L total, with tests starting at line 2272. It no longer mixes just 4 concerns: the file now owns the public load API, trust verification, terminal setup, operator-env / auth handling, container slot claiming, workspace materialization, launch orchestration, and attach/finalizer cleanup. It is still the hardest file to split safely because any error here blocks all runtime changes.
 
 ## Proposed split
 
