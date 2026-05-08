@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  publish-preview:
+  source-changed:
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_run' &&
@@ -23,6 +23,60 @@ jobs:
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_repository.full_name == github.repository &&
        github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    outputs:
+      source: ${{ steps.filter.outputs.source }}
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Resolve source SHA
+        id: source
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: jackin-project/jackin
+          ref: ${{ steps.source.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Classify changed paths
+        id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "source=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          sha="${{ steps.source.outputs.sha }}"
+          parent="$(git rev-parse "${sha}^1")"
+          source=false
+          while IFS= read -r path; do
+            case "$path" in
+              Cargo.toml|Cargo.lock|rust-toolchain.toml|src/*|docker/runtime/*)
+                source=true
+                ;;
+            esac
+          done < <(git diff --name-only "${parent}...${sha}")
+
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+
+  publish-preview:
+    needs: source-changed
+    if: >-
+      needs.source-changed.outputs.source == 'true' &&
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.head_branch == 'main'))
     runs-on: ubuntu-latest
     steps:
       - name: Resolve source SHA

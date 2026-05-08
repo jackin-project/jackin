@@ -3,23 +3,61 @@ name: Construct Image
 on:
   push:
     branches: [main]
-    paths:
-      - '.github/workflows/construct.yml'
-      - 'Justfile'
-      - 'docker-bake.hcl'
-      - 'docker/construct/**'
   pull_request:
     branches: [main]
-    paths:
-      - '.github/workflows/construct.yml'
-      - 'Justfile'
-      - 'docker-bake.hcl'
-      - 'docker/construct/**'
   workflow_dispatch:
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      construct: ${{ steps.filter.outputs.construct }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed paths
+        id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "construct=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            head="${{ github.event.pull_request.head.sha }}"
+            range="${base}...${head}"
+          else
+            before="${{ github.event.before }}"
+            head="${{ github.sha }}"
+            if [ "$before" = "0000000000000000000000000000000000000000" ]; then
+              echo "construct=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            range="${before}...${head}"
+          fi
+
+          construct=false
+          while IFS= read -r path; do
+            case "$path" in
+              .github/workflows/construct.yml|Justfile|docker-bake.hcl|docker/construct/*)
+                construct=true
+                ;;
+            esac
+          done < <(git diff --name-only "$range")
+
+          echo "construct=$construct" >> "$GITHUB_OUTPUT"
+
   build-amd64:
     name: amd64
+    needs: changes
+    if: needs.changes.outputs.construct == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -76,6 +114,8 @@ jobs:
 
   build-arm64:
     name: arm64
+    needs: changes
+    if: needs.changes.outputs.construct == 'true'
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -132,8 +172,11 @@ jobs:
 
   publish-manifest:
     name: publish manifest
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
-    needs: [build-amd64, build-arm64]
+    if: |
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) &&
+      needs.changes.outputs.construct == 'true'
+    needs: [changes, build-amd64, build-arm64]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
