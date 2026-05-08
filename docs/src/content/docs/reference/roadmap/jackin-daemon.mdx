@@ -92,7 +92,7 @@ The console / TUI gets a one-line daemon-status indicator in its footer, mirrori
 
 ### Migration of today's reconcilers
 
-- **Keep-awake `caffeinate`.** Today's per-command reconciler (`src/runtime/caffeinate.rs`) becomes a daemon-owned watcher: the daemon subscribes to "any role from a keep-awake workspace running" via Docker events and holds the caffeinate lock. CLI commands no longer reconcile.
+- **Keep-awake `caffeinate`.** Today's per-command reconciler (see <RepoFile path="src/runtime/caffeinate.rs" />) becomes a daemon-owned watcher: the daemon subscribes to "any role from a keep-awake workspace running" via Docker events and holds the caffeinate lock. CLI commands no longer reconcile.
 - **Live auth sync.** First feature designed to require the daemon — see the [live-auth-sync roadmap item](/reference/roadmap/live-auth-sync/) for the per-axis adapter plan. The daemon hosts the shared store flocks and the host-side watchers.
 - **Future reactive watchers.** Container exit notifications, sensitive-mount confirmations across sessions, etc. — each adds an adapter under the daemon's plug-in surface, not its own ad-hoc workaround.
 
