@@ -269,6 +269,7 @@ export default defineConfig({
                     { label: 'jackin daemon', slug: 'reference/roadmap/jackin-daemon' },
                     { label: 'Agent attention prompts', slug: 'reference/roadmap/agent-attention-prompts' },
                     { label: 'Host bridge — secrets and approved host actions', slug: 'reference/roadmap/host-bridge' },
+                    { label: 'Container credential exposure — beyond env injection', slug: 'reference/roadmap/container-credential-exposure' },
                     { label: 'Bollard migration', slug: 'reference/roadmap/bollard-migration' },
                     { label: 'Construct user creation', slug: 'reference/roadmap/construct-user-creation' },
                   ],
