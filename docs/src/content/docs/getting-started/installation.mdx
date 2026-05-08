@@ -64,12 +64,12 @@ On macOS, [OrbStack](https://orbstack.dev/) is a lightweight alternative to Dock
 
 jackin' itself is a single binary. When you first load an agent, jackin' will:
 
-1. **Pull the construct image** (`projectjackin/construct:trixie`) — a Debian-based image with system tools, Docker CLI, git, and more
-2. **Clone the role repo** — cached at `~/.jackin/roles/`
-3. **Build a derived image** — layers the agent's tools and Claude Code on top of the construct
-4. **Create a Docker network** — per-agent isolation
+1. **Pull the `construct` image** — the shared Debian-based base image every agent extends
+2. **Fetch the role repository** — cached locally so subsequent loads of the same role do not re-clone
+3. **Build a derived image** — layers the role's tools and the agent runtime on top of the `construct`
+4. **Create a per-agent `Docker` network** — for isolation between agents
 
-Subsequent loads re-run `docker build` but reuse Docker's layer cache where nothing upstream changed, so repeated loads of the same agent are typically fast. The role repo cache at `~/.jackin/roles/` is also reused. Passing `--rebuild` additionally invalidates the Claude installation layer so a newer Claude version is picked up.
+Subsequent loads of the same role are typically fast: `Docker`'s layer cache is reused, the role-repo cache is reused, and only changed layers rebuild. Pass `--rebuild` when you want jackin' to refresh the agent-runtime install layer (for example, to pick up a newer agent release).
 
 ## Next steps
 

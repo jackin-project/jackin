@@ -4,60 +4,67 @@ description: Operator-controlled env layers, 1Password integration, and host-env
 ---
 import { Aside } from '@astrojs/starlight/components'
 
-jackin' lets operators declare environment variables in four config layers that are merged at launch and injected into the agent container via `docker run -e`. Values can be literal strings, references to host env vars, or references to 1Password items resolved through the `op` CLI.
+jackin' lets you set environment variables for agent containers at four scopes — global, per role, per workspace, and per (workspace × role). Values can be literal strings, references to host env vars, or references to 1Password items resolved through the `op` CLI.
+
+<Aside type="tip">
+Operator env vars are managed through `jackin config env`,
+`jackin workspace env`, or the **Environments** tab in the
+operator console's workspace editor (workspace and per-(workspace ×
+role) scopes). You should not need to hand-edit any configuration
+file — the global scope is CLI-only today; the workspace scopes
+are reachable from both the CLI and the console.
+</Aside>
 
 ## Why operator env
 
-Role manifests (`jackin.role.toml`) declare the env *shape* — what keys a role expects, what's interactive, what has a default. Operator env layers declare the *values* for a specific operator on a specific workspace with a specific role. Keeping shape and values in different places means:
+Role manifests declare the env *shape* — what keys a role expects, what's interactive, what has a default. Operator env scopes declare the *values* for a specific operator on a specific workspace with a specific role. Keeping shape and values in different places means:
 
 - Third-party roles never see your secrets in their git history.
 - The same role can run with different credentials in different workspaces (personal laptop vs company monorepo).
-- You can override a manifest default from `config.toml` without forking the role.
+- You can override a manifest default without forking the role.
 
-## Layers
+## Scopes
 
-Four layers are merged with later-wins semantics:
+Four scopes are merged with later-wins semantics — most-specific values take priority:
 
-1. **Global** — `[env]` at the top of `~/.config/jackin/config.toml`.
-2. **Role** — `[roles.<selector>.env]`.
-3. **Workspace** — `[workspaces.<name>.env]`.
-4. **Workspace × Role** — `[workspaces.<name>.roles.<selector>.env]`.
+1. **Global** — applies to every agent launch.
+2. **Role** — applies whenever this role is loaded.
+3. **Workspace** — applies whenever this workspace is loaded.
+4. **Workspace × Role** — applies only for this specific (workspace, role) cell.
 
-Keys present in multiple layers take the value from the highest-priority layer (layer 4 > layer 3 > layer 2 > layer 1). Keys unique to any layer are preserved.
+Keys present in multiple scopes take the value from the highest-priority scope (4 > 3 > 2 > 1). Keys unique to any scope are preserved.
+
+## Setting values from the CLI
+
+Use `jackin config env` for global and per-role values, and `jackin workspace env` for per-workspace and per (workspace × role) values:
+
+```bash
+# Global — applies to every agent launch
+jackin config env set OPERATOR_ORG "acme-corp"
+
+# Role scope — only when loading agent-smith
+jackin config env set API_TOKEN "op://Personal/acme-api/token" --role agent-smith
+
+# Workspace scope — only when launching in big-monorepo
+jackin workspace env set big-monorepo ARTIFACT_REGISTRY '${COMPANY_REGISTRY_URL}'
+
+# Workspace × Role — most specific, wins on conflict
+jackin workspace env set big-monorepo API_TOKEN "op://Work/shared-smith/token" --role agent-smith
+```
+
+Values are stored verbatim — whatever you pass is what jackin' resolves at launch time. List or remove values with `jackin config env list` / `jackin config env unset` (and the matching `jackin workspace env` subcommands).
 
 ## Value syntax
 
-Each value in an env map is one of:
+Each value is one of:
 
 | Syntax | Resolution |
 |---|---|
 | `op://VAULT/ITEM/FIELD` | Resolved via the [1Password CLI](https://developer.1password.com/docs/cli/) (`op read "<ref>"`). Requires `op` on `PATH` and an authenticated session. |
-| `$NAME` or `${NAME}` | Read from the host's environment at launch time (`std::env::var(NAME)`). Errors if the host var is unset. |
+| `$NAME` or `${NAME}` | Read from the host's environment at launch time. Errors if the host var is unset. |
 | Anything else | Literal string. |
 
-## Example
-
-```toml
-# ~/.config/jackin/config.toml
-
-# Global — applies to every agent launch
-[env]
-OPERATOR_ORG = "acme-corp"
-
-# Role layer — only when loading agent-smith
-[roles.agent-smith.env]
-API_TOKEN = "op://Personal/acme-api/token"
-
-# Workspace layer — only when launching in "big-monorepo"
-[workspaces.big-monorepo.env]
-ARTIFACT_REGISTRY = "${COMPANY_REGISTRY_URL}"
-
-# Workspace × Role — most specific, wins on conflict
-[workspaces.big-monorepo.roles.agent-smith.env]
-API_TOKEN = "op://Work/shared-smith/token"
-```
-
-When `jackin load agent-smith` is invoked in `big-monorepo`:
+When you load an agent with the example above in `big-monorepo`:
 
 - `OPERATOR_ORG = "acme-corp"` (literal; from global)
 - `API_TOKEN = <resolved via op read "op://Work/shared-smith/token">` (workspace × role wins over role layer)
@@ -65,47 +72,42 @@ When `jackin load agent-smith` is invoked in `big-monorepo`:
 
 ## Reserved names
 
-Five runtime-owned names are reserved and rejected at config load. Declaring them at any layer is a hard error:
+A small set of names is owned by the jackin' runtime and cannot be set from any scope:
 
 - `JACKIN`
 - `JACKIN_DIND_HOSTNAME`
+- `JACKIN_AGENT`
+- `JACKIN_ROLE`
 - `DOCKER_HOST`
 - `DOCKER_TLS_VERIFY`
 - `DOCKER_CERT_PATH`
 
-<Aside type="note">
-Reserved-name enforcement runs at config LOAD, not at launch. If your `config.toml` declares a reserved name, any `jackin` subcommand (including `config show`) will fail with a message pointing at the offending layer.
-</Aside>
+Trying to set one of these is rejected before the agent launches.
 
 ## 1Password CLI setup
 
 1. Install the [1Password CLI](https://developer.1password.com/docs/cli/get-started/).
 2. Sign in: `eval $(op signin)` (or unlock the desktop-app integration).
-3. Declare `op://...` references in your config.
+3. Set values with `op://...` references — for example:
 
-Each `jackin load` that touches `op://...` values shells out to `op read <ref>` per key. `op` failures (missing item, expired session, binary not on PATH) surface as aggregated resolution errors — all failing keys are reported in a single message. `op` subprocesses have a 30-second timeout per call, and stderr is truncated at 4 KiB in error messages.
+   ```bash
+   jackin config env set ANTHROPIC_API_KEY "op://Personal/Anthropic/key"
+   ```
+
+Each `jackin load` that references `op://...` values shells out to `op read <ref>` per key. `op` failures (missing item, expired session, binary not on PATH) are reported in a single message that names every failing key. Each `op` invocation has a 30-second timeout.
 
 ## Launch diagnostic
 
-jackin' prints a compact diagnostic line on launch when operator env is non-empty:
+jackin' prints a compact diagnostic line on launch when operator env is non-empty, so you can confirm at a glance which keys flowed into the container:
 
 ```
 [jackin] operator env: 3 resolved (2 op://, 1 host ref, 0 literal)
 ```
 
-In `--debug` mode the diagnostic expands to per-key reference strings and layer attribution:
-
-```
-[jackin] operator env:
-  API_TOKEN      op://Work/shared-smith/token  (workspace "big-monorepo" → role "agent-smith" [env])
-  OPERATOR_ORG   literal                        (global [env])
-  REGISTRY       ${COMPANY_REGISTRY_URL}        (workspace "big-monorepo" [env])
-```
-
-Resolved values are never printed — only `op://` references (which are not secret themselves), host-var references, or the label `"literal"`.
+In `--debug` mode, the diagnostic expands to per-key reference strings and scope attribution. Resolved secret values are never printed.
 
 ## Interaction with manifest env
 
-Manifest-declared env (`jackin.role.toml`'s `[env]` table) is resolved first (with interactive prompts as needed). Operator env is resolved second and overlaid on top: **operator wins on key conflict**. This lets operators pin a value that the manifest would otherwise prompt for, or swap a manifest default for a workspace-specific secret.
+A role's manifest can declare env vars the role expects — including interactive prompts. Manifest-declared env is resolved first (running any prompts the role asks for); operator env is resolved second and overlaid on top: **operator wins on key conflict.** This lets you pin a value that the manifest would otherwise prompt for, or swap a manifest default for a workspace-specific secret.
 
-See [Authentication Forwarding](/guides/authentication) for the companion mechanism that forwards Claude Code credentials from host to container. Env layers and auth forwarding are orthogonal — use both.
+See [Authentication Forwarding](/guides/authentication/) for the companion mechanism that forwards Claude Code credentials from host to container. Env scopes and auth forwarding are orthogonal — use both.

@@ -4,6 +4,16 @@ description: "The config.toml schema and storage locations"
 ---
 import { Aside } from '@astrojs/starlight/components'
 
+<Aside type="note">
+This page is an **internals reference** for contributors and operators
+who want to read, audit, or hand-edit jackin's config file directly —
+typically while debugging or shipping a fix. Day-to-day operator work
+goes through `jackin workspace …`, `jackin config …`, and the
+operator console, none of which require touching this file. Start
+from the [Operator Guide](/guides/workspaces/) instead if that is
+what you're after.
+</Aside>
+
 ## Storage locations
 
 | Path | Purpose |
@@ -95,12 +105,10 @@ Values can be:
 - Anything else — literal
 
 <Aside type="caution" title="Reserved names cannot be overridden">
-A small set of names — `JACKIN`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH` — are owned by the jackin runtime and set internally on every launch. Declaring them at any of the four layers above is rejected at config load. There is no way to override these values. See [Reserved names](/guides/environment-variables/#reserved-names) for the full list.
+A small set of names is owned by the jackin' runtime and set internally on every launch. Declaring them at any of the four layers above is rejected at config load. See [Reserved names](/guides/environment-variables/#reserved-names) for the canonical list.
 </Aside>
 
-Reserved runtime names (`JACKIN`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`) are rejected at config load.
-
-See [Environment Variables](/guides/environment-variables) for the full guide.
+See [Environment Variables](/guides/environment-variables/) for the full guide.
 
 ### Workspaces
 

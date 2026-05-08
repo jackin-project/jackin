@@ -1,0 +1,219 @@
+---
+title: Codebase Map
+description: Where the source lives, how the modules fit together, and where to start reading
+---
+import RepoFile from '../../../components/RepoFile.astro'
+import { Aside } from '@astrojs/starlight/components'
+
+This page is a **contributor's map** of the jackin' source tree. It is
+written for people who want to understand how jackin' is built, debug
+its internals, or work on the project itself. If you only want to *use*
+jackin', start at [Concepts](/getting-started/concepts/) and the
+[Operator Guide](/guides/workspaces/) — you do not need this page.
+
+<Aside type="note">
+**This page is the canonical module map for jackin'.** When module
+structure changes, this page is updated in the same PR — see the
+"Code ↔ Docs Cross-Reference" table in <RepoFile path="PROJECT_STRUCTURE.md" />.
+`PROJECT_STRUCTURE.md` itself is a short, agent-facing pointer that
+covers the multi-repo ecosystem and the per-PR docs contract; it
+sends readers here for the actual module-level detail.
+</Aside>
+
+## Repository layout
+
+| Path | What lives there |
+|---|---|
+| `src/` | Rust CLI binary — every command jackin' implements |
+| `docker/construct/` | Source for the shared base Docker image (`projectjackin/construct:trixie`) |
+| <RepoFile path="docker/runtime/entrypoint.sh" /> | The entrypoint script jackin' injects into every derived image |
+| `docs/` | This documentation site (Astro + Starlight) |
+| `.github/workflows/` | CI for jackin', the construct image, and the docs site |
+| `tests/` | End-to-end and integration tests |
+
+## Where to start reading
+
+Different contribution shapes have different natural entry points.
+
+### "I want to add or change a CLI flag"
+
+Start at <RepoFile path="src/cli/mod.rs" /> — the top-level `Cli` and
+`Command` enum. Each subcommand has its own clap module:
+
+| Subcommand | Module |
+|---|---|
+| `load` / `hardline` / `console` | <RepoFile path="src/cli/role.rs" /> |
+| `eject` / `purge` | <RepoFile path="src/cli/cleanup.rs" /> |
+| `workspace` | <RepoFile path="src/cli/workspace.rs" /> |
+| `config` | <RepoFile path="src/cli/config.rs" /> |
+| `exile` (unit variant) | <RepoFile path="src/cli/mod.rs" /> |
+| Bare `jackin` / `console` dispatch | <RepoFile path="src/cli/dispatch.rs" /> |
+
+Command dispatch lives in `src/app/`. Every clap subcommand has a
+match arm in <RepoFile path="src/app/mod.rs" /> (`run`) that calls
+into the relevant domain module (`workspace/`, `runtime/`, `config/`,
+etc.). When you add a flag, also update the matching docs page under
+`docs/src/content/docs/commands/`.
+
+### "I want to change container lifecycle behaviour"
+
+The container lifecycle lives in `src/runtime/`:
+
+- <RepoFile path="src/runtime/launch.rs" /> — the load path: clone/update
+  role repo, validate the contract, generate a derived Dockerfile, build
+  the image on the host Docker engine, start the DinD sidecar and the
+  agent container, attach.
+- <RepoFile path="src/runtime/attach.rs" /> — the attach + reconnect path
+  (`hardline`).
+- <RepoFile path="src/runtime/cleanup.rs" /> — `eject`, `exile`, `purge`,
+  and orphan GC.
+- <RepoFile path="src/runtime/image.rs" /> — `docker build` invocation.
+- <RepoFile path="src/runtime/repo_cache.rs" /> — the role-repo cache lock
+  + fetch logic.
+- <RepoFile path="src/runtime/caffeinate.rs" /> — the macOS keep-awake
+  reconciler.
+
+The end-to-end shape of "what happens when you run `jackin load`" is
+described in [Architecture → Container lifecycle](/reference/architecture/#container-lifecycle).
+
+### "I want to change workspace or mount behaviour"
+
+The workspace model is in `src/workspace/`:
+
+- <RepoFile path="src/workspace/mod.rs" /> — types and re-exports.
+- <RepoFile path="src/workspace/mounts.rs" /> — mount parsing and validation.
+- <RepoFile path="src/workspace/planner.rs" /> — `plan_create`, `plan_edit`,
+  `plan_collapse` (the redundant-mount invariant).
+- <RepoFile path="src/workspace/resolve.rs" /> — runtime resolution from
+  workspace + ad-hoc + global mounts.
+- <RepoFile path="src/workspace/sensitive.rs" /> — sensitive-mount detection
+  for the warn-and-confirm gate.
+
+Per-mount isolation (worktree / clone) lives in a separate module
+because it has its own materialization lifecycle:
+
+- <RepoFile path="src/isolation/materialize.rs" /> — worktree and clone
+  materialization + `MaterializedWorkspace`.
+- <RepoFile path="src/isolation/state.rs" /> — `isolation.json` IO.
+- <RepoFile path="src/isolation/finalize.rs" /> — the post-attach
+  finalizer that decides between *preserve* / *clean* / *return-to-agent*.
+
+### "I want to change a config-file shape"
+
+The TOML config model lives in `src/config/`:
+
+- <RepoFile path="src/config/mod.rs" /> — top-level `AppConfig` struct
+  and submodule re-exports.
+- <RepoFile path="src/config/persist.rs" /> — `AppConfig::load_or_init`
+  (config-load + builtin sync).
+- <RepoFile path="src/config/editor.rs" /> — `ConfigEditor` (the save
+  path used by every CLI mutator).
+- <RepoFile path="src/config/workspaces.rs" /> — workspace CRUD plus
+  the `require_workspace` helper.
+- <RepoFile path="src/config/mounts.rs" />,
+  <RepoFile path="src/config/roles.rs" /> — CRUD and resolution per
+  area (global mounts; builtin sync, trust, and auth-forward).
+
+Whenever a config field changes, also update
+[Configuration File](/reference/configuration/) so the schema reference
+stays accurate.
+
+### "I want to change role-manifest behaviour"
+
+The `jackin.role.toml` schema and validator live in `src/manifest/`:
+
+- <RepoFile path="src/manifest/mod.rs" /> — schema structs, `load`,
+  `display_name`.
+- <RepoFile path="src/manifest/validate.rs" /> — `RoleManifest::validate`
+  and `validate_agent_consistency`.
+
+Whenever the manifest schema changes, also update
+[Role Manifest](/developing/role-manifest/).
+
+### "I want to change the operator console (TUI)"
+
+The interactive console lives in `src/console/`:
+
+- <RepoFile path="src/console/mod.rs" /> — `run_console` entrypoint,
+  event loop, and the quit-confirm overlay; per-screen drawing lives
+  under `src/console/manager/render/`.
+- <RepoFile path="src/console/state.rs" /> — `ConsoleState` and
+  `WorkspaceChoice`.
+- <RepoFile path="src/console/preview.rs" /> — workspace preview and
+  detail lines.
+- `src/console/manager/` — the workspace-manager TUI subsystem.
+- `src/console/widgets/` — reusable modal and widget components.
+
+General terminal-UI helpers (palette, intro/outro animation, prompt
+helpers) are split out into `src/tui/`.
+
+## Cross-cutting helpers
+
+A handful of files at the crate root own concerns that don't cluster
+into a single module:
+
+| File | Owns |
+|---|---|
+| <RepoFile path="src/env_model.rs" /> | Reserved-runtime-env list, `is_reserved`, interpolation reference extraction, topological env order with cycle detection. |
+| <RepoFile path="src/env_resolver.rs" /> | Runtime env resolution — interpolation, interactive prompts. |
+| <RepoFile path="src/selector.rs" /> | Role-selector parsing (`agent-smith`, `chainargos/backend-engineer`, …). |
+| <RepoFile path="src/repo.rs" /> | Role-repo validation — required files, path-traversal checks. |
+| <RepoFile path="src/repo_contract.rs" /> | Enforces that role `Dockerfile`s extend the construct base. |
+| <RepoFile path="src/derived_image.rs" /> | Generates the derived Dockerfile from the role's repo + the construct base. |
+| <RepoFile path="src/docker.rs" /> | Docker command builder — `CommandRunner` trait and `ShellRunner`. |
+| <RepoFile path="src/paths.rs" /> | XDG-compliant data and config directory resolution (`JackinPaths`). |
+
+## Code ↔ docs cross-reference
+
+When a code change affects user-visible behaviour, the matching docs
+page must change in the same PR. The full table lives at the bottom of
+<RepoFile path="PROJECT_STRUCTURE.md" />; the most common pairings are:
+
+| Code change in | Update docs in |
+|---|---|
+| `src/cli/**` | [Commands](/commands/load/) |
+| `src/workspace/**` (mount logic) | [Workspaces](/guides/workspaces/), [Mounts](/guides/mounts/) |
+| `src/config/**` | [Configuration File](/reference/configuration/) |
+| `src/runtime/**` | [Architecture](/reference/architecture/) |
+| `src/isolation/**` | Workspaces (per-mount isolation), Architecture (materialization + finalizer), [Configuration File](/reference/configuration/) |
+| `src/manifest/**` | [Role Manifest](/developing/role-manifest/) |
+| <RepoFile path="src/instance/auth.rs" /> | [Authentication](/guides/authentication/), [Security Model](/guides/security-model/) |
+| <RepoFile path="src/derived_image.rs" /> | [Construct Image](/developing/construct-image/) |
+| <RepoFile path="docker/construct/Dockerfile" /> | [Construct Image](/developing/construct-image/) |
+
+## Docs site source
+
+The docs site (this site) is an Astro + Starlight project under `docs/`.
+Bun is the only supported package manager.
+
+| Path | Purpose |
+|---|---|
+| <RepoFile path="docs/astro.config.ts" /> | Site metadata, sidebar layout, edit-link target |
+| `docs/src/content/docs/` | All MDX content — file path maps to URL |
+| `docs/src/components/overrides/` | Starlight component overrides (Head, SiteTitle, …) |
+| <RepoFile path="docs/src/pages/index.astro" /> | Landing route — plain Astro page, NOT a Starlight content entry |
+
+To run the site locally:
+
+```sh
+cd docs
+bun install --frozen-lockfile
+bun run dev   # http://localhost:4321/
+```
+
+## Contributor entry points
+
+If you have not contributed before, these files are worth reading
+first:
+
+- <RepoFile path="AGENTS.md" /> — house rules (apply equally to humans and agents).
+- <RepoFile path="CONTRIBUTING.md" /> — contribution flow, DCO sign-off.
+- <RepoFile path="BRANCHING.md" /> — branch naming and merge policy.
+- <RepoFile path="COMMITS.md" /> — Conventional Commits format.
+- <RepoFile path="TESTING.md" /> — how to run the test suite.
+- <RepoFile path="PROJECT_STRUCTURE.md" /> — agent-facing pointer covering the multi-repo ecosystem and the per-PR docs contract; the detailed module map this page surfaces is the source of truth.
+
+The [Roadmap](/reference/roadmap/) is the catalogue of in-flight and
+planned design work. When picking up a task, the matching roadmap
+entry usually has the problem statement, the chosen approach, and the
+related source files.

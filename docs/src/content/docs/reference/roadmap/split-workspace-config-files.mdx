@@ -1,0 +1,205 @@
+---
+title: "Split config.toml into per-workspace files"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Configuration ergonomics)
+
+## Problem
+
+Today every workspace, role, global mount, and `auth_forward` setting
+lives in a single monolithic file at `~/.config/jackin/config.toml`.
+The format itself stays useful (TOML is fine, and changing it is not
+the goal here), but a single file makes everyday operator tasks
+unnecessarily painful:
+
+- **Reusing on a fresh machine.** To carry a setup over to a new
+  laptop, you copy the whole file — including unrelated workspaces,
+  unrelated roles, and unrelated secrets references that the new
+  machine may not need.
+- **Sharing one workspace with a colleague.** "Here is how I have my
+  monorepo set up" turns into "let me read through `config.toml`,
+  delete every unrelated workspace, scrub every unrelated role
+  trust, and paste back the trimmed result." That is friction every
+  team member hits, and the trimming is error-prone.
+- **Versioning a subset.** Tools like
+  [chezmoi](https://www.chezmoi.io/) make it easy to put your dotfiles
+  under version control, but a single `config.toml` forces an
+  all-or-nothing decision: either the whole file is tracked (and a
+  one-off workspace creates a noisy diff) or none of it is. There is
+  no clean way to say "version-control these three workspaces; leave
+  the others alone."
+- **Diff legibility.** Mount-list reordering inside one TOML file
+  produces big diffs even when only one workspace changed.
+
+The shape jackin' writes today (one big file with `[[workspaces.<name>.mounts]]`
+arrays interleaved with role trust entries, global mounts, and
+top-level `[claude] / [codex]` blocks) makes all of these worse —
+related rows for one workspace can be scattered across the file.
+
+## Goal
+
+Split the operator config so that **each workspace is its own file**,
+without changing the TOML format itself. Concretely:
+
+```
+~/.config/jackin/
+├── config.toml                    # global settings only
+└── workspaces/
+    ├── jackin.toml                # workspace "jackin"
+    ├── chainargos.toml            # workspace "chainargos"
+    └── jackin-roles.toml          # workspace "jackin-roles"
+```
+
+Rules:
+
+1. **Workspace name = file name.** `workspaces/jackin.toml` *is* the
+   `jackin` workspace. No `[workspaces.jackin]` header inside; the
+   file describes a single workspace and its name comes from the
+   filename. Headers inside collapse from
+   `[workspaces.jackin.mounts]` → `[[mounts]]`,
+   `[workspaces.jackin.keep_awake]` → `[keep_awake]`, and so on.
+2. **`config.toml` keeps everything that is not a workspace.** Global
+   `[env]`, `[claude] / [codex]` defaults, `[roles.<selector>]` trust
+   and source, `[docker.mounts]`, and any future global setting stay
+   in the top-level file.
+3. **Filename rules match the existing workspace-name rules.**
+   Whatever character set jackin' currently allows in workspace names
+   is also the character set allowed in `workspaces/*.toml`
+   filenames. Anything not allowed as a workspace name is rejected
+   on load with a clear error.
+
+## Why it matters
+
+- **Sharing.** "Drop this `workspaces/monorepo.toml` into your
+  `~/.config/jackin/workspaces/`" is a one-line instruction. No
+  trimming, no scrubbing.
+- **Fresh machine.** Copy `config.toml` plus the subset of
+  `workspaces/*.toml` you actually want.
+- **Selective version control.** chezmoi (or plain
+  `git init` in the workspaces directory) can track exactly the
+  workspaces you want under version control — leave the others
+  out, or `.gitignore` them. Personal scratch workspaces stay
+  private; team workspaces get reviewed in PRs.
+- **Cleaner diffs.** A change to one workspace's mounts only
+  touches one file.
+- **Easier rollback.** Delete a single file to drop a workspace.
+
+This work is fundamentally about **operator ergonomics around the
+config**, not about the data model or the TOML format.
+
+## Migration
+
+The first jackin' release that ships this layout migrates the
+existing `config.toml` automatically:
+
+1. On startup, if the top-level config still contains any
+   `[workspaces.*]` tables, jackin' moves each workspace into
+   `workspaces/<name>.toml` (creating the directory if needed).
+2. The top-level file is rewritten without the `[workspaces.*]`
+   tables but with everything else intact.
+3. Migration is idempotent: a config that is already split is left
+   alone.
+4. A short message is printed to stderr the first time the migration
+   runs so the operator notices the new layout.
+
+Per <RepoFile path="AGENTS.md" /> ("Project status: pre-release
+(agent-only)") this can be a hard cut for code that reads the config
+once the new shape ships — no compatibility shim, no
+`tolerant ignore + warn`. The migration above is a one-shot helper,
+not a permanent fallback parser.
+
+## Sketch
+
+`config.toml` after split:
+
+```toml
+# Global Claude / Codex defaults
+[claude]
+auth_forward = "sync"
+
+# Global mounts (applied to all roles / scopes)
+[docker.mounts]
+
+# Role trust + git source
+[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+
+[roles.the-architect]
+git = "https://github.com/jackin-project/jackin-the-architect.git"
+trusted = true
+
+[roles."chainargos/agent-brown"]
+git = "https://github.com/chainargos/jackin-agent-brown.git"
+trusted = true
+```
+
+`workspaces/jackin.toml`:
+
+```toml
+workdir = "/Users/donbeave/Projects/jackin-project"
+allowed_roles = ["the-architect"]
+last_role = "the-architect"
+git_pull_on_entry = true
+
+[keep_awake]
+enabled = true
+
+[[mounts]]
+src = "/Users/donbeave/Projects/jackin-project/jackin"
+dst = "/Users/donbeave/Projects/jackin-project/jackin"
+readonly = false
+isolation = "clone"
+
+[[mounts]]
+src = "/Users/donbeave/Projects/jackin-project/jackin-agent-smith"
+dst = "/Users/donbeave/Projects/jackin-project/jackin-agent-smith"
+readonly = false
+isolation = "worktree"
+
+# … further mounts for this workspace …
+```
+
+The contents of each workspace file are **only** that workspace's
+fields — no `[workspaces.jackin.*]` header repetition. The workspace
+name is the filename, full stop.
+
+`workspaces/chainargos.toml` and the rest follow the same shape. Per-(workspace × role) overrides
+(`[roles.<role>.env]`, `[<role>.claude]`, `[<role>.codex]`) live
+inside the workspace file as nested tables — for example
+`[roles."chainargos/agent-brown".env]`.
+
+## Open questions
+
+- **Workspace-name characters in filenames.** Today's workspace names
+  may include `/` (namespaced) — for example
+  `jackin-roles`. The split must agree with the OS filesystem on what
+  is legal. A first cut: forbid `/`, `\`, and OS-reserved names in
+  workspace identifiers, and migrate any existing names that violate
+  the new rule.
+- **Atomic multi-file writes.** `jackin workspace edit` may need to
+  touch the workspace file *and* the global file (e.g. when adding a
+  mount that resolves a previously-untrusted role). Either keep the
+  edit single-file or write a small lock-around-multiple-files
+  helper.
+- **TUI workspace-manager UX.** The console's workspace-manager list
+  still shows workspaces by name, regardless of where they live on
+  disk. Confirm there are no surprises with file-watch refresh
+  semantics.
+- **Empty workspace directory.** A fresh install has no workspaces,
+  so `workspaces/` may be empty (or absent). Both must be valid.
+- **Roles, env scopes.** Decide whether per-role config
+  (`[roles.<selector>]`) and global env (`[env]`) ever belong in
+  their own files, or whether the only split is workspaces. The
+  initial proposal is **only workspaces** — keep the surface area
+  small until the workspace split has shipped and we have evidence
+  of demand.
+
+## Related
+
+- <RepoFile path="src/config/persist.rs" /> — `AppConfig::load_or_init` (single-file load today).
+- <RepoFile path="src/config/editor.rs" /> — `ConfigEditor::save` (single-file write today).
+- <RepoFile path="src/config/workspaces.rs" /> — workspace CRUD entry points.
+- [Configuration File](/reference/configuration/) — internals reference; will need a rewrite to describe the split layout once shipped.
+- [Workspaces](/guides/workspaces/) — operator-facing guide; the operator-side promise (CLI/TUI manages everything) does not change.

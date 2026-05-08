@@ -132,14 +132,17 @@ bun install --frozen-lockfile
 - Sidebar and top-nav are configured in `astro.config.ts`.
 - **Roadmap sidebar discipline.** Every MDX file under
   `src/content/docs/reference/roadmap/` must have a matching entry in
-  the sidebar in `astro.config.ts` (under `Reference → Roadmap → Open
-  items`, `Resolved`, or `Codebase health` as appropriate for its
-  `**Status**` field). Whenever you add, rename, delete, or change the
-  status of a roadmap item — or restructure the directory — verify
-  the sidebar still matches the directory contents in the same PR.
-  Operators rely on the sidebar (not the overview prose) to discover
-  open work, so an item reachable only via direct URL or the
-  overview page is effectively hidden. To audit:
+  the sidebar in `astro.config.ts` under one of the open-work
+  categories (`Universal Orchestrator Program`, `Codebase health`,
+  `Agent runtimes & authentication`, `Isolation & security`,
+  `Infrastructure`, `Documentation tooling`,
+  `Configuration ergonomics`) or under `Resolved`, as appropriate for
+  the page's `**Status**` field. Whenever you add, rename, delete, or
+  change the status of a roadmap item — or restructure the directory
+  — verify the sidebar still matches the directory contents in the
+  same PR. Operators rely on the sidebar (not the overview prose) to
+  discover open work, so an item reachable only via direct URL or
+  the overview page is effectively hidden. To audit:
 
   ```sh
   ls docs/src/content/docs/reference/roadmap/*.mdx \
@@ -197,6 +200,111 @@ bun install --frozen-lockfile
 - Every page requires a `title:` field in its frontmatter.
 - Self-hosted fonts via fontsource (`src/styles/fonts.css`) — no third-party font CDN.
 - Keep docs and code behavior aligned; when they differ, code is the source of truth.
+- **Never reference open pull requests in published documentation.** Any
+  link of the form `https://github.com/jackin-project/<repo>/pull/<N>`
+  or prose like "PR #123" / "in flight in #123" must not appear in
+  `src/content/docs/**.mdx`. Open PRs are ephemeral — they may be
+  closed, rebased, force-pushed, retitled, split, or replaced — so
+  pointing operators or roadmap readers at one bakes a transient URL
+  into a long-lived page. When a feature is *under development*,
+  describe its **state** ("under active development", "in flight",
+  "design in progress") without naming the PR. The PR that lands the
+  feature is the right place to update the documentation to say it
+  has landed; until then, the docs describe the steady-state user-
+  visible reality, not the in-progress engineering. Closed/merged
+  PRs and issues may still appear when they are the canonical record
+  of a *resolved* design discussion or a known limitation — that is
+  the existing pattern in `reference/roadmap/*.mdx` and is fine.
+  This rule applies equally to the README, AGENTS files outside
+  `docs/`, and any other published artefact.
+- **The site has three audiences, not two.** Always classify a docs
+  change against this list before writing it:
+  1. **Operator** (sidebar groups: *Getting Started*, *Operator
+     Guide*, *Commands*) — uses jackin' as a product through CLI and
+     TUI. Never asked to know on-disk paths, TOML schemas, or
+     internals.
+  2. **Role author** (sidebar group: *Role Authoring* — pages under
+     `guides/role-repos.mdx` and `developing/*`) — **also user-facing**.
+     Builds their own role repos with their preferred toolchain and
+     plugins. Does not need to know how jackin' is implemented to
+     follow these pages. The only concession is that
+     `developing/construct-image.mdx` has a contributor lower half
+     for `just construct-build` / CI workflow.
+  3. **Contributor** (sidebar group: *Behind jackin' — Internals* —
+     `reference/*`, including `roadmap/*.mdx`) — works on jackin'
+     itself. Architecture, configuration-file schema, codebase map,
+     roadmap design proposals. This is where on-disk layouts,
+     internal mechanisms, and Rust-level details live.
+
+  When you add or rewrite a page, decide which of the three audiences
+  it serves and put it under the matching sidebar group. Never mix
+  audiences inside the same page beyond the explicit
+  `developing/construct-image.mdx` exception. Pages on the
+  user-facing surfaces (Operator and Role Authoring) link out to the
+  Internals surface when a contributor reader would want the deeper
+  detail; they do not inline it.
+
+- **Never leak technical-implementation details into user-facing
+  pages.** "User-facing" here covers **both** the Operator surface
+  (Getting Started, Operator Guide, Commands) **and** the Role
+  Authoring surface (the *Role Authoring* sidebar group). On either
+  surface, do not mention:
+  - on-disk paths the operator never edits — `~/.config/jackin/`,
+    `~/.jackin/`, `~/.jackin/data/<…>/`, `~/.jackin/roles/<…>/`,
+    `~/.jackin/cache/`, the per-container state directory layout,
+    `isolation.json`, the `git/worktree/repo/<dst>/<container>/`
+    materialised path, the role-repo branch cache directory, or any
+    other internal storage location;
+  - TOML schema fragments — `[workspaces.<name>]`,
+    `[workspaces.<name>.env]`, `[workspaces.<name>.roles.<role>.env]`,
+    `[claude]`, `[codex]`, `[roles."org/agent"]`, `[docker.mounts]`,
+    `[[mounts]]`, etc.;
+  - field-level keys readers would only know from reading the
+    config file — `auth_forward = "sync"`, `trusted = true`,
+    `last_role`, `git_pull_on_entry`, `published_image`, `data_dir`,
+    `keep_awake.enabled`, etc. Describe the **operator-visible
+    behaviour** instead;
+  - Rust struct, enum, function, or module names — `RoleManifest`,
+    `MountIsolation`, `ConfigEditor`, `MaterializedWorkspace`,
+    `RUNTIME_OWNED_ENV_VARS`, etc.;
+  - internal-implementation footnotes — "this is technical debt and
+    is on the roadmap to simplify", "the current implementation does
+    X then Y in the derived image", or any other "we plan to refactor
+    this" admission. Those belong to the internals pages or to a
+    roadmap item, not to the operator surface.
+
+  Where each kind of detail belongs:
+
+  - **Contributor-only internals** (jackin's on-disk layout under
+    `~/.config/jackin/` and `~/.jackin/`, the schema of jackin's own
+    `config.toml`, `isolation.json`, the per-container state-directory
+    layout, internal Rust struct/enum/function names, and any
+    "this is technical debt" admission) belong on pages under
+    `reference/` and `reference/roadmap/`. They must **not** appear
+    on the Operator or Role Authoring surfaces.
+  - **Role-author surface schema** is different from jackin's
+    internals and *is* allowed on the Role Authoring pages: the
+    schema of the role's own `jackin.role.toml` (`[claude]`,
+    `[codex]`, `[hooks]`, `[identity]`, `[env.<NAME>]`, etc.) lives
+    in `developing/role-manifest.mdx` because that file is the
+    role author's own surface — they author it. Likewise the role
+    repo's own `Dockerfile` shape lives in `developing/creating-roles.mdx`
+    and `guides/role-repos.mdx`. These are the role's artefacts, not
+    jackin's storage.
+  - **The contributor section of `developing/construct-image.mdx`**
+    (its lower half — `just construct-build`, CI workflow, advanced
+    publish rehearsal) is the documented exception where one page
+    serves two audiences. Its top-of-page Aside calls this out
+    explicitly.
+
+  Whenever a user-facing page needs to refer to internal layout
+  for context, link to the matching internals page
+  (`/reference/configuration/`, `/reference/architecture/`,
+  `/reference/codebase-map/`) instead of inlining the detail. When
+  in doubt, ask: "could a reader follow this
+  page using only the CLI/TUI?" If the answer is no because the page
+  describes a TOML key or an on-disk path, move that detail to
+  internals.
 
 ## Landing Page
 
