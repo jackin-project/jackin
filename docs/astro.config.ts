@@ -62,6 +62,7 @@ export default defineConfig({
             { label: 'Installation', slug: 'getting-started/installation' },
             { label: 'Quick Start', slug: 'getting-started/quickstart' },
             { label: 'Concepts', slug: 'getting-started/concepts' },
+            { label: 'Design Principles', slug: 'getting-started/design-principles' },
           ],
         },
         {
@@ -70,7 +71,14 @@ export default defineConfig({
             { label: 'Workspaces', slug: 'guides/workspaces' },
             { label: 'Mounts', slug: 'guides/mounts' },
             { label: 'Environment Variables', slug: 'guides/environment-variables' },
-            { label: 'Authentication', slug: 'guides/authentication' },
+            {
+              label: 'Authentication',
+              items: [
+                { label: 'Overview', slug: 'guides/authentication' },
+                { label: 'Agent Authentication', slug: 'guides/authentication/agents' },
+                { label: 'GitHub CLI Authentication', slug: 'guides/authentication/github-cli' },
+              ],
+            },
             { label: 'Security Model', slug: 'guides/security-model' },
             { label: 'Comparison', slug: 'guides/comparison' },
           ],

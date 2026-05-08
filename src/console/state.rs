@@ -196,6 +196,7 @@ mod tests {
                 keep_awake: crate::workspace::KeepAwakeConfig::default(),
                 claude: None,
                 codex: None,
+                github: None,
                 git_pull_on_entry: false,
             },
         );
@@ -234,6 +235,7 @@ mod tests {
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
             claude: None,
             codex: None,
+            github: None,
             git_pull_on_entry: false,
         }
     }

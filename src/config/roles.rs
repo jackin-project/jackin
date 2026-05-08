@@ -1,6 +1,8 @@
-use super::{AppConfig, AuthForwardMode, RoleSource};
+use super::{AppConfig, AuthForwardMode, GithubAuthMode, RoleSource};
 use crate::agent::Agent;
+use crate::operator_env::EnvValue;
 use crate::selector::RoleSelector;
+use std::collections::BTreeMap;
 
 /// Resolve the effective auth-forward mode for an agent in a (workspace, role) scope.
 ///
@@ -45,6 +47,69 @@ pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) 
         Agent::Codex => cfg.codex.as_ref().map(|c| c.auth_forward),
     }
     .unwrap_or_default()
+}
+
+/// Resolve the effective GitHub CLI auth-forward mode for a
+/// (workspace, role) scope.
+///
+/// Walks three layers, most-specific wins:
+///
+/// 1. `workspaces[ws].roles[role].github`
+/// 2. `workspaces[ws].github`
+/// 3. `github` (global)
+///
+/// Returns [`GithubAuthMode::Sync`] when no layer is set. Unlike
+/// Claude / Codex, the GitHub axis has no agent dimension because
+/// `.config/gh/` is shared by every agent in the container.
+pub fn resolve_github_mode(cfg: &AppConfig, workspace: &str, role: &str) -> GithubAuthMode {
+    if let Some(m) = cfg
+        .workspaces
+        .get(workspace)
+        .and_then(|ws| ws.roles.get(role))
+        .and_then(|ro| ro.github.as_ref().map(|g| g.auth_forward))
+    {
+        return m;
+    }
+
+    if let Some(m) = cfg
+        .workspaces
+        .get(workspace)
+        .and_then(|ws| ws.github.as_ref().map(|g| g.auth_forward))
+    {
+        return m;
+    }
+
+    cfg.github
+        .as_ref()
+        .map_or_else(GithubAuthMode::default, |g| g.auth_forward)
+}
+
+/// Walk the three `[…github.env]` layers for the given pair.
+///
+/// Merges later layers over earlier ones. Used by the launcher to
+/// discover `GH_TOKEN` / `GH_HOST` / `GH_ENTERPRISE_TOKEN` declarations
+/// specific to GitHub auth without requiring operators to also list
+/// them under the regular role/workspace `[*.env]` blocks.
+pub fn build_github_env_layers(
+    cfg: &AppConfig,
+    workspace: &str,
+    role: &str,
+) -> BTreeMap<String, EnvValue> {
+    let ws = cfg.workspaces.get(workspace);
+    let layers = [
+        cfg.github.as_ref().map(|g| &g.env),
+        ws.and_then(|w| w.github.as_ref()).map(|g| &g.env),
+        ws.and_then(|w| w.roles.get(role))
+            .and_then(|ro| ro.github.as_ref())
+            .map(|g| &g.env),
+    ];
+    let mut merged: BTreeMap<String, EnvValue> = BTreeMap::new();
+    for env in layers.into_iter().flatten() {
+        for (k, v) in env {
+            merged.insert(k.clone(), v.clone());
+        }
+    }
+    merged
 }
 
 pub const BUILTIN_ROLES: &[(&str, &str)] = &[
@@ -397,8 +462,13 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 mod resolve_mode_tests {
     use super::*;
     use crate::agent::Agent;
-    use crate::config::{AgentAuthConfig, AppConfig, AuthForwardMode, CodexAuthConfig};
+    use crate::config::{
+        AgentAuthConfig, AppConfig, AuthForwardMode, CodexAuthConfig, GithubAuthConfig,
+        GithubAuthMode,
+    };
+    use crate::operator_env::EnvValue;
     use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
+    use std::collections::BTreeMap;
 
     /// Build an `AppConfig` with optionally-set Claude modes at each of
     /// the 3 layers: global, workspace, workspace × role.
@@ -537,5 +607,141 @@ mod resolve_mode_tests {
             resolve_mode(&cfg, Agent::Codex, "proj", "smith"),
             AuthForwardMode::ApiKey
         );
+    }
+
+    // ── build_github_env_layers — 3-layer merge precedence ──────
+
+    fn ws_with_github_env(env: BTreeMap<String, EnvValue>) -> WorkspaceConfig {
+        WorkspaceConfig {
+            github: Some(GithubAuthConfig {
+                auth_forward: GithubAuthMode::Sync,
+                env,
+            }),
+            ..WorkspaceConfig::default()
+        }
+    }
+
+    #[test]
+    fn build_github_env_layers_global_only() {
+        let mut global_env = BTreeMap::new();
+        global_env.insert("GH_TOKEN".into(), EnvValue::Plain("ghp_global".into()));
+        let cfg = AppConfig {
+            github: Some(GithubAuthConfig {
+                auth_forward: GithubAuthMode::Sync,
+                env: global_env,
+            }),
+            ..AppConfig::default()
+        };
+        let merged = build_github_env_layers(&cfg, "proj", "smith");
+        assert_eq!(
+            merged.get("GH_TOKEN"),
+            Some(&EnvValue::Plain("ghp_global".into()))
+        );
+    }
+
+    #[test]
+    fn build_github_env_layers_workspace_overrides_global() {
+        let mut global_env = BTreeMap::new();
+        global_env.insert("GH_TOKEN".into(), EnvValue::Plain("ghp_global".into()));
+        let mut ws_env = BTreeMap::new();
+        ws_env.insert("GH_TOKEN".into(), EnvValue::Plain("ghp_ws".into()));
+        let mut workspaces = BTreeMap::new();
+        workspaces.insert("proj".into(), ws_with_github_env(ws_env));
+        let cfg = AppConfig {
+            github: Some(GithubAuthConfig {
+                auth_forward: GithubAuthMode::Sync,
+                env: global_env,
+            }),
+            workspaces,
+            ..AppConfig::default()
+        };
+        let merged = build_github_env_layers(&cfg, "proj", "smith");
+        assert_eq!(
+            merged.get("GH_TOKEN"),
+            Some(&EnvValue::Plain("ghp_ws".into()))
+        );
+    }
+
+    #[test]
+    fn build_github_env_layers_role_overrides_workspace_and_global() {
+        let mut global_env = BTreeMap::new();
+        global_env.insert("GH_TOKEN".into(), EnvValue::Plain("ghp_global".into()));
+        let mut ws_env = BTreeMap::new();
+        ws_env.insert("GH_TOKEN".into(), EnvValue::Plain("ghp_ws".into()));
+        let mut role_env = BTreeMap::new();
+        role_env.insert("GH_TOKEN".into(), EnvValue::Plain("ghp_role".into()));
+        let mut ws = ws_with_github_env(ws_env);
+        ws.roles.insert(
+            "smith".into(),
+            crate::workspace::WorkspaceRoleOverride {
+                github: Some(GithubAuthConfig {
+                    auth_forward: GithubAuthMode::Token,
+                    env: role_env,
+                }),
+                ..crate::workspace::WorkspaceRoleOverride::default()
+            },
+        );
+        let mut workspaces = BTreeMap::new();
+        workspaces.insert("proj".into(), ws);
+        let cfg = AppConfig {
+            github: Some(GithubAuthConfig {
+                auth_forward: GithubAuthMode::Sync,
+                env: global_env,
+            }),
+            workspaces,
+            ..AppConfig::default()
+        };
+        let merged = build_github_env_layers(&cfg, "proj", "smith");
+        assert_eq!(
+            merged.get("GH_TOKEN"),
+            Some(&EnvValue::Plain("ghp_role".into()))
+        );
+    }
+
+    #[test]
+    fn build_github_env_layers_preserves_distinct_keys_across_layers() {
+        let mut global_env = BTreeMap::new();
+        global_env.insert("GH_TOKEN".into(), EnvValue::Plain("ghp_global".into()));
+        let mut ws_env = BTreeMap::new();
+        ws_env.insert("GH_HOST".into(), EnvValue::Plain("ghe.acme.com".into()));
+        let mut role_env = BTreeMap::new();
+        role_env.insert(
+            "GH_ENTERPRISE_TOKEN".into(),
+            EnvValue::Plain("ent_token".into()),
+        );
+        let mut ws = ws_with_github_env(ws_env);
+        ws.roles.insert(
+            "smith".into(),
+            crate::workspace::WorkspaceRoleOverride {
+                github: Some(GithubAuthConfig {
+                    auth_forward: GithubAuthMode::Token,
+                    env: role_env,
+                }),
+                ..crate::workspace::WorkspaceRoleOverride::default()
+            },
+        );
+        let mut workspaces = BTreeMap::new();
+        workspaces.insert("proj".into(), ws);
+        let cfg = AppConfig {
+            github: Some(GithubAuthConfig {
+                auth_forward: GithubAuthMode::Sync,
+                env: global_env,
+            }),
+            workspaces,
+            ..AppConfig::default()
+        };
+        let merged = build_github_env_layers(&cfg, "proj", "smith");
+        // All 3 keys survive — different keys at different layers.
+        assert_eq!(merged.len(), 3);
+        assert!(merged.contains_key("GH_TOKEN"));
+        assert!(merged.contains_key("GH_HOST"));
+        assert!(merged.contains_key("GH_ENTERPRISE_TOKEN"));
+    }
+
+    #[test]
+    fn build_github_env_layers_empty_when_no_layers_set() {
+        let cfg = AppConfig::default();
+        let merged = build_github_env_layers(&cfg, "proj", "smith");
+        assert!(merged.is_empty());
     }
 }

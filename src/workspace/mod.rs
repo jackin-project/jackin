@@ -77,6 +77,13 @@ pub struct WorkspaceConfig {
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex: Option<crate::config::CodexAuthConfig>,
+    /// Workspace-level GitHub CLI (`gh`) auth configuration. Middle
+    /// layer of the layered resolver (global → workspace → workspace
+    /// × role). GitHub auth is agent-neutral — `.config/gh/` is shared
+    /// by every agent in the container — so unlike `claude` / `codex`
+    /// this layer carries no per-agent split.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github: Option<crate::config::GithubAuthConfig>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub git_pull_on_entry: bool,
 }
@@ -137,6 +144,12 @@ pub struct WorkspaceRoleOverride {
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex: Option<crate::config::CodexAuthConfig>,
+    /// Per-(workspace × role) GitHub CLI auth override — most-specific
+    /// layer of the layered resolver. The `[github]` axis has no agent
+    /// dimension because `.config/gh/` is shared by every agent in the
+    /// container.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github: Option<crate::config::GithubAuthConfig>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -732,6 +745,7 @@ isolation = "clone"
             keep_awake: KeepAwakeConfig::default(),
             claude: None,
             codex: None,
+            github: None,
             git_pull_on_entry: false,
         };
         let err = validate_workspace_config("ws", &workspace).unwrap_err();

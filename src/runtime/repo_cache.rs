@@ -190,6 +190,8 @@ pub(super) fn resolve_agent_repo(
     debug: bool,
     branch_override: Option<&str>,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo, std::fs::File)> {
+    // URL is normalized once inside `resolve_agent_repo_with` — single
+    // chokepoint for the SSH→HTTPS rewrite, no double-allocation.
     resolve_agent_repo_with(
         paths,
         selector,
@@ -223,6 +225,8 @@ pub(super) fn register_agent_repo(
     debug: bool,
     persist_registration: impl FnOnce() -> anyhow::Result<()>,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo)> {
+    let normalized = normalize_github_url(git_url);
+    let git_url = normalized.as_str();
     let cached_repo = CachedRepo::new(paths, selector);
     let legacy_root = role_cache_root(paths, selector);
     if cached_repo.repo_dir.join(".git").is_dir() || legacy_root.join(".git").is_dir() {
@@ -307,6 +311,23 @@ pub(super) fn register_agent_repo(
     Ok((cached_repo, validated_repo))
 }
 
+/// Normalize SSH-form GitHub URLs to HTTPS so containers without an
+/// SSH key can still clone a role repo when the operator's
+/// `[roles.<name>].git` is in the SCP/`ssh://` form.
+///
+/// Non-GitHub URLs (e.g. self-hosted gitlab) pass through unchanged —
+/// substituting their SSH form for HTTPS would risk hitting an
+/// HTTPS endpoint that doesn't exist on the operator's SCM.
+pub(super) fn normalize_github_url(url: &str) -> String {
+    if let Some(rest) = url.strip_prefix("git@github.com:") {
+        return format!("https://github.com/{rest}");
+    }
+    if let Some(rest) = url.strip_prefix("ssh://git@github.com/") {
+        return format!("https://github.com/{rest}");
+    }
+    url.to_string()
+}
+
 /// Build the argument list for `git clone`, optionally scoped to a single branch.
 /// `git clone -b <branch>` fetches only that branch, making the clone faster and
 /// leaving the working tree on the right branch without a separate checkout step.
@@ -327,6 +348,8 @@ pub(super) fn resolve_agent_repo_with(
     branch_override: Option<&str>,
     confirm_removal: impl FnOnce() -> anyhow::Result<bool>,
 ) -> anyhow::Result<(CachedRepo, crate::repo::ValidatedRoleRepo, std::fs::File)> {
+    let normalized = normalize_github_url(git_url);
+    let git_url = normalized.as_str();
     let cached_repo = branch_override.map_or_else(
         || CachedRepo::new(paths, selector),
         |branch| CachedRepo::for_branch(paths, selector, branch),
@@ -484,6 +507,72 @@ mod tests {
     use crate::paths::JackinPaths;
     use crate::selector::RoleSelector;
     use tempfile::tempdir;
+
+    #[test]
+    fn normalize_github_url_rewrites_scp_form() {
+        assert_eq!(
+            normalize_github_url("git@github.com:jackin-project/jackin.git"),
+            "https://github.com/jackin-project/jackin.git"
+        );
+    }
+
+    #[test]
+    fn normalize_github_url_rewrites_ssh_url_form() {
+        assert_eq!(
+            normalize_github_url("ssh://git@github.com/jackin-project/jackin.git"),
+            "https://github.com/jackin-project/jackin.git"
+        );
+    }
+
+    #[test]
+    fn normalize_github_url_passes_https_through_unchanged() {
+        assert_eq!(
+            normalize_github_url("https://github.com/jackin-project/jackin.git"),
+            "https://github.com/jackin-project/jackin.git"
+        );
+    }
+
+    #[test]
+    fn normalize_github_url_leaves_non_github_urls_alone() {
+        // Non-GitHub SSH URLs must NOT be rewritten — substituting an
+        // HTTPS URL would risk hitting an endpoint that doesn't exist
+        // on the operator's SCM.
+        assert_eq!(
+            normalize_github_url("git@gitlab.example.com:team/repo.git"),
+            "git@gitlab.example.com:team/repo.git"
+        );
+        assert_eq!(
+            normalize_github_url("ssh://git@gitlab.example.com/team/repo.git"),
+            "ssh://git@gitlab.example.com/team/repo.git"
+        );
+    }
+
+    #[test]
+    fn normalize_github_url_handles_missing_git_suffix() {
+        assert_eq!(
+            normalize_github_url("git@github.com:jackin-project/jackin"),
+            "https://github.com/jackin-project/jackin"
+        );
+        assert_eq!(
+            normalize_github_url("ssh://git@github.com/jackin-project/jackin"),
+            "https://github.com/jackin-project/jackin"
+        );
+    }
+
+    #[test]
+    fn repo_matches_cross_protocol_for_same_owner_repo() {
+        // After SSH→HTTPS normalize, a repo cloned years ago via SSH
+        // and a config that now says HTTPS must agree at the
+        // remote-URL match check.
+        assert!(repo_matches(
+            "https://github.com/jackin-project/jackin.git",
+            "git@github.com:jackin-project/jackin.git"
+        ));
+        assert!(repo_matches(
+            "git@github.com:jackin-project/jackin.git",
+            "https://github.com/jackin-project/jackin.git"
+        ));
+    }
 
     #[test]
     fn parse_repo_name_extracts_owner_repo_from_ssh_url() {

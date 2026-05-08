@@ -5,23 +5,11 @@ description: "Interactive operator console"
 import { Aside } from '@astrojs/starlight/components'
 
 <Aside type="tip">
-The operator console is the **simplest and most convenient way to use
-jackin'** day-to-day, and the surface most operators stay on. The CLI
-is for the **advanced and very specific cases**: scripted one-liners,
-niche flags, automation, and behaviours the console deliberately does
-not expose.
+The operator console is the **simplest and most convenient way to use jackin'** day-to-day, and the surface most operators stay on. The CLI is for the **advanced and very specific cases**: scripted one-liners, niche flags, automation, and behaviours the console deliberately does not expose.
 
-Today the console covers launching agents (the `load` flow),
-managing workspaces (`workspace`), and editing the per-workspace
-auth and env tables (`config` for those scopes). The remaining CLI
-subcommands — `hardline`, `eject`, `exile`, `purge`, global mounts
-and global env, multi-session preview — are **not in the console
-yet** and live on the CLI for now; they will land in the console as
-the TUI grows feature by feature. There is no feature parity by
-design: niche flags continue to land on the CLI first.
+Today the console covers launching agents (the `load` flow), managing workspaces (`workspace`), and editing the per-workspace auth and env tables (`config` for those scopes). The remaining CLI subcommands — `hardline`, `eject`, `exile`, `purge`, global mounts and global env, multi-session preview — are **not in the console yet** and live on the CLI for now; they will land in the console as the TUI grows feature by feature. There is no feature parity by design: niche flags continue to land on the CLI first.
 
-The expectation is **most people use the TUI, and reach for the CLI
-only when they need it.**
+The expectation is **most people use the TUI, and reach for the CLI only when they need it.**
 </Aside>
 
 ## Synopsis
@@ -30,86 +18,35 @@ only when they need it.**
 jackin console [--debug]
 ```
 
-Open the operator console — an interactive terminal UI for picking a
-workspace and agent, managing saved workspaces, and launching agents
-into isolated containers.
+Opens the operator console — an interactive terminal UI for picking a workspace and an agent, managing saved workspaces, editing per-workspace settings, and launching agents into isolated containers.
 
-Running `jackin` with no subcommand opens the same console when stdout
-is attached to an interactive terminal that is at least 40x15 in size.
-On non-interactive shells (piped output, CI, very small terminals) bare
-`jackin` silently prints top-level help instead. `jackin console` makes
-the intent explicit and errors out when the terminal cannot host the
-TUI.
+Running `jackin` with no subcommand opens the same console when stdout is attached to an interactive terminal. On non-interactive shells (piped output, CI, very small terminals) bare `jackin` silently prints top-level help instead. `jackin console` makes the intent explicit and errors out when the terminal cannot host the TUI.
 
-The important distinction is:
+## What the console gives you
 
-- **workspace** = which files are mounted
-- **agent** = which tool profile is loaded
+The console opens directly to a workspace manager list — no separate workspace-picker stage. From there you can:
 
-## How it works
+- **Launch an agent into a workspace.** Each workspace row launches a container running the workspace's allowed roles and agents. When the workspace has a single eligible role and agent, launch is one keystroke. When there's ambiguity, the console asks you to pick.
+- **Use your current directory as a workspace.** A synthetic row at the top of the manager list mounts your `cwd` at the same path inside the container. Useful for quick one-off launches without saving a workspace definition.
+- **Open the workspace editor.** Edit the workspace's roles, environment variables, and authentication settings. Each editor surface lives on its own tab inside the editor.
 
-`jackin console` opens directly to the workspace manager list. Select a
-workspace with `↑`/`↓` and press `Enter` to launch. The manager list
-**is** the opening view — there is no separate workspace-picker stage.
+For the per-axis details — what each tab manages, what defaults apply, where the launch summary surfaces what's effective — see the per-axis guide pages linked below.
 
-If agent disambiguation is needed, a compact picker appears as an
-overlay on the manager list. There is no separate full-screen
-agent-selection screen.
+## Workspace editor — what each tab is for
 
-## Workspace selection
+- **General** — workspace name and working directory.
+- **Roles** — which roles may launch in this workspace, and which one (if any) is the default. See [Workspaces](/guides/workspaces/).
+- **Mounts** — host directories made available inside the container, with read-only / read-write and per-mount isolation modes. See [Mounts](/guides/mounts/).
+- **Environments** — workspace-wide and per-role environment variables, sourced from literal values, host env, or `1Password`. See [Environment Variables](/guides/environment-variables/).
+- **Auth** — `Claude Code` and `Codex` (and, when wired, `GitHub CLI`) authentication forwarding modes at workspace and per-role scope. See [Authentication](/guides/authentication/) for the shared pattern across every auth axis.
 
-The manager list shows two kinds of rows:
+Every editor surface is reachable from the workspace manager list — you don't need to know which keystroke opens which panel; the in-app footer shows the available actions for whatever you have focused.
 
-- **Current directory** — a synthetic row that mounts your `cwd` at the same path inside the container
-- **Saved workspaces** — named definitions you have created with `jackin workspace create` or in the workspace manager
+## When to reach for the CLI instead
 
-If your current directory falls under a saved workspace's host `workdir` or one of its mounted host paths, that workspace is preselected.
+`jackin console` is the simplified, intuitive TUI for everyday workspace launches. [`jackin load`](/commands/load/) is the full-surface CLI — together with its neighbours (`hardline`, `eject`, `exile`, `purge`, `workspace`, `config`) it exposes every flag and capability jackin' offers.
 
-## Role disambiguation
-
-Pressing `Enter` on a workspace row routes by eligible-role count:
-
-- **`default_role` set** on the workspace → launch immediately with that
-  role. No picker.
-- **Exactly one eligible role** (after the workspace's `allowed_roles`
-  filter) → launch immediately with it. No picker.
-- **Multiple eligible roles and no default** → an inline `Select Role`
-  picker overlays the manager list. Type to filter, `↑`/`↓` to navigate,
-  `Enter` to commit, `Esc` to cancel.
-
-The picker is anchored on the manager list — cancelling drops you back
-on the same workspace row with the launch unchanged.
-
-## Agent disambiguation
-
-Roles declare which agents (`claude`, `codex`) they can host via the
-`agents` field in their `jackin.role.toml`. Once the role is resolved,
-the console may prompt for the agent:
-
-- **`default_agent` set** on the workspace → launch with that agent. No
-  prompt.
-- **Role supports a single agent** → launch with it. No prompt.
-- **Role supports multiple agents and the workspace has no
-  `default_agent`** → after the TUI tears down, a one-shot terminal
-  prompt asks which agent to start. Press `Enter` on the highlighted
-  choice to commit, `Ctrl-C` to abort.
-
-The prompt is intentionally a plain terminal `Select`, not a TUI
-overlay — it sits on the same path as the sensitive-mount confirmation
-that runs between `run_console` and `load_role`.
-
-## When to use the console vs `load`
-
-`jackin console` is the simplified, intuitive TUI for everyday
-workspace launches. [`jackin load`](/commands/load/) is the full-surface
-CLI — together with its neighbours (`hardline`, `eject`, `exile`,
-`purge`, `workspace`, `config`) it exposes every flag and capability
-jackin offers.
-
-The console intentionally stays narrower. **New niche flags and
-detail-level options land on the CLI first, and sometimes exclusively.**
-The console surfaces only what fits into an intuitive flow — treat it
-as a fast path for the common cases, not as a visual alias for the CLI.
+The console intentionally stays narrower. **New niche flags and detail-level options land on the CLI first, and sometimes exclusively.** The console surfaces only what fits into an intuitive flow — treat it as a fast path for the common cases, not as a visual alias for the CLI.
 
 | | `jackin console` | `jackin load` |
 |---|---|---|
@@ -119,121 +56,3 @@ as a fast path for the common cases, not as a visual alias for the CLI.
 | **Agent selection** | Interactive picker | Explicit argument |
 | **Feature surface** | Simplified — common flows only | Complete — every flag jackin exposes |
 | **Where new niche flags land** | Rarely | First, and sometimes exclusively |
-
-## Workspace editor — Roles tab
-
-The Roles tab controls which roles may launch in this workspace and
-which one (if any) is the default.
-
-- **Allow / disallow** — `Space` on a role row toggles whether the
-  role is allowed in this workspace. The `[x]` / `[ ]` glyph reflects
-  the *effective* allow-state: an empty `allowed_roles` list is the
-  shorthand for "all roles allowed", and every row reads `[x]` in that
-  mode.
-- **Default role** — `*` on an allowed role row pins it as the
-  workspace default; pressing `*` again on the same row clears the
-  default. The default role carries a `★` marker in the rendered list.
-- **Disallowing the current default** clears the default automatically
-  — defaults are only meaningful on allowed roles.
-- `*` on an unallowed role is a no-op; press `Space` to allow the
-  role first.
-
-| Key | Action |
-|---|---|
-| `Space` on role row | Toggle allow / disallow |
-| `*` on allowed role | Set as default (or clear if already default) |
-
-The default-role assignment used to live as a read-only row on the
-General tab; it is now editable here. The General tab now shows only
-`Name` and `Working dir`.
-
-## Workspace editor — Environments tab
-
-The Environments tab in the `jackin console` workspace editor manages
-environment variables at two scopes:
-
-- **Workspace environment** — applies to every role launch in this
-  workspace.
-- **Per-role overrides** — apply only when a specific role is launched
-  in this workspace.
-
-Values are stored as-typed. Use `op://...` for 1Password references,
-`$VAR` or `${VAR}` for shell-variable substitution, or a literal
-string. jackin' resolves them at launch.
-
-| Key | Action |
-|---|---|
-| `Enter` on key row | Edit the value in a modal text input |
-| `Enter` on `+ Add` row | Add a new key — opens the key-name modal, then a source picker (Plain text / 1Password) |
-| `D` on key row | Delete the key (single confirmation) |
-| `A` | Add a new key/value pair to the focused section (same flow as `Enter` on `+ Add`) |
-| `M` | Toggle value masking (masked by default; resets on tab exit) |
-| `P` on key row | Open 1Password picker; commits `op://...` directly to the key |
-| `P` on `+ Add` row | Open 1Password picker; on commit, prompt for key name |
-| `→` or `Enter` on section header | Expand a role override section |
-| `←` on section header | Collapse a role override section |
-
-### Adding a new environment variable
-
-Pressing `Enter` on a `+ Add` row (workspace or per-role) walks you
-through the entry in two steps. First, a modal asks for the key name.
-After you commit the name, a small source picker opens with two
-buttons: **Plain text** and **1Password**. Pick Plain text to type
-the value verbatim in a follow-up text modal, or pick 1Password to
-drill the picker (Account → Vault → Item → Field) and store an
-`op://...` reference. The 1Password button is disabled if the `op`
-CLI isn't on `PATH` at console startup; install `op` and restart
-`jackin console` to enable it.
-
-`Esc` on the source picker (or any earlier step) cancels the entry —
-no key is added.
-
-If you type a name that's already used in the same scope (workspace
-env, or a role's overrides), the modal flags it inline and won't
-accept Enter until you change it.
-
-### Adding per-role overrides
-
-The `+ Add per-role override for ...` sentinel at the bottom of the
-Environments tab opens a role picker showing allowed roles that
-don't yet have overrides. Picking a role drops you straight into the
-normal add flow (key name → source → value). The role's override
-section appears once the first key/value commits — no empty
-placeholders. Cancelling at any modal step leaves the workspace
-unchanged.
-
-The sentinel hides itself when every workspace-allowed role already
-has an override section — there's no action left to take.
-
-### 1Password picker
-
-Pressing `P` on an Environments-tab row opens a three-pane picker that browses
-your 1Password vaults and items. Navigate with `↑`/`↓`, type to filter,
-`Enter` to drill down, `Esc` to go back.
-
-The picker is a row-level action, not a sub-mode of the value editor:
-
-- **`P` on an existing key row** — selecting a field commits an
-  `op://Vault/Item/field` reference straight into that key's pending
-  value. No intermediate text modal.
-- **`P` on a `+ Add` sentinel row** — selecting a field stashes the
-  reference, then opens an `EnvKey` modal so you can name the new key.
-  Pressing `Enter` on the key name writes both at once.
-
-The picker shows what is available to reference, never what's stored. Field
-values are never read or displayed.
-
-If you have multiple 1Password accounts signed in, the picker opens with an
-Account pane first (`Enter` to drill into that account's vaults; `Esc` to
-choose a different account). Single-account setups skip straight to the
-vault list.
-
-**Requirements:** 1Password CLI (`op`) must be installed and signed in.
-
-- Not installed: `brew install 1password-cli` (macOS) or visit
-  `1password.com/downloads/command-line/`, then run `op signin`.
-- Not signed in: run `op signin` in your shell, then retry.
-- No vaults visible: check Settings → Developer → CLI integration in the
-  1Password app.
-
-jackin' uses your existing `op` session — there is no separate jackin' auth.

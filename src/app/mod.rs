@@ -504,6 +504,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     },
                     claude: None,
                     codex: None,
+                    github: None,
                     git_pull_on_entry: git_pull,
                 };
                 let mut editor = crate::config::ConfigEditor::open(&paths)?;
@@ -1231,6 +1232,7 @@ mod auth_set_tests {
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
             claude: None,
             codex: None,
+            github: None,
             git_pull_on_entry: false,
         };
         let out = render_workspace_show("jackin", &ws);

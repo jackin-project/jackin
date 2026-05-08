@@ -151,7 +151,7 @@ pub fn handle_key(
             // separate `pending_name.is_some()` flag plus an
             // `expect("prelude complete")` to keep the two invariants
             // in sync.
-            #[allow(clippy::items_after_statements)]
+            #[allow(clippy::items_after_statements, clippy::large_enum_variant)]
             enum PreludeStatus {
                 InProgress,
                 Complete(String, crate::workspace::WorkspaceConfig),

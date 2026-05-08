@@ -18,3 +18,4 @@ docs/.lycheecache
 # not part of the public docs surface. Specs under docs/superpowers/specs/
 # are intentionally tracked.
 docs/superpowers/plans/
+.claude/worktrees/

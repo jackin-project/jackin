@@ -43,6 +43,7 @@ jackin' is a functional proof of concept. **`Claude Code` and `Codex` ship today
 
 - [1Password integration](/reference/roadmap/onepassword-integration/) — workspace-managed `op://` env references shipped; file-mount generation (option 4) still deferred
 - [Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/) — Codex shipped as a fully integrated runtime; Amp runtime integration is under active development; full feature parity across `claude` / `codex` / `amp` still ongoing
+- [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/) — three-mode auth-forward (`sync` / `token` / `ignore`) at all three layers shipped, plus container HTTPS-normalize and `gh` credential helper wiring; console UX, dedicated CLI subcommand, scope pre-flight, and bidirectional shared-store sync still pending
 
 ## Planned
 
@@ -62,7 +63,6 @@ jackin' is a functional proof of concept. **`Claude Code` and `Codex` ship today
 - **Network policy controls** — outbound domain filtering per role, similar to Docker Sandboxes' network policies. See [devcontainer parity](/reference/roadmap/devcontainer-parity/) for a comparison with the upstream `anthropics/claude-code` devcontainer's `iptables`/`ipset` egress-allowlist approach.
 - **Credential proxy** — proxy-based credential injection to avoid storing tokens inside containers
 - **[Agent version pinning](/reference/roadmap/reproducibility-pinning/)** — pin role repos to tagged versions for reproducible builds, with explicit `--update` to advance (status: needs design — brainstorming required before implementation)
-- **[GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/)** — extend the layered `auth_forward` model from agent runtimes to the GitHub CLI, so each (workspace × role) can use either the host login or a least-privilege token (e.g. a fine-grained PAT) instead of one broad `gh` identity for everything
 - **[Reliable Claude authentication strategy](/reference/roadmap/claude-auth-strategy/)** — move beyond copied session auth toward clearer, more durable modes for long-lived and concurrent agent runtimes (status: deferred — needs design work)
 - **[Alternative isolation tiers](/reference/roadmap/selectable-sandbox-backends/)** — explore stronger backends beyond plain container isolation for users who need them, including [rootless DinD](/reference/roadmap/rootless-dind/) as a lighter-weight option (status: deferred — requires a dedicated design pass)
 - **[Devcontainer parity](/reference/roadmap/devcontainer-parity/)** — comparison with the upstream `anthropics/claude-code` devcontainer setup; informs network policy + reproducibility decisions (status: proposed — research captured, no implementation committed)

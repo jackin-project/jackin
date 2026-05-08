@@ -76,6 +76,60 @@ Credentials referenced by `api_key` and `oauth_token` live in ordinary
 `[*.env]` blocks under the well-known names `ANTHROPIC_API_KEY`,
 `CLAUDE_CODE_OAUTH_TOKEN`, and `OPENAI_API_KEY`.
 
+### GitHub CLI auth-forward settings
+
+GitHub CLI (`gh`) auth uses a parallel `[github]` block with three
+modes — `sync` (default), `token`, `ignore`. The `[github]` axis has
+**no agent dimension** because `~/.config/gh/` is shared by every
+agent in the container.
+
+```toml
+# Layer 1 — global default
+[github]
+auth_forward = "sync"   # "sync" (default), "token", or "ignore"
+
+# Layer 2 — workspace-wide override (e.g. a customer-facing PAT)
+[workspaces.customer-acme.github]
+auth_forward = "token"
+
+[workspaces.customer-acme.github.env]
+GH_TOKEN = { op = "op://abc.../def.../fld...", path = "Work/ACME/github-fine-grained-pat" }
+
+# Layer 3 — workspace × role override (e.g. a tighter release-bot token)
+[workspaces.customer-acme.roles.release-bot.github]
+auth_forward = "token"
+
+[workspaces.customer-acme.roles.release-bot.github.env]
+GH_TOKEN = { op = "op://abc.../def.../fld...", path = "Work/ACME/github-release-pat" }
+
+# Per-role opt-out — throwaway role with no GitHub access
+[workspaces.customer-acme.roles.scratch.github]
+auth_forward = "ignore"
+```
+
+Mode behaviour:
+
+- `sync` — materialize `~/.config/gh/hosts.yml` from the host's `gh`
+  login on each launch (`gh auth token --hostname github.com`,
+  with `~/.config/gh/hosts.yml` parse as a fallback). When the host is
+  logged out, any existing in-container `hosts.yml` is preserved.
+- `token` — wipe any prior `hosts.yml` and inject `GH_TOKEN` (and
+  `GITHUB_TOKEN` from the same source) into the container's process
+  env from the resolved `[github.env]` map. Pre-flight aborts launch
+  when `GH_TOKEN` is missing.
+- `ignore` — wipe any forwarded `hosts.yml` and export nothing.
+
+Resolution order, most-specific first:
+
+- `[workspaces.<ws>.roles.<role>.github].auth_forward`
+- `[workspaces.<ws>.github].auth_forward`
+- `[github].auth_forward` (global default)
+
+Operator-only — role manifests cannot set or override `[github]`,
+same rule as `[claude]` / `[codex]`. Optional GHE-targeted env vars
+`GH_HOST` and `GH_ENTERPRISE_TOKEN` may also be set in the
+`[…github.env]` block; they are forwarded to the container as-is.
+
 ### Operator env layers
 
 Four layers contribute env vars to the agent container, merged with later-wins semantics:
