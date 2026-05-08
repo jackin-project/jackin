@@ -1,10 +1,9 @@
 //! Top-level dispatch helpers.
 //!
-//! This module owns the decision logic that drives bare `jackin`, the
-//! explicit `jackin console` subcommand, and the deprecated-but-still
-//! supported `jackin launch` alias. It lives separately from [`crate::run`]
-//! so the decisions are unit-testable without standing up a full
-//! [`crate::config::AppConfig`] / [`crate::paths::JackinPaths`].
+//! This module owns the decision logic that drives bare `jackin` and the
+//! explicit `jackin console` subcommand. It lives separately from
+//! [`crate::run`] so the decisions are unit-testable without standing up a
+//! full [`crate::config::AppConfig`] / [`crate::paths::JackinPaths`].
 
 use std::io::IsTerminal;
 
@@ -17,11 +16,8 @@ pub const MIN_TUI_COLS: u16 = 40;
 /// Minimum rows for the operator console to render usefully.
 pub const MIN_TUI_ROWS: u16 = 15;
 
-/// User-visible deprecation message emitted when `jackin launch` is used.
-pub const LAUNCH_DEPRECATION_WARNING: &str = "warning: `jackin launch` is deprecated and will be removed in a future release; use `jackin` or `jackin console` instead";
-
-/// Error message emitted when `jackin console` (or `jackin launch`) is
-/// invoked but the current terminal cannot host the TUI.
+/// Error message emitted when `jackin console` is invoked but the current
+/// terminal cannot host the TUI.
 pub const CONSOLE_REQUIRES_TTY_ERROR: &str =
     "jackin' console requires an interactive terminal (stdout must be a TTY, minimum size 40x15)";
 
@@ -31,15 +27,10 @@ pub enum Action {
     /// Run the operator console.
     RunConsole {
         args: ConsoleArgs,
-        /// When true, the operator asked for the console by name (either
-        /// `console` or the deprecated `launch`). Non-TUI-capable terminals
-        /// must surface an explicit error instead of silently falling back
-        /// to `--help`.
+        /// When true, the operator asked for the console by name (i.e.
+        /// `jackin console`). Non-TUI-capable terminals must surface an
+        /// explicit error instead of silently falling back to `--help`.
         explicit: bool,
-        /// When true, the caller reached the console via the deprecated
-        /// `jackin launch` alias; the dispatcher must emit the deprecation
-        /// warning before handing off to the runner.
-        deprecated_alias: bool,
     },
     /// Run a non-console subcommand.
     RunCommand(Command),
@@ -48,10 +39,8 @@ pub enum Action {
     PrintHelpAndExit,
     /// Display long-form man page help for a command and exit.
     PrintHelp { command: Vec<String> },
-    /// Error: explicit console request on a non-TTY terminal. Carries
-    /// `deprecated_alias` so the dispatcher can still emit the `launch`
-    /// deprecation warning before the error exit.
-    ErrorNotTtyCapable { deprecated_alias: bool },
+    /// Error: explicit console request on a non-TTY terminal.
+    ErrorNotTtyCapable,
 }
 
 /// Report whether the current terminal can host the operator console.
@@ -80,30 +69,14 @@ pub const fn is_size_tui_capable(cols: u16, rows: u16) -> bool {
 /// both branches without touching the real terminal.
 pub fn classify(cli: Cli, tui_capable: bool) -> Action {
     match cli.command {
-        Some(Command::Launch(args)) => {
-            if tui_capable {
-                Action::RunConsole {
-                    args,
-                    explicit: true,
-                    deprecated_alias: true,
-                }
-            } else {
-                Action::ErrorNotTtyCapable {
-                    deprecated_alias: true,
-                }
-            }
-        }
         Some(Command::Console(args)) => {
             if tui_capable {
                 Action::RunConsole {
                     args,
                     explicit: true,
-                    deprecated_alias: false,
                 }
             } else {
-                Action::ErrorNotTtyCapable {
-                    deprecated_alias: false,
-                }
+                Action::ErrorNotTtyCapable
             }
         }
         Some(Command::Help { command }) => Action::PrintHelp { command },
@@ -113,7 +86,6 @@ pub fn classify(cli: Cli, tui_capable: bool) -> Action {
                 Action::RunConsole {
                     args: cli.console_args,
                     explicit: false,
-                    deprecated_alias: false,
                 }
             } else {
                 Action::PrintHelpAndExit
@@ -157,7 +129,6 @@ mod tests {
             Action::RunConsole {
                 args: ConsoleArgs { .. },
                 explicit: false,
-                deprecated_alias: false,
             }
         ));
     }
@@ -171,7 +142,6 @@ mod tests {
             Action::RunConsole {
                 args: ConsoleArgs { debug: true },
                 explicit: false,
-                deprecated_alias: false,
             }
         ));
     }
@@ -194,7 +164,6 @@ mod tests {
             Action::RunConsole {
                 args: ConsoleArgs { .. },
                 explicit: true,
-                deprecated_alias: false,
             }
         ));
     }
@@ -208,7 +177,6 @@ mod tests {
             Action::RunConsole {
                 args: ConsoleArgs { debug: true },
                 explicit: true,
-                deprecated_alias: false,
             }
         ));
     }
@@ -217,40 +185,7 @@ mod tests {
     fn console_subcommand_without_tty_errors() {
         let cli = Cli::try_parse_from(["jackin", "console"]).unwrap();
         let action = classify(cli, false);
-        assert_eq!(
-            action,
-            Action::ErrorNotTtyCapable {
-                deprecated_alias: false,
-            }
-        );
-    }
-
-    #[test]
-    fn launch_subcommand_still_routes_to_console_runner_with_deprecation_flag() {
-        let cli = Cli::try_parse_from(["jackin", "launch"]).unwrap();
-        let action = classify(cli, true);
-        // See `bare_jackin_on_tty_runs_console_implicitly` for why
-        // `debug` is matched with `..`.
-        assert!(matches!(
-            action,
-            Action::RunConsole {
-                args: ConsoleArgs { .. },
-                explicit: true,
-                deprecated_alias: true,
-            }
-        ));
-    }
-
-    #[test]
-    fn launch_subcommand_without_tty_errors_with_deprecation_flag() {
-        let cli = Cli::try_parse_from(["jackin", "launch"]).unwrap();
-        let action = classify(cli, false);
-        assert_eq!(
-            action,
-            Action::ErrorNotTtyCapable {
-                deprecated_alias: true,
-            }
-        );
+        assert_eq!(action, Action::ErrorNotTtyCapable);
     }
 
     #[test]
@@ -267,13 +202,6 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "exile"]).unwrap();
         let action = classify(cli, false);
         assert!(matches!(action, Action::RunCommand(Command::Exile)));
-    }
-
-    #[test]
-    fn deprecation_warning_mentions_deprecated_and_alternatives() {
-        assert!(LAUNCH_DEPRECATION_WARNING.contains("deprecated"));
-        assert!(LAUNCH_DEPRECATION_WARNING.contains("jackin console"));
-        assert!(LAUNCH_DEPRECATION_WARNING.contains("jackin launch"));
     }
 
     #[test]

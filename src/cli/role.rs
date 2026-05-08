@@ -122,13 +122,6 @@ pub struct ConsoleArgs {
     pub debug: bool,
 }
 
-/// Backwards-compat alias for `ConsoleArgs`.
-///
-/// `jackin launch` is the pre-rename spelling of `jackin console`. The
-/// struct is identical; the type alias keeps older module imports working
-/// without a big-bang rename.
-pub type LaunchArgs = ConsoleArgs;
-
 #[cfg(test)]
 mod tests {
     use crate::cli::{Cli, Command};
@@ -315,16 +308,6 @@ mod tests {
                 ref mounts,
                 ..
             })) if mounts.len() == 2
-        ));
-    }
-
-    #[test]
-    fn parses_launch_command() {
-        let cli = Cli::try_parse_from(["jackin", "launch"]).unwrap();
-        // See `parses_load_command` for why `debug` is matched with `..`.
-        assert!(matches!(
-            cli.command,
-            Some(Command::Launch(super::LaunchArgs { .. }))
         ));
     }
 

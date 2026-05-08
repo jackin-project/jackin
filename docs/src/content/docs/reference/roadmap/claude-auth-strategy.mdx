@@ -44,8 +44,6 @@ Status as of the Token-mode release:
 - `ignore` — never forward host auth; require in-container `/login`
 - `token` — inject `CLAUDE_CODE_OAUTH_TOKEN` from the resolved operator env and leave the agent state directory empty; recommended for long-lived or concurrent sessions (delivered in PR 3 of this series)
 
-Configs that still declare `auth_forward = "copy"` are migrated to `sync` on load with a deprecation notice (delivered in PR 1 of this series).
-
 Claude Code's own authentication model also matters here. The official docs support several credential sources with a defined precedence order, including:
 
 - subscription OAuth credentials from `/login`
@@ -159,7 +157,7 @@ Cons:
 
 Delivered (three-PR series):
 
-1. `sync` is the default; `copy` is deprecated and auto-migrated.
+1. `sync` is the default auth-forwarding mode.
 2. A workspace-scoped env resolver populates `CLAUDE_CODE_OAUTH_TOKEN` from `op://` references or host env vars.
 3. `token` mode uses that resolved env instead of bind-mounting `/login` session state. Token mode is now the recommended choice for long-lived or concurrent jackin sessions; `sync` remains a good default for ad-hoc single-session usage.
 
@@ -170,7 +168,6 @@ Delivered (three-PR series):
 Examples:
 
 ```bash
-jackin config auth set copy
 jackin config auth set sync
 jackin config auth set ignore
 jackin config auth set token

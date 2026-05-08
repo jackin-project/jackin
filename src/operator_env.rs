@@ -25,12 +25,9 @@ pub trait OpRunner {
 ///
 /// `layer_label` / `var_name` are used only in error messages.
 ///
-/// # Behavior change
-///
-/// Lexical `op://` detection at runtime is gone — only structural
-/// `EnvValue::OpRef` triggers `op read`. Bare `op://...` strings
-/// stored as `EnvValue::Plain` (e.g. legacy workspace TOMLs) flow
-/// to the container literally.
+/// Only structural `EnvValue::OpRef` triggers `op read`. Bare
+/// `op://...` strings stored as `EnvValue::Plain` flow to the
+/// container literally.
 pub fn resolve_env_value<R, H>(
     layer_label: &str,
     var_name: &str,

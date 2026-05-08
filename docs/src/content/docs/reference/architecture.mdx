@@ -141,7 +141,7 @@ Successful cleanup removes the corresponding record rather than keeping a histor
 
 ### Foreground session finalization
 
-Every command that opens or reopens an agent foreground session — `jackin load`, `jackin launch`, `jackin hardline`, the operator console — funnels through the same post-attach finalizer. After `docker attach` returns, jackin' inspects the container and decides:
+Every command that opens or reopens an agent foreground session — `jackin load`, `jackin hardline`, the operator console — funnels through the same post-attach finalizer. After `docker attach` returns, jackin' inspects the container and decides:
 
 - **Container is still running** → preserve everything for `jackin hardline` to reconnect later. No isolated-worktree action.
 - **Stopped, non-zero exit or OOM** → preserve the container, DinD, and isolated worktrees so `jackin hardline` can restart in place.
