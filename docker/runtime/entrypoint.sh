@@ -102,8 +102,13 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
   amp)
     mkdir -p /home/agent/.config/amp
     if [ -f /jackin/amp/settings.json ]; then
+        echo "[entrypoint] amp: forwarding host settings.json into ~/.config/amp/" >&2
         cp /jackin/amp/settings.json /home/agent/.config/amp/settings.json
         chmod 600 /home/agent/.config/amp/settings.json
+    elif [ -n "${AMP_API_KEY:-}" ]; then
+        echo "[entrypoint] amp: AMP_API_KEY present in env; agent will use api-key auth" >&2
+    else
+        echo "[entrypoint] amp: no settings.json mounted and AMP_API_KEY unset — agent will require interactive login" >&2
     fi
     LAUNCH=(amp)
     ;;

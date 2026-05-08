@@ -139,3 +139,89 @@ agents = ["amp"]
     assert!(!run_cmd.contains("/jackin/codex/"), "{run_cmd}");
     assert!(!run_cmd.contains("/jackin/amp/settings.json"), "{run_cmd}");
 }
+
+#[test]
+fn amp_launch_under_sync_mounts_settings_json_in_docker_run() {
+    let temp = tempdir().unwrap();
+    let paths = JackinPaths::for_tests(temp.path());
+    paths.ensure_base_dirs().unwrap();
+
+    // Stage host ~/.config/amp/settings.json under the test's fake
+    // home (paths.home_dir, which load_role consults for host-side
+    // auth state) so the Sync arm of provision_amp_auth produces a
+    // non-None mounted path.
+    let amp_dir = paths.home_dir.join(".config/amp");
+    std::fs::create_dir_all(&amp_dir).unwrap();
+    std::fs::write(amp_dir.join("settings.json"), "{\"amp\":true}").unwrap();
+
+    std::fs::write(
+        &paths.config_file,
+        r#"[amp]
+auth_forward = "sync"
+
+[roles.the-architect]
+git = "https://github.com/jackin-project/jackin-the-architect.git"
+trusted = true
+"#,
+    )
+    .unwrap();
+
+    let selector = RoleSelector::new(None, "the-architect");
+    let repo_dir = jackin::repo::CachedRepo::new(&paths, &selector).repo_dir;
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    std::fs::write(
+        repo_dir.join("Dockerfile"),
+        "FROM projectjackin/construct:trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        repo_dir.join("jackin.role.toml"),
+        r#"dockerfile = "Dockerfile"
+agents = ["amp"]
+
+[amp]
+"#,
+    )
+    .unwrap();
+
+    let mut config = AppConfig::load_or_init(&paths).unwrap();
+    let workspace = ResolvedWorkspace {
+        label: repo_dir.display().to_string(),
+        workdir: "/workspace".to_string(),
+        mounts: vec![MountConfig {
+            src: repo_dir.display().to_string(),
+            dst: "/workspace".to_string(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        }],
+        default_agent: Some(Agent::Amp),
+        keep_awake_enabled: false,
+        git_pull_on_entry: false,
+    };
+    let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+    load_role(
+        &paths,
+        &mut config,
+        &selector,
+        &workspace,
+        &mut runner,
+        &LoadOptions::default(),
+    )
+    .unwrap();
+
+    let run_cmd = runner
+        .recorded
+        .iter()
+        .find(|call| call.contains("docker run -d -it"))
+        .expect("role docker run should run");
+    assert!(
+        run_cmd.contains(":/jackin/amp/settings.json"),
+        "Sync mode must mount settings.json into the container: {run_cmd}"
+    );
+    // No AMP_API_KEY in env config → no -e flag.
+    assert!(
+        !run_cmd.contains("-e AMP_API_KEY="),
+        "Sync mode without AMP_API_KEY must not inject the var: {run_cmd}"
+    );
+}

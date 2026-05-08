@@ -152,27 +152,28 @@ pub enum GithubProvisionKind {
 /// Agent-specific paths that belong to one variant.
 ///
 /// Encoded as an enum so the agent variant and the actual paths can
-/// never disagree — the previous shape (`Option<PathBuf>` plus a
-/// runtime invariant "Some iff agent == Codex" enforced by `expect()`
-/// across two functions) is now a compile-checked match.
+/// never disagree.
 ///
 /// All host paths land under `/jackin/<agent>/...` inside the
 /// container. The agent's expected home-relative paths
-/// (`~/.claude.json`, `~/.codex/auth.json`, …) are NOT bind-mounted
-/// directly: jackin's entrypoint copies the relevant files from
-/// `/jackin/` into the agent's home before launch. This isolates the
-/// host→container handoff to a single tree (`/jackin/`) the operator
-/// can audit at a glance, and frees `/home/agent/.claude/` and
-/// `/home/agent/.codex/` to carry image-baked config (settings.json,
-/// hooks/, memory/) without being masked by a runtime mount.
+/// (`~/.claude.json`, `~/.codex/auth.json`, `~/.config/amp/settings.json`,
+/// …) are NOT bind-mounted directly: jackin's entrypoint copies the
+/// relevant files from `/jackin/` into the agent's home before launch.
+/// This isolates the host→container handoff to a single tree (`/jackin/`)
+/// the operator can audit at a glance, and frees the agent's home tree
+/// (`/home/agent/.claude/`, `/home/agent/.codex/`,
+/// `/home/agent/.config/amp/`) to carry image-baked config without
+/// being masked by a runtime mount.
 ///
-/// Path fields hold the host filesystem location regardless of whether
-/// the file gets bind-mounted; the mount decision is encoded in
-/// `forward_auth` (Claude) or in the optional path fields directly
-/// (Codex). `forward_auth = false` means the agent authenticates via
-/// env vars (`CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`) and the
-/// auth files must not flow into the container even though they exist
-/// on the host (`wipe_claude_state` leaves a `{}` shell behind).
+/// The mount decision is encoded in `forward_auth` (Claude) or in the
+/// optional path fields directly (Codex/Amp). For Claude,
+/// `forward_auth = false` means the agent authenticates via env vars
+/// (`CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`) and the auth files
+/// must not flow into the container even though they exist on the host
+/// (`wipe_claude_state` leaves a `{}` shell behind). For Codex/Amp,
+/// `None` on the optional path field means the same thing — wiped on
+/// disk, no mount, env-driven authentication
+/// (`OPENAI_API_KEY` / `AMP_API_KEY`).
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum AgentRuntimeState {

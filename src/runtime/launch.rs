@@ -253,6 +253,12 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         }
         AgentRuntimeState::Amp { settings_json } => {
             let mut mounts = Vec::new();
+            // Bind read-write so that an in-container `amp` token
+            // rotation writes back to the host role-state file —
+            // matches Codex's `auth.json` mount semantics. Do not
+            // change to `:ro` without first plumbing token rotation
+            // somewhere else, or operators will silently lose
+            // refreshed tokens on container teardown.
             if let Some(settings_json) = settings_json {
                 mounts.push(format!(
                     "{}:/jackin/amp/settings.json",
@@ -1477,9 +1483,9 @@ fn load_role_with(
                     env_var,
                 );
                 let source_ref = auth_token_source_reference(env_var, raw.as_deref());
-                tui::auth_mode_notice(&auth_mode.to_string(), Some(&source_ref));
+                tui::auth_mode_notice(agent, &auth_mode.to_string(), Some(&source_ref));
             } else {
-                tui::auth_mode_notice(&auth_mode.to_string(), None);
+                tui::auth_mode_notice(agent, &auth_mode.to_string(), None);
             }
 
             // Verbose outcome notices kept for operator context.
@@ -1525,17 +1531,22 @@ fn load_role_with(
             });
             tui::codex_auth_notice(resolved_source, (auth_mode, auth_outcome).into());
         } else if agent == crate::agent::Agent::Amp {
-            let env_var = agent.required_env_var(auth_mode);
-            let source_ref = env_var.and_then(|v| {
-                let raw = lookup_operator_env_raw(
-                    config,
-                    Some(&role_key),
-                    workspace_name.as_deref(),
-                    v,
-                );
-                Some(auth_token_source_reference(v, raw.as_deref()))
+            // Match the Codex pattern: only report a source-ref when
+            // the resolved env actually carries a non-empty value for
+            // the credential var. The raw lookup alone would advertise
+            // a layer that contributed an empty/whitespace string.
+            let amp_env_var = agent.required_env_var(auth_mode);
+            let raw_source = amp_env_var.and_then(|v| {
+                lookup_operator_env_raw(config, Some(&role_key), workspace_name.as_deref(), v)
             });
-            tui::auth_mode_notice(&auth_mode.to_string(), source_ref.as_deref());
+            let resolved_source = amp_env_var.and_then(|v| {
+                resolved_env
+                    .vars
+                    .iter()
+                    .any(|(k, value)| k == v && !value.trim().is_empty())
+                    .then(|| raw_source.as_deref().unwrap_or(v))
+            });
+            tui::auth_mode_notice(agent, &auth_mode.to_string(), resolved_source);
 
             match auth_outcome {
                 crate::instance::AuthProvisionOutcome::Synced => {
@@ -1545,7 +1556,7 @@ fn load_role_with(
                     );
                 }
                 crate::instance::AuthProvisionOutcome::TokenMode => {
-                    if let Some(env_var) = env_var {
+                    if let Some(env_var) = amp_env_var {
                         eprintln!(
                             "[jackin] auth_forward={auth_mode} — role will use \
                              {env_var} from the resolved env."
@@ -1560,7 +1571,12 @@ fn load_role_with(
                         );
                     }
                 }
-                crate::instance::AuthProvisionOutcome::Skipped => {}
+                crate::instance::AuthProvisionOutcome::Skipped => {
+                    eprintln!(
+                        "[jackin] auth_forward=ignore — wiped any prior synced \
+                         settings.json; agent will require interactive login."
+                    );
+                }
             }
         }
 

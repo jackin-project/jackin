@@ -18,9 +18,9 @@ pub struct RoleManifest {
     #[serde(default)]
     pub identity: Option<IdentityConfig>,
     /// Top-level list of supported agents. `None` means the field
-    /// was omitted, which `supported_agents()` treats as the legacy
-    /// claude-only default. `Some(empty)` is rejected by validate
-    /// as a user error.
+    /// was omitted, which `supported_agents()` treats as
+    /// claude-only (the implicit default). `Some(empty)` is
+    /// rejected by validate as a user error.
     #[serde(default)]
     pub agents: Option<Vec<crate::agent::Agent>>,
     #[serde(default)]

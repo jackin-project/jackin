@@ -47,9 +47,10 @@ impl Agent {
     }
 
     /// Modes this agent supports. UI surfaces should consult this when
-    /// listing options to the user. The TOML parser uses `CodexAuthConfig`
-    /// to reject unsupported modes at parse time — this method is the
-    /// runtime/UI parallel.
+    /// listing options to the user. The TOML parser uses agent-specific
+    /// newtypes around `AgentAuthConfig` (`CodexAuthConfig`,
+    /// `AmpAuthConfig`) to reject unsupported modes at parse time —
+    /// this method is the runtime/UI parallel.
     pub const fn supported_modes(self) -> &'static [crate::config::AuthForwardMode] {
         use crate::config::AuthForwardMode as M;
         match self {

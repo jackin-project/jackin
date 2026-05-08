@@ -216,7 +216,7 @@ mod tests {
         for sentinel in &[
             "JACKIN",               // in-container sentinel (was JACKIN)
             "JACKIN_DIND_HOSTNAME", // was manifest JACKIN_DIND_HOSTNAME_ENV_NAME value
-            "JACKIN_AGENT",         // injected by runtime - agent slug (claude/codex/amp)
+            "JACKIN_AGENT",         // injected by runtime — agent slug (claude/codex/amp)
             "JACKIN_ROLE",          // injected by runtime — role selector key
             "DOCKER_HOST",
             "DOCKER_TLS_VERIFY",

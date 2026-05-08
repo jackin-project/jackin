@@ -17,23 +17,24 @@ pub(super) fn is_valid_env_var_name(name: &str) -> bool {
 ///   must exist (even if empty), so consumers like
 ///   `instance/mod.rs::prepare` can rely on the table being non-`None`
 ///   when launching that agent without a runtime check.
-/// - Without an `agents` field, the manifest must declare [claude]
-///   (legacy default; `supported_agents()` returns `[Claude]`).
+/// - Without an `agents` field, the manifest is treated as
+///   claude-only and must declare `[claude]`
+///   (`supported_agents()` returns `[Claude]`).
 ///
-/// Also surfaces an orphan-table warning (non-fatal): if a `[claude]`
-/// or `[codex]` table is populated but the corresponding agent isn't
-/// listed in `agents`, the table is dead config — every runtime path
-/// skips it. Authors editing manifests by hand routinely add
-/// `[codex] model = "..."` first and forget the `agents = [...]`
-/// declaration; without this signal they'd have to debug "agent does
-/// not support codex" at load time and figure out the connection
-/// themselves.
+/// Also surfaces an orphan-table warning (non-fatal): if any
+/// `[<agent>]` table (`[claude]`, `[codex]`, `[amp]`) is populated
+/// but the corresponding agent isn't listed in `agents`, the table
+/// is dead config — every runtime path skips it. Authors editing
+/// manifests by hand routinely add `[codex] model = "..."` first
+/// and forget the `agents = [...]` declaration; without this signal
+/// they'd have to debug "agent does not support codex" at load time
+/// and figure out the connection themselves.
 ///
-/// Orphan warnings are skipped on legacy manifests (no `agents`
-/// field) since the implicit default is unambiguous: those manifests
-/// are claude-only by definition, so a populated `[claude]` table is
-/// expected and a populated `[codex]` would also have failed the
-/// per-agent table-required check above.
+/// Orphan warnings are skipped on manifests with no `agents` field
+/// since the implicit default is unambiguous: those manifests are
+/// claude-only by definition, so a populated `[claude]` table is
+/// expected and any other populated `[<agent>]` table would also
+/// have failed the per-agent table-required check above.
 pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec<ManifestWarning>> {
     use crate::agent::Agent;
 
@@ -67,9 +68,9 @@ pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec
 
     let mut warnings = Vec::new();
 
-    // Only meaningful when `agents` is explicit — legacy manifests
-    // (no `agents` field) implicitly default to claude-only and have
-    // their own coverage rule above.
+    // Only meaningful when `agents` is explicit — manifests with no
+    // `agents` field implicitly default to claude-only and have their
+    // own coverage rule above.
     if manifest.agents.is_some() {
         if manifest.codex.is_some() && !supported.contains(&Agent::Codex) {
             warnings.push(ManifestWarning::new(

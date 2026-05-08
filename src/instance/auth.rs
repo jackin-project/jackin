@@ -514,14 +514,16 @@ impl RoleState {
     ///
     /// `Sync` with the host file missing preserves any role-state
     /// `settings.json` from a prior run so an in-container login isn't
-    /// silently dropped. `OAuthToken` is parser-rejected for Amp; the arm
-    /// is kept for match exhaustiveness and treated as `TokenMode`
-    /// without touching role-state files.
+    /// silently dropped. `OAuthToken` is parser-rejected for Amp; if a
+    /// config bypass ever reaches the defensive arm we wipe the role
+    /// state and log so the bypass is loud rather than silent.
     pub(super) fn provision_amp_auth(
         settings_json: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        use anyhow::Context;
+
         // Reject any pre-existing symlink at the role-state settings.json
         // BEFORE branching on mode (same defensive check as Codex).
         if settings_json.exists() {
@@ -530,8 +532,20 @@ impl RoleState {
 
         let host_settings = host_home.join(".config/amp/settings.json");
         let outcome = match mode {
-            // Parser-rejected for Amp; defensive no-op.
-            AuthForwardMode::OAuthToken => AuthProvisionOutcome::TokenMode,
+            // Parser-rejected for Amp. If we reach this arm the parser
+            // was bypassed; treat it as an env-driven mode (TokenMode)
+            // and wipe any prior Sync residue so forwarded credentials
+            // cannot survive into the container. Log loudly so the
+            // bypass is visible in operator output.
+            AuthForwardMode::OAuthToken => {
+                eprintln!(
+                    "[jackin] internal: provision_amp_auth received unsupported \
+                     OAuthToken mode for Amp — parser invariant bypassed; \
+                     wiping role state and falling back to token-mode."
+                );
+                wipe_amp_state(settings_json)?;
+                AuthProvisionOutcome::TokenMode
+            }
             AuthForwardMode::ApiKey => {
                 wipe_amp_state(settings_json)?;
                 AuthProvisionOutcome::TokenMode
@@ -542,7 +556,12 @@ impl RoleState {
             }
             AuthForwardMode::Sync => match std::fs::read_to_string(&host_settings) {
                 Ok(content) => {
-                    write_private_file(settings_json, &content)?;
+                    write_private_file(settings_json, &content).with_context(|| {
+                        format!(
+                            "failed to write Amp role-state settings.json at {}",
+                            settings_json.display()
+                        )
+                    })?;
                     AuthProvisionOutcome::Synced
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -552,13 +571,21 @@ impl RoleState {
                     AuthProvisionOutcome::HostMissing
                 }
                 Err(e) => {
-                    // Surface unexpected read errors instead of
-                    // misdiagnosing them as host-missing and silently
-                    // dropping the operator into a re-login loop.
-                    anyhow::bail!(
-                        "failed to read host {}: {e} (run with --debug to capture the underlying error)",
-                        host_settings.display()
-                    );
+                    // Surface the underlying io::Error via the source
+                    // chain so {e:#} or `--debug` actually exposes the
+                    // kind (PermissionDenied, NotADirectory, etc.)
+                    // instead of misdiagnosing it as host-missing.
+                    let hint = match e.kind() {
+                        std::io::ErrorKind::PermissionDenied => {
+                            " (check host file permissions on the parent dir)"
+                        }
+                        _ => "",
+                    };
+                    return Err(anyhow::Error::new(e).context(format!(
+                        "failed to read host {}{}",
+                        host_settings.display(),
+                        hint
+                    )));
                 }
             },
         };
@@ -577,10 +604,18 @@ impl RoleState {
 /// Remove any role-state `settings.json` so a prior Sync run cannot
 /// leak forwarded credentials into the container under env-driven
 /// modes (`Ignore`, `ApiKey`); the agent then authenticates via
-/// `AMP_API_KEY` or a fresh in-container login.
+/// `AMP_API_KEY` (`ApiKey`) or a fresh in-container login (`Ignore`).
 fn wipe_amp_state(settings_json: &Path) -> anyhow::Result<()> {
+    use anyhow::Context;
     if settings_json.exists() {
-        std::fs::remove_file(settings_json)?;
+        std::fs::remove_file(settings_json).with_context(|| {
+            format!(
+                "failed to wipe stale Amp settings.json at {} \
+                 (auth_forward switched to ignore/api_key); remove the file \
+                 manually if it has unexpected ownership",
+                settings_json.display()
+            )
+        })?;
     }
     Ok(())
 }
@@ -2587,10 +2622,12 @@ mod amp_auth_tests {
     }
 
     #[test]
-    fn oauth_token_defensive_arm_preserves_existing_file() {
+    fn oauth_token_defensive_arm_wipes_role_state() {
         // OAuthToken is parser-rejected for Amp; the defensive arm in
-        // provision_amp_auth must not wipe a prior Sync's role-state file
-        // if a config bypass ever reaches this code path.
+        // provision_amp_auth wipes any prior Sync's role-state file so a
+        // config bypass cannot leak forwarded credentials into the
+        // container. The arm should never run in production, but if it
+        // does the bypass must be loud and safe.
         let temp = tempdir().unwrap();
         let settings_json = temp.path().join("settings.json");
         std::fs::write(&settings_json, "{\"prior_sync\":true}").unwrap();
@@ -2603,35 +2640,85 @@ mod amp_auth_tests {
         .unwrap();
 
         assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
-        // File survives, so it would be mountable; the launch-side env
-        // resolver still drives the actual auth.
-        assert_eq!(mounted.as_deref(), Some(settings_json.as_path()));
-        assert_eq!(
-            std::fs::read_to_string(&settings_json).unwrap(),
-            "{\"prior_sync\":true}"
+        assert!(mounted.is_none(), "bypass arm must not produce a mount");
+        assert!(
+            !settings_json.exists(),
+            "bypass arm must wipe the prior Sync residue"
         );
     }
 
     #[cfg(unix)]
     #[test]
-    fn rejects_symlink_at_settings_json() {
+    fn rejects_symlink_at_settings_json_under_every_mode() {
+        // Loop every mode (mirrors `rejects_symlink_at_auth_json_under_*`
+        // for Codex). Today the symlink check is hoisted above the mode
+        // match, so the same defense holds for all four arms — but a
+        // future refactor that pushes the check inside specific arms
+        // could regress Sync (highest blast radius — it would otherwise
+        // read through the symlink) silently.
+        for mode in [
+            AuthForwardMode::Sync,
+            AuthForwardMode::ApiKey,
+            AuthForwardMode::OAuthToken,
+            AuthForwardMode::Ignore,
+        ] {
+            let temp = tempdir().unwrap();
+            let settings_json = temp.path().join("settings.json");
+            let decoy = temp.path().join("decoy.txt");
+            std::fs::write(&decoy, "secret").unwrap();
+            std::os::unix::fs::symlink(&decoy, &settings_json).unwrap();
+
+            let err =
+                RoleState::provision_amp_auth(&settings_json, mode, Path::new("/nonexistent"))
+                    .unwrap_err();
+
+            assert!(
+                err.to_string().contains("symlink"),
+                "mode={mode:?}: expected symlink rejection, got: {err}"
+            );
+            assert_eq!(
+                std::fs::read_to_string(&decoy).unwrap(),
+                "secret",
+                "mode={mode:?}: decoy contents must survive"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn surfaces_unreadable_host_settings_json_as_error() {
+        // Sync arm with an unreadable host settings.json must surface
+        // the io::Error rather than misdiagnosing it as HostMissing,
+        // otherwise the operator gets trapped in a re-login loop they
+        // cannot escape until they spot the bad permissions on the
+        // host file. Mirrors Codex's `surfaces_unreadable_host_auth_json_as_error`.
+        use std::os::unix::fs::PermissionsExt;
         let temp = tempdir().unwrap();
         let settings_json = temp.path().join("settings.json");
-        let decoy = temp.path().join("decoy.txt");
-        std::fs::write(&decoy, "secret").unwrap();
-        std::os::unix::fs::symlink(&decoy, &settings_json).unwrap();
+        let host_home = temp.path().join("host_home");
+        let amp_dir = host_home.join(".config/amp");
+        std::fs::create_dir_all(&amp_dir).unwrap();
+        let host_settings = amp_dir.join("settings.json");
+        std::fs::write(&host_settings, "{\"amp\":true}").unwrap();
+        std::fs::set_permissions(&host_settings, std::fs::Permissions::from_mode(0o000)).unwrap();
 
-        let err = RoleState::provision_amp_auth(
-            &settings_json,
-            AuthForwardMode::Ignore,
-            Path::new("/nonexistent"),
-        )
-        .unwrap_err();
+        let result =
+            RoleState::provision_amp_auth(&settings_json, AuthForwardMode::Sync, &host_home);
 
+        // Restore perms so tempdir cleanup succeeds regardless of test
+        // outcome.
+        let _ = std::fs::set_permissions(&host_settings, std::fs::Permissions::from_mode(0o600));
+
+        let err = result.expect_err("EACCES on host settings.json must surface as an error");
+        let rendered = format!("{err:#}");
         assert!(
-            err.to_string().contains("symlink"),
-            "expected symlink rejection, got: {err}"
+            rendered.contains("settings.json"),
+            "error must name the host file: {rendered}"
         );
-        assert_eq!(std::fs::read_to_string(&decoy).unwrap(), "secret");
+        assert!(
+            !rendered.contains("not found")
+                && !rendered.to_ascii_lowercase().contains("nonexistent"),
+            "EACCES must not be reported as not-found: {rendered}"
+        );
     }
 }
