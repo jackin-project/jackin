@@ -4,6 +4,12 @@ description: "Jack an agent into an isolated container"
 ---
 import { Aside } from '@astrojs/starlight/components'
 
+<Aside type="note">
+`jackin load` is the **CLI** entry point. For most day-to-day work,
+[`jackin console`](/commands/console/) is simpler and faster. Use
+`jackin load` when you want a scriptable one-liner, want to skip the
+TUI entirely, or want a flag the console does not expose.
+</Aside>
 
 ## Synopsis
 
@@ -11,7 +17,7 @@ import { Aside } from '@astrojs/starlight/components'
 jackin load [SELECTOR] [TARGET] [OPTIONS]
 ```
 
-Load an agent into an isolated Docker container. This is the primary command for starting an agent session.
+Load an agent into an isolated `Docker` container directly from the command line.
 
 `SELECTOR` chooses the **role** (tool profile). `TARGET` chooses the **workspace or path** (file access boundary).
 
@@ -106,16 +112,15 @@ jackin load the-architect --role-branch feat/caveman-all-install
 
 | Behaviour | Default | With `--role-branch` |
 |---|---|---|
-| Role repo cache path | `~/.jackin/roles/<name>/` | `~/.jackin/roles/<name>/branches/<branch>/` |
-| Image tag | `jackin-<name>` | `jackin-<name>-<branch-slug>` |
-| Uses `published_image` | Yes (if declared in manifest) | No — always builds from the branch Dockerfile |
-| Docker layer cache | Used | Used (no forced rebuild unless `--rebuild` is also passed) |
-| Repo lock file | Shared with default-branch loads | Separate — branch builds never block default-branch loads |
+| Branch cached and reused | Default branch | The named branch — repeat loads of the same branch reuse the cached checkout |
+| Image | Stable per-role image | Branch-specific image, fully isolated from the stable image |
+| Concurrency with default-branch loads | Same role's default-branch load may be blocked while the cache refreshes | Branch builds never block default-branch loads, and vice versa |
 | Trust confirmation | First-use only | **Always** — regardless of the role's trusted status |
+| Forced rebuild | Pass `--rebuild` to refresh layers | Same — pass `--rebuild` to refresh layers |
 
-The branch cache (`branches/<branch>/`) is completely separate from the default-branch cache. Running `jackin load the-architect` after a branch build still uses the unchanged default-branch image.
+The branch image is completely separate from the default-branch image. Running `jackin load the-architect` after a branch build still uses the unchanged default-branch image.
 
-Branch names with slashes are preserved as nested directories on disk (`feat/my-pr` → `branches/feat/my-pr/`), so a branch named `feat/my-pr` and one named `feat-my-pr` are always stored at distinct paths and use distinct lock files.
+Branch names with slashes (`feat/my-pr`) and dashes (`feat-my-pr`) are kept distinct, so loading both never reuses the same image or cache slot by mistake.
 
 ### Branch trust gate
 

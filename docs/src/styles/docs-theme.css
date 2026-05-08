@@ -968,3 +968,32 @@ site-search dialog {
 .pagination-links a:hover svg {
   color: var(--jk-brand);
 }
+
+/* Brand-styled inline name for "jackin'" — automatically wrapped
+   by the `rehype-jk` plugin (see docs/scripts/rehype-jk.ts). Uses
+   `--jk-text` so the name reads white-on-dark and black-on-light
+   (theme-aware) and stays maximally legible in long prose. The
+   weight bump distinguishes it from the surrounding paragraph
+   without using a saturated brand colour mid-sentence. Skips code
+   blocks. */
+.jk-name {
+  color: var(--jk-text);
+  font-weight: 600;
+}
+
+.jk-name:hover {
+  text-decoration: none;
+}
+
+/* Inside headings the existing heading weight wins so we do not
+   double-bold. Colour still inherits the heading's own colour, which
+   is `--jk-text` in both themes by default. */
+:where(h1, h2, h3, h4, h5, h6) .jk-name {
+  font-weight: inherit;
+}
+
+/* Inside links the link colour wins so the name stays underlined
+   without competing against the surrounding link text. */
+a .jk-name {
+  color: inherit;
+}

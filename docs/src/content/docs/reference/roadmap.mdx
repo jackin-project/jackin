@@ -8,17 +8,18 @@ import RepoFile from '../../../components/RepoFile.astro'
 
 ## Current status
 
-jackin' is a functional proof of concept with Claude Code as its first supported agent runtime, namespaced roles, workspace management, and an interactive operator console.
+jackin' is a functional proof of concept. **`Claude Code` and `Codex` ship today as fully integrated agent runtimes**, with namespaced roles, workspace management, per-mount isolation for parallel agents, layered authentication forwarding (including `1Password` references), and an interactive operator console (TUI). **`Amp` is under active development** — when it lands, this section will be updated to reflect it.
 
 ## Completed
 
-- Claude Code agent runtime with full permission mode
-- Docker container isolation with Docker-in-Docker
-- Interactive operator console with workspace and agent selection
-- Workspace management (add, edit, remove, list, show)
-- Global mount configuration with agent scoping
-- Role repo contract validation
-- Derived Dockerfile generation with UID/GID remapping
+- `Claude Code` and `Codex` agent runtimes with full-speed mode (`--dangerously-skip-permissions` / YOLO) inside the container boundary
+- Layered authentication forwarding per (workspace × role × agent) — `sync` / `api_key` / `oauth_token` / `ignore` for `Claude Code`, and `sync` / `api_key` / `ignore` for `Codex` (which does not support `oauth_token`)
+- `Docker` container isolation with `Docker-in-Docker`
+- Interactive operator console (TUI) with workspace, role, and agent selection
+- Workspace management (add, edit, remove, list, show) — CLI and TUI
+- Global mount configuration with role scoping
+- Role repository contract validation
+- Derived `Dockerfile` generation with UID/GID remapping
 - State persistence across sessions
 - Agent identity (display names)
 - UID/GID host user mapping
@@ -26,7 +27,7 @@ jackin' is a functional proof of concept with Claude Code as its first supported
 - Homebrew installation
 - Namespaced roles (e.g., `chainargos/frontend-engineer`)
 - Last-agent memory per workspace
-- [Custom Claude plugin marketplaces](/reference/roadmap/custom-plugin-marketplace/) in `jackin.role.toml`
+- [Custom `Claude Code` plugin marketplaces](/reference/roadmap/custom-plugin-marketplace/) in `jackin.role.toml`
 - [Sensitive mount path warnings](/reference/roadmap/sensitive-mount-warnings/) (warn-and-confirm for `~/.ssh`, `~/.aws`, etc.)
 - [Automatic orphaned DinD cleanup](/reference/roadmap/orphaned-dind-cleanup/) (pre-launch garbage collection)
 - [`${env.VAR}` interpolation](/reference/roadmap/env-var-interpolation/) in env var prompts and defaults for dependent variables
@@ -41,14 +42,14 @@ jackin' is a functional proof of concept with Claude Code as its first supported
 ## Partially implemented
 
 - [1Password integration](/reference/roadmap/onepassword-integration/) — workspace-managed `op://` env references shipped; file-mount generation (option 4) still deferred
-- [Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/) — Codex foundation slice shipped; Amp and full feature parity still in flight
+- [Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/) — Codex shipped as a fully integrated runtime; Amp runtime integration is under active development; full feature parity across `claude` / `codex` / `amp` still ongoing
 
 ## Planned
 
 ### Agent runtimes
 
 <Aside type="note">
-The Codex foundation slice is in (see Partially implemented above). The remaining work to reach `claude` / `codex` / `amp` parity — runtime-specific auth, config, state, entrypoint behavior, and Amp itself — continues under the same roadmap item.
+`Claude Code` and `Codex` are fully integrated runtimes today (see Partially implemented above). `Amp` is under active development. The remaining work to reach full `claude` / `codex` / `amp` feature parity — runtime-specific auth, config, state, and entrypoint behaviour — continues under the same roadmap item.
 </Aside>
 - **[Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/)** — finish the runtime abstraction so one role can launch under `claude`, `codex`, or `amp` interchangeably. Phase 1 focuses on secure local usability, not full Claude-feature parity.
 
@@ -73,29 +74,39 @@ The Codex foundation slice is in (see Partially implemented above). The remainin
 
 ### Operator surface and fleet operations
 
-- **[Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)** — phased program of 18 leaf items closing the gap between jackin's primitives and the operator surface that adjacent tools (notably [`multicode`](https://github.com/yawkat/multicode)) ship today. Covers live agent observability, per-instance persistent storage, declarative resource limits, autonomous task queue, remote operation, and skill mounts — the missing pieces that prevent jackin' from being the canonical orchestrator teams compose on instead of building their own. The full list of 18 leaves lives in the program doc and the sidebar under **Reference → Roadmap → Active programs → Universal Orchestrator Program**.
+- **[Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)** — phased program of 18 leaf items closing the gap between jackin's primitives and the operator surface that adjacent tools (notably [`multicode`](https://github.com/yawkat/multicode)) ship today. Covers live agent observability, per-instance persistent storage, declarative resource limits, autonomous task queue, remote operation, and skill mounts — the missing pieces that prevent jackin' from being the canonical orchestrator teams compose on instead of building their own. The full list of 18 leaves lives in the program doc and the sidebar under **Reference → Roadmap → Universal Orchestrator Program**.
 
 ### Codebase health
 
 - **[Codebase readability program](/reference/roadmap/codebase-readability/)** — multi-phase internal-quality work covering documentation/setup, behavioral specs, module-contract refactors, and test coverage. The full leaf list lives in the program doc and in the sidebar under **Reference → Roadmap → Codebase health**.
 - **[Open review findings catalog](/reference/roadmap/open-review-findings/)** — living backlog of review findings with accepted-exception annotations. Code review and automated scanning consult this catalog (see <RepoFile path="AGENTS.md" /> → "Code review & automated scanning").
 
+### Configuration ergonomics
+
+- **[Split `config.toml` into per-workspace files](/reference/roadmap/split-workspace-config-files/)** — keep the TOML format, but move every workspace into `~/.config/jackin/workspaces/<name>.toml`, leaving `config.toml` for global settings only. Designed for one-file sharing, fresh-machine reuse, and selective version control (e.g. via [chezmoi](https://www.chezmoi.io/)).
+
 ### Documentation infrastructure
 
 - **[Greenfield workspace pattern](/reference/roadmap/greenfield-workspace/)** — workspace-onboarding pattern for empty projects (status: deferred to Phase 3 — trigger not yet met, but architecture is ready)
 - **[Markdown linting for docs](/reference/roadmap/docs-markdown-linting/)** — uniform Markdown lint pipeline for the docs site (status: proposed — design captured, no implementation committed)
+- **[Move documentation to a separate repository](/reference/roadmap/docs-separate-repository/)** — promote `docs/` out of the CLI repo into its own `jackin-project/jackin-docs` repo so the ecosystem-level docs have an ecosystem-level home; the load-bearing question is how to keep the docs as fresh as same-repo co-location makes them today (status: deferred — needs design pass on the cross-repo freshness story)
 - **[Rustdoc → Starlight integration](/reference/roadmap/rustdoc-json-starlight/)** — surface rustdoc JSON inside the Starlight docs site (status: deferred — Phase 3)
 
 <Aside type="tip">
-Detailed design documents for individual TODO items are linked from the sidebar under **Roadmap → Open items** and **Roadmap → Resolved**. Each page is a self-contained proposal with problem statement, options, and related files.
+Detailed design documents for individual TODO items are linked from the sidebar under **Roadmap** (each open category — `Universal Orchestrator Program`, `Codebase health`, `Agent runtimes & authentication`, `Isolation & security`, `Infrastructure`, `Documentation tooling`, `Configuration ergonomics`) and **Roadmap → Resolved** for shipped items. Each page is a self-contained proposal with problem statement, options, and related files.
 </Aside>
 ## Vision
 
-jackin' is designed as a **local-first development tool** with a focus on excellent UX and practical isolation. The near-term goal is to be the best way to run AI coding agents in parallel on a local machine — lightweight, composable, and open source.
+The user-facing summary of where jackin' is headed lives on the
+[Why jackin'? → Vision](/getting-started/why/#vision) page so it is
+visible to operators and role authors, not only to contributors who
+end up on the roadmap. The longer-term shape of the project, the
+local-first focus, and the eventual move toward Kubernetes-backed
+debug workflows are all captured there.
 
-The longer-term vision extends to deployment ecosystems. Kubernetes support will enable jackin' as a debug container platform — loading an AI agent into a production pod to safely investigate issues, with the same workspace and mount controls that make local use safe.
-
-The project welcomes suggestions and contributions. If jackin' works for your use case — or almost works but needs something different — [open an issue](https://github.com/jackin-project/jackin/issues) or submit a pull request.
+If jackin' works for your use case — or almost works but needs
+something different — [open an issue](https://github.com/jackin-project/jackin/issues)
+or submit a pull request.
 
 ## Contributing
 

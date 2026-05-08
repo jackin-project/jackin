@@ -1,6 +1,6 @@
 ---
 title: Core Concepts
-description: The mental model behind jackin' — operators, agents, constructs, and workspaces
+description: The mental model behind jackin' — operators, agents, roles, constructs, and workspaces
 ---
 import { Aside } from '@astrojs/starlight/components'
 
@@ -14,25 +14,25 @@ import { Aside } from '@astrojs/starlight/components'
 - Which workspace configuration to use
 - When to eject (stop) an agent
 
-The operator never enters the container. You interact with jackin's CLI and TUI from your host machine.
+The operator never enters the container. You drive jackin' from your host machine through two surfaces: the **operator console** (`jackin console`) — an interactive TUI that is the simplest and most-used way to work day-to-day — and the **CLI** (`jackin load`, `jackin workspace`, …) for advanced, scripted, or non-interactive flows.
 
 ## Agents
 
-An **agent** is an AI coding runtime (like Claude Code) running inside an isolated Docker container. Each agent:
+An **agent** is an AI coding runtime (`Claude Code` and `Codex` today; `Amp` under active development) running inside an isolated `Docker` container. Each agent:
 
 - Has its own filesystem, network, and process space
-- Runs with full permissions inside the container (`--dangerously-skip-permissions`)
+- Runs at full speed inside the container — whatever "no permission prompts" mode the runtime ships (`Claude Code`'s `--dangerously-skip-permissions`, `Codex`'s YOLO, etc.) — because the boundary is the container, not the prompts
 - Can only access directories you explicitly mount
-- Has Docker-in-Docker (DinD) enabled, so it can build and run Docker containers inside its own container
-- Persists its state between sessions (Claude history, settings, GitHub CLI auth/config, plugins)
+- Can build and run its own containers (`Docker-in-Docker`), without touching your host's `Docker` daemon
+- Persists its state between sessions (conversation history, runtime settings, `GitHub CLI` auth/config, plugins)
 
 ### Roles
 
-An agent **class** is a reusable tool profile for creating agent containers. It's defined by a GitHub repository that contains a Dockerfile and a manifest file (`jackin.role.toml`). For example:
+An agent **role** is a reusable tool profile for creating agent containers. It's defined by a `GitHub` repository that contains a `Dockerfile` and a manifest file. For example:
 
 - `agent-smith` — the default role
 - `the-architect` — an agent with the full Rust toolchain (used for jackin' development)
-- `chainargos/backend-engineer` — a namespaced agent for backend work in the chainargos organization
+- `chainargos/backend-engineer` — a namespaced role for backend work in the chainargos organization
 
 The name `agent-smith` is just a project-specific example. In practice, role names can reflect the job they are designed for:
 
@@ -42,16 +42,16 @@ The name `agent-smith` is just a project-specific example. In practice, role nam
 - `docs-writer`
 - `security-reviewer`
 
-When you run `jackin load agent-smith`, jackin' clones the `jackin-agent-smith` repository, builds a Docker image from it, and launches a container.
+When you run `jackin load agent-smith`, jackin' clones the `jackin-agent-smith` repository, builds a `Docker` image from it, and launches a container.
 
-Think of an role as answering: "What kind of agent is this?"
+Think of a role as answering: "What kind of agent is this?"
 
 - Which language toolchains are installed?
 - Which shell setup or helper scripts are present?
-- Which Claude plugins are installed?
+- Which `Claude Code` plugins (or equivalent extensions for other runtimes) are installed?
 - Which defaults should this agent start with?
 
-One project may intentionally use several roles. That is not redundancy. It is how you keep the agent's world focused. A frontend-oriented class can carry UI tooling and plugins, while a backend-oriented class can carry server tooling and database clients, even if both point at the same workspace. The smaller and more relevant that environment is, the less out-of-scope context the agent has to inspect.
+One project may intentionally use several roles. That is not redundancy. It is how you keep the agent's world focused. A frontend-oriented role can carry UI tooling and plugins, while a backend-oriented role can carry server tooling and database clients, even if both point at the same workspace. The smaller and more relevant that environment is, the less out-of-scope context the agent has to inspect.
 
 ### Agent instances
 
@@ -59,40 +59,24 @@ A single role can have multiple running **instances**. Each instance is a separa
 
 ## The construct
 
-The **construct** in jackin' is the shared base Docker image that every agent starts from — the empty foundation that gets layered with agent-specific tools at load time:
+The **`construct`** is the shared base `Docker` image that every agent starts from. It carries the operating system and the tools every agent is expected to have on day one — `Debian`, the `Docker` CLI, `git`, `GitHub CLI`, `mise`, `ripgrep`, `fd`, `fzf`, `zsh` with `Oh My Zsh`, and the `Starship` prompt.
 
-```
-projectjackin/construct:trixie
-```
+Role repos extend the `construct` with their own tools. For example, a role for Rust development would add the Rust toolchain on top of the `construct`.
 
-The construct provides:
-
-| Component | Purpose |
-|---|---|
-| **Debian Trixie** | Stable base OS |
-| **Docker CLI + Compose** | So agents can build/run containers (via DinD) |
-| **Git + Git LFS** | Source control |
-| **GitHub CLI** | Repository and PR operations |
-| **mise** | Language version management (Node, Python, Go, etc.) |
-| **ripgrep, fd, fzf** | Fast search tools |
-| **zsh + Oh My Zsh** | Shell environment with autosuggestions |
-| **Starship prompt** | Informative terminal prompt |
-
-Role repos extend the construct with their own tools. For example, an agent for Rust development would add the Rust toolchain on top of the construct.
-
-## Docker-in-Docker (DinD)
-
-Each agent gets its own Docker daemon via a **DinD sidecar container**. This means agents can:
-
-- Build Docker images (`docker build`)
-- Run containers (`docker run`)
-- Use Docker Compose (`docker compose up`)
-
-All within their own isolated Docker environment. The agent's Docker daemon is completely separate from your host's Docker daemon.
+You don't pull or maintain the `construct` yourself — `jackin load` does it for you the first time it is needed.
 
 <Aside type="note">
-The DinD sidecar runs on a per-agent Docker network (`jackin-{agent}-net`). The agent container connects to the DinD daemon via TCP.
+If you want to know exactly what the `construct` contains and how it
+is built, see [The Construct Image](/developing/construct-image/) in
+the internals section. Operators rarely need that level of detail.
 </Aside>
+
+## Docker-in-Docker
+
+Each agent gets its own private `Docker` daemon. From the agent's point of view that means it can run `docker build`, `docker run`, and `docker compose` inside its own container, without ever talking to your host `Docker` daemon.
+
+The practical consequence: an agent can build and run containers as part of its work, but those containers cannot escape into your host's `Docker` engine.
+
 ## Workspaces
 
 A **workspace** defines how your project directories are mounted into an agent container. It specifies:
@@ -122,58 +106,34 @@ Workspaces can be:
 
 1. **Current-directory workspace** — the current directory, mounted at the same path. This is what you get with `jackin load agent-smith` from any directory.
 
-2. **Saved** — named configurations stored in `~/.config/jackin/config.toml`. Saved workspaces are useful when you want to reuse the same project boundary across sessions, launch from anywhere, preserve a multi-mount layout, or keep a preferred/default agent attached to that project.
+2. **Saved** — named configurations you create in the operator console (or with `jackin workspace create` from the CLI). Saved workspaces are useful when you want to reuse the same project boundary across sessions, launch from anywhere, preserve a multi-mount layout, or keep a preferred/default agent attached to that project.
 
-## Derived images
-
-When you load an agent, jackin' doesn't use the construct image directly. Instead, it generates a **derived Dockerfile** that:
-
-1. Starts from the agent's Dockerfile (which itself starts from the construct)
-2. Remaps the container user to match your host UID/GID
-3. Installs Claude Code — the current implementation targets Claude specifically; supporting other agent runtimes is on the roadmap but not in the build path today
-4. Injects the runtime entrypoint script
-5. Copies in Claude plugins if declared in the manifest
-
-Every load re-runs `docker build` on the derived Dockerfile, but Docker's layer cache makes unchanged layers instant — the first load pays the full build cost, subsequent loads typically only rebuild what changed. Passing `--rebuild` additionally invalidates the Claude installation layer so the next build picks up a newer Claude version.
+<Aside type="tip">
+Saved workspaces are managed exclusively through `jackin workspace …`
+commands or the operator console — there is no need to hand-edit any
+configuration file. Every operator-level setting has a CLI flow; the
+common ones (workspace mounts, workspace env, per-(workspace × role)
+auth) additionally have a TUI flow in the operator console. Global
+mounts, global env, and a few advanced flags are CLI-only today.
+</Aside>
 
 ## State persistence
 
-Agent state is persisted between sessions at `~/.jackin/data/<container-name>/`. This includes:
+Each agent keeps its own session state — conversation history, login state for tools you authenticated inside the container (such as `gh`), and any plugins the role installed. When you stop and restart an agent, it picks up where it left off.
 
-- `.claude/` — Claude Code session history and configuration
-- `.claude.json` — Claude settings
-- `.config/gh/` — GitHub CLI authentication and settings when you authenticate inside the container
-
-When you stop and restart an agent, it picks up where it left off. Use `jackin purge` to delete persisted state and start fresh.
+To wipe an agent's persisted state and start fresh, run `jackin purge <role>`.
 
 ## Putting it all together
 
-Here's what happens when you run `jackin load agent-smith ~/Projects/my-app`:
+When you run `jackin load agent-smith ~/Projects/my-app`, jackin' takes care of every step needed to launch a usable agent — from your point of view, that looks like:
 
-```
-1. Resolve role "agent-smith"
-   └─ Clone/update github.com/jackin-project/jackin-agent-smith
+1. **Pick the role** — fetch and validate the role repo.
+2. **Build the agent image** — extending the `construct` with the role's tools and the agent runtime. Subsequent loads reuse `Docker`'s layer cache.
+3. **Mount your project files** — at the path the workspace says.
+4. **Start the container in isolation** — on its own `Docker` network, with its own private `Docker` daemon for any containers the agent itself needs to build.
+5. **Drop you inside** — `Claude Code` (or another supported runtime) starts with full permissions inside that boundary.
 
-2. Validate role repo contract
-   └─ Check jackin.role.toml and Dockerfile
-
-3. Generate derived Dockerfile
-   └─ Construct base → Agent layer → Claude install → Entrypoint
-
-4. Build derived Docker image (cached if unchanged)
-
-5. Create per-agent Docker network
-   └─ jackin-agent-smith-net
-
-6. Launch DinD sidecar container
-   └─ jackin-agent-smith-dind on jackin-agent-smith-net
-
-7. Launch agent container
-   ├─ Mount ~/Projects/my-app at the same path
-   ├─ Mount persisted state from ~/.jackin/data/
-   ├─ Connect to jackin-agent-smith-net
-   ├─ Set DOCKER_HOST to DinD sidecar
-   └─ Run Claude Code with --dangerously-skip-permissions
-
-8. You're inside — Claude Code is ready
-```
+That whole sequence is one command. If you want to read the full,
+under-the-hood account — derived `Dockerfile`s, networking, isolated
+worktrees, the post-attach finalizer — see
+[Architecture](/reference/architecture/) in the internals section.

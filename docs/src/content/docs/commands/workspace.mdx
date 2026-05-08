@@ -169,15 +169,15 @@ jackin workspace prune my-app        # interactive
 jackin workspace prune my-app --yes  # non-interactive
 ```
 
-Under rule C, a mount is redundant when another mount in the same workspace strictly covers it at the same container location — same host-to-container offset. See [Redundant-mount invariant](/guides/mounts/#redundant-mount-invariant) in the mounts guide.
+A mount is redundant when another mount in the same workspace strictly covers it at the same container location — same host-to-container offset. See [Redundant mounts](/guides/mounts/#redundant-mounts) in the mounts guide.
 
 ## `workspace env`
 
 Manage operator env vars at workspace and workspace-role scope.
 
-Values are stored verbatim — `op://...` 1Password references, `$VAR` / `${VAR}` shell-style interpolations, and literal strings all work. jackin' resolves values at launch time through the operator-env layer; there is no editor-side validation of key names or value shape.
+Values are stored verbatim — `op://...` 1Password references, `$VAR` / `${VAR}` shell-style interpolations, and literal strings all work. jackin' resolves values at launch time; there is no editor-side validation of key names or value shape.
 
-Without `--role`, writes and reads target `[workspaces.<WORKSPACE>.env]`. With `--role <SELECTOR>`, they target `[workspaces.<WORKSPACE>.roles.<SELECTOR>.env]`. The workspace must already exist — unknown workspaces fail fast with a non-zero exit. The role selector is not pre-validated.
+Without `--role`, writes and reads target the **workspace-wide** scope (applies to every role launch in this workspace). With `--role <SELECTOR>`, they target the **per-(workspace × role)** scope (applies only when that role is launched in this workspace). The workspace must already exist — unknown workspaces fail fast with a non-zero exit. The role selector is not pre-validated.
 
 ### `workspace env set`
 
@@ -189,8 +189,8 @@ Set or overwrite an env var at the chosen scope.
 
 | Option | Description |
 |---|---|
-| `--role <SELECTOR>` | Apply to `[workspaces.<WORKSPACE>.roles.<SELECTOR>.env]` instead of the workspace-wide table |
-| `--comment <TEXT>` | Write a TOML line comment directly above the key |
+| `--role <SELECTOR>` | Apply to the per-(workspace × role) scope instead of the workspace-wide one |
+| `--comment <TEXT>` | Attach an inline comment to the key |
 
 ```bash
 # Workspace scope
@@ -209,11 +209,11 @@ jackin workspace env set prod DEBUG "1" --comment "temporary; remove after Q2"
 jackin workspace env unset <WORKSPACE> <KEY> [OPTIONS]
 ```
 
-Remove an env var from the chosen scope. Idempotent: if the key is not present, prints `<KEY> not set.` and exits 0 without modifying the config file. Fails fast if `<WORKSPACE>` does not exist.
+Remove an env var from the chosen scope. Idempotent: if the key is not present, prints `<KEY> not set.` and exits 0 without modifying anything. Fails fast if `<WORKSPACE>` does not exist.
 
 | Option | Description |
 |---|---|
-| `--role <SELECTOR>` | Unset from `[workspaces.<WORKSPACE>.roles.<SELECTOR>.env]` instead of the workspace-wide table |
+| `--role <SELECTOR>` | Unset from the per-(workspace × role) scope instead of the workspace-wide one |
 
 ```bash
 jackin workspace env unset prod DB_URL
@@ -230,7 +230,7 @@ Show the env vars registered at the chosen scope as a table with `Key` and `Valu
 
 | Option | Description |
 |---|---|
-| `--role <SELECTOR>` | List vars from `[workspaces.<WORKSPACE>.roles.<SELECTOR>.env]` instead of the workspace-wide table |
+| `--role <SELECTOR>` | List vars from the per-(workspace × role) scope instead of the workspace-wide one |
 
 ```bash
 jackin workspace env list prod
