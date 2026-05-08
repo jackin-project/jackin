@@ -1,1 +1,10 @@
+# Editor/tool local state
+.idea/
+.vscode/
+*.swp
 .DS_Store
+
+# Docker build context leftovers
+*.tar
+*.tar.gz
+.dockerignore.bak

@@ -1,8 +1,8 @@
-# agent-brown
+# Agent Brown
 
 > **Internal — ChainArgos only.** This repository and the published Docker image are private and must remain private. See [AGENTS.md § Hard rules](./AGENTS.md#hard-rules-do-not-break-these).
 
-`agent-brown` is the ChainArgos `jackin` agent role. It provides the agent-specific environment layer for the ChainArgos Java/Rust monorepo.
+**Agent Brown** is the ChainArgos `jackin` agent role (role identifier `agent-brown`). It provides the agent-specific environment layer for the ChainArgos Java/Rust monorepo.
 
 `jackin` validates this repo's Dockerfile, derives the final image itself, and mounts the cached repo checkout into `/workspace` when you run:
 
