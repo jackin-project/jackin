@@ -5,6 +5,16 @@ description: What's inside the shared base image that every agent starts from
 import RepoFile from '../../../components/RepoFile.astro'
 import { Aside } from '@astrojs/starlight/components'
 
+<Aside type="note">
+This page has two readers. **Role authors** (user-facing) read the
+top half — *what is in the `construct`*, *what tools come for free*,
+*how to extend it from a role's `Dockerfile`*. **Contributors**
+(internals-facing) read the lower half — *how to build, validate,
+and publish the `construct` image itself* (`just construct-build`,
+CI workflow, advanced publish rehearsal). Operators using jackin'
+as a product do not need to read either half; `jackin load` pulls
+and updates the `construct` automatically.
+</Aside>
 
 ## What is the construct?
 

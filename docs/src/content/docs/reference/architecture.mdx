@@ -5,6 +5,16 @@ description: How jackin' orchestrates containers, networks, and persisted state
 
 import ArchitectureDiagram from '../../../components/diagrams/ArchitectureDiagram.astro'
 import ImageLayers from '../../../components/diagrams/ImageLayers.astro'
+import RepoFile from '../../../components/RepoFile.astro'
+import { Aside } from '@astrojs/starlight/components'
+
+<Aside type="note">
+This page is **for contributors** — anyone who wants to understand or
+work on jackin' itself. Operators do not need to read it to use
+jackin'; the [Operator Guide](/guides/workspaces/) and
+[Concepts](/getting-started/concepts/) cover everything an operator
+needs.
+</Aside>
 
 ## High-level architecture
 
@@ -222,16 +232,22 @@ If the main thing you need is the strongest local boundary for autonomous agents
 
 ## Technology stack
 
-jackin' itself is built in Rust:
+jackin' is built in Rust. The runtime dependencies, grouped by what they own, match <RepoFile path="Cargo.toml" />:
 
-| Component | Technology |
+| Concern | Crates |
 |---|---|
-| CLI parsing | `clap` |
-| Terminal UI | `ratatui` + `crossterm` |
+| CLI parsing & manpages | `clap`, `clap_mangen` |
+| Terminal UI | `ratatui`, `crossterm`, `ratatui-textarea`, `tui-widget-list`, `dialoguer` |
 | Table output | `tabled` |
-| Configuration | `serde` + `toml` |
+| Configuration (parse + edit) | `serde`, `serde_json`, `toml`, `toml_edit` |
+| XDG paths and process locking | `directories`, `fs2` |
 | Dockerfile parsing | `dockerfile-parser-rs` |
-| Error handling | `anyhow` + `thiserror` |
+| Error handling | `anyhow`, `thiserror` |
 | Colored output | `owo-colors` |
+| Filesystem helpers | `tempfile` |
+| Open external URLs | `open` |
+| Test helpers (dev) | `assert_cmd`, `predicates` |
 
-The project targets Rust edition 2024 and forbids unsafe code.
+The project targets **Rust edition 2024** with a current MSRV of **1.94** (see `rust-version` in <RepoFile path="Cargo.toml" />) and `unsafe_code = "forbid"` at the crate root. Clippy lints are configured with `correctness` and `suspicious` set to `deny` and `complexity`/`style`/`perf`/`pedantic`/`nursery` set to `warn` — see <RepoFile path="Cargo.toml" /> for the full lint table.
+
+When this list drifts from <RepoFile path="Cargo.toml" />, <RepoFile path="Cargo.toml" /> wins. Update both in the same PR.

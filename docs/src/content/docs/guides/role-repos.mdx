@@ -1,9 +1,19 @@
 ---
-title: Role Repos
+title: Role Repositories
 description: How role repositories work and how they're discovered
 ---
 import { Aside } from '@astrojs/starlight/components'
 
+<Aside type="note">
+This page is **for role authors** — anyone creating their own
+role repository (`backend-engineer`, `docs-writer`,
+`security-reviewer`, …) for themselves or for a team. Role
+authoring is a normal user-facing activity, not a contributor
+activity: you do not need to know how jackin' is implemented to
+read this page. Operators who only *load* existing roles only need
+the role's selector name (e.g. `agent-smith`) and can skip this
+section.
+</Aside>
 
 ## What is a role repo?
 
@@ -72,14 +82,14 @@ This name appears in jackin's TUI and output. When omitted, the role selector na
 
 ## Caching
 
-Role repos are cloned under `~/.jackin/roles/` on first load. The default branch checkout lives at `~/.jackin/roles/<role>/default`, and branch-specific checkouts live under `~/.jackin/roles/<role>/branches/<branch>`. Subsequent loads use the cached checkout. jackin' updates the repo on each load to keep the cache current.
+jackin' caches each role's repository on first load and reuses the cached checkout on every subsequent load — there is no manual cache to manage. Branches loaded with `--role-branch` are cached separately from the default branch, so you can flip between them without re-cloning either side. jackin' updates the cache on each load to keep it in sync with the configured source.
 
 jackin' is intentionally strict about that cache:
 
 - if the cached repo's `origin` no longer matches the configured source, load fails
 - if the cached repo contains local changes or extra files, load fails
 
-This avoids silently building from a tampered or stale cache. If you intentionally edited the cached repo, remove it and let jackin' clone again.
+This avoids silently building from a tampered or stale cache. If you intentionally need a clean cache, run `jackin purge <role>` to drop it and let the next load clone fresh.
 
 <Aside type="tip">
 Pass `--rebuild` to force jackin' to rebuild the Docker image from scratch. This is useful when the construct base image or agent Dockerfile has changed.

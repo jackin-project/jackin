@@ -4,6 +4,13 @@ description: "The jackin.role.toml file that defines a role"
 ---
 import { Aside } from '@astrojs/starlight/components'
 
+<Aside type="note">
+This page is **for role authors** — it documents the schema of the
+`jackin.role.toml` file inside a role repository. Role authoring is
+a user-facing activity: you do not need to know how jackin' is
+implemented to use this page. Operators who only *load* existing
+roles never edit this file.
+</Aside>
 
 ## Overview
 
@@ -218,16 +225,12 @@ Declare environment variables that the agent needs at runtime. Each variable is 
 - `depends_on` entries must use the `env.` prefix (e.g., `"env.PROJECT"`)
 - `depends_on` must reference variables declared in the same manifest
 - `${env.*}` references in `prompt` and `default` must point to declared variables that are listed in `depends_on`
-- `JACKIN` is reserved for jackin and cannot be declared in `[env]`
-- `JACKIN_DIND_HOSTNAME` is reserved for jackin and cannot be declared in `[env]`
+- Reserved runtime names (see [Reserved names](/guides/environment-variables/#reserved-names) for the canonical list) cannot be declared in `[env]`
 - Circular dependencies are rejected
 
 ### Runtime-managed variables
 
-jackin sets these variables automatically inside the container. Do not declare either of them in `[env]`.
-
-- `JACKIN=1` marks that the process is running inside a jackin-managed runtime.
-- `JACKIN_DIND_HOSTNAME` is the hostname agents should use to reach published services started via the Docker-in-Docker daemon.
+jackin' sets a small set of variables automatically inside the container — most notably `JACKIN=1` (which marks that the process is running inside a jackin-managed runtime) and `JACKIN_DIND_HOSTNAME` (which agents use to reach published services started via the Docker-in-Docker daemon). The full set of reserved runtime names is documented under [Reserved names](/guides/environment-variables/#reserved-names) and must not be declared in `[env]`.
 
 ### Interactive text input
 

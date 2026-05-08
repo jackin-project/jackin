@@ -2,9 +2,11 @@
 
 Jack your AI coding agents in. Isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.
 
+jackin' is the **ecosystem layer around** AI coding agents — not another agent itself. It runs many agents in parallel, each in its own container, with its own file access, tool profile, and credentials. Every agent runtime ([Claude Code](https://docs.anthropic.com/en/docs/claude-code) `--dangerously-skip-permissions`, [Codex](https://github.com/openai/codex) YOLO, [Amp](https://ampcode.com), and the next ones to come) is most productive at full speed — and full speed against your host machine is risky. jackin' moves the boundary off the host, so the runtime can stay fast.
+
 Documentation: <https://jackin.tailrocks.com/>
 
-> **Current status:** jackin' is built as a proof of concept around [Claude Code](https://docs.anthropic.com/en/docs/claude-code) as its first and only supported agent runtime. Support for additional runtimes is [on the roadmap](https://jackin.tailrocks.com/reference/roadmap/).
+> **Current status:** jackin' is a proof of concept. [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://github.com/openai/codex) ship today as fully integrated agent runtimes. [Amp](https://ampcode.com) is under active development and will join them; full feature parity across all three is tracked on the [roadmap](https://jackin.tailrocks.com/reference/roadmap/). The isolation model is runtime-agnostic — adding another runtime is a matter of installing and starting it inside the container, not changing the boundary.
 
 ## Install
 
@@ -22,25 +24,31 @@ Or [build from source](https://jackin.tailrocks.com/getting-started/installation
 
 ## Quick Start
 
-```sh
-# Load an agent into your current project directory
-jackin load agent-smith
+The simplest way to use jackin' is the **operator console** — an interactive TUI that picks workspaces, roles, and agents for you:
 
-# Or open the interactive operator console
+```sh
 jackin
 ```
 
-That's it. jackin' pulls the base image, builds the agent container, mounts your project, and drops you into Claude Code — fully autonomous inside an isolated environment.
+(Or `jackin console` to be explicit.) The console is the daily driver and covers the common cases of every other command.
 
-See the [Quick Start guide](https://jackin.tailrocks.com/getting-started/quickstart/) for common workflows and next steps.
+If you'd rather see the isolation model in action with a single one-shot command, `jackin load` is the **scriptable CLI** equivalent:
+
+```sh
+jackin load agent-smith
+```
+
+That pulls the base image, builds the agent container, mounts your project, and drops you into the agent runtime — fully autonomous inside an isolated environment.
+
+See the [Quick Start guide](https://jackin.tailrocks.com/getting-started/quickstart/) for the full walkthrough, and [`jackin console`](https://jackin.tailrocks.com/commands/console/) for the TUI reference.
 
 ## What It Does
 
 - **Isolates each agent** in its own Docker container with Docker-in-Docker enabled
-- **Gives agents full autonomy** inside the container boundary (`--dangerously-skip-permissions`)
+- **Gives agents full autonomy** inside the container boundary (whatever full-speed mode the runtime ships — Claude's `--dangerously-skip-permissions`, Codex's YOLO, etc.)
 - **Separates tooling from file access** — roles define the environment, workspaces define which files are visible
 - **Supports multiple agents simultaneously** — different tool profiles against the same or different projects
-- **Persists agent state** between sessions (Claude history, GitHub CLI auth, plugins)
+- **Persists agent state** between sessions (conversation history, GitHub CLI auth, plugins)
 
 Learn more: [Why jackin'?](https://jackin.tailrocks.com/getting-started/why/) · [Core Concepts](https://jackin.tailrocks.com/getting-started/concepts/) · [Security Model](https://jackin.tailrocks.com/guides/security-model/) · [Comparison with Alternatives](https://jackin.tailrocks.com/guides/comparison/)
 
@@ -49,24 +57,27 @@ Learn more: [Why jackin'?](https://jackin.tailrocks.com/getting-started/why/) ·
 | Repository | Description |
 |---|---|
 | [jackin](https://github.com/jackin-project/jackin) | CLI source code (this repo) |
-| [jackin-agent-smith](https://github.com/jackin-project/jackin-agent-smith) | Default general-purpose agent |
-| [jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) | Rust development agent (used for jackin' development) |
-| [construct image source](https://github.com/jackin-project/jackin/tree/main/docker/construct) | Shared base Docker image for all agents |
+| [jackin-agent-smith](https://github.com/jackin-project/jackin-agent-smith) | Default general-purpose role |
+| [jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) | Rust development role (used for jackin' development) |
+| [construct image source](https://github.com/jackin-project/jackin/tree/main/docker/construct) | Shared base Docker image for all roles |
 
 ## Documentation
 
-The full documentation lives at **<https://jackin.tailrocks.com/>** and covers:
+This README is a first impression. The full documentation at **<https://jackin.tailrocks.com/>** is where every detail lives:
 
-- [Installation](https://jackin.tailrocks.com/getting-started/installation/) — all install methods and prerequisites
-- [Core Concepts](https://jackin.tailrocks.com/getting-started/concepts/) — operators, agents, constructs, and workspaces
-- [Commands](https://jackin.tailrocks.com/commands/load/) — complete CLI reference
-- [Creating Agents](https://jackin.tailrocks.com/developing/creating-agents/) — build your own role repos
-- [The Construct Image](https://jackin.tailrocks.com/developing/construct-image/) — what's inside the shared base image and how it is built
-- [Architecture](https://jackin.tailrocks.com/reference/architecture/) — how jackin' orchestrates containers and networks
+- [Why jackin'?](https://jackin.tailrocks.com/getting-started/why/) — the problem and the ecosystem framing
+- [Installation](https://jackin.tailrocks.com/getting-started/installation/) — install methods and prerequisites
+- [Quick Start](https://jackin.tailrocks.com/getting-started/quickstart/) — first-run walkthrough, console + CLI side by side
+- [Core Concepts](https://jackin.tailrocks.com/getting-started/concepts/) — operators, agents, roles, constructs, workspaces
+- [`jackin console`](https://jackin.tailrocks.com/commands/console/) — the daily-driver TUI
+- [Commands](https://jackin.tailrocks.com/commands/console/) — full reference (TUI first, then CLI)
+- [Security Model](https://jackin.tailrocks.com/guides/security-model/) — what the boundary protects and what it doesn't
+- [Comparison with Alternatives](https://jackin.tailrocks.com/guides/comparison/) — honest snapshot vs. Docker Sandboxes and others
+- Behind jackin' (Internals) — [Architecture](https://jackin.tailrocks.com/reference/architecture/), [Codebase Map](https://jackin.tailrocks.com/reference/codebase-map/), [Roadmap](https://jackin.tailrocks.com/reference/roadmap/)
 
 ## Development
 
-To develop jackin' itself, use [The Architect](https://github.com/jackin-project/jackin-the-architect) — a dedicated agent with the full Rust toolchain:
+To develop jackin' itself, use [The Architect](https://github.com/jackin-project/jackin-the-architect) — a dedicated role with the full Rust toolchain:
 
 ```sh
 jackin load the-architect

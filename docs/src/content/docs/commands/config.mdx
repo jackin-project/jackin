@@ -88,13 +88,13 @@ workspace editor (or by hand-editing TOML).
 jackin config auth set <MODE>
 ```
 
-Set the global Claude auth-forwarding mode (`[claude].auth_forward`).
+Set the global Claude auth-forwarding mode (the default mode for every `Claude Code` launch unless a workspace or per-role override changes it).
 
 | Mode | Description |
 |---|---|
 | `sync` | Overwrite from host on each launch when host auth exists; preserve container auth when absent (default) |
-| `api_key` | Inject `ANTHROPIC_API_KEY` from the operator-env layer |
-| `oauth_token` | Inject `CLAUDE_CODE_OAUTH_TOKEN` from the operator-env layer |
+| `api_key` | Inject `ANTHROPIC_API_KEY` from your operator env vars |
+| `oauth_token` | Inject `CLAUDE_CODE_OAUTH_TOKEN` from your operator env vars |
 | `ignore` | Never forward; revoke any previously forwarded credentials |
 
 ```bash
@@ -120,9 +120,9 @@ jackin config auth show
 
 Manage operator env vars at global and per-role scope.
 
-Values are stored verbatim — whatever you type is what goes into the TOML. No editor-side validation of key names or value shape. jackin' resolves values at launch time through the operator-env layer, so `op://...` 1Password references, `$VAR` / `${VAR}` shell-style interpolations, and literal strings all work.
+Values are stored verbatim — whatever you type is what jackin' resolves at launch time. No editor-side validation of key names or value shape. `op://...` 1Password references, `$VAR` / `${VAR}` shell-style interpolations, and literal strings all work.
 
-Without `--role`, writes and reads target the global `[env]` table. With `--role <SELECTOR>`, they target `[roles.<SELECTOR>.env]`. The role selector is not pre-validated — the table path is written even if the role is not registered.
+Without `--role`, writes and reads target the **global** scope (applies to every agent launch). With `--role <SELECTOR>`, they target the **per-role** scope (applies only when that role is loaded). The role selector is not pre-validated — the value is recorded even if the role is not registered.
 
 ### `config env set`
 
@@ -134,8 +134,8 @@ Set or overwrite an env var at the chosen scope.
 
 | Option | Description |
 |---|---|
-| `--role <SELECTOR>` | Apply to `[roles.<SELECTOR>.env]` instead of the global `[env]` |
-| `--comment <TEXT>` | Write a TOML line comment directly above the key |
+| `--role <SELECTOR>` | Apply to the per-role scope instead of the global scope |
+| `--comment <TEXT>` | Attach an inline comment to the key |
 
 ```bash
 # Global scope — 1Password reference
@@ -154,11 +154,11 @@ jackin config env set OPENAI_KEY "op://Work/OpenAI/key" --comment "rotate quarte
 jackin config env unset <KEY> [OPTIONS]
 ```
 
-Remove an env var from the chosen scope. Idempotent: if the key is not present, prints `<KEY> not set.` and exits 0 without modifying the config file.
+Remove an env var from the chosen scope. Idempotent: if the key is not present, prints `<KEY> not set.` and exits 0 without changing anything.
 
 | Option | Description |
 |---|---|
-| `--role <SELECTOR>` | Unset from `[roles.<SELECTOR>.env]` instead of the global `[env]` |
+| `--role <SELECTOR>` | Unset from the per-role scope instead of the global scope |
 
 ```bash
 jackin config env unset API_TOKEN
@@ -175,7 +175,7 @@ Show the env vars registered at the chosen scope as a table with `Key` and `Valu
 
 | Option | Description |
 |---|---|
-| `--role <SELECTOR>` | List vars from `[roles.<SELECTOR>.env]` instead of the global `[env]` |
+| `--role <SELECTOR>` | List vars from the per-role scope instead of the global scope |
 
 ```bash
 jackin config env list

@@ -7,13 +7,25 @@ import { Aside } from '@astrojs/starlight/components'
 
 ## Honest boundary statement
 
-jackin' provides a **container boundary**, not a **microVM boundary**.
+jackin' provides a **container boundary** today. That is a deliberate proof-of-concept choice, not the long-term ceiling.
 
-That distinction matters.
+Containers are where jackin' starts because the team building it has years of operational experience with `Docker`, the mental model is widely understood, and a container boundary is the shortest path to a useful product the operator can actually feel — workspaces, mounts, isolated worktrees, parallel agents, all running locally without an additional virtualization layer to debug. The current version is mostly designed around that boundary because it is what we know how to make ergonomic *now*.
 
-jackin' is useful when you trust the agent runtime itself but want to limit what it can touch on your machine. It is not the right tool to claim hypervisor-level isolation or to contain a fully hostile workload.
+That doesn't mean jackin' has to stop there. Stronger boundaries — microVMs, hypervisor-backed sandboxes, and selectable backends — are explicit research items on the roadmap:
 
-If you need the hardest local isolation boundary available today, a microVM-based tool such as Docker Sandboxes is stronger by design.
+- [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) — let the operator pick `Docker`, microVM, or another backend per workspace, instead of forcing one for everyone. Not every workload needs a microVM, and forcing one would cost startup time, build cache, and parallelism.
+- [Rootless `DinD`](/reference/roadmap/rootless-dind/) — shrink the privileged surface inside the current container model.
+- [Reproducibility & provenance pinning](/reference/roadmap/reproducibility-pinning/) — tighten what gets into the image to begin with.
+
+The plan is to keep iterating on UX, ergonomics, and operator workflows until jackin' is no longer in the *experimenting and figuring it out* phase, and then research and add stronger isolation boundaries as a configurable option. We constantly look at adjacent projects (microVM-based agent sandboxes, devcontainer setups, remote sandbox products) and borrow good ideas — see [Comparison with Alternatives](/guides/comparison/) for a current snapshot.
+
+So the honest framing today is:
+
+- jackin' is useful when you trust the agent runtime itself but want to limit what it can touch on your machine.
+- It is not the right tool to claim hypervisor-level isolation or to contain a fully hostile workload **right now**.
+- If you need the hardest local isolation boundary available today, a microVM-based tool such as `Docker Sandboxes` is stronger by design — and we treat those tools as references for what jackin' should eventually offer as one of the selectable backends.
+
+For the latest plan and current research items, the [Roadmap](/reference/roadmap/) is the source of truth.
 
 ## Isolation layers
 
@@ -64,7 +76,7 @@ Built-in agents (`agent-smith`, `the-architect`) are always trusted. When you lo
     - The agent will have access to your mounted workspace files
 ```
 
-Once you confirm, the trust decision is saved to `~/.config/jackin/config.toml` and subsequent loads proceed without prompting.
+Once you confirm, jackin' remembers the decision and subsequent loads of the same role proceed without prompting.
 
 You can also manage trust from the command line:
 
@@ -79,13 +91,7 @@ jackin config trust revoke chainargos/the-architect
 jackin config trust list
 ```
 
-For non-interactive environments (CI, automation), pre-trust an agent by adding `trusted = true` to its config entry:
-
-```toml
-[roles."org/agent-name"]
-git = "https://github.com/org/jackin-agent-name.git"
-trusted = true
-```
+For non-interactive environments (CI, automation), use `jackin config trust grant <selector>` ahead of the first load — that records the trust decision the same way the interactive prompt would.
 
 <Aside type="note">
 Trust is tied to the agent selector (e.g., `org/agent-name`), not the git URL. If an agent's cached repo URL no longer matches the configured source, jackin' rejects it with a separate remote-mismatch error regardless of trust status.
@@ -94,7 +100,7 @@ Trust is tied to the agent selector (e.g., `org/agent-name`), not the git URL. I
 
 Loading a role from an unmerged branch (`--role-branch`) triggers a separate, always-on confirmation prompt — even if the role is already trusted.
 
-The reason: `trusted = true` in your config records that you reviewed the role's **default branch**. An external contributor can open a pull request on that same role repository with a modified Dockerfile that runs arbitrary commands during the image build. If you loaded the branch without a prompt, you could unknowingly execute code you never reviewed, in a context where you expected the behaviour of the trusted default branch.
+The reason: trusting a role records that you reviewed the role's **default branch**. An external contributor can open a pull request on that same role repository with a modified Dockerfile that runs arbitrary commands during the image build. If you loaded the branch without a prompt, you could unknowingly execute code you never reviewed, in a context where you expected the behaviour of the trusted default branch.
 
 The branch trust gate shows the role, source repository, and branch name, then asks you to confirm that you have reviewed the diff:
 
@@ -153,26 +159,17 @@ jackin' remaps the container user to your host UID and GID. That means:
 - you avoid common permission conflicts after the agent edits files
 - the main runtime process does not run as root
 
-<Aside type="note">
-The current implementation creates the user in the construct image and then remaps it in the derived image. This is known technical debt and is on the roadmap to simplify.
-</Aside>
 ## What persists and what does not
 
-jackin' persists state at `~/.jackin/data/<container-name>/`. Today that includes:
+Each agent keeps its own session state — conversation history, OAuth credentials forwarded from your host, account metadata, and any tool logins (such as `gh`) you performed inside the container. That state survives stop/restart, so reconnecting to the same role picks up where it left off.
 
-- `.claude/` (session history, and `.credentials.json` with OAuth tokens)
-- `.claude.json` (account metadata and preferences)
-- `.config/gh/`
-
-That means Claude conversation state, authentication, and `gh` state can survive across sessions.
-
-But several important things do **not** persist:
+Several important things do **not** persist:
 
 - the mutable root filesystem of the runtime container
 - packages installed interactively into the running container
-- DinD images and containers created during that session
+- containers and images the agent built inside its own private `Docker` daemon during the session
 
-This is a deliberate trade-off. jackin' is biased toward reproducible agent images and explicit workspace mounts, not long-lived mutable sandboxes.
+This is a deliberate trade-off. jackin' is biased toward reproducible agent images and explicit workspace mounts, not long-lived mutable sandboxes. Use `jackin purge <role>` to wipe all of an agent's persisted state and start fresh.
 
 ## Current implementation constraints
 
@@ -196,9 +193,9 @@ Mounted files are live host files. If the agent edits a mounted path, the host f
 
 ### Authentication forwarding
 
-By default, jackin' forwards the host's Claude Code OAuth credentials into new agent containers (`auth_forward = "sync"`). This means agents start pre-authenticated but also means OAuth tokens are stored on disk in the agent state directory with `0600` permissions.
+By default, jackin' forwards the host's Claude Code OAuth credentials into new agent containers (the `sync` auth-forward mode). This means agents start pre-authenticated, but it also means OAuth tokens land on disk inside the agent's persisted state with owner-only file permissions.
 
-You can control this behavior at three layers (global, per workspace, and per workspace × role × agent) — see [Authentication Forwarding](/guides/authentication). Setting `auth_forward = "ignore"` revokes any previously forwarded credentials and returns to the legacy behavior of manual in-container login. The `api_key` and `oauth_token` modes inject the credential into the container's process env at launch only — no credential is written to disk in the role-state directory.
+You can control this behaviour at three scopes (global, per workspace, and per workspace × role × agent) — see [Authentication Forwarding](/guides/authentication/). Setting the mode to `ignore` revokes any previously forwarded credentials and falls back to manual in-container login. The `api_key` and `oauth_token` modes inject the credential into the container's process env at launch only — no credential is written to disk inside the agent's persisted state.
 
 ### Credentials obtained inside the runtime remain inside the runtime
 
