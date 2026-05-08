@@ -79,7 +79,7 @@ The console / TUI gets a one-line daemon-status indicator in its footer, mirrori
 ### Control protocol
 
 - **Transport.** Unix domain socket. Path per-operator: `~/.jackin/run/jackin-daemon.sock`.
-- **Wire format.** JSON-line request/response, similar to how `gh` CLI talks to its keyring helper. Avoids gRPC dependency footprint at this scale.
+- **Wire format.** JSON Lines — one JSON object per line, request/response. Avoids gRPC dependency footprint at this scale.
 - **Authentication.** Filesystem permissions on the socket (`0700` directory, `0600` socket). Same UID. No additional auth layer.
 - **Versioning.** Each request carries a protocol version; daemon rejects mismatches with a clear "client / daemon version skew" error, suggesting `jackin daemon restart` to pick up the matching daemon binary.
 
@@ -102,9 +102,9 @@ Each of the dependent features (live auth sync, keep-awake migration, container 
 
 The daemon's bones (lifecycle, install, control socket, security model, logs) need to be designed once. Each feature plugs into that base. This roadmap item exists to make that design explicit and to be the place where "do we have a daemon yet?" is answered for any future proposal.
 
-## Implementation phasing
+## Proposed implementation phasing
 
-Rough order of operations, to be confirmed during the design pass:
+Rough order of operations — not committed; to be confirmed during the design pass:
 
 1. **Phase 0 — design.** Answer every "Open design questions" subsection. Pick lifecycle, install, control protocol, security posture. Land an updated version of this roadmap item with answers.
 2. **Phase 1 — empty daemon.** Ship `jackin daemon serve` / `start` / `stop` / `status` / `logs` with no watchers. Just the lifecycle, install, control socket, log redaction. No feature uses it yet.

@@ -42,7 +42,7 @@ cover, with one architecture:
 - `GitHub CLI` (`gh`)
 - `Claude Code` (file + macOS Keychain)
 - `Codex` (`~/.codex/auth.json`)
-- `Amp` (when its auth integration lands)
+- `Amp` (forthcoming)
 - any future authentication axis jackin' adds (the [credential
   source pattern](/reference/roadmap/credential-source-pattern/)
   evolution should plug in here too)
@@ -105,9 +105,9 @@ Per auth axis, when the live mode is active:
    disk.
 5. **Operator-visible.** The launch summary already names the auth
    source for each axis. The daemon must surface its state too —
-   a status line or `jackin auth status` subcommand showing which
-   containers are subscribed, when each axis last reconciled, any
-   pending conflicts.
+   a status line or `jackin auth status` subcommand (proposed —
+   does not exist today) showing which containers are subscribed,
+   when each axis last reconciled, any pending conflicts.
 6. **Revocable and contained.** Same opt-in / opt-out semantics
    the existing modes have. Operators must be able to switch a
    workspace or role to non-live `forward` / `ignore` and have
@@ -122,11 +122,13 @@ Per auth axis, when the live mode is active:
 │   claude: Keychain or .creds     │         │   claude: .creds         │
 │   codex: auth.json               │         │   codex: auth.json       │
 │         ↕                        │         │         ↕                │
-│  jackin auth-syncd               │  ←──→   │  jackin-auth-watcher     │
-│   (host daemon)                  │         │   (in-container watcher) │
+│  live-auth-sync adapter          │  ←──→   │  jackin-auth-watcher     │
+│  (hosted by the jackin daemon)   │         │   (in-container watcher) │
 │   - polls gh auth token          │         │   - inotify per axis     │
 │   - inotify per source file      │         │   - small static binary  │
-│   - macOS notification → poll    │         │     baked into construct │
+│   - polling, with platform       │         │     baked into construct │
+│     change-event hooks where     │         │                          │
+│     available                    │         │                          │
 │   - reconciles shared store      │         │                          │
 └──────────────────────────────────┘         └──────────────────────────┘
                 ↕                                       ↕
@@ -142,11 +144,17 @@ Per auth axis, when the live mode is active:
 - **Shared store** at `~/.jackin/auth-shared/<axis>/`. Single
   on-disk source of truth per axis. Atomic tmp+rename writes;
   flock to serialize concurrent writers.
-- **Host daemon** — `jackin auth-syncd`. Long-running. Watches
-  host source (poll + inotify on Linux; macOS Keychain
-  notifications + poll fallback). Reconciles host → shared
-  store. Watches shared store; reconciles back to host.
-  Surfaces status via control socket for the CLI / TUI.
+- **live-auth-sync adapter — hosted by the
+  [jackin daemon](/reference/roadmap/jackin-daemon/).** Not a
+  separate process. The daemon owns the long-running lifecycle;
+  this item adds one adapter against the daemon's plug-in
+  surface that watches host sources (poll + inotify on Linux;
+  polling, with macOS Keychain change-event hooks where a stable
+  public API exists — `SecKeychainAddCallback` is deprecated, so
+  the macOS path is polling-only until a successor surfaces).
+  Reconciles host → shared store, then shared store → host.
+  Surfaces status to the CLI / TUI through the daemon's control
+  socket.
 - **Container-side watcher** — small static binary baked into
   the construct image. Inotify on the agent-store paths inside
   the container. On change, atomically push to the shared store
@@ -156,32 +164,66 @@ Per auth axis, when the live mode is active:
   store path directly so all parties see the same file. The
   per-container path stays for `forward` / `snapshot` /
   `ignore` modes that don't opt into live.
-- **macOS Keychain bridge.** Daemon writes tokens back to
+- **macOS Keychain bridge.** Adapter writes tokens back to
   Keychain via `security add-generic-password -U` so the host
   user's normal `gh` / `claude` workflow stays consistent. Never
   leak keychain-only tokens to plaintext files except inside
   the shared store + container.
-- **Per-axis adapter.** Each auth axis has its own source-store
-  and on-disk shape. The daemon needs an axis-trait abstraction
-  so adding `Amp` later is one adapter, not a rewrite.
+- **Per-axis adapter trait.** Each auth axis has its own source-
+  store and on-disk shape. The daemon's plug-in surface defines
+  one trait per axis so adding `Amp` later is one adapter, not
+  a rewrite.
 
 ### Conflict resolution
 
 - **Last-writer-wins** by `(mtime, checksum)`.
 - **Agent-induced rotation always wins over a stale host poll.**
-  When the daemon's poll cycle and an in-container refresh land
+  When the adapter's poll cycle and an in-container refresh land
   in the same window, the in-container value is the source of
   truth (it's the OAuth-grant that the server now considers
   current).
-- **Detected conflict surfaces in `jackin auth status`** so the
-  operator can see drift instead of having one side silently
-  overwrite the other.
+- **Detected conflict surfaces in `jackin auth status`**
+  (proposed subcommand — does not exist today) so the operator
+  can see drift instead of having one side silently overwrite
+  the other.
 
-### Why a long-running host process — and how it lands
+### Why this depends on the daemon
 
 This is one of the first features that genuinely needs a long-running host-side jackin process. The shape of that process — lifecycle, install method, control socket, security posture, log redaction — is **not** decided here. It belongs to the umbrella [jackin daemon](/reference/roadmap/jackin-daemon/) roadmap item, which exists so each reactive feature plugs into one common daemon rather than each inventing its own.
 
 This live-sync item depends on `jackin daemon` Phase 1 (empty daemon — lifecycle and control socket) shipping first. Live sync then adds a per-axis adapter against the daemon's plug-in surface: one adapter for `gh`, one for `Claude`, one for `Codex`, future ones for `Amp` and any new auth axis. The adapter trait shape is described under the daemon roadmap item.
+
+## Host-side effects
+
+Per <RepoFile path="AGENTS.md" /> "Never mutate the host machine
+silently": the live-sync adapter writes to host-side state. Each
+write is opt-in via the workspace's chosen mode (`live` /
+`sync` / `forward` / `ignore`) and surfaces in the daemon's
+status output and the launch summary.
+
+- **macOS Keychain writes.** When an in-container refresh
+  produces a new token, the adapter writes it back to the host
+  Keychain via `security add-generic-password -U` so the host
+  user's normal `gh` / `claude` workflow keeps working. The
+  operator authorizes the write by enabling live mode for the
+  axis; the daemon's status output names every host write as
+  it happens.
+- **Plaintext shared-store writes.** The adapter writes the
+  current axis token to `~/.jackin/auth-shared/<axis>/<file>`
+  (atomic tmp+rename, flock-protected). Same opt-in contract:
+  live mode is the only mode that produces these files; other
+  modes leave the path empty.
+- **No host repository / dotfile mutations.** The adapter never
+  touches `~/.gitconfig`, `~/.ssh/`, `~/.config/gh/hosts.yml`
+  outside the operator's own `gh` writes, or any user repo's
+  `.git/config`. Read-only access to host source files (e.g.
+  `gh auth token`) is fine; writes target only the Keychain
+  entry the operator's host already owns and the jackin-private
+  shared store.
+- **Opt-out path.** Switching the workspace or role to a non-
+  live mode tears down the adapter for that axis and leaves
+  host state at whatever the most-recent live-mode reconcile
+  produced; no further writes occur.
 
 ## Out of scope for this item
 

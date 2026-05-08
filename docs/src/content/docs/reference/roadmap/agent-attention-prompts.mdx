@@ -29,7 +29,7 @@ The end state, from the operator's seat:
 
 The agent inside the container needs a way to tell jackin' "I'm idle on operator input." Three sources, in priority order:
 
-1. **An MCP server jackin' auto-registers in every agent session.** Each agent runtime jackin' supports today (Claude Code, Codex; Amp soon) integrates MCP servers via its own config; jackin' already does this for `tirith` and `shellfirm`. The proposed `jackin-attention` MCP server adds two tools the agent can call:
+1. **An MCP server jackin' auto-registers in every agent session.** Each agent runtime jackin' supports (Claude Code, Codex; Amp forthcoming) integrates MCP servers via its own config. jackin' already wires `tirith` and `shellfirm` for the Claude runtime via <RepoFile path="docker/runtime/entrypoint.sh" />; the equivalent registration for Codex / Amp is part of this proposal's scope. The new `jackin-attention` MCP server adds two tools the agent can call:
    - `attention.waiting(reason: string, urgency?: low | normal | high)` — declare the agent is waiting for operator input.
    - `attention.resolved()` — clear the waiting state when the operator responds.
 
@@ -45,7 +45,7 @@ Path 1 is the primary, path 2 the fallback, path 3 a future hook for runtimes th
 
 The pieces:
 
-- **`jackin-attention` MCP server.** Static binary baked into the construct image. Registered automatically in each agent's MCP config at container launch (parallel to today's `tirith` / `shellfirm` registration in <RepoFile path="docker/runtime/entrypoint.sh" />). When the agent calls `attention.waiting`, the MCP server pushes the event over the existing per-container control channel (the same bind-mount or pipe used for daemon ↔ container coordination — see [jackin daemon](/reference/roadmap/jackin-daemon/) for the channel design).
+- **`jackin-attention` MCP server.** Static binary baked into the construct image. Registered automatically in each agent's MCP config at container launch — extending the registration pattern <RepoFile path="docker/runtime/entrypoint.sh" /> uses today for the Claude runtime's `tirith` / `shellfirm` to every supported runtime. When the agent calls `attention.waiting`, the MCP server pushes the event over the existing per-container control channel (the same bind-mount or pipe used for daemon ↔ container coordination — see [jackin daemon](/reference/roadmap/jackin-daemon/) for the channel design).
 - **The jackin daemon dispatches the host-side notification.** Per the [jackin daemon](/reference/roadmap/jackin-daemon/) plug-in surface, this feature is one adapter that listens for attention events from any running container and translates them to OS-native notifications:
   - macOS — `osascript -e 'display notification …'` or the `UserNotifications` framework via a small Swift helper. Sound escalation via `afplay` / `NSSound`.
   - Linux — `notify-send` (libnotify) or the org.freedesktop.Notifications D-Bus API. Sound via `paplay` / `aplay`.
@@ -62,7 +62,7 @@ The pieces:
 
 ## Per-workspace / per-role policy
 
-The configuration knobs (managed through `jackin console` → workspace editor → a new **Notifications** tab, parallel to the existing Auth / Mounts / Environments tabs):
+The configuration knobs (managed through `jackin console` → workspace editor → a new **Notifications** tab, parallel to the existing General / Mounts / Roles / Secrets / Auth tabs):
 
 | Knob | Default | What it does |
 |---|---|---|
@@ -117,7 +117,7 @@ The lifecycle, install, and security posture this needs are the same ones the [j
 
 A minimal cut to validate the shape:
 
-1. `jackin-attention` MCP server, baked into construct, auto-registered for every agent runtime jackin' supports today.
+1. `jackin-attention` MCP server, baked into construct, auto-registered for every agent runtime jackin' supports (Claude Code first, Codex / Amp as part of the same phase to close the runtime-coverage gap left by today's Claude-only `tirith` / `shellfirm` registration).
 2. The two-tool surface `attention.waiting` / `attention.resolved`.
 3. Daemon adapter listening on the per-container control channel, dispatching macOS Notification Center notifications.
 4. Click action wired for the operator's current terminal (detected at launch from `TERM_PROGRAM`); other terminals get the notification with no click action and a one-line "open this terminal manually" hint.

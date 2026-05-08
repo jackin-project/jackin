@@ -124,7 +124,7 @@ This feature widens the attack surface jackin' presents to a malicious agent. Th
 
 ## How the agent expresses requests
 
-Same shape as [agent attention prompts](/reference/roadmap/agent-attention-prompts/): a jackin'-bundled MCP server, auto-registered at container launch, exposes the `secret.*` and `host.*` tool families. The agent runtime's tool-use loop calls these tools when the agent decides it needs a secret or a host command; jackin' bundles the MCP server, registers it in each agent's MCP config (parallel to today's `tirith` / `shellfirm` registration in <RepoFile path="docker/runtime/entrypoint.sh" />), and never asks the operator to wire it manually.
+Same shape as [agent attention prompts](/reference/roadmap/agent-attention-prompts/): a jackin'-bundled MCP server, auto-registered at container launch, exposes the `secret.*` and `host.*` tool families. The agent runtime's tool-use loop calls these tools when the agent decides it needs a secret or a host command; jackin' bundles the MCP server, registers it in each agent's MCP config — extending the registration pattern <RepoFile path="docker/runtime/entrypoint.sh" /> uses today for the Claude runtime's `tirith` / `shellfirm` to every supported runtime — and never asks the operator to wire it manually.
 
 Tool surface (initial cut):
 
@@ -144,6 +144,39 @@ Same shape as the other reactive features that depend on it. The bridge needs:
 
 None of these can run from a CLI that exits between commands. The daemon's lifecycle, install, security posture, and control-socket transport are decided in the [jackin daemon](/reference/roadmap/jackin-daemon/) item; this feature is one adapter against that base.
 
+## Host-side effects
+
+Per <RepoFile path="AGENTS.md" /> "Never mutate the host machine
+silently": the bridge runs operator-authorized commands as the
+operator's UID and writes to host-side audit state. Every effect
+is gated on a TouchID / polkit / password approval surface that
+names the request before it runs.
+
+- **Arbitrary host commands.** `host.run` invokes a command on
+  the host with the operator's UID, only after operator
+  approval through the daemon's prompt surface
+  (`LocalAuthentication` / polkit / password). The command, the
+  agent's stated reason, and the approval/deny outcome land in
+  the audit log. Per-workspace `disabled` / `allowlist` /
+  `blocklist` policies bound what can ever be requested.
+- **Secret reads from operator-chosen sources.**
+  `secret.request` resolves through whatever store the operator
+  configured (Keychain, 1Password, env, etc.). Reads happen only
+  on operator approval; the daemon never enumerates secrets and
+  never caches values past the lifetime of the single
+  `secret.use_in` substitution.
+- **Audit log writes.** The daemon appends approval / deny
+  events to `~/.jackin/log/host-bridge.jsonl` (path subject to
+  daemon design). No other host file is mutated by this feature.
+- **Opt-out path.** Setting the workspace policy to `disabled`
+  unregisters the MCP server inside the container; no further
+  requests are even surfaced to the operator.
+- **Out of scope: silent host writes.** This feature deliberately
+  ships no shape that can mutate the host without per-request
+  approval. Pre-approved allowlist patterns still surface a
+  one-line audit-log entry per invocation; no command runs
+  invisibly.
+
 ## Phase 1 cut
 
 A minimal slice that proves the shape:
@@ -152,7 +185,7 @@ A minimal slice that proves the shape:
 2. macOS approval surface via `LocalAuthentication` (TouchID + password fallback).
 3. Linux approval surface via terminal password prompt (no polkit yet).
 4. Audit log written to `~/.jackin/log/host-bridge.jsonl` with rotation.
-5. `Bridge` tab in `jackin console` workspace editor: enable / disable per workspace, view recent audit entries.
+5. `Bridge` tab in `jackin console` workspace editor (parallel to the existing General / Mounts / Roles / Secrets / Auth tabs): enable / disable per workspace, view recent audit entries.
 
 Not in phase 1: `secret.request` / `secret.use_in` (more complex handle lifecycle), allowlist / blocklist policies, polkit integration, `host.run_capability`, prompt-fatigue debounce, audit export tooling.
 
