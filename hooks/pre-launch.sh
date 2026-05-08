@@ -1,30 +1,17 @@
 #!/bin/bash
-# agent-brown pre-launch hook. jackin's runtime entrypoint runs this
-# script (via `[hooks].pre_launch` in jackin.role.toml) after the agent
-# CLI is installed and plugins are bootstrapped, but before the agent
-# itself launches.
-#
-# Why a runtime hook and not an image-build step: the Claude MCP
-# registration needs the claude CLI, which jackin injects per container
-# at launch time rather than baking into this published image. Trying
-# to run `claude mcp add …` at image-build time silently no-ops because
-# the binary is not on PATH yet.
+# Runs after jackin installs the agent CLI and bootstraps plugins.
+# `claude mcp add …` belongs here, not in the Dockerfile, because
+# jackin injects the claude CLI per container at launch time.
 set -euo pipefail
 
-# Line-numbered ERR trap so a future maintainer who wraps a function
-# call in `if foo; then …` (which suspends `errexit`) still gets a
-# diagnostic if the function later fails.
 trap 'printf "[brown-pre-launch] ERROR: failed at line %s (exit %s)\n" "$LINENO" "$?" >&2; exit 1' ERR
 
 log()  { printf '[brown-pre-launch] %s\n' "$*"; }
 warn() { printf '[brown-pre-launch] WARNING: %s\n' "$*" >&2; }
 err()  { printf '[brown-pre-launch] ERROR: %s\n'   "$*" >&2; }
 
-# ── PostgreSQL host wiring ────────────────────────────────────────────
-#
-# Derive POSTGRESQL_DB_HOST from the DinD sidecar hostname so Gradle build
-# files can connect to PostgreSQL running inside docker-compose.
-# TODO: drop the DOCKER_HOST fallback below once jackin-project/jackin#32
+# Gradle reads POSTGRESQL_DB_HOST to reach the docker-compose Postgres.
+# TODO: drop the DOCKER_HOST fallback once jackin-project/jackin#32
 # ships and JACKIN_DIND_HOSTNAME is always set.
 if [ -n "${JACKIN_DIND_HOSTNAME:-}" ]; then
     export POSTGRESQL_DB_HOST="$JACKIN_DIND_HOSTNAME"
@@ -37,25 +24,19 @@ elif [ -n "${DOCKER_HOST:-}" ]; then
     fi
 fi
 
-# ── Context7 MCP setup ────────────────────────────────────────────────
 if [ -n "${CONTEXT7_API_KEY:-}" ]; then
     log "configuring Context7 MCP server"
-    # API key passed via env to keep it out of /proc/<pid>/cmdline.
+    # Pass via env, not `--api-key`, to keep the key out of /proc/<pid>/cmdline.
     if ! CONTEXT7_API_KEY="$CONTEXT7_API_KEY" mise exec -- ctx7 setup --claude --mcp -y; then
         err "ctx7 setup failed (exit $?). Check CONTEXT7_API_KEY and reachability of context7.com"
         exit 1
     fi
 fi
 
-# ── caveman-shrink MCP middleware proxy ───────────────────────────────
-#
-# caveman-shrink wraps another MCP server's stdio and caveman-compresses
-# the responses before they reach the agent — used to cut the token
-# cost of verbose MCP servers (filesystem, github, search, etc.). By
-# itself the registration is a placeholder that spawns the upstream
-# package; you wire it against a specific server later by editing the
-# `mcpServers` entry to put the real upstream after the caveman-shrink
-# arg list, e.g.:
+# caveman-shrink wraps another MCP server's stdio and compresses the
+# responses to cut token cost. The registration here is a placeholder
+# — wire it to a real upstream by editing the `mcpServers` entry to
+# append the upstream after the caveman-shrink arg list, e.g.:
 #
 #   {
 #     "mcpServers": {
@@ -69,18 +50,15 @@ fi
 #
 # Reference: https://github.com/JuliusBrussee/caveman/tree/main/mcp-servers/caveman-shrink
 register_caveman_shrink() {
-    # The script header documents the runtime contract: when JACKIN_AGENT=claude,
-    # jackin guarantees the claude CLI is on PATH before this hook runs. A
-    # missing CLI here means that contract was violated.
+    # JACKIN_AGENT=claude is contracted to mean the claude CLI is on
+    # PATH; a missing binary here is a contract violation, not a skip.
     if ! command -v claude >/dev/null 2>&1; then
         err "JACKIN_AGENT=claude but claude CLI not on PATH — jackin runtime contract violated"
         exit 1
     fi
 
-    # Idempotent: skip on subsequent container starts. `claude mcp get`
-    # exits non-zero if the entry doesn't exist; capture stderr so an
-    # auth/parse/crash error is distinguished from the benign "not found"
-    # case. The benign message is "No MCP server with name …".
+    # Capture stderr so the benign "No MCP server with name …" case
+    # is distinguished from a real auth/parse/crash error.
     local mcp_get_err
     if mcp_get_err="$(claude mcp get caveman-shrink 2>&1 >/dev/null)"; then
         return 0
@@ -105,9 +83,6 @@ verify_codex_caveman_skills() {
     exit 1
 }
 
-# Per-agent dispatch. An empty or unknown JACKIN_AGENT surfaces a
-# warning instead of silently no-op-ing, so a misspelling or a
-# regression in jackin's env-injection is visible at boot.
 case "${JACKIN_AGENT:-}" in
     claude) register_caveman_shrink ;;
     codex)  verify_codex_caveman_skills ;;

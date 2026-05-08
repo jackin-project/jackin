@@ -2,7 +2,7 @@
 
 > **Internal — ChainArgos only.** This repository and the published Docker image are private and must remain private. See [AGENTS.md § Hard rules](./AGENTS.md#hard-rules-do-not-break-these).
 
-`agent-brown` is the ChainArgos `jackin` agent. It provides the agent-specific environment layer for the ChainArgos Java/Rust monorepo.
+`agent-brown` is the ChainArgos `jackin` agent role. It provides the agent-specific environment layer for the ChainArgos Java/Rust monorepo.
 
 `jackin` validates this repo's Dockerfile, derives the final image itself, and mounts the cached repo checkout into `/workspace` when you run:
 
@@ -20,7 +20,7 @@ jackin load chainargos/agent-brown --agent codex
 
 ## Environment
 
-Versions pinned in `Dockerfile` ARGs (`RUST_VERSION`, `NODE_VERSION`, `JAVA_VERSION`, `PROTOC_VERSION`, `TESSL_VERSION`, `CAVEMAN_REF`); bump via `docker build --build-arg <NAME>=<value>`.
+Versions pinned in `Dockerfile` ARGs (`RUST_VERSION`, `NODE_VERSION`, `JAVA_VERSION`, `PROTOC_VERSION`, `TESSL_VERSION`, `CAVEMAN_VERSION`); bump via `docker build --build-arg <NAME>=<value>`.
 
 - **Node.js** (via mise)
 - **Rust** (via mise)
@@ -30,7 +30,7 @@ Versions pinned in `Dockerfile` ARGs (`RUST_VERSION`, `NODE_VERSION`, `JAVA_VERS
 - **Cargo tools:** cargo-nextest, ast-grep, rust-script, just, bottom
 - **Tessl CLI** (pinned)
 - **ctx7** (npm)
-- **Caveman** token-compression hooks + skills (claude + codex profiles, GitHub ref pinned)
+- **Caveman** token-compression hooks + skills (claude + codex profiles, pinned to a tagged release)
 
 Shared shell/runtime tools come from `jackin-construct:trixie`.
 
@@ -39,7 +39,7 @@ Shared shell/runtime tools come from `jackin-construct:trixie`.
 Declared in [`jackin.role.toml`](./jackin.role.toml) under `[claude].plugins` and bootstrapped at runtime by jackin. Marketplaces beyond `@claude-plugins-official`:
 
 - `@tailrocks-marketplace` — [tailrocks/tailrocks-marketplace](https://github.com/tailrocks/tailrocks-marketplace) (source of `rust-best-practices`)
-- `@caveman` — [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) (source of `caveman`; GitHub ref pinned via Dockerfile `CAVEMAN_REF`)
+- `@caveman` — [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) (source of `caveman`; pinned to a tagged release via Dockerfile `CAVEMAN_VERSION`)
 
 Trust rationale: see [AGENTS.md § Threat model](./AGENTS.md#threat-model).
 
