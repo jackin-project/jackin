@@ -504,25 +504,24 @@ impl RoleState {
     /// Provision Amp's host-side `settings.json` according to the
     /// chosen auth-forwarding strategy.
     ///
-    ///   * **Sync** + host file present → copy `~/.config/amp/settings.json`
-    ///     to the role-state path with `0o600` perms,
-    ///     `forward_auth = true`. Returns `Synced`.
-    ///   * **Sync** + host file absent → leave any existing role-state
-    ///     `settings.json` untouched (it may carry forward an in-container
-    ///     login), `forward_auth = true`. Returns `HostMissing`.
-    ///   * **`ApiKey`** → wipe role-state `settings.json` (the agent
-    ///     authenticates via `AMP_API_KEY`), `forward_auth = false`.
-    ///     Returns `TokenMode`.
-    ///   * **`OAuthToken`** → unreachable in production (parser-rejected
-    ///     for Amp). Defensive arm: treated as `TokenMode` without
-    ///     touching role-state files.
-    ///   * **Ignore** → wipe role-state `settings.json`,
-    ///     `forward_auth = false`. Returns `Skipped`.
+    /// Returns `(outcome, mounted_settings_json)` where
+    /// `mounted_settings_json` is the role-state `settings.json` path when
+    /// it should be bind-mounted into the container (file exists
+    /// post-call), or `None` when the mount must be skipped. Centralising
+    /// the decision here means `RoleState::prepare` does not need to
+    /// re-stat the file or reason about which outcome implies which mount
+    /// state — same shape as `provision_codex_auth`.
+    ///
+    /// `Sync` with the host file missing preserves any role-state
+    /// `settings.json` from a prior run so an in-container login isn't
+    /// silently dropped. `OAuthToken` is parser-rejected for Amp; the arm
+    /// is kept for match exhaustiveness and treated as `TokenMode`
+    /// without touching role-state files.
     pub(super) fn provision_amp_auth(
         settings_json: &Path,
         mode: AuthForwardMode,
         host_home: &Path,
-    ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         // Reject any pre-existing symlink at the role-state settings.json
         // BEFORE branching on mode (same defensive check as Codex).
         if settings_json.exists() {
@@ -553,6 +552,9 @@ impl RoleState {
                     AuthProvisionOutcome::HostMissing
                 }
                 Err(e) => {
+                    // Surface unexpected read errors instead of
+                    // misdiagnosing them as host-missing and silently
+                    // dropping the operator into a re-login loop.
                     anyhow::bail!(
                         "failed to read host {}: {e} (run with --debug to capture the underlying error)",
                         host_settings.display()
@@ -561,21 +563,21 @@ impl RoleState {
             },
         };
 
-        let forward_auth = matches!(
-            outcome,
-            AuthProvisionOutcome::Synced | AuthProvisionOutcome::HostMissing
-        );
-        Ok((outcome, forward_auth))
+        let mounted_settings_json = match outcome {
+            AuthProvisionOutcome::Synced => Some(settings_json.to_path_buf()),
+            AuthProvisionOutcome::Skipped => None,
+            AuthProvisionOutcome::HostMissing | AuthProvisionOutcome::TokenMode => {
+                settings_json.exists().then(|| settings_json.to_path_buf())
+            }
+        };
+        Ok((outcome, mounted_settings_json))
     }
 }
 
-/// Wipe the container's Amp settings to a clean empty shape.
-///
-/// Used by every non-Sync mode that owns the file (`Ignore`, `ApiKey`)
-/// — they must guarantee no stale `settings.json` from a prior Sync run
-/// survives so the agent inside the container authenticates via
-/// `AMP_API_KEY` (or fresh login) rather than re-using forwarded
-/// credentials.
+/// Remove any role-state `settings.json` so a prior Sync run cannot
+/// leak forwarded credentials into the container under env-driven
+/// modes (`Ignore`, `ApiKey`); the agent then authenticates via
+/// `AMP_API_KEY` or a fresh in-container login.
 fn wipe_amp_state(settings_json: &Path) -> anyhow::Result<()> {
     if settings_json.exists() {
         std::fs::remove_file(settings_json)?;
@@ -2504,12 +2506,12 @@ mod amp_auth_tests {
         let settings_json = temp.path().join("settings.json");
         let host_home = stage_host_settings(&temp, "{\"amp\":true}");
 
-        let (outcome, forward_auth) =
+        let (outcome, mounted) =
             RoleState::provision_amp_auth(&settings_json, AuthForwardMode::Sync, &host_home)
                 .unwrap();
 
         assert_eq!(outcome, AuthProvisionOutcome::Synced);
-        assert!(forward_auth);
+        assert_eq!(mounted.as_deref(), Some(settings_json.as_path()));
         assert_eq!(
             std::fs::read_to_string(&settings_json).unwrap(),
             "{\"amp\":true}"
@@ -2523,16 +2525,31 @@ mod amp_auth_tests {
         std::fs::write(&settings_json, "{\"in_container_login\":true}").unwrap();
         let host_home = temp.path().join("empty_host_home");
 
-        let (outcome, forward_auth) =
+        let (outcome, mounted) =
             RoleState::provision_amp_auth(&settings_json, AuthForwardMode::Sync, &host_home)
                 .unwrap();
 
         assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
-        assert!(forward_auth);
+        assert_eq!(mounted.as_deref(), Some(settings_json.as_path()));
         assert_eq!(
             std::fs::read_to_string(&settings_json).unwrap(),
             "{\"in_container_login\":true}"
         );
+    }
+
+    #[test]
+    fn sync_with_no_host_and_no_prior_file_skips_mount() {
+        let temp = tempdir().unwrap();
+        let settings_json = temp.path().join("settings.json");
+        let host_home = temp.path().join("empty_host_home");
+
+        let (outcome, mounted) =
+            RoleState::provision_amp_auth(&settings_json, AuthForwardMode::Sync, &host_home)
+                .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+        assert!(mounted.is_none());
+        assert!(!settings_json.exists());
     }
 
     #[test]
@@ -2542,12 +2559,12 @@ mod amp_auth_tests {
         std::fs::write(&settings_json, "{\"stale\":\"creds\"}").unwrap();
         let host_home = stage_host_settings(&temp, "{\"amp\":true}");
 
-        let (outcome, forward_auth) =
+        let (outcome, mounted) =
             RoleState::provision_amp_auth(&settings_json, AuthForwardMode::ApiKey, &host_home)
                 .unwrap();
 
         assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
-        assert!(!forward_auth);
+        assert!(mounted.is_none());
         assert!(!settings_json.exists());
     }
 
@@ -2557,7 +2574,7 @@ mod amp_auth_tests {
         let settings_json = temp.path().join("settings.json");
         std::fs::write(&settings_json, "{\"stale\":\"creds\"}").unwrap();
 
-        let (outcome, forward_auth) = RoleState::provision_amp_auth(
+        let (outcome, mounted) = RoleState::provision_amp_auth(
             &settings_json,
             AuthForwardMode::Ignore,
             Path::new("/nonexistent"),
@@ -2565,8 +2582,34 @@ mod amp_auth_tests {
         .unwrap();
 
         assert_eq!(outcome, AuthProvisionOutcome::Skipped);
-        assert!(!forward_auth);
+        assert!(mounted.is_none());
         assert!(!settings_json.exists());
+    }
+
+    #[test]
+    fn oauth_token_defensive_arm_preserves_existing_file() {
+        // OAuthToken is parser-rejected for Amp; the defensive arm in
+        // provision_amp_auth must not wipe a prior Sync's role-state file
+        // if a config bypass ever reaches this code path.
+        let temp = tempdir().unwrap();
+        let settings_json = temp.path().join("settings.json");
+        std::fs::write(&settings_json, "{\"prior_sync\":true}").unwrap();
+
+        let (outcome, mounted) = RoleState::provision_amp_auth(
+            &settings_json,
+            AuthForwardMode::OAuthToken,
+            Path::new("/nonexistent"),
+        )
+        .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
+        // File survives, so it would be mountable; the launch-side env
+        // resolver still drives the actual auth.
+        assert_eq!(mounted.as_deref(), Some(settings_json.as_path()));
+        assert_eq!(
+            std::fs::read_to_string(&settings_json).unwrap(),
+            "{\"prior_sync\":true}"
+        );
     }
 
     #[cfg(unix)]

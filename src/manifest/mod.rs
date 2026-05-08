@@ -46,8 +46,7 @@ pub struct CodexConfig {
 
 /// Per-role Amp configuration.
 ///
-/// Empty for now; reserved for future agent-specific knobs (e.g.
-/// settings overrides). Declared so manifests that list
+/// Has no fields. Declared so manifests that list
 /// `agents = [..., "amp"]` can carry an `[amp]` table that satisfies
 /// the agent/table consistency check.
 #[derive(Debug, Clone, Default, Deserialize)]

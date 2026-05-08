@@ -206,15 +206,13 @@ pub enum AgentRuntimeState {
         auth_json: Option<PathBuf>,
     },
     Amp {
-        /// Host path to Amp's settings file (`settings.json`).
-        /// Always assigned by `prepare`; only bind-mounted when
-        /// `forward_auth` is `true` and the file exists on disk.
-        settings_json: PathBuf,
-        /// Whether `settings_json` should be bind-mounted under
-        /// `/jackin/amp/`. `false` for `ignore`/`api_key` (env-driven
-        /// authentication via `AMP_API_KEY` — no host filesystem state
-        /// must reach the container).
-        forward_auth: bool,
+        /// Host path mounted at `/jackin/amp/settings.json` when the
+        /// file was synced from the host's `~/.config/amp/settings.json`
+        /// on a previous launch (or persists from a prior in-container
+        /// login). `None` when the mount must be skipped — env-driven
+        /// modes (`ignore`/`api_key`) wipe it; sync with no host file
+        /// and no carry-over leaves nothing to mount.
+        settings_json: Option<PathBuf>,
     },
 }
 
@@ -301,29 +299,16 @@ impl RoleState {
     }
 
     /// Host path to Amp's `settings.json` (mounted at
-    /// `/jackin/amp/settings.json` in the container when
-    /// [`Self::amp_forwards_auth`] is `true`). `None` if this state
-    /// was not prepared for `Agent::Amp`.
+    /// `/jackin/amp/settings.json` in the container). `None` when no
+    /// settings file is available (env-driven mode wiped it / sync
+    /// host-missing with no prior file) or when this state was not
+    /// prepared for `Agent::Amp`.
     #[must_use]
     pub fn amp_settings_json(&self) -> Option<&Path> {
         match &self.agent_runtime {
-            AgentRuntimeState::Amp { settings_json, .. } => Some(settings_json),
+            AgentRuntimeState::Amp { settings_json, .. } => settings_json.as_deref(),
             AgentRuntimeState::Claude { .. } | AgentRuntimeState::Codex { .. } => None,
         }
-    }
-
-    /// Whether Amp's `settings.json` should flow into the container
-    /// under `/jackin/amp/`. `false` for env-driven modes
-    /// (`ignore`/`api_key`) and for non-Amp states.
-    #[must_use]
-    pub const fn amp_forwards_auth(&self) -> bool {
-        matches!(
-            &self.agent_runtime,
-            AgentRuntimeState::Amp {
-                forward_auth: true,
-                ..
-            }
-        )
     }
 }
 
@@ -417,16 +402,10 @@ impl RoleState {
             crate::agent::Agent::Amp => {
                 let amp_dir = root.join("amp");
                 std::fs::create_dir_all(&amp_dir)?;
-                let settings_json = amp_dir.join("settings.json");
-                let (outcome, forward_auth) =
-                    Self::provision_amp_auth(&settings_json, auth_forward, host_home)?;
-                (
-                    AgentRuntimeState::Amp {
-                        settings_json,
-                        forward_auth,
-                    },
-                    outcome,
-                )
+                let settings_json_path = amp_dir.join("settings.json");
+                let (outcome, settings_json) =
+                    Self::provision_amp_auth(&settings_json_path, auth_forward, host_home)?;
+                (AgentRuntimeState::Amp { settings_json }, outcome)
             }
         };
 

@@ -251,14 +251,9 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
             }
             mounts
         }
-        AgentRuntimeState::Amp {
-            settings_json,
-            forward_auth,
-        } => {
+        AgentRuntimeState::Amp { settings_json } => {
             let mut mounts = Vec::new();
-            // Same gate as Claude: settings only flow into the container
-            // under sync mode AND only when the file exists on disk.
-            if *forward_auth && settings_json.exists() {
+            if let Some(settings_json) = settings_json {
                 mounts.push(format!(
                     "{}:/jackin/amp/settings.json",
                     settings_json.display()
@@ -1530,18 +1525,17 @@ fn load_role_with(
             });
             tui::codex_auth_notice(resolved_source, (auth_mode, auth_outcome).into());
         } else if agent == crate::agent::Agent::Amp {
-            if let Some(env_var) = agent.required_env_var(auth_mode) {
+            let env_var = agent.required_env_var(auth_mode);
+            let source_ref = env_var.and_then(|v| {
                 let raw = lookup_operator_env_raw(
                     config,
                     Some(&role_key),
                     workspace_name.as_deref(),
-                    env_var,
+                    v,
                 );
-                let source_ref = auth_token_source_reference(env_var, raw.as_deref());
-                tui::auth_mode_notice(&auth_mode.to_string(), Some(&source_ref));
-            } else {
-                tui::auth_mode_notice(&auth_mode.to_string(), None);
-            }
+                Some(auth_token_source_reference(v, raw.as_deref()))
+            });
+            tui::auth_mode_notice(&auth_mode.to_string(), source_ref.as_deref());
 
             match auth_outcome {
                 crate::instance::AuthProvisionOutcome::Synced => {
@@ -1551,9 +1545,9 @@ fn load_role_with(
                     );
                 }
                 crate::instance::AuthProvisionOutcome::TokenMode => {
-                    if let Some(env_var) = agent.required_env_var(auth_mode) {
+                    if let Some(env_var) = env_var {
                         eprintln!(
-                            "[jackin] auth_forward={auth_mode} - role will use \
+                            "[jackin] auth_forward={auth_mode} — role will use \
                              {env_var} from the resolved env."
                         );
                     }
