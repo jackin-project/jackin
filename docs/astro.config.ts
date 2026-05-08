@@ -247,6 +247,7 @@ export default defineConfig({
                     { label: 'Multi-runtime support (Codex & Amp)', slug: 'reference/roadmap/multi-runtime-support' },
                     { label: 'Reliable Claude authentication strategy', slug: 'reference/roadmap/claude-auth-strategy' },
                     { label: 'GitHub CLI authentication strategy', slug: 'reference/roadmap/github-cli-auth-strategy' },
+                    { label: 'Live bidirectional auth sync', slug: 'reference/roadmap/live-auth-sync' },
                     { label: '1Password integration', slug: 'reference/roadmap/onepassword-integration' },
                   ],
                 },
@@ -265,6 +266,9 @@ export default defineConfig({
                   label: 'Infrastructure',
                   collapsed: true,
                   items: [
+                    { label: 'jackin daemon', slug: 'reference/roadmap/jackin-daemon' },
+                    { label: 'Agent attention prompts', slug: 'reference/roadmap/agent-attention-prompts' },
+                    { label: 'Host bridge — secrets and approved host actions', slug: 'reference/roadmap/host-bridge' },
                     { label: 'Bollard migration', slug: 'reference/roadmap/bollard-migration' },
                     { label: 'Construct user creation', slug: 'reference/roadmap/construct-user-creation' },
                   ],

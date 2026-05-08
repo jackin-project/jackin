@@ -1,0 +1,140 @@
+---
+title: "Agent Attention Prompts"
+---
+import { Aside } from '@astrojs/starlight/components'
+import RepoFile from '../../../../components/RepoFile.astro'
+
+
+**Status**: Open — design proposal
+
+## Problem
+
+The biggest hidden cost of running AI coding agents today is **idle wall-clock**. Agents finish work, hit a confirmation prompt, run into an ambiguous decision, or stop on a long-running command and silently wait for the operator to come back to the terminal. The operator, meanwhile, is heads-down on something else — reviewing a PR, in a meeting, on another machine — with no signal that anything wants their attention.
+
+Every minute the agent waits is a minute of compounding throughput loss across however many agents the operator is running in parallel. The point of jackin' is to make running many agents safe and convenient; "many agents" is only a real win if the operator can stay in flow and only context-switch when an agent actually needs them.
+
+This roadmap item proposes **agent attention prompts**: an opt-in, per-workspace, per-role notification channel that fires a host-side OS notification when an agent inside a jackin' container is waiting on operator input, with optional escalation to sound and a click action that focuses the right terminal tab.
+
+## What the operator gets
+
+The end state, from the operator's seat:
+
+1. **A passive notification, on the host, when an agent stops to wait.** macOS Notification Center / Linux desktop notification / Windows toast. Title names the workspace, role, and (optionally) the question the agent is asking. No visible jackin window required — the operator can be anywhere on the host.
+2. **Optional escalation.** When the operator has set a per-workspace policy *"if I don't respond in N seconds, start playing a sound"*, jackin' escalates from a silent toast to an audible cue. Configurable per workspace and per role; off by default.
+3. **Click-to-focus.** Clicking the notification opens or focuses the terminal tab the agent is running in (Ghostty, kitty, iTerm2, WezTerm, gnome-terminal, …). Operators don't have to remember which window the agent is in.
+4. **Per-workspace mute.** Operators in deep-focus mode can mute notifications for a workspace temporarily without losing the launch-time policy.
+5. **Per-axis toggle.** Notify on *idle waiting*, on *agent finished work*, on *sensitive-mount confirmation requested*, etc. — operators choose which classes of attention prompts they care about.
+
+## How the agent expresses "I'm waiting"
+
+The agent inside the container needs a way to tell jackin' "I'm idle on operator input." Three sources, in priority order:
+
+1. **An MCP server jackin' auto-registers in every agent session.** Each agent runtime jackin' supports today (Claude Code, Codex; Amp soon) integrates MCP servers via its own config; jackin' already does this for `tirith` and `shellfirm`. The proposed `jackin-attention` MCP server adds two tools the agent can call:
+   - `attention.waiting(reason: string, urgency?: low | normal | high)` — declare the agent is waiting for operator input.
+   - `attention.resolved()` — clear the waiting state when the operator responds.
+
+   The agent runtime's tool-use loop already calls these tools when the runtime decides it's hit a confirmation or an open-ended ambiguity; jackin' bundles the MCP server, registers it at launch, and never asks the operator to wire it manually.
+
+2. **Inferred from the agent's PTY activity.** Even without explicit MCP calls, jackin' can detect "the agent stopped emitting output and is sitting on a prompt" by watching the container's TTY (no output for N seconds while the process is `S+` foreground). This catches the long tail of confirmation flows the agent runtime hasn't instrumented yet.
+
+3. **Inferred from the agent's exit code / state file.** When the agent runtime writes a state file or exits with a "waiting for input" code, jackin' reads it.
+
+Path 1 is the primary, path 2 the fallback, path 3 a future hook for runtimes that publish their own state.
+
+## How the notification reaches the host
+
+The pieces:
+
+- **`jackin-attention` MCP server.** Static binary baked into the construct image. Registered automatically in each agent's MCP config at container launch (parallel to today's `tirith` / `shellfirm` registration in <RepoFile path="docker/runtime/entrypoint.sh" />). When the agent calls `attention.waiting`, the MCP server pushes the event over the existing per-container control channel (the same bind-mount or pipe used for daemon ↔ container coordination — see [jackin daemon](/reference/roadmap/jackin-daemon/) for the channel design).
+- **The jackin daemon dispatches the host-side notification.** Per the [jackin daemon](/reference/roadmap/jackin-daemon/) plug-in surface, this feature is one adapter that listens for attention events from any running container and translates them to OS-native notifications:
+  - macOS — `osascript -e 'display notification …'` or the `UserNotifications` framework via a small Swift helper. Sound escalation via `afplay` / `NSSound`.
+  - Linux — `notify-send` (libnotify) or the org.freedesktop.Notifications D-Bus API. Sound via `paplay` / `aplay`.
+  - Windows — out of scope for the first phase; revisit when jackin' supports Windows hosts.
+- **Click-to-focus adapter.** The notification carries an action that, when activated, runs a host-side command to focus the right terminal tab. Each terminal emulator gets a small adapter:
+  - Ghostty — `ghostty +cli focus-tab <id>` or AppleScript / D-Bus.
+  - kitty — `kitten @ focus-tab --match …`.
+  - iTerm2 — AppleScript.
+  - WezTerm — `wezterm cli activate-tab`.
+  - gnome-terminal / Konsole — D-Bus.
+  - tmux — `tmux switch-client -t …`.
+
+  jackin' detects the surrounding terminal at container launch (env var introspection — `TERM_PROGRAM`, `KITTY_PID`, etc.) and stores the tab handle so the click action knows where to land.
+
+## Per-workspace / per-role policy
+
+The configuration knobs (managed through `jackin console` → workspace editor → a new **Notifications** tab, parallel to the existing Auth / Mounts / Environments tabs):
+
+| Knob | Default | What it does |
+|---|---|---|
+| `attention.enabled` | `true` | Master switch for this workspace. |
+| `attention.urgency_filter` | `normal+high` | Which urgency levels notify (`low`/`normal`/`high`). |
+| `attention.sound_escalation_after` | `off` | If unset, silent forever. Set to a duration (e.g. `60s`, `5m`) to start playing sound after that wait. |
+| `attention.click_action` | `focus_tab` | What clicking the notification does (`focus_tab` / `none`). |
+| `attention.mute_until` | unset | Temporary mute set from the TUI (`m` on the workspace row); auto-clears at the named timestamp. |
+
+Every knob is configurable globally, per workspace, and per (workspace × role × agent), with the same most-specific-wins resolution rule the rest of jackin' already uses.
+
+## Why a daemon
+
+Same answer as live auth sync: this feature can't run from a CLI that exits between commands. The daemon adapter:
+
+- Subscribes to the per-container control channels for attention events.
+- Tracks per-event timers (sound-escalation deadlines).
+- Holds the per-workspace mute state.
+- Talks to the OS notification API.
+- Receives click events back from the OS and runs the focus-tab action.
+
+The lifecycle, install, and security posture this needs are the same ones the [jackin daemon](/reference/roadmap/jackin-daemon/) item is decided. This feature is an adapter against that daemon; it does not introduce its own long-running shape.
+
+## Open design questions
+
+### MCP server contract
+
+- **Tool surface.** Just `attention.waiting` / `attention.resolved`? Or a richer set (`attention.progress(message)` for "I'm still working, here's what I'm doing")?
+- **Auto-resolve vs explicit resolve.** Does the next tool call from the agent count as "operator unblocked the agent" (auto-resolve), or does the agent have to call `attention.resolved` explicitly?
+- **Urgency taxonomy.** `low / normal / high` is a starting point; do we need an `error` level for crashes vs `interactive` for confirmations? The smaller the taxonomy, the better.
+
+### Inference fallback
+
+- **PTY-idle threshold.** How many seconds of TTY silence before jackin' assumes the agent is waiting? Too short = false positives every time an agent is thinking; too long = operator waits longer than necessary. Configurable per workspace?
+- **False-positive backoff.** When the operator confirms a notification was a false positive (clicks "this wasn't really waiting"), the daemon should debounce that container for a while.
+
+### Click-to-focus across terminals
+
+- **Detection.** Which terminal hosts the operator's session is detected at launch from env vars. What if the operator switches terminals after launch (closes Ghostty, reopens in iTerm)? The click action would fail. Does jackin' degrade gracefully (notification with no click action)?
+- **Adapter scope.** Do we ship adapters for every popular terminal in v1, or one (the operator's current `TERM_PROGRAM`) and add the rest later? The latter is smaller; the former is more useful.
+
+### Notification de-duplication
+
+- **Multiple agents waiting at once.** Five agents idle in five containers — five notifications? One grouped notification? A digest the operator can drill into?
+- **Notification fatigue.** What's the rate-limit policy? After N notifications in M seconds, fall back to a digest?
+
+### Cross-host
+
+- **Remote operator.** When jackin' grows to support remote agents (Kubernetes phase, see the [Why jackin'](/getting-started/why/) page), notifications need to reach the operator wherever they are. Out of scope for v1; revisit when remote-agent work lands.
+
+## What ships in phase 1
+
+A minimal cut to validate the shape:
+
+1. `jackin-attention` MCP server, baked into construct, auto-registered for every agent runtime jackin' supports today.
+2. The two-tool surface `attention.waiting` / `attention.resolved`.
+3. Daemon adapter listening on the per-container control channel, dispatching macOS Notification Center notifications.
+4. Click action wired for the operator's current terminal (detected at launch from `TERM_PROGRAM`); other terminals get the notification with no click action and a one-line "open this terminal manually" hint.
+5. `Notifications` tab in `jackin console` workspace editor — enable / mute / sound-escalation duration. No per-role overrides in v1.
+6. Linux `notify-send` adapter as part of the same phase (it's small and operators on Linux deserve parity from day one).
+
+Not in phase 1: PTY-idle inference fallback, sound files beyond a single default, urgency-based sound differentiation, cross-terminal click-to-focus matrix, Windows support.
+
+## Why this matters
+
+Concretely: an operator running four agents in parallel today loses ~20–30% of total work time to "I didn't notice the agent was waiting." Even a 50% reduction in idle-wait time pays for the implementation effort within a few weeks of operator usage, and that's before counting the qualitative win of staying in flow on the work the operator actually came to do.
+
+The bet of jackin' is that running many agents safely and conveniently changes how operators work. Attention prompts are the difference between *"I have ten agents running, but I have to babysit them"* and *"I have ten agents running, and they ping me when they need me."*
+
+## Related work
+
+- [jackin daemon](/reference/roadmap/jackin-daemon/) — host-side process this feature plugs into. Phase 1 daemon must ship before this adapter can.
+- [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/) — sibling feature plugging into the same daemon; sets the precedent for per-axis adapters.
+- [Universal Orchestrator Program → Live agent observability](/reference/roadmap/multicode-inspired-features/) — adjacent work on surfacing what the agent is *doing* in real time. Attention prompts close the loop the other direction (when the agent stops doing things and waits).
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — current MCP-registration pattern for `tirith` / `shellfirm`. The `jackin-attention` MCP server registers through the same code path.
