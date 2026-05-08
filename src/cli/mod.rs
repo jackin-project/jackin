@@ -2,7 +2,7 @@ use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Parser, Subcommand};
 
 use cleanup::{EjectArgs, PurgeArgs};
-use role::{ConsoleArgs, HardlineArgs, LaunchArgs, LoadArgs};
+use role::{ConsoleArgs, HardlineArgs, LoadArgs};
 
 pub(super) const HELP_STYLES: Styles = Styles::styled()
     .header(AnsiColor::BrightGreen.on_default().effects(Effects::BOLD))
@@ -86,9 +86,6 @@ pub enum Command {
     Exile,
     Purge(PurgeArgs),
     Console(ConsoleArgs),
-    /// Open the operator console (deprecated — use `jackin` or `jackin console`)
-    #[command(hide = true)]
-    Launch(LaunchArgs),
     /// Manage saved workspaces
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Workspace(WorkspaceCommand),
@@ -176,12 +173,6 @@ mod tests {
         ] {
             assert!(help.contains(cmd), "missing command: {cmd}");
         }
-        // `launch` is hidden (deprecated alias for `console`) and should
-        // not appear in the top-level command list.
-        assert!(
-            !help.contains("\n  launch "),
-            "deprecated `launch` should be hidden from help"
-        );
     }
 
     // ── help subcommand disabled ────────────────────────────────────────
@@ -254,7 +245,6 @@ mod tests {
             vec!["jackin", "exile", "--help"],
             vec!["jackin", "purge", "--help"],
             vec!["jackin", "console", "--help"],
-            vec!["jackin", "launch", "--help"],
             vec!["jackin", "workspace", "create", "--help"],
             vec!["jackin", "workspace", "list", "--help"],
             vec!["jackin", "workspace", "show", "--help"],

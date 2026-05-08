@@ -742,15 +742,6 @@ auth_forward = "oauth_token"
     }
 
     #[test]
-    fn auth_forward_mode_from_str_rejects_deprecated_copy_alias() {
-        use std::str::FromStr;
-        assert!(
-            AuthForwardMode::from_str("copy").is_err(),
-            "the deprecated `copy` alias must no longer parse"
-        );
-    }
-
-    #[test]
     fn auth_forward_mode_from_str_accepts_sync_and_ignore() {
         use std::str::FromStr;
         assert_eq!(

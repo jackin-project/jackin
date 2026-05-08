@@ -100,7 +100,6 @@ Maps 1:1 with the published site sidebar:
 | Commands | `commands/load.mdx` | `jackin load` |
 | | `commands/console.mdx` | `jackin console` (bare `jackin` dispatches here) |
 | | `commands/cd.mdx` | `jackin cd` (open a child shell in an isolated worktree) |
-| | `commands/launch.mdx` | `jackin launch` (deprecated alias for `jackin console`) |
 | | `commands/hardline.mdx` | `jackin hardline` |
 | | `commands/eject.mdx` | `jackin eject` |
 | | `commands/exile.mdx` | `jackin exile` |

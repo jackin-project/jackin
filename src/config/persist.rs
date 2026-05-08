@@ -112,9 +112,7 @@ mod tests {
     }
 
     #[test]
-    fn load_rejects_deprecated_copy_alias() {
-        // Pre-release stance: no compatibility shims. `auth_forward = "copy"`
-        // must hard-fail at load instead of being silently migrated.
+    fn load_rejects_invalid_auth_forward_value() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -122,7 +120,7 @@ mod tests {
         std::fs::write(
             &paths.config_file,
             r#"[claude]
-auth_forward = "copy"
+auth_forward = "bogus"
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
@@ -133,8 +131,8 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
         let err = AppConfig::load_or_init(&paths).unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.contains("unknown variant `copy`") || msg.contains("invalid auth_forward mode"),
-            "expected parse error rejecting `copy`, got: {msg}"
+            msg.contains("unknown variant `bogus`") || msg.contains("invalid auth_forward mode"),
+            "expected parse error rejecting `bogus`, got: {msg}"
         );
     }
 

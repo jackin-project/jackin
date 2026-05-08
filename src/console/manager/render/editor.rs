@@ -944,9 +944,8 @@ fn split_bracket_subtitle(s: &str) -> (String, Option<String>) {
 /// `vault / item → field`, 4-segment adds `section`). An optional
 /// `[subtitle]` annotation after the item renders in `PHOSPHOR_DIM`; an
 /// optional `?attribute=...` query suffix renders in `PHOSPHOR_DIM` after
-/// the field. `Plain` rows (including legacy bare `op://...` strings)
-/// render as a literal / masked value with no `[op]` marker — the visual
-/// migration signal that the row needs re-picking to upgrade.
+/// the field. `Plain` rows render as a literal / masked value with no
+/// `[op]` marker.
 fn render_secrets_key_line(
     selected: bool,
     cursor_col: &str,
