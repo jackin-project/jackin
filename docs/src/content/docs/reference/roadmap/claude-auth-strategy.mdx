@@ -251,9 +251,23 @@ At minimum, this design would touch:
 - [config command](/commands/config/) — document setup and mode selection
 - [Configuration](/reference/configuration/) — config format updates
 
+## Follow-up Proposal
+
+The token-mode release leaves operator setup as a manual five-step
+copy-paste flow. A follow-up design proposal addresses that:
+
+- [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) —
+  guided `jackin workspace claude-token setup` orchestrator that
+  PTY-captures the upstream `claude setup-token` output, writes the
+  result to 1Password (or a future keychain backend), wires the
+  workspace config, and validates end-to-end. Also covers rotation,
+  revocation, expiry banners, and TUI integration.
+
 ## Open Questions
 
 1. Where should jackin store a long-lived Claude token on macOS and Linux?
+   *(Addressed by the [Workspace Claude Token Setup](/reference/roadmap/workspace-claude-token-setup/) proposal:
+   1Password by default, OS keychain as a follow-up source.)*
 2. Should token mode be an explicit opt-in only, or should it eventually replace `copy` as the default recommendation?
 3. Is a token-only mode sufficient, or should jackin also support an operator-provided `apiKeyHelper` path for terminal-only workflows?
 4. Should jackin proactively detect likely-auth-drift conditions and recommend `purge` or `sync` before the operator hits a 401?

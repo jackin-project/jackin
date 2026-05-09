@@ -8,7 +8,7 @@ import RepoFile from '../../../components/RepoFile.astro'
 
 ## Current status
 
-jackin' is experimental preview software and has not reached a stable release yet. **`Claude Code`, `Codex`, and `Amp` ship today as built-in agent runtimes**, with namespaced roles, workspace management, per-mount isolation for parallel agents, layered authentication forwarding (including `1Password` references), and an interactive operator console (TUI). Breaking changes are expected while the core design and basic functionality settle.
+jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` ship today as built-in agent runtimes**, with namespaced roles, workspace management, per-mount isolation for parallel agents, layered authentication forwarding (including `1Password` references), and an interactive operator console (TUI).
 
 ## Completed
 
@@ -44,6 +44,7 @@ jackin' is experimental preview software and has not reached a stable release ye
 - [1Password integration](/reference/roadmap/onepassword-integration/) — workspace-managed `op://` env references shipped; file-mount generation (option 4) still deferred
 - [Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/) — `Claude Code`, `Codex`, and `Amp` all shipped as built-in runtimes; full feature parity across `claude` / `codex` / `amp` still in flight
 - [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/) — three-mode auth-forward (`sync` / `token` / `ignore`) at all three layers shipped, plus container HTTPS-normalize, `gh` credential helper wiring, and the auth-tab GitHub CLI row in `jackin console`; dedicated CLI subcommand, scope pre-flight, and bidirectional shared-store sync still pending
+- [Workspace Claude token setup](/reference/roadmap/workspace-claude-token-setup/) — `jackin workspace claude-token setup|rotate|revoke|doctor` orchestrator with PTY-captured tokens, 1Password write, post-write SHA validation, the in-container OAuth-token onboarding skeleton, and the launch-banner expiry countdown all shipped; TUI `[G] Generate token` action, Apple Keychain backend, and bulk `--all` migration flag remain. Under-the-hood mechanics at [Claude Token Orchestrator](/reference/claude-token-orchestrator/)
 
 ## Planned
 
@@ -105,16 +106,9 @@ Detailed design documents for individual TODO items are linked from the sidebar 
 </Aside>
 ## Vision
 
-The user-facing summary of where jackin' is headed lives on the
-[Why jackin'? → Vision](/getting-started/why/#vision) page so it is
-visible to operators and role authors, not only to contributors who
-end up on the roadmap. The longer-term shape of the project, the
-local-first focus, and the eventual move toward Kubernetes-backed
-debug workflows are all captured there.
+The user-facing summary of where jackin' is headed lives on the [Why jackin'? → Vision](/getting-started/why/#vision) page so it is visible to operators and role authors, not only to contributors who end up on the roadmap. The longer-term shape of the project, the local-first focus, and the eventual move toward Kubernetes-backed debug workflows are all captured there.
 
-If jackin' works for your use case — or almost works but needs
-something different — [open an issue](https://github.com/jackin-project/jackin/issues)
-or submit a pull request.
+If jackin' works for your use case — or almost works but needs something different — [open an issue](https://github.com/jackin-project/jackin/issues) or submit a pull request.
 
 ## Contributing
 

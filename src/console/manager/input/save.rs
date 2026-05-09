@@ -2014,6 +2014,7 @@ mod tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: KeepAwakeConfig::default(),
+            op_account: None,
             claude: None,
             codex: None,
             amp: None,

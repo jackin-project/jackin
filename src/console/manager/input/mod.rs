@@ -151,17 +151,21 @@ pub fn handle_key(
             // separate `pending_name.is_some()` flag plus an
             // `expect("prelude complete")` to keep the two invariants
             // in sync.
-            #[allow(clippy::items_after_statements, clippy::large_enum_variant)]
+            // `WorkspaceConfig` is several hundred bytes once auth /
+            // canonical-slot fields are populated, so box the
+            // success carrier — `Complete` was already the only
+            // payload variant.
+            #[allow(clippy::items_after_statements)]
             enum PreludeStatus {
                 InProgress,
-                Complete(String, crate::workspace::WorkspaceConfig),
+                Complete(Box<(String, crate::workspace::WorkspaceConfig)>),
                 Cancelled,
             }
             let status = if let ManagerStage::CreatePrelude(p) = &state.stage {
                 if p.modal.is_some() {
                     PreludeStatus::InProgress
                 } else if let Some((name, ws)) = p.completed() {
-                    PreludeStatus::Complete(name, ws)
+                    PreludeStatus::Complete(Box::new((name, ws)))
                 } else {
                     PreludeStatus::Cancelled
                 }
@@ -169,7 +173,8 @@ pub fn handle_key(
                 PreludeStatus::InProgress
             };
             match status {
-                PreludeStatus::Complete(name, ws) => {
+                PreludeStatus::Complete(payload) => {
+                    let (name, ws) = *payload;
                     let mut editor = EditorState::new_create();
                     editor.pending = ws;
                     editor.pending_name = Some(name);

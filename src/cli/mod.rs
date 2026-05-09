@@ -37,7 +37,7 @@ pub mod role;
 pub mod workspace;
 
 pub use config::{AuthCommand, ConfigCommand, EnvCommand, MountCommand, TrustCommand};
-pub use workspace::{WorkspaceCommand, WorkspaceEnvCommand};
+pub use workspace::{WorkspaceClaudeTokenCommand, WorkspaceCommand, WorkspaceEnvCommand};
 
 /// Operator's CLI for orchestrating AI coding roles in isolated containers
 ///
