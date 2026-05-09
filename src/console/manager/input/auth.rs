@@ -10,7 +10,6 @@
 //! (Claude/Codex write `[workspaces.<ws>(.roles.<role>)?].<agent>`;
 //! Github writes `[workspaces.<ws>(.roles.<role>)?].github`).
 
-use crate::agent::Agent;
 use crossterm::event::{KeyCode, KeyEvent};
 
 use super::super::super::widgets::auth_panel::{AuthForm, CredentialInput};
@@ -156,9 +155,9 @@ const fn target_kind(target: &AuthFormTarget) -> AuthKind {
 fn clear_role_kind(editor: &mut EditorState<'_>, role: &str, kind: AuthKind) {
     if let Some(ro) = editor.pending.roles.get_mut(role) {
         match kind {
-            AuthKind::Agent(Agent::Claude) => ro.claude = None,
-            AuthKind::Agent(Agent::Codex) => ro.codex = None,
-            AuthKind::Agent(Agent::Amp) => ro.amp = None,
+            AuthKind::Claude => ro.claude = None,
+            AuthKind::Codex => ro.codex = None,
+            AuthKind::Amp => ro.amp = None,
             AuthKind::Github => ro.github = None,
         }
     }
@@ -166,9 +165,9 @@ fn clear_role_kind(editor: &mut EditorState<'_>, role: &str, kind: AuthKind) {
 
 fn clear_workspace_kind(ws: &mut crate::workspace::WorkspaceConfig, kind: AuthKind) {
     match kind {
-        AuthKind::Agent(Agent::Claude) => ws.claude = None,
-        AuthKind::Agent(Agent::Codex) => ws.codex = None,
-        AuthKind::Agent(Agent::Amp) => ws.amp = None,
+        AuthKind::Claude => ws.claude = None,
+        AuthKind::Codex => ws.codex = None,
+        AuthKind::Amp => ws.amp = None,
         AuthKind::Github => ws.github = None,
     }
 }
@@ -182,7 +181,7 @@ fn current_mode_and_credential(
 ) -> (Option<AuthMode>, Option<EnvValue>) {
     match target {
         AuthFormTarget::Workspace { kind } => match kind {
-            AuthKind::Agent(Agent::Claude) => {
+            AuthKind::Claude => {
                 let mode = editor
                     .pending
                     .claude
@@ -192,7 +191,7 @@ fn current_mode_and_credential(
                 let cred = env_var.and_then(|v| editor.pending.env.get(v).cloned());
                 (mode, cred)
             }
-            AuthKind::Agent(Agent::Codex) => {
+            AuthKind::Codex => {
                 let mode = editor
                     .pending
                     .codex
@@ -202,7 +201,7 @@ fn current_mode_and_credential(
                 let cred = env_var.and_then(|v| editor.pending.env.get(v).cloned());
                 (mode, cred)
             }
-            AuthKind::Agent(Agent::Amp) => {
+            AuthKind::Amp => {
                 let mode = editor
                     .pending
                     .amp
@@ -235,7 +234,7 @@ fn current_mode_and_credential(
         AuthFormTarget::WorkspaceRole { role, kind } => {
             let override_ref = editor.pending.roles.get(role);
             match kind {
-                AuthKind::Agent(Agent::Claude) => {
+                AuthKind::Claude => {
                     let mode = override_ref
                         .and_then(|ro| ro.claude.as_ref())
                         .map(|c| AuthMode::from_auth_forward(c.auth_forward));
@@ -244,7 +243,7 @@ fn current_mode_and_credential(
                         env_var.and_then(|v| override_ref.and_then(|ro| ro.env.get(v).cloned()));
                     (mode, cred)
                 }
-                AuthKind::Agent(Agent::Codex) => {
+                AuthKind::Codex => {
                     let mode = override_ref
                         .and_then(|ro| ro.codex.as_ref())
                         .map(|c| AuthMode::from_auth_forward(c.0.auth_forward));
@@ -253,7 +252,7 @@ fn current_mode_and_credential(
                         env_var.and_then(|v| override_ref.and_then(|ro| ro.env.get(v).cloned()));
                     (mode, cred)
                 }
-                AuthKind::Agent(Agent::Amp) => {
+                AuthKind::Amp => {
                     let mode = override_ref
                         .and_then(|ro| ro.amp.as_ref())
                         .map(|c| AuthMode::from_auth_forward(c.0.auth_forward));
@@ -742,7 +741,7 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
             set_workspace_mode(&mut editor.pending, *kind, Some(outcome.mode));
             if let (Some(name), Some(value)) = (outcome.env_var_name, outcome.env_value.clone()) {
                 match kind {
-                    AuthKind::Agent(_) => {
+                    AuthKind::Claude | AuthKind::Codex | AuthKind::Amp => {
                         editor.pending.env.insert(name.to_string(), value);
                     }
                     AuthKind::Github => {
@@ -757,7 +756,7 @@ fn persist_form(editor: &mut EditorState<'_>, target: &AuthFormTarget, form: &Au
             set_role_mode(entry, *kind, Some(outcome.mode));
             if let (Some(name), Some(value)) = (outcome.env_var_name, outcome.env_value.clone()) {
                 match kind {
-                    AuthKind::Agent(_) => {
+                    AuthKind::Claude | AuthKind::Codex | AuthKind::Amp => {
                         entry.env.insert(name.to_string(), value);
                     }
                     AuthKind::Github => {
@@ -793,17 +792,17 @@ fn set_workspace_mode(
     mode: Option<AuthMode>,
 ) {
     match kind {
-        AuthKind::Agent(Agent::Claude) => {
+        AuthKind::Claude => {
             ws.claude = mode
                 .and_then(AuthMode::to_auth_forward)
                 .map(|auth_forward| AgentAuthConfig { auth_forward });
         }
-        AuthKind::Agent(Agent::Codex) => {
+        AuthKind::Codex => {
             ws.codex = mode
                 .and_then(AuthMode::to_auth_forward)
                 .map(|auth_forward| CodexAuthConfig(AgentAuthConfig { auth_forward }));
         }
-        AuthKind::Agent(Agent::Amp) => {
+        AuthKind::Amp => {
             ws.amp = mode
                 .and_then(AuthMode::to_auth_forward)
                 .map(|auth_forward| AmpAuthConfig(AgentAuthConfig { auth_forward }));
@@ -826,17 +825,17 @@ fn set_workspace_mode(
 
 fn set_role_mode(entry: &mut WorkspaceRoleOverride, kind: AuthKind, mode: Option<AuthMode>) {
     match kind {
-        AuthKind::Agent(Agent::Claude) => {
+        AuthKind::Claude => {
             entry.claude = mode
                 .and_then(AuthMode::to_auth_forward)
                 .map(|auth_forward| AgentAuthConfig { auth_forward });
         }
-        AuthKind::Agent(Agent::Codex) => {
+        AuthKind::Codex => {
             entry.codex = mode
                 .and_then(AuthMode::to_auth_forward)
                 .map(|auth_forward| CodexAuthConfig(AgentAuthConfig { auth_forward }));
         }
-        AuthKind::Agent(Agent::Amp) => {
+        AuthKind::Amp => {
             entry.amp = mode
                 .and_then(AuthMode::to_auth_forward)
                 .map(|auth_forward| AmpAuthConfig(AgentAuthConfig { auth_forward }));
@@ -900,7 +899,7 @@ mod tests {
                 matches!(
                     r,
                     AuthRow::WorkspaceMode {
-                        kind: AuthKind::Agent(Agent::Claude),
+                        kind: AuthKind::Claude,
                     }
                 )
             })
@@ -951,7 +950,7 @@ mod tests {
         let ws = cfg.workspaces.get("proj").unwrap().clone();
         let mut editor = EditorState::new_edit("proj".into(), ws);
         editor.active_tab = crate::console::manager::state::EditorTab::Auth;
-        editor.auth_selected_kind = Some(AuthKind::Agent(Agent::Claude));
+        editor.auth_selected_kind = Some(AuthKind::Claude);
         let ws_claude_idx = workspace_claude_row_idx(&editor, &cfg);
         editor.active_field = FieldFocus::Row(ws_claude_idx);
         state.stage = ManagerStage::Editor(editor);
@@ -1192,7 +1191,7 @@ mod tests {
                     r,
                     AuthRow::RoleMode {
                         role,
-                        kind: AuthKind::Agent(Agent::Claude),
+                        kind: AuthKind::Claude,
                     } if role == "smith"
                 )
             })
@@ -1206,7 +1205,7 @@ mod tests {
             target,
             &AuthFormTarget::WorkspaceRole {
                 role: "smith".into(),
-                kind: AuthKind::Agent(Agent::Claude),
+                kind: AuthKind::Claude,
             }
         );
 
@@ -1406,9 +1405,9 @@ mod tests {
         // to leak through Esc.)
         editor.pending_auth_form_return = Some(AuthFormReturnPath {
             target: AuthFormTarget::Workspace {
-                kind: AuthKind::Agent(Agent::Claude),
+                kind: AuthKind::Claude,
             },
-            state: Box::new(AuthForm::new(AuthKind::Agent(Agent::Claude))),
+            state: Box::new(AuthForm::new(AuthKind::Claude)),
             focus: AuthFormFocus::Mode,
             literal_buffer: String::new(),
         });

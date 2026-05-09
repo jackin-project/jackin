@@ -23,21 +23,13 @@ use crate::config::{AuthForwardMode, GithubAuthMode};
 
 /// Which auth section the operator is currently editing.
 ///
-/// `Agent(_)` lifts the runtime [`Agent`] enum directly — every per-
-/// agent table (`label`, `supported_modes`, `required_env_var`)
-/// delegates to `Agent` so adding a fourth runtime is one line on
-/// `Agent`, not five scattered match arms here. `Github` is the lone
-/// non-runtime kind and stays its own variant.
+/// See module docs for why this is wider than `Agent`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AuthKind {
-    Agent(Agent),
+    Claude,
+    Codex,
+    Amp,
     Github,
-}
-
-impl From<Agent> for AuthKind {
-    fn from(agent: Agent) -> Self {
-        Self::Agent(agent)
-    }
 }
 
 impl AuthKind {
@@ -46,9 +38,9 @@ impl AuthKind {
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Agent(Agent::Claude) => "Claude Code",
-            Self::Agent(Agent::Codex) => "Codex",
-            Self::Agent(Agent::Amp) => "Amp",
+            Self::Claude => "Claude Code",
+            Self::Codex => "Codex",
+            Self::Amp => "Amp",
             Self::Github => "GitHub CLI",
         }
     }
@@ -60,52 +52,69 @@ impl AuthKind {
     #[must_use]
     pub const fn supported_modes(self) -> &'static [AuthMode] {
         match self {
-            Self::Agent(Agent::Claude) => &[
+            Self::Claude => &[
                 AuthMode::Sync,
                 AuthMode::ApiKey,
                 AuthMode::OAuthToken,
                 AuthMode::Ignore,
             ],
-            Self::Agent(Agent::Codex | Agent::Amp) => {
-                &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore]
-            }
+            Self::Codex | Self::Amp => &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore],
             Self::Github => &[AuthMode::Sync, AuthMode::Token, AuthMode::Ignore],
         }
     }
 
     /// Well-known env var that carries the auth credential for this
-    /// (kind, mode) combination, if any.
+    /// (kind, mode) combination, if any. Returns `None` for modes that
+    /// don't inject a credential (sync, ignore) or for combinations
+    /// that don't make sense for the kind.
     #[must_use]
     pub const fn required_env_var(self, mode: AuthMode) -> Option<&'static str> {
         match (self, mode) {
-            (Self::Agent(Agent::Claude), AuthMode::ApiKey) => Some("ANTHROPIC_API_KEY"),
-            (Self::Agent(Agent::Claude), AuthMode::OAuthToken) => Some("CLAUDE_CODE_OAUTH_TOKEN"),
-            (Self::Agent(Agent::Codex), AuthMode::ApiKey) => Some("OPENAI_API_KEY"),
-            (Self::Agent(Agent::Amp), AuthMode::ApiKey) => Some("AMP_API_KEY"),
+            (Self::Claude, AuthMode::ApiKey) => Some("ANTHROPIC_API_KEY"),
+            (Self::Claude, AuthMode::OAuthToken) => Some("CLAUDE_CODE_OAUTH_TOKEN"),
+            (Self::Codex, AuthMode::ApiKey) => Some("OPENAI_API_KEY"),
+            (Self::Amp, AuthMode::ApiKey) => Some("AMP_API_KEY"),
             (Self::Github, AuthMode::Token) => Some(crate::env_model::GH_TOKEN_ENV_NAME),
             _ => None,
         }
     }
 
-    /// Convert to the runtime [`Agent`] axis for code paths that remain
-    /// agent-keyed (per-agent persistence diffs, `resolve_mode`).
-    /// `Self::Github` has no runtime peer.
+    /// Map a runtime [`Agent`] onto its [`AuthKind`] counterpart. The
+    /// inverse direction (`Agent::for_auth_kind`) is intentionally
+    /// absent — `AuthKind::Github` has no `Agent` partner.
+    #[must_use]
+    pub const fn for_agent(agent: Agent) -> Self {
+        match agent {
+            Agent::Claude => Self::Claude,
+            Agent::Codex => Self::Codex,
+            Agent::Amp => Self::Amp,
+        }
+    }
+
+    /// Convert back to the runtime [`Agent`] axis for code paths that
+    /// remain agent-keyed (Claude / Codex persistence diffs, the
+    /// shared `resolve_mode` helper that takes an `Agent`). Returns
+    /// `None` for `Self::Github`, which has no runtime peer.
     #[must_use]
     pub const fn agent(self) -> Option<Agent> {
         match self {
-            Self::Agent(a) => Some(a),
+            Self::Claude => Some(Agent::Claude),
+            Self::Codex => Some(Agent::Codex),
+            Self::Amp => Some(Agent::Amp),
             Self::Github => None,
         }
     }
 
     /// Whether the role-override entry already carries a block for
-    /// this kind.
+    /// this kind. Used by the auth-role-override picker (filter out
+    /// roles that already have an override) and the render-side row
+    /// builder (decide whether to draw a `RoleHeader`).
     #[must_use]
     pub const fn role_override_present(self, ro: &crate::config::WorkspaceRoleOverride) -> bool {
         match self {
-            Self::Agent(Agent::Claude) => ro.claude.is_some(),
-            Self::Agent(Agent::Codex) => ro.codex.is_some(),
-            Self::Agent(Agent::Amp) => ro.amp.is_some(),
+            Self::Claude => ro.claude.is_some(),
+            Self::Codex => ro.codex.is_some(),
+            Self::Amp => ro.amp.is_some(),
             Self::Github => ro.github.is_some(),
         }
     }
@@ -197,9 +206,9 @@ mod tests {
 
     #[test]
     fn label_matches_design_spec() {
-        assert_eq!(AuthKind::Agent(Agent::Claude).label(), "Claude Code");
-        assert_eq!(AuthKind::Agent(Agent::Codex).label(), "Codex");
-        assert_eq!(AuthKind::Agent(Agent::Amp).label(), "Amp");
+        assert_eq!(AuthKind::Claude.label(), "Claude Code");
+        assert_eq!(AuthKind::Codex.label(), "Codex");
+        assert_eq!(AuthKind::Amp.label(), "Amp");
         assert_eq!(AuthKind::Github.label(), "GitHub CLI");
     }
 
@@ -211,20 +220,20 @@ mod tests {
 
     #[test]
     fn claude_supported_modes_include_oauth_token() {
-        let modes = AuthKind::Agent(Agent::Claude).supported_modes();
+        let modes = AuthKind::Claude.supported_modes();
         assert!(modes.contains(&AuthMode::OAuthToken));
     }
 
     #[test]
     fn codex_supported_modes_exclude_oauth_token_and_token() {
-        let modes = AuthKind::Agent(Agent::Codex).supported_modes();
+        let modes = AuthKind::Codex.supported_modes();
         assert!(!modes.contains(&AuthMode::OAuthToken));
         assert!(!modes.contains(&AuthMode::Token));
     }
 
     #[test]
     fn amp_supported_modes_exclude_oauth_token_and_token() {
-        let modes = AuthKind::Agent(Agent::Amp).supported_modes();
+        let modes = AuthKind::Amp.supported_modes();
         assert!(!modes.contains(&AuthMode::OAuthToken));
         assert!(!modes.contains(&AuthMode::Token));
     }
@@ -246,59 +255,41 @@ mod tests {
     #[test]
     fn claude_required_env_vars_match_runtime_table() {
         assert_eq!(
-            AuthKind::Agent(Agent::Claude).required_env_var(AuthMode::ApiKey),
+            AuthKind::Claude.required_env_var(AuthMode::ApiKey),
             Some("ANTHROPIC_API_KEY")
         );
         assert_eq!(
-            AuthKind::Agent(Agent::Claude).required_env_var(AuthMode::OAuthToken),
+            AuthKind::Claude.required_env_var(AuthMode::OAuthToken),
             Some("CLAUDE_CODE_OAUTH_TOKEN")
         );
-        assert_eq!(
-            AuthKind::Agent(Agent::Claude).required_env_var(AuthMode::Sync),
-            None
-        );
-        assert_eq!(
-            AuthKind::Agent(Agent::Claude).required_env_var(AuthMode::Ignore),
-            None
-        );
+        assert_eq!(AuthKind::Claude.required_env_var(AuthMode::Sync), None);
+        assert_eq!(AuthKind::Claude.required_env_var(AuthMode::Ignore), None);
     }
 
     #[test]
     fn amp_required_env_vars_match_runtime_table() {
         assert_eq!(
-            AuthKind::Agent(Agent::Amp).required_env_var(AuthMode::ApiKey),
+            AuthKind::Amp.required_env_var(AuthMode::ApiKey),
             Some("AMP_API_KEY")
         );
-        assert_eq!(
-            AuthKind::Agent(Agent::Amp).required_env_var(AuthMode::Sync),
-            None
-        );
-        assert_eq!(
-            AuthKind::Agent(Agent::Amp).required_env_var(AuthMode::Ignore),
-            None
-        );
-        assert_eq!(
-            AuthKind::Agent(Agent::Amp).required_env_var(AuthMode::OAuthToken),
-            None
-        );
+        assert_eq!(AuthKind::Amp.required_env_var(AuthMode::Sync), None);
+        assert_eq!(AuthKind::Amp.required_env_var(AuthMode::Ignore), None);
+        assert_eq!(AuthKind::Amp.required_env_var(AuthMode::OAuthToken), None);
     }
 
     #[test]
-    fn from_agent_round_trip() {
-        assert_eq!(
-            AuthKind::from(Agent::Claude),
-            AuthKind::Agent(Agent::Claude)
-        );
-        assert_eq!(AuthKind::from(Agent::Codex), AuthKind::Agent(Agent::Codex));
-        assert_eq!(AuthKind::from(Agent::Amp), AuthKind::Agent(Agent::Amp));
+    fn for_agent_round_trip() {
+        assert_eq!(AuthKind::for_agent(Agent::Claude), AuthKind::Claude);
+        assert_eq!(AuthKind::for_agent(Agent::Codex), AuthKind::Codex);
+        assert_eq!(AuthKind::for_agent(Agent::Amp), AuthKind::Amp);
     }
 
     #[test]
     fn agent_returns_none_for_github() {
         assert_eq!(AuthKind::Github.agent(), None);
-        assert_eq!(AuthKind::Agent(Agent::Claude).agent(), Some(Agent::Claude));
-        assert_eq!(AuthKind::Agent(Agent::Codex).agent(), Some(Agent::Codex));
-        assert_eq!(AuthKind::Agent(Agent::Amp).agent(), Some(Agent::Amp));
+        assert_eq!(AuthKind::Claude.agent(), Some(Agent::Claude));
+        assert_eq!(AuthKind::Codex.agent(), Some(Agent::Codex));
+        assert_eq!(AuthKind::Amp.agent(), Some(Agent::Amp));
     }
 
     #[test]
@@ -340,9 +331,9 @@ mod tests {
     #[test]
     fn role_override_present_false_when_no_blocks_set() {
         let ro = crate::config::WorkspaceRoleOverride::default();
-        assert!(!AuthKind::Agent(Agent::Claude).role_override_present(&ro));
-        assert!(!AuthKind::Agent(Agent::Codex).role_override_present(&ro));
-        assert!(!AuthKind::Agent(Agent::Amp).role_override_present(&ro));
+        assert!(!AuthKind::Claude.role_override_present(&ro));
+        assert!(!AuthKind::Codex.role_override_present(&ro));
+        assert!(!AuthKind::Amp.role_override_present(&ro));
         assert!(!AuthKind::Github.role_override_present(&ro));
     }
 
@@ -355,9 +346,9 @@ mod tests {
             }),
             ..crate::config::WorkspaceRoleOverride::default()
         };
-        assert!(AuthKind::Agent(Agent::Claude).role_override_present(&ro));
-        assert!(!AuthKind::Agent(Agent::Codex).role_override_present(&ro));
-        assert!(!AuthKind::Agent(Agent::Amp).role_override_present(&ro));
+        assert!(AuthKind::Claude.role_override_present(&ro));
+        assert!(!AuthKind::Codex.role_override_present(&ro));
+        assert!(!AuthKind::Amp.role_override_present(&ro));
         assert!(!AuthKind::Github.role_override_present(&ro));
 
         // Codex-only override → only Codex returns true.
@@ -369,9 +360,9 @@ mod tests {
             )),
             ..crate::config::WorkspaceRoleOverride::default()
         };
-        assert!(!AuthKind::Agent(Agent::Claude).role_override_present(&ro));
-        assert!(AuthKind::Agent(Agent::Codex).role_override_present(&ro));
-        assert!(!AuthKind::Agent(Agent::Amp).role_override_present(&ro));
+        assert!(!AuthKind::Claude.role_override_present(&ro));
+        assert!(AuthKind::Codex.role_override_present(&ro));
+        assert!(!AuthKind::Amp.role_override_present(&ro));
         assert!(!AuthKind::Github.role_override_present(&ro));
 
         // Amp-only override → only Amp returns true.
@@ -383,9 +374,9 @@ mod tests {
             )),
             ..crate::config::WorkspaceRoleOverride::default()
         };
-        assert!(!AuthKind::Agent(Agent::Claude).role_override_present(&ro));
-        assert!(!AuthKind::Agent(Agent::Codex).role_override_present(&ro));
-        assert!(AuthKind::Agent(Agent::Amp).role_override_present(&ro));
+        assert!(!AuthKind::Claude.role_override_present(&ro));
+        assert!(!AuthKind::Codex.role_override_present(&ro));
+        assert!(AuthKind::Amp.role_override_present(&ro));
         assert!(!AuthKind::Github.role_override_present(&ro));
 
         // Github-only override → only Github returns true.
@@ -396,9 +387,9 @@ mod tests {
             }),
             ..crate::config::WorkspaceRoleOverride::default()
         };
-        assert!(!AuthKind::Agent(Agent::Claude).role_override_present(&ro));
-        assert!(!AuthKind::Agent(Agent::Codex).role_override_present(&ro));
-        assert!(!AuthKind::Agent(Agent::Amp).role_override_present(&ro));
+        assert!(!AuthKind::Claude.role_override_present(&ro));
+        assert!(!AuthKind::Codex.role_override_present(&ro));
+        assert!(!AuthKind::Amp.role_override_present(&ro));
         assert!(AuthKind::Github.role_override_present(&ro));
     }
 
@@ -424,9 +415,9 @@ mod tests {
             }),
             ..crate::config::WorkspaceRoleOverride::default()
         };
-        assert!(AuthKind::Agent(Agent::Claude).role_override_present(&ro));
-        assert!(AuthKind::Agent(Agent::Codex).role_override_present(&ro));
-        assert!(AuthKind::Agent(Agent::Amp).role_override_present(&ro));
+        assert!(AuthKind::Claude.role_override_present(&ro));
+        assert!(AuthKind::Codex.role_override_present(&ro));
+        assert!(AuthKind::Amp.role_override_present(&ro));
         assert!(AuthKind::Github.role_override_present(&ro));
     }
 }

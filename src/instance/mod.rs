@@ -165,26 +165,34 @@ pub enum GithubProvisionKind {
 /// `/home/agent/.local/share/amp/`) to carry image-baked config without
 /// being masked by a runtime mount.
 ///
-/// Every variant encodes mount eligibility in `Option<PathBuf>`:
-/// `Some(p)` ⇔ the file should bind-mount at `/jackin/<agent>/<file>`,
-/// `None` ⇔ env-driven auth (`CLAUDE_CODE_OAUTH_TOKEN` /
-/// `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `AMP_API_KEY`) or the
-/// host-missing fallback. `wipe_claude_state` may still leave a `{}`
-/// shell on disk; this type tracks mount, not on-disk presence.
+/// The mount decision is encoded in `forward_auth` (Claude) or in the
+/// optional path fields directly (Codex/Amp). For Claude,
+/// `forward_auth = false` means the agent authenticates via env vars
+/// (`CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`) and the auth files
+/// must not flow into the container even though they exist on the host
+/// (`wipe_claude_state` leaves a `{}` shell behind). For Codex/Amp,
+/// `None` on the optional path field means the same thing — wiped on
+/// disk, no mount, env-driven authentication
+/// (`OPENAI_API_KEY` / `AMP_API_KEY`).
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum AgentRuntimeState {
     Claude {
-        /// Host path mounted at `/jackin/claude/account.json`. `None`
-        /// when env-driven modes wiped it / mounted nothing, matching
-        /// the `Some` ⇔ mountable invariant Codex and Amp variants
-        /// follow. The role-state file itself may still exist as `{}`
-        /// after a non-sync mode; this field tracks mount eligibility,
-        /// not on-disk presence.
-        account_json: Option<PathBuf>,
-        /// Host path mounted at `/jackin/claude/credentials.json`.
-        /// Same `Some` ⇔ mountable invariant as `account_json`.
-        credentials_json: Option<PathBuf>,
+        /// Host path to Claude's account-metadata file. Always
+        /// populated by `prepare` (as `{}` for non-sync modes); only
+        /// bind-mounted when `forward_auth` is `true` *and* the file
+        /// exists on disk.
+        account_json: PathBuf,
+        /// Host path to Claude's OAuth credentials file. May not exist
+        /// on disk in env-driven modes (the wipe path removes it).
+        /// Only bind-mounted when `forward_auth` is `true` *and* the
+        /// file exists.
+        credentials_json: PathBuf,
+        /// Whether `account_json` and `credentials_json` should be
+        /// bind-mounted under `/jackin/claude/`. `false` for
+        /// `ignore`/`api_key`/`oauth_token` (env-driven authentication
+        /// — no host filesystem state must reach the container).
+        forward_auth: bool,
     },
     Codex {
         /// Host path mounted at `/jackin/codex/config.toml` (always —
@@ -223,27 +231,48 @@ pub struct RoleState {
 }
 
 impl RoleState {
-    /// Host path to Claude's account-metadata file. `None` when no
-    /// mount is eligible (env-driven mode wiped it / non-Claude
-    /// state).
+    /// Host path to Claude's account-metadata file. `None` when not
+    /// prepared for `Agent::Claude`. The path is returned regardless
+    /// of mount eligibility — call sites that care whether the file
+    /// will reach the container should also consult
+    /// [`Self::claude_forwards_auth`].
     #[must_use]
     pub fn claude_account_json(&self) -> Option<&Path> {
         match &self.agent_runtime {
-            AgentRuntimeState::Claude { account_json, .. } => account_json.as_deref(),
+            AgentRuntimeState::Claude { account_json, .. } => Some(account_json),
             AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp { .. } => None,
         }
     }
 
-    /// Host path to Claude's OAuth credentials file. `None` when no
-    /// mount is eligible.
+    /// Host path to Claude's OAuth credentials file. `None` when not
+    /// prepared for `Agent::Claude`. As with [`Self::claude_account_json`],
+    /// the path is returned regardless of whether the file currently
+    /// exists on disk or will be bind-mounted into the container; pair
+    /// with [`Self::claude_forwards_auth`] when filtering for runtime
+    /// reachability.
     #[must_use]
     pub fn claude_credentials_json(&self) -> Option<&Path> {
         match &self.agent_runtime {
             AgentRuntimeState::Claude {
                 credentials_json, ..
-            } => credentials_json.as_deref(),
+            } => Some(credentials_json),
             AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp { .. } => None,
         }
+    }
+
+    /// Whether Claude's auth files (`account.json`, `credentials.json`)
+    /// should flow into the container under `/jackin/claude/`. `false`
+    /// for env-driven modes (`ignore`/`api_key`/`oauth_token`) and for
+    /// non-Claude states.
+    #[must_use]
+    pub const fn claude_forwards_auth(&self) -> bool {
+        matches!(
+            &self.agent_runtime,
+            AgentRuntimeState::Claude {
+                forward_auth: true,
+                ..
+            }
+        )
     }
 
     /// Host path to Codex's `config.toml` (mounted at
@@ -330,34 +359,20 @@ impl RoleState {
                 let claude_dir = root.join("claude");
                 std::fs::create_dir_all(&claude_dir)?;
 
-                let account_path = claude_dir.join("account.json");
-                let credentials_path = claude_dir.join("credentials.json");
+                let account_json = claude_dir.join("account.json");
+                let credentials_json = claude_dir.join("credentials.json");
                 let (outcome, forward_auth) = Self::provision_claude_auth(
-                    &account_path,
-                    &credentials_path,
+                    &account_json,
+                    &credentials_json,
                     auth_forward,
                     host_home,
                 )?;
-
-                // Mount eligibility: forward_auth gates the whole pair
-                // (env-driven modes never bind host state), then each
-                // file's existence gates its own mount. `provision_claude_auth`
-                // always writes account.json (as `{}` when wiping) so it
-                // exists post-call under sync; credentials.json may have
-                // been removed by the wipe path.
-                let (account_json, credentials_json) = if forward_auth {
-                    (
-                        account_path.exists().then_some(account_path),
-                        credentials_path.exists().then_some(credentials_path),
-                    )
-                } else {
-                    (None, None)
-                };
 
                 (
                     AgentRuntimeState::Claude {
                         account_json,
                         credentials_json,
+                        forward_auth,
                     },
                     outcome,
                 )
@@ -445,17 +460,32 @@ plugins = []
         )
         .unwrap();
 
-        // Mount accessors return `None` under Ignore (env-driven mode
-        // never bind-mounts host state). The role-state file itself
-        // still exists on disk as a `{}` placeholder.
-        assert!(state.claude_account_json().is_none());
-        assert!(state.claude_credentials_json().is_none());
+        // Auth files exist as `{}` placeholders even under env-driven
+        // modes; they just won't be bind-mounted (`forward_auth = false`).
+        assert_eq!(
+            std::fs::read_to_string(state.claude_account_json().unwrap()).unwrap(),
+            "{}"
+        );
+        assert!(
+            !state.claude_forwards_auth(),
+            "Ignore mode must not forward auth into the container",
+        );
         assert!(state.codex_config_toml().is_none());
 
+        // Pin the host-side grouped layout: a regression to the legacy
+        // flat shape (`.claude/state/.credentials.json` at the data-dir
+        // root) would still satisfy the accessor checks
+        // above, since they only look up paths through the enum. These
+        // assertions verify the actual host paths under
+        // `<container>/claude/`.
         let container_root = paths.data_dir.join("jackin-agent-smith");
         assert_eq!(
-            std::fs::read_to_string(container_root.join("claude").join("account.json")).unwrap(),
-            "{}"
+            state.claude_account_json().unwrap(),
+            container_root.join("claude").join("account.json"),
+        );
+        assert_eq!(
+            state.claude_credentials_json().unwrap(),
+            container_root.join("claude").join("credentials.json"),
         );
     }
 
@@ -499,5 +529,6 @@ agents = ["codex"]
         // makes the absence structural rather than a runtime nil.
         assert!(state.claude_account_json().is_none());
         assert!(state.claude_credentials_json().is_none());
+        assert!(!state.claude_forwards_auth());
     }
 }

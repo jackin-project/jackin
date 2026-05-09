@@ -294,6 +294,27 @@ impl ConfigEditor {
         }
     }
 
+    /// Write or clear `[workspaces.<workspace>].op_account`.
+    ///
+    /// Pins every `op` invocation made on behalf of the workspace to
+    /// the named 1P account. Operator can pass UUID, label, or email
+    /// — `op` accepts all three.
+    pub fn set_workspace_op_account(&mut self, workspace: &str, account: Option<&str>) {
+        use toml_edit::value as toml_value;
+        let table = table_path_mut(
+            &mut self.doc,
+            &["workspaces".to_string(), workspace.to_string()],
+        );
+        match account {
+            Some(acc) => {
+                table.insert("op_account", toml_value(acc));
+            }
+            None => {
+                table.remove("op_account");
+            }
+        }
+    }
+
     /// Write or clear `[workspaces.<workspace>.roles.<role>.<agent>].auth_forward`.
     ///
     /// Mirrors [`Self::set_workspace_auth_forward`] one layer deeper.

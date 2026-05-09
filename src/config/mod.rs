@@ -83,9 +83,13 @@ impl std::str::FromStr for AuthForwardMode {
 /// Per-agent auth configuration wrapper.
 ///
 /// Used at every layer (global, per-role, per-workspace, per-(workspace × role))
-/// to carry the auth-forwarding mode for a particular agent. Future fields
-/// (e.g. credential-env overrides) live under this struct so each agent's
-/// auth knobs are namespaced together.
+/// to carry the auth-forwarding mode for a particular agent.
+///
+/// Credentials always live in the shared `[env]` block at the same layer.
+/// For `auth_forward = "oauth_token"` mode, `jackin workspace claude-token
+/// setup` writes `CLAUDE_CODE_OAUTH_TOKEN` into `[workspaces.<ws>.env]`
+/// as an `op://` reference — identical to how `ANTHROPIC_API_KEY` or
+/// `GH_TOKEN` are stored.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct AgentAuthConfig {
@@ -159,10 +163,9 @@ pub struct GithubAuthConfig {
     pub env: BTreeMap<String, crate::operator_env::EnvValue>,
 }
 
-/// Newtype around `AgentAuthConfig` that rejects `oauth_token` at parse time.
+/// Newtype around `AgentAuthConfig` that rejects `oauth_token` mode at parse time.
 ///
-/// Codex does not support `AuthForwardMode::OAuthToken` (the CLI uses a
-/// refresh-token flow rather than a static OAuth token); rejecting it at
+/// Codex does not support `AuthForwardMode::OAuthToken` — rejecting it at
 /// deserialization time keeps the type system honest so downstream code
 /// never has to handle the impossible combination.
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
@@ -969,6 +972,56 @@ auth_forward = "oauth_token"
         assert!(
             msg.contains("unknown field `bogus`") || msg.contains("unknown field \"bogus\""),
             "expected unknown-field error, got: {msg}"
+        );
+    }
+
+    /// `oauth_token` is no longer a field on `AgentAuthConfig` — credentials
+    /// live in the `[env]` block. Configs that still carry the old field
+    /// are rejected by `deny_unknown_fields`.
+    #[test]
+    fn agent_auth_config_rejects_legacy_oauth_token_field() {
+        let toml = "auth_forward = \"oauth_token\"\noauth_token = \"sk-ant-oat01-literal\"";
+        let err = toml::from_str::<AgentAuthConfig>(toml).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown field"),
+            "expected unknown-field rejection, got: {msg}"
+        );
+    }
+
+    /// `oauth_token` in `[codex]` is rejected as an unknown field.
+    #[test]
+    fn codex_auth_config_rejects_oauth_token_field() {
+        let toml = "auth_forward = \"api_key\"\noauth_token = \"doesnt-belong\"";
+        let err = toml::from_str::<CodexAuthConfig>(toml).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown field"),
+            "expected unknown-field rejection, got: {msg}"
+        );
+    }
+
+    /// Same rejection through the top-level `AppConfig` parse path.
+    #[test]
+    fn reject_codex_oauth_token_field_at_app_config_layer() {
+        let toml = "[codex]\nauth_forward = \"api_key\"\noauth_token = \"wrong-place\"";
+        let err = toml::from_str::<AppConfig>(toml).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown field"),
+            "expected unknown-field rejection at AppConfig layer, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn agent_auth_config_serializes_without_extraneous_fields() {
+        let cfg = AgentAuthConfig {
+            auth_forward: AuthForwardMode::Sync,
+        };
+        let s = toml::to_string(&cfg).unwrap();
+        assert!(
+            !s.contains("oauth_token"),
+            "serialized config must not contain oauth_token, got:\n{s}"
         );
     }
 

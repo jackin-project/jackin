@@ -516,6 +516,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     keep_awake: crate::workspace::KeepAwakeConfig {
                         enabled: keep_awake,
                     },
+                    op_account: None,
                     claude: None,
                     codex: None,
                     amp: None,
@@ -955,7 +956,22 @@ pub fn run(cli: Cli) -> Result<()> {
                     if key.is_empty() {
                         anyhow::bail!("env var key cannot be empty");
                     }
-                    config.require_workspace(&workspace)?;
+                    let ws = config.require_workspace(&workspace)?;
+                    // CLAUDE_CODE_OAUTH_TOKEN under oauth_token mode is owned
+                    // by the claude-token orchestrator; an unset here would
+                    // silently break auth at the next launch.
+                    if key == crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV
+                        && role.is_none()
+                        && ws.claude.as_ref().map(|c| c.auth_forward)
+                            == Some(crate::config::AuthForwardMode::OAuthToken)
+                    {
+                        anyhow::bail!(
+                            "CLAUDE_CODE_OAUTH_TOKEN is managed by \
+                             `jackin workspace claude-token` — use \
+                             `jackin workspace claude-token revoke {workspace}` \
+                             to clear it"
+                        );
+                    }
                     let scope = workspace_env_scope(workspace, role);
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     if editor.remove_env_var(&scope, &key) {
@@ -989,6 +1005,9 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
             },
+            WorkspaceCommand::ClaudeToken(action) => {
+                handle_claude_token(&paths, &mut config, action)
+            }
         },
         Command::Purge(PurgeArgs { selector, all }) => match Selector::parse(&selector)? {
             Selector::Container(container) => {
@@ -1050,7 +1069,7 @@ fn resolve_env_value_for_cli(value: &str) -> anyhow::Result<crate::operator_env:
         )
     })?;
 
-    let op_ref = crate::operator_env::resolve_op_uri_to_ref(value, &op_cli)?;
+    let op_ref = crate::operator_env::resolve_op_uri_to_ref(value, &op_cli, None)?;
     Ok(crate::operator_env::EnvValue::OpRef(op_ref))
 }
 
@@ -1058,6 +1077,207 @@ fn workspace_env_scope(workspace: String, role: Option<String>) -> config::EnvSc
     match role {
         Some(a) => config::EnvScope::WorkspaceRole { workspace, role: a },
         None => config::EnvScope::Workspace(workspace),
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn handle_claude_token(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    action: cli::WorkspaceClaudeTokenCommand,
+) -> Result<()> {
+    use crate::operator_env::OpRef;
+    use crate::workspace::token_setup;
+
+    fn parse_reuse(input: &str, account: Option<&str>) -> Result<OpRef> {
+        if !input.starts_with("op://") {
+            anyhow::bail!(
+                "--reuse expects an op:// reference (got {input:?}); see \
+                 https://developer.1password.com/docs/cli/secret-reference-syntax/"
+            );
+        }
+        // Canonicalise via the same disambiguation path the picker
+        // uses. Thread the operator's `--op-account` into every
+        // underlying `op vault list` / `item list` / `item get` query
+        // so multi-1P-account operators resolve `--reuse` against the
+        // pinned account; otherwise a coincidentally-named item in
+        // the default account could swap in for the intended one.
+        let probe = crate::operator_env::OpCli::new();
+        crate::operator_env::resolve_op_uri_to_ref(input, &probe, account)
+    }
+
+    match action {
+        cli::WorkspaceClaudeTokenCommand::Setup {
+            workspace,
+            vault,
+            item_name,
+            op_account,
+            reuse,
+        } => {
+            let reuse_ref = reuse
+                .as_deref()
+                .map(|r| parse_reuse(r, op_account.as_deref()))
+                .transpose()?;
+            let args = token_setup::TokenSetupArgs {
+                vault,
+                item_name,
+                account: op_account,
+                reuse: reuse_ref,
+            };
+            let report = token_setup::run_setup(paths, config, &workspace, &args)?;
+            print_token_setup_report(&report);
+            Ok(())
+        }
+        cli::WorkspaceClaudeTokenCommand::Rotate {
+            workspace,
+            vault,
+            item_name,
+            op_account,
+        } => {
+            let prior = config
+                .workspaces
+                .get(&workspace)
+                .and_then(|w| w.env.get(crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV))
+                .cloned();
+            // Default rotate to the prior item's vault when
+            // `--vault` is not supplied. Without this, the
+            // documented `rotate my-app` form errors inside
+            // `create_op_item` AFTER the PTY token capture
+            // completes. See [`token_setup::vault_for_rotate`].
+            let derived_vault = token_setup::vault_for_rotate(vault, prior.as_ref());
+            let args = token_setup::TokenSetupArgs {
+                vault: derived_vault,
+                item_name,
+                account: op_account,
+                reuse: None,
+            };
+            let report = token_setup::run_setup(paths, config, &workspace, &args)?;
+            print_token_setup_report(&report);
+            delete_prior_op_item(prior, &report.op_ref, report.op_account)?;
+            Ok(())
+        }
+        cli::WorkspaceClaudeTokenCommand::Revoke {
+            workspace,
+            delete_op_item,
+        } => {
+            let report = token_setup::run_revoke(paths, config, &workspace, delete_op_item)?;
+            if report.cleared_slot {
+                println!(
+                    "Cleared canonical slot for workspace {:?}.",
+                    report.workspace
+                );
+            } else {
+                println!(
+                    "Workspace {:?} had no canonical slot — config left unchanged.",
+                    report.workspace
+                );
+            }
+            if report.deleted_op_item {
+                println!("Deleted referenced 1P item.");
+            }
+            Ok(())
+        }
+        cli::WorkspaceClaudeTokenCommand::Doctor { workspace } => {
+            let report = token_setup::run_doctor(config, &workspace)?;
+            println!("workspace        {}", report.workspace);
+            println!("auth_forward     {}", report.mode);
+            println!(
+                "op_account       {}",
+                report.op_account.as_deref().unwrap_or("(default)")
+            );
+            if let Some(r) = &report.op_ref {
+                println!("op_ref           {}", r.path);
+            } else {
+                println!("op_ref           (literal slot)");
+            }
+            println!(
+                "token sha256     {}… (12 hex prefix; matches stored value)",
+                report.token_sha256_prefix
+            );
+            Ok(())
+        }
+    }
+}
+
+/// Delete the previous 1P item after a rotate succeeded.
+///
+/// A delete failure promotes the whole rotate to an `Err` so
+/// exit-code-driven automation (CI, `set -e`) sees the orphan —
+/// silent swallowing would let the vault accumulate dangling tokens,
+/// and on a credential-revocation rotation the old token would
+/// remain live in 1P.
+fn delete_prior_op_item(
+    prior: Option<crate::operator_env::EnvValue>,
+    new_ref: &crate::operator_env::OpRef,
+    account: Option<String>,
+) -> Result<()> {
+    let op_cli = crate::operator_env::OpCli::new().with_account(account);
+    delete_prior_op_item_with_runner(prior, new_ref, &op_cli)
+}
+
+fn delete_prior_op_item_with_runner(
+    prior: Option<crate::operator_env::EnvValue>,
+    new_ref: &crate::operator_env::OpRef,
+    op_writer: &dyn crate::operator_env::OpWriteRunner,
+) -> Result<()> {
+    let Some(crate::operator_env::EnvValue::OpRef(prior_ref)) = prior else {
+        return Ok(());
+    };
+    if prior_ref.op == new_ref.op {
+        eprintln!(
+            "[jackin] rotate: new op-ref matches prior — this is unexpected for a successful \
+             rotate (`item_create` should always produce a new item id). The new token may not \
+             be the freshly-captured one. Re-run `claude-token doctor` to verify."
+        );
+        return Ok(());
+    }
+    let Some(parts) = crate::operator_env::parse_op_reference(&prior_ref.op) else {
+        eprintln!(
+            "[jackin] rotate: prior slot {path:?} ({op}) is not in UUID form; \
+             delete by hand if desired",
+            path = prior_ref.path,
+            op = prior_ref.op,
+        );
+        return Ok(());
+    };
+    op_writer
+        .item_delete(&parts.item, &parts.vault, None)
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "rotate: prior item ({path}) was NOT deleted: {e} \
+                 (delete by hand: `{hint}`)",
+                path = prior_ref.path,
+                hint = parts.manual_delete_hint(),
+            )
+        })?;
+    eprintln!("Deleted prior 1P item ({}).", prior_ref.path);
+    Ok(())
+}
+
+fn print_token_setup_report(report: &crate::workspace::token_setup::TokenSetupReport) {
+    println!();
+    println!("Workspace        {}", report.workspace);
+    if let Some(version) = report.claude_cli_version.as_deref() {
+        println!("Claude CLI       {version}");
+    }
+    println!("op:// reference  {}", report.op_ref.path);
+    println!(
+        "op_account       {}",
+        report.op_account.as_deref().unwrap_or("(default)")
+    );
+    println!(
+        "token sha256     {}… (12 hex prefix; matches stored value)",
+        report.token_sha256_prefix
+    );
+    if let Some(expiry) = report.expiry_estimate.as_deref() {
+        println!("expires (est.)   {expiry}");
+    }
+    println!("auth_forward     oauth_token (synthesised CLAUDE_CODE_OAUTH_TOKEN)");
+    println!();
+    if report.created {
+        println!("New token captured and stored in 1Password.");
+    } else {
+        println!("Existing op:// reference adopted; no new item created.");
     }
 }
 
@@ -1247,6 +1467,7 @@ mod auth_set_tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
+            op_account: None,
             claude: None,
             codex: None,
             amp: None,
@@ -1257,5 +1478,138 @@ mod auth_set_tests {
         assert!(out.contains("Isolation"));
         assert!(out.contains("worktree"));
         assert!(out.contains("shared"));
+    }
+
+    /// Test fake for [`crate::operator_env::OpWriteRunner`] used by
+    /// the rotate-cleanup tests below.
+    struct FakeOpWriter {
+        deletes: std::cell::RefCell<Vec<(String, String)>>,
+        fail_delete: bool,
+    }
+    impl FakeOpWriter {
+        fn new() -> Self {
+            Self {
+                deletes: std::cell::RefCell::new(Vec::new()),
+                fail_delete: false,
+            }
+        }
+        fn failing() -> Self {
+            Self {
+                deletes: std::cell::RefCell::new(Vec::new()),
+                fail_delete: true,
+            }
+        }
+    }
+    impl crate::operator_env::OpWriteRunner for FakeOpWriter {
+        fn item_create(
+            &self,
+            _params: crate::operator_env::OpItemCreateParams<'_>,
+        ) -> anyhow::Result<crate::operator_env::OpRef> {
+            unimplemented!("rotate-cleanup tests do not exercise item_create")
+        }
+        fn item_delete(
+            &self,
+            item_id: &str,
+            vault_id: &str,
+            _account: Option<&str>,
+        ) -> anyhow::Result<()> {
+            self.deletes
+                .borrow_mut()
+                .push((vault_id.to_string(), item_id.to_string()));
+            if self.fail_delete {
+                anyhow::bail!("simulated item_delete failure");
+            }
+            Ok(())
+        }
+    }
+
+    /// Rotate's prior-item cleanup parses the prior op:// reference,
+    /// issues a delete with the parsed UUIDs, and returns Ok.
+    #[test]
+    fn delete_prior_op_item_with_op_ref_calls_writer_with_parsed_uuids() {
+        let prior = Some(crate::operator_env::EnvValue::OpRef(
+            crate::operator_env::OpRef {
+                op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
+                path: "Personal/Prior/token".into(),
+            },
+        ));
+        let new_ref = crate::operator_env::OpRef {
+            op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
+            path: "Personal/New/token".into(),
+        };
+        let writer = FakeOpWriter::new();
+        delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
+        assert_eq!(
+            *writer.deletes.borrow(),
+            vec![("VAULT_UUID".to_string(), "OLD_ITEM".to_string())],
+        );
+    }
+
+    /// Rotate's prior-item cleanup is a no-op when the prior slot is
+    /// `None` or holds a literal token — jackin does not know where
+    /// the literal came from.
+    #[test]
+    fn delete_prior_op_item_skips_when_prior_is_none_or_literal() {
+        let new_ref = crate::operator_env::OpRef {
+            op: "op://V/I/F".into(),
+            path: "Personal/New/token".into(),
+        };
+        let writer = FakeOpWriter::new();
+        delete_prior_op_item_with_runner(None, &new_ref, &writer).unwrap();
+        assert!(writer.deletes.borrow().is_empty());
+
+        let writer = FakeOpWriter::new();
+        delete_prior_op_item_with_runner(
+            Some(crate::operator_env::EnvValue::Plain("literal".into())),
+            &new_ref,
+            &writer,
+        )
+        .unwrap();
+        assert!(writer.deletes.borrow().is_empty());
+    }
+
+    /// Rotate must NOT delete the new item it just created if the
+    /// new and prior `op://` references are equal — a same-ref result
+    /// indicates a deeper bug, but the safety guard prevents data
+    /// loss until the operator runs `doctor`.
+    #[test]
+    fn delete_prior_op_item_skips_when_new_ref_equals_prior() {
+        let same = crate::operator_env::OpRef {
+            op: "op://V/I/F".into(),
+            path: "Personal/Item/token".into(),
+        };
+        let writer = FakeOpWriter::new();
+        delete_prior_op_item_with_runner(
+            Some(crate::operator_env::EnvValue::OpRef(same.clone())),
+            &same,
+            &writer,
+        )
+        .unwrap();
+        assert!(writer.deletes.borrow().is_empty());
+    }
+
+    /// `op item delete` failure promotes to whole-rotate `Err` with
+    /// a copy-pasteable manual-delete command, so exit-code-driven
+    /// automation surfaces the orphan.
+    #[test]
+    fn delete_prior_op_item_propagates_err_with_actionable_hint() {
+        let prior = Some(crate::operator_env::EnvValue::OpRef(
+            crate::operator_env::OpRef {
+                op: "op://V_UUID/I_UUID/F".into(),
+                path: "Personal/Prior/token".into(),
+            },
+        ));
+        let new_ref = crate::operator_env::OpRef {
+            op: "op://V_UUID/I_NEW/F".into(),
+            path: "Personal/New/token".into(),
+        };
+        let writer = FakeOpWriter::failing();
+        let err = delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("simulated item_delete failure"), "got: {msg}");
+        assert!(
+            msg.contains("op item delete I_UUID --vault V_UUID"),
+            "must include copy-pasteable recovery command, got: {msg}"
+        );
     }
 }

@@ -168,7 +168,6 @@ const fn mode_requires_credential(kind: AuthKind, mode: AuthMode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::Agent;
 
     fn dummy_op_ref() -> OpRef {
         OpRef {
@@ -179,34 +178,34 @@ mod tests {
 
     #[test]
     fn save_disabled_when_mode_unset() {
-        let f = AuthForm::new(AuthKind::Agent(Agent::Claude));
+        let f = AuthForm::new(AuthKind::Claude);
         assert!(!f.can_save(), "no mode picked");
     }
 
     #[test]
     fn save_enabled_for_sync() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Claude));
+        let mut f = AuthForm::new(AuthKind::Claude);
         f.set_mode(AuthMode::Sync);
         assert!(f.can_save(), "sync needs no credential");
     }
 
     #[test]
     fn save_enabled_for_ignore() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Claude));
+        let mut f = AuthForm::new(AuthKind::Claude);
         f.set_mode(AuthMode::Ignore);
         assert!(f.can_save());
     }
 
     #[test]
     fn save_disabled_for_api_key_without_credential() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Claude));
+        let mut f = AuthForm::new(AuthKind::Claude);
         f.set_mode(AuthMode::ApiKey);
         assert!(!f.can_save(), "api_key requires credential");
     }
 
     #[test]
     fn save_enabled_for_api_key_with_literal() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Claude));
+        let mut f = AuthForm::new(AuthKind::Claude);
         f.set_mode(AuthMode::ApiKey);
         f.set_literal("sk-ant-test".into());
         assert!(f.can_save());
@@ -214,7 +213,7 @@ mod tests {
 
     #[test]
     fn save_disabled_for_api_key_with_empty_literal() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Claude));
+        let mut f = AuthForm::new(AuthKind::Claude);
         f.set_mode(AuthMode::ApiKey);
         f.set_literal(String::new());
         assert!(!f.can_save());
@@ -222,7 +221,7 @@ mod tests {
 
     #[test]
     fn save_enabled_for_api_key_with_op_ref() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Claude));
+        let mut f = AuthForm::new(AuthKind::Claude);
         f.set_mode(AuthMode::ApiKey);
         f.set_op_ref(dummy_op_ref());
         assert!(f.can_save());
@@ -235,7 +234,7 @@ mod tests {
     /// after the broken config had been written to disk.
     #[test]
     fn save_disabled_for_api_key_with_empty_op_ref() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Claude));
+        let mut f = AuthForm::new(AuthKind::Claude);
         f.set_mode(AuthMode::ApiKey);
         // Both fields empty: rejected.
         f.set_op_ref(OpRef {
@@ -259,7 +258,7 @@ mod tests {
 
     #[test]
     fn mode_switch_to_sync_collapses_credential_block() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Claude));
+        let mut f = AuthForm::new(AuthKind::Claude);
         f.set_mode(AuthMode::ApiKey);
         f.set_literal("sk-ant-test".into());
         assert!(f.shows_credential_block());
@@ -271,21 +270,21 @@ mod tests {
 
     #[test]
     fn codex_form_does_not_offer_oauth_token() {
-        let f = AuthForm::new(AuthKind::Agent(Agent::Codex));
+        let f = AuthForm::new(AuthKind::Codex);
         let modes = f.available_modes();
         assert!(!modes.contains(&AuthMode::OAuthToken));
     }
 
     #[test]
     fn amp_form_does_not_offer_oauth_token() {
-        let f = AuthForm::new(AuthKind::Agent(Agent::Amp));
+        let f = AuthForm::new(AuthKind::Amp);
         let modes = f.available_modes();
         assert!(!modes.contains(&AuthMode::OAuthToken));
     }
 
     #[test]
     fn save_emits_correct_env_var_name_for_claude_api_key() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Claude));
+        let mut f = AuthForm::new(AuthKind::Claude);
         f.set_mode(AuthMode::ApiKey);
         f.set_literal("sk-ant-test".into());
         let outcome = f.commit().unwrap();
@@ -296,7 +295,7 @@ mod tests {
 
     #[test]
     fn save_emits_correct_env_var_name_for_claude_oauth_token() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Claude));
+        let mut f = AuthForm::new(AuthKind::Claude);
         f.set_mode(AuthMode::OAuthToken);
         f.set_op_ref(dummy_op_ref());
         let outcome = f.commit().unwrap();
@@ -305,7 +304,7 @@ mod tests {
 
     #[test]
     fn save_emits_correct_env_var_name_for_codex_api_key() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Codex));
+        let mut f = AuthForm::new(AuthKind::Codex);
         f.set_mode(AuthMode::ApiKey);
         f.set_literal("sk-test".into());
         let outcome = f.commit().unwrap();
@@ -314,7 +313,7 @@ mod tests {
 
     #[test]
     fn save_emits_correct_env_var_name_for_amp_api_key() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Amp));
+        let mut f = AuthForm::new(AuthKind::Amp);
         f.set_mode(AuthMode::ApiKey);
         f.set_literal("sgamp-test".into());
         let outcome = f.commit().unwrap();
@@ -323,7 +322,7 @@ mod tests {
 
     #[test]
     fn save_returns_none_for_sync_with_no_credential() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Claude));
+        let mut f = AuthForm::new(AuthKind::Claude);
         f.set_mode(AuthMode::Sync);
         let outcome = f.commit().unwrap();
         assert_eq!(outcome.mode, AuthMode::Sync);
@@ -334,7 +333,7 @@ mod tests {
     #[test]
     fn from_existing_pre_populates_literal_credential() {
         let f = AuthForm::from_existing(
-            AuthKind::Agent(Agent::Claude),
+            AuthKind::Claude,
             AuthMode::ApiKey,
             Some(EnvValue::Plain("sk-ant-existing".into())),
         );
@@ -350,7 +349,7 @@ mod tests {
     fn from_existing_pre_populates_op_ref_credential() {
         let r = dummy_op_ref();
         let f = AuthForm::from_existing(
-            AuthKind::Agent(Agent::Claude),
+            AuthKind::Claude,
             AuthMode::OAuthToken,
             Some(EnvValue::OpRef(r.clone())),
         );
@@ -418,7 +417,7 @@ mod tests {
 
     #[test]
     fn op_picker_failed_read_blocks_commit() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Claude));
+        let mut f = AuthForm::new(AuthKind::Claude);
         f.set_mode(AuthMode::ApiKey);
         let attempted = OpRef {
             op: "op://uuid/missing".into(),
@@ -435,7 +434,7 @@ mod tests {
 
     #[test]
     fn op_picker_successful_read_persists_op_ref() {
-        let mut f = AuthForm::new(AuthKind::Agent(Agent::Claude));
+        let mut f = AuthForm::new(AuthKind::Claude);
         f.set_mode(AuthMode::ApiKey);
         let r = OpRef {
             op: "op://uuid/anthropic".into(),
