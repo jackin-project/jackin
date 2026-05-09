@@ -15,48 +15,32 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      construct: ${{ steps.filter.outputs.construct }}
+      construct: ${{ steps.dispatch.outputs.construct || steps.filter.outputs.construct }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
+      # Manual dispatch always exercises the construct image build —
+      # the operator wants the build run, not a diff-based decision.
+      - name: Force construct=true on workflow_dispatch
+        id: dispatch
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: echo "construct=true" >> "$GITHUB_OUTPUT"
+
       - name: Classify changed paths
         id: filter
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "construct=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            base="${{ github.event.pull_request.base.sha }}"
-            head="${{ github.event.pull_request.head.sha }}"
-            range="${base}...${head}"
-          else
-            before="${{ github.event.before }}"
-            head="${{ github.sha }}"
-            if [ "$before" = "0000000000000000000000000000000000000000" ]; then
-              echo "construct=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            range="${before}...${head}"
-          fi
-
-          construct=false
-          while IFS= read -r path; do
-            case "$path" in
-              .github/workflows/construct.yml|Justfile|docker-bake.hcl|docker/construct/*)
-                construct=true
-                ;;
-            esac
-          done < <(git diff --name-only "$range")
-
-          echo "construct=$construct" >> "$GITHUB_OUTPUT"
+        if: github.event_name != 'workflow_dispatch'
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          filters: |
+            construct:
+              - '.github/workflows/construct.yml'
+              - 'Justfile'
+              - 'docker-bake.hcl'
+              - 'docker/construct/**'
 
   build-amd64:
     name: amd64

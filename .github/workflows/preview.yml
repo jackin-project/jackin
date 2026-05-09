@@ -81,6 +81,18 @@ jobs:
             exit 0
           fi
 
+          # Capture the diff into a variable with explicit failure
+          # handling. Bash process substitution does not propagate exit
+          # codes under `set -e`, so a transient `git diff` failure
+          # (force-pushed history, unreachable parent ref, etc.) would
+          # leave `source=false` and silently skip the publish. Failing
+          # open here matches the rest of the classifier's behavior.
+          if ! diff_files=$(git diff --name-only "${old_sha}...${sha}" 2>&1); then
+            echo "::warning::diff failed for ${old_sha}...${sha}: ${diff_files}; failing open"
+            echo "source=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           source=false
           while IFS= read -r path; do
             case "$path" in
@@ -88,7 +100,7 @@ jobs:
                 source=true
                 ;;
             esac
-          done < <(git diff --name-only "${old_sha}...${sha}")
+          done <<< "$diff_files"
 
           echo "source=$source" >> "$GITHUB_OUTPUT"
 

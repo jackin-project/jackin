@@ -34,52 +34,39 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     outputs:
-      docs: ${{ steps.filter.outputs.docs }}
+      docs: ${{ steps.dispatch.outputs.docs || steps.filter.outputs.docs }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
+      - name: Force docs=true on workflow_dispatch
+        id: dispatch
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: echo "docs=true" >> "$GITHUB_OUTPUT"
+
       - name: Classify changed paths
         id: filter
-        shell: bash
-        run: |
-          set -euo pipefail
+        if: github.event_name != 'workflow_dispatch'
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          filters: |
+            docs:
+              - '.github/workflows/docs.yml'
+              - 'docs/**'
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "docs=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            base="${{ github.event.pull_request.base.sha }}"
-            head="${{ github.event.pull_request.head.sha }}"
-            range="${base}...${head}"
-          else
-            before="${{ github.event.before }}"
-            head="${{ github.sha }}"
-            if [ "$before" = "0000000000000000000000000000000000000000" ]; then
-              echo "docs=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            range="${before}...${head}"
-          fi
-
-          docs=false
-          while IFS= read -r path; do
-            case "$path" in
-              .github/workflows/docs.yml|docs/*)
-                docs=true
-                ;;
-            esac
-          done < <(git diff --name-only "$range")
-
-          echo "docs=$docs" >> "$GITHUB_OUTPUT"
-
-  docs-link-check:
-    needs: changes
-    if: needs.changes.outputs.docs == 'true'
+  # The docs site links to repository files via the <RepoFile path="…" />
+  # component, which renders a `blob/main` URL that lychee remaps to the
+  # PR checkout. A source-only PR that renames or deletes a referenced
+  # file (for example src/runtime/launch.rs) would not match the docs
+  # path filter and would silently merge with broken links. Run a cheap
+  # standalone repo-link check on every non-schedule event so source
+  # renames cannot bypass the docs link contract documented in
+  # docs/AGENTS.md.
+  repo-link-check:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -98,6 +85,24 @@ jobs:
       - name: Check source repository links
         working-directory: docs
         run: mise exec -- bun run check:repo-links
+
+  docs-link-check:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup mise
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+        with:
+          working_directory: docs
+          install: true
+
+      - name: Install dependencies
+        working-directory: docs
+        run: mise exec -- bun install --frozen-lockfile
 
       - name: Build site
         working-directory: docs
@@ -138,7 +143,9 @@ jobs:
           path: docs/dist
 
   deploy:
-    needs: docs-link-check
+    # docs-link-check covers full-site lychee + Astro build; repo-link-check
+    # covers <RepoFile /> path validity. Both must pass before publishing.
+    needs: [docs-link-check, repo-link-check]
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:

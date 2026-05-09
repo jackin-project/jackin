@@ -36,9 +36,10 @@
       "matchStrings": [
         "MISE_VERSION=(?<currentValue>\\S+)"
       ],
-      "depNameTemplate": "jdx/mise",
-      "datasourceTemplate": "github-releases",
-      "extractVersionTemplate": "^v?(?<version>.*)$"
+      "depNameTemplate": "mise",
+      "packageNameTemplate": "mise",
+      "datasourceTemplate": "deb",
+      "registryUrlTemplate": "https://mise.jdx.dev/deb?suite=stable&components=main&binaryArch=amd64"
     }
   ],
   "prHourlyLimit": 0,
