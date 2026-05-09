@@ -32,7 +32,7 @@ jobs:
         id: source
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           else
             echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
           fi
@@ -64,7 +64,7 @@ jobs:
           source=false
           while IFS= read -r path; do
             case "$path" in
-              Cargo.toml|Cargo.lock|rust-toolchain.toml|src/*|docker/runtime/*)
+              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|src/*|docker/runtime/*)
                 source=true
                 ;;
             esac
