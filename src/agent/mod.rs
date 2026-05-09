@@ -11,6 +11,14 @@ pub enum Agent {
 }
 
 impl Agent {
+    /// Every variant in declaration order. Single source of truth for
+    /// per-variant enumeration; call sites that need to iterate every
+    /// agent (TUI picker rows, manifest validator's three-table loop,
+    /// derived-image install ordering, test fixtures) consult this
+    /// instead of hand-rolling their own array. Adding a new variant
+    /// is one line here, not seven scattered edits.
+    pub const ALL: &'static [Self] = &[Self::Claude, Self::Codex, Self::Amp];
+
     pub const fn slug(self) -> &'static str {
         match self {
             Self::Claude => "claude",

@@ -166,7 +166,20 @@ pub struct GithubAuthConfig {
 /// deserialization time keeps the type system honest so downstream code
 /// never has to handle the impossible combination.
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
-pub struct CodexAuthConfig(pub AgentAuthConfig);
+pub struct CodexAuthConfig(pub(crate) AgentAuthConfig);
+
+impl CodexAuthConfig {
+    /// Construct a `CodexAuthConfig`, rejecting unsupported modes. The
+    /// inner field is `pub(crate)` so external callers must funnel
+    /// through this constructor and cannot bypass the parse-time
+    /// invariant by tuple-constructing an `OAuthToken` value.
+    pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
+        if cfg.auth_forward == AuthForwardMode::OAuthToken {
+            return Err("auth_forward 'oauth_token' is not supported for codex");
+        }
+        Ok(Self(cfg))
+    }
+}
 
 impl<'de> serde::Deserialize<'de> for CodexAuthConfig {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -197,7 +210,18 @@ impl std::ops::Deref for CodexAuthConfig {
 /// via an `AMP_API_KEY` or its own settings file); rejecting it at
 /// deserialization time keeps the type system honest.
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
-pub struct AmpAuthConfig(pub AgentAuthConfig);
+pub struct AmpAuthConfig(pub(crate) AgentAuthConfig);
+
+impl AmpAuthConfig {
+    /// Construct an `AmpAuthConfig`, rejecting unsupported modes. See
+    /// [`CodexAuthConfig::new`] for the invariant rationale.
+    pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
+        if cfg.auth_forward == AuthForwardMode::OAuthToken {
+            return Err("auth_forward 'oauth_token' is not supported for amp");
+        }
+        Ok(Self(cfg))
+    }
+}
 
 impl<'de> serde::Deserialize<'de> for AmpAuthConfig {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
