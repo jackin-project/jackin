@@ -253,12 +253,16 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         }
         AgentRuntimeState::Amp { settings_json } => {
             let mut mounts = Vec::new();
-            // Bind read-write so that an in-container `amp` token
-            // rotation writes back to the host role-state file —
-            // matches Codex's `auth.json` mount semantics. Do not
-            // change to `:ro` without first plumbing token rotation
-            // somewhere else, or operators will silently lose
-            // refreshed tokens on container teardown.
+            // Bound read-write at the docker level (parallel to Codex's
+            // `auth.json`), but the runtime entrypoint copies the file
+            // into `~/.config/amp/settings.json` rather than
+            // symlinking, so in-session token rotation lands in the
+            // container's writable layer and does NOT propagate back
+            // to the host role-state file today. Live bidirectional
+            // sync is tracked under the reactive-daemon roadmap; the
+            // mount is RW now so that future plumbing (symlink, bind
+            // re-mount) can rely on a writable target without a
+            // launch-side change.
             if let Some(settings_json) = settings_json {
                 mounts.push(format!(
                     "{}:/jackin/amp/settings.json",

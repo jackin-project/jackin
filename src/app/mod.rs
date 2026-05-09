@@ -371,7 +371,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     editor.set_global_auth_forward(parsed_mode);
                     editor.save()?;
-                    println!("Set global auth forwarding to {parsed_mode}.");
+                    println!("Set global Claude auth forwarding to {parsed_mode}.");
                     Ok(())
                 }
                 cli::AuthCommand::Show => {
