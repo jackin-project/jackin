@@ -8,8 +8,9 @@
 
 ```sh
 jackin load chainargos/agent-brown
-# or, with the codex CLI instead of claude:
+# or, with the codex or amp CLI instead of claude:
 jackin load chainargos/agent-brown --agent codex
+jackin load chainargos/agent-brown --agent amp
 ```
 
 ## Contract
@@ -30,7 +31,7 @@ Versions pinned in `Dockerfile` ARGs (`RUST_VERSION`, `NODE_VERSION`, `JAVA_VERS
 - **Cargo tools:** cargo-nextest, ast-grep, rust-script, just, bottom
 - **Tessl CLI** (pinned)
 - **ctx7** (npm)
-- **Caveman** token-compression hooks + skills (claude + codex profiles, pinned to a tagged release)
+- **Caveman** token-compression hooks + skills (claude + codex + amp profiles, pinned to a tagged release)
 
 Shared shell/runtime tools come from `jackin-construct:trixie`.
 

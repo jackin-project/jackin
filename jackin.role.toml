@@ -1,6 +1,6 @@
 dockerfile = "Dockerfile"
 published_image = "docker.io/chainargos/jackin-agent-brown:latest"
-agents = ["claude", "codex"]
+agents = ["claude", "codex", "amp"]
 
 [identity]
 name = "Agent Brown"
@@ -29,6 +29,8 @@ source = "tailrocks/tailrocks-marketplace"
 source = "JuliusBrussee/caveman"
 
 [codex]
+
+[amp]
 
 [hooks]
 pre_launch = "hooks/pre-launch.sh"
