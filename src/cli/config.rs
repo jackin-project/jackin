@@ -22,9 +22,9 @@ pub enum ConfigCommand {
 pub enum EnvCommand {
     /// Set an env var at global or per-role scope
     ///
-    /// Without `--role`, writes to the global `[env]` table. With
-    /// `--role <SELECTOR>`, writes to `[roles.<selector>.env]`. The role
-    /// selector is not pre-validated — the table path is written regardless
+    /// Without `--role`, writes the env var globally. With
+    /// `--role <SELECTOR>`, scopes it to that role only. The role
+    /// selector is not pre-validated — the value is recorded regardless
     /// of whether that role is registered, matching `config auth set`.
     #[command(
         before_help = BANNER,
@@ -43,7 +43,7 @@ Examples:
         /// Apply to a specific role instead of globally
         #[arg(long)]
         role: Option<String>,
-        /// Write a TOML comment line above the key
+        /// Attach a comment to the key (recorded alongside the value)
         #[arg(long)]
         comment: Option<String>,
     },
@@ -87,11 +87,9 @@ pub enum AuthCommand {
     /// Set the global authentication forwarding mode for an agent
     ///
     /// Controls how the host's agent authentication is made available to
-    /// role containers at the global layer (writes
-    /// `[<agent>].auth_forward`). Defaults to `claude` when `--agent` is
-    /// omitted. The GitHub axis has its own `[github]` block and is
-    /// configured through the operator console's Auth tab today, not
-    /// this CLI verb.
+    /// role containers at the global layer. Defaults to `claude` when
+    /// `--agent` is omitted. GitHub CLI auth is configured through the
+    /// operator console's Auth tab today, not this CLI verb.
     ///
     /// Modes: sync (default — overwrite container auth from host on each
     /// launch when host auth exists; preserve container auth when host auth
