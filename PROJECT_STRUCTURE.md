@@ -45,7 +45,7 @@ for the discussion of moving it out).
 | [`jackin-project/jackin`](https://github.com/jackin-project/jackin) (this repo) | CLI source, the `construct` Dockerfile under `docker/construct/`, the docs site under `docs/`, CI workflows |
 | [`jackin-project/jackin-agent-smith`](https://github.com/jackin-project/jackin-agent-smith) | Default general-purpose role (`agent-smith`) |
 | [`jackin-project/jackin-the-architect`](https://github.com/jackin-project/jackin-the-architect) | Rust-development role (`the-architect`) used to develop jackin' itself |
-| [`jackin-project/homebrew-tap`](https://github.com/jackin-project/homebrew-tap) | Homebrew formulae for stable + preview channels |
+| [`jackin-project/homebrew-tap`](https://github.com/jackin-project/homebrew-tap) | Homebrew formulae for preview now and stable once jackin reaches its first stable release |
 | [`jackin-project/jackin-marketplace`](https://github.com/jackin-project/jackin-marketplace) | Claude plugin marketplace consumed by role manifests |
 | [`jackin-project/validate-agent-action`](https://github.com/jackin-project/validate-agent-action) | GitHub Action that validates `jackin.role.toml` in role repos |
 | [`jackin-project/jackin-dev`](https://github.com/jackin-project/jackin-dev) | Internal development tooling and shared dotfiles |
