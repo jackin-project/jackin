@@ -169,10 +169,9 @@ pub struct GithubAuthConfig {
 pub struct CodexAuthConfig(pub(crate) AgentAuthConfig);
 
 impl CodexAuthConfig {
-    /// Construct a `CodexAuthConfig`, rejecting unsupported modes. The
-    /// inner field is `pub(crate)` so external callers must funnel
-    /// through this constructor and cannot bypass the parse-time
-    /// invariant by tuple-constructing an `OAuthToken` value.
+    /// Construct, rejecting `OAuthToken`. The only public path to
+    /// build the newtype, so the parse-time invariant survives
+    /// post-deserialize.
     pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
         if cfg.auth_forward == AuthForwardMode::OAuthToken {
             return Err("auth_forward 'oauth_token' is not supported for codex");
@@ -213,8 +212,7 @@ impl std::ops::Deref for CodexAuthConfig {
 pub struct AmpAuthConfig(pub(crate) AgentAuthConfig);
 
 impl AmpAuthConfig {
-    /// Construct an `AmpAuthConfig`, rejecting unsupported modes. See
-    /// [`CodexAuthConfig::new`] for the invariant rationale.
+    /// Construct, rejecting `OAuthToken`. See [`CodexAuthConfig::new`].
     pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
         if cfg.auth_forward == AuthForwardMode::OAuthToken {
             return Err("auth_forward 'oauth_token' is not supported for amp");

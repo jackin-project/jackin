@@ -769,16 +769,11 @@ fn write_private_file(path: &Path, content: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tighten permissions on an existing file to `0o600` if it exists.
-/// Refuses to operate on symlinks.  No-op on non-Unix or if the file
-/// doesn't exist.
-///
-/// Errors are logged via `eprintln!` rather than returned: this runs
-/// from within a successful `Sync` host-missing arm where the operator
-/// already has a working role-state file. A failed chmod must not
-/// abort the launch, but it must not be silent either — leaving a
-/// credential file at world-readable perms with no operator signal is
-/// a security regression.
+/// Tighten permissions on an existing file to `0o600`. No-op on
+/// symlinks, non-Unix, or missing files. Errors are logged rather
+/// than returned: callers are mid-Sync and must not abort the launch,
+/// but a silent chmod failure on a credential file is a security
+/// regression.
 fn repair_permissions(path: &Path) {
     #[cfg(unix)]
     {
@@ -2754,10 +2749,8 @@ mod amp_auth_tests {
     #[cfg(unix)]
     #[test]
     fn synced_secrets_json_has_restricted_permissions() {
-        // Pin the role-state file at 0o600 after Sync. Mirrors Codex /
-        // Claude — a future Amp-specific bypass that swapped
-        // `write_private_file` for `std::fs::write` would otherwise leak
-        // credentials at 0o644.
+        // Bypassing `write_private_file` would land at 0o644 and leak
+        // the token. Pin 0o600 explicitly.
         use std::os::unix::fs::PermissionsExt;
         let temp = tempdir().unwrap();
         let secrets_json = temp.path().join("secrets.json");
@@ -2782,10 +2775,8 @@ mod amp_auth_tests {
     #[cfg(unix)]
     #[test]
     fn sync_repairs_permissions_when_host_secrets_missing() {
-        // The HostMissing arm is the only path where a prior role-state
-        // file persists across a re-launch. Pin that the arm tightens
-        // permissions on the carried-over file rather than leaving
-        // whatever mode the previous owner gave it. Mirrors Codex.
+        // HostMissing is the only path that carries a prior file
+        // across launches; the arm must tighten its perms.
         use std::os::unix::fs::PermissionsExt;
         let temp = tempdir().unwrap();
         let secrets_json = temp.path().join("secrets.json");
@@ -2811,11 +2802,8 @@ mod amp_auth_tests {
 
     #[test]
     fn sync_ignores_xdg_config_settings_json_decoy() {
-        // Pin that Sync reads only `~/.local/share/amp/secrets.json`
-        // (XDG_DATA, the canonical token store). A decoy at the
-        // XDG_CONFIG path `~/.config/amp/settings.json` — Amp's
-        // preferences file, never the credential store — must not be
-        // forwarded. Catches a regression that swapped the source path.
+        // Catches a regression that swapped the Sync source from
+        // XDG_DATA `secrets.json` to XDG_CONFIG `settings.json`.
         let temp = tempdir().unwrap();
         let secrets_json = temp.path().join("secrets.json");
         let host_home = temp.path().join("host_home");
@@ -2844,9 +2832,8 @@ mod amp_auth_tests {
 
     #[test]
     fn sync_treats_empty_host_secrets_as_host_missing() {
-        // Pin the empty-content guard: a zero-byte / whitespace-only
-        // host file must surface as HostMissing rather than silently
-        // copying an empty payload that Amp can't authenticate against.
+        // Without this guard, an empty host file would be Synced and
+        // the agent would fail to auth with no breadcrumb.
         let temp = tempdir().unwrap();
         let secrets_json = temp.path().join("secrets.json");
         let host_home = stage_host_secrets(&temp, "   \n\t  \n");
