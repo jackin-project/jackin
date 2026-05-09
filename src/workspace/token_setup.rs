@@ -24,7 +24,9 @@
 
 use crate::config::{AppConfig, AuthForwardMode, ConfigEditor, EnvScope};
 use crate::host_claude;
-use crate::operator_env::{EnvValue, OpItemCreateParams, OpRef, OpRunner, OpWriteRunner};
+use crate::operator_env::{
+    CLAUDE_OAUTH_TOKEN_ENV, EnvValue, OpItemCreateParams, OpRef, OpRunner, OpWriteRunner,
+};
 use crate::paths::JackinPaths;
 
 use secrecy::ExposeSecret;
@@ -80,7 +82,9 @@ pub struct TokenSetupArgs {
 #[derive(Debug, Clone)]
 pub struct TokenSetupReport {
     pub workspace: String,
-    pub claude_cli_version: String,
+    /// Probed `claude` CLI version. `None` on `--reuse` because the
+    /// orchestrator does not invoke `claude` on that path.
+    pub claude_cli_version: Option<String>,
     pub op_ref: OpRef,
     pub op_account: Option<String>,
     pub token_sha256_prefix: String,
@@ -105,13 +109,20 @@ pub fn run_setup(
     let op_account =
         effective_account(config, workspace, args.account.as_deref()).map(str::to_string);
     let op_cli = crate::operator_env::OpCli::new().with_account(op_account);
-    let probe = host_claude::probe_claude_cli()?;
+    // Probe `claude` only when we will actually mint a fresh token.
+    // `--reuse` adopts an existing `op://` reference and never invokes
+    // claude, so requiring it on PATH would block a legitimate flow.
+    let probe = if args.reuse.is_some() {
+        None
+    } else {
+        Some(host_claude::probe_claude_cli()?)
+    };
     run_setup_with_runner(
         paths,
         config,
         workspace,
         args,
-        &probe,
+        probe.as_ref(),
         host_claude::capture_setup_token,
         &op_cli,
         &op_cli,
@@ -119,7 +130,8 @@ pub fn run_setup(
 }
 
 /// Test-injectable variant. Takes:
-/// - a pre-resolved Claude CLI probe (skips re-running `claude --version`),
+/// - a pre-resolved Claude CLI probe (skips re-running `claude --version`);
+///   `None` on the `--reuse` path because no token capture happens,
 /// - a closure that returns the captured token (`capture_setup_token`
 ///   in production; a fixture in tests),
 /// - an [`OpRunner`] for read-back validation, and
@@ -134,7 +146,7 @@ pub fn run_setup_with_runner<F>(
     config: &mut AppConfig,
     workspace: &str,
     args: &TokenSetupArgs,
-    probe: &host_claude::ClaudeProbe,
+    probe: Option<&host_claude::ClaudeProbe>,
     capture: F,
     op_reader: &dyn OpRunner,
     op_writer: &dyn OpWriteRunner,
@@ -142,15 +154,8 @@ pub fn run_setup_with_runner<F>(
 where
     F: FnOnce() -> anyhow::Result<secrecy::SecretString>,
 {
-    if !config.workspaces.contains_key(workspace) {
-        anyhow::bail!(
-            "workspace {workspace:?} is not registered; \
-             create it first with `jackin workspace create`"
-        );
-    }
+    config.require_workspace(workspace)?;
 
-    // Step 1: produce a token. Either re-use the operator's existing
-    // op:// (skip generation) or capture a fresh one.
     let (op_ref, token_sha256_prefix, created) = if let Some(reuse_ref) = args.reuse.as_ref() {
         let value = op_reader.read(&reuse_ref.op).map_err(|e| {
             anyhow::anyhow!(
@@ -162,44 +167,50 @@ where
         let prefix = sha256_prefix(&value);
         (reuse_ref.clone(), prefix, false)
     } else {
+        let probe = probe.ok_or_else(|| {
+            anyhow::anyhow!("internal error: claude probe missing on capture path")
+        })?;
         let secret = capture()?;
         let prefix = sha256_prefix(secret.expose_secret());
-        let op_ref = create_op_item(op_writer, config, workspace, args, &secret, &prefix, probe)?;
+        let op_ref = create_op_item(op_writer, workspace, args, &secret, &prefix, probe)?;
         (op_ref, prefix, true)
     };
 
-    // Step 2: validate the write BEFORE persisting any on-disk
-    // config. A wired slot pointing at a 1P item whose value the
-    // operator never saw would silently inject a mystery token at
-    // the next launch — both arms below abort and best-effort
-    // delete the orphan so the operator's vault stays tidy.
-    let cleanup_orphan = || {
-        if created && let Some((vault_id, item_id)) = parse_uuid_op_ref(&op_ref.op) {
-            let _ = op_writer.item_delete(item_id, vault_id, args.account.as_deref());
+    // Validate the write BEFORE persisting any on-disk config: a wired
+    // slot pointing at an item whose value the operator never saw
+    // would silently inject a mystery token at the next launch. Skip
+    // on `--reuse` — both reads target the same pre-existing item, so
+    // the comparison is meaningless and only doubles the biometric
+    // prompt count.
+    if created {
+        let cleanup_orphan = || {
+            if let Some(parts) = crate::operator_env::parse_op_reference(&op_ref.op) {
+                let _ = op_writer.item_delete(&parts.item, &parts.vault, args.account.as_deref());
+            }
+        };
+        let resolved = op_reader.read(&op_ref.op).map_err(|e| {
+            cleanup_orphan();
+            anyhow::anyhow!(
+                "post-write validation failed: re-reading {:?} returned: {e} \
+                 (no on-disk config was changed; the just-created 1P item was \
+                 best-effort deleted)",
+                op_ref.path
+            )
+        })?;
+        if sha256_prefix(&resolved) != token_sha256_prefix {
+            cleanup_orphan();
+            anyhow::bail!(
+                "post-write validation failed: {:?} resolved to a value whose SHA-256 prefix \
+                 does not match the value just written. No on-disk config was changed; the \
+                 just-created 1P item was best-effort deleted. Re-run setup, or inspect the \
+                 1P item by hand if the deletion did not succeed.",
+                op_ref.path
+            );
         }
-    };
-    let resolved = op_reader.read(&op_ref.op).map_err(|e| {
-        cleanup_orphan();
-        anyhow::anyhow!(
-            "post-write validation failed: re-reading {:?} returned: {e} \
-             (no on-disk config was changed; the just-created 1P item was \
-             best-effort deleted)",
-            op_ref.path
-        )
-    })?;
-    if sha256_prefix(&resolved) != token_sha256_prefix {
-        cleanup_orphan();
-        anyhow::bail!(
-            "post-write validation failed: {:?} resolved to a value whose SHA-256 prefix \
-             does not match the value just written. No on-disk config was changed; the \
-             just-created 1P item was best-effort deleted. Re-run setup, or inspect the \
-             1P item by hand if the deletion did not succeed.",
-            op_ref.path
-        );
     }
 
-    // Step 3: persist the workspace config last so a partial failure
-    // earlier in this function never leaves a wired-but-broken slot.
+    // Persist the workspace config last: a partial failure earlier
+    // must never leave a wired-but-broken slot.
     let mut editor = ConfigEditor::open(paths)?;
     editor.set_workspace_auth_forward(
         workspace,
@@ -208,7 +219,7 @@ where
     );
     editor.set_env_var(
         &EnvScope::Workspace(workspace.to_string()),
-        "CLAUDE_CODE_OAUTH_TOKEN",
+        CLAUDE_OAUTH_TOKEN_ENV,
         EnvValue::OpRef(op_ref.clone()),
     )?;
     if let Some(account) = args.account.as_deref()
@@ -253,7 +264,7 @@ where
 
     Ok(TokenSetupReport {
         workspace: workspace.to_string(),
-        claude_cli_version: probe.version.clone(),
+        claude_cli_version: probe.map(|p| p.version.clone()),
         op_ref,
         op_account,
         token_sha256_prefix,
@@ -276,19 +287,19 @@ pub fn run_revoke(
     workspace: &str,
     delete_op_item: bool,
 ) -> anyhow::Result<RevokeReport> {
-    let ws = config
-        .workspaces
-        .get(workspace)
-        .ok_or_else(|| anyhow::anyhow!("workspace {workspace:?} is not registered"))?;
-    let prior = ws.env.get("CLAUDE_CODE_OAUTH_TOKEN").cloned();
+    let prior = config
+        .require_workspace(workspace)?
+        .env
+        .get(CLAUDE_OAUTH_TOKEN_ENV)
+        .cloned();
 
     let deleted_item = if delete_op_item
         && let Some(EnvValue::OpRef(r)) = &prior
-        && let Some((vault_id, item_id)) = parse_uuid_op_ref(&r.op)
+        && let Some(parts) = crate::operator_env::parse_op_reference(&r.op)
     {
         let account = effective_account(config, workspace, None).map(str::to_string);
         let op_cli = crate::operator_env::OpCli::new().with_account(account);
-        op_cli.item_delete(item_id, vault_id, None)?;
+        op_cli.item_delete(&parts.item, &parts.vault, None)?;
         true
     } else {
         false
@@ -297,7 +308,7 @@ pub fn run_revoke(
     let mut editor = ConfigEditor::open(paths)?;
     editor.remove_env_var(
         &EnvScope::Workspace(workspace.to_string()),
-        "CLAUDE_CODE_OAUTH_TOKEN",
+        CLAUDE_OAUTH_TOKEN_ENV,
     );
     editor.set_workspace_auth_forward(
         workspace,
@@ -362,16 +373,13 @@ pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> 
 /// observe the auth banner; doctor's job is to confirm the
 /// canonical-slot config plumbing resolves without errors.
 pub fn run_doctor(config: &AppConfig, workspace: &str) -> anyhow::Result<DoctorReport> {
-    let ws = config
-        .workspaces
-        .get(workspace)
-        .ok_or_else(|| anyhow::anyhow!("workspace {workspace:?} is not registered"))?;
+    let ws = config.require_workspace(workspace)?;
     let mode = ws
         .claude
         .as_ref()
         .map(|c| c.auth_forward)
         .unwrap_or_default();
-    let token_decl = ws.env.get("CLAUDE_CODE_OAUTH_TOKEN").ok_or_else(|| {
+    let token_decl = ws.env.get(CLAUDE_OAUTH_TOKEN_ENV).ok_or_else(|| {
         anyhow::anyhow!(
             "workspace {workspace:?} has no CLAUDE_CODE_OAUTH_TOKEN in its env block — \
              run `jackin workspace claude-token setup` first"
@@ -413,7 +421,6 @@ pub struct DoctorReport {
 
 fn create_op_item(
     op_writer: &dyn OpWriteRunner,
-    config: &AppConfig,
     workspace: &str,
     args: &TokenSetupArgs,
     secret: &secrecy::SecretString,
@@ -449,11 +456,8 @@ fn create_op_item(
     );
     let tags = [JACKIN_TAG, workspace_tag.as_str()];
 
-    let _ = config; // reserved for future cross-workspace conflict checks
-    let account = args.account.as_deref();
     let params = OpItemCreateParams {
         vault_id: vault,
-        account,
         title: &title,
         category: DEFAULT_ITEM_CATEGORY,
         field_label: DEFAULT_FIELD_LABEL,
@@ -462,19 +466,6 @@ fn create_op_item(
         tags: &tags,
     };
     op_writer.item_create(params)
-}
-
-/// Parse `op://VAULT/ITEM/FIELD` (or 4-segment) into `(vault, item)`
-/// — the IDs needed to delete the item.
-pub fn parse_uuid_op_ref(uri: &str) -> Option<(&str, &str)> {
-    let body = uri.strip_prefix("op://")?;
-    let mut segs = body.split('/');
-    let vault = segs.next()?;
-    let item = segs.next()?;
-    if vault.is_empty() || item.is_empty() {
-        return None;
-    }
-    Some((vault, item))
 }
 
 fn effective_account<'a>(
@@ -725,14 +716,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_uuid_op_ref_handles_3_and_4_segment_uris() {
-        assert_eq!(parse_uuid_op_ref("op://Va/It/Fl"), Some(("Va", "It")));
-        assert_eq!(parse_uuid_op_ref("op://Va/It/Sec/Fl"), Some(("Va", "It")));
-        assert_eq!(parse_uuid_op_ref("not-an-op-ref"), None);
-        assert_eq!(parse_uuid_op_ref("op:///It/Fl"), None);
-    }
-
-    #[test]
     fn sha256_prefix_is_stable_12_hex_chars() {
         let p = sha256_prefix("hello");
         assert_eq!(p.len(), 12);
@@ -779,7 +762,7 @@ mod tests {
                 vault: Some("Personal".into()),
                 ..Default::default()
             },
-            &probe,
+            Some(&probe),
             || Ok(secrecy::SecretString::from(token.to_string())),
             &reader,
             &writer,
@@ -815,7 +798,7 @@ mod tests {
 
         // Report values plumbed through.
         assert_eq!(report.workspace, "proj");
-        assert_eq!(report.claude_cli_version, "2.1.4");
+        assert_eq!(report.claude_cli_version.as_deref(), Some("2.1.4"));
         assert_eq!(report.token_sha256_prefix, sha256_prefix(token));
         assert!(report.created);
         assert!(report.expiry_estimate.is_some());
@@ -843,13 +826,13 @@ mod tests {
             &mut cfg,
             "ghost",
             &TokenSetupArgs::default(),
-            &probe,
+            Some(&probe),
             || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
             &reader,
             &writer,
         )
         .unwrap_err();
-        assert!(err.to_string().contains("not registered"));
+        assert!(err.to_string().contains("unknown workspace"));
         assert!(writer.last_create.borrow().is_none());
     }
 
@@ -864,7 +847,7 @@ mod tests {
             &mut cfg,
             "proj",
             &TokenSetupArgs::default(),
-            &probe,
+            Some(&probe),
             || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
             &reader,
             &writer,
@@ -891,7 +874,7 @@ mod tests {
                 vault: Some("Personal".into()),
                 ..Default::default()
             },
-            &probe,
+            Some(&probe),
             || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
             &reader,
             &writer,
@@ -929,7 +912,7 @@ mod tests {
                 vault: Some("Personal".into()),
                 ..Default::default()
             },
-            &probe,
+            Some(&probe),
             || Err(anyhow::anyhow!("OAuth flow cancelled by operator")),
             &reader,
             &writer,
@@ -962,7 +945,7 @@ mod tests {
                 vault: Some("Personal".into()),
                 ..Default::default()
             },
-            &probe,
+            Some(&probe),
             || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
             &reader,
             &writer,
@@ -1001,7 +984,7 @@ mod tests {
                 vault: Some("Personal".into()),
                 ..Default::default()
             },
-            &probe,
+            Some(&probe),
             || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
             &reader,
             &writer,
@@ -1046,7 +1029,7 @@ mod tests {
                 }),
                 ..Default::default()
             },
-            &probe,
+            Some(&probe),
             || panic!("capture must NOT run on the reuse path"),
             &reader,
             &writer,
@@ -1080,7 +1063,7 @@ mod tests {
                 }),
                 ..Default::default()
             },
-            &probe,
+            Some(&probe),
             || panic!("capture must NOT be called on the reuse path"),
             &reader,
             &writer,

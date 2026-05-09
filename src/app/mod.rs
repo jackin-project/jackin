@@ -957,11 +957,10 @@ pub fn run(cli: Cli) -> Result<()> {
                         anyhow::bail!("env var key cannot be empty");
                     }
                     let ws = config.require_workspace(&workspace)?;
-                    // Guard: CLAUDE_CODE_OAUTH_TOKEN is managed by
-                    // `jackin workspace claude-token` when oauth_token mode
-                    // is active. Deleting it here would break auth silently
-                    // at the next launch.
-                    if key == "CLAUDE_CODE_OAUTH_TOKEN"
+                    // CLAUDE_CODE_OAUTH_TOKEN under oauth_token mode is owned
+                    // by the claude-token orchestrator; an unset here would
+                    // silently break auth at the next launch.
+                    if key == crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV
                         && role.is_none()
                         && ws.claude.as_ref().map(|c| c.auth_forward)
                             == Some(crate::config::AuthForwardMode::OAuthToken)
@@ -1138,7 +1137,7 @@ fn handle_claude_token(
             let prior = config
                 .workspaces
                 .get(&workspace)
-                .and_then(|w| w.env.get("CLAUDE_CODE_OAUTH_TOKEN"))
+                .and_then(|w| w.env.get(crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV))
                 .cloned();
             // Default rotate to the prior item's vault when
             // `--vault` is not supplied. Without this, the
@@ -1219,8 +1218,7 @@ fn delete_prior_op_item(
         eprintln!("[jackin] rotate: new op-ref matches prior — old item not deleted");
         return Ok(());
     }
-    let Some((vault_id, item_id)) = crate::workspace::token_setup::parse_uuid_op_ref(&prior_ref.op)
-    else {
+    let Some(parts) = crate::operator_env::parse_op_reference(&prior_ref.op) else {
         eprintln!(
             "[jackin] rotate: prior slot {path:?} is not in UUID form; \
              delete by hand if desired",
@@ -1229,15 +1227,16 @@ fn delete_prior_op_item(
         return Ok(());
     };
     let op_cli = crate::operator_env::OpCli::new().with_account(account);
-    crate::operator_env::OpWriteRunner::item_delete(&op_cli, item_id, vault_id, None).map_err(
-        |e| {
+    crate::operator_env::OpWriteRunner::item_delete(&op_cli, &parts.item, &parts.vault, None)
+        .map_err(|e| {
             anyhow::anyhow!(
                 "rotate: prior item ({path}) was NOT deleted: {e} \
-                 (delete by hand: `op item delete {item_id} --vault {vault_id}`)",
-                path = prior_ref.path
+                 (delete by hand: `op item delete {item} --vault {vault}`)",
+                path = prior_ref.path,
+                item = parts.item,
+                vault = parts.vault,
             )
-        },
-    )?;
+        })?;
     eprintln!("Deleted prior 1P item ({}).", prior_ref.path);
     Ok(())
 }
@@ -1245,7 +1244,9 @@ fn delete_prior_op_item(
 fn print_token_setup_report(report: &crate::workspace::token_setup::TokenSetupReport) {
     println!();
     println!("Workspace        {}", report.workspace);
-    println!("Claude CLI       {}", report.claude_cli_version);
+    if let Some(version) = report.claude_cli_version.as_deref() {
+        println!("Claude CLI       {version}");
+    }
     println!("op:// reference  {}", report.op_ref.path);
     println!(
         "op_account       {}",

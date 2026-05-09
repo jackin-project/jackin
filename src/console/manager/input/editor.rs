@@ -1623,11 +1623,10 @@ fn apply_editor_confirm(
 ) -> anyhow::Result<()> {
     match target {
         ConfirmTarget::DeleteEnvVar { scope, key } => {
-            // Guard: block deleting CLAUDE_CODE_OAUTH_TOKEN while oauth_token
-            // mode is active. The credential is managed by
-            // `jackin workspace claude-token`; removing it here would silently
-            // break auth at the next launch.
-            let protected = key == "CLAUDE_CODE_OAUTH_TOKEN"
+            // CLAUDE_CODE_OAUTH_TOKEN under oauth_token mode is owned by the
+            // claude-token orchestrator; an unset here would silently break
+            // auth at the next launch.
+            let protected = key == crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV
                 && matches!(scope, SecretsScopeTag::Workspace)
                 && editor.pending.claude.as_ref().map(|c| c.auth_forward)
                     == Some(crate::config::AuthForwardMode::OAuthToken);

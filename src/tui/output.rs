@@ -235,20 +235,21 @@ fn format_auth_mode_notice_for_test(
 }
 
 fn format_expiry_suffix(days: i64) -> String {
-    use owo_colors::OwoColorize;
-    if days < 0 {
-        format!(
-            " — {}",
-            format!("expired {} day(s) ago", days.unsigned_abs()).red()
-        )
-    } else if days == 0 {
-        format!(" — {}", "expires today".red())
-    } else if days <= 7 {
-        format!(" — {}", format!("expires in {days} day(s)").red())
-    } else if days <= 30 {
-        format!(" — {}", format!("expires in {days} day(s)").yellow())
+    use owo_colors::{AnsiColors, OwoColorize};
+    let (text, color) = match days {
+        d if d < 0 => (
+            format!("expired {} day(s) ago", d.unsigned_abs()),
+            AnsiColors::Red,
+        ),
+        0 => ("expires today".to_string(), AnsiColors::Red),
+        d if d <= 7 => (format!("expires in {d} day(s)"), AnsiColors::Red),
+        d if d <= 30 => (format!("expires in {d} day(s)"), AnsiColors::Yellow),
+        d => (format!("expires in {d} day(s)"), AnsiColors::Default),
+    };
+    if matches!(color, AnsiColors::Default) {
+        format!(" — {}", text.dimmed())
     } else {
-        format!(" — {}", format!("expires in {days} day(s)").dimmed())
+        format!(" — {}", text.color(color))
     }
 }
 

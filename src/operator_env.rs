@@ -843,10 +843,14 @@ pub trait OpWriteRunner {
 /// Parameters for [`OpWriteRunner::item_create`]. Borrowed-form to
 /// match the existing `OpStructRunner` style and avoid cloning every
 /// string at the call site.
+///
+/// The `op` account is pinned on the [`OpCli`] instance via
+/// [`OpCli::with_account`] before the call — there is no per-call
+/// override, mirroring how [`OpRunner::read`] consumes
+/// [`OpCli::account`].
 #[derive(Debug, Clone, Copy)]
 pub struct OpItemCreateParams<'a> {
     pub vault_id: &'a str,
-    pub account: Option<&'a str>,
     pub title: &'a str,
     /// `op` item category. Use `"API Credential"` for OAuth tokens.
     pub category: &'a str,
