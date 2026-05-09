@@ -22,8 +22,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Manual dispatch always exercises the construct image build —
-      # the operator wants the build run, not a diff-based decision.
       - name: Force construct=true on workflow_dispatch
         id: dispatch
         if: github.event_name == 'workflow_dispatch'

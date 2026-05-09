@@ -37,7 +37,6 @@
         "MISE_VERSION=(?<currentValue>\\S+)"
       ],
       "depNameTemplate": "mise",
-      "packageNameTemplate": "mise",
       "datasourceTemplate": "deb",
       "registryUrlTemplate": "https://mise.jdx.dev/deb?suite=stable&components=main&binaryArch=amd64"
     }

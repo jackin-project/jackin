@@ -18,28 +18,24 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      # Either the dispatch short-circuit step or dorny/paths-filter
-      # writes the boolean — never both, since they are mutually
-      # exclusive on event_name.
+      # The dispatch short-circuit and paths-filter steps are mutually
+      # exclusive on event_name, so at most one writes a value here.
       rust: ${{ steps.dispatch.outputs.rust || steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
-      # workflow_dispatch is an explicit operator action — skip the
-      # paths-filter classifier so manual runs always exercise the
-      # full Rust suite, regardless of which paths happened to change.
       - name: Force rust=true on workflow_dispatch
         id: dispatch
         if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: echo "rust=true" >> "$GITHUB_OUTPUT"
 
-      # build.rs feeds compile-time version metadata into every Rust
-      # build, and docker/runtime/entrypoint.sh is pulled in via
-      # include_str!() in src/derived_image.rs — both affect the
-      # produced binary even though they live outside src/ and tests/.
+      # build.rs supplies compile-time version metadata and
+      # docker/runtime/entrypoint.sh is include_str!'d by
+      # src/derived_image.rs — both affect the produced binary even
+      # though they live outside src/ and tests/.
       - name: Classify changed paths
         id: filter
         if: github.event_name != 'workflow_dispatch'
@@ -64,12 +60,10 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
         with:
-          # Toolchain channel comes from rust-toolchain.toml.
           components: clippy, rustfmt
-          # `-D warnings` is enforced explicitly on the clippy step below;
-          # leaving the action's default RUSTFLAGS would also apply it to
-          # `cargo build`/`cargo check`/`cargo nextest run`, which is a
-          # behavioral change we don't want to bundle into this PR.
+          # `-D warnings` is enforced explicitly on the clippy step
+          # below; leaving the action's default RUSTFLAGS would also
+          # apply it to `cargo build`/`cargo check`/`cargo nextest run`.
           rustflags: ""
       - uses: taiki-e/install-action@cca35edeb1d01366c2843b68fc3ca441446d73d3 # v2.77.1
         with:
@@ -121,7 +115,6 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
         with:
-          # Toolchain channel comes from rust-toolchain.toml.
           target: ${{ matrix.target }}
           cache-key: validator-${{ matrix.target }}
           rustflags: ""

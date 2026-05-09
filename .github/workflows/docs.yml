@@ -30,6 +30,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Schedule (cron) runs only `check-deployed` (line ~210) by design —
+  # all other jobs gate themselves out on `event_name != 'schedule'`.
+  # The cron path verifies live deployed-site links; it has nothing to
+  # validate against the source tree at schedule time.
   changes:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
