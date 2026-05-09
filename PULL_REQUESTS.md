@@ -94,7 +94,7 @@ git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
 git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
 ```
 
-The `-f` (`--force`) on `git fetch` is required, not optional. Agent-authored PR branches are routinely force-pushed during iteration (review-fix amend, rebase onto fresh `main`, body-only fix-ups). Without `-f`, every force-push breaks the operator's verify recipe with `! [rejected] <branch> -> origin/<branch> (non-fast-forward)`, and the local `refs/remotes/origin/<branch>` stays pinned to the pre-force-push tip. The `git checkout -B` rewrites the local branch unconditionally, but only against whatever the remote-tracking ref points at — so the fetch must update that ref through force-pushes to be useful. Equivalent recipe: `git fetch origin '+<BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>'`. Prefer the `-f` form for readability.
+The `-f` (`--force`) on `git fetch` is required, not optional. Agent-authored PR branches may have been force-pushed after explicit operator approval (DCO amend, rebase onto fresh `main`, body-only fix-ups). Without `-f`, every force-push breaks the operator's verify recipe with `! [rejected] <branch> -> origin/<branch> (non-fast-forward)`, and the local `refs/remotes/origin/<branch>` stays pinned to the pre-force-push tip. The `git checkout -B` rewrites the local branch unconditionally, but only against whatever the remote-tracking ref points at - so the fetch must update that ref through force-pushes to be useful. Equivalent recipe: `git fetch origin '+<BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>'`. Prefer the `-f` form for readability.
 
 #### Static Checks
 
@@ -214,7 +214,7 @@ During iteration:
 - Do **not** run broad/final verification by default during iteration. In particular, do not run `cargo fmt -- --check`, `cargo clippy -- -D warnings`, `cargo nextest run`, or GitHub Actions polling unless the operator explicitly asks for verification/final prep or the PR is moving to merge-readiness.
 - If a small targeted run reveals a formatting or clippy issue, fix the obvious local cause when it is part of the changed code, but do not escalate into the full formatting + clippy + full-suite pipeline unless the operator asks.
 - Do not update the PR body after every iteration unless the operator asks for it or the PR description has become actively misleading for someone reviewing right now.
-- Do not amend, force-push, or wait for GitHub Actions as a reflex after every small feedback pass. If the branch already has a PR open, a normal follow-up commit is acceptable during review unless the operator asked to keep the PR as one amended commit.
+- Do not amend, force-push, or wait for GitHub Actions as a reflex after every small feedback pass. Force-pushes require explicit operator approval per [BRANCHING.md](BRANCHING.md). If the branch already has a PR open, a normal follow-up commit is acceptable during review unless the operator asked to keep the PR as one amended commit.
 - Summarize what changed and tell the operator what lightweight local check, if any, was run. Then stop so the operator can validate the UI/behavior.
 
 Move to merge-readiness only when the operator gives a clear signal such as "this is correct", "prepare it", "ready for review", "run the full checks", or "now we can merge". At that point run the full verification suite, reconcile the PR body with the final diff, push/update the branch, and check CI.
@@ -258,6 +258,10 @@ When an agent merges a pull request, the resulting squash commit must preserve t
 - Prefer GitHub's default squash title when it already matches that format.
 - If overriding the commit title, manually append `(#PR_NUMBER)`.
 - For Codex `gh` merges: do not pass a custom title unless necessary; if one is passed, it must include `(#PR_NUMBER)`.
+- Before merging, explicitly check the exact title that will be written to
+  history. If using GitHub's default, confirm it already includes `(#PR_NUMBER)`.
+  If passing `--subject`, build it from the final PR title plus the PR suffix
+  and read it back before running the merge command.
 - Generate the squash commit body at merge time in a temporary file. Do not pollute the visible PR description with commit-only trailer footers just to influence GitHub's default squash message.
 - The generated squash commit body must summarize what actually shipped in clear prose. Use the PR title/body, diff, and commit messages as source material, but do not paste the full PR body, local verification instructions, checklists, or raw commit list into the final commit.
 - The generated body can be one paragraph for small PRs or a few concise paragraphs for larger PRs. It should be detailed enough to explain the change when reading `git log`, but free of process noise.

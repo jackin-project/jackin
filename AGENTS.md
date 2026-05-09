@@ -70,6 +70,7 @@ When the first release is being cut, the operator will explicitly ask for the ch
 All rules for opening, iterating on, refreshing, reviewing, and merging pull requests live in [`PULL_REQUESTS.md`](PULL_REQUESTS.md). **Read that file before opening any PR.** It covers:
 
 - Per-PR merge authorization (agents never merge without explicit "merge it" confirmation).
+- Force-push authorization (agents never rewrite an existing remote branch without explicit operator approval).
 - Required PR body shape (Summary / hard-rule callout / What's deferred / Verify locally / Migration notes).
 - "Verify locally" templates, including the `export TIRITH=0` line that lets multi-line pastes survive the `tirith` paste scanner.
 - PR-body authoring rules — no hard-wrap, no verbosity / duplication, no deployed-docs links, no mechanical CI-shaped checks.
