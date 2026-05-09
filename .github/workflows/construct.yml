@@ -187,9 +187,51 @@ jobs:
       - name: Publish multi-platform manifest
         run: just construct-publish-manifest
 
+  # PR-time rehearsal of `publish-manifest`'s setup. Runs the same
+  # docker buildx CLI plumbing publish-manifest depends on, without
+  # logging in to Docker Hub or writing a manifest to the registry,
+  # so a workflow- or job-level env-var leak that breaks
+  # `docker buildx` resolution surfaces in PR rather than
+  # post-merge on main. Catches the exact failure class from
+  # jackin-project/jackin#266 — `docker buildx ls` evaluates
+  # BUILDX_BUILDER at startup and exits non-zero on a missing-builder
+  # reference, regardless of whether the rest of the command would
+  # have hit the network. The rehearsal runs on the events
+  # publish-manifest itself skips: PR and feature-branch dispatch
+  # that touch construct paths.
+  publish-manifest-rehearsal:
+    name: publish manifest (rehearsal)
+    if: needs.changes.outputs.construct == 'true' && needs.changes.outputs.is_publish != 'true'
+    needs: [changes, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install just
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+
+      - name: Verify docker buildx CLI resolves under workflow env
+        # `docker buildx ls` reads BUILDX_BUILDER (and the rest of
+        # buildx's env-driven config) and fails fast on a missing
+        # builder reference. This is the exact error shape from
+        # jackin-project/jackin#266 — running it on PR + feature-branch
+        # dispatch surfaces a leak that publish-manifest would
+        # otherwise only hit post-merge on main.
+        run: docker buildx ls
+
+      - name: Verify imagetools CLI plugin loads
+        # Exercises the same plugin path publish-manifest's
+        # `docker buildx imagetools create` / `inspect` commands rely
+        # on. Cheap, network-free smoke that the plugin is bundled
+        # and loadable on the runner.
+        run: docker buildx imagetools --help >/dev/null
+
   construct-required:
     if: always()
-    needs: [changes, build, publish-manifest]
+    needs: [changes, build, publish-manifest, publish-manifest-rehearsal]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
