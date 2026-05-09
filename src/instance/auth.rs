@@ -500,6 +500,110 @@ impl RoleState {
     }
 }
 
+impl RoleState {
+    /// Provision Amp's host-side `secrets.json` per the chosen mode.
+    ///
+    /// Source: `~/.local/share/amp/secrets.json` (`XDG_DATA`). The
+    /// `XDG_CONFIG` `~/.config/amp/settings.json` is preferences only
+    /// and never holds the token.
+    ///
+    /// `mounted_secrets_json` is `None` when the bind mount must be
+    /// skipped. `Sync` with no host file preserves any prior role-state
+    /// file so an in-container login isn't silently dropped.
+    /// `OAuthToken` is parser-rejected; the defensive arm wipes + logs
+    /// so a bypass is loud rather than silent.
+    pub(super) fn provision_amp_auth(
+        secrets_json: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        use anyhow::Context;
+
+        // `reject_symlink` no-ops on ENOENT, so no pre-stat needed.
+        reject_symlink(secrets_json)?;
+
+        let host_secrets = host_home.join(".local/share/amp/secrets.json");
+        let outcome = match mode {
+            // Parser-rejected for Amp. Defensive arm: wipe + log loudly
+            // so a parser bypass cannot leak prior Sync residue.
+            AuthForwardMode::OAuthToken => {
+                eprintln!(
+                    "[jackin] internal: provision_amp_auth received unsupported \
+                     OAuthToken mode for Amp — parser invariant bypassed; \
+                     wiping role state and falling back to token-mode."
+                );
+                wipe_amp_state(secrets_json)?;
+                AuthProvisionOutcome::TokenMode
+            }
+            AuthForwardMode::ApiKey => {
+                wipe_amp_state(secrets_json)?;
+                AuthProvisionOutcome::TokenMode
+            }
+            AuthForwardMode::Ignore => {
+                wipe_amp_state(secrets_json)?;
+                AuthProvisionOutcome::Skipped
+            }
+            AuthForwardMode::Sync => match std::fs::read_to_string(&host_secrets) {
+                Ok(content) => {
+                    write_private_file(secrets_json, &content).with_context(|| {
+                        format!(
+                            "failed to write Amp role-state secrets.json at {}",
+                            secrets_json.display()
+                        )
+                    })?;
+                    AuthProvisionOutcome::Synced
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    if secrets_json.exists() {
+                        repair_permissions(secrets_json);
+                    }
+                    AuthProvisionOutcome::HostMissing
+                }
+                Err(e) => {
+                    // Preserve `io::Error` source chain so `{e:#}` /
+                    // `--debug` exposes the kind (PermissionDenied,
+                    // NotADirectory) instead of misdiagnosing as
+                    // host-missing.
+                    let hint = match e.kind() {
+                        std::io::ErrorKind::PermissionDenied => {
+                            " (check host file permissions on the parent dir)"
+                        }
+                        _ => "",
+                    };
+                    return Err(anyhow::Error::new(e).context(format!(
+                        "failed to read host {}{}",
+                        host_secrets.display(),
+                        hint
+                    )));
+                }
+            },
+        };
+
+        let mounted_secrets_json = match outcome {
+            AuthProvisionOutcome::Synced => Some(secrets_json.to_path_buf()),
+            AuthProvisionOutcome::Skipped => None,
+            AuthProvisionOutcome::HostMissing | AuthProvisionOutcome::TokenMode => {
+                secrets_json.exists().then(|| secrets_json.to_path_buf())
+            }
+        };
+        Ok((outcome, mounted_secrets_json))
+    }
+}
+
+/// Remove role-state `secrets.json` so a prior Sync run cannot leak
+/// credentials under env-driven modes (`Ignore`, `ApiKey`).
+fn wipe_amp_state(secrets_json: &Path) -> anyhow::Result<()> {
+    use anyhow::Context;
+    wipe_file_if_present(secrets_json).with_context(|| {
+        format!(
+            "failed to wipe stale Amp secrets.json at {} \
+             (auth_forward switched to ignore/api_key); remove the file \
+             manually if it has unexpected ownership",
+            secrets_json.display()
+        )
+    })
+}
+
 /// Copy the host's `.claude.json` into the container state, or write `{}`
 /// if the host file doesn't exist.
 fn copy_host_claude_json(host_path: &Path, dest_path: &Path) -> anyhow::Result<()> {
@@ -2396,6 +2500,217 @@ mod github_auth_tests {
         assert!(
             !s.contains("ghp_token_secret"),
             "TokenMode token leaked: {s}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod amp_auth_tests {
+    use crate::config::AuthForwardMode;
+    use crate::instance::{AuthProvisionOutcome, RoleState};
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    fn stage_host_secrets(temp: &tempfile::TempDir, content: &str) -> std::path::PathBuf {
+        let host_home = temp.path().join("host_home");
+        let amp_dir = host_home.join(".local/share/amp");
+        std::fs::create_dir_all(&amp_dir).unwrap();
+        std::fs::write(amp_dir.join("secrets.json"), content).unwrap();
+        host_home
+    }
+
+    #[test]
+    fn sync_copies_host_secrets_json_when_present() {
+        let temp = tempdir().unwrap();
+        let secrets_json = temp.path().join("secrets.json");
+        let host_home = stage_host_secrets(
+            &temp,
+            "{\"apiKey@https://ampcode.com/\":\"sgamp_user_test\"}",
+        );
+
+        let (outcome, mounted) =
+            RoleState::provision_amp_auth(&secrets_json, AuthForwardMode::Sync, &host_home)
+                .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert_eq!(mounted.as_deref(), Some(secrets_json.as_path()));
+        assert_eq!(
+            std::fs::read_to_string(&secrets_json).unwrap(),
+            "{\"apiKey@https://ampcode.com/\":\"sgamp_user_test\"}"
+        );
+    }
+
+    #[test]
+    fn sync_preserves_existing_secrets_when_host_file_missing() {
+        let temp = tempdir().unwrap();
+        let secrets_json = temp.path().join("secrets.json");
+        std::fs::write(&secrets_json, "{\"in_container_login\":true}").unwrap();
+        let host_home = temp.path().join("empty_host_home");
+
+        let (outcome, mounted) =
+            RoleState::provision_amp_auth(&secrets_json, AuthForwardMode::Sync, &host_home)
+                .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+        assert_eq!(mounted.as_deref(), Some(secrets_json.as_path()));
+        assert_eq!(
+            std::fs::read_to_string(&secrets_json).unwrap(),
+            "{\"in_container_login\":true}"
+        );
+    }
+
+    #[test]
+    fn sync_with_no_host_and_no_prior_file_skips_mount() {
+        let temp = tempdir().unwrap();
+        let secrets_json = temp.path().join("secrets.json");
+        let host_home = temp.path().join("empty_host_home");
+
+        let (outcome, mounted) =
+            RoleState::provision_amp_auth(&secrets_json, AuthForwardMode::Sync, &host_home)
+                .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+        assert!(mounted.is_none());
+        assert!(!secrets_json.exists());
+    }
+
+    #[test]
+    fn api_key_mode_wipes_role_secrets_json() {
+        let temp = tempdir().unwrap();
+        let secrets_json = temp.path().join("secrets.json");
+        std::fs::write(&secrets_json, "{\"stale\":\"creds\"}").unwrap();
+        let host_home = stage_host_secrets(
+            &temp,
+            "{\"apiKey@https://ampcode.com/\":\"sgamp_user_test\"}",
+        );
+
+        let (outcome, mounted) =
+            RoleState::provision_amp_auth(&secrets_json, AuthForwardMode::ApiKey, &host_home)
+                .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
+        assert!(mounted.is_none());
+        assert!(!secrets_json.exists());
+    }
+
+    #[test]
+    fn ignore_mode_wipes_role_secrets_json() {
+        let temp = tempdir().unwrap();
+        let secrets_json = temp.path().join("secrets.json");
+        std::fs::write(&secrets_json, "{\"stale\":\"creds\"}").unwrap();
+
+        let (outcome, mounted) = RoleState::provision_amp_auth(
+            &secrets_json,
+            AuthForwardMode::Ignore,
+            Path::new("/nonexistent"),
+        )
+        .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Skipped);
+        assert!(mounted.is_none());
+        assert!(!secrets_json.exists());
+    }
+
+    #[test]
+    fn oauth_token_defensive_arm_wipes_role_state() {
+        // OAuthToken is parser-rejected for Amp; the defensive arm in
+        // provision_amp_auth wipes any prior Sync's role-state file so a
+        // config bypass cannot leak forwarded credentials into the
+        // container. The arm should never run in production, but if it
+        // does the bypass must be loud and safe.
+        let temp = tempdir().unwrap();
+        let secrets_json = temp.path().join("secrets.json");
+        std::fs::write(&secrets_json, "{\"prior_sync\":true}").unwrap();
+
+        let (outcome, mounted) = RoleState::provision_amp_auth(
+            &secrets_json,
+            AuthForwardMode::OAuthToken,
+            Path::new("/nonexistent"),
+        )
+        .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
+        assert!(mounted.is_none(), "bypass arm must not produce a mount");
+        assert!(
+            !secrets_json.exists(),
+            "bypass arm must wipe the prior Sync residue"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_at_secrets_json_under_every_mode() {
+        // Loop every mode. The symlink check is hoisted above the mode
+        // match, so the defense holds for all four arms today — but a
+        // future refactor that pushes the check inside specific arms
+        // could silently regress Sync (highest blast radius — it would
+        // otherwise read through the symlink).
+        for mode in [
+            AuthForwardMode::Sync,
+            AuthForwardMode::ApiKey,
+            AuthForwardMode::OAuthToken,
+            AuthForwardMode::Ignore,
+        ] {
+            let temp = tempdir().unwrap();
+            let secrets_json = temp.path().join("secrets.json");
+            let decoy = temp.path().join("decoy.txt");
+            std::fs::write(&decoy, "secret").unwrap();
+            std::os::unix::fs::symlink(&decoy, &secrets_json).unwrap();
+
+            let err = RoleState::provision_amp_auth(&secrets_json, mode, Path::new("/nonexistent"))
+                .unwrap_err();
+
+            assert!(
+                err.to_string().contains("symlink"),
+                "mode={mode:?}: expected symlink rejection, got: {err}"
+            );
+            assert_eq!(
+                std::fs::read_to_string(&decoy).unwrap(),
+                "secret",
+                "mode={mode:?}: decoy contents must survive"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn surfaces_unreadable_host_secrets_json_as_error() {
+        // Sync arm with an unreadable host secrets.json must surface
+        // the io::Error rather than misdiagnosing as HostMissing —
+        // otherwise the operator gets trapped in a re-login loop they
+        // cannot escape until they spot the bad permissions on the
+        // host file.
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempdir().unwrap();
+        let secrets_json = temp.path().join("secrets.json");
+        let host_home = temp.path().join("host_home");
+        let amp_dir = host_home.join(".local/share/amp");
+        std::fs::create_dir_all(&amp_dir).unwrap();
+        let host_secrets = amp_dir.join("secrets.json");
+        std::fs::write(
+            &host_secrets,
+            "{\"apiKey@https://ampcode.com/\":\"sgamp_user_test\"}",
+        )
+        .unwrap();
+        std::fs::set_permissions(&host_secrets, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let result =
+            RoleState::provision_amp_auth(&secrets_json, AuthForwardMode::Sync, &host_home);
+
+        // Restore perms so tempdir cleanup succeeds regardless of test
+        // outcome.
+        let _ = std::fs::set_permissions(&host_secrets, std::fs::Permissions::from_mode(0o600));
+
+        let err = result.expect_err("EACCES on host secrets.json must surface as an error");
+        let rendered = format!("{err:#}");
+        assert!(
+            rendered.contains("secrets.json"),
+            "error must name the host file: {rendered}"
+        );
+        assert!(
+            !rendered.contains("not found")
+                && !rendered.to_ascii_lowercase().contains("nonexistent"),
+            "EACCES must not be reported as not-found: {rendered}"
         );
     }
 }

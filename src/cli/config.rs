@@ -84,18 +84,22 @@ Examples:
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum AuthCommand {
-    /// Set the authentication forwarding mode
+    /// Set the global Claude authentication forwarding mode
     ///
-    /// Controls how the host's agent authentication is made available
-    /// to role containers.
+    /// Controls how the host's Claude authentication is made available to
+    /// role containers at the global layer (writes `[claude].auth_forward`).
+    /// The Codex, Amp, and GitHub axes have their own per-axis blocks
+    /// (`[codex]` / `[amp]` / `[github]`) and are configured through the
+    /// operator console's Auth tab today, not this CLI verb — extending
+    /// `auth set` to take an explicit agent argument is a tracked follow-up.
+    ///
     /// Modes: sync (default — overwrite container auth from host on each
     /// launch when host auth exists; preserve container auth when host auth
     /// is absent), ignore (revoke and never forward), `oauth_token` (use a
     /// long-lived `CLAUDE_CODE_OAUTH_TOKEN` resolved from the operator env),
-    /// `api_key` (use a short-lived API key — e.g. `ANTHROPIC_API_KEY` /
-    /// `OPENAI_API_KEY` — resolved from the operator env). Tokens and keys
-    /// are never written to disk; see `jackin` docs on auth forwarding for
-    /// setup.
+    /// `api_key` (use a short-lived `ANTHROPIC_API_KEY` resolved from the
+    /// operator env). Tokens and keys are never written to disk; see
+    /// `jackin` docs on auth forwarding for setup.
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,

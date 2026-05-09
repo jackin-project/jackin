@@ -650,7 +650,7 @@ pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -
 /// both index into the same `Vec<AuthRow>` so cursor row numbers always
 /// agree with what's drawn.
 ///
-/// Keyed off [`AuthKind`] (Claude / Codex / Github), wider than the
+/// Keyed off [`AuthKind`], wider than the
 /// runtime `Agent` enum so the GitHub CLI row sits alongside the agent
 /// rows without forcing a synthetic `Agent::Github` variant.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -692,16 +692,14 @@ pub enum AuthRow {
 
 /// Build the row-shape vector for the Auth tab.
 ///
-/// `config` provides the live `[claude]` / `[codex]` / `[github]`
-/// globals so the "does this mode need a credential?" check runs
-/// against the operator's actual configuration. The synthesized config
-/// (workspace pending merged onto the live globals) is built once here
-/// and reused for every credential-row check, regardless of how many
-/// roles are expanded.
+/// `config` supplies the global `[claude]` / `[codex]` / `[amp]` /
+/// `[github]` blocks. Synthesized config (workspace pending merged
+/// onto globals) is built once and reused for every credential-row
+/// check across expanded roles.
 pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthRow> {
     use crate::console::manager::auth_kind::AuthKind;
     let Some(kind) = editor.auth_selected_kind else {
-        // Root view — three rows in fixed order. `Github` is purely a
+        // Root view — one row per kind, fixed order. `Github` is purely a
         // panel-layer kind (no `Agent` peer); see
         // `crate::console::manager::auth_kind` for the design notes.
         return vec![
@@ -710,6 +708,9 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
             },
             AuthRow::AuthKindRow {
                 kind: AuthKind::Codex,
+            },
+            AuthRow::AuthKindRow {
+                kind: AuthKind::Amp,
             },
             AuthRow::AuthKindRow {
                 kind: AuthKind::Github,
@@ -779,9 +780,9 @@ fn effective_mode_needs_credential(
     kind.required_env_var(mode).is_some()
 }
 
-/// Resolve the effective auth mode for the panel, tunnelling through
-/// the kind-specific resolver in `crate::config`. Claude / Codex still
-/// go through `resolve_mode`; Github routes through `resolve_github_mode`.
+/// Resolve the effective auth mode for the panel via the kind-specific
+/// resolver in `crate::config`. Agent kinds go through `resolve_mode`;
+/// Github routes through `resolve_github_mode`.
 fn resolve_panel_mode(
     cfg: &AppConfig,
     kind: crate::console::manager::auth_kind::AuthKind,
@@ -790,10 +791,12 @@ fn resolve_panel_mode(
 ) -> crate::console::manager::auth_kind::AuthMode {
     use crate::console::manager::auth_kind::{AuthKind, AuthMode};
     match kind {
-        AuthKind::Claude | AuthKind::Codex => {
-            // `kind.agent()` returns `Some` for Claude/Codex; the
-            // GitHub arm above means the unwrap is unreachable here.
-            let agent = kind.agent().expect("Claude/Codex kinds map to an Agent");
+        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp => {
+            // `kind.agent()` returns `Some` for Claude/Codex/Amp; the
+            // GitHub arm below means the unwrap is unreachable here.
+            let agent = kind
+                .agent()
+                .expect("Claude/Codex/Amp kinds map to an Agent");
             let mode = crate::config::resolve_mode(cfg, agent, workspace, role);
             AuthMode::from_auth_forward(mode)
         }
@@ -1273,10 +1276,8 @@ fn render_auth_source_line(
     ratatui::text::Line::from(spans)
 }
 
-/// Pull the explicit workspace-level mode for a kind, if any.
-///
-/// Mirrors the existing Claude / Codex branches — Github uses its own
-/// mode enum so it threads through [`AuthMode::from_github`].
+/// Explicit workspace-level mode for a kind, if any. Github uses its
+/// own mode enum and threads through [`AuthMode::from_github`].
 fn explicit_workspace_mode(
     ws: &crate::workspace::WorkspaceConfig,
     kind: crate::console::manager::auth_kind::AuthKind,
@@ -1290,7 +1291,11 @@ fn explicit_workspace_mode(
         AuthKind::Codex => ws
             .codex
             .as_ref()
-            .map(|c| AuthMode::from_auth_forward(c.auth_forward)),
+            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
+        AuthKind::Amp => ws
+            .amp
+            .as_ref()
+            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
         AuthKind::Github => ws
             .github
             .as_ref()
@@ -1298,13 +1303,9 @@ fn explicit_workspace_mode(
     }
 }
 
-/// Walk the env layers for a credential lookup.
-///
-/// For Claude / Codex the env map lives directly on
-/// `[workspaces.<ws>(.roles.<role>).env]`. For Github the env map
-/// lives on `[workspaces.<ws>(.roles.<role>).github.env]` (parallel to
-/// the global `[github.env]`). The kind decides which family of layers
-/// the panel reads from.
+/// Walk env layers for a credential lookup. Github's env map lives
+/// under `[…github.env]` (parallel to global `[github.env]`); the
+/// agent kinds use `[…env]` directly.
 fn auth_source_value<'a>(
     synthesized: &'a AppConfig,
     workspace_name: &str,
@@ -1315,13 +1316,13 @@ fn auth_source_value<'a>(
     use crate::console::manager::auth_kind::AuthKind;
     match kind {
         AuthKind::Github => github_source_value(synthesized, workspace_name, role, env_name),
-        AuthKind::Claude | AuthKind::Codex => {
-            claude_codex_source_value(synthesized, workspace_name, role, env_name)
+        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp => {
+            agent_env_source_value(synthesized, workspace_name, role, env_name)
         }
     }
 }
 
-fn claude_codex_source_value<'a>(
+fn agent_env_source_value<'a>(
     synthesized: &'a AppConfig,
     workspace_name: &str,
     role: &str,
@@ -1420,11 +1421,8 @@ pub(in crate::console) fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>
     }
 }
 
-/// Synthesize an `AppConfig` whose `[claude]` / `[codex]` / `[github]`
-/// come from the live global config and whose `[workspaces.<ws>]`
-/// mirrors `editor.pending`. The Auth panel reads from this so changes
-/// the operator makes via the auth-edit form show up immediately,
-/// before save.
+/// Merge live global blocks with `editor.pending` for the active
+/// workspace so the Auth panel renders pending edits before save.
 pub(in crate::console::manager) fn synthesize_appconfig_for_auth(
     state: &EditorState<'_>,
     config: &AppConfig,
@@ -1432,6 +1430,7 @@ pub(in crate::console::manager) fn synthesize_appconfig_for_auth(
     let mut synthesized = AppConfig {
         claude: config.claude.clone(),
         codex: config.codex.clone(),
+        amp: config.amp.clone(),
         github: config.github.clone(),
         env: config.env.clone(),
         roles: config.roles.clone(),
@@ -1856,6 +1855,7 @@ mod secrets_tab_render_tests {
                 env: role_env,
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
             },
         );
@@ -2001,6 +2001,7 @@ mod secrets_tab_render_tests {
                 env: role_env,
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
             },
         );
@@ -2010,6 +2011,7 @@ mod secrets_tab_render_tests {
                 env: std::collections::BTreeMap::new(),
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
             },
         );
@@ -2324,6 +2326,7 @@ mod secrets_tab_render_tests {
                 env: role_env,
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
             },
         );
@@ -2361,6 +2364,7 @@ mod secrets_tab_render_tests {
                 env: a_env,
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
             },
         );
@@ -2370,6 +2374,7 @@ mod secrets_tab_render_tests {
                 env: b_env,
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
             },
         );
@@ -2679,6 +2684,7 @@ mod eligible_agents_for_override_tests {
                     env,
                     claude: None,
                     codex: None,
+                    amp: None,
                     github: None,
                 },
             );
@@ -2840,10 +2846,13 @@ mod auth_flat_rows_tests {
                     kind: AuthKind::Codex,
                 },
                 AuthRow::AuthKindRow {
+                    kind: AuthKind::Amp,
+                },
+                AuthRow::AuthKindRow {
                     kind: AuthKind::Github,
                 },
             ],
-            "root view must list Claude / Codex / Github in this order"
+            "root view must list Claude / Codex / Amp / Github in this order"
         );
     }
 

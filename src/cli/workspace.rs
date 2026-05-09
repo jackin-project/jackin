@@ -34,7 +34,7 @@ pub enum WorkspaceCommand {
 Examples:
   jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app
   jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app --mount ~/cache:/cache:ro
-  jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app --default-agent codex
+  jackin workspace create my-app --workdir ~/Projects/my-app --mount ~/Projects/my-app --default-agent amp
   jackin workspace create monorepo --workdir /workspace --mount ~/src:/workspace
   jackin workspace create restricted --workdir ~/app --mount ~/app --allowed-role agent-smith --default-role agent-smith"
     )]
@@ -53,7 +53,7 @@ Examples:
         /// Role to select by default when loading this workspace
         #[arg(long = "default-role")]
         default_role: Option<String>,
-        /// Default agent for this workspace (claude or codex)
+        /// Default agent for this workspace (claude, codex, or amp)
         #[arg(long, value_parser = parse_agent)]
         default_agent: Option<crate::agent::Agent>,
         /// Set isolation mode for a mount destination. Repeatable.
@@ -105,7 +105,7 @@ Examples:
   jackin workspace edit my-app --allowed-role chainargos/the-architect
   jackin workspace edit my-app --default-role agent-smith
   jackin workspace edit my-app --clear-default-role
-  jackin workspace edit my-app --default-agent codex
+  jackin workspace edit my-app --default-agent amp
   jackin workspace edit my-app --clear-default-agent
   jackin workspace edit my-app --mount ~/Projects/my-app --yes
   jackin workspace edit my-app --prune"

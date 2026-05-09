@@ -1,4 +1,4 @@
-//! Two-row picker: Claude or Codex, used in the Auth-tab "+ Add" flow.
+//! Agent picker used in the Auth-tab "+ Add" flow.
 //!
 //! Arrow keys move focus, Enter commits, Esc cancels.
 
@@ -14,6 +14,7 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
 const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 const WHITE: Color = Color::Rgb(255, 255, 255);
+const AGENTS: [Agent; 3] = [Agent::Claude, Agent::Codex, Agent::Amp];
 
 #[derive(Debug, Clone)]
 pub struct AgentChoiceState {
@@ -30,14 +31,16 @@ impl AgentChoiceState {
     pub const fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<Agent> {
         match key.code {
             KeyCode::Down | KeyCode::Char('j') => {
-                if matches!(self.focused, Agent::Claude) {
-                    self.focused = Agent::Codex;
+                let idx = focus_index(self.focused);
+                if idx + 1 < AGENTS.len() {
+                    self.focused = AGENTS[idx + 1];
                 }
                 ModalOutcome::Continue
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if matches!(self.focused, Agent::Codex) {
-                    self.focused = Agent::Claude;
+                let idx = focus_index(self.focused);
+                if idx > 0 {
+                    self.focused = AGENTS[idx - 1];
                 }
                 ModalOutcome::Continue
             }
@@ -45,6 +48,14 @@ impl AgentChoiceState {
             KeyCode::Esc => ModalOutcome::Cancel,
             _ => ModalOutcome::Continue,
         }
+    }
+}
+
+const fn focus_index(agent: Agent) -> usize {
+    match agent {
+        Agent::Claude => 0,
+        Agent::Codex => 1,
+        Agent::Amp => 2,
     }
 }
 
@@ -89,6 +100,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentChoiceState) {
     let lines = vec![
         make_row(Agent::Claude, "Claude"),
         make_row(Agent::Codex, "Codex"),
+        make_row(Agent::Amp, "Amp"),
     ];
     frame.render_widget(Paragraph::new(lines), rows[0]);
 
@@ -121,18 +133,22 @@ mod tests {
     }
 
     #[test]
-    fn down_moves_to_codex_then_clamps() {
+    fn down_moves_through_agents_then_clamps() {
         let mut s = AgentChoiceState::new();
         let _ = s.handle_key(key(KeyCode::Down));
         assert_eq!(s.focused, Agent::Codex);
         let _ = s.handle_key(key(KeyCode::Down));
-        assert_eq!(s.focused, Agent::Codex);
+        assert_eq!(s.focused, Agent::Amp);
+        let _ = s.handle_key(key(KeyCode::Down));
+        assert_eq!(s.focused, Agent::Amp);
     }
 
     #[test]
-    fn up_moves_to_claude_then_clamps() {
+    fn up_moves_through_agents_then_clamps() {
         let mut s = AgentChoiceState::new();
-        s.focused = Agent::Codex;
+        s.focused = Agent::Amp;
+        let _ = s.handle_key(key(KeyCode::Up));
+        assert_eq!(s.focused, Agent::Codex);
         let _ = s.handle_key(key(KeyCode::Up));
         assert_eq!(s.focused, Agent::Claude);
         let _ = s.handle_key(key(KeyCode::Up));

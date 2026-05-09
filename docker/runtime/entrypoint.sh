@@ -99,6 +99,21 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     fi
     LAUNCH=(codex)
     ;;
+  amp)
+    mkdir -p /home/agent/.local/share/amp
+    if [ -f /jackin/amp/secrets.json ]; then
+        echo "[entrypoint] amp: forwarding host secrets.json into ~/.local/share/amp/" >&2
+        cp /jackin/amp/secrets.json /home/agent/.local/share/amp/secrets.json
+        chmod 600 /home/agent/.local/share/amp/secrets.json
+    elif [ -n "${AMP_API_KEY:-}" ]; then
+        echo "[entrypoint] amp: AMP_API_KEY present in env; agent will use api-key auth" >&2
+    else
+        echo "[entrypoint] amp: no secrets.json mounted and AMP_API_KEY unset — agent will require interactive login" >&2
+    fi
+    # CLI flag chosen over `amp.dangerouslyAllowAll: true` so jackin
+    # doesn't write to the operator's XDG_CONFIG.
+    LAUNCH=(amp --dangerously-allow-all)
+    ;;
   *)
     echo "[entrypoint] unknown JACKIN_AGENT: $JACKIN_AGENT" >&2
     exit 2

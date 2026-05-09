@@ -28,7 +28,7 @@ The configuration file is TOML format at `~/.config/jackin/config.toml`. It's ma
 
 ### Agent auth-forward settings
 
-`auth_forward` is configured per agent (`claude`, `codex`) at three
+`auth_forward` is configured per agent (`claude`, `codex`, `amp`) at three
 layers, with most-specific wins:
 
 ```toml
@@ -39,11 +39,17 @@ auth_forward = "sync"  # "sync" (default), "api_key", "oauth_token", or "ignore"
 [codex]
 auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — Codex rejects "oauth_token"
 
+[amp]
+auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — Amp rejects "oauth_token"
+
 # Layer 2 — workspace-wide override
 [workspaces.my-app.claude]
 auth_forward = "oauth_token"
 
 [workspaces.my-app.codex]
+auth_forward = "api_key"
+
+[workspaces.my-app.amp]
 auth_forward = "api_key"
 
 # Layer 3 — most-specific (workspace × role × agent) override
@@ -52,6 +58,9 @@ auth_forward = "ignore"
 
 [workspaces.my-app.roles.agent-smith.codex]
 auth_forward = "sync"
+
+[workspaces.my-app.roles.agent-smith.amp]
+auth_forward = "ignore"
 ```
 
 | Field | Description | Default |
@@ -59,22 +68,25 @@ auth_forward = "sync"
 | `auth_forward` | How the host's agent credentials (or env-supplied keys/tokens) are made available to agent containers. See [Authentication Forwarding](/guides/authentication). | `sync` |
 
 Accepted values: `sync` \| `api_key` \| `oauth_token` \| `ignore`.
-`oauth_token` is **Claude only** — setting it under any `[codex]` block
-is rejected at parse time with an "unknown variant" error.
+`oauth_token` is **Claude only** — setting it under any `[codex]` or
+`[amp]` block is rejected at parse time.
 
 Locations the field may appear at, in resolution order
 (most-specific first):
 
 - `[workspaces.<ws>.roles.<role>.claude].auth_forward`
 - `[workspaces.<ws>.roles.<role>.codex].auth_forward`
+- `[workspaces.<ws>.roles.<role>.amp].auth_forward`
 - `[workspaces.<ws>.claude].auth_forward`
 - `[workspaces.<ws>.codex].auth_forward`
+- `[workspaces.<ws>.amp].auth_forward`
 - `[claude].auth_forward` (global default)
 - `[codex].auth_forward` (global default)
+- `[amp].auth_forward` (global default)
 
 Credentials referenced by `api_key` and `oauth_token` live in ordinary
 `[*.env]` blocks under the well-known names `ANTHROPIC_API_KEY`,
-`CLAUDE_CODE_OAUTH_TOKEN`, and `OPENAI_API_KEY`.
+`CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, and `AMP_API_KEY`.
 
 ### GitHub CLI auth-forward settings
 
@@ -171,7 +183,7 @@ See [Environment Variables](/guides/environment-variables/) for the full guide.
 workdir = "/home/user/Projects/my-app"
 allowed_roles = ["agent-smith", "the-architect"]
 default_role = "agent-smith"
-default_agent = "codex"
+default_agent = "amp"
 last_role = "the-architect"
 
 [[workspaces.my-app.mounts]]
@@ -201,7 +213,7 @@ git_pull_on_entry = true
 | `mounts[].isolation` | Per-mount isolation mode: `shared` (default), `worktree`, or `clone`. Omitting the field deserializes to `shared`, but every save writes the field explicitly so old configs migrate to the new shape on first save. Global mounts (under `[docker.mounts]` or `[[mounts]]`) reject this field at parse time. See [Per-mount isolation](/guides/workspaces/#per-mount-isolation). |
 | `allowed_roles` | List of allowed role selectors |
 | `default_role` | Default role selector |
-| `default_agent` | Optional workspace default agent (`"claude"` or `"codex"`). Omit to default to Claude. |
+| `default_agent` | Optional workspace default agent (`"claude"`, `"codex"`, or `"amp"`). Omit to default to Claude. |
 | `last_role` | Most recently used role selector for this workspace |
 | `keep_awake.enabled` | macOS-only: keep the host awake while any agent in this workspace is running (see [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake)). On Linux/Windows the flag is silently accepted but has no effect — useful when sharing a `config.toml` across machines, but the host will still sleep. |
 | `git_pull_on_entry` | Run `git pull` on every mounted git repository from the host before the agent container starts. Failures are non-fatal — the launch continues even when offline or the working tree is dirty. Omitted from TOML when `false` (the default). See [Git pull on entry](/guides/workspaces/#git-pull-on-entry). |
@@ -230,9 +242,10 @@ Each running role stores state at `~/.jackin/data/<container-name>/`:
 | `claude/credentials.json` | Claude Code OAuth credentials (mounted at `/jackin/claude/credentials.json`; only forwarded under `auth_forward = "sync"`) |
 | `codex/config.toml` | Codex config generated at launch (mounted at `/jackin/codex/config.toml`) |
 | `codex/auth.json` | Synced copy of host `~/.codex/auth.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/jackin/codex/auth.json`; absent when host has no auth.json) |
+| `amp/secrets.json` | Synced copy of host `~/.local/share/amp/secrets.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/jackin/amp/secrets.json`; absent when host has no secrets.json). `secrets.json` is the XDG_DATA file the Amp CLI writes the `apiKey@https://ampcode.com/` token into; the XDG_CONFIG path `~/.config/amp/settings.json` is preferences only and is intentionally not forwarded |
 | `.config/gh/` | GitHub CLI authentication and settings (agent-neutral) |
 
-All host→container handoff lives under a single tree (`/jackin/`) the operator can audit at a glance. The agent's home directory (`~/.claude/`, `~/.codex/`) is image-baked and not bind-mounted; the runtime entrypoint copies the relevant files from `/jackin/` into the agent's home before launch. This isolates configuration that ships in the image (`settings.json`, hooks, memory) from auth/state forwarded by the host, and keeps in-container writes (token rotation, conversation history) inside the writable layer rather than leaking back to the host.
+All host→container handoff lives under a single tree (`/jackin/`) the operator can audit at a glance. The agent's home directory (`~/.claude/`, `~/.codex/`, `~/.local/share/amp/`) is image-baked and not bind-mounted; the runtime entrypoint copies the relevant files from `/jackin/` into the agent's home before launch. This isolates configuration that ships in the image (`settings.json`, hooks, memory) from auth/state forwarded by the host, and keeps in-container writes (token rotation, conversation history) inside the writable layer rather than leaking back to the host.
 
 `claude/account.json` is rebuilt as `{}` (empty object) by every non-sync auth mode so it is always present on disk; the bind mount is the gate for whether the file flows into the container, not the file's existence. `claude/credentials.json` is wiped on every non-sync mode and never bind-mounted under `ignore`/`api_key`/`oauth_token`.
 

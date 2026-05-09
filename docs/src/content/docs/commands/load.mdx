@@ -38,7 +38,7 @@ Load an agent into an isolated `Docker` container directly from the command line
 | `--force` | Acknowledge a dirty host working tree when materializing an isolated mount in non-interactive mode. Required only when (a) the workspace has at least one `worktree`-isolated mount and (b) the host repo's tree has staged, unstaged-tracked, or untracked files. Ignored otherwise. |
 | `--no-intro` | Skip the animated intro sequence |
 | `--debug` | Print raw container output for troubleshooting |
-| `--agent <NAME>` | Override the launch agent (`claude` or `codex`). When omitted on a multi-agent role with no `default_agent` on the workspace, an interactive prompt asks. |
+| `--agent <NAME>` | Override the launch agent (`claude`, `codex`, or `amp`). When omitted on a multi-agent role with no `default_agent` on the workspace, an interactive prompt asks. |
 
 ## Examples
 
@@ -83,7 +83,7 @@ jackin load the-architect --role-branch feat/my-pr
 8. Creates a per-agent Docker network and DinD sidecar
 9. Launches the agent container with all resolved mounts and environment variables
 10. Runs the pre-launch hook if declared
-11. Starts Claude Code with `--dangerously-skip-permissions`
+11. Starts the selected agent CLI
 
 <Aside type="note">
 If the agent manifest declares interactive environment variables, `jackin load` prompts for their values before building the Docker image. This ensures no build time is wasted if you cancel.

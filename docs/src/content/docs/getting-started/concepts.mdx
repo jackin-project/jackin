@@ -18,7 +18,7 @@ The operator never enters the container. You drive jackin' from your host machin
 
 ## Agents
 
-An **agent** is an AI coding runtime (`Claude Code` and `Codex` today; `Amp` under active development) running inside an isolated `Docker` container. Each agent:
+An **agent** is an AI coding runtime (`Claude Code`, `Codex`, and `Amp` today) running inside an isolated `Docker` container. Each agent:
 
 - Has its own filesystem, network, and process space
 - Runs at full speed inside the container — whatever "no permission prompts" mode the runtime ships (`Claude Code`'s `--dangerously-skip-permissions`, `Codex`'s YOLO, etc.) — because the boundary is the container, not the prompts

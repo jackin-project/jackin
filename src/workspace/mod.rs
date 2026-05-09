@@ -49,7 +49,7 @@ pub struct WorkspaceConfig {
     pub allowed_roles: Vec<String>,
     #[serde(default)]
     pub default_role: Option<String>,
-    /// Workspace-level default agent (claude or codex). When unset,
+    /// Workspace-level default agent (claude, codex, or amp). When unset,
     /// `resolved_agent()` falls back to Claude. The field is omitted
     /// from serialized output when `None` so legacy config files stay
     /// byte-for-byte stable.
@@ -77,6 +77,10 @@ pub struct WorkspaceConfig {
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex: Option<crate::config::CodexAuthConfig>,
+    /// Workspace-level Amp auth configuration. See `claude` above —
+    /// same role in the resolver, parallel field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amp: Option<crate::config::AmpAuthConfig>,
     /// Workspace-level GitHub CLI (`gh`) auth configuration. Middle
     /// layer of the layered resolver (global → workspace → workspace
     /// × role). GitHub auth is agent-neutral — `.config/gh/` is shared
@@ -144,6 +148,10 @@ pub struct WorkspaceRoleOverride {
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex: Option<crate::config::CodexAuthConfig>,
+    /// Per-(workspace × role) Amp auth override. See `claude` above —
+    /// same role in the resolver, parallel field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amp: Option<crate::config::AmpAuthConfig>,
     /// Per-(workspace × role) GitHub CLI auth override — most-specific
     /// layer of the layered resolver. The `[github]` axis has no agent
     /// dimension because `.config/gh/` is shared by every agent in the
@@ -745,6 +753,7 @@ isolation = "clone"
             keep_awake: KeepAwakeConfig::default(),
             claude: None,
             codex: None,
+            amp: None,
             github: None,
             git_pull_on_entry: false,
         };
@@ -767,6 +776,9 @@ auth_forward = "api_key"
 
 [codex]
 auth_forward = "sync"
+
+[amp]
+auth_forward = "api_key"
 "#;
         let cfg: WorkspaceConfig = toml::from_str(toml).unwrap();
         assert_eq!(
@@ -776,6 +788,10 @@ auth_forward = "sync"
         assert_eq!(
             cfg.codex.as_ref().unwrap().auth_forward,
             crate::config::AuthForwardMode::Sync,
+        );
+        assert_eq!(
+            cfg.amp.as_ref().unwrap().auth_forward,
+            crate::config::AuthForwardMode::ApiKey,
         );
     }
 
@@ -818,6 +834,8 @@ allowed_roles = ["smith"]
 auth_forward = "oauth_token"
 [roles.smith.codex]
 auth_forward = "ignore"
+[roles.smith.amp]
+auth_forward = "api_key"
 "#;
         let cfg: WorkspaceConfig = toml::from_str(toml).unwrap();
         let smith = cfg.roles.get("smith").expect("smith role must be present");
@@ -828,6 +846,10 @@ auth_forward = "ignore"
         assert_eq!(
             smith.codex.as_ref().unwrap().auth_forward,
             crate::config::AuthForwardMode::Ignore,
+        );
+        assert_eq!(
+            smith.amp.as_ref().unwrap().auth_forward,
+            crate::config::AuthForwardMode::ApiKey,
         );
     }
 
@@ -845,6 +867,10 @@ allowed_roles = ["smith"]
         assert!(
             cfg.codex.is_none(),
             "WorkspaceConfig.codex must default to None"
+        );
+        assert!(
+            cfg.amp.is_none(),
+            "WorkspaceConfig.amp must default to None"
         );
     }
 
@@ -884,6 +910,41 @@ auth_forward = "oauth_token"
     }
 
     #[test]
+    fn reject_amp_oauth_token_in_workspace() {
+        let toml = r#"
+workdir = "/tmp/proj"
+allowed_roles = ["smith"]
+
+[amp]
+auth_forward = "oauth_token"
+"#;
+        let err = toml::from_str::<WorkspaceConfig>(toml).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not supported for amp"),
+            "expected amp-rejection message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn reject_amp_oauth_token_in_workspace_role_override() {
+        let toml = r#"
+workdir = "/tmp/proj"
+allowed_roles = ["smith"]
+
+[roles.smith]
+[roles.smith.amp]
+auth_forward = "oauth_token"
+"#;
+        let err = toml::from_str::<WorkspaceConfig>(toml).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not supported for amp"),
+            "expected amp-rejection message, got: {msg}"
+        );
+    }
+
+    #[test]
     fn parse_workspace_role_override_without_agent_auth() {
         let toml = r#"
 workdir = "/tmp/proj"
@@ -900,6 +961,10 @@ allowed_roles = ["smith"]
         assert!(
             smith.codex.is_none(),
             "role override codex must default to None"
+        );
+        assert!(
+            smith.amp.is_none(),
+            "role override amp must default to None"
         );
     }
 }

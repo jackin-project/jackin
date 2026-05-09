@@ -383,8 +383,8 @@ pub enum AuthFormFocus {
 /// Committing the form writes back into the matching slot on
 /// `editor.pending`:
 ///
-///   - workspace `claude` / `codex` / `github` field, or
-///   - workspace-role override `claude` / `codex` / `github` field,
+///   - workspace `claude` / `codex` / `amp` / `github` field, or
+///   - workspace-role override `claude` / `codex` / `amp` / `github` field,
 ///
 /// plus the credential env var when the chosen mode requires one.
 ///
@@ -1182,6 +1182,7 @@ mod tests {
                 env: role_x_env,
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
             },
         );
@@ -1233,6 +1234,7 @@ mod tests {
                 },
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
             },
         );
@@ -1389,6 +1391,7 @@ mod tests {
             keep_awake: KeepAwakeConfig::default(),
             claude: None,
             codex: None,
+            amp: None,
             github: None,
             git_pull_on_entry: false,
         };

@@ -132,7 +132,7 @@ pub(super) fn build_agent_image(
     )?;
 
     // Extract and store the Claude version from the built image when launching
-    // Claude. Codex's V1 update path is explicit `--rebuild`.
+    // Claude. Codex and Amp use the explicit `--rebuild` path for now.
     if agent == crate::agent::Agent::Claude
         && let Ok(version) = runner.capture(
             "docker",

@@ -21,8 +21,12 @@ pub(crate) const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
 pub(crate) const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 pub(crate) const WHITE: Color = Color::Rgb(255, 255, 255);
 pub(crate) const DANGER_RED: Color = Color::Rgb(255, 94, 122);
-const AUTH_FORM_MODE_LABEL_WIDTH: usize = 12;
-const AUTH_FORM_CREDENTIAL_LABEL_WIDTH: usize = 22;
+// Width chosen so the longest credential env-var name
+// (`CLAUDE_CODE_OAUTH_TOKEN`, 23 chars) fits without overflow and the
+// Mode value column lines up with the credential value column when
+// rendered with a single-space separator.
+const AUTH_FORM_MODE_LABEL_WIDTH: usize = 23;
+const AUTH_FORM_CREDENTIAL_LABEL_WIDTH: usize = 23;
 
 /// Operator-facing slug for an [`AuthMode`]. Wraps
 /// [`AuthMode::as_str`] so the panel keeps a single re-export point
@@ -123,7 +127,7 @@ fn build_form_lines(form: &AuthForm, focus: AuthFormFocus) -> Vec<FormLine> {
             format!("{:<AUTH_FORM_MODE_LABEL_WIDTH$}", "Mode"),
             label_style(),
         ),
-        Span::raw("  "),
+        Span::raw(" "),
         Span::styled(mode_text.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
     ])));
 
@@ -159,7 +163,7 @@ fn credential_env_line(env_var: &str, cred: &CredentialInput, selected: bool) ->
             format!("{env_var:<AUTH_FORM_CREDENTIAL_LABEL_WIDTH$}"),
             label_style,
         ),
-        Span::raw("  "),
+        Span::raw(" "),
     ];
     match cred {
         CredentialInput::None => {
@@ -399,7 +403,7 @@ mod form_render_tests {
         });
         let s = dump_form(&form);
         assert!(
-            s.contains("CLAUDE_CODE_OAUTH_TOKEN  Boris / Roblox → token"),
+            s.contains("CLAUDE_CODE_OAUTH_TOKEN Boris / Roblox → token"),
             "env var and breadcrumb should have a visible gap; dump:\n{s}"
         );
     }

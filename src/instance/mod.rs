@@ -152,27 +152,28 @@ pub enum GithubProvisionKind {
 /// Agent-specific paths that belong to one variant.
 ///
 /// Encoded as an enum so the agent variant and the actual paths can
-/// never disagree — the previous shape (`Option<PathBuf>` plus a
-/// runtime invariant "Some iff agent == Codex" enforced by `expect()`
-/// across two functions) is now a compile-checked match.
+/// never disagree.
 ///
 /// All host paths land under `/jackin/<agent>/...` inside the
 /// container. The agent's expected home-relative paths
-/// (`~/.claude.json`, `~/.codex/auth.json`, …) are NOT bind-mounted
-/// directly: jackin's entrypoint copies the relevant files from
-/// `/jackin/` into the agent's home before launch. This isolates the
-/// host→container handoff to a single tree (`/jackin/`) the operator
-/// can audit at a glance, and frees `/home/agent/.claude/` and
-/// `/home/agent/.codex/` to carry image-baked config (settings.json,
-/// hooks/, memory/) without being masked by a runtime mount.
+/// (`~/.claude.json`, `~/.codex/auth.json`, `~/.local/share/amp/secrets.json`,
+/// …) are NOT bind-mounted directly: jackin's entrypoint copies the
+/// relevant files from `/jackin/` into the agent's home before launch.
+/// This isolates the host→container handoff to a single tree (`/jackin/`)
+/// the operator can audit at a glance, and frees the agent's home tree
+/// (`/home/agent/.claude/`, `/home/agent/.codex/`,
+/// `/home/agent/.local/share/amp/`) to carry image-baked config without
+/// being masked by a runtime mount.
 ///
-/// Path fields hold the host filesystem location regardless of whether
-/// the file gets bind-mounted; the mount decision is encoded in
-/// `forward_auth` (Claude) or in the optional path fields directly
-/// (Codex). `forward_auth = false` means the agent authenticates via
-/// env vars (`CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`) and the
-/// auth files must not flow into the container even though they exist
-/// on the host (`wipe_claude_state` leaves a `{}` shell behind).
+/// The mount decision is encoded in `forward_auth` (Claude) or in the
+/// optional path fields directly (Codex/Amp). For Claude,
+/// `forward_auth = false` means the agent authenticates via env vars
+/// (`CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`) and the auth files
+/// must not flow into the container even though they exist on the host
+/// (`wipe_claude_state` leaves a `{}` shell behind). For Codex/Amp,
+/// `None` on the optional path field means the same thing — wiped on
+/// disk, no mount, env-driven authentication
+/// (`OPENAI_API_KEY` / `AMP_API_KEY`).
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum AgentRuntimeState {
@@ -205,6 +206,15 @@ pub enum AgentRuntimeState {
         /// writable layer (lost on `docker rm`).
         auth_json: Option<PathBuf>,
     },
+    Amp {
+        /// Host path mounted at `/jackin/amp/secrets.json`. `None`
+        /// when env-driven modes wiped it or sync had no host file
+        /// to copy and no carry-over to preserve.
+        ///
+        /// `XDG_DATA` path. `~/.config/amp/settings.json` (`XDG_CONFIG`)
+        /// holds preferences only and is intentionally not forwarded.
+        secrets_json: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -230,7 +240,7 @@ impl RoleState {
     pub fn claude_account_json(&self) -> Option<&Path> {
         match &self.agent_runtime {
             AgentRuntimeState::Claude { account_json, .. } => Some(account_json),
-            AgentRuntimeState::Codex { .. } => None,
+            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp { .. } => None,
         }
     }
 
@@ -246,7 +256,7 @@ impl RoleState {
             AgentRuntimeState::Claude {
                 credentials_json, ..
             } => Some(credentials_json),
-            AgentRuntimeState::Codex { .. } => None,
+            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp { .. } => None,
         }
     }
 
@@ -272,7 +282,7 @@ impl RoleState {
     pub fn codex_config_toml(&self) -> Option<&Path> {
         match &self.agent_runtime {
             AgentRuntimeState::Codex { config_toml, .. } => Some(config_toml),
-            AgentRuntimeState::Claude { .. } => None,
+            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp { .. } => None,
         }
     }
 
@@ -285,7 +295,17 @@ impl RoleState {
     pub fn codex_auth_json(&self) -> Option<&Path> {
         match &self.agent_runtime {
             AgentRuntimeState::Codex { auth_json, .. } => auth_json.as_deref(),
-            AgentRuntimeState::Claude { .. } => None,
+            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp { .. } => None,
+        }
+    }
+
+    /// Host path to Amp's `secrets.json`. `None` when no file is
+    /// available or when this state was not prepared for `Agent::Amp`.
+    #[must_use]
+    pub fn amp_secrets_json(&self) -> Option<&Path> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Amp { secrets_json, .. } => secrets_json.as_deref(),
+            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Codex { .. } => None,
         }
     }
 }
@@ -376,6 +396,14 @@ impl RoleState {
                     },
                     outcome,
                 )
+            }
+            crate::agent::Agent::Amp => {
+                let amp_dir = root.join("amp");
+                std::fs::create_dir_all(&amp_dir)?;
+                let secrets_json_path = amp_dir.join("secrets.json");
+                let (outcome, secrets_json) =
+                    Self::provision_amp_auth(&secrets_json_path, auth_forward, host_home)?;
+                (AgentRuntimeState::Amp { secrets_json }, outcome)
             }
         };
 

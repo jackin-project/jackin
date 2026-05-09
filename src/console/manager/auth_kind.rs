@@ -5,7 +5,7 @@
 //! fake `Agent::Github` variant on the runtime layer.
 //!
 //! `AuthKind` names which auth section the operator is editing in the
-//! workspace-manager Auth tab. Claude and Codex map 1:1 onto the
+//! workspace-manager Auth tab. Claude, Codex, and Amp map 1:1 onto the
 //! `Agent` enum (they are runtimes); Github is a non-runtime kind —
 //! no install block, no launch entrypoint, no version probe — but it
 //! still has its own `auth_forward` axis at three layers (global,
@@ -28,6 +28,7 @@ use crate::config::{AuthForwardMode, GithubAuthMode};
 pub enum AuthKind {
     Claude,
     Codex,
+    Amp,
     Github,
 }
 
@@ -39,6 +40,7 @@ impl AuthKind {
         match self {
             Self::Claude => "Claude Code",
             Self::Codex => "Codex",
+            Self::Amp => "Amp",
             Self::Github => "GitHub CLI",
         }
     }
@@ -56,7 +58,7 @@ impl AuthKind {
                 AuthMode::OAuthToken,
                 AuthMode::Ignore,
             ],
-            Self::Codex => &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore],
+            Self::Codex | Self::Amp => &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore],
             Self::Github => &[AuthMode::Sync, AuthMode::Token, AuthMode::Ignore],
         }
     }
@@ -71,6 +73,7 @@ impl AuthKind {
             (Self::Claude, AuthMode::ApiKey) => Some("ANTHROPIC_API_KEY"),
             (Self::Claude, AuthMode::OAuthToken) => Some("CLAUDE_CODE_OAUTH_TOKEN"),
             (Self::Codex, AuthMode::ApiKey) => Some("OPENAI_API_KEY"),
+            (Self::Amp, AuthMode::ApiKey) => Some("AMP_API_KEY"),
             (Self::Github, AuthMode::Token) => Some(crate::env_model::GH_TOKEN_ENV_NAME),
             _ => None,
         }
@@ -84,6 +87,7 @@ impl AuthKind {
         match agent {
             Agent::Claude => Self::Claude,
             Agent::Codex => Self::Codex,
+            Agent::Amp => Self::Amp,
         }
     }
 
@@ -96,6 +100,7 @@ impl AuthKind {
         match self {
             Self::Claude => Some(Agent::Claude),
             Self::Codex => Some(Agent::Codex),
+            Self::Amp => Some(Agent::Amp),
             Self::Github => None,
         }
     }
@@ -109,6 +114,7 @@ impl AuthKind {
         match self {
             Self::Claude => ro.claude.is_some(),
             Self::Codex => ro.codex.is_some(),
+            Self::Amp => ro.amp.is_some(),
             Self::Github => ro.github.is_some(),
         }
     }
@@ -202,6 +208,7 @@ mod tests {
     fn label_matches_design_spec() {
         assert_eq!(AuthKind::Claude.label(), "Claude Code");
         assert_eq!(AuthKind::Codex.label(), "Codex");
+        assert_eq!(AuthKind::Amp.label(), "Amp");
         assert_eq!(AuthKind::Github.label(), "GitHub CLI");
     }
 
@@ -220,6 +227,13 @@ mod tests {
     #[test]
     fn codex_supported_modes_exclude_oauth_token_and_token() {
         let modes = AuthKind::Codex.supported_modes();
+        assert!(!modes.contains(&AuthMode::OAuthToken));
+        assert!(!modes.contains(&AuthMode::Token));
+    }
+
+    #[test]
+    fn amp_supported_modes_exclude_oauth_token_and_token() {
+        let modes = AuthKind::Amp.supported_modes();
         assert!(!modes.contains(&AuthMode::OAuthToken));
         assert!(!modes.contains(&AuthMode::Token));
     }
@@ -253,9 +267,21 @@ mod tests {
     }
 
     #[test]
+    fn amp_required_env_vars_match_runtime_table() {
+        assert_eq!(
+            AuthKind::Amp.required_env_var(AuthMode::ApiKey),
+            Some("AMP_API_KEY")
+        );
+        assert_eq!(AuthKind::Amp.required_env_var(AuthMode::Sync), None);
+        assert_eq!(AuthKind::Amp.required_env_var(AuthMode::Ignore), None);
+        assert_eq!(AuthKind::Amp.required_env_var(AuthMode::OAuthToken), None);
+    }
+
+    #[test]
     fn for_agent_round_trip() {
         assert_eq!(AuthKind::for_agent(Agent::Claude), AuthKind::Claude);
         assert_eq!(AuthKind::for_agent(Agent::Codex), AuthKind::Codex);
+        assert_eq!(AuthKind::for_agent(Agent::Amp), AuthKind::Amp);
     }
 
     #[test]
@@ -263,6 +289,7 @@ mod tests {
         assert_eq!(AuthKind::Github.agent(), None);
         assert_eq!(AuthKind::Claude.agent(), Some(Agent::Claude));
         assert_eq!(AuthKind::Codex.agent(), Some(Agent::Codex));
+        assert_eq!(AuthKind::Amp.agent(), Some(Agent::Amp));
     }
 
     #[test]
@@ -306,6 +333,7 @@ mod tests {
         let ro = crate::config::WorkspaceRoleOverride::default();
         assert!(!AuthKind::Claude.role_override_present(&ro));
         assert!(!AuthKind::Codex.role_override_present(&ro));
+        assert!(!AuthKind::Amp.role_override_present(&ro));
         assert!(!AuthKind::Github.role_override_present(&ro));
     }
 
@@ -320,6 +348,7 @@ mod tests {
         };
         assert!(AuthKind::Claude.role_override_present(&ro));
         assert!(!AuthKind::Codex.role_override_present(&ro));
+        assert!(!AuthKind::Amp.role_override_present(&ro));
         assert!(!AuthKind::Github.role_override_present(&ro));
 
         // Codex-only override → only Codex returns true.
@@ -333,6 +362,21 @@ mod tests {
         };
         assert!(!AuthKind::Claude.role_override_present(&ro));
         assert!(AuthKind::Codex.role_override_present(&ro));
+        assert!(!AuthKind::Amp.role_override_present(&ro));
+        assert!(!AuthKind::Github.role_override_present(&ro));
+
+        // Amp-only override → only Amp returns true.
+        let ro = crate::config::WorkspaceRoleOverride {
+            amp: Some(crate::config::AmpAuthConfig(
+                crate::config::AgentAuthConfig {
+                    auth_forward: crate::config::AuthForwardMode::ApiKey,
+                },
+            )),
+            ..crate::config::WorkspaceRoleOverride::default()
+        };
+        assert!(!AuthKind::Claude.role_override_present(&ro));
+        assert!(!AuthKind::Codex.role_override_present(&ro));
+        assert!(AuthKind::Amp.role_override_present(&ro));
         assert!(!AuthKind::Github.role_override_present(&ro));
 
         // Github-only override → only Github returns true.
@@ -345,16 +389,22 @@ mod tests {
         };
         assert!(!AuthKind::Claude.role_override_present(&ro));
         assert!(!AuthKind::Codex.role_override_present(&ro));
+        assert!(!AuthKind::Amp.role_override_present(&ro));
         assert!(AuthKind::Github.role_override_present(&ro));
     }
 
     #[test]
-    fn role_override_present_all_three_kinds_set() {
+    fn role_override_present_all_kinds_set() {
         let ro = crate::config::WorkspaceRoleOverride {
             claude: Some(crate::config::AgentAuthConfig {
                 auth_forward: crate::config::AuthForwardMode::Sync,
             }),
             codex: Some(crate::config::CodexAuthConfig(
+                crate::config::AgentAuthConfig {
+                    auth_forward: crate::config::AuthForwardMode::Sync,
+                },
+            )),
+            amp: Some(crate::config::AmpAuthConfig(
                 crate::config::AgentAuthConfig {
                     auth_forward: crate::config::AuthForwardMode::Sync,
                 },
@@ -367,6 +417,7 @@ mod tests {
         };
         assert!(AuthKind::Claude.role_override_present(&ro));
         assert!(AuthKind::Codex.role_override_present(&ro));
+        assert!(AuthKind::Amp.role_override_present(&ro));
         assert!(AuthKind::Github.role_override_present(&ro));
     }
 }

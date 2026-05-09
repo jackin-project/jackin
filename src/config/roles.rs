@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 /// 3. `<agent>.auth_forward` (global)
 ///
 /// Returns [`AuthForwardMode::Sync`] if no layer is set. The `<agent>`
-/// selector picks the `claude` vs `codex` field at each layer.
+/// selector picks the matching per-agent field at each layer.
 ///
 /// Passing `workspace = ""` (or any name not present in the config)
 /// naturally falls through to the global layer; this is the supported
@@ -28,6 +28,7 @@ pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) 
         .and_then(|ro| match agent {
             Agent::Claude => ro.claude.as_ref().map(|c| c.auth_forward),
             Agent::Codex => ro.codex.as_ref().map(|c| c.auth_forward),
+            Agent::Amp => ro.amp.as_ref().map(|c| c.auth_forward),
         })
     {
         return m;
@@ -37,6 +38,7 @@ pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) 
     if let Some(m) = cfg.workspaces.get(workspace).and_then(|ws| match agent {
         Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
         Agent::Codex => ws.codex.as_ref().map(|c| c.auth_forward),
+        Agent::Amp => ws.amp.as_ref().map(|c| c.auth_forward),
     }) {
         return m;
     }
@@ -45,6 +47,7 @@ pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) 
     match agent {
         Agent::Claude => cfg.claude.as_ref().map(|c| c.auth_forward),
         Agent::Codex => cfg.codex.as_ref().map(|c| c.auth_forward),
+        Agent::Amp => cfg.amp.as_ref().map(|c| c.auth_forward),
     }
     .unwrap_or_default()
 }
@@ -463,8 +466,8 @@ mod resolve_mode_tests {
     use super::*;
     use crate::agent::Agent;
     use crate::config::{
-        AgentAuthConfig, AppConfig, AuthForwardMode, CodexAuthConfig, GithubAuthConfig,
-        GithubAuthMode,
+        AgentAuthConfig, AmpAuthConfig, AppConfig, AuthForwardMode, CodexAuthConfig,
+        GithubAuthConfig, GithubAuthMode,
     };
     use crate::operator_env::EnvValue;
     use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
@@ -605,6 +608,20 @@ mod resolve_mode_tests {
         };
         assert_eq!(
             resolve_mode(&cfg, Agent::Codex, "proj", "smith"),
+            AuthForwardMode::ApiKey
+        );
+    }
+
+    #[test]
+    fn amp_uses_amp_layer() {
+        let cfg = AppConfig {
+            amp: Some(AmpAuthConfig(AgentAuthConfig {
+                auth_forward: AuthForwardMode::ApiKey,
+            })),
+            ..AppConfig::default()
+        };
+        assert_eq!(
+            resolve_mode(&cfg, Agent::Amp, "proj", "smith"),
             AuthForwardMode::ApiKey
         );
     }
