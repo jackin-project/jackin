@@ -101,8 +101,9 @@ host ↔ container boundary is the operator's call.
 
 `Claude Code`'s `--dangerously-skip-permissions`, `Codex`'s
 `workspace-write` + `--dangerously-bypass-approvals-and-sandbox`
-(aliased `--yolo`), and the equivalents shipping in every other
-agent runtime — jackin' enables all of them by default.
+(aliased `--yolo`), `Amp`'s `--dangerously-allow-all`, and the
+equivalents shipping in every other agent runtime — jackin'
+enables all of them by default.
 
 The reason this is safe: the container, not the in-runtime
 prompt, is the trust boundary. Once you've decided to drop an

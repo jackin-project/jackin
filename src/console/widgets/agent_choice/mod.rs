@@ -14,7 +14,6 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
 const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 const WHITE: Color = Color::Rgb(255, 255, 255);
-const AGENTS: [Agent; 3] = [Agent::Claude, Agent::Codex, Agent::Amp];
 
 #[derive(Debug, Clone)]
 pub struct AgentChoiceState {
@@ -28,19 +27,19 @@ impl AgentChoiceState {
         }
     }
 
-    pub const fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<Agent> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<Agent> {
         match key.code {
             KeyCode::Down | KeyCode::Char('j') => {
                 let idx = focus_index(self.focused);
-                if idx + 1 < AGENTS.len() {
-                    self.focused = AGENTS[idx + 1];
+                if idx + 1 < Agent::ALL.len() {
+                    self.focused = Agent::ALL[idx + 1];
                 }
                 ModalOutcome::Continue
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 let idx = focus_index(self.focused);
                 if idx > 0 {
-                    self.focused = AGENTS[idx - 1];
+                    self.focused = Agent::ALL[idx - 1];
                 }
                 ModalOutcome::Continue
             }
@@ -51,11 +50,18 @@ impl AgentChoiceState {
     }
 }
 
-const fn focus_index(agent: Agent) -> usize {
+fn focus_index(agent: Agent) -> usize {
+    Agent::ALL
+        .iter()
+        .position(|a| *a == agent)
+        .expect("Agent::ALL contains every Agent variant")
+}
+
+const fn agent_picker_label(agent: Agent) -> &'static str {
     match agent {
-        Agent::Claude => 0,
-        Agent::Codex => 1,
-        Agent::Amp => 2,
+        Agent::Claude => "Claude",
+        Agent::Codex => "Codex",
+        Agent::Amp => "Amp",
     }
 }
 
@@ -97,11 +103,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentChoiceState) {
         ])
         .split(inner);
 
-    let lines = vec![
-        make_row(Agent::Claude, "Claude"),
-        make_row(Agent::Codex, "Codex"),
-        make_row(Agent::Amp, "Amp"),
-    ];
+    let lines: Vec<Line> = Agent::ALL
+        .iter()
+        .map(|a| make_row(*a, agent_picker_label(*a)))
+        .collect();
     frame.render_widget(Paragraph::new(lines), rows[0]);
 
     let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);

@@ -22,9 +22,9 @@ pub enum ConfigCommand {
 pub enum EnvCommand {
     /// Set an env var at global or per-role scope
     ///
-    /// Without `--role`, writes to the global `[env]` table. With
-    /// `--role <SELECTOR>`, writes to `[roles.<selector>.env]`. The role
-    /// selector is not pre-validated — the table path is written regardless
+    /// Without `--role`, writes the env var globally. With
+    /// `--role <SELECTOR>`, scopes it to that role only. The role
+    /// selector is not pre-validated — the value is recorded regardless
     /// of whether that role is registered, matching `config auth set`.
     #[command(
         before_help = BANNER,
@@ -43,7 +43,7 @@ Examples:
         /// Apply to a specific role instead of globally
         #[arg(long)]
         role: Option<String>,
-        /// Write a TOML comment line above the key
+        /// Attach a comment to the key (recorded alongside the value)
         #[arg(long)]
         comment: Option<String>,
     },
@@ -84,22 +84,21 @@ Examples:
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum AuthCommand {
-    /// Set the global Claude authentication forwarding mode
+    /// Set the global authentication forwarding mode for an agent
     ///
-    /// Controls how the host's Claude authentication is made available to
-    /// role containers at the global layer (writes `[claude].auth_forward`).
-    /// The Codex, Amp, and GitHub axes have their own per-axis blocks
-    /// (`[codex]` / `[amp]` / `[github]`) and are configured through the
-    /// operator console's Auth tab today, not this CLI verb — extending
-    /// `auth set` to take an explicit agent argument is a tracked follow-up.
+    /// Controls how the host's agent authentication is made available to
+    /// role containers at the global layer. Defaults to `claude` when
+    /// `--agent` is omitted. GitHub CLI auth is configured through the
+    /// operator console's Auth tab today, not this CLI verb.
     ///
     /// Modes: sync (default — overwrite container auth from host on each
     /// launch when host auth exists; preserve container auth when host auth
-    /// is absent), ignore (revoke and never forward), `oauth_token` (use a
-    /// long-lived `CLAUDE_CODE_OAUTH_TOKEN` resolved from the operator env),
-    /// `api_key` (use a short-lived `ANTHROPIC_API_KEY` resolved from the
-    /// operator env). Tokens and keys are never written to disk; see
-    /// `jackin` docs on auth forwarding for setup.
+    /// is absent), ignore (revoke and never forward), `oauth_token` (Claude
+    /// only — long-lived `CLAUDE_CODE_OAUTH_TOKEN` resolved from the operator
+    /// env), `api_key` (short-lived `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
+    /// `AMP_API_KEY` from the operator env). Tokens and keys are never
+    /// written to disk. Modes unsupported by the chosen agent are rejected
+    /// — see `jackin` docs on auth forwarding for setup.
     #[command(
         before_help = BANNER,
         styles = HELP_STYLES,
@@ -108,11 +107,16 @@ Examples:
   jackin config auth set sync
   jackin config auth set ignore
   jackin config auth set oauth_token
-  jackin config auth set api_key"
+  jackin config auth set api_key
+  jackin config auth set api_key --agent codex
+  jackin config auth set sync --agent amp"
     )]
     Set {
         /// Authentication forwarding mode: sync, ignore, `api_key`, or `oauth_token`
         mode: String,
+        /// Agent to configure: `claude` (default), `codex`, or `amp`.
+        #[arg(long, default_value = "claude")]
+        agent: String,
     },
     /// Show the current authentication forwarding mode
     #[command(
@@ -397,13 +401,13 @@ mod tests {
     }
 
     #[test]
-    fn parses_config_auth_set_global() {
+    fn parses_config_auth_set_global_defaults_to_claude() {
         let cli = Cli::try_parse_from(["jackin", "config", "auth", "set", "sync"]).unwrap();
         assert!(matches!(
             cli.command,
             Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
-                        ref mode,
-                    }))) if mode == "sync"
+                        ref mode, ref agent,
+                    }))) if mode == "sync" && agent == "claude"
         ));
     }
 
@@ -413,8 +417,22 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
-                        ref mode,
+                        ref mode, ..
                     }))) if mode == "oauth_token"
+        ));
+    }
+
+    #[test]
+    fn parses_config_auth_set_with_agent_flag() {
+        let cli = Cli::try_parse_from([
+            "jackin", "config", "auth", "set", "api_key", "--agent", "codex",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Config(ConfigCommand::Auth(AuthCommand::Set {
+                        ref mode, ref agent,
+                    }))) if mode == "api_key" && agent == "codex"
         ));
     }
 

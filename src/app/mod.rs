@@ -30,6 +30,12 @@ fn parse_auth_forward_mode_from_cli(raw: &str) -> anyhow::Result<config::AuthFor
     raw.parse().map_err(|e: String| anyhow::anyhow!("{e}"))
 }
 
+/// Parse an agent slug as it arrived from the CLI.
+fn parse_agent_from_cli(raw: &str) -> anyhow::Result<crate::agent::Agent> {
+    raw.parse()
+        .map_err(|_| anyhow::anyhow!("unknown agent {raw:?}; expected one of: claude, codex, amp"))
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn run(cli: Cli) -> Result<()> {
     let paths = JackinPaths::detect()?;
@@ -366,12 +372,20 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
             },
             cli::ConfigCommand::Auth(auth_cmd) => match auth_cmd {
-                cli::AuthCommand::Set { mode } => {
+                cli::AuthCommand::Set { mode, agent } => {
+                    let parsed_agent = parse_agent_from_cli(&agent)?;
                     let parsed_mode = parse_auth_forward_mode_from_cli(&mode)?;
+                    if !parsed_agent.supported_modes().contains(&parsed_mode) {
+                        anyhow::bail!(
+                            "auth_forward {parsed_mode} is not supported for {parsed_agent}; \
+                             supported modes: {:?}",
+                            parsed_agent.supported_modes()
+                        );
+                    }
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
-                    editor.set_global_auth_forward(parsed_mode);
+                    editor.set_global_auth_forward(parsed_agent, parsed_mode);
                     editor.save()?;
-                    println!("Set global Claude auth forwarding to {parsed_mode}.");
+                    println!("Set global {parsed_agent} auth forwarding to {parsed_mode}.");
                     Ok(())
                 }
                 cli::AuthCommand::Show => {

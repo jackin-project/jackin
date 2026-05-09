@@ -11,6 +11,10 @@ pub enum Agent {
 }
 
 impl Agent {
+    /// Every variant in declaration order. Iteration sites consult
+    /// this instead of hand-rolling their own array.
+    pub const ALL: &'static [Self] = &[Self::Claude, Self::Codex, Self::Amp];
+
     pub const fn slug(self) -> &'static str {
         match self {
             Self::Claude => "claude",
