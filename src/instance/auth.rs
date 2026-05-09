@@ -120,15 +120,21 @@ impl RoleState {
                     AuthProvisionOutcome::HostMissing
                 }
                 Err(e) => {
-                    // Surface unexpected read errors (EACCES, EIO, ENOTDIR,
-                    // …) instead of misdiagnosing them as "host missing"
-                    // and silently dropping the operator into a re-login
-                    // loop they cannot escape until they notice the bad
-                    // permission/dir/etc. on `~/.codex/auth.json`.
-                    anyhow::bail!(
-                        "failed to read host {}: {e} (run with --debug to capture the underlying error)",
-                        host_auth_json.display()
-                    );
+                    // Preserve `io::Error` source chain so `{e:#}` /
+                    // `--debug` exposes the kind (PermissionDenied,
+                    // NotADirectory) instead of misdiagnosing as
+                    // host-missing.
+                    let hint = match e.kind() {
+                        std::io::ErrorKind::PermissionDenied => {
+                            " (check host file permissions on the parent dir)"
+                        }
+                        _ => "",
+                    };
+                    return Err(anyhow::Error::new(e).context(format!(
+                        "failed to read host {}{}",
+                        host_auth_json.display(),
+                        hint
+                    )));
                 }
             },
         };
@@ -544,6 +550,19 @@ impl RoleState {
                 AuthProvisionOutcome::Skipped
             }
             AuthForwardMode::Sync => match std::fs::read_to_string(&host_secrets) {
+                Ok(content) if content.trim().is_empty() => {
+                    // Empty/whitespace host file would otherwise silently
+                    // copy as Synced and the agent would re-prompt login
+                    // inside the container with no breadcrumb.
+                    eprintln!(
+                        "[jackin] host {} is empty/whitespace — treating as host-missing",
+                        host_secrets.display()
+                    );
+                    if secrets_json.exists() {
+                        repair_permissions(secrets_json);
+                    }
+                    AuthProvisionOutcome::HostMissing
+                }
                 Ok(content) => {
                     write_private_file(secrets_json, &content).with_context(|| {
                         format!(
@@ -750,24 +769,37 @@ fn write_private_file(path: &Path, content: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tighten permissions on an existing file to `0o600` if it exists.
-/// Refuses to operate on symlinks.  No-op on non-Unix or if the file
-/// doesn't exist.
+/// Tighten permissions on an existing file to `0o600`. No-op on
+/// symlinks, non-Unix, or missing files. Errors are logged rather
+/// than returned: callers are mid-Sync and must not abort the launch,
+/// but a silent chmod failure on a credential file is a security
+/// regression.
 fn repair_permissions(path: &Path) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        // Use symlink_metadata so we don't follow symlinks.
-        if let Ok(meta) = std::fs::symlink_metadata(path) {
-            if meta.file_type().is_symlink() {
-                eprintln!(
-                    "[jackin] warning: refusing to chmod symlink at {}",
-                    path.display()
-                );
-                return;
+        match std::fs::symlink_metadata(path) {
+            Ok(meta) => {
+                if meta.file_type().is_symlink() {
+                    eprintln!(
+                        "[jackin] warning: refusing to chmod symlink at {}",
+                        path.display()
+                    );
+                    return;
+                }
+                if meta.is_file()
+                    && let Err(e) =
+                        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+                {
+                    eprintln!(
+                        "[jackin] warning: failed to chmod 0o600 on {}: {e}",
+                        path.display()
+                    );
+                }
             }
-            if meta.is_file() {
-                let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                eprintln!("[jackin] warning: stat failed on {}: {e}", path.display());
             }
         }
     }
@@ -2711,6 +2743,110 @@ mod amp_auth_tests {
             !rendered.contains("not found")
                 && !rendered.to_ascii_lowercase().contains("nonexistent"),
             "EACCES must not be reported as not-found: {rendered}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn synced_secrets_json_has_restricted_permissions() {
+        // Bypassing `write_private_file` would land at 0o644 and leak
+        // the token. Pin 0o600 explicitly.
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempdir().unwrap();
+        let secrets_json = temp.path().join("secrets.json");
+        let host_home = stage_host_secrets(
+            &temp,
+            "{\"apiKey@https://ampcode.com/\":\"sgamp_user_test\"}",
+        );
+
+        RoleState::provision_amp_auth(&secrets_json, AuthForwardMode::Sync, &host_home).unwrap();
+
+        let mode = std::fs::metadata(&secrets_json)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "synced secrets.json must be 0o600, got {mode:o}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sync_repairs_permissions_when_host_secrets_missing() {
+        // HostMissing is the only path that carries a prior file
+        // across launches; the arm must tighten its perms.
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempdir().unwrap();
+        let secrets_json = temp.path().join("secrets.json");
+        std::fs::write(&secrets_json, "{\"in_container_login\":true}").unwrap();
+        std::fs::set_permissions(&secrets_json, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let host_home = temp.path().join("empty_host_home");
+
+        let (outcome, _) =
+            RoleState::provision_amp_auth(&secrets_json, AuthForwardMode::Sync, &host_home)
+                .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+        let mode = std::fs::metadata(&secrets_json)
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(
+            mode, 0o600,
+            "HostMissing must repair the carry-over file's permissions; got {mode:o}"
+        );
+    }
+
+    #[test]
+    fn sync_ignores_xdg_config_settings_json_decoy() {
+        // Catches a regression that swapped the Sync source from
+        // XDG_DATA `secrets.json` to XDG_CONFIG `settings.json`.
+        let temp = tempdir().unwrap();
+        let secrets_json = temp.path().join("secrets.json");
+        let host_home = temp.path().join("host_home");
+
+        // Only the XDG_CONFIG decoy exists; the canonical XDG_DATA
+        // path is empty.
+        let xdg_config = host_home.join(".config/amp");
+        std::fs::create_dir_all(&xdg_config).unwrap();
+        std::fs::write(xdg_config.join("settings.json"), "WRONG").unwrap();
+
+        let (outcome, mounted) =
+            RoleState::provision_amp_auth(&secrets_json, AuthForwardMode::Sync, &host_home)
+                .unwrap();
+
+        assert_eq!(
+            outcome,
+            AuthProvisionOutcome::HostMissing,
+            "decoy at XDG_CONFIG must not produce a Sync"
+        );
+        assert!(mounted.is_none());
+        assert!(
+            !secrets_json.exists(),
+            "decoy contents must not be copied into the role state"
+        );
+    }
+
+    #[test]
+    fn sync_treats_empty_host_secrets_as_host_missing() {
+        // Without this guard, an empty host file would be Synced and
+        // the agent would fail to auth with no breadcrumb.
+        let temp = tempdir().unwrap();
+        let secrets_json = temp.path().join("secrets.json");
+        let host_home = stage_host_secrets(&temp, "   \n\t  \n");
+
+        let (outcome, mounted) =
+            RoleState::provision_amp_auth(&secrets_json, AuthForwardMode::Sync, &host_home)
+                .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+        assert!(mounted.is_none());
+        assert!(
+            !secrets_json.exists(),
+            "empty host file must not produce a role-state copy"
         );
     }
 }

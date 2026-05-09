@@ -229,8 +229,8 @@ Examples:
 pub enum WorkspaceEnvCommand {
     /// Set an env var at workspace or workspace-role scope
     ///
-    /// Without `--role`, writes to `[workspaces.<workspace>.env]`. With
-    /// `--role <SELECTOR>`, writes to `[workspaces.<workspace>.roles.<selector>.env]`.
+    /// Without `--role`, scopes the env var to the whole workspace. With
+    /// `--role <SELECTOR>`, narrows it to that role within the workspace.
     /// The role selector is not pre-validated.
     #[command(
         before_help = BANNER,
@@ -251,7 +251,7 @@ Examples:
         /// Apply to a specific role inside this workspace
         #[arg(long)]
         role: Option<String>,
-        /// Write a TOML comment line above the key
+        /// Attach a comment to the key (recorded alongside the value)
         #[arg(long)]
         comment: Option<String>,
     },

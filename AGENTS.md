@@ -128,6 +128,33 @@ If you are uncertain which agent is creating the commit, ask — the trailer is 
 
 All review-time rules — accepted-exception catalog, design-principles check, applying review fixes, iterating on operator feedback — live in [`PULL_REQUESTS.md`](PULL_REQUESTS.md). Read that file before reviewing or iterating on any PR.
 
+## Code comments — explain only what is not obvious
+
+**Comments earn their place by encoding non-obvious WHY, not by narrating WHAT.** Well-named identifiers, type signatures, and surrounding code already say what the code does; a comment that repeats them is noise that pushes real signal off the screen and rots faster than the code it describes.
+
+Comment when, and only when, one of these is true:
+
+- The code looks suspicious, weird, or wrong on first read but is intentional. Name the constraint that forced it (TOCTOU, parser-bypass safety, ordering invariant, race window, kernel quirk, upstream bug).
+- A non-local invariant is being preserved. Point at the invariant and the call site that depends on it.
+- The shape could reasonably be written a different way. Name the trade-off that picked the current shape.
+- The code interacts with an externally documented behaviour an unfamiliar reader would not predict (POSIX edge case, Docker daemon quirk, library footgun).
+
+Do not comment when:
+
+- The identifier name already says it (`fn provision_amp_auth` does not need `// Provision Amp auth`).
+- The function signature already says it (`Result<T, io::Error>` does not need `// returns an io::Error on failure`).
+- The control flow says it (`for x in items { … }` does not need `// loop over items`).
+- The diff says it (`// renamed from foo`, `// added in PR #N`, `// previously did X`).
+
+Style:
+
+- Prefer one sentence to a paragraph. Trim until removing one more word would make the comment unclear.
+- Lead with the constraint, not the code. "TOCTOU on settings.json: …" beats "We do this thing because there is a TOCTOU…".
+- Drop "mirrors X" / "matches Y" parallel-structure narration — the parallel code structure already encodes that, and the cross-reference dates the moment one side drifts.
+- Code blocks, function names, error strings, and CLI flag names are exact and never abbreviated; English prose around them is as terse as possible.
+
+This rule applies to inline `//` comments, multi-line `/// `/// `//!` doc comments, and to test-method docstrings. Operator-facing surfaces (`clap` `--help` text, `eprintln!` lines the operator sees, README prose) follow the docs split rules in `docs/AGENTS.md` instead — those are not "comments" in the sense above.
+
 ## Walking the operator through local validation (agent-only)
 
 When walking the operator through manual validation of a jackin feature (smoke testing a PR, reproducing a bug, executing a PR test plan), every `jackin <subcommand>` invocation in the recipe MUST include `--debug`. That includes `cargo run --bin jackin -- <subcommand> --debug` while iterating from a checkout.
