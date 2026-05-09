@@ -1417,9 +1417,9 @@ fn load_role_with(
             &role_key,
         )?;
 
-        // Resolve the GitHub-auth axis. The layered resolver mirrors
-        // the Claude/Codex one but has no agent dimension — `.config/gh/`
-        // is shared by every agent in the container.
+        // Resolve the GitHub-auth axis. Layered like the per-agent
+        // resolver but with no agent dimension — `.config/gh/` is
+        // shared by every agent in the container.
         let github_mode = crate::config::resolve_github_mode(config, workspace_name_str, &role_key);
         let github_env_decls =
             crate::config::build_github_env_layers(config, workspace_name_str, &role_key);
@@ -1530,10 +1530,10 @@ fn load_role_with(
             });
             tui::codex_auth_notice(resolved_source, (auth_mode, auth_outcome).into());
         } else if agent == crate::agent::Agent::Amp {
-            // Match the Codex pattern: only report a source-ref when
-            // the resolved env actually carries a non-empty value for
-            // the credential var. The raw lookup alone would advertise
-            // a layer that contributed an empty/whitespace string.
+            // Only report a source-ref when the resolved env actually
+            // carries a non-empty value for the credential var. The raw
+            // lookup alone would advertise a layer that contributed an
+            // empty/whitespace string.
             let amp_env_var = agent.required_env_var(auth_mode);
             let raw_source = amp_env_var.and_then(|v| {
                 lookup_operator_env_raw(config, Some(&role_key), workspace_name.as_deref(), v)
@@ -1565,7 +1565,7 @@ fn load_role_with(
                 crate::instance::AuthProvisionOutcome::HostMissing => {
                     if matches!(auth_mode, crate::config::AuthForwardMode::Sync) {
                         eprintln!(
-                            "[jackin] auth_forward=sync but no host Amp settings found; \
+                            "[jackin] auth_forward=sync but no host Amp secrets.json found; \
                              preserving existing container auth if present."
                         );
                     }
@@ -1573,7 +1573,7 @@ fn load_role_with(
                 crate::instance::AuthProvisionOutcome::Skipped => {
                     eprintln!(
                         "[jackin] auth_forward=ignore — wiped any prior synced \
-                         settings.json; agent will require interactive login."
+                         secrets.json; agent will require interactive login."
                     );
                 }
             }

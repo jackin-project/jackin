@@ -650,7 +650,7 @@ pub(in crate::console::manager) fn secrets_flat_rows(editor: &EditorState<'_>) -
 /// both index into the same `Vec<AuthRow>` so cursor row numbers always
 /// agree with what's drawn.
 ///
-/// Keyed off [`AuthKind`] (Claude / Codex / Github), wider than the
+/// Keyed off [`AuthKind`], wider than the
 /// runtime `Agent` enum so the GitHub CLI row sits alongside the agent
 /// rows without forcing a synthetic `Agent::Github` variant.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -699,7 +699,7 @@ pub enum AuthRow {
 pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthRow> {
     use crate::console::manager::auth_kind::AuthKind;
     let Some(kind) = editor.auth_selected_kind else {
-        // Root view — three rows in fixed order. `Github` is purely a
+        // Root view — one row per kind, fixed order. `Github` is purely a
         // panel-layer kind (no `Agent` peer); see
         // `crate::console::manager::auth_kind` for the design notes.
         return vec![
@@ -780,9 +780,9 @@ fn effective_mode_needs_credential(
     kind.required_env_var(mode).is_some()
 }
 
-/// Resolve the effective auth mode for the panel, tunnelling through
-/// the kind-specific resolver in `crate::config`. Claude / Codex still
-/// go through `resolve_mode`; Github routes through `resolve_github_mode`.
+/// Resolve the effective auth mode for the panel via the kind-specific
+/// resolver in `crate::config`. Agent kinds go through `resolve_mode`;
+/// Github routes through `resolve_github_mode`.
 fn resolve_panel_mode(
     cfg: &AppConfig,
     kind: crate::console::manager::auth_kind::AuthKind,

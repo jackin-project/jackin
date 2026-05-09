@@ -2640,12 +2640,11 @@ mod amp_auth_tests {
     #[cfg(unix)]
     #[test]
     fn rejects_symlink_at_secrets_json_under_every_mode() {
-        // Loop every mode (mirrors `rejects_symlink_at_auth_json_under_*`
-        // for Codex). Today the symlink check is hoisted above the mode
-        // match, so the same defense holds for all four arms — but a
+        // Loop every mode. The symlink check is hoisted above the mode
+        // match, so the defense holds for all four arms today — but a
         // future refactor that pushes the check inside specific arms
-        // could regress Sync (highest blast radius — it would otherwise
-        // read through the symlink) silently.
+        // could silently regress Sync (highest blast radius — it would
+        // otherwise read through the symlink).
         for mode in [
             AuthForwardMode::Sync,
             AuthForwardMode::ApiKey,
@@ -2677,10 +2676,10 @@ mod amp_auth_tests {
     #[test]
     fn surfaces_unreadable_host_secrets_json_as_error() {
         // Sync arm with an unreadable host secrets.json must surface
-        // the io::Error rather than misdiagnosing it as HostMissing,
+        // the io::Error rather than misdiagnosing as HostMissing —
         // otherwise the operator gets trapped in a re-login loop they
         // cannot escape until they spot the bad permissions on the
-        // host file. Mirrors Codex's `surfaces_unreadable_host_auth_json_as_error`.
+        // host file.
         use std::os::unix::fs::PermissionsExt;
         let temp = tempdir().unwrap();
         let secrets_json = temp.path().join("secrets.json");
