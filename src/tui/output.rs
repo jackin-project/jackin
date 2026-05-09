@@ -180,16 +180,27 @@ pub fn hint(prefix: &str, command: &str, suffix: &str) {
 /// Shapes (label varies by agent — `<agent> auth:`):
 ///   claude auth: host session (sync)
 ///   claude auth: none (ignore — /login required inside the container)
+///   claude auth: OAuth token (`CLAUDE_CODE_OAUTH_TOKEN` — expires in 12 days)
 ///   amp auth: API key (`AMP_API_KEY` ← <source-reference>)
 ///
 /// `source_reference` is consulted only by the env-driven token/api-key
 /// arms; pass the resolver's source description for the relevant env
 /// entry (e.g. `"op://vault/claude/token"` or
 /// `"$CLAUDE_CODE_OAUTH_TOKEN"`). Other modes pass `None`.
-pub fn auth_mode_notice(agent: crate::agent::Agent, mode: &str, source_reference: Option<&str>) {
+///
+/// `expiry_days` is consulted only by the `oauth_token` arm. Negative
+/// values render as `expired`, `<= 7` as `expires in N days` (red),
+/// `<= 30` as yellow, otherwise dimmed. Pass `None` when no expiry is
+/// known (e.g. `--reuse` path or cache miss).
+pub fn auth_mode_notice(
+    agent: crate::agent::Agent,
+    mode: &str,
+    source_reference: Option<&str>,
+    expiry_days: Option<i64>,
+) {
     eprintln!(
         "  {}",
-        format_auth_mode_notice_for_test(agent, mode, source_reference)
+        format_auth_mode_notice_for_test(agent, mode, source_reference, expiry_days)
     );
 }
 
@@ -199,6 +210,7 @@ fn format_auth_mode_notice_for_test(
     agent: crate::agent::Agent,
     mode: &str,
     source_reference: Option<&str>,
+    expiry_days: Option<i64>,
 ) -> String {
     use crate::config::AuthForwardMode;
     let label_text = format!("{} auth:", agent.slug());
@@ -208,7 +220,8 @@ fn format_auth_mode_notice_for_test(
         "oauth_token" => {
             let src =
                 source_reference.unwrap_or_else(|| env_default_for(AuthForwardMode::OAuthToken));
-            format!("OAuth token ({src})")
+            let suffix = expiry_days.map(format_expiry_suffix).unwrap_or_default();
+            format!("OAuth token ({src}{suffix})")
         }
         "api_key" => {
             let src = source_reference.unwrap_or_else(|| env_default_for(AuthForwardMode::ApiKey));
@@ -219,6 +232,27 @@ fn format_auth_mode_notice_for_test(
         other => other.to_string(),
     };
     format!("{label} {}", body.color(rgb(PHOSPHOR_DIM)))
+}
+
+fn format_expiry_suffix(days: i64) -> String {
+    use owo_colors::OwoColorize;
+    if days < 0 {
+        format!(
+            " — {}",
+            format!("expired {} day(s) ago", days.unsigned_abs()).red()
+        )
+    } else if days == 0 {
+        format!(" — {}", "expires today".red())
+    } else if days <= 7 {
+        format!(" — {}", format!("expires in {days} day(s)").red())
+    } else if days <= 30 {
+        format!(" — {}", format!("expires in {days} day(s)").yellow())
+    } else {
+        format!(
+            " — {}",
+            format!("expires in {days} day(s)").dimmed()
+        )
+    }
 }
 
 /// Verbose outcome eprintln line that follows [`auth_mode_notice`] for
@@ -458,6 +492,7 @@ mod tests {
             crate::agent::Agent::Claude,
             "oauth_token",
             Some("CLAUDE_CODE_OAUTH_TOKEN ← op://vault/claude/token"),
+            None::<i64>,
         );
         let clean = strip_ansi(&line);
         assert!(clean.contains("claude auth:"), "got: {clean}");
@@ -469,10 +504,47 @@ mod tests {
     }
 
     #[test]
+    fn auth_mode_notice_oauth_token_appends_expiry_days_when_present() {
+        let line = format_auth_mode_notice_for_test(
+            crate::agent::Agent::Claude,
+            "oauth_token",
+            Some("CLAUDE_CODE_OAUTH_TOKEN ← op://Personal/Claude/token"),
+            Some(12),
+        );
+        let clean = strip_ansi(&line);
+        assert!(clean.contains("expires in 12 day(s)"), "got: {clean}");
+    }
+
+    #[test]
+    fn auth_mode_notice_oauth_token_renders_expired_when_negative() {
+        let line = format_auth_mode_notice_for_test(
+            crate::agent::Agent::Claude,
+            "oauth_token",
+            None,
+            Some(-3),
+        );
+        let clean = strip_ansi(&line);
+        assert!(clean.contains("expired 3 day(s) ago"), "got: {clean}");
+    }
+
+    #[test]
+    fn auth_mode_notice_oauth_token_renders_expires_today_at_zero() {
+        let line = format_auth_mode_notice_for_test(
+            crate::agent::Agent::Claude,
+            "oauth_token",
+            None,
+            Some(0),
+        );
+        let clean = strip_ansi(&line);
+        assert!(clean.contains("expires today"), "got: {clean}");
+    }
+
+    #[test]
     fn auth_mode_notice_sync_has_one_liner() {
         let clean = strip_ansi(&format_auth_mode_notice_for_test(
             crate::agent::Agent::Claude,
             "sync",
+            None,
             None,
         ));
         assert!(clean.contains("claude auth:"));
@@ -486,6 +558,7 @@ mod tests {
             crate::agent::Agent::Claude,
             "ignore",
             None,
+            None,
         ));
         assert!(clean.contains("claude auth:"));
         assert!(clean.contains("none"));
@@ -494,7 +567,8 @@ mod tests {
 
     #[test]
     fn auth_mode_notice_uses_agent_specific_label_and_env_var_for_amp() {
-        let line = format_auth_mode_notice_for_test(crate::agent::Agent::Amp, "api_key", None);
+        let line =
+            format_auth_mode_notice_for_test(crate::agent::Agent::Amp, "api_key", None, None);
         let clean = strip_ansi(&line);
         assert!(clean.contains("amp auth:"), "got: {clean}");
         assert!(clean.contains("API key"), "got: {clean}");

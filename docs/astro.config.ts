@@ -285,6 +285,7 @@ export default defineConfig({
                   items: [
                     { label: 'Multi-runtime support (Codex & Amp)', slug: 'reference/roadmap/multi-runtime-support' },
                     { label: 'Reliable Claude authentication strategy', slug: 'reference/roadmap/claude-auth-strategy' },
+                    { label: 'Workspace Claude token setup', slug: 'reference/roadmap/workspace-claude-token-setup' },
                     { label: 'GitHub CLI authentication strategy', slug: 'reference/roadmap/github-cli-auth-strategy' },
                     { label: '1Password integration', slug: 'reference/roadmap/onepassword-integration' },
                   ],

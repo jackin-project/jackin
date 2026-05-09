@@ -8,7 +8,7 @@ import RepoFile from '../../../components/RepoFile.astro'
 
 ## Current status
 
-jackin' is experimental preview software and has not reached a stable release yet. **`Claude Code`, `Codex`, and `Amp` ship today as built-in agent runtimes**, with namespaced roles, workspace management, per-mount isolation for parallel agents, layered authentication forwarding (including `1Password` references), and an interactive operator console (TUI). Breaking changes are expected while the core design and basic functionality settle.
+jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` ship today as built-in agent runtimes**, with namespaced roles, workspace management, per-mount isolation for parallel agents, layered authentication forwarding (including `1Password` references), and an interactive operator console (TUI).
 
 ## Completed
 
@@ -64,6 +64,7 @@ jackin' is experimental preview software and has not reached a stable release ye
 - **Credential proxy** — proxy-based credential injection to avoid storing tokens inside containers
 - **[Agent version pinning](/reference/roadmap/reproducibility-pinning/)** — pin role repos to tagged versions for reproducible builds, with explicit `--update` to advance (status: needs design — brainstorming required before implementation)
 - **[Reliable Claude authentication strategy](/reference/roadmap/claude-auth-strategy/)** — move beyond copied session auth toward clearer, more durable modes for long-lived and concurrent agent runtimes (status: deferred — needs design work)
+- **[Workspace Claude token setup](/reference/roadmap/workspace-claude-token-setup/)** — guided `jackin workspace claude-token setup` orchestrator that PTY-captures the upstream `claude setup-token` output, writes the result to 1Password, wires the workspace config, and validates end-to-end (status: in progress — orchestrator + CLI shipped; TUI integration and expiry banner remain)
 - **[Alternative isolation tiers](/reference/roadmap/selectable-sandbox-backends/)** — explore stronger backends beyond plain container isolation for users who need them, including [rootless DinD](/reference/roadmap/rootless-dind/) as a lighter-weight option (status: deferred — requires a dedicated design pass)
 - **[Devcontainer parity](/reference/roadmap/devcontainer-parity/)** — comparison with the upstream `anthropics/claude-code` devcontainer setup; informs network policy + reproducibility decisions (status: proposed — research captured, no implementation committed)
 

@@ -42,7 +42,7 @@ impl Agent {
         use crate::config::AuthForwardMode as M;
         match (self, mode) {
             (Self::Claude, M::ApiKey) => Some("ANTHROPIC_API_KEY"),
-            (Self::Claude, M::OAuthToken) => Some("CLAUDE_CODE_OAUTH_TOKEN"),
+            (Self::Claude, M::OAuthToken) => Some(crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV),
             (Self::Codex, M::ApiKey) => Some("OPENAI_API_KEY"),
             (Self::Amp, M::ApiKey) => Some("AMP_API_KEY"),
             (Self::Claude, M::Sync | M::Ignore)

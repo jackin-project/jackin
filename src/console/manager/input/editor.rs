@@ -1622,26 +1622,46 @@ fn apply_editor_confirm(
     paths: &JackinPaths,
 ) -> anyhow::Result<()> {
     match target {
-        ConfirmTarget::DeleteEnvVar { scope, key } => match scope {
-            SecretsScopeTag::Workspace => {
-                editor.pending.env.remove(key);
+        ConfirmTarget::DeleteEnvVar { scope, key } => {
+            // Guard: block deleting CLAUDE_CODE_OAUTH_TOKEN while oauth_token
+            // mode is active. The credential is managed by
+            // `jackin workspace claude-token`; removing it here would silently
+            // break auth at the next launch.
+            let protected = key == "CLAUDE_CODE_OAUTH_TOKEN"
+                && matches!(scope, SecretsScopeTag::Workspace)
+                && editor
+                    .pending
+                    .claude
+                    .as_ref()
+                    .map(|c| c.auth_forward)
+                    == Some(crate::config::AuthForwardMode::OAuthToken);
+            if protected {
+                anyhow::bail!(
+                    "CLAUDE_CODE_OAUTH_TOKEN is managed by `jackin workspace claude-token` \
+                     — use `jackin workspace claude-token revoke <workspace>` to clear it"
+                );
             }
-            SecretsScopeTag::Role(role) => {
-                let mut drop_agent = false;
-                if let Some(ov) = editor.pending.roles.get_mut(role) {
-                    ov.env.remove(key);
-                    // Drop empty override so change_count reports
-                    // clean when the role's overrides are later
-                    // re-added.
-                    if ov.env.is_empty() {
-                        drop_agent = true;
+            match scope {
+                SecretsScopeTag::Workspace => {
+                    editor.pending.env.remove(key);
+                }
+                SecretsScopeTag::Role(role) => {
+                    let mut drop_agent = false;
+                    if let Some(ov) = editor.pending.roles.get_mut(role) {
+                        ov.env.remove(key);
+                        // Drop empty override so change_count reports
+                        // clean when the role's overrides are later
+                        // re-added.
+                        if ov.env.is_empty() {
+                            drop_agent = true;
+                        }
+                    }
+                    if drop_agent {
+                        editor.pending.roles.remove(role);
                     }
                 }
-                if drop_agent {
-                    editor.pending.roles.remove(role);
-                }
             }
-        },
+        }
         ConfirmTarget::TrustRoleSource { key, source } => {
             persist_trusted_role_add(editor, config, paths, key, source.clone())?;
         }
@@ -3723,14 +3743,13 @@ mod auth_cursor_step_tests {
     use super::super::super::auth_kind::AuthKind;
     use super::super::super::render::editor::AuthRow;
     use super::{step_auth_cursor_down, step_auth_cursor_up};
-    use crate::agent::Agent;
 
     fn rows() -> Vec<AuthRow> {
         // Mirrors the focused-mode shape: WorkspaceMode → Spacer →
         // RoleHeader → Spacer → AddSentinel.
         vec![
             AuthRow::WorkspaceMode {
-                kind: AuthKind::Agent(Agent::Claude),
+                kind: AuthKind::Claude,
             },
             AuthRow::Spacer,
             AuthRow::RoleHeader {
@@ -3764,7 +3783,7 @@ mod auth_cursor_step_tests {
         // candidate verbatim (caller already clamped to `max`).
         let r = vec![
             AuthRow::WorkspaceMode {
-                kind: AuthKind::Agent(Agent::Claude),
+                kind: AuthKind::Claude,
             },
             AuthRow::Spacer,
         ];
@@ -3792,7 +3811,7 @@ mod auth_cursor_step_tests {
         let r = vec![
             AuthRow::Spacer,
             AuthRow::WorkspaceMode {
-                kind: AuthKind::Agent(Agent::Claude),
+                kind: AuthKind::Claude,
             },
         ];
         assert_eq!(step_auth_cursor_up(&r, 0), 0);

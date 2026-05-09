@@ -482,15 +482,21 @@ mod resolve_mode_tests {
     ) -> AppConfig {
         let mut cfg = AppConfig::default();
         if let Some(m) = global {
-            cfg.claude = Some(AgentAuthConfig { auth_forward: m });
+            cfg.claude = Some(AgentAuthConfig {
+                auth_forward: m,
+            });
         }
         let mut ws_cfg = WorkspaceConfig::default();
         if let Some(m) = ws {
-            ws_cfg.claude = Some(AgentAuthConfig { auth_forward: m });
+            ws_cfg.claude = Some(AgentAuthConfig {
+                auth_forward: m,
+            });
         }
         if let Some(m) = ws_role {
             let over = WorkspaceRoleOverride {
-                claude: Some(AgentAuthConfig { auth_forward: m }),
+                claude: Some(AgentAuthConfig {
+                    auth_forward: m,
+                }),
                 ..Default::default()
             };
             ws_cfg.roles.insert("smith".to_string(), over);

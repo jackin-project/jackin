@@ -223,6 +223,122 @@ Examples:
     /// Manage operator env vars at workspace and workspace-role scope
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Env(WorkspaceEnvCommand),
+    /// Manage the workspace's long-lived Claude OAuth token
+    ///
+    /// Wraps `claude setup-token`, the 1Password write API, and
+    /// the workspace config so the operator can move from "no
+    /// token" to "token mode active" in one command. See
+    /// <https://jackin.tailrocks.com/reference/roadmap/workspace-claude-token-setup/>
+    /// for the full design.
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    ClaudeToken(WorkspaceClaudeTokenCommand),
+}
+
+/// `jackin workspace claude-token <action>` — guided lifecycle for
+/// the workspace's long-lived Claude OAuth token.
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum WorkspaceClaudeTokenCommand {
+    /// Generate a token, store it in 1Password, and wire the
+    /// workspace config — end-to-end with no copy-paste.
+    ///
+    /// Requires `claude` and `op` on PATH. The first invocation for a
+    /// workspace requires `--vault`; the orchestrator drops a
+    /// deterministic 1Password item (default name:
+    /// `jackin · {workspace} · claude-token`) and writes the
+    /// canonical-slot reference into `[workspaces.<ws>.claude]`.
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin workspace claude-token setup my-app --vault Personal
+  jackin workspace claude-token setup my-app --vault Personal --item-name \"jackin · {ws} · claude\"
+  jackin workspace claude-token setup my-app --reuse op://Personal/Existing/token
+  jackin workspace claude-token setup my-app --vault Work --op-account Work"
+    )]
+    Setup {
+        /// Workspace whose `[workspaces.<NAME>.claude]` block should
+        /// be wired
+        workspace: String,
+        /// 1Password vault name or UUID for the new item. Required
+        /// unless `--reuse` is supplied. Mutually exclusive with
+        /// `--reuse`.
+        #[arg(long, conflicts_with = "reuse")]
+        vault: Option<String>,
+        /// Override the default item title — `{ws}` substitutes the
+        /// workspace name
+        #[arg(long = "item-name")]
+        item_name: Option<String>,
+        /// Pin this run to a specific 1Password account (UUID,
+        /// label, or email). Persists to `[workspaces.<ws>].op_account`.
+        #[arg(long = "op-account")]
+        op_account: Option<String>,
+        /// Reuse an existing `op://` reference instead of generating
+        /// a fresh token. Mutually exclusive with `--vault` (the
+        /// vault is implicit in the supplied reference).
+        #[arg(long, conflicts_with = "vault")]
+        reuse: Option<String>,
+    },
+    /// Generate a fresh token and overwrite the workspace's existing
+    /// canonical slot.
+    ///
+    /// Equivalent to `setup` with one extra step: after the new item
+    /// is created and validated, the prior 1Password item (if any)
+    /// is deleted so the old token cannot be silently re-used.
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin workspace claude-token rotate my-app
+  jackin workspace claude-token rotate my-app --vault Personal"
+    )]
+    Rotate {
+        /// Workspace name
+        workspace: String,
+        /// Override vault for the new item (defaults to the vault
+        /// that holds the prior item)
+        #[arg(long)]
+        vault: Option<String>,
+        /// Override the default item title — `{ws}` substitutes the
+        /// workspace name
+        #[arg(long = "item-name")]
+        item_name: Option<String>,
+        /// Pin this run to a specific 1Password account
+        #[arg(long = "op-account")]
+        op_account: Option<String>,
+    },
+    /// Clear the workspace's canonical slot and switch
+    /// `auth_forward` to `ignore`.
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin workspace claude-token revoke my-app
+  jackin workspace claude-token revoke my-app --delete-op-item"
+    )]
+    Revoke {
+        /// Workspace name
+        workspace: String,
+        /// Also delete the 1P item the prior slot pointed to. No-op
+        /// when the slot held a literal value rather than an op-ref.
+        #[arg(long = "delete-op-item", default_value_t = false)]
+        delete_op_item: bool,
+    },
+    /// Resolve the workspace's canonical slot through `op` and
+    /// report whether the value resolves cleanly.
+    #[command(
+        before_help = BANNER,
+        styles = HELP_STYLES,
+        after_long_help = "\
+Examples:
+  jackin workspace claude-token doctor my-app"
+    )]
+    Doctor {
+        /// Workspace name
+        workspace: String,
+    },
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]

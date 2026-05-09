@@ -7,6 +7,7 @@ pub mod derived_image;
 pub mod docker;
 pub mod env_model;
 pub mod env_resolver;
+pub mod host_claude;
 pub mod instance;
 pub mod isolation;
 pub mod manifest;

@@ -516,6 +516,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     keep_awake: crate::workspace::KeepAwakeConfig {
                         enabled: keep_awake,
                     },
+                    op_account: None,
                     claude: None,
                     codex: None,
                     amp: None,
@@ -955,7 +956,23 @@ pub fn run(cli: Cli) -> Result<()> {
                     if key.is_empty() {
                         anyhow::bail!("env var key cannot be empty");
                     }
-                    config.require_workspace(&workspace)?;
+                    let ws = config.require_workspace(&workspace)?;
+                    // Guard: CLAUDE_CODE_OAUTH_TOKEN is managed by
+                    // `jackin workspace claude-token` when oauth_token mode
+                    // is active. Deleting it here would break auth silently
+                    // at the next launch.
+                    if key == "CLAUDE_CODE_OAUTH_TOKEN"
+                        && role.is_none()
+                        && ws.claude.as_ref().map(|c| c.auth_forward)
+                            == Some(crate::config::AuthForwardMode::OAuthToken)
+                    {
+                        anyhow::bail!(
+                            "CLAUDE_CODE_OAUTH_TOKEN is managed by \
+                             `jackin workspace claude-token` — use \
+                             `jackin workspace claude-token revoke {workspace}` \
+                             to clear it"
+                        );
+                    }
                     let scope = workspace_env_scope(workspace, role);
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     if editor.remove_env_var(&scope, &key) {
@@ -989,6 +1006,9 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
             },
+            WorkspaceCommand::ClaudeToken(action) => {
+                handle_claude_token(&paths, &mut config, action)
+            }
         },
         Command::Purge(PurgeArgs { selector, all }) => match Selector::parse(&selector)? {
             Selector::Container(container) => {
@@ -1050,7 +1070,7 @@ fn resolve_env_value_for_cli(value: &str) -> anyhow::Result<crate::operator_env:
         )
     })?;
 
-    let op_ref = crate::operator_env::resolve_op_uri_to_ref(value, &op_cli)?;
+    let op_ref = crate::operator_env::resolve_op_uri_to_ref(value, &op_cli, None)?;
     Ok(crate::operator_env::EnvValue::OpRef(op_ref))
 }
 
@@ -1058,6 +1078,192 @@ fn workspace_env_scope(workspace: String, role: Option<String>) -> config::EnvSc
     match role {
         Some(a) => config::EnvScope::WorkspaceRole { workspace, role: a },
         None => config::EnvScope::Workspace(workspace),
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn handle_claude_token(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    action: cli::WorkspaceClaudeTokenCommand,
+) -> Result<()> {
+    use crate::operator_env::OpRef;
+    use crate::workspace::token_setup;
+
+    fn parse_reuse(input: &str, account: Option<&str>) -> Result<OpRef> {
+        if !input.starts_with("op://") {
+            anyhow::bail!(
+                "--reuse expects an op:// reference (got {input:?}); see \
+                 https://developer.1password.com/docs/cli/secret-reference-syntax/"
+            );
+        }
+        // Canonicalise via the same disambiguation path the picker
+        // uses. Thread the operator's `--op-account` into every
+        // underlying `op vault list` / `item list` / `item get` query
+        // so multi-1P-account operators resolve `--reuse` against the
+        // pinned account; otherwise a coincidentally-named item in
+        // the default account could swap in for the intended one.
+        let probe = crate::operator_env::OpCli::new();
+        crate::operator_env::resolve_op_uri_to_ref(input, &probe, account)
+    }
+
+    match action {
+        cli::WorkspaceClaudeTokenCommand::Setup {
+            workspace,
+            vault,
+            item_name,
+            op_account,
+            reuse,
+        } => {
+            let reuse_ref = reuse
+                .as_deref()
+                .map(|r| parse_reuse(r, op_account.as_deref()))
+                .transpose()?;
+            let args = token_setup::TokenSetupArgs {
+                vault,
+                item_name,
+                account: op_account,
+                reuse: reuse_ref,
+            };
+            let report = token_setup::run_setup(paths, config, &workspace, &args)?;
+            print_token_setup_report(&report);
+            Ok(())
+        }
+        cli::WorkspaceClaudeTokenCommand::Rotate {
+            workspace,
+            vault,
+            item_name,
+            op_account,
+        } => {
+            let prior = config
+                .workspaces
+                .get(&workspace)
+                .and_then(|w| w.env.get("CLAUDE_CODE_OAUTH_TOKEN"))
+                .cloned();
+            // Default rotate to the prior item's vault when
+            // `--vault` is not supplied. Without this, the
+            // documented `rotate my-app` form errors inside
+            // `create_op_item` AFTER the PTY token capture
+            // completes. See [`token_setup::vault_for_rotate`].
+            let derived_vault = token_setup::vault_for_rotate(vault, prior.as_ref());
+            let args = token_setup::TokenSetupArgs {
+                vault: derived_vault,
+                item_name,
+                account: op_account,
+                reuse: None,
+            };
+            let report = token_setup::run_setup(paths, config, &workspace, &args)?;
+            print_token_setup_report(&report);
+            delete_prior_op_item(prior, &report.op_ref, report.op_account)?;
+            Ok(())
+        }
+        cli::WorkspaceClaudeTokenCommand::Revoke {
+            workspace,
+            delete_op_item,
+        } => {
+            let report = token_setup::run_revoke(paths, config, &workspace, delete_op_item)?;
+            if report.cleared_slot {
+                println!(
+                    "Cleared canonical slot for workspace {:?}.",
+                    report.workspace
+                );
+            } else {
+                println!(
+                    "Workspace {:?} had no canonical slot — config left unchanged.",
+                    report.workspace
+                );
+            }
+            if report.deleted_op_item {
+                println!("Deleted referenced 1P item.");
+            }
+            Ok(())
+        }
+        cli::WorkspaceClaudeTokenCommand::Doctor { workspace } => {
+            let report = token_setup::run_doctor(config, &workspace)?;
+            println!("workspace        {}", report.workspace);
+            println!("auth_forward     {}", report.mode);
+            println!(
+                "op_account       {}",
+                report.op_account.as_deref().unwrap_or("(default)")
+            );
+            if let Some(r) = &report.op_ref {
+                println!("op_ref           {}", r.path);
+            } else {
+                println!("op_ref           (literal slot)");
+            }
+            println!(
+                "token sha256     {}… (12 hex prefix; matches stored value)",
+                report.token_sha256_prefix
+            );
+            Ok(())
+        }
+    }
+}
+
+/// Delete the previous 1P item after a rotate succeeded.
+///
+/// A delete failure promotes the whole rotate to an `Err` so
+/// exit-code-driven automation (CI, `set -e`) sees the orphan —
+/// silent swallowing would let the vault accumulate dangling tokens,
+/// and on a credential-revocation rotation the old token would
+/// remain live in 1P.
+fn delete_prior_op_item(
+    prior: Option<crate::operator_env::EnvValue>,
+    new_ref: &crate::operator_env::OpRef,
+    account: Option<String>,
+) -> Result<()> {
+    let Some(crate::operator_env::EnvValue::OpRef(prior_ref)) = prior else {
+        return Ok(());
+    };
+    if prior_ref.op == new_ref.op {
+        eprintln!("[jackin] rotate: new op-ref matches prior — old item not deleted");
+        return Ok(());
+    }
+    let Some((vault_id, item_id)) = crate::workspace::token_setup::parse_uuid_op_ref(&prior_ref.op)
+    else {
+        eprintln!(
+            "[jackin] rotate: prior slot {path:?} is not in UUID form; \
+             delete by hand if desired",
+            path = prior_ref.path
+        );
+        return Ok(());
+    };
+    let op_cli = crate::operator_env::OpCli::new().with_account(account);
+    crate::operator_env::OpWriteRunner::item_delete(&op_cli, item_id, vault_id, None).map_err(
+        |e| {
+            anyhow::anyhow!(
+                "rotate: prior item ({path}) was NOT deleted: {e} \
+                 (delete by hand: `op item delete {item_id} --vault {vault_id}`)",
+                path = prior_ref.path
+            )
+        },
+    )?;
+    eprintln!("Deleted prior 1P item ({}).", prior_ref.path);
+    Ok(())
+}
+
+fn print_token_setup_report(report: &crate::workspace::token_setup::TokenSetupReport) {
+    println!();
+    println!("Workspace        {}", report.workspace);
+    println!("Claude CLI       {}", report.claude_cli_version);
+    println!("op:// reference  {}", report.op_ref.path);
+    println!(
+        "op_account       {}",
+        report.op_account.as_deref().unwrap_or("(default)")
+    );
+    println!(
+        "token sha256     {}… (12 hex prefix; matches stored value)",
+        report.token_sha256_prefix
+    );
+    if let Some(expiry) = report.expiry_estimate.as_deref() {
+        println!("expires (est.)   {expiry}");
+    }
+    println!("auth_forward     oauth_token (synthesised CLAUDE_CODE_OAUTH_TOKEN)");
+    println!();
+    if report.created {
+        println!("New token captured and stored in 1Password.");
+    } else {
+        println!("Existing op:// reference adopted; no new item created.");
     }
 }
 
@@ -1247,6 +1453,7 @@ mod auth_set_tests {
             env: std::collections::BTreeMap::new(),
             roles: std::collections::BTreeMap::new(),
             keep_awake: crate::workspace::KeepAwakeConfig::default(),
+            op_account: None,
             claude: None,
             codex: None,
             amp: None,

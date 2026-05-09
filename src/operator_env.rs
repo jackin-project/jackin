@@ -233,6 +233,13 @@ const OP_STDERR_MAX: usize = 4 * 1024;
 pub struct OpCli {
     binary: String,
     timeout: std::time::Duration,
+    /// Pinned 1P account forwarded as `op --account <id>` on every
+    /// invocation. `None` lets `op` fall back to its default-account
+    /// context. Set per-workspace at launch via
+    /// `WorkspaceConfig::op_account` so multi-account operators get
+    /// deterministic resolution regardless of which account they last
+    /// `op signin`-ed.
+    account: Option<String>,
 }
 
 impl OpCli {
@@ -240,6 +247,7 @@ impl OpCli {
         Self {
             binary: OP_DEFAULT_BIN.to_string(),
             timeout: OP_DEFAULT_TIMEOUT,
+            account: None,
         }
     }
 
@@ -252,6 +260,7 @@ impl OpCli {
         Self {
             binary: OP_DEFAULT_BIN.to_string(),
             timeout: std::time::Duration::from_secs(3),
+            account: None,
         }
     }
 
@@ -259,12 +268,25 @@ impl OpCli {
         Self {
             binary,
             timeout: OP_DEFAULT_TIMEOUT,
+            account: None,
         }
+    }
+
+    /// Pin every `op` invocation to a specific account. UUID, label,
+    /// or email — `op` accepts all three. Pass `None` to clear.
+    #[must_use]
+    pub fn with_account(mut self, account: Option<String>) -> Self {
+        self.account = account;
+        self
     }
 
     #[cfg(test)]
     const fn with_binary_and_timeout(binary: String, timeout: std::time::Duration) -> Self {
-        Self { binary, timeout }
+        Self {
+            binary,
+            timeout,
+            account: None,
+        }
     }
 }
 
@@ -356,7 +378,11 @@ impl OpRunner for OpCli {
         use std::io::Read;
         use std::process::{Command, Stdio};
 
-        let mut child = Command::new(&self.binary)
+        let mut cmd = Command::new(&self.binary);
+        if let Some(account) = self.account.as_deref() {
+            cmd.args(["--account", account]);
+        }
+        let mut child = cmd
             .args(["read", reference])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -767,6 +793,278 @@ impl OpStructRunner for OpCli {
     }
 }
 
+/// Mutating 1Password operations used by the workspace-token setup
+/// orchestrator.
+///
+/// Held in a separate trait from [`OpStructRunner`] so the read-only
+/// SAFETY contract on the picker's `OpCache` cannot be accidentally
+/// widened by a future `item_create` impl that decides to memoise
+/// its return value.
+///
+/// All write paths take secret material on **stdin**, never on argv —
+/// `op item create login.password=value` is forbidden because that
+/// places the secret in `/proc/<pid>/cmdline` where any process on the
+/// host with the right uid can read it. Implementations must use
+/// `op item create login.password[password]=-` (or the equivalent
+/// `--field`) and pipe the value through stdin.
+///
+/// See `docs/src/content/docs/reference/roadmap/workspace-claude-token-setup.mdx`
+/// for the operator-facing flow this trait powers.
+pub trait OpWriteRunner {
+    /// Create an item and return the canonical `op://...` reference
+    /// pointing at the named field. `value` lands on the child's
+    /// stdin — never on argv.
+    ///
+    /// `category` is an `op` item category (e.g. `"API Credential"`,
+    /// `"Password"`, `"Secure Note"`). `notes_plain` populates the
+    /// item's free-form notes block (used by the orchestrator to
+    /// stamp `{workspace, host, created, expires, token_sha256_prefix}`).
+    fn item_create(&self, params: OpItemCreateParams<'_>) -> anyhow::Result<OpRef>;
+
+    /// Delete an item entirely. Used by
+    /// `jackin workspace claude-token revoke --delete-op-item` and
+    /// by the rotate flow to remove the prior 1P item once the new
+    /// one is wired and validated.
+    ///
+    /// There is intentionally no `item_edit_field` on this trait:
+    /// the upstream `op` CLI has no documented stdin form for
+    /// `op item edit`, and any argv form would violate the
+    /// stdin-only contract this trait declares. Rotation is
+    /// implemented as `item_create` (new item) + `item_delete`
+    /// (old item once the new one is wired and validated).
+    fn item_delete(
+        &self,
+        item_id: &str,
+        vault_id: &str,
+        account: Option<&str>,
+    ) -> anyhow::Result<()>;
+}
+
+/// Parameters for [`OpWriteRunner::item_create`]. Borrowed-form to
+/// match the existing `OpStructRunner` style and avoid cloning every
+/// string at the call site.
+#[derive(Debug, Clone, Copy)]
+pub struct OpItemCreateParams<'a> {
+    pub vault_id: &'a str,
+    pub account: Option<&'a str>,
+    pub title: &'a str,
+    /// `op` item category. Use `"API Credential"` for OAuth tokens.
+    pub category: &'a str,
+    /// Field label (`"token"`, `"password"`, etc.).
+    pub field_label: &'a str,
+    /// Field value — lands on stdin, never on argv.
+    pub value: &'a str,
+    /// Optional `notesPlain` block (provenance metadata stamp).
+    pub notes_plain: Option<&'a str>,
+    /// `op` item tags applied at create time so list/search filters
+    /// can find every jackin-managed item.
+    pub tags: &'a [&'a str],
+}
+
+/// JSON shape returned by `op item create --format json`. Only the
+/// fields jackin needs to construct an [`OpRef`] are deserialized.
+#[derive(serde::Deserialize)]
+struct RawCreatedItem {
+    id: String,
+    title: String,
+    vault: RawCreatedItemVault,
+    #[serde(default)]
+    fields: Vec<RawCreatedItemField>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawCreatedItemVault {
+    id: String,
+    #[serde(default)]
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
+struct RawCreatedItemField {
+    id: String,
+    #[serde(default)]
+    label: String,
+    /// 1Password emits `reference` for non-default fields. When present
+    /// jackin prefers it verbatim over a synthesised `op://...` URI
+    /// because `reference` is upstream's canonical form (handles
+    /// sections, slashes, whitespace correctly — same reasoning as
+    /// `OpField::reference`).
+    #[serde(default)]
+    reference: String,
+}
+
+impl OpWriteRunner for OpCli {
+    #[allow(clippy::too_many_lines)]
+    fn item_create(&self, params: OpItemCreateParams<'_>) -> anyhow::Result<OpRef> {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        // Build the JSON template. `op item create -` reads it from
+        // stdin so the secret value never crosses argv. Tags and
+        // notesPlain ride along inside the same template — neither
+        // is sensitive but consolidating into one stdin payload
+        // keeps the argv invocation deterministic and free of
+        // operator-supplied content.
+        let template = serde_json::json!({
+            "title": params.title,
+            "category": params.category,
+            "tags": params.tags,
+            "fields": [{
+                "id": params.field_label,
+                "label": params.field_label,
+                "type": "CONCEALED",
+                "value": params.value,
+            }],
+            "notesPlain": params.notes_plain.unwrap_or(""),
+        });
+        let body = serde_json::to_vec(&template)
+            .map_err(|e| anyhow::anyhow!("failed to encode op item template: {e}"))?;
+
+        let mut cmd = Command::new(&self.binary);
+        if let Some(account) = self.account.as_deref() {
+            cmd.args(["--account", account]);
+        }
+        cmd.args([
+            "item",
+            "create",
+            "--vault",
+            params.vault_id,
+            "--format",
+            "json",
+        ]);
+        cmd.arg("-");
+        let mut child = cmd
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "failed to spawn 1Password CLI {:?}: {e} \
+                     (is `op` installed and on your PATH? see \
+                     https://developer.1password.com/docs/cli/)",
+                    self.binary
+                )
+            })?;
+
+        // Write the template body to the child's stdin and drop the
+        // handle so `op` sees EOF and proceeds. Scoping the stdin
+        // borrow with `take()` ensures the pipe is closed before we
+        // call `wait_with_output()` — leaving it open would deadlock
+        // if `op` waits for EOF before printing JSON.
+        //
+        // If the write fails (typically `EPIPE` because `op` rejected
+        // the template body and exited), drain its stderr before
+        // surfacing the error so the operator sees the real cause
+        // (auth failure, vault permission, schema mismatch) instead
+        // of a generic "stdin write failed".
+        if let Some(mut stdin) = child.stdin.take()
+            && let Err(e) = stdin.write_all(&body)
+        {
+            drop(stdin);
+            let captured = child.wait_with_output().ok();
+            let stderr_msg = captured
+                .as_ref()
+                .map(|o| String::from_utf8_lossy(&o.stderr).into_owned())
+                .unwrap_or_default();
+            anyhow::bail!(
+                "failed to write op item template to stdin: {e} (op stderr: {})",
+                truncate_stderr(&stderr_msg).trim()
+            );
+        }
+
+        let out = child
+            .wait_with_output()
+            .map_err(|e| anyhow::anyhow!("1Password CLI wait failed: {e}"))?;
+
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            anyhow::bail!(
+                "`op item create` exited with status {}: {}",
+                format_exit_status(out.status),
+                truncate_stderr(&stderr).trim()
+            );
+        }
+
+        // SAFETY: `op item create --format json` echoes the created
+        // item's fields back, including the secret `value` for
+        // CONCEALED fields. We deserialize via `RawCreatedItem`
+        // (which intentionally omits `value`) and never embed the
+        // raw stdout bytes in any error message — the
+        // field-not-found arm below lists labels and ids only.
+        let raw: RawCreatedItem = serde_json::from_slice(&out.stdout).map_err(|e| {
+            anyhow::anyhow!(
+                "failed to parse `op item create` JSON: {e} \
+                 (item may have been created but its layout is unrecognised; \
+                 inspect or delete by hand in 1Password)"
+            )
+        })?;
+
+        // Locate the field by case-insensitive label match — the
+        // template `id` we sent is what `op` echoes back as the
+        // field id, but downstream callers expect to look up by
+        // operator-visible `field_label`.
+        let field = raw
+            .fields
+            .iter()
+            .find(|f| f.label.eq_ignore_ascii_case(params.field_label))
+            .ok_or_else(|| {
+                let labels: Vec<&str> = raw.fields.iter().map(|f| f.label.as_str()).collect();
+                anyhow::anyhow!(
+                    "`op item create` returned no field with label {:?}; \
+                     observed labels: {labels:?}. The item was created (id {:?}) \
+                     but jackin cannot reference its field — delete by hand in \
+                     1Password and re-run setup.",
+                    params.field_label,
+                    raw.id,
+                )
+            })?;
+
+        // Prefer `field.reference` (1P's canonical emission) when
+        // present; otherwise synthesise the canonical UUID URI.
+        let op_uri = if field.reference.is_empty() {
+            format!("op://{}/{}/{}", raw.vault.id, raw.id, field.id)
+        } else {
+            field.reference.clone()
+        };
+
+        // Snapshot path for editor / display: use the human-visible
+        // names that came back from `op` (vault name, item title,
+        // field label).
+        let vault_name = if raw.vault.name.is_empty() {
+            raw.vault.id.clone()
+        } else {
+            raw.vault.name
+        };
+        let path = format!("{}/{}/{}", vault_name, raw.title, params.field_label);
+
+        Ok(OpRef { op: op_uri, path })
+    }
+
+    fn item_delete(
+        &self,
+        item_id: &str,
+        vault_id: &str,
+        account: Option<&str>,
+    ) -> anyhow::Result<()> {
+        // Per-call account override beats the OpCli's pinned account
+        // so a caller can target a specific 1P account even when the
+        // workspace is unscoped. Read-side `OpStructRunner::item_get`
+        // does NOT consult `self.account` — that asymmetry is
+        // deliberate: the read path is driven by the picker, which
+        // sets the account on the call itself.
+        let effective_account = account.or(self.account.as_deref());
+        let mut args: Vec<&str> = Vec::new();
+        if let Some(acc) = effective_account {
+            args.push("--account");
+            args.push(acc);
+        }
+        args.extend_from_slice(&["item", "delete", item_id, "--vault", vault_id]);
+        let _ = run_op_with_timeout(&self.binary, &args, self.timeout)?;
+        Ok(())
+    }
+}
+
 /// Source layer of an env value, attached to error messages and
 /// launch diagnostics so the operator can locate the offending entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -861,8 +1159,21 @@ pub fn validate_reserved_names(config: &crate::config::AppConfig) -> anyhow::Res
 ///
 /// The caller must probe `op` CLI availability before calling this
 /// (e.g. via [`OpRunner::probe`]).
+///
+/// `account` pins every underlying `op` query (`vault list`, `item
+/// list`, `item get`) to a specific 1Password account. Required when
+/// the operator runs more than one signed-in account: a name-based
+/// `op://...` reference can otherwise resolve a coincidentally-named
+/// item from the default account instead of the intended one. Pass
+/// `None` when the call has no account context (e.g. ambient
+/// `op://...` resolution where the operator has not pinned an
+/// account).
 #[allow(clippy::too_many_lines)]
-pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Result<OpRef> {
+pub fn resolve_op_uri_to_ref(
+    input: &str,
+    op: &dyn OpStructRunner,
+    account: Option<&str>,
+) -> anyhow::Result<OpRef> {
     use anyhow::{anyhow, bail};
 
     if !input.starts_with("op://") {
@@ -905,7 +1216,7 @@ pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Re
     };
 
     // Resolve vault by name (case-insensitive) or UUID.
-    let vaults = op.vault_list(None)?;
+    let vaults = op.vault_list(account)?;
     let vault = vaults
         .iter()
         .find(|v| v.name.eq_ignore_ascii_case(vault_seg) || v.id == vault_seg)
@@ -913,7 +1224,7 @@ pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Re
 
     // Resolve items in this vault, then filter by name (case-insensitive) or
     // UUID, and by subtitle filter when present.
-    let items = op.item_list(&vault.id, None)?;
+    let items = op.item_list(&vault.id, account)?;
     let mut matches: Vec<&OpItem> = items
         .iter()
         .filter(|i| {
@@ -964,7 +1275,7 @@ pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Re
     let item = matches.pop().unwrap();
 
     // Resolve field by label (case-insensitive) or UUID.
-    let fields = op.item_get(&item.id, &vault.id, None)?;
+    let fields = op.item_get(&item.id, &vault.id, account)?;
     let field = fields
         .iter()
         .find(|f| f.label.eq_ignore_ascii_case(field_seg) || f.id == field_seg)
@@ -1038,6 +1349,16 @@ pub fn resolve_op_uri_to_ref(input: &str, op: &dyn OpStructRunner) -> anyhow::Re
 /// layers — global, role, workspace, workspace-role — for the given
 /// `(role, workspace)` selection. Later layers overwrite earlier ones,
 /// so the final layer attached to each key is the one that wins.
+fn record_layer(
+    attributed: &mut std::collections::BTreeMap<String, (EnvLayer, EnvValue)>,
+    layer: &EnvLayer,
+    env: &std::collections::BTreeMap<String, EnvValue>,
+) {
+    for (k, v) in env {
+        attributed.insert(k.clone(), (layer.clone(), v.clone()));
+    }
+}
+
 fn build_attributed_layers(
     config: &crate::config::AppConfig,
     role_selector: Option<&str>,
@@ -1046,37 +1367,45 @@ fn build_attributed_layers(
     let mut attributed: std::collections::BTreeMap<String, (EnvLayer, EnvValue)> =
         std::collections::BTreeMap::new();
 
-    let mut record = |layer: EnvLayer, env: &std::collections::BTreeMap<String, EnvValue>| {
-        for (k, v) in env {
-            attributed.insert(k.clone(), (layer.clone(), v.clone()));
-        }
-    };
-
-    record(EnvLayer::Global, &config.env);
+    record_layer(&mut attributed, &EnvLayer::Global, &config.env);
     if let Some(role_name) = role_selector
         && let Some(a) = config.roles.get(role_name)
     {
-        record(EnvLayer::Role(role_name.to_string()), &a.env);
+        record_layer(
+            &mut attributed,
+            &EnvLayer::Role(role_name.to_string()),
+            &a.env,
+        );
     }
     if let Some(ws_name) = workspace_name
         && let Some(ws) = config.workspaces.get(ws_name)
     {
-        record(EnvLayer::Workspace(ws_name.to_string()), &ws.env);
+        record_layer(
+            &mut attributed,
+            &EnvLayer::Workspace(ws_name.to_string()),
+            &ws.env,
+        );
         if let Some(role_name) = role_selector
             && let Some(ov) = ws.roles.get(role_name)
         {
-            record(
-                EnvLayer::WorkspaceRole {
-                    workspace: ws_name.to_string(),
-                    role: role_name.to_string(),
-                },
-                &ov.env,
-            );
+            let ws_role_layer = EnvLayer::WorkspaceRole {
+                workspace: ws_name.to_string(),
+                role: role_name.to_string(),
+            };
+            record_layer(&mut attributed, &ws_role_layer, &ov.env);
         }
     }
 
     attributed
 }
+
+/// Env var Claude Code reads for the long-lived OAuth token.
+///
+/// Centralised so the canonical-slot synthesiser, the launch
+/// diagnostic, and the `Agent::required_env_var` accessor stay in
+/// sync. See <https://code.claude.com/docs/en/iam> for upstream
+/// precedence semantics.
+pub const CLAUDE_OAUTH_TOKEN_ENV: &str = "CLAUDE_CODE_OAUTH_TOKEN";
 
 /// Walk the env layers for the given `(role, workspace)` pair and
 /// resolve every value. Resolution failures across layers are
@@ -1086,13 +1415,17 @@ pub fn resolve_operator_env(
     role_selector: Option<&str>,
     workspace_name: Option<&str>,
 ) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
-    resolve_operator_env_with(
-        config,
-        role_selector,
-        workspace_name,
-        &OpCli::new(),
-        |name| std::env::var(name),
-    )
+    // Pin `op` to the workspace's chosen 1Password account when one is
+    // configured (`[workspaces.X].op_account`). Multi-account operators
+    // rely on this so resolution doesn't silently use whichever account
+    // they last `op signin`-ed.
+    let op_account = workspace_name
+        .and_then(|ws| config.workspaces.get(ws))
+        .and_then(|ws| ws.op_account.clone());
+    let runner = OpCli::new().with_account(op_account);
+    resolve_operator_env_with(config, role_selector, workspace_name, &runner, |name| {
+        std::env::var(name)
+    })
 }
 
 /// `?Sized` so callers can pass `&dyn OpRunner` (used by
@@ -2707,7 +3040,7 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             .with_item("v_uuid", "Stripe", "i_uuid", "")
             .with_field("i_uuid", "api key", "f_uuid", false);
 
-        let result = resolve_op_uri_to_ref("op://Private/Stripe/api key", &stub).unwrap();
+        let result = resolve_op_uri_to_ref("op://Private/Stripe/api key", &stub, None).unwrap();
         assert_eq!(result.op, "op://v_uuid/i_uuid/f_uuid");
         assert_eq!(result.path, "Private/Stripe/api key");
     }
@@ -2720,7 +3053,7 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             .with_item("v_uuid", "Claude", "i_b", "alexey@chainargos.com")
             .with_item("v_uuid", "Claude", "i_c", "team@example.com");
 
-        let err = resolve_op_uri_to_ref("op://Private/Claude/auth", &stub).unwrap_err();
+        let err = resolve_op_uri_to_ref("op://Private/Claude/auth", &stub, None).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("3 items"), "msg: {msg}");
         assert!(msg.contains("Claude[alexey@zhokhov.com]"), "msg: {msg}");
@@ -2742,7 +3075,8 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             .with_field("i_a", "auth", "f_uuid_a", false);
 
         let result =
-            resolve_op_uri_to_ref("op://Private/Claude[alexey@zhokhov.com]/auth", &stub).unwrap();
+            resolve_op_uri_to_ref("op://Private/Claude[alexey@zhokhov.com]/auth", &stub, None)
+                .unwrap();
         assert_eq!(result.op, "op://v_uuid/i_a/f_uuid_a");
         // Path retains brackets because the item is ambiguous in the vault.
         assert_eq!(result.path, "Private/Claude[alexey@zhokhov.com]/auth");
@@ -2752,7 +3086,7 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
     fn resolve_op_uri_plain_literal_not_affected() {
         // Non-op:// input must be rejected by resolve_op_uri_to_ref.
         let stub = StubOpStructRunner::new();
-        let err = resolve_op_uri_to_ref("postgres://localhost", &stub).unwrap_err();
+        let err = resolve_op_uri_to_ref("postgres://localhost", &stub, None).unwrap_err();
         assert!(err.to_string().contains("not an op://"), "{err}");
     }
 
@@ -2763,7 +3097,7 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             .with_vault("Private", "v_uuid")
             .with_item("v_uuid", "Stripe", "i_uuid", "");
 
-        let err = resolve_op_uri_to_ref("op://${APP_ENV}/Stripe/api key", &stub).unwrap_err();
+        let err = resolve_op_uri_to_ref("op://${APP_ENV}/Stripe/api key", &stub, None).unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("substitution") || msg.contains("${"),
@@ -2780,7 +3114,7 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             .with_item("v_uuid", "Stripe", "i_uuid", "")
             .with_field("i_uuid", "api key", "f_uuid", false);
 
-        let result = resolve_op_uri_to_ref("op://v_uuid/i_uuid/f_uuid", &stub).unwrap();
+        let result = resolve_op_uri_to_ref("op://v_uuid/i_uuid/f_uuid", &stub, None).unwrap();
         assert_eq!(result.op, "op://v_uuid/i_uuid/f_uuid");
         assert_eq!(result.path, "Private/Stripe/api key");
     }
@@ -2792,9 +3126,12 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             .with_item("v_uuid", "GitHub", "i_uuid", "")
             .with_field("i_uuid", "one-time password", "f_uuid", false);
 
-        let result =
-            resolve_op_uri_to_ref("op://Private/GitHub/one-time password?attribute=otp", &stub)
-                .unwrap();
+        let result = resolve_op_uri_to_ref(
+            "op://Private/GitHub/one-time password?attribute=otp",
+            &stub,
+            None,
+        )
+        .unwrap();
         assert!(result.op.contains("?attribute=otp"), "op: {}", result.op);
         assert!(
             result.path.contains("?attribute=otp"),
@@ -2810,8 +3147,12 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             .with_vault("Private", "v_uuid")
             .with_item("v_uuid", "GitHub", "i_uuid", "")
             .with_field("i_uuid", "one-time password", "f_uuid", false);
-        let r = resolve_op_uri_to_ref("op://Private/GitHub/one-time password?attr=type", &stub)
-            .unwrap();
+        let r = resolve_op_uri_to_ref(
+            "op://Private/GitHub/one-time password?attr=type",
+            &stub,
+            None,
+        )
+        .unwrap();
         assert!(r.op.contains("?attr=type"), "op: {}", r.op);
         assert!(r.path.contains("?attr=type"), "path: {}", r.path);
     }
@@ -2822,8 +3163,12 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             .with_vault("Personal", "v_uuid")
             .with_item("v_uuid", "MyKey", "i_uuid", "")
             .with_field("i_uuid", "private key", "f_uuid", false);
-        let r = resolve_op_uri_to_ref("op://Personal/MyKey/private key?ssh-format=openssh", &stub)
-            .unwrap();
+        let r = resolve_op_uri_to_ref(
+            "op://Personal/MyKey/private key?ssh-format=openssh",
+            &stub,
+            None,
+        )
+        .unwrap();
         assert!(r.op.contains("?ssh-format=openssh"), "op: {}", r.op);
         assert!(r.path.contains("?ssh-format=openssh"), "path: {}", r.path);
     }
@@ -2836,7 +3181,7 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             .with_field("i_uuid", "auth token", "f_uuid", false);
 
         let result =
-            resolve_op_uri_to_ref("op://Private/Claude/security/auth token", &stub).unwrap();
+            resolve_op_uri_to_ref("op://Private/Claude/security/auth token", &stub, None).unwrap();
         assert_eq!(result.path, "Private/Claude/security/auth token");
         assert!(result.op.contains("/security/"), "op: {}", result.op);
     }
@@ -2845,7 +3190,7 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
     fn resolve_op_uri_vault_not_found_errors() {
         let stub = StubOpStructRunner::new().with_vault("Personal", "v1");
 
-        let err = resolve_op_uri_to_ref("op://NoSuchVault/Item/field", &stub).unwrap_err();
+        let err = resolve_op_uri_to_ref("op://NoSuchVault/Item/field", &stub, None).unwrap_err();
         assert!(err.to_string().contains("vault not found"), "{}", err);
     }
 
@@ -2854,7 +3199,7 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
         let stub = StubOpStructRunner::new().with_vault("Private", "v_uuid");
         // No items in the vault.
 
-        let err = resolve_op_uri_to_ref("op://Private/NoSuchItem/field", &stub).unwrap_err();
+        let err = resolve_op_uri_to_ref("op://Private/NoSuchItem/field", &stub, None).unwrap_err();
         assert!(err.to_string().contains("not found"), "{}", err);
     }
 
@@ -2865,7 +3210,7 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             .with_item("v_uuid", "Stripe", "i_uuid", "");
         // No fields on the item.
 
-        let err = resolve_op_uri_to_ref("op://Private/Stripe/api key", &stub).unwrap_err();
+        let err = resolve_op_uri_to_ref("op://Private/Stripe/api key", &stub, None).unwrap_err();
         assert!(err.to_string().contains("not found"), "{}", err);
     }
 
@@ -2886,6 +3231,7 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             // User types lowercase "security"
             "op://Private/Claude/security/auth token",
             &stub,
+            None,
         )
         .unwrap();
         // Both op and path normalize to the canonical "Security" capitalization.
@@ -2907,7 +3253,7 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             .with_vault("Private", "v_uuid")
             .with_item("v_uuid", "Notes", "abcdef1234567890", "")
             .with_item("v_uuid", "Notes", "fedcba0987654321", "");
-        let err = resolve_op_uri_to_ref("op://Private/Notes/notesPlain", &stub).unwrap_err();
+        let err = resolve_op_uri_to_ref("op://Private/Notes/notesPlain", &stub, None).unwrap_err();
         let msg = format!("{err:#}");
         // Empty subtitles fall back to short id prefixes.
         assert!(
@@ -2929,7 +3275,8 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             .with_item("v_uuid", "Notes", "abcdef1234567890", "")
             .with_item("v_uuid", "Notes", "fedcba0987654321", "")
             .with_field("abcdef1234567890", "notesPlain", "f_uuid", false);
-        let r = resolve_op_uri_to_ref("op://Private/Notes[#abcdef12]/notesPlain", &stub).unwrap();
+        let r =
+            resolve_op_uri_to_ref("op://Private/Notes[#abcdef12]/notesPlain", &stub, None).unwrap();
         assert_eq!(r.op, "op://v_uuid/abcdef1234567890/f_uuid");
     }
 
@@ -2940,9 +3287,100 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             .with_vault("Private", "v_uuid")
             .with_item("v_uuid", "Stripe", "i_uuid", "")
             .with_field("i_uuid", "", "f_uuid", false);
-        let r = resolve_op_uri_to_ref("op://Private/Stripe/f_uuid", &stub).unwrap();
+        let r = resolve_op_uri_to_ref("op://Private/Stripe/f_uuid", &stub, None).unwrap();
         // path must not end with a trailing slash (empty label)
         assert_eq!(r.path, "Private/Stripe/f_uuid");
+    }
+
+    /// `CLAUDE_CODE_OAUTH_TOKEN` in `[workspaces.X.env]` resolves normally.
+    #[test]
+    fn workspace_env_oauth_token_resolves() {
+        let mut cfg = crate::config::AppConfig::default();
+        let mut ws = crate::workspace::WorkspaceConfig {
+            workdir: "/x".into(),
+            ..Default::default()
+        };
+        ws.env.insert(
+            CLAUDE_OAUTH_TOKEN_ENV.into(),
+            EnvValue::Plain("sk-ant-oat01-from-env".into()),
+        );
+        cfg.workspaces.insert("proj".into(), ws);
+
+        let resolved = resolve_operator_env_with(
+            &cfg,
+            Some("smith"),
+            Some("proj"),
+            &TestOpRunner::forbidden(),
+            |_| Err(std::env::VarError::NotPresent),
+        )
+        .unwrap();
+        assert_eq!(
+            resolved.get(CLAUDE_OAUTH_TOKEN_ENV).map(String::as_str),
+            Some("sk-ant-oat01-from-env")
+        );
+    }
+
+    /// Workspace-role env overrides workspace env (standard last-wins merge).
+    #[test]
+    fn workspace_role_env_overrides_workspace_env_for_oauth_token() {
+        let mut cfg = crate::config::AppConfig::default();
+        let mut ws = crate::workspace::WorkspaceConfig {
+            workdir: "/x".into(),
+            ..Default::default()
+        };
+        ws.env.insert(
+            CLAUDE_OAUTH_TOKEN_ENV.into(),
+            EnvValue::Plain("workspace-tier".into()),
+        );
+        let mut ov = crate::workspace::WorkspaceRoleOverride::default();
+        ov.env.insert(
+            CLAUDE_OAUTH_TOKEN_ENV.into(),
+            EnvValue::Plain("role-tier".into()),
+        );
+        ws.roles.insert("smith".into(), ov);
+        cfg.workspaces.insert("proj".into(), ws);
+
+        let resolved = resolve_operator_env_with(
+            &cfg,
+            Some("smith"),
+            Some("proj"),
+            &TestOpRunner::forbidden(),
+            |_| Err(std::env::VarError::NotPresent),
+        )
+        .unwrap();
+        assert_eq!(
+            resolved.get(CLAUDE_OAUTH_TOKEN_ENV).map(String::as_str),
+            Some("role-tier")
+        );
+    }
+
+    /// Workspace env overrides global env for `CLAUDE_CODE_OAUTH_TOKEN`.
+    #[test]
+    fn workspace_env_overrides_global_env_for_oauth_token() {
+        let mut cfg = crate::config::AppConfig::default();
+        cfg.env.insert(
+            CLAUDE_OAUTH_TOKEN_ENV.into(),
+            EnvValue::Plain("global-token".into()),
+        );
+        let mut ws = crate::workspace::WorkspaceConfig {
+            workdir: "/x".into(),
+            ..Default::default()
+        };
+        ws.env.insert(
+            CLAUDE_OAUTH_TOKEN_ENV.into(),
+            EnvValue::Plain("workspace-token".into()),
+        );
+        cfg.workspaces.insert("proj".into(), ws);
+
+        let resolved =
+            resolve_operator_env_with(&cfg, None, Some("proj"), &TestOpRunner::forbidden(), |_| {
+                Err(std::env::VarError::NotPresent)
+            })
+            .unwrap();
+        assert_eq!(
+            resolved.get(CLAUDE_OAUTH_TOKEN_ENV).map(String::as_str),
+            Some("workspace-token")
+        );
     }
 
     /// Fix 1A: 3-segment input where the field actually lives in a section
@@ -2960,7 +3398,7 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
                 "op://Private/Claude/Security/auth token",
             );
         // User supplies 3-segment URI (no section), but field lives in "Security"
-        let r = resolve_op_uri_to_ref("op://Private/Claude/auth token", &stub).unwrap();
+        let r = resolve_op_uri_to_ref("op://Private/Claude/auth token", &stub, None).unwrap();
         assert!(
             r.op.contains("/Security/"),
             "op must include section from field.reference; got {}",
@@ -2971,5 +3409,86 @@ TOKEN = { op = "op://abc/def/fld", path = "Vault/Item/Field", paht = "stray" }
             "path must include section from field.reference; got {}",
             r.path
         );
+    }
+
+    /// `account` arg threads through every underlying `op` call.
+    ///
+    /// `parse_reuse` constructs an `OpCli` without `with_account` and
+    /// must instead pass the operator's `--op-account` straight to
+    /// `resolve_op_uri_to_ref`. Regression test for the bug where
+    /// the account was set on the runner but the resolver passed
+    /// hardcoded `None` to `vault_list` / `item_list` / `item_get`,
+    /// so multi-1P-account operators silently resolved against the
+    /// default account.
+    #[test]
+    fn resolve_op_uri_threads_account_into_struct_runner_calls() {
+        use std::cell::RefCell;
+
+        struct AccountRecordingStub {
+            inner: StubOpStructRunner,
+            calls: RefCell<Vec<(&'static str, Option<String>)>>,
+        }
+
+        impl OpStructRunner for AccountRecordingStub {
+            fn account_list(&self) -> anyhow::Result<Vec<OpAccount>> {
+                Ok(vec![])
+            }
+            fn vault_list(&self, account: Option<&str>) -> anyhow::Result<Vec<OpVault>> {
+                self.calls
+                    .borrow_mut()
+                    .push(("vault_list", account.map(str::to_string)));
+                self.inner.vault_list(account)
+            }
+            fn item_list(
+                &self,
+                vault_id: &str,
+                account: Option<&str>,
+            ) -> anyhow::Result<Vec<OpItem>> {
+                self.calls
+                    .borrow_mut()
+                    .push(("item_list", account.map(str::to_string)));
+                self.inner.item_list(vault_id, account)
+            }
+            fn item_get(
+                &self,
+                item_id: &str,
+                vault_id: &str,
+                account: Option<&str>,
+            ) -> anyhow::Result<Vec<OpField>> {
+                self.calls
+                    .borrow_mut()
+                    .push(("item_get", account.map(str::to_string)));
+                self.inner.item_get(item_id, vault_id, account)
+            }
+        }
+
+        let stub = AccountRecordingStub {
+            inner: StubOpStructRunner::new()
+                .with_vault("Private", "v_uuid")
+                .with_item("v_uuid", "Stripe", "i_uuid", "")
+                .with_field("i_uuid", "api key", "f_uuid", true),
+            calls: RefCell::new(Vec::new()),
+        };
+
+        let _ = resolve_op_uri_to_ref(
+            "op://Private/Stripe/api key",
+            &stub,
+            Some("work-account-uuid"),
+        )
+        .unwrap();
+
+        let calls = stub.calls.borrow();
+        assert_eq!(
+            calls.len(),
+            3,
+            "resolver should call vault_list, item_list, item_get exactly once each; got {calls:?}"
+        );
+        for (name, account) in calls.iter() {
+            assert_eq!(
+                account.as_deref(),
+                Some("work-account-uuid"),
+                "{name} must receive the threaded account"
+            );
+        }
     }
 }
