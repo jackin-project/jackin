@@ -18,8 +18,6 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      # The dispatch short-circuit and paths-filter steps are mutually
-      # exclusive on event_name, so at most one writes a value here.
       rust: ${{ steps.dispatch.outputs.rust || steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -145,28 +143,15 @@ jobs:
             jackin-validate-${{ matrix.target }}.tar.gz.sha256
           retention-days: 7
 
-  # Aggregator job — single stable check name for branch-protection
-  # required-status to point at, regardless of how many gated jobs
-  # are added or skipped under it. `if: always()` runs even when an
-  # upstream job fails or skips; the success condition is "no upstream
-  # failed and no upstream cancelled".
+  # Single stable check name for branch-protection required-status,
+  # regardless of which gated jobs skipped under it.
   ci-required:
     if: always()
     needs: [changes, check, msrv, build-validator]
     runs-on: ubuntu-latest
     steps:
-      - name: Aggregate gated job results
-        shell: bash
-        env:
-          NEEDS_RESULT: ${{ toJSON(needs) }}
-        run: |
-          set -euo pipefail
-          # Fail if any need failed or was cancelled. Skipped is
-          # treated as success — that is the entire point of the
-          # path-aware gating: jobs that were not relevant to the
-          # change correctly skip without blocking.
-          printf '%s\n' "$NEEDS_RESULT"
-          if printf '%s' "$NEEDS_RESULT" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
-            echo "::error::one or more gated CI jobs failed or were cancelled"
-            exit 1
-          fi
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/aggregate-needs
+        with:
+          needs-json: ${{ toJSON(needs) }}
+          workflow-label: CI

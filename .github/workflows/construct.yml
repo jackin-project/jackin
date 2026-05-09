@@ -7,22 +7,34 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: construct-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Builder name used by every step that calls `just construct-*`.
   BUILDX_BUILDER: jackin-construct
-  # Single source of truth for the digest directory used by both the
-  # build jobs (write) and the publish-manifest job (read).
+  # Single source of truth for the digest directory — `build` writes
+  # into it, `publish-manifest` reads from it.
   DIGEST_DIR: /tmp/jackin-construct-digests
+  # Registry image coordinate; centralized so cache refs and any
+  # future tag arithmetic stay in sync.
+  REGISTRY_IMAGE: projectjackin/construct
 
 jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
       construct: ${{ steps.dispatch.outputs.construct || steps.filter.outputs.construct }}
+      # Single source of truth for "should this run produce / publish
+      # registry artifacts" — true on push-to-main and on
+      # workflow_dispatch from main, false everywhere else (PRs,
+      # dispatch from feature branches). Downstream steps gate on
+      # `needs.changes.outputs.is_publish` instead of restating the
+      # same boolean five times.
+      is_publish: ${{ steps.flags.outputs.is_publish }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -46,6 +58,19 @@ jobs:
               - 'Justfile'
               - 'docker-bake.hcl'
               - 'docker/construct/**'
+
+      - name: Compute publish flag
+        id: flags
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ] || { [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$REF" = "refs/heads/main" ]; }; then
+            echo "is_publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_publish=false" >> "$GITHUB_OUTPUT"
+          fi
 
   # amd64 and arm64 share every step except runner label and platform
   # string. Matrix collapse keeps the per-platform fail-fast=false
@@ -80,7 +105,7 @@ jobs:
           driver: docker-container
 
       - name: Log in to Docker Hub
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+        if: needs.changes.outputs.is_publish == 'true'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -90,25 +115,25 @@ jobs:
         run: just construct-init-buildx
 
       - name: Expose GitHub Actions cache runtime
-        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
+        if: needs.changes.outputs.is_publish != 'true'
         uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
 
       - name: Build ${{ matrix.platform }} without push
-        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
+        if: needs.changes.outputs.is_publish != 'true'
         env:
           CACHE_FROM: type=gha,scope=construct-pr-${{ matrix.platform }}
           CACHE_TO: type=gha,scope=construct-pr-${{ matrix.platform }},mode=max
         run: just construct-build-platform ${{ matrix.platform }}
 
       - name: Push ${{ matrix.platform }} image by digest
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+        if: needs.changes.outputs.is_publish == 'true'
         env:
-          CACHE_FROM: type=registry,ref=projectjackin/construct:buildcache-${{ matrix.platform }}
-          CACHE_TO: type=registry,ref=projectjackin/construct:buildcache-${{ matrix.platform }},mode=max
+          CACHE_FROM: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.platform }}
+          CACHE_TO: type=registry,ref=${{ env.REGISTRY_IMAGE }}:buildcache-${{ matrix.platform }},mode=max
         run: just construct-push-platform ${{ matrix.platform }}
 
       - name: Upload ${{ matrix.platform }} digest
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+        if: needs.changes.outputs.is_publish == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: construct-digest-${{ matrix.platform }}
@@ -118,10 +143,7 @@ jobs:
 
   publish-manifest:
     name: publish manifest
-    if: |
-      (github.event_name == 'push' ||
-       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) &&
-      needs.changes.outputs.construct == 'true'
+    if: needs.changes.outputs.is_publish == 'true' && needs.changes.outputs.construct == 'true'
     needs: [changes, build]
     runs-on: ubuntu-24.04
     permissions:
@@ -158,21 +180,13 @@ jobs:
       - name: Publish multi-platform manifest
         run: just construct-publish-manifest
 
-  # Single stable check name for branch-protection required-status.
-  # See ci.yml's `ci-required` job for the same pattern + rationale.
   construct-required:
     if: always()
     needs: [changes, build, publish-manifest]
     runs-on: ubuntu-latest
     steps:
-      - name: Aggregate gated job results
-        shell: bash
-        env:
-          NEEDS_RESULT: ${{ toJSON(needs) }}
-        run: |
-          set -euo pipefail
-          printf '%s\n' "$NEEDS_RESULT"
-          if printf '%s' "$NEEDS_RESULT" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
-            echo "::error::one or more gated construct jobs failed or were cancelled"
-            exit 1
-          fi
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/aggregate-needs
+        with:
+          needs-json: ${{ toJSON(needs) }}
+          workflow-label: construct

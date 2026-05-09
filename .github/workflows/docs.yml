@@ -64,11 +64,10 @@ jobs:
   # The docs site links to repository files via the <RepoFile path="…" />
   # component, which renders a `blob/main` URL that lychee remaps to the
   # PR checkout. A source-only PR that renames or deletes a referenced
-  # file (for example src/runtime/launch.rs) would not match the docs
-  # path filter and would silently merge with broken links. Run a cheap
-  # standalone repo-link check on every non-schedule event so source
-  # renames cannot bypass the docs link contract documented in
-  # docs/AGENTS.md.
+  # file would not match the docs path filter and would silently merge
+  # with broken links. Run a cheap standalone repo-link check on every
+  # non-schedule event so source renames cannot bypass the docs link
+  # contract documented in docs/AGENTS.md.
   repo-link-check:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -182,7 +181,7 @@ jobs:
     # from main is excluded because the deploy job already verifies the
     # just-deployed site, and running both in parallel would race against
     # the publish window.
-    if: |
+    if: >-
       github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
     runs-on: ubuntu-latest
@@ -201,8 +200,6 @@ jobs:
           blob-url: ${{ env.JACKIN_REPO_BLOB_URL }}
           github-token: ${{ github.token }}
 
-  # Single stable check name for branch-protection required-status.
-  # See ci.yml's `ci-required` job for the same pattern + rationale.
   # Skip on schedule because schedule runs only `check-deployed` and a
   # one-job aggregator on schedule has no value.
   docs-required:
@@ -210,14 +207,8 @@ jobs:
     needs: [changes, repo-link-check, docs-link-check, deploy]
     runs-on: ubuntu-latest
     steps:
-      - name: Aggregate gated job results
-        shell: bash
-        env:
-          NEEDS_RESULT: ${{ toJSON(needs) }}
-        run: |
-          set -euo pipefail
-          printf '%s\n' "$NEEDS_RESULT"
-          if printf '%s' "$NEEDS_RESULT" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
-            echo "::error::one or more gated docs jobs failed or were cancelled"
-            exit 1
-          fi
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/aggregate-needs
+        with:
+          needs-json: ${{ toJSON(needs) }}
+          workflow-label: docs
