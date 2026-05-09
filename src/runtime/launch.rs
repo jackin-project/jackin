@@ -2878,18 +2878,18 @@ agents = ["amp"]
     #[test]
     fn workspace_mise_paths_cover_workdir_and_mount_destinations() {
         let workspace = crate::workspace::ResolvedWorkspace {
-            label: "chainargos".to_string(),
+            label: "sample-workspace".to_string(),
             workdir: "/workspace".to_string(),
             mounts: vec![
                 crate::workspace::MountConfig {
-                    src: "/host/java-monorepo".to_string(),
-                    dst: "/workspace/java-monorepo".to_string(),
+                    src: "/host/jackin".to_string(),
+                    dst: "/workspace/jackin".to_string(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
                 crate::workspace::MountConfig {
-                    src: "/host/blockchain-nodes".to_string(),
-                    dst: "/workspace/blockchain-nodes".to_string(),
+                    src: "/host/homebrew-tap".to_string(),
+                    dst: "/workspace/homebrew-tap".to_string(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
@@ -2903,7 +2903,7 @@ agents = ["amp"]
 
         assert_eq!(
             value,
-            "/workspace:/workspace/blockchain-nodes:/workspace/java-monorepo"
+            "/workspace:/workspace/homebrew-tap:/workspace/jackin"
         );
     }
 
@@ -4484,10 +4484,10 @@ plugins = []
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 
-[workspaces.chainargos]
+[workspaces.sample-workspace]
 workdir = "/workspace"
 
-[[workspaces.chainargos.mounts]]
+[[workspaces.sample-workspace.mounts]]
 src = "/tmp"
 dst = "/workspace"
 "#,
@@ -4522,18 +4522,18 @@ plugins = []
         .unwrap();
 
         let workspace = crate::workspace::ResolvedWorkspace {
-            label: "chainargos".to_string(),
+            label: "sample-workspace".to_string(),
             workdir: "/workspace".to_string(),
             mounts: vec![
                 crate::workspace::MountConfig {
                     src: repo_dir.display().to_string(),
-                    dst: "/workspace/java-monorepo".to_string(),
+                    dst: "/workspace/jackin".to_string(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
                 crate::workspace::MountConfig {
                     src: repo_dir.display().to_string(),
-                    dst: "/workspace/blockchain-nodes".to_string(),
+                    dst: "/workspace/homebrew-tap".to_string(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
@@ -4560,7 +4560,7 @@ plugins = []
             .unwrap();
         assert!(
             run_cmd.contains(
-                "-e MISE_TRUSTED_CONFIG_PATHS=/workspace:/workspace/blockchain-nodes:/workspace/java-monorepo"
+                "-e MISE_TRUSTED_CONFIG_PATHS=/workspace:/workspace/homebrew-tap:/workspace/jackin"
             ),
             "workspace must inject mise trusted paths; got: {run_cmd}"
         );
