@@ -253,9 +253,14 @@ impl ConfigEditor {
         }
     }
 
-    pub fn set_global_auth_forward(&mut self, mode: crate::config::AuthForwardMode) {
-        let claude_table = table_path_mut(&mut self.doc, &["claude".to_string()]);
-        claude_table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
+    /// Write `[<agent.slug>].auth_forward = <mode>` at the global layer.
+    pub fn set_global_auth_forward(
+        &mut self,
+        agent: crate::agent::Agent,
+        mode: crate::config::AuthForwardMode,
+    ) {
+        let table = table_path_mut(&mut self.doc, &[agent.slug().to_string()]);
+        table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
     }
 
     /// Write or clear `[workspaces.<workspace>.<agent>].auth_forward`.
@@ -1425,19 +1430,25 @@ trusted = true
     }
 
     #[test]
-    fn set_global_auth_forward_writes_root_claude_table() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        paths.ensure_base_dirs().unwrap();
-        std::fs::write(&paths.config_file, "").unwrap();
+    fn set_global_auth_forward_writes_per_agent_table() {
+        for (agent, header) in [
+            (crate::agent::Agent::Claude, "[claude]"),
+            (crate::agent::Agent::Codex, "[codex]"),
+            (crate::agent::Agent::Amp, "[amp]"),
+        ] {
+            let temp = tempdir().unwrap();
+            let paths = JackinPaths::for_tests(temp.path());
+            paths.ensure_base_dirs().unwrap();
+            std::fs::write(&paths.config_file, "").unwrap();
 
-        let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_global_auth_forward(crate::config::AuthForwardMode::Sync);
-        editor.save().unwrap();
+            let mut editor = ConfigEditor::open(&paths).unwrap();
+            editor.set_global_auth_forward(agent, crate::config::AuthForwardMode::Sync);
+            editor.save().unwrap();
 
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains("[claude]"), "{out}");
-        assert!(out.contains(r#"auth_forward = "sync""#), "{out}");
+            let out = std::fs::read_to_string(&paths.config_file).unwrap();
+            assert!(out.contains(header), "expected {header} in:\n{out}");
+            assert!(out.contains(r#"auth_forward = "sync""#), "{out}");
+        }
     }
 
     #[test]
