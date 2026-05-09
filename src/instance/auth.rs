@@ -460,15 +460,22 @@ impl RoleState {
                 wipe_claude_state(account_json, credentials_json)?;
                 AuthProvisionOutcome::Skipped
             }
-            // ApiKey and OAuthToken share filesystem behavior: both env-driven
-            // modes provision the same empty shape as Ignore — the agent
-            // inside the container authenticates via env vars, not via
-            // filesystem credentials. Switching from sync → token/api_key must
-            // still wipe any previously forwarded creds. They differ only in
-            // which env var the launcher sets (CLAUDE_CODE_OAUTH_TOKEN vs
-            // ANTHROPIC_API_KEY); host-state provisioning is identical.
-            AuthForwardMode::OAuthToken | AuthForwardMode::ApiKey => {
+            // ApiKey: wipe any forwarded host creds; agent authenticates
+            // via ANTHROPIC_API_KEY in the env. No skeleton needed —
+            // console-API auth path does not require ~/.claude.json.
+            AuthForwardMode::ApiKey => {
                 wipe_claude_state(account_json, credentials_json)?;
+                AuthProvisionOutcome::Skipped
+            }
+            // OAuthToken: write a minimal skeleton so the Claude CLI skips
+            // its interactive login wizard and reads CLAUDE_CODE_OAUTH_TOKEN
+            // from the env instead. Without this file, the CLI shows the
+            // "Select login method" prompt even when the env var is set.
+            AuthForwardMode::OAuthToken => {
+                if credentials_json.exists() {
+                    std::fs::remove_file(credentials_json)?;
+                }
+                write_private_file(account_json, r#"{"hasCompletedOnboarding":true}"#)?;
                 AuthProvisionOutcome::TokenMode
             }
             AuthForwardMode::Sync => {
@@ -495,12 +502,13 @@ impl RoleState {
             }
         };
 
-        // Sync-mode outcomes forward auth state; env-driven modes don't.
-        // The launcher additionally checks file existence at mount time
-        // (host-missing sync may have neither file on disk).
+        // Sync and token modes forward auth state (the launcher checks
+        // file existence at mount time). ApiKey and Ignore do not.
         let forward_auth = matches!(
             outcome,
-            AuthProvisionOutcome::Synced | AuthProvisionOutcome::HostMissing
+            AuthProvisionOutcome::Synced
+                | AuthProvisionOutcome::HostMissing
+                | AuthProvisionOutcome::TokenMode
         );
         Ok((outcome, forward_auth))
     }
@@ -1026,7 +1034,7 @@ plugins = []
     }
 
     #[test]
-    fn token_mode_writes_empty_json_and_no_credentials() {
+    fn token_mode_writes_onboarding_skeleton_and_no_credentials() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         // Seed host auth — token mode must NOT copy it.
@@ -1044,9 +1052,11 @@ plugins = []
         )
         .unwrap();
 
+        // Skeleton tells Claude CLI to skip the interactive login wizard;
+        // actual auth comes from CLAUDE_CODE_OAUTH_TOKEN in the env.
         assert_eq!(
             std::fs::read_to_string(state.claude_account_json().unwrap()).unwrap(),
-            "{}"
+            r#"{"hasCompletedOnboarding":true}"#
         );
         assert!(
             !state.claude_credentials_json().unwrap().exists(),
@@ -1107,7 +1117,7 @@ plugins = []
             !state2.claude_credentials_json().unwrap().exists(),
             "api_key mode must wipe .credentials.json"
         );
-        assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
+        assert_eq!(outcome, AuthProvisionOutcome::Skipped);
     }
 
     #[test]
@@ -1131,8 +1141,8 @@ plugins = []
         assert!(state.claude_credentials_json().unwrap().exists());
 
         // Operator switches to token — credentials must be wiped and
-        // .claude.json reset to {} so Claude Code inside the container
-        // authenticates exclusively via CLAUDE_CODE_OAUTH_TOKEN.
+        // .claude.json reset to skeleton so Claude Code skips the login
+        // wizard and authenticates exclusively via CLAUDE_CODE_OAUTH_TOKEN.
         let (state2, outcome) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
@@ -1145,7 +1155,7 @@ plugins = []
         .unwrap();
         assert_eq!(
             std::fs::read_to_string(state2.claude_account_json().unwrap()).unwrap(),
-            "{}"
+            r#"{"hasCompletedOnboarding":true}"#
         );
         assert!(!state2.claude_credentials_json().unwrap().exists());
         assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
@@ -1158,7 +1168,7 @@ plugins = []
         seed_host_auth(&temp);
         let manifest = simple_manifest(&temp);
 
-        // First run: token mode leaves an empty state
+        // First run: token mode writes the onboarding skeleton
         let (state, _) = RoleState::prepare(
             &paths,
             "jackin-agent-smith",
@@ -1171,7 +1181,7 @@ plugins = []
         .unwrap();
         assert_eq!(
             std::fs::read_to_string(state.claude_account_json().unwrap()).unwrap(),
-            "{}"
+            r#"{"hasCompletedOnboarding":true}"#
         );
 
         // Operator switches to sync — host auth must now be forwarded
