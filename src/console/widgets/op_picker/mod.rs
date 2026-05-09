@@ -2172,7 +2172,7 @@ mod tests {
                 "op://Private/Stripe/api key",
             );
         let cli_ref =
-            crate::operator_env::resolve_op_uri_to_ref("op://Private/Stripe/api key", &stub)
+            crate::operator_env::resolve_op_uri_to_ref("op://Private/Stripe/api key", &stub, None)
                 .unwrap();
 
         assert_eq!(cli_ref.op, picker_ref.op, "op URI must match");
@@ -2224,6 +2224,7 @@ mod tests {
         let cli_ref = crate::operator_env::resolve_op_uri_to_ref(
             "op://Private/Claude[alexey@zhokhov.com]/auth token",
             &stub,
+            None,
         )
         .unwrap();
 
@@ -2270,6 +2271,7 @@ mod tests {
         let cli_ref = crate::operator_env::resolve_op_uri_to_ref(
             "op://Private/Claude/Security/auth token",
             &stub,
+            None,
         )
         .unwrap();
 
@@ -2316,9 +2318,12 @@ mod tests {
                 true,
                 "op://Private/Claude/Security/auth token",
             );
-        let cli_ref =
-            crate::operator_env::resolve_op_uri_to_ref("op://Private/Claude/auth token", &stub)
-                .unwrap();
+        let cli_ref = crate::operator_env::resolve_op_uri_to_ref(
+            "op://Private/Claude/auth token",
+            &stub,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(cli_ref.op, picker_ref.op, "op URI must match");
         assert_eq!(cli_ref.path, picker_ref.path, "display path must match");

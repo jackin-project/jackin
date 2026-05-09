@@ -236,3 +236,115 @@ Show the env vars registered at the chosen scope as a table with `Key` and `Valu
 jackin workspace env list prod
 jackin workspace env list prod --role agent-smith
 ```
+
+## `workspace claude-token`
+
+End-to-end orchestrator for Claude long-lived OAuth tokens. Generates a fresh token, stores it in 1Password, and wires the workspace so Claude inside the container reads it from the env. The operator never sees the token value.
+
+```bash
+jackin workspace claude-token <SUBCOMMAND>
+```
+
+| Subcommand | Purpose |
+|---|---|
+| `setup`  | Generate (or adopt) a token, store it, switch the workspace to OAuth-token mode. |
+| `rotate` | Replace the workspace's current token with a freshly-captured one and delete the prior 1P item. |
+| `revoke` | Clear the wired token and switch the workspace's Claude auth back to `ignore`. Optionally delete the 1P item. |
+| `doctor` | Resolve the wired token via `op` and report its SHA-256 prefix so the operator can confirm the canonical slot points at a real, readable item. |
+
+Every subcommand needs `claude` and `op` on `PATH`. `setup` and `rotate` drive `claude setup-token` interactively under a PTY — the operator completes the OAuth flow in their browser. The token is captured into a redacted in-memory secret and never echoed to stdout, scrollback, or shell history.
+
+### `workspace claude-token setup`
+
+```bash
+jackin workspace claude-token setup <WORKSPACE> --vault <VAULT> [OPTIONS]
+```
+
+| Option | Description |
+|---|---|
+| `--vault <VAULT>`        | 1Password vault name or UUID where the new item lands. Required unless `--reuse` is passed. |
+| `--item-name <NAME>`     | Override the auto-generated item title. `{ws}` substitutes the workspace name. Default: `jackin · {ws} · claude-token`. |
+| `--op-account <ACCOUNT>` | Pin every `op` invocation to a specific 1P account. Persists onto the workspace so subsequent `rotate` / `revoke` use the same account. |
+| `--reuse <OP_REF>`       | Skip token generation and adopt the supplied `op://Vault/Item/field` reference verbatim. Use when an item already exists in 1Password. |
+
+On success the workspace's Claude auth flips to OAuth-token mode and the new (or reused) `op://` reference becomes the canonical slot. An "expires in N days" countdown is stamped into the local cache so the launch banner can surface it. On failure no on-disk config is changed and any orphan 1P item is best-effort deleted; if the cleanup itself fails the error message includes the exact `op item delete` command to run by hand.
+
+```bash
+# First-time setup — opens the browser for the OAuth flow
+jackin workspace claude-token setup my-app --vault Personal
+
+# Multi-account 1P operators pin the account
+jackin workspace claude-token setup my-app --vault Work --op-account work@example.com
+
+# Adopt an existing op:// reference instead of minting a new token
+jackin workspace claude-token setup my-app --reuse "op://Personal/jackin · my-app · claude-token/token"
+```
+
+### `workspace claude-token rotate`
+
+```bash
+jackin workspace claude-token rotate <WORKSPACE> [OPTIONS]
+```
+
+Capture a fresh token, store it under a new 1P item, repoint the workspace, then delete the prior item. Without `--vault` the prior item's vault is reused, so `rotate <ws>` is the day-to-day form.
+
+| Option | Description |
+|---|---|
+| `--vault <VAULT>`        | Move the rotated item to a different vault. Defaults to the prior item's vault. |
+| `--item-name <NAME>`     | Override the auto-generated item title for the new item. |
+| `--op-account <ACCOUNT>` | Pin every `op` invocation for this rotation. |
+
+If the prior 1P item cannot be deleted (auth, permission, network), the rotate exits non-zero with a copy-pasteable `op item delete` recovery command — the new item is wired and live, the old one needs hand-removal.
+
+```bash
+jackin workspace claude-token rotate my-app
+jackin workspace claude-token rotate my-app --vault Archive  # move to a different vault
+```
+
+### `workspace claude-token revoke`
+
+```bash
+jackin workspace claude-token revoke <WORKSPACE> [--delete-op-item]
+```
+
+Clear the wired token from the workspace and switch the agent's auth mode back to `ignore`. The cached expiry stamp is removed so the launch banner stops surfacing a countdown.
+
+| Option | Description |
+|---|---|
+| `--delete-op-item` | Also delete the 1P item the workspace pointed at. Refused (with a hand-recovery hint) when the slot held a literal token instead of an `op://` reference, or when the URI does not parse — the operator explicitly opted into a 1P-side delete and a silent no-op would let the secret survive in the vault. |
+
+```bash
+jackin workspace claude-token revoke my-app                    # config-only revoke
+jackin workspace claude-token revoke my-app --delete-op-item   # also remove the 1P item
+```
+
+### `workspace claude-token doctor`
+
+```bash
+jackin workspace claude-token doctor <WORKSPACE>
+```
+
+Resolve the wired token through `op` and print:
+
+- The workspace's auth-forward mode.
+- The pinned 1P account (or `(default)`).
+- The `op://` reference (or `(literal slot)` when the workspace stores the token verbatim).
+- A 12-character SHA-256 prefix of the resolved value so the operator can compare against what they expect to see in 1Password.
+
+This is a structural / connectivity check — it does not contact Claude's API. Doctor's job is to confirm the canonical-slot plumbing resolves cleanly. Token validity upstream is observed by launching the workspace and watching the auth banner.
+
+```bash
+jackin workspace claude-token doctor my-app
+```
+
+A working slot prints:
+
+```text
+workspace        my-app
+auth_forward     oauth_token
+op_account       work@example.com
+op_ref           Personal/jackin · my-app · claude-token/token
+token sha256     a3f9c2b81e74… (12 hex prefix; matches stored value)
+```
+
+See [Claude OAuth-token authentication](/guides/authentication/agents/#oauth_token-claude-only) for the operator-level concept; [Claude Token Orchestrator](/reference/claude-token-orchestrator/) for the under-the-hood mechanics (contributor reference).

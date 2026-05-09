@@ -3,6 +3,7 @@ pub mod paths;
 pub(crate) mod planner;
 pub mod resolve;
 pub mod sensitive;
+pub mod token_setup;
 
 pub use mounts::{
     parse_mount_spec, parse_mount_spec_resolved, validate_mount_paths, validate_mount_specs,
@@ -68,6 +69,21 @@ pub struct WorkspaceConfig {
     pub roles: std::collections::BTreeMap<String, WorkspaceRoleOverride>,
     #[serde(default, skip_serializing_if = "KeepAwakeConfig::is_default")]
     pub keep_awake: KeepAwakeConfig,
+    /// Pin this workspace to a specific 1Password account when
+    /// resolving `op://` references. Forwarded as `op --account <id>`
+    /// to every `op` invocation made on behalf of this workspace
+    /// (env resolver at launch, write helpers in
+    /// `jackin workspace claude-token setup`).
+    ///
+    /// When unset, `op` falls back to its default-account context.
+    /// Multi-account 1Password operators set this so a workspace's
+    /// secrets always resolve against the right account regardless
+    /// of which account the operator most recently `op signin`-ed.
+    ///
+    /// Accepts the account UUID, the shorthand label (e.g.
+    /// `Personal`), or the email — `op` accepts all three.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub op_account: Option<String>,
     /// Workspace-level Claude auth configuration. Forms the middle
     /// layer of the 3-layer auth resolver
     /// (global → workspace → workspace × role × agent).
@@ -751,6 +767,7 @@ isolation = "clone"
             env: BTreeMap::new(),
             roles: BTreeMap::new(),
             keep_awake: KeepAwakeConfig::default(),
+            op_account: None,
             claude: None,
             codex: None,
             amp: None,
@@ -965,6 +982,38 @@ allowed_roles = ["smith"]
         assert!(
             smith.amp.is_none(),
             "role override amp must default to None"
+        );
+    }
+
+    /// `op_account` round-trips literal strings.
+    #[test]
+    fn workspace_config_round_trips_op_account() {
+        let original = WorkspaceConfig {
+            workdir: "/x".into(),
+            op_account: Some("Personal".into()),
+            ..Default::default()
+        };
+        let serialized = toml::to_string(&original).expect("serialize");
+        assert!(
+            serialized.contains(r#"op_account = "Personal""#),
+            "serialized form must include op_account line, got:\n{serialized}"
+        );
+        let parsed: WorkspaceConfig = toml::from_str(&serialized).expect("re-deserialize");
+        assert_eq!(parsed.op_account, Some("Personal".into()));
+    }
+
+    /// Default workspace omits `op_account` from serialized form so
+    /// existing config files stay byte-for-byte stable.
+    #[test]
+    fn workspace_config_omits_op_account_when_none() {
+        let cfg = WorkspaceConfig {
+            workdir: "/x".into(),
+            ..Default::default()
+        };
+        let s = toml::to_string(&cfg).unwrap();
+        assert!(
+            !s.contains("op_account"),
+            "default workspace must not serialize op_account, got:\n{s}"
         );
     }
 }
