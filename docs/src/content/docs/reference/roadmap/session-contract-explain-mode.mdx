@@ -53,15 +53,22 @@ enough to use as an audit artifact.
 | Section | Contents |
 |---|---|
 | Identity | workspace, role, agent runtime, instance name, role source, image tag/digest when known |
+| Routing / tier decision | selected backend, configured alternatives, recommendation reason, and why stronger or weaker tiers were not selected |
 | Sandbox | backend (`dind`, `microvm`, future remote/Kubernetes), Docker daemon shape, privileged sidecar status, TLS/rootless status |
 | Filesystem | read-write mounts, read-only mounts, isolated worktree/clone mounts, generated override files, workdir, sensitive path warnings |
-| Credentials | per-runtime auth mode, GitHub CLI mode, `1Password` references, env/file/bridge delivery, known exposure warnings |
-| Network | current network mode, egress policy if configured, service/port reachability, host localhost exposure caveats |
-| Host-side effects | image build, container creation, DinD sidecar creation, worktree creation, auth sync, state directory writes, future snapshots |
+| Credentials | per-runtime auth mode, GitHub CLI mode, `1Password` references, env/file/bridge delivery, granted/denied/unavailable credentials, known exposure warnings |
+| Integrations | active stack integrations, recommendation source, approval state, and any diff from the previously approved recommendation hash |
+| Network | current network mode, egress policy if configured, enforcement quality, connection logging posture, host localhost exposure caveats |
+| Service ports | requested and active host-to-container mappings, sandbox-to-host aliases, protocol, persistence, and host-side effects |
+| Runtime homes | provider home directories and state roots for Claude, Codex, GitHub CLI, plugins, and skills, including whether each path is persisted |
+| Host-side effects | image build, container creation, DinD sidecar creation, worktree/config writes, generated files, port publications, auth sync, state directory writes, firewall/proxy helper setup, future snapshots |
 | Recovery | cleanup policy, preserved worktree path, snapshot availability, `hardline`/`purge` recovery path |
 
 The `--json` shape should be stable enough for docs, tests, CI checks, and
-future `jackin daemon` consumers. It should not expose secret values.
+future `jackin daemon` consumers. The JSON schema should be versioned and
+stable: additive fields are allowed, but existing field names and enum values
+must not change without a schema-version bump. It should not expose secret
+values.
 
 ## Phases
 
@@ -70,6 +77,12 @@ future `jackin daemon` consumers. It should not expose secret values.
 - Factor the existing workspace/role/agent resolution into a side-effect-free
   contract builder.
 - Print filesystem, runtime, auth mode, and Docker/DinD sections.
+- Print planned host mutations even in explain mode, including worktree/config
+  writes, generated files, port publications, auth sync, image builds,
+  state-directory creation, and firewall/proxy helper setup. The command
+  reports them as planned effects and performs none of them.
+- Include a routing explanation such as: `selected dind because no microVM
+  backend is configured; network policy is guest-enforced only`.
 - Add `jackin explain <role> <workspace>` and `jackin load --explain`.
 - Include a JSON form that redacts values but preserves delivery type.
 

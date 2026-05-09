@@ -149,6 +149,14 @@ runs locally. Resolved credentials are passed to the remote *per
 invocation*, never persisted there. This matches multicode's posture
 and avoids leaving long-lived secrets on a shared host.
 
+### Sync contract
+
+Every synced path needs an explicit direction and owner. `sync_up` means the
+local host is authoritative, `sync_bidi` means conflict behavior is part of
+the contract, and remote-only jackin state stays remote unless the operator
+requests a recovery copy. Credentials are never included in broad sync rules;
+they use the credential source pattern and per-invocation grants instead.
+
 ## Scope (V1)
 
 - A `jackin-remote` binary, cross-compilable from the same repo.

@@ -48,10 +48,17 @@ An integration can propose:
 
 An integration cannot:
 
+- widen trust compared with the resolved workspace/role policy
 - add write mounts
 - change sandbox backend
 - change network policy
 - expose credentials or credential-shaped env vars
+- convert a denied credential into an env var, file mount, command output, or
+  helper socket
+- request env names matching credential-shaped patterns such as `*_TOKEN`,
+  `*_KEY`, `*_SECRET`, `*_PASSWORD`, `AWS_*`, `GITHUB_*`, `GH_*`, `OPENAI_*`,
+  or `ANTHROPIC_*` unless a jackin-owned credential source explicitly grants
+  them
 - run hooks or shell commands
 - override agent runtime configuration
 - mutate host files
@@ -100,6 +107,9 @@ canonical path plus file hash, so changes prompt again.
 - Reject unknown fields, unsafe env names, paths that resolve into sensitive
   credential zones, and oversized manifests.
 - Add validation commands for contribution-friendly PRs.
+- Add `jackin integration validate <path>` output that prints accepted fields,
+  rejected fields, resolved paths, sensitive-zone hits, safe-env decisions, and
+  the exact contract diff a reviewer should inspect.
 
 ## Host-side effects
 

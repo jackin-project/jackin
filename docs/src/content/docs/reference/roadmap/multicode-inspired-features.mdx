@@ -66,6 +66,41 @@ Every borrowed idea has to survive these filters:
 | Claude/devcontainer patterns | Default-deny firewall and reproducible container setup | Devcontainers are workspace setup, not a multi-agent orchestrator or full operator platform |
 | Conductor-style native worktrees | Low-friction host-native worktrees | No meaningful sandbox boundary; useful only as a UX comparison |
 
+## User-facing benefit matrix
+
+This table is the "why would an operator care?" pass. A feature only belongs
+on the roadmap when it improves an engineer's day-to-day control loop, not
+just because another tool has it.
+
+| User-visible benefit | Seen in | Jackin direction |
+|---|---|---|
+| Know the exact boundary before launch | Hazmat session contract; Docker Sandboxes security model | [Session contract and explain mode](/reference/roadmap/session-contract-explain-mode/) becomes the common preflight for mounts, auth, Docker, network, ports, persistence, and recovery |
+| Pick the right containment tier for the job | Hazmat tier decision flow; Docker Sandboxes private-daemon path | Add a tier recommendation to `jackin explain` rather than forcing users to infer whether `dind`, rootless DinD, microVM, SSH remote, or Kubernetes is appropriate |
+| Run Docker/Compose without trusting the host daemon | Docker Sandboxes private Docker Engine; Hazmat Tier 3 | Keep host socket mounting out of scope; make private-daemon backends the Docker-capable path under [selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) |
+| See and govern outbound network behavior | Docker Sandboxes dashboard network panel; Hazmat deny-mode routing | [Network egress policy](/reference/roadmap/network-egress-policy/) should include connection logs and rule-editing UX, not only static allowlist config |
+| Open services started by the agent | Docker Sandboxes `sbx ports`; multicode host-localhost notes | Track service exposure as a first-class session-contract section with explicit host-side effects and non-persistent port mappings |
+| Work in parallel without clobbering the main checkout | Docker Sandboxes `--branch`; multicode short-lived workspaces | Jackin already has per-mount worktree/clone isolation; improve the operator surface around branch naming, preserved worktrees, and post-session review |
+| Resume a configured environment without rebuilding everything | Docker Sandboxes named/persistent VMs; multicode workspaces | Preserve jackin's explicit state model, but add disk/resource visibility and cleanup policy so persistence does not become invisible bloat |
+| See which agents are idle, busy, waiting, or expensive | multicode live TUI; Docker Sandboxes dashboard cards | [Agent runtime status](/reference/roadmap/agent-runtime-status/), [console resource panel](/reference/roadmap/console-resource-panel/), and [token telemetry](/reference/roadmap/token-cost-telemetry/) should converge into one operator overview |
+| Jump from agent output to issue/PR/repo state | multicode `<multicode:*>` tags | Keep the tag protocol vendor-neutral and optional, then use it to drive GitHub link tracking and custom operator actions |
+| Reuse stack setup safely | Hazmat integrations; Docker Sandboxes kits/templates | Keep roles as the environment unit, but allow non-executable stack hints and future reviewed setup kits where they cannot widen trust |
+| Roll back after a bad unattended run | Hazmat snapshots/restore; Docker Sandboxes disposable VM cleanup | [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/) should separate metadata recovery, project snapshots, and sandbox-state deletion |
+| Run the same operator model over SSH/server/Kubernetes | multicode-remote; Jackin roadmap vision | [jackin-remote](/reference/roadmap/jackin-remote/) and Kubernetes support should reuse the same contract/status/policy vocabulary instead of becoming separate products |
+
+## Ideas to decline or postpone
+
+Some adjacent-tool features are attractive but would cut against jackin's
+values if copied directly.
+
+| Idea | Why not copy directly | Safer jackin alternative |
+|---|---|---|
+| Host Docker socket passthrough | Any agent with daemon access can create privileged containers or host bind mounts; this collapses the sandbox boundary | Private daemon only: DinD, rootless DinD, microVM-owned Docker, or Kubernetes-controlled pods |
+| Same-absolute-path workspace passthrough everywhere | Elegant in microVMs, but it would break jackin's explicit `dst` mount model in Docker/container backends | Keep `dst` explicit; only use same-path passthrough inside a backend that natively needs and explains it |
+| TUI-only orchestration | Fast for one product, but jackin's core users automate from terminals, SSH, and scripts | CLI-first contracts and commands, with `jackin console` as the common day-to-day overview |
+| Repo-controlled integration manifests with arbitrary paths/hooks | Turns untrusted project files into policy authority | Repo may recommend known integration names; operator approval and jackin-owned manifests decide what activates |
+| Broad environment inheritance for convenience | Secret-shaped env vars and auth sockets are easy to leak into agents | Named credential sources, safe env selectors, and bridge/proxy-mediated capabilities |
+| "Sandbox equals safe" messaging | Docker Sandboxes and Hazmat both document residual workspace, hooks, network, and persistence risk | Print backend-specific risk posture and recovery limits in the session contract |
+
 ## Critical read of Hazmat
 
 Hazmat is not a jackin replacement. It is a containment-first launcher that
@@ -134,7 +169,15 @@ not as an assumption that every backend can match immediately.
 4. **Branch mode is operator-friendly.** `--branch` creates worktrees under
    `.sbx/`, keeping agent changes out of the main working tree while Git still
    works inside the sandbox.
-5. **The security docs are blunt about remaining risk.** Workspace changes are
+5. **The dashboard makes state legible.** `sbx` shows live sandbox status,
+   CPU/RAM use, port mappings, and network governance rules. The important
+   borrow is not the card UI; it is one operator overview for runtime, ports,
+   policy, and cleanup.
+6. **Ports and host services are explicit.** Host-to-sandbox services require
+   published port mappings, and sandbox-to-host service access goes through a
+   named host alias plus policy. Jackin needs equivalent explicitness for
+   dev servers, databases, and local model runners.
+7. **The security docs are blunt about remaining risk.** Workspace changes are
    live on the host in direct mode; hooks and generated files still matter.
 
 ### Where jackin should differ
@@ -176,11 +219,12 @@ present in jackin' today; **planned** means a roadmap item already exists;
 | External tool/IDE/diff launcher | Yes — `[handler]` block, `[[tool]]` array | *Gap — see [Operator handler system](/reference/roadmap/operator-handler-system/)* |
 | Custom operator-defined tools | Yes — `[[tool]]` array, hotkey + exec/prompt type | *Gap — see [Custom operator tools](/reference/roadmap/custom-operator-tools/)* |
 | Autonomous task queue | Fork adds queue config; original has the substrate | *Gap — see [Autonomous task queue](/reference/roadmap/autonomous-task-queue/)* |
-| Task source abstraction | Manual workspaces in original; issue queue in fork | *Gap — see [Task source abstraction](/reference/roadmap/task-source-abstraction/)* |
+| PR lifecycle actions | Fork exposes publish, rebase, fix CI, address review, request review, and merge actions | *Gap — model manual gates and PR readiness inside [Autonomous task queue](/reference/roadmap/autonomous-task-queue/)* |
+| Task source abstraction | Manual workspaces in original; issue queue in fork | *Gap — add source-neutral task policy in [Task source abstraction](/reference/roadmap/task-source-abstraction/)* |
 | Idle runtime cleanup | Yes — `gradle --stop`, container recycle | *Gap — see [Idle runtime cleanup](/reference/roadmap/idle-runtime-cleanup/)* |
 | Remote orchestration | Yes — `multicode-remote` SSH bridge + rsync | *Gap — see [jackin-remote](/reference/roadmap/jackin-remote/)* |
 | Workspace skills mount | Yes — `add-skills-from` mounts to provider skill dirs | *Gap — see [Workspace skills mount](/reference/roadmap/workspace-skills-mount/)* |
-| Credential source plurality | Backends such as env and command | Partial — `op://` and `${env.VAR}` shipped; *see [Credential source pattern](/reference/roadmap/credential-source-pattern/)* |
+| Credential source plurality | Backends such as OS secret stores, env, and command | Partial — `op://` and `${env.VAR}` shipped; *see [Credential source pattern](/reference/roadmap/credential-source-pattern/)* |
 | GitHub CLI auth passthrough | Read-only mount / token config | Partial — see [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/) |
 | Operator console / TUI | Yes — ratatui, full-time | Have — `jackin console` (less feature-rich than CLI on purpose) |
 | Role repo contract | Implicit via skill/config mounts | Have — `jackin.role.toml` + `Dockerfile` |
@@ -209,6 +253,11 @@ present in jackin' today; **planned** means a roadmap item already exists;
   TUI-only product.
 - **Toolchain-neutral orchestration** instead of Micronaut/Java defaults baked
   into the orchestrator.
+- **Security boundary honesty.** multicode's README is explicit that its
+  isolation is for safety and convenience, not security. Jackin's docs should
+  preserve that kind of bluntness for every backend: `dind` is useful, but it
+  is not a microVM; microVM is stronger, but still has workspace and credential
+  policy caveats.
 
 ## Track B — Containment and recovery comparison
 
@@ -221,9 +270,10 @@ jackin pretend to be either one.
 | Strong local isolation | macOS user + seatbelt + `pf`; VM tier for hardest cases | Per-sandbox microVM | [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) |
 | Docker workflows | Private-daemon tier only; shared daemon rejected in containment | Private Docker Engine inside VM | Keep DinD explicit, add microVM/private-daemon backend, reject silent host socket exposure |
 | Network policy | `pf` plus DNS blocklist; exact-domain caveats documented | Host-side proxy, deny-by-default, non-HTTP blocked | [Network egress policy](/reference/roadmap/network-egress-policy/) |
+| Service ports | Service access appears in session contract | `sbx ports` publishes host-to-sandbox traffic; host services use policy-approved alias | Add service access and port mappings to session contract + network policy |
 | Credential delivery | Host-owned secret store, materialized/brokered per harness | Host proxy injects credentials; values stay outside VM | [Container credential exposure](/reference/roadmap/container-credential-exposure/) and [host bridge](/reference/roadmap/host-bridge/) |
 | Stack ergonomics | Integration manifests with strict "cannot widen trust" rules | Templates/kits and agent-specific setup | [Stack integration contracts](/reference/roadmap/stack-integration-contracts/) plus role repos |
-| Recovery | Pre-session snapshots, restore, formal backup invariants | Persistent VM state; `sbx rm` cleanup | [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/) |
+| Recovery | Pre-session snapshots, restore, formal backup invariants | Persistent VM state; `sbx rm` cleanup | [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/) plus disk/state budgets |
 | Parallel Git work | Not the main product focus | Direct mode plus `.sbx/` branch worktrees | [Per-mount isolation](/reference/roadmap/per-mount-isolation/) with jackin-owned worktree/clone modes |
 | Proof / governance | TLA+ for setup, policy, backup, launch invariants | Product security docs | ADRs and behavioral specs for host-side effects |
 
@@ -286,14 +336,14 @@ launched, what can be reached, and how to recover.
 
 | Item | Primary inspiration | Depends on |
 |---|---|---|
-| [Session contract and explain mode](/reference/roadmap/session-contract-explain-mode/) | Hazmat session contract / `hazmat explain`; Docker Sandboxes security model | Workspace resolution; auth strategy |
+| [Session contract and explain mode](/reference/roadmap/session-contract-explain-mode/) | Hazmat session contract / `hazmat explain`; Docker Sandboxes security model and `sbx ports`/lifecycle output | Workspace resolution; auth strategy |
 | [Stack integration contracts](/reference/roadmap/stack-integration-contracts/) | Hazmat session integrations | Session contract |
 
 ### Phase B2 — Control egress and credentials
 
 | Item | Primary inspiration | Depends on |
 |---|---|---|
-| [Network egress policy](/reference/roadmap/network-egress-policy/) | Docker Sandboxes host proxy; Hazmat `pf`/DNS hardening; Claude devcontainer allowlist | Session contract; selectable sandbox backends |
+| [Network egress policy](/reference/roadmap/network-egress-policy/) | Docker Sandboxes host proxy and network panel; Hazmat `pf`/DNS hardening; Claude devcontainer allowlist | Session contract; selectable sandbox backends |
 | [Container credential exposure](/reference/roadmap/container-credential-exposure/) | Docker Sandboxes credential proxy; Hazmat secret store | Host bridge; credential source pattern |
 | [Host bridge](/reference/roadmap/host-bridge/) | Brokered host capabilities | jackin daemon |
 
@@ -318,10 +368,11 @@ launched, what can be reached, and how to recover.
 This is a guide, not a constraint. The tracks are intentionally separable.
 
 1. **Fleet quick wins**: workspace description, archive, handler system,
-   resource limits, and ephemeral mounts can land as independent PRs.
+   resource limits, ephemeral mounts, and the lightweight parts of service
+   visibility can land as independent PRs.
 2. **Session contract first for containment work**: do not build network,
-   snapshot, or integration behavior until jackin can preview the fully
-   resolved launch boundary and host-side effects.
+   snapshot, port-forwarding, or integration behavior until jackin can preview
+   the fully resolved launch boundary and host-side effects.
 3. **Persistent storage before deep observability**: per-instance SQLite should
    land before GitHub link tracking, token telemetry, snapshot metadata, and
    autonomous queue persistence.
@@ -334,6 +385,10 @@ This is a guide, not a constraint. The tracks are intentionally separable.
 6. **Do not claim Docker Sandboxes parity early**: jackin can improve DinD and
    add microVMs before it has host-side network proxying and credential
    injection. The docs must keep that distinction visible.
+7. **Add tier recommendations before adding more backends**: Hazmat's decision
+   flow is useful because it tells users when not to use a mode. Jackin should
+   make `dind`/microVM/remote/Kubernetes recommendations visible before the
+   backend matrix grows.
 
 ## Key structural insights
 
@@ -355,6 +410,10 @@ This is a guide, not a constraint. The tracks are intentionally separable.
    DinD, OrbStack isolated machine, Docker Sandboxes microVM, SSH remote host,
    and Kubernetes pod all need one user-facing abstraction, but their risk
    profiles must be printed honestly.
+6. **Service access is part of the boundary.** Ports, host aliases, and local
+   service reachability are not small UX extras. They decide whether an agent
+   can hit databases, dev servers, model runners, or cloud emulators, so they
+   belong in the same contract as mounts and credentials.
 
 ## Open program-level questions
 
@@ -375,6 +434,14 @@ This is a guide, not a constraint. The tracks are intentionally separable.
 5. **Credential proxy destination.** Is the host bridge the long-term place for
    credential proxying, or should sandbox backends own it? Recommended default:
    host bridge owns operator approval and audit; backends own transport.
+6. **Service access model.** Should port publication be workspace config,
+   per-session command, console action, or all three? Recommended default:
+   command/console action first, config only for stable dev servers; always
+   show active mappings in the contract/status surface.
+7. **Persistence budget.** Should jackin show per-instance disk usage and
+   cleanup recommendations before adding microVM/private-daemon backends?
+   Recommended default: yes, because Docker Sandboxes-style persistence is
+   useful only if operators can see and reclaim it.
 
 ## Out of scope for this program
 

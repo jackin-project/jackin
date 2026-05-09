@@ -82,6 +82,21 @@ Multi-vendor compat: `<multicode:repo>` etc. parse identically to the
 vendor namespaces can be added behind a feature flag if/when the
 ecosystem demands.
 
+### Manual repair
+
+Agents will sometimes emit a malformed URL, the wrong issue, or no PR tag at
+all. Operators need a repair path that fixes the operator surface without
+rewriting the transcript:
+
+```sh
+jackin tags set <instance> pr <url>
+jackin tags unset <instance> issue <url>
+```
+
+Manual repairs are marked `operator-provided`, override display state, and stay
+separate from agent-emitted transcript events. This keeps the console useful
+even when the protocol is advisory rather than enforced.
+
 ### Parser placement
 
 The parser sits *upstream* of the [agent runtime
@@ -126,6 +141,8 @@ runtime; for Claude, that's the `[claude.plugins]` array).
 - Console renders captured links as clickable items next to the agent
   row (using the [operator handler
   system](/reference/roadmap/operator-handler-system/) for click).
+- CLI and console repair commands for setting and unsetting captured values,
+  stored as operator-provided overrides.
 - One published skill bundle (separate repo) that roles can
   include to enable emission.
 
@@ -134,8 +151,6 @@ runtime; for Claude, that's the `[claude.plugins]` array).
 - Persistence of tag history. V1 in-memory only;
   [persistent storage layer](/reference/roadmap/persistent-storage-layer/)
   adds it later.
-- Per-instance custom-link CRUD from the console (multicode has this).
-  Defer; the agent-emitted set is enough.
 - Tag protocol versioning (`<jackin:repo version="2">...</jackin:repo>`).
   V1 is unversioned; if we ever need to break compatibility, add the
   attribute then.

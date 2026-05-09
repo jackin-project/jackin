@@ -47,8 +47,9 @@ Per-workspace samples come from cgroup files inside the systemd unit:
 (current bytes), and `MemoryOomCount` from systemd properties.
 
 The TUI displays these as columns: machine CPU%, machine RAM, per-workspace
-CPU%, per-workspace RAM. RAM cells turn yellow when within 512 MB of
-`memory_max`. OOM kills are highlighted explicitly.
+CPU%, per-workspace RAM. RAM cells turn yellow when near the configured
+`memory_max`. OOM kills and file-descriptor pressure are highlighted
+explicitly.
 
 ## Recommended Shape
 
@@ -73,14 +74,18 @@ Fields per agent:
 - `cpu_percent: f32` (relative to one host core)
 - `memory_bytes: u64` (current RSS-equivalent)
 - `memory_limit_bytes: u64?` (from declared limit; renders "no limit" when absent)
-- `oom_killed: bool` (sticky from last OOM, cleared on container restart)
+- `memory_near_limit: bool` (derived from configured limit and current usage)
+- `oom_kill_count: u64` (sticky until container restart)
+- `nofile_limit: u64?` and `open_file_descriptors: u64?` when the backend can
+  report them
 
 ### Machine sampling
 
 Cross-platform — use the `sysinfo` crate (already a candidate dependency
 for this kind of work) for CPU/RAM. For the data-dir disk usage, walk
-`~/.jackin/data/` once on console open and incrementally on archive
-events; do not poll on every render.
+`~/.jackin/data/` once on console open and incrementally on archive events;
+also show free disk for the filesystem containing jackin's data directory. Do
+not poll disk usage on every render.
 
 ### Console rendering
 
@@ -95,8 +100,9 @@ per-agent table includes a status column to its left.
 
 ## Scope (V1)
 
-- Per-agent CPU%, RAM, RAM-vs-limit, OOM flag — sampled via Docker stats.
-- Machine summary: total CPU%, total RAM, data-dir disk usage.
+- Per-agent CPU%, RAM, RAM-vs-limit, OOM count, and file-descriptor limit when
+  available — sampled via Docker stats or backend-specific APIs.
+- Machine summary: total CPU%, total RAM, data-dir disk usage, and free disk.
 - 2-second sample interval while panel is open; paused when closed.
 - Console keystroke toggles the panel; defaults to closed.
 - Sample failures (Docker unreachable, container gone) degrade silently —

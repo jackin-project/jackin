@@ -52,7 +52,16 @@ quality:
 - `open` — no egress restriction
 - `guest-enforced` — iptables/nftables/proxy inside the sandbox
 - `host-enforced` — host-side proxy/firewall outside the sandbox
+- `partial` — some traffic is controlled, but at least one relevant path
+  remains open; the contract must name the uncovered path
 - `not-enforceable` — config requested but backend cannot safely apply it
+
+Examples of `partial` are expected early:
+
+- agent-container egress is filtered, but DinD-created inner containers are
+  not yet covered
+- HTTP/HTTPS proxying is enforced, but non-HTTP protocols are blocked,
+  unclassified, or backend-dependent
 
 ## Backend strategy
 
@@ -70,6 +79,13 @@ quality:
 
 - Add config parsing and launch-contract output.
 - Do not silently claim enforcement where the backend cannot provide it.
+- Record connection decision logs: timestamp, instance, destination host/IP,
+  port, protocol, rule matched, allowed/denied, and enforcement backend.
+- Expose rule editing through CLI and `jackin console` before launch; edits
+  must update the resolved session contract before they take effect.
+- Treat service ports as part of network policy: published container ports,
+  sandbox-to-host aliases, local database/dev-server access, and model-runner
+  endpoints must be listed with allow/deny status.
 - If `mode = "deny"` or `mode = "allowlist"` is requested on an unsupported
   backend, fail before launch unless the operator opts into `open`.
 

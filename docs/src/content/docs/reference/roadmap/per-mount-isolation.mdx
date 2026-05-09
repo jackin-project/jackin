@@ -240,7 +240,7 @@ isolation = "shared"
 
 The agent sees an isolated checkout at `/workspace/jackin` while `target/` is backed by a shared host cache. This is intentional, not a redundant mount to collapse.
 
-**Hooks inherit from the host repo.** Worktrees share `.git/hooks/` with the parent — operators who rely on pre-commit/pre-push to keep commits clean get that for free inside agent containers. Operators with host-specific hooks that don't work in the container fix the hook. V1 does not ship a `--no-hooks` flag; it can be added later if the use case materializes.
+**Hooks inherit from the host repo.** Worktrees share `.git/hooks/` with the parent — operators who rely on pre-commit/pre-push to keep commits clean get that for free inside agent containers. This is also a trust risk: repo-local hooks, `core.hooksPath`, and shared git config can execute host-authored policy inside the agent workflow and can drift while long-running agents are active. Clone mode is the safer default for untrusted agents because its `.git` directory is independent. A future hook-approval flow should make hook source, hash, install path, and drift visible before an agent is allowed to run commit/push workflows.
 
 **Back-merge is outside jackin's scope.** Agents push their branch to `origin` (GitHub or equivalent) from inside the container, and the PR is opened by the operator's usual tooling (e.g., the Superpowers plugin in Claude Code). Review happens upstream, not locally. Because worktrees inherit `.git/config` from the host, `remote.origin.url` and the operator's credential setup are available to the agent without any jackin'-side remote configuration. Jackin' does not implement `jackin diff`, `jackin integrate`, or any merge-assist command.
 

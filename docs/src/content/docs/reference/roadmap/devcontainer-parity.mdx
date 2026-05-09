@@ -15,7 +15,7 @@ jackin also has, and makes a few different choices that are worth comparing
 directly:
 
 - upstream bakes a network-egress allowlist into the container image via
-  `iptables` + `ipset` and a `postCreateCommand` that runs it with
+  `iptables` + `ipset` and a `postStartCommand` that runs it with
   `NET_ADMIN`/`NET_RAW` capabilities
 - upstream grants `sudo` **only** to a single setup script, not to the whole
   session
@@ -102,7 +102,8 @@ Source: <RepoFile path="docker/runtime/entrypoint.sh" />
   - Named volumes per `devcontainerId`:
     - `claude-code-bashhistory-${devcontainerId}` → `/commandhistory`
     - `claude-code-config-${devcontainerId}` → `/home/node/.claude`
-  - `postCreateCommand: "sudo /usr/local/bin/init-firewall.sh"`
+  - `postStartCommand: "sudo /usr/local/bin/init-firewall.sh"`
+  - `waitFor: "postStartCommand"`
   - Extensions: `anthropic.claude-code`, ESLint, Prettier, GitLens
   - Env: `NODE_OPTIONS=--max-old-space-size=4096`
 - `init-firewall.sh`:
@@ -129,7 +130,7 @@ Source: <RepoFile path="docker/runtime/entrypoint.sh" />
 | Search / fuzzy tools | `fzf` | `fzf`, `fd-find`, `ripgrep` |
 | Security tools | none | `tirith`, `shellfirm` (MCP + shell hooks) |
 | Docker-in-sandbox | not available | DinD sidecar, per-agent network, TLS |
-| Network egress policy | iptables/ipset allowlist via `postCreateCommand` | none at container layer |
+| Network egress policy | iptables/ipset allowlist via `postStartCommand` | none at container layer |
 | Devcontainer spec | yes (is the product) | no — images not discoverable by VS Code/Cursor/Codespaces |
 | Shell history persistence | named volume per `devcontainerId` | not persisted (inside container layer) |
 | Claude config persistence | named volume `claude-code-config-*` | host bind mount `~/.jackin/data/{name}/.claude` |
@@ -188,8 +189,8 @@ Definition, debugging, or extension auto-install.
    it into the workspace's `.devcontainer/` directory (or a jackin-managed
    shadow dir) so IDEs can consume it. Fields: build target (use the jackin
    image directly), `runArgs`, mounts matching what jackin would mount,
-   `postCreateCommand` pointing at jackin's entrypoint hooks, an extensions
-   list curated per agent.
+   `postStartCommand` for per-start jackin runtime hooks, `postCreateCommand`
+   only for one-time initialization, an extensions list curated per agent.
 2. **Ship a static reference `devcontainer.json` in the docs.** Operators
    copy it into their project. Zero product change, lowest cost. Loses
    coupling to jackin's actual runtime config.
@@ -199,6 +200,14 @@ Definition, debugging, or extension auto-install.
 **Recommendation**: Option 1 is the most aligned with jackin's positioning
 as a managed runtime, but it is not urgent. Option 2 is a cheap way to
 validate demand first.
+
+Generated `devcontainer.json` should use `postStartCommand` for per-start
+runtime setup that must rerun when the container restarts, and reserve
+`postCreateCommand` for one-time image/container initialization. It should set
+`waitFor` to the command that gates a usable agent environment so VS Code and
+Cursor do not attach before firewall setup, mounted homes, and runtime
+bootstrap are ready. The parity check should compare jackin launch readiness
+against devcontainer `waitFor` semantics, not only generated fields.
 
 ### Finding 3 — Scope the `claude` user's sudo
 

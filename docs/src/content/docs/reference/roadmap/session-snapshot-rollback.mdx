@@ -102,6 +102,12 @@ The restore command should refuse to run while the instance is active. It
 should print the exact host paths it will mutate and require an explicit flag
 or interactive confirmation.
 
+Before any destructive restore, jackin should snapshot the current state of the
+paths it is about to overwrite. That emergency snapshot is not a replacement
+for a real backup system, but it preserves a last-known state if the operator
+selected the wrong instance, the restore target changed since launch, or the
+snapshot excludes were too broad.
+
 ## Host-side effects
 
 Snapshots write to jackin's data directory. Restore mutates host workspace

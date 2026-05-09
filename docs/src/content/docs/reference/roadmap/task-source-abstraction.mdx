@@ -86,6 +86,30 @@ pub struct Task {
 }
 ```
 
+### Task policy
+
+Each source also returns or references a `TaskPolicy` so the queue does not
+hardcode GitHub issue assumptions:
+
+```rust
+pub struct TaskPolicy {
+    pub allowed_repositories: Vec<String>,
+    pub default_base_branch: Option<String>,
+    pub allowed_base_branches: Vec<String>,
+    pub required_labels: Vec<String>,
+    pub excluded_labels: Vec<String>,
+    pub write_target: WriteTarget,            // Worktree | Clone | RemoteBranchOnly
+    pub publish_mode: PublishMode,            // Never | ManualGate | AutoDraft | AutoReady
+    pub credential_source: Option<String>,
+    pub max_open_prs_per_repo: Option<u32>,
+    pub dedupe_key: String,
+}
+```
+
+The policy is user-facing because it controls what a queued agent may publish,
+where it may publish, and which manual gates are required. It belongs in the
+resolved session contract for every autonomous dispatch.
+
 ### V1 source: GitHub issues
 
 ```toml
