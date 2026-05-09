@@ -27,35 +27,57 @@ pub fn require_interactive_stdin(msg: &str) -> anyhow::Result<()> {
 /// Returns the 0-based index of the chosen option.
 /// Errors if stdin is not a terminal.
 pub fn prompt_choice(message: &str, options: &[&str]) -> anyhow::Result<usize> {
-    use std::io::BufRead;
-
     require_interactive_stdin(
         "ambiguous target requires interactive input, but stdin is not a terminal",
     )?;
+    prompt_choice_from(
+        message,
+        options,
+        &mut std::io::stdin().lock(),
+        &mut io::stderr(),
+    )
+}
 
-    eprintln!("{message}");
-    for (i, option) in options.iter().enumerate() {
-        eprintln!("  [{}] {}", i + 1, option);
+fn prompt_choice_from<R: io::BufRead, W: Write>(
+    message: &str,
+    options: &[&str],
+    input: &mut R,
+    output: &mut W,
+) -> anyhow::Result<usize> {
+    if options.is_empty() {
+        anyhow::bail!("prompt_choice requires at least one option");
     }
-    eprint!("Choose [1/{}]: ", options.len());
-    let _ = io::stderr().flush();
 
-    let mut line = String::new();
-    std::io::stdin().lock().read_line(&mut line)?;
-    let trimmed = line.trim();
-    let index: usize = trimmed
-        .parse::<usize>()
-        .ok()
-        .and_then(|n| {
+    writeln!(output, "{message}")?;
+    for (i, option) in options.iter().enumerate() {
+        writeln!(output, "  [{}] {}", i + 1, option)?;
+    }
+
+    loop {
+        write!(output, "Choose [1/{}]: ", options.len())?;
+        output.flush()?;
+
+        let mut line = String::new();
+        if input.read_line(&mut line)? == 0 {
+            anyhow::bail!("input closed before a choice was made");
+        }
+        let trimmed = line.trim();
+        if let Some(index) = trimmed.parse::<usize>().ok().and_then(|n| {
             if n >= 1 && n <= options.len() {
                 Some(n - 1)
             } else {
                 None
             }
-        })
-        .ok_or_else(|| anyhow::anyhow!("invalid choice: {trimmed:?}"))?;
+        }) {
+            return Ok(index);
+        }
 
-    Ok(index)
+        writeln!(
+            output,
+            "Invalid choice {trimmed:?}; enter a number from 1 to {}.",
+            options.len()
+        )?;
+    }
 }
 
 /// Display a spinner while waiting, returning when `poll` returns `Ok(())`.
@@ -109,4 +131,53 @@ where
     eprint!("\r\x1b[2K");
     let _ = io::stderr().flush();
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("timed out: {message}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::prompt_choice_from;
+    use std::io::Cursor;
+
+    #[test]
+    fn prompt_choice_retries_empty_input() {
+        let mut input = Cursor::new(b"\n3\n".as_slice());
+        let mut output = Vec::new();
+
+        let choice = prompt_choice_from(
+            "Pick one",
+            &["one", "two", "three"],
+            &mut input,
+            &mut output,
+        )
+        .unwrap();
+
+        assert_eq!(choice, 2);
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("Invalid choice \"\""));
+        assert_eq!(output.matches("Choose [1/3]:").count(), 2);
+    }
+
+    #[test]
+    fn prompt_choice_retries_out_of_range_input() {
+        let mut input = Cursor::new(b"4\n2\n".as_slice());
+        let mut output = Vec::new();
+
+        let choice =
+            prompt_choice_from("Pick one", &["one", "two"], &mut input, &mut output).unwrap();
+
+        assert_eq!(choice, 1);
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("Invalid choice \"4\""));
+        assert_eq!(output.matches("Choose [1/2]:").count(), 2);
+    }
+
+    #[test]
+    fn prompt_choice_reports_closed_input() {
+        let mut input = Cursor::new([].as_slice());
+        let mut output = Vec::new();
+
+        let err = prompt_choice_from("Pick one", &["one"], &mut input, &mut output).unwrap_err();
+
+        assert!(err.to_string().contains("input closed before a choice"));
+    }
 }
