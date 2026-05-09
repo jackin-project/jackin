@@ -5,6 +5,7 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use jackin::{
+    agent::Agent,
     config::{AppConfig, ConfigEditor},
     console::{
         ConsoleStage, ConsoleState,
@@ -2714,12 +2715,12 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
         .clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(AuthKind::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Agent(Agent::Claude));
     let ws_claude_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::WorkspaceMode {
-                kind: AuthKind::Claude
+                kind: AuthKind::Agent(Agent::Claude)
             }
         )
     });
@@ -2858,12 +2859,12 @@ fn auth_credential_source_enter_opens_source_picker() -> Result<()> {
         .clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(AuthKind::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Agent(Agent::Claude));
     let ws_claude_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::WorkspaceMode {
-                kind: AuthKind::Claude
+                kind: AuthKind::Agent(Agent::Claude)
             }
         )
     });
@@ -2920,7 +2921,7 @@ fn auth_add_role_override_flow_uses_selected_auth_kind() -> Result<()> {
         .clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(AuthKind::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Agent(Agent::Claude));
 
     let sentinel_idx = auth_row_idx(&ed, &config, |r| matches!(r, AuthRow::AddSentinel { .. }));
     ed.active_field = FieldFocus::Row(sentinel_idx);
@@ -2941,7 +2942,7 @@ fn auth_add_role_override_flow_uses_selected_auth_kind() -> Result<()> {
                     jackin::console::manager::state::AuthFormTarget::WorkspaceRole { role, kind },
                 ..
             }) => {
-                assert_eq!(*kind, AuthKind::Claude);
+                assert_eq!(*kind, AuthKind::Agent(Agent::Claude));
                 assert!(
                     !role.is_empty(),
                     "role must propagate from AuthRolePicker → AuthForm"
@@ -2973,7 +2974,7 @@ fn auth_role_header_left_right_toggles_expansion() -> Result<()> {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(AuthKind::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Agent(Agent::Claude));
     let header_idx = auth_row_idx(&ed, &config, |r| matches!(r, AuthRow::RoleHeader { .. }));
     ed.active_field = FieldFocus::Row(header_idx);
     state.stage = ManagerStage::Editor(ed);
@@ -3008,7 +3009,7 @@ fn auth_role_header_d_clears_selected_auth_kind_override() -> Result<()> {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(AuthKind::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Agent(Agent::Claude));
     let header_idx = auth_row_idx(&ed, &config, |r| matches!(r, AuthRow::RoleHeader { .. }));
     ed.active_field = FieldFocus::Row(header_idx);
     state.stage = ManagerStage::Editor(ed);
@@ -3060,13 +3061,15 @@ fn auth_role_agent_row_d_silently_clears_single_agent() -> Result<()> {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(jackin::console::manager::auth_kind::AuthKind::Claude);
+    ed.auth_selected_kind = Some(jackin::console::manager::auth_kind::AuthKind::Agent(
+        Agent::Claude,
+    ));
     ed.auth_expanded.insert("the-architect".into());
     let claude_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::RoleMode {
-                kind: AuthKind::Claude,
+                kind: AuthKind::Agent(Agent::Claude),
                 ..
             }
         )
@@ -3112,7 +3115,7 @@ fn auth_enter_on_auth_kind_focuses_selected_agent() -> Result<()> {
         matches!(
             r,
             AuthRow::AuthKindRow {
-                kind: AuthKind::Codex
+                kind: AuthKind::Agent(Agent::Codex)
             }
         )
     });
@@ -3122,7 +3125,7 @@ fn auth_enter_on_auth_kind_focuses_selected_agent() -> Result<()> {
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Enter))?;
 
     let ed = editor(&state);
-    assert_eq!(ed.auth_selected_kind, Some(AuthKind::Codex));
+    assert_eq!(ed.auth_selected_kind, Some(AuthKind::Agent(Agent::Codex)));
     assert!(
         matches!(ed.active_field, FieldFocus::Row(0)),
         "Enter on AuthKind must reset cursor to Row(0); got {:?}",
@@ -3146,7 +3149,7 @@ fn auth_esc_from_focused_view_pops_to_picker_without_dirty_modal() -> Result<()>
     let ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(AuthKind::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Agent(Agent::Claude));
     // Mutate `pending` so `is_dirty()` is true — this is what would
     // otherwise route Esc through `Modal::SaveDiscardCancel`.
     ed.pending.git_pull_on_entry = !ed.pending.git_pull_on_entry;
@@ -3186,7 +3189,7 @@ fn auth_tab_cycle_off_auth_clears_selected_agent() -> Result<()> {
     let ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(AuthKind::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Agent(Agent::Claude));
     state.stage = ManagerStage::Editor(ed);
 
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
@@ -3221,12 +3224,12 @@ fn auth_workspace_source_d_clears_workspace_mode() -> Result<()> {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(AuthKind::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Agent(Agent::Claude));
     let source_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::WorkspaceSource {
-                kind: AuthKind::Claude
+                kind: AuthKind::Agent(Agent::Claude)
             }
         )
     });
@@ -3268,12 +3271,12 @@ fn auth_credential_text_input_cancel_restores_form() -> Result<()> {
     let ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(AuthKind::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Agent(Agent::Claude));
     let ws_claude_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::WorkspaceMode {
-                kind: AuthKind::Claude
+                kind: AuthKind::Agent(Agent::Claude)
             }
         )
     });
@@ -3337,12 +3340,12 @@ fn auth_source_picker_op_disabled_when_op_missing() -> Result<()> {
     let ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
-    ed.auth_selected_kind = Some(AuthKind::Claude);
+    ed.auth_selected_kind = Some(AuthKind::Agent(Agent::Claude));
     let ws_claude_idx = auth_row_idx(&ed, &config, |r| {
         matches!(
             r,
             AuthRow::WorkspaceMode {
-                kind: AuthKind::Claude
+                kind: AuthKind::Agent(Agent::Claude)
             }
         )
     });

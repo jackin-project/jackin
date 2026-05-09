@@ -3723,13 +3723,14 @@ mod auth_cursor_step_tests {
     use super::super::super::auth_kind::AuthKind;
     use super::super::super::render::editor::AuthRow;
     use super::{step_auth_cursor_down, step_auth_cursor_up};
+    use crate::agent::Agent;
 
     fn rows() -> Vec<AuthRow> {
         // Mirrors the focused-mode shape: WorkspaceMode → Spacer →
         // RoleHeader → Spacer → AddSentinel.
         vec![
             AuthRow::WorkspaceMode {
-                kind: AuthKind::Claude,
+                kind: AuthKind::Agent(Agent::Claude),
             },
             AuthRow::Spacer,
             AuthRow::RoleHeader {
@@ -3763,7 +3764,7 @@ mod auth_cursor_step_tests {
         // candidate verbatim (caller already clamped to `max`).
         let r = vec![
             AuthRow::WorkspaceMode {
-                kind: AuthKind::Claude,
+                kind: AuthKind::Agent(Agent::Claude),
             },
             AuthRow::Spacer,
         ];
@@ -3791,7 +3792,7 @@ mod auth_cursor_step_tests {
         let r = vec![
             AuthRow::Spacer,
             AuthRow::WorkspaceMode {
-                kind: AuthKind::Claude,
+                kind: AuthKind::Agent(Agent::Claude),
             },
         ];
         assert_eq!(step_auth_cursor_up(&r, 0), 0);
