@@ -221,6 +221,66 @@ fn format_auth_mode_notice_for_test(
     format!("{label} {}", body.color(rgb(PHOSPHOR_DIM)))
 }
 
+/// Verbose outcome eprintln line that follows [`auth_mode_notice`] for
+/// the file-driven agents (Claude, Amp). Codex uses [`codex_auth_notice`]
+/// instead.
+pub fn agent_outcome_notice(
+    agent: crate::agent::Agent,
+    auth_mode: crate::config::AuthForwardMode,
+    auth_outcome: crate::instance::AuthProvisionOutcome,
+) {
+    use crate::agent::Agent as A;
+    use crate::config::AuthForwardMode as M;
+    use crate::instance::AuthProvisionOutcome as O;
+
+    let display = match agent {
+        A::Claude => "Claude Code",
+        A::Codex => "Codex",
+        A::Amp => "Amp",
+    };
+    match auth_outcome {
+        O::Synced => {
+            eprintln!(
+                "[jackin] Synced host {display} authentication into role state \
+                 (auth_forward=sync)."
+            );
+        }
+        O::TokenMode => {
+            if let Some(env_var) = agent.required_env_var(auth_mode) {
+                eprintln!(
+                    "[jackin] auth_forward={auth_mode} — role will use \
+                     {env_var} from the resolved env."
+                );
+            }
+        }
+        O::HostMissing => {
+            if matches!(auth_mode, M::Sync) {
+                let host_file = match agent {
+                    A::Claude => "credentials",
+                    A::Codex => "auth.json",
+                    A::Amp => "secrets.json",
+                };
+                eprintln!(
+                    "[jackin] auth_forward=sync but no host {display} {host_file} found; \
+                     preserving existing container auth if present."
+                );
+            }
+        }
+        O::Skipped => {
+            // Only Amp emits a Skipped breadcrumb today; Claude/Codex
+            // are silent. The asymmetry is intentional — Amp's wipe
+            // path is the only one where the operator's next launch
+            // surfaces interactive-login prompts.
+            if matches!(agent, A::Amp) {
+                eprintln!(
+                    "[jackin] auth_forward=ignore — wiped any prior synced \
+                     secrets.json; agent will require interactive login."
+                );
+            }
+        }
+    }
+}
+
 /// Sync-state half of the Codex auth notice.
 ///
 /// Derived from `(AuthForwardMode, AuthProvisionOutcome)` via [`From`]

@@ -1469,114 +1469,33 @@ fn load_role_with(
         // from the operator env config's raw declaration (the op://
         // reference or $NAME ref as written). Resolved values are never
         // printed.
-        if agent == crate::agent::Agent::Claude {
-            // Per-mode auth notice: for credential-injecting modes we look
-            // up the raw declaration of the mode's required env var
-            // (resolved through `Agent::required_env_var`) and surface its
-            // source reference; sync/ignore have no env source to print.
-            if let Some(env_var) = agent.required_env_var(auth_mode) {
+        // Resolve the credential source-reference once per launch and
+        // gate it on a non-empty resolved value, so a layer that
+        // contributed an empty/whitespace string is not advertised as
+        // the source. The raw lookup is the operator-typed declaration
+        // (`op://...`, `$VAR`, literal); the env-var name is the
+        // fallback when the resolver tracked the value but no raw
+        // declaration string is recorded.
+        let resolved_source: Option<String> =
+            agent.required_env_var(auth_mode).and_then(|env_var| {
                 let raw = lookup_operator_env_raw(
                     config,
                     Some(&role_key),
                     workspace_name.as_deref(),
                     env_var,
                 );
-                let source_ref = auth_token_source_reference(env_var, raw.as_deref());
-                tui::auth_mode_notice(agent, &auth_mode.to_string(), Some(&source_ref));
-            } else {
-                tui::auth_mode_notice(agent, &auth_mode.to_string(), None);
-            }
-
-            // Verbose outcome notices kept for operator context.
-            match auth_outcome {
-                crate::instance::AuthProvisionOutcome::Synced => {
-                    eprintln!(
-                        "[jackin] Synced host Claude Code authentication into role state \
-                         (auth_forward=sync)."
-                    );
-                }
-                crate::instance::AuthProvisionOutcome::TokenMode => {
-                    if let Some(env_var) = agent.required_env_var(auth_mode) {
-                        eprintln!(
-                            "[jackin] auth_forward={auth_mode} — role will use \
-                             {env_var} from the resolved env."
-                        );
-                    }
-                }
-                crate::instance::AuthProvisionOutcome::HostMissing => {
-                    if matches!(auth_mode, crate::config::AuthForwardMode::Sync) {
-                        eprintln!(
-                            "[jackin] auth_forward=sync but no host credentials found; \
-                                 preserving existing container auth if present."
-                        );
-                    }
-                }
-                crate::instance::AuthProvisionOutcome::Skipped => {}
-            }
-        } else if agent == crate::agent::Agent::Codex {
-            // For Codex, the credential env var is OPENAI_API_KEY in
-            // ApiKey mode and absent for Sync/Ignore. Drive the lookup
-            // through `Agent::required_env_var` to keep this generic.
-            let codex_env_var = agent.required_env_var(auth_mode);
-            let raw_source = codex_env_var.and_then(|v| {
-                lookup_operator_env_raw(config, Some(&role_key), workspace_name.as_deref(), v)
-            });
-            let resolved_source = codex_env_var.and_then(|v| {
-                resolved_env
+                let has_value = resolved_env
                     .vars
                     .iter()
-                    .any(|(k, value)| k == v && !value.trim().is_empty())
-                    .then(|| raw_source.as_deref().unwrap_or(v))
+                    .any(|(k, v)| k == env_var && !v.trim().is_empty());
+                has_value.then(|| raw.unwrap_or_else(|| env_var.to_string()))
             });
-            tui::codex_auth_notice(resolved_source, (auth_mode, auth_outcome).into());
-        } else if agent == crate::agent::Agent::Amp {
-            // Only report a source-ref when the resolved env actually
-            // carries a non-empty value for the credential var. The raw
-            // lookup alone would advertise a layer that contributed an
-            // empty/whitespace string.
-            let amp_env_var = agent.required_env_var(auth_mode);
-            let raw_source = amp_env_var.and_then(|v| {
-                lookup_operator_env_raw(config, Some(&role_key), workspace_name.as_deref(), v)
-            });
-            let resolved_source = amp_env_var.and_then(|v| {
-                resolved_env
-                    .vars
-                    .iter()
-                    .any(|(k, value)| k == v && !value.trim().is_empty())
-                    .then(|| raw_source.as_deref().unwrap_or(v))
-            });
-            tui::auth_mode_notice(agent, &auth_mode.to_string(), resolved_source);
 
-            match auth_outcome {
-                crate::instance::AuthProvisionOutcome::Synced => {
-                    eprintln!(
-                        "[jackin] Synced host Amp authentication into role state \
-                         (auth_forward=sync)."
-                    );
-                }
-                crate::instance::AuthProvisionOutcome::TokenMode => {
-                    if let Some(env_var) = amp_env_var {
-                        eprintln!(
-                            "[jackin] auth_forward={auth_mode} — role will use \
-                             {env_var} from the resolved env."
-                        );
-                    }
-                }
-                crate::instance::AuthProvisionOutcome::HostMissing => {
-                    if matches!(auth_mode, crate::config::AuthForwardMode::Sync) {
-                        eprintln!(
-                            "[jackin] auth_forward=sync but no host Amp secrets.json found; \
-                             preserving existing container auth if present."
-                        );
-                    }
-                }
-                crate::instance::AuthProvisionOutcome::Skipped => {
-                    eprintln!(
-                        "[jackin] auth_forward=ignore — wiped any prior synced \
-                         secrets.json; agent will require interactive login."
-                    );
-                }
-            }
+        if agent == crate::agent::Agent::Codex {
+            tui::codex_auth_notice(resolved_source.as_deref(), (auth_mode, auth_outcome).into());
+        } else {
+            tui::auth_mode_notice(agent, &auth_mode.to_string(), resolved_source.as_deref());
+            tui::agent_outcome_notice(agent, auth_mode, auth_outcome);
         }
 
         // GitHub auth summary line — agent-neutral. The breadcrumb walks
