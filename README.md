@@ -6,17 +6,12 @@ jackin' is the **ecosystem layer around** AI coding agents — not another agent
 
 Documentation: <https://jackin.tailrocks.com/>
 
-> **Current status:** jackin' is a proof of concept. [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://github.com/openai/codex) ship today as fully integrated agent runtimes. [Amp](https://ampcode.com) is under active development and will join them; full feature parity across all three is tracked on the [roadmap](https://jackin.tailrocks.com/reference/roadmap/). The isolation model is runtime-agnostic — adding another runtime is a matter of installing and starting it inside the container, not changing the boundary.
+> **Current status:** jackin' is experimental preview software. It has not reached a stable release yet, and breaking changes are expected while the core design and basic functionality settle. The docs track the rolling preview channel, which is the best way to see what the project is today. [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://github.com/openai/codex) ship today as fully integrated agent runtimes. [Amp](https://ampcode.com) is under active development and will join them; full feature parity across all three is tracked on the [roadmap](https://jackin.tailrocks.com/reference/roadmap/).
 
 ## Install
 
 ```sh
 brew tap jackin-project/tap
-
-# Stable
-brew install jackin
-
-# OR rolling preview channel
 brew install jackin@preview
 ```
 

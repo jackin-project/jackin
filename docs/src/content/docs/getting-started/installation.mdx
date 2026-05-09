@@ -14,16 +14,15 @@ import { Aside, TabItem, Tabs } from '@astrojs/starlight/components'
 
 The easiest way to install on macOS or Linux is via Homebrew. The Homebrew formulae are maintained in the [jackin-project/homebrew-tap](https://github.com/jackin-project/homebrew-tap) repository.
 
+<Aside type="caution" title="Experimental preview">
+jackin' has not reached a stable release yet. The documentation tracks the rolling preview channel, which is the recommended install path while the core design and basic functionality settle. Breaking changes are expected.
+</Aside>
+
 <Tabs>
 <TabItem label="Homebrew">
 
 ```bash
 brew tap jackin-project/tap
-
-# Stable
-brew install jackin
-
-# Or install the rolling preview channel
 brew install jackin@preview
 ```
 
@@ -46,7 +45,7 @@ jackin --version
 You should see the jackin' version and the banner:
 
 ```
-jackin 1.0.0
+jackin 0.6.0-preview.<n>+<sha>
 ```
 
 ## Docker setup
