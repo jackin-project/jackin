@@ -32,7 +32,7 @@ all see tasks through the trait.
 
 **Sources**:
 - README — [Autonomous queueing](https://github.com/graemerocher/multicode#autonomous-queueing) (closest — describes the GitHub-issue scanner that this leaf generalizes)
-- *No abstraction in multicode* — this leaf proposes a `TaskSource` trait jackin'-side; multicode hardcodes GitHub. Source code: [`lib/src/manager.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/manager.rs) is where their queue logic lives.
+- *No abstraction in multicode* — this leaf proposes a `TaskSource` trait jackin'-side; multicode hardcodes GitHub. Source code: [`lib/src/manager.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/manager.rs) is where their queue logic lives.
 
 multicode's autonomous-issue-scanning has no abstraction — it talks directly
 to GitHub via Octocrab and turns issues into queued workspaces. Their

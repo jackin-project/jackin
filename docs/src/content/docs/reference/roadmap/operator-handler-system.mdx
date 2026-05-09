@@ -33,7 +33,7 @@ launch an external tool would invent its own.
 
 **Sources**:
 - README — [Editor Tool](https://github.com/graemerocher/multicode#editor-tool) (covers the `[compare]` block for IDE selection)
-- Config — [`config.toml` `[handler]` block](https://github.com/yawkat/multicode/blob/main/config.toml)
+- Config — [`config.toml` `[handler]` block](https://github.com/graemerocher/multicode/blob/main/config.toml)
 
 ```toml
 [handler]
@@ -42,8 +42,8 @@ review-pty = false                     # allocate a PTY for the launcher?
 web = "/usr/bin/firefox {}"            # template-mode launcher (single {} required)
 ```
 
-multicode also exposes a `[compare]` block (in the graemerocher fork) that
-specifies the IDE for "open in editor":
+multicode also exposes a `[compare]` block in the current reference
+implementation that specifies the IDE for "open in editor":
 
 ```toml
 [compare]

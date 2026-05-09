@@ -809,20 +809,20 @@ Three existing pages overstate today's `gh` story. The right time
 to fix them is the same PR series, so the operator narrative stays
 consistent:
 
-- <RepoFile path="docs/src/content/docs/reference/roadmap.mdx" /> —
+- [Roadmap](/reference/roadmap/) —
   the **Completed** entry "GitHub CLI authentication passthrough"
   describes today's behaviour as forwarding. It is
   *persistence-only* — the in-container login survives restarts
   but no host login flows in. Either reword to "GitHub CLI auth
   state persists across container restarts" or split into
   "Have (persistence)" + "Coming (host forwarding)".
-- <RepoFile path="docs/src/content/docs/reference/roadmap/open-review-findings.mdx" />
+- [Open review findings](/reference/roadmap/open-review-findings/)
   finding 3 — claims runtime startup triggers `gh auth login`
   automatically. The current
   <RepoFile path="docker/runtime/entrypoint.sh" /> only runs
   `gh auth setup-git` *after* a successful `gh auth status`; it
   does not run `gh auth login`. Mark resolved or remove.
-- <RepoFile path="docs/src/content/docs/reference/roadmap/multicode-inspired-features.mdx" />
+- [Agent Orchestrator Research Program](/reference/roadmap/multicode-inspired-features/)
   comparison row "GitHub CLI auth passthrough | Yes (read-only
   mount) | Have" — same overstatement. Reword to persistence-only,
   with this roadmap item as the planned forwarding work.

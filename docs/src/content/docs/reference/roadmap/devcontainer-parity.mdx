@@ -230,7 +230,7 @@ specific command rather than globally.
 
 **Recommendation**: Defer until Finding 1 is implemented. Revisit as part of
 a broader hardening pass and document the tradeoff in
-<RepoFile path="docs/src/content/docs/guides/security-model.mdx" />.
+[Security model](/guides/security-model/).
 
 ### Finding 4 — Persist shell history
 
@@ -293,5 +293,5 @@ extensions list becomes an obvious payload for it.
 - <RepoFile path="src/derived_image.rs" /> — derived image generation and Claude plugin install commands
 - <RepoFile path="src/runtime/launch.rs" /> — mount and capability wiring (touched by Findings 1 and 4)
 - <RepoFile path="src/derived_image.rs" /> — derived Dockerfile generation (touched by Finding 2)
-- <RepoFile path="docs/src/content/docs/guides/security-model.mdx" /> — security posture (touched by Findings 1 and 3)
+- [Security model](/guides/security-model/) — security posture (touched by Findings 1 and 3)
 - Upstream reference: [`anthropics/claude-code/.devcontainer`](https://github.com/anthropics/claude-code/tree/main/.devcontainer)
