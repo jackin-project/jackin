@@ -741,6 +741,11 @@ fn op_picker_commit_writes_value_directly_to_pending() -> Result<()> {
                 picker.field_list_state.select(Some(0));
                 picker.stage = OpPickerStage::Field;
                 picker.load_state = OpLoadState::Ready;
+                // Drop any in-flight probe result so handle_key's
+                // leading poll_load doesn't race the test by draining
+                // a stale `Err(...)` from the constructor's account
+                // probe and routing into the Fatal-error guard.
+                picker.cancel_in_flight_load();
             }
             other => panic!("expected OpPicker modal; got {other:?}"),
         }
@@ -840,6 +845,11 @@ fn op_picker_sentinel_p_flow() -> Result<()> {
                 picker.field_list_state.select(Some(0));
                 picker.stage = OpPickerStage::Field;
                 picker.load_state = OpLoadState::Ready;
+                // Drop any in-flight probe result so handle_key's
+                // leading poll_load doesn't race the test by draining
+                // a stale `Err(...)` from the constructor's account
+                // probe and routing into the Fatal-error guard.
+                picker.cancel_in_flight_load();
             }
             other => panic!("expected OpPicker modal; got {other:?}"),
         }
@@ -1231,6 +1241,11 @@ fn op_picker_multi_account_flow() -> Result<()> {
                 picker.selected_account = None;
                 picker.stage = OpPickerStage::Account;
                 picker.load_state = OpLoadState::Ready;
+                // Drop any in-flight probe result so handle_key's
+                // leading poll_load doesn't race the test by draining
+                // a stale `Err(...)` from the constructor's account
+                // probe and routing into the Fatal-error guard.
+                picker.cancel_in_flight_load();
             }
             other => panic!("expected OpPicker modal; got {other:?}"),
         }
@@ -1283,6 +1298,11 @@ fn op_picker_multi_account_flow() -> Result<()> {
                 picker.field_list_state.select(Some(0));
                 picker.stage = OpPickerStage::Field;
                 picker.load_state = OpLoadState::Ready;
+                // Drop any in-flight probe result so handle_key's
+                // leading poll_load doesn't race the test by draining
+                // a stale `Err(...)` from the constructor's account
+                // probe and routing into the Fatal-error guard.
+                picker.cancel_in_flight_load();
             }
             other => panic!("expected OpPicker modal; got {other:?}"),
         }

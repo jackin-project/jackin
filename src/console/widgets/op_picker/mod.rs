@@ -303,6 +303,18 @@ impl OpPickerState {
     /// Public so the outer console event loop can drain pending
     /// results every tick — keeps the picker responsive without
     /// requiring keystrokes. Idempotent on an empty channel.
+    /// Discard any in-flight load result and force the picker into
+    /// the `Ready` state. Intended for tests that seed picker state
+    /// directly after the constructor's async probe has already been
+    /// kicked off — without this, `handle_key`'s leading `poll_load`
+    /// call can drain a stale `Err(...)` from the still-open
+    /// receiver and short-circuit the test through the Fatal-error
+    /// guard, racing the test against the probe thread.
+    pub fn cancel_in_flight_load(&mut self) {
+        self.rx = None;
+        self.load_state = OpLoadState::Ready;
+    }
+
     pub fn poll_load(&mut self) {
         let Some(rx) = self.rx.as_ref() else {
             return;
