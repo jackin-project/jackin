@@ -211,7 +211,7 @@ pub enum AgentRuntimeState {
         /// when env-driven modes wiped it or sync had no host file
         /// to copy and no carry-over to preserve.
         ///
-        /// XDG_DATA path. `~/.config/amp/settings.json` (XDG_CONFIG)
+        /// `XDG_DATA` path. `~/.config/amp/settings.json` (`XDG_CONFIG`)
         /// holds preferences only and is intentionally not forwarded.
         secrets_json: Option<PathBuf>,
     },

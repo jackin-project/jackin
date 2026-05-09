@@ -503,8 +503,8 @@ impl RoleState {
 impl RoleState {
     /// Provision Amp's host-side `secrets.json` per the chosen mode.
     ///
-    /// Source: `~/.local/share/amp/secrets.json` (XDG_DATA). The
-    /// XDG_CONFIG `~/.config/amp/settings.json` is preferences only
+    /// Source: `~/.local/share/amp/secrets.json` (`XDG_DATA`). The
+    /// `XDG_CONFIG` `~/.config/amp/settings.json` is preferences only
     /// and never holds the token.
     ///
     /// `mounted_secrets_json` is `None` when the bind mount must be
