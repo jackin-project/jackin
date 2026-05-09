@@ -54,21 +54,41 @@ jobs:
           fi
 
           sha="${{ steps.source.outputs.sha }}"
-          # Root-commit guard: if HEAD has no parent (orphan / initial
-          # commit) classify as source-changed so we never silently skip a
-          # real publish.
-          if ! parent="$(git rev-parse --verify "${sha}^1" 2>/dev/null)"; then
+
+          # Use the previously-published preview SHA as the diff base
+          # rather than the current head's first parent. A multi-commit
+          # push (rebase merge, linear merge, direct push of N commits)
+          # can land a source change in an earlier commit and a
+          # docs-only final commit; classifying against `${sha}^1` would
+          # see only the docs and silently skip a real publish. Reading
+          # the prior published SHA out of the live homebrew-tap formula
+          # lets us classify the full range that has accumulated since
+          # the last preview release.
+          old_sha=$(
+            curl -fsSL "https://raw.githubusercontent.com/jackin-project/homebrew-tap/main/Formula/jackin-preview.rb" |
+              sed -n 's|^[[:space:]]*url "https://github.com/jackin-project/jackin/archive/\([0-9a-f]\{40\}\)\.tar\.gz"$|\1|p' |
+              head -1
+          ) || true
+
+          # Fall back to source=true when there is no prior published
+          # SHA, when the head SHA is already published, or when the
+          # prior SHA is not reachable in the current checkout. Failing
+          # open is the safe direction here — the publish job's own
+          # "formula already up to date" guard catches the no-op case.
+          if [ -z "$old_sha" ] || [ "$old_sha" = "$sha" ] \
+             || ! git rev-parse --verify "${old_sha}^{commit}" >/dev/null 2>&1; then
             echo "source=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
           source=false
           while IFS= read -r path; do
             case "$path" in
-              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|src/*|docker/runtime/*)
+              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/*|docker/runtime/*)
                 source=true
                 ;;
             esac
-          done < <(git diff --name-only "${parent}...${sha}")
+          done < <(git diff --name-only "${old_sha}...${sha}")
 
           echo "source=$source" >> "$GITHUB_OUTPUT"
 

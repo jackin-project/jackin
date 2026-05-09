@@ -43,10 +43,14 @@ jobs:
             range="${before}...${head}"
           fi
 
+          # build.rs feeds compile-time version metadata into every Rust
+          # build, and docker/runtime/entrypoint.sh is pulled in via
+          # include_str!() in src/derived_image.rs — both affect the
+          # produced binary even though they live outside src/ and tests/.
           rust=false
           while IFS= read -r path; do
             case "$path" in
-              .github/workflows/ci.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|src/*|tests/*)
+              .github/workflows/ci.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/*|tests/*|docker/runtime/*)
                 rust=true
                 ;;
             esac
