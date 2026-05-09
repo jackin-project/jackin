@@ -298,14 +298,9 @@ fn build_workspace_mount_strings(
     out
 }
 
-fn jackin_workspace_mise_trusted_config_paths(
-    workspace_name: Option<&str>,
+fn workspace_mise_trusted_config_paths(
     workspace: &crate::workspace::ResolvedWorkspace,
 ) -> Option<String> {
-    if workspace_name != Some("jackin") {
-        return None;
-    }
-
     let mut paths = std::collections::BTreeSet::new();
     if !workspace.workdir.trim().is_empty() {
         paths.insert(workspace.workdir.clone());
@@ -319,9 +314,8 @@ fn jackin_workspace_mise_trusted_config_paths(
     (!paths.is_empty()).then(|| paths.into_iter().collect::<Vec<_>>().join(":"))
 }
 
-fn inject_jackin_workspace_env(
+fn inject_workspace_mise_env(
     vars: &mut Vec<(String, String)>,
-    workspace_name: Option<&str>,
     workspace: &crate::workspace::ResolvedWorkspace,
 ) {
     if vars
@@ -331,7 +325,7 @@ fn inject_jackin_workspace_env(
         return;
     }
 
-    if let Some(value) = jackin_workspace_mise_trusted_config_paths(workspace_name, workspace) {
+    if let Some(value) = workspace_mise_trusted_config_paths(workspace) {
         vars.push((MISE_TRUSTED_CONFIG_PATHS_ENV.to_string(), value));
     }
 }
@@ -1312,7 +1306,7 @@ fn load_role_with(
             merged_vars.push((k.clone(), v.clone()));
         }
     }
-    inject_jackin_workspace_env(&mut merged_vars, workspace_name.as_deref(), workspace);
+    inject_workspace_mise_env(&mut merged_vars, workspace);
     let resolved_env = crate::env_resolver::ResolvedEnv { vars: merged_vars };
 
     // Launch-time diagnostic: emit a single compact line summarising
@@ -2882,20 +2876,20 @@ agents = ["amp"]
     }
 
     #[test]
-    fn jackin_workspace_mise_paths_cover_workdir_and_mount_destinations() {
+    fn workspace_mise_paths_cover_workdir_and_mount_destinations() {
         let workspace = crate::workspace::ResolvedWorkspace {
-            label: "jackin".to_string(),
+            label: "chainargos".to_string(),
             workdir: "/workspace".to_string(),
             mounts: vec![
                 crate::workspace::MountConfig {
-                    src: "/host/jackin".to_string(),
-                    dst: "/workspace/jackin".to_string(),
+                    src: "/host/java-monorepo".to_string(),
+                    dst: "/workspace/java-monorepo".to_string(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
                 crate::workspace::MountConfig {
-                    src: "/host/homebrew-tap".to_string(),
-                    dst: "/workspace/homebrew-tap".to_string(),
+                    src: "/host/blockchain-nodes".to_string(),
+                    dst: "/workspace/blockchain-nodes".to_string(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
@@ -2905,26 +2899,23 @@ agents = ["amp"]
             git_pull_on_entry: false,
         };
 
-        let value = jackin_workspace_mise_trusted_config_paths(Some("jackin"), &workspace).unwrap();
+        let value = workspace_mise_trusted_config_paths(&workspace).unwrap();
 
         assert_eq!(
             value,
-            "/workspace:/workspace/homebrew-tap:/workspace/jackin"
-        );
-        assert!(
-            jackin_workspace_mise_trusted_config_paths(Some("scentbird"), &workspace).is_none()
+            "/workspace:/workspace/blockchain-nodes:/workspace/java-monorepo"
         );
     }
 
     #[test]
-    fn jackin_workspace_mise_env_does_not_override_operator_value() {
+    fn workspace_mise_env_does_not_override_operator_value() {
         let workspace = repo_workspace(std::path::Path::new("/host/repo"));
         let mut vars = vec![(
             MISE_TRUSTED_CONFIG_PATHS_ENV.to_string(),
             "/operator/trusted".to_string(),
         )];
 
-        inject_jackin_workspace_env(&mut vars, Some("jackin"), &workspace);
+        inject_workspace_mise_env(&mut vars, &workspace);
 
         assert_eq!(
             vars,
@@ -4482,7 +4473,7 @@ plugins = []
     }
 
     #[test]
-    fn load_agent_injects_mise_trusted_paths_for_jackin_workspace_only() {
+    fn load_agent_injects_mise_trusted_paths_for_any_workspace() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -4493,10 +4484,10 @@ plugins = []
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 
-[workspaces.jackin]
+[workspaces.chainargos]
 workdir = "/workspace"
 
-[[workspaces.jackin.mounts]]
+[[workspaces.chainargos.mounts]]
 src = "/tmp"
 dst = "/workspace"
 "#,
@@ -4531,18 +4522,18 @@ plugins = []
         .unwrap();
 
         let workspace = crate::workspace::ResolvedWorkspace {
-            label: "jackin".to_string(),
+            label: "chainargos".to_string(),
             workdir: "/workspace".to_string(),
             mounts: vec![
                 crate::workspace::MountConfig {
                     src: repo_dir.display().to_string(),
-                    dst: "/workspace/jackin".to_string(),
+                    dst: "/workspace/java-monorepo".to_string(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
                 crate::workspace::MountConfig {
                     src: repo_dir.display().to_string(),
-                    dst: "/workspace/homebrew-tap".to_string(),
+                    dst: "/workspace/blockchain-nodes".to_string(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
                 },
@@ -4569,9 +4560,9 @@ plugins = []
             .unwrap();
         assert!(
             run_cmd.contains(
-                "-e MISE_TRUSTED_CONFIG_PATHS=/workspace:/workspace/homebrew-tap:/workspace/jackin"
+                "-e MISE_TRUSTED_CONFIG_PATHS=/workspace:/workspace/blockchain-nodes:/workspace/java-monorepo"
             ),
-            "jackin workspace must inject mise trusted paths; got: {run_cmd}"
+            "workspace must inject mise trusted paths; got: {run_cmd}"
         );
     }
 
