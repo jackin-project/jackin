@@ -213,28 +213,13 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         AgentRuntimeState::Claude {
             account_json,
             credentials_json,
-            forward_auth,
         } => {
             let mut mounts = Vec::new();
-            // Auth files only flow into the container under sync mode
-            // (`forward_auth = true`) AND only when the file exists on
-            // disk. Env-driven modes (api_key/oauth_token/ignore) leave
-            // `forward_auth = false`, keeping host filesystem state out
-            // of the container even though `wipe_claude_state` may have
-            // left a `{}` placeholder behind.
-            if *forward_auth {
-                if account_json.exists() {
-                    mounts.push(format!(
-                        "{}:/jackin/claude/account.json",
-                        account_json.display()
-                    ));
-                }
-                if credentials_json.exists() {
-                    mounts.push(format!(
-                        "{}:/jackin/claude/credentials.json",
-                        credentials_json.display()
-                    ));
-                }
+            if let Some(p) = account_json {
+                mounts.push(format!("{}:/jackin/claude/account.json", p.display()));
+            }
+            if let Some(p) = credentials_json {
+                mounts.push(format!("{}:/jackin/claude/credentials.json", p.display()));
             }
             mounts
         }
