@@ -248,10 +248,7 @@ fn format_expiry_suffix(days: i64) -> String {
     } else if days <= 30 {
         format!(" — {}", format!("expires in {days} day(s)").yellow())
     } else {
-        format!(
-            " — {}",
-            format!("expires in {days} day(s)").dimmed()
-        )
+        format!(" — {}", format!("expires in {days} day(s)").dimmed())
     }
 }
 

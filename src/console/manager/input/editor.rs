@@ -1629,11 +1629,7 @@ fn apply_editor_confirm(
             // break auth at the next launch.
             let protected = key == "CLAUDE_CODE_OAUTH_TOKEN"
                 && matches!(scope, SecretsScopeTag::Workspace)
-                && editor
-                    .pending
-                    .claude
-                    .as_ref()
-                    .map(|c| c.auth_forward)
+                && editor.pending.claude.as_ref().map(|c| c.auth_forward)
                     == Some(crate::config::AuthForwardMode::OAuthToken);
             if protected {
                 anyhow::bail!(

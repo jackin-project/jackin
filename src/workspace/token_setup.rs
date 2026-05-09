@@ -1167,11 +1167,12 @@ mod tests {
         assert!(!report.deleted_op_item);
 
         // Env var cleared.
-        assert!(cfg
-            .workspaces
-            .get("proj")
-            .and_then(|w| w.env.get("CLAUDE_CODE_OAUTH_TOKEN"))
-            .is_none());
+        assert!(
+            cfg.workspaces
+                .get("proj")
+                .and_then(|w| w.env.get("CLAUDE_CODE_OAUTH_TOKEN"))
+                .is_none()
+        );
         // auth_forward flipped to Ignore.
         let claude = cfg
             .workspaces
