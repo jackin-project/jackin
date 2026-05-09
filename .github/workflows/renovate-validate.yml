@@ -1,0 +1,49 @@
+name: Renovate Validate
+
+# Validate that the Renovate config not only parses cleanly under the
+# strict schema validator, but that the upstream sources its custom
+# managers point at still resolve and still list the expected package
+# names. Renovate's `deb` and `github-releases` datasources fail
+# silently — they just return "no updates available" — so a URL that
+# 404s or a renamed upstream package would silently re-introduce the
+# version drift this PR's customManagers were added to prevent.
+#
+# Runs on every PR and every push to main; the validation is cheap
+# (~10s per job) and the fail-loud behavior is the whole point.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate-validate-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Validate renovate.json schema (strict)
+        run: npx --yes --package=renovate renovate-config-validator --strict renovate.json
+
+      - name: Verify mise apt source resolves and lists the mise package
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://mise.jdx.dev/deb/dists/stable/main/binary-amd64/Packages"
+          if ! body=$(curl -fsSL --max-time 30 "$url" 2>&1); then
+            echo "::error::failed to fetch ${url}: ${body}"
+            exit 1
+          fi
+          if ! printf '%s\n' "$body" | grep -q '^Package: mise$'; then
+            echo "::error::${url} did not list a 'Package: mise' entry — the MISE renovate manager will silently produce no updates"
+            exit 1
+          fi
