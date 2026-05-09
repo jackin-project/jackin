@@ -46,23 +46,23 @@ Setup:
 
 `oauth_token` is designed for long-lived and concurrent jackin' sessions on `Claude`. Instead of bind-mounting a copy of the host's `/login` session state, jackin' injects a long-lived OAuth token (`CLAUDE_CODE_OAUTH_TOKEN`) into the container's process env. `Claude Code` inside the container reads the token directly, bypassing the file-based credential store.
 
-Setup:
+The recommended setup path is the orchestrator:
 
-1. On the host, generate a token:
+```bash
+jackin workspace claude-token setup my-app --vault Personal
+```
 
-   ```bash
-   claude setup-token
-   ```
+That single command drives `claude setup-token` interactively, captures the token without ever showing it on stdout or in shell history, stores it in 1Password under a jackin-managed item, and switches the workspace's Claude auth to OAuth-token mode. The launch banner then surfaces an "expires in N days" countdown so rotation timing is never a surprise.
 
-2. Tell jackin' where to find it by setting `CLAUDE_CODE_OAUTH_TOKEN` at one of the env scopes — for example, referencing 1Password:
+Subsequent operations:
 
-   ```bash
-   jackin config env set CLAUDE_CODE_OAUTH_TOKEN "op://Personal/Claude/token"
-   ```
+- `jackin workspace claude-token rotate my-app` — capture a fresh token and delete the prior 1P item.
+- `jackin workspace claude-token revoke my-app` — clear the wired token and switch back to `ignore`. Pass `--delete-op-item` to also remove the 1P item.
+- `jackin workspace claude-token doctor my-app` — confirm the wired slot resolves cleanly through `op`.
 
-3. Set `auth_forward = oauth_token` for `Claude` at the matching scope (see below).
+See the [`workspace claude-token` command reference](/commands/workspace/#workspace-claude-token) for full option coverage.
 
-If `CLAUDE_CODE_OAUTH_TOKEN` is not present in the resolved env when `oauth_token` mode is active, jackin' aborts the launch with a clear error pointing at the missing key.
+If `CLAUDE_CODE_OAUTH_TOKEN` is not present in the resolved env when `oauth_token` mode is active, jackin' aborts the launch with a clear error pointing at the missing key. Re-run `jackin workspace claude-token setup` to repair the slot.
 
 <Aside type="caution">
 `Codex` and `Amp` have no OAuth-token analog of `Claude`'s `CLAUDE_CODE_OAUTH_TOKEN`. Setting `auth_forward = "oauth_token"` for either is rejected. Use `api_key` (with `OPENAI_API_KEY` or `AMP_API_KEY`) or `sync` instead.

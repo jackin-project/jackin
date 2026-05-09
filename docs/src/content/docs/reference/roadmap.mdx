@@ -44,6 +44,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 - [1Password integration](/reference/roadmap/onepassword-integration/) — workspace-managed `op://` env references shipped; file-mount generation (option 4) still deferred
 - [Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/) — `Claude Code`, `Codex`, and `Amp` all shipped as built-in runtimes; full feature parity across `claude` / `codex` / `amp` still in flight
 - [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/) — three-mode auth-forward (`sync` / `token` / `ignore`) at all three layers shipped, plus container HTTPS-normalize, `gh` credential helper wiring, and the auth-tab GitHub CLI row in `jackin console`; dedicated CLI subcommand, scope pre-flight, and bidirectional shared-store sync still pending
+- [Workspace Claude token setup](/reference/roadmap/workspace-claude-token-setup/) — `jackin workspace claude-token setup|rotate|revoke|doctor` orchestrator with PTY-captured tokens, 1Password write, post-write SHA validation, the in-container OAuth-token onboarding skeleton, and the launch-banner expiry countdown all shipped; TUI `[G] Generate token` action, Apple Keychain backend, and bulk `--all` migration flag remain. Under-the-hood mechanics at [Claude Token Orchestrator](/reference/claude-token-orchestrator/)
 
 ## Planned
 
@@ -64,7 +65,6 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 - **Credential proxy** — proxy-based credential injection to avoid storing tokens inside containers
 - **[Agent version pinning](/reference/roadmap/reproducibility-pinning/)** — pin role repos to tagged versions for reproducible builds, with explicit `--update` to advance (status: needs design — brainstorming required before implementation)
 - **[Reliable Claude authentication strategy](/reference/roadmap/claude-auth-strategy/)** — move beyond copied session auth toward clearer, more durable modes for long-lived and concurrent agent runtimes (status: deferred — needs design work)
-- **[Workspace Claude token setup](/reference/roadmap/workspace-claude-token-setup/)** — guided `jackin workspace claude-token setup` orchestrator that PTY-captures the upstream `claude setup-token` output, writes the result to 1Password, wires the workspace config, and validates end-to-end (status: in progress — orchestrator + CLI shipped; TUI integration and expiry banner remain)
 - **[Alternative isolation tiers](/reference/roadmap/selectable-sandbox-backends/)** — explore stronger backends beyond plain container isolation for users who need them, including [rootless DinD](/reference/roadmap/rootless-dind/) as a lighter-weight option (status: deferred — requires a dedicated design pass)
 - **[Devcontainer parity](/reference/roadmap/devcontainer-parity/)** — comparison with the upstream `anthropics/claude-code` devcontainer setup; informs network policy + reproducibility decisions (status: proposed — research captured, no implementation committed)
 
@@ -106,16 +106,9 @@ Detailed design documents for individual TODO items are linked from the sidebar 
 </Aside>
 ## Vision
 
-The user-facing summary of where jackin' is headed lives on the
-[Why jackin'? → Vision](/getting-started/why/#vision) page so it is
-visible to operators and role authors, not only to contributors who
-end up on the roadmap. The longer-term shape of the project, the
-local-first focus, and the eventual move toward Kubernetes-backed
-debug workflows are all captured there.
+The user-facing summary of where jackin' is headed lives on the [Why jackin'? → Vision](/getting-started/why/#vision) page so it is visible to operators and role authors, not only to contributors who end up on the roadmap. The longer-term shape of the project, the local-first focus, and the eventual move toward Kubernetes-backed debug workflows are all captured there.
 
-If jackin' works for your use case — or almost works but needs
-something different — [open an issue](https://github.com/jackin-project/jackin/issues)
-or submit a pull request.
+If jackin' works for your use case — or almost works but needs something different — [open an issue](https://github.com/jackin-project/jackin/issues) or submit a pull request.
 
 ## Contributing
 

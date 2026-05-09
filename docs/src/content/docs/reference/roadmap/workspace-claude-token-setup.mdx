@@ -4,152 +4,85 @@ title: "Workspace Claude Token Setup"
 import RepoFile from '../../../../components/RepoFile.astro'
 
 
-**Status**: In progress — orchestrator + CLI shipped; TUI integration
-and expiry banner remain.
+**Status**: Partially implemented — orchestrator, CLI, post-write validation, expiry banner, and the in-container OAuth-token onboarding skeleton all shipped; TUI `[G] Generate token` action, the Apple Keychain backend, and the bulk `--all` migration flag remain.
 
-**Parent**: [Reliable Claude Authentication Strategy](/reference/roadmap/claude-auth-strategy/)
-(this item supersedes the parent's "non-goal" stance against wrapping
-`claude setup-token`, see [Background](#background)).
+**Parent**: [Reliable Claude Authentication Strategy](/reference/roadmap/claude-auth-strategy/) (this item supersedes the parent's "non-goal" stance against wrapping `claude setup-token`, see [Background](#background)).
+
+**Internals reference**: see [Claude Token Orchestrator](/reference/claude-token-orchestrator/) for the load-bearing details — PTY mechanics, ANSI redactor, post-write SHA round-trip, `OrphanCleanup` state machine, expiry stamp cache, test injection seams.
 
 ## What is shipped
 
-- `[workspaces.X.claude].oauth_token` canonical slot on
-  `AgentAuthConfig` — accepts `EnvValue::Plain` or `EnvValue::OpRef`,
-  rejected at parse-time on `[codex]`.
-- `[workspaces.X].op_account` field on `WorkspaceConfig` — pins every
-  `op` invocation made on behalf of the workspace to a specific 1P
-  account via `op --account <id>`.
-- Env resolver synthesis: a non-empty canonical slot at any of the 3
-  Claude layers (global, workspace, workspace × role) materialises
-  `CLAUDE_CODE_OAUTH_TOKEN` at the same layer; standard last-wins
-  merge across layers.
+- `[workspaces.X.claude].oauth_token` canonical slot on `AgentAuthConfig` — accepts `EnvValue::Plain` or `EnvValue::OpRef`, rejected at parse-time on `[codex]`.
+- `[workspaces.X].op_account` field on `WorkspaceConfig` — pins every `op` invocation made on behalf of the workspace to a specific 1P account via `op --account <id>`.
+- Env resolver synthesis: a non-empty canonical slot at any of the 3 Claude layers (global, workspace, workspace × role) materialises `CLAUDE_CODE_OAUTH_TOKEN` at the same layer; standard last-wins merge across layers.
 - `host_claude::probe_claude_cli()` — host-side CLI probe.
-- `host_claude::capture_setup_token()` — PTY-wrapped
-  `claude setup-token` driver. Token captured into
-  `secrecy::SecretString`, redactor swaps the matching span for
-  `<redacted>` in the operator's stderr stream so the URL /
-  instructions still display but the token never echoes.
-- `OpWriteRunner` trait + `OpCli` impl: `item_create` (JSON template
-  on stdin, secret never on argv) and `item_delete`. `item_edit_field`
-  is intentionally unimplemented (no documented stdin form on
-  upstream `op item edit`); rotation uses create + delete instead.
-- `workspace::token_setup` orchestrator: `run_setup`, `run_revoke`,
-  `run_doctor`. Stamps `notesPlain` with workspace / host /
-  created / expires_estimate / `token_sha256_prefix`.
-- CLI surface — `jackin workspace claude-token setup|rotate|revoke|doctor`,
-  with `--vault`, `--item-name`, `--op-account`, `--reuse`,
-  `--delete-op-item`. Help text in <RepoFile path="src/cli/workspace.rs" />.
+- `host_claude::capture_setup_token()` — PTY-wrapped `claude setup-token` driver. Token captured into `secrecy::SecretString`, redactor swaps the matching span for `<redacted>` in the operator's stderr stream so the URL / instructions still display but the token never echoes.
+- `OpWriteRunner` trait + `OpCli` impl: `item_create` (JSON template on stdin, secret never on argv) and `item_delete`. `item_edit_field` is intentionally unimplemented (no documented stdin form on upstream `op item edit`); rotation uses create + delete instead.
+- `workspace::token_setup` orchestrator: `run_setup`, `run_revoke`, `run_doctor`, with `_with_runner` injection seams for hermetic unit tests. Stamps `notesPlain` with workspace / host / created / `expires_estimate` / `token_sha256_prefix`.
+- Post-write SHA-256 round-trip validation gating config persistence; on validation failure the orphan 1P item is best-effort deleted and the bail message reports the cleanup outcome via the `OrphanCleanup` enum (`Deleted` / `UnparseableRef` / `DeleteFailed { hint }`). Recovery `op item delete <id> --vault <vault>` command is rendered via `OpReferenceParts::manual_delete_hint`.
+- Rotate flow including same-`op://`-ref guard, prior-vault defaulting via `vault_for_rotate`, and a copy-pasteable manual-delete recovery hint when `delete_prior_op_item` fails.
+- Revoke `--delete-op-item` is a hard error on literal-token slots and unparseable URIs (silent no-op would let the secret survive).
+- In-container onboarding skeleton — `provision_claude_auth` writes `{"hasCompletedOnboarding":true}` to `account.json` under `OAuthToken` mode and bind-mounts it via `agent_mounts`; `credentials.json` is removed and never mounted.
+- Expiry stamp cache + launch banner — `expiry_days_for_launch` reads `<cache_dir>/claude-token-expiry/<workspace>` and `tui::output::format_expiry_suffix` renders red/yellow/dim countdowns. Malformed-stamp errors surface a one-shot warning on the next launch.
+- Deletion guards on the canonical slot — `jackin workspace env unset <ws> CLAUDE_CODE_OAUTH_TOKEN` and the TUI Environments tab `D` key both refuse while `auth_forward = oauth_token` is active, pointing the operator at `jackin workspace claude-token revoke`.
+- CLI surface — `jackin workspace claude-token setup|rotate|revoke|doctor`, with `--vault`, `--item-name`, `--op-account`, `--reuse`, `--delete-op-item`. Help text in <RepoFile path="src/cli/workspace.rs" />.
 
 ## What is NOT yet shipped
 
-- TUI integration — `[G] Generate token →` action on the auth panel
-  modal so the operator never leaves `jackin console`.
-- Expiry banner in the launch diagnostic + pre-launch validity probe.
-- Apple Keychain backend (`keychain://` source) — gated on the
-  cross-cutting [Credential Source Pattern](/reference/roadmap/credential-source-pattern/) landing.
+- TUI integration — `[G] Generate token →` action on the auth panel modal so the operator never leaves `jackin console`. The auth panel today surfaces `jackin workspace claude-token setup <workspace> --vault <vault>` as a copy-pasteable hint instead of driving the orchestrator from inside the TUI.
+- Pre-launch validity probe (a doctor-style structural check on every launch). The shipped expiry banner is best-effort; a real upstream-validity probe would catch externally-rotated tokens before the agent hits API 401.
+- Apple Keychain backend (`keychain://` source) — gated on the cross-cutting [Credential Source Pattern](/reference/roadmap/credential-source-pattern/) landing.
 - Bulk `--all` migration flag.
 
 ## Problem
 
-Token mode (`auth_forward = "oauth_token"`) is the recommended choice
-for long-lived or concurrent jackin' sessions, but the operator setup
-path is currently a five-step manual chore:
+Token mode (`auth_forward = "oauth_token"`) is the recommended choice for long-lived or concurrent jackin' sessions, but the operator setup path is currently a five-step manual chore:
 
 1. Run `claude setup-token` on the host.
 2. Copy the printed token from terminal output.
-3. Open 1Password (or another secret store), create a new item, paste
-   the value into the right field.
-4. Edit `~/.config/jackin/config.toml` by hand to add
-   `CLAUDE_CODE_OAUTH_TOKEN = "op://..."` to the right
-   workspace-scoped `[env]` block.
-5. Edit the same file again to set
-   `auth_forward = "oauth_token"` under the matching
-   `[workspaces.<ws>.claude]` block.
+3. Open 1Password (or another secret store), create a new item, paste the value into the right field.
+4. Edit `~/.config/jackin/config.toml` by hand to add `CLAUDE_CODE_OAUTH_TOKEN = "op://..."` to the right workspace-scoped `[env]` block.
+5. Edit the same file again to set `auth_forward = "oauth_token"` under the matching `[workspaces.<ws>.claude]` block.
 
-That flow has every classic foot-gun: secrets in shell history, secrets
-in scrollback, two coupled config edits, and zero validation that the
-final stack actually works until the next launch fails with `API Error: 401`.
+That flow has every classic foot-gun: secrets in shell history, secrets in scrollback, two coupled config edits, and zero validation that the final stack actually works until the next launch fails with `API Error: 401`.
 
-The pain compounds for operators with several workspaces. Each
-workspace ideally wants its own long-lived token so revocation stays
-granular, but nobody wants to repeat the five steps five times.
+The pain compounds for operators with several workspaces. Each workspace ideally wants its own long-lived token so revocation stays granular, but nobody wants to repeat the five steps five times.
 
 ## Why It Matters
 
-- Manual steps are where secrets leak — clipboards, terminals, log
-  capture, accidentally-committed dotfiles.
-- jackin's value proposition is that the operator workflow is smooth.
-  Token mode is *the* recommended mode for production-style usage but
-  has the worst onboarding ergonomics of any auth mode shipped today.
-- Several already-deferred items (granular 1P account scope, token
-  rotation, expiry warnings) all become solvable if a single
-  jackin-owned setup flow exists to anchor them.
-- The current config shape couples two unrelated keys
-  (`auth_forward` mode + a magic env-var name). A guided setup path is
-  the natural opportunity to introduce a single canonical slot.
+- Manual steps are where secrets leak — clipboards, terminals, log capture, accidentally-committed dotfiles.
+- jackin's value proposition is that the operator workflow is smooth. Token mode is *the* recommended mode for production-style usage but has the worst onboarding ergonomics of any auth mode shipped today.
+- Several already-deferred items (granular 1P account scope, token rotation, expiry warnings) all become solvable if a single jackin-owned setup flow exists to anchor them.
+- The current config shape couples two unrelated keys (`auth_forward` mode + a magic env-var name). A guided setup path is the natural opportunity to introduce a single canonical slot.
 
 ## Background
 
-The [Claude auth strategy](/reference/roadmap/claude-auth-strategy/)
-roadmap shipped token mode (`auth_forward = "oauth_token"`) but
-deliberately did not wrap the upstream `claude setup-token` flow —
-the operator was expected to run the upstream command, copy the
-token by hand, and write it into config.
+The [Claude auth strategy](/reference/roadmap/claude-auth-strategy/) roadmap shipped token mode (`auth_forward = "oauth_token"`) but deliberately did not wrap the upstream `claude setup-token` flow — the operator was expected to run the upstream command, copy the token by hand, and write it into config.
 
-That call was correct for the minimum viable token-mode release. With
-token mode in production, three follow-on requirements have surfaced
-that the manual flow does not address:
+That call was correct for the minimum viable token-mode release. With token mode in production, three follow-on requirements have surfaced that the manual flow does not address:
 
-1. **Workspace-scoped tokens** (one OAuth token per workspace, stored
-   under a deterministic 1P name, revocable independently).
-2. **Multi-1P-account operators** (token for `Personal` workspace
-   lives in `Personal` vault; token for `Work` workspace lives in
-   `Work` vault — `op` CLI default-account context cannot resolve both
-   in the same session).
-3. **Token lifecycle** (rotation before expiry, revocation on workspace
-   delete, drift detection when 1P value rotated externally).
+1. **Workspace-scoped tokens** (one OAuth token per workspace, stored under a deterministic 1P name, revocable independently).
+2. **Multi-1P-account operators** (token for `Personal` workspace lives in `Personal` vault; token for `Work` workspace lives in `Work` vault — `op` CLI default-account context cannot resolve both in the same session).
+3. **Token lifecycle** (rotation before expiry, revocation on workspace delete, drift detection when 1P value rotated externally).
 
-This proposal therefore reverses the original non-goal: jackin' should
-own a workspace-scoped setup, rotate, revoke, and validate flow, with
-the upstream `claude setup-token` invoked as the inner step that
-actually mints the token.
+This proposal therefore reverses the original non-goal: jackin' should own a workspace-scoped setup, rotate, revoke, and validate flow, with the upstream `claude setup-token` invoked as the inner step that actually mints the token.
 
 ## Goal
 
-1. One command — `jackin workspace claude-token setup` — moves a
-   workspace from "no token configured" to "token mode active and
-   end-to-end validated", with no copy-paste of secret material.
-2. Tokens never touch shell history, scrollback, or any file on disk
-   that jackin writes. The token transits jackin's process memory once
-   and lands in 1Password (or an alternative secret backend).
-3. Every subsequent token operation (rotate, revoke, doctor) is a
-   single command and stays workspace-scoped.
-4. The flow is idempotent: re-running it updates the existing 1P item
-   in place rather than creating duplicates.
-5. Multi-account 1P operators can pin a workspace to a specific
-   `op` account so resolution is deterministic.
-6. The TUI Auth tab gains a peer "Generate token" action so the
-   operator never needs to drop to the CLI.
+1. One command — `jackin workspace claude-token setup` — moves a workspace from "no token configured" to "token mode active and end-to-end validated", with no copy-paste of secret material.
+2. Tokens never touch shell history, scrollback, or any file on disk that jackin writes. The token transits jackin's process memory once and lands in 1Password (or an alternative secret backend).
+3. Every subsequent token operation (rotate, revoke, doctor) is a single command and stays workspace-scoped.
+4. The flow is idempotent: re-running it updates the existing 1P item in place rather than creating duplicates.
+5. Multi-account 1P operators can pin a workspace to a specific `op` account so resolution is deterministic.
+6. The TUI Auth tab gains a peer "Generate token" action so the operator never needs to drop to the CLI.
 
 ## Non-Goals
 
-- Replacing or forking `claude setup-token`. jackin always shells out
-  to the upstream binary; what jackin owns is the surrounding
-  capture, storage, wiring, and validation.
-- Generating tokens without operator interaction. The browser-based
-  consent step in `claude setup-token` stays. jackin only removes the
-  copy-paste *after* consent.
-- Bringing token rotation onto a schedule (daemon, cron). Rotation is
-  always operator-initiated by `jackin workspace rotate claude-token`.
-  An optional pre-launch expiry banner is in scope; an automatic
-  rotator is not.
-- Creating a generic secrets platform. The setup flow is Claude-token
-  specific; the underlying primitives (op-write, host-CLI probe,
-  PTY-wrapped capture) are factored generically so a future
-  `gh auth token` or `codex login` flow can reuse them, but nothing in
-  this proposal ships a cross-runtime secret pipeline.
-- Solving Codex equivalent. Codex has no analog to
-  `CLAUDE_CODE_OAUTH_TOKEN`; this proposal is Claude-only.
+- Replacing or forking `claude setup-token`. jackin always shells out to the upstream binary; what jackin owns is the surrounding capture, storage, wiring, and validation.
+- Generating tokens without operator interaction. The browser-based consent step in `claude setup-token` stays. jackin only removes the copy-paste *after* consent.
+- Bringing token rotation onto a schedule (daemon, cron). Rotation is always operator-initiated by `jackin workspace rotate claude-token`. An optional pre-launch expiry banner is in scope; an automatic rotator is not.
+- Creating a generic secrets platform. The setup flow is Claude-token specific; the underlying primitives (op-write, host-CLI probe, PTY-wrapped capture) are factored generically so a future `gh auth token` or `codex login` flow can reuse them, but nothing in this proposal ships a cross-runtime secret pipeline.
+- Solving Codex equivalent. Codex has no analog to `CLAUDE_CODE_OAUTH_TOKEN`; this proposal is Claude-only.
 
 ## Design Options
 
@@ -160,22 +93,18 @@ Keep the current state. Documentation already explains the steps.
 Pros:
 
 - zero implementation work
-- preserves the original "wrap nothing" stance from the token-mode
-  spec
+- preserves the original "wrap nothing" stance from the token-mode spec
 
 Cons:
 
 - secret-in-clipboard / secret-in-scrollback risk on every setup
-- two-key config edit invites partial states (mode set, env missing,
-  or vice versa) that only fail at next launch
+- two-key config edit invites partial states (mode set, env missing, or vice versa) that only fail at next launch
 - no idempotency story for rotation
 - no multi-account 1P story
 
 ### Option 2: Setup helper that prints instructions only
 
-A `jackin workspace claude-token setup --plan` style command that
-prints a personalized step list for the current workspace, but does
-not perform the steps.
+A `jackin workspace claude-token setup --plan` style command that prints a personalized step list for the current workspace, but does not perform the steps.
 
 Pros:
 
@@ -185,67 +114,45 @@ Pros:
 Cons:
 
 - still has every copy-paste foot-gun of Option 1
-- false sense of automation; operators expect actions when commands
-  exist with imperative verbs
+- false sense of automation; operators expect actions when commands exist with imperative verbs
 
 ### Option 3: Full guided setup with PTY-captured token + 1P write (recommended)
 
-`jackin workspace claude-token setup` runs the full pipeline:
-host-CLI probe → PTY-wrapped `claude setup-token` → in-process token
-capture → `op item create`/`op item edit` (or alternative backend) →
-config wiring → end-to-end validation.
+`jackin workspace claude-token setup` runs the full pipeline: host-CLI probe → PTY-wrapped `claude setup-token` → in-process token capture → `op item create`/`op item edit` (or alternative backend) → config wiring → end-to-end validation.
 
 Pros:
 
 - zero copy-paste of secret material
-- single canonical 1P naming (`jackin · <workspace> · claude-token`)
-  so revocation and rotation become trivial
-- launch-time failure modes shifted to setup-time, where they are
-  actionable
-- naturally extends to other secret-bearing CLIs (`gh auth token`,
-  `codex login` if/when it gains a non-interactive path)
+- single canonical 1P naming (`jackin · <workspace> · claude-token`) so revocation and rotation become trivial
+- launch-time failure modes shifted to setup-time, where they are actionable
+- naturally extends to other secret-bearing CLIs (`gh auth token`, `codex login` if/when it gains a non-interactive path)
 
 Cons:
 
-- requires a new `OpWriteRunner` trait (the existing
-  `OpStructRunner` is read-only by SAFETY contract — see
-  <RepoFile path="src/console/op_cache.rs" />)
-- requires a PTY harness (`portable-pty` or equivalent) to host the
-  interactive `claude setup-token` flow without echoing the captured
-  token to the parent TTY
-- adds a dependency on the host having Claude CLI installed, with
-  install-hint plumbing for the case where it is missing
+- requires a new `OpWriteRunner` trait (the existing `OpStructRunner` is read-only by SAFETY contract — see <RepoFile path="src/console/op_cache.rs" />)
+- requires a PTY harness (`portable-pty` or equivalent) to host the interactive `claude setup-token` flow without echoing the captured token to the parent TTY
+- adds a dependency on the host having Claude CLI installed, with install-hint plumbing for the case where it is missing
 
 ### Option 4: Use OS keychain instead of 1Password for storage
 
-Store the captured token in Apple Keychain (macOS) or libsecret
-(Linux), with config referencing it via a future
-`keychain://<service>` source URI.
+Store the captured token in Apple Keychain (macOS) or libsecret (Linux), with config referencing it via a future `keychain://<service>` source URI.
 
 Pros:
 
 - no 1P CLI dependency for solo operators
-- aligns with the
-  [Credential Source Pattern](/reference/roadmap/credential-source-pattern/)
-  cross-cutting roadmap
+- aligns with the [Credential Source Pattern](/reference/roadmap/credential-source-pattern/) cross-cutting roadmap
 
 Cons:
 
 - needs the cross-cutting `CredentialSource` enum landed first
-- operators who already standardise on 1P (the dominant cohort today)
-  get nothing
-- shared / team workspace scenarios benefit much more from a 1P
-  shared-vault path than from per-host keychain entries
+- operators who already standardise on 1P (the dominant cohort today) get nothing
+- shared / team workspace scenarios benefit much more from a 1P shared-vault path than from per-host keychain entries
 
-Ship as a follow-up source after Option 3, gated on the credential
-source pattern landing.
+Ship as a follow-up source after Option 3, gated on the credential source pattern landing.
 
 ## Recommendation
 
-Implement Option 3 now and treat Option 4 as a follow-up source on
-top of the same setup pipeline. The setup orchestrator is
-backend-agnostic; only the storage step changes when keychain support
-arrives.
+Implement Option 3 now and treat Option 4 as a follow-up source on top of the same setup pipeline. The setup orchestrator is backend-agnostic; only the storage step changes when keychain support arrives.
 
 ## Suggested Operator UX
 
@@ -274,9 +181,7 @@ jackin workspace revoke claude-token --delete-1p-item
 jackin workspace doctor claude-token
 ```
 
-`jackin workspace ...` is a new top-level subcommand group that
-implicitly targets the current-directory workspace; an explicit
-`--workspace <name>` flag overrides.
+`jackin workspace ...` is a new top-level subcommand group that implicitly targets the current-directory workspace; an explicit `--workspace <name>` flag overrides.
 
 ### Sample interactive transcript
 
@@ -318,23 +223,17 @@ Next `jackin load` in this workspace will use OAuth token mode.
 
 ### TUI integration
 
-The Auth tab in `jackin console`
-(<RepoFile path="src/console/widgets/auth_panel/render.rs" />) gains
-a single new action on a credential row when mode = `oauth_token` and
-no credential is set:
+The Auth tab in `jackin console` (<RepoFile path="src/console/widgets/auth_panel/render.rs" />) gains a single new action on a credential row when mode = `oauth_token` and no credential is set:
 
 ```text
 [G] Generate new token →
 ```
 
-Selecting it triggers the same orchestrator used by the CLI flow. The
-modal renders progress for steps 1–4 inline so the operator never
-leaves the console.
+Selecting it triggers the same orchestrator used by the CLI flow. The modal renders progress for steps 1–4 inline so the operator never leaves the console.
 
 ### Config shape
 
-Introduce a single canonical slot inside the per-(workspace ×
-agent) auth block:
+Introduce a single canonical slot inside the per-(workspace × agent) auth block:
 
 ```toml
 [workspaces.chainargos-platform.claude]
@@ -342,15 +241,7 @@ auth_forward = "oauth_token"
 oauth_token  = "op://Personal/jackin · chainargos-platform · claude-token/token"
 ```
 
-The resolver synthesises `CLAUDE_CODE_OAUTH_TOKEN` from `oauth_token`
-at the **same layer** the slot was declared on, then runs the
-standard four-layer last-wins merge (global → role → workspace →
-workspace × role). Synthesis runs after the explicit `[env]` of the
-same layer, so when the operator declares both at the same layer the
-canonical slot wins on intra-layer collision; cross-layer ordering is
-unchanged. The "two-key" form (declaring `CLAUDE_CODE_OAUTH_TOKEN`
-directly inside `[workspaces.X.env]`) is just a normal env entry and
-behaves like every other env var:
+The resolver synthesises `CLAUDE_CODE_OAUTH_TOKEN` from `oauth_token` at the **same layer** the slot was declared on, then runs the standard four-layer last-wins merge (global → role → workspace → workspace × role). Synthesis runs after the explicit `[env]` of the same layer, so when the operator declares both at the same layer the canonical slot wins on intra-layer collision; cross-layer ordering is unchanged. The "two-key" form (declaring `CLAUDE_CODE_OAUTH_TOKEN` directly inside `[workspaces.X.env]`) is just a normal env entry and behaves like every other env var:
 
 ```toml
 # Two ways to spell the same thing — pick whichever block makes the
@@ -369,11 +260,7 @@ auth_forward = "oauth_token"
 CLAUDE_CODE_OAUTH_TOKEN = "op://Personal/Anthropic/token"
 ```
 
-There is no special "redundant entry" warning — per the pre-release
-schema rule in <RepoFile path="AGENTS.md" />, jackin does not ship
-tolerance handlers. If both forms are set at the same layer, the
-canonical slot wins (synthesis after explicit env); that is the
-entire collision contract.
+There is no special "redundant entry" warning — per the pre-release schema rule in <RepoFile path="AGENTS.md" />, jackin does not ship tolerance handlers. If both forms are set at the same layer, the canonical slot wins (synthesis after explicit env); that is the entire collision contract.
 
 A new optional field pins workspace 1P account scope:
 
@@ -392,35 +279,16 @@ gains an expiry suffix when the canonical slot is in use:
 claude auth: OAuth token (oauth_token ← op://Personal/jackin · …/token, expires 2027-05-08)
 ```
 
-Within 30 days of expiry, the suffix renders yellow; within 7 days,
-red. Beyond expiry, launch refuses unless `--force` is passed.
+Within 30 days of expiry, the suffix renders yellow; within 7 days, red. Beyond expiry, launch refuses unless `--force` is passed.
 
 ## Security Notes
 
-- **PTY isolation.** `claude setup-token` runs under a `portable-pty`
-  child. Stdout is consumed in-process, parsed for the token line,
-  and never forwarded to the parent TTY or any tracing sink.
-- **Heap minimization.** The token is held in a `secrecy::SecretString`
-  for the entire pipeline; `Debug` and `Display` are scrubbed; the
-  buffer is zeroed before the captured slot is dropped.
-- **No process-arg leakage.** The token is *never* passed to `op` via
-  argv — `op item create` reads it from stdin
-  (`op item create … password=- < <SecretString>`).
-- **Provenance metadata only.** The 1P item stores a SHA-256 prefix
-  (first 12 hex chars) of the token in `notesPlain`; `jackin
-  workspace doctor claude-token` recomputes the prefix from the
-  retrieved value to detect external rotation. The full hash is
-  *never* recorded — prefix-only avoids constructing a confirmation
-  oracle while still letting drift be visible.
-- **Filesystem hygiene.** The orchestrator emits zero temp files. If
-  PTY capture fails midway, the partial child process is killed and
-  the operator instructed to re-run; no half-written 1P item or
-  config edit persists.
-- **Revoke completeness.** `revoke` flips mode to `ignore`, removes
-  the canonical slot, and (optionally) deletes the 1P item. It does
-  *not* call any Anthropic-side revocation API — that surface does
-  not exist publicly today; the operator must rotate via Anthropic
-  dashboard if true revocation is required.
+- **PTY isolation.** `claude setup-token` runs under a `portable-pty` child. Stdout is consumed in-process, parsed for the token line, and never forwarded to the parent TTY or any tracing sink.
+- **Heap minimization.** The token is held in a `secrecy::SecretString` for the entire pipeline; `Debug` and `Display` are scrubbed; the buffer is zeroed before the captured slot is dropped.
+- **No process-arg leakage.** The token is *never* passed to `op` via argv — `op item create` reads it from stdin (`op item create … password=- < <SecretString>`).
+- **Provenance metadata only.** The 1P item stores a SHA-256 prefix (first 12 hex chars) of the token in `notesPlain`; `jackin workspace doctor claude-token` recomputes the prefix from the retrieved value to detect external rotation. The full hash is *never* recorded — prefix-only avoids constructing a confirmation oracle while still letting drift be visible.
+- **Filesystem hygiene.** The orchestrator emits zero temp files. If PTY capture fails midway, the partial child process is killed and the operator instructed to re-run; no half-written 1P item or config edit persists.
+- **Revoke completeness.** `revoke` flips mode to `ignore`, removes the canonical slot, and (optionally) deletes the 1P item. It does *not* call any Anthropic-side revocation API — that surface does not exist publicly today; the operator must rotate via Anthropic dashboard if true revocation is required.
 
 ## Implementation Outline
 
@@ -428,116 +296,58 @@ Order matters; later items depend on earlier ones.
 
 ### Phase A — Primitives
 
-- New: <RepoFile path="src/host_claude.rs" /> — host CLI probe
-  (`which claude`, version parse, install hint per OS), PTY-wrapped
-  `setup-token` driver, token-line parser. No business logic.
-- Extend: <RepoFile path="src/operator_env.rs" /> — add
-  `OpWriteRunner` trait with `item_create`, `item_edit`,
-  `item_delete`. Keep `OpStructRunner` read-only (SAFETY contract
-  in <RepoFile path="src/console/op_cache.rs" /> stays intact). New
-  trait lives next to the existing one, never touches the cache.
-- Extend: <RepoFile path="src/operator_env.rs" /> — `OpAccount`
-  scoping helpers; pass `--account` to all `op` invocations when a
-  workspace pins one.
+- New: <RepoFile path="src/host_claude.rs" /> — host CLI probe (`which claude`, version parse, install hint per OS), PTY-wrapped `setup-token` driver, token-line parser. No business logic.
+- Extend: <RepoFile path="src/operator_env.rs" /> — add `OpWriteRunner` trait with `item_create`, `item_edit`, `item_delete`. Keep `OpStructRunner` read-only (SAFETY contract in <RepoFile path="src/console/op_cache.rs" /> stays intact). New trait lives next to the existing one, never touches the cache.
+- Extend: <RepoFile path="src/operator_env.rs" /> — `OpAccount` scoping helpers; pass `--account` to all `op` invocations when a workspace pins one.
 
 ### Phase B — Config slot
 
-- Extend: <RepoFile path="src/workspace/mod.rs" /> — add
-  `op_account: Option<String>` and `claude.oauth_token: Option<EnvValue>`
-  on the per-workspace agent auth block.
-- Extend: <RepoFile path="src/runtime/launch.rs" /> — resolver picks up
-  the canonical slot and synthesises `CLAUDE_CODE_OAUTH_TOKEN` for
-  the container env. Legacy `[env]` form still wins if canonical is
-  unset.
-- Extend: <RepoFile path="src/config/editor.rs" /> — round-trip the
-  new fields, including `op_account` migration for existing
-  workspaces.
+- Extend: <RepoFile path="src/workspace/mod.rs" /> — add `op_account: Option<String>` and `claude.oauth_token: Option<EnvValue>` on the per-workspace agent auth block.
+- Extend: <RepoFile path="src/runtime/launch.rs" /> — resolver picks up the canonical slot and synthesises `CLAUDE_CODE_OAUTH_TOKEN` for the container env. Legacy `[env]` form still wins if canonical is unset.
+- Extend: <RepoFile path="src/config/editor.rs" /> — round-trip the new fields, including `op_account` migration for existing workspaces.
 
 ### Phase C — Orchestrator
 
-- Extend: <RepoFile path="src/cli/workspace.rs" /> — `setup` /
-  `rotate` / `revoke` / `doctor` subcommands; thin glue calling
-  Phase A + B.
-- New: <RepoFile path="src/workspace/token_setup.rs" /> —
-  orchestrator state machine: probe host CLI, run PTY capture, write
-  1P item, edit config, run validation. Returns a typed report
-  rendered by the CLI.
-- Extend: <RepoFile path="src/cli/mod.rs" /> — register the new
-  subcommand group, wire dispatch via
+- Extend: <RepoFile path="src/cli/workspace.rs" /> — `setup` / `rotate` / `revoke` / `doctor` subcommands; thin glue calling Phase A + B.
+- New: <RepoFile path="src/workspace/token_setup.rs" /> — orchestrator state machine: probe host CLI, run PTY capture, write 1P item, edit config, run validation. Returns a typed report rendered by the CLI.
+- Extend: <RepoFile path="src/cli/mod.rs" /> — register the new subcommand group, wire dispatch via
   <RepoFile path="src/app/mod.rs" />.
 
 ### Phase D — TUI integration
 
-- Extend: <RepoFile path="src/console/widgets/auth_panel/form.rs" /> —
-  add the `[G] Generate token →` action; only enabled when mode =
-  `oauth_token` and credential is `None`.
-- New: `src/console/widgets/auth_panel/setup_modal.rs` — progress
-  modal driven by the same orchestrator.
+- Extend: <RepoFile path="src/console/widgets/auth_panel/form.rs" /> — add the `[G] Generate token →` action; only enabled when mode = `oauth_token` and credential is `None`.
+- New: `src/console/widgets/auth_panel/setup_modal.rs` — progress modal driven by the same orchestrator.
 
 ### Phase E — Lifecycle polish
 
-- Extend: <RepoFile path="src/tui/output.rs" /> — expiry suffix in the
-  launch diagnostic.
-- Extend: <RepoFile path="src/runtime/launch.rs" /> — pre-launch
-  expiry check + cached validity probe (24h TTL by default; flush on
-  rotate).
+- Extend: <RepoFile path="src/tui/output.rs" /> — expiry suffix in the launch diagnostic.
+- Extend: <RepoFile path="src/runtime/launch.rs" /> — pre-launch expiry check + cached validity probe (24h TTL by default; flush on rotate).
 - New: documentation pages — see Docs section below.
 
 ### Docs
 
-- Update: <RepoFile path="docs/src/content/docs/guides/authentication/agents.mdx" />
-  — replace the manual "Setup" subsection under "oauth_token" with a
-  pointer to the new wizard, keep the manual sequence under a
-  "Manual setup (advanced)" disclosure.
-- New: <RepoFile path="docs/src/content/docs/commands/workspace.mdx" />
-  — `setup` / `rotate` / `revoke` / `doctor` reference.
-- Update: <RepoFile path="docs/src/content/docs/reference/roadmap/claude-auth-strategy.mdx" />
-  — link this proposal as the resolution path for the parent's open
-  question #1 (token storage on macOS/Linux).
+- Update: <RepoFile path="docs/src/content/docs/guides/authentication/agents.mdx" /> — replace the manual "Setup" subsection under "oauth_token" with a pointer to the new wizard, keep the manual sequence under a "Manual setup (advanced)" disclosure.
+- New: <RepoFile path="docs/src/content/docs/commands/workspace.mdx" /> — `setup` / `rotate` / `revoke` / `doctor` reference.
+- Update: <RepoFile path="docs/src/content/docs/reference/roadmap/claude-auth-strategy.mdx" /> — link this proposal as the resolution path for the parent's open question #1 (token storage on macOS/Linux).
 
 ## Open Questions
 
-1. **Token-line parsing contract.** Is the upstream output of
-   `claude setup-token` stable enough to regex-parse, or should the
-   wrapper require a `--print-token-only` upstream flag? If the
-   latter, should jackin ship a small upstream PR to Anthropic?
-2. **Concurrent setup safety.** Two `jackin workspace setup
-   claude-token` runs against the same workspace at once — should
-   the orchestrator hold a flock on `~/.config/jackin/config.toml`?
-3. **Default `op_account` discovery.** When the operator has multiple
-   1P accounts and no workspace pin, should the wizard prompt every
-   time, or remember the last choice per workspace?
-4. **Doctor verbosity.** Should `doctor` print the `op://` reference
-   in full, partially redacted, or only the resolution result? (Full
-   path makes audits easy; partial redaction is friendlier in
-   shared-screen demos.)
-5. **Apple Keychain follow-up timing.** Does Option 4 (keychain
-   backend) ship in the same release or wait for the
-   [Credential Source Pattern](/reference/roadmap/credential-source-pattern/)
-   to land first?
-6. **Bulk migration.** Is `jackin workspace claude-token setup --all`
-   worth shipping in v1, or does serial per-workspace remain
-   sufficient until adoption demands batch?
+1. **Token-line parsing contract.** Is the upstream output of `claude setup-token` stable enough to regex-parse, or should the wrapper require a `--print-token-only` upstream flag? If the latter, should jackin ship a small upstream PR to Anthropic?
+2. **Concurrent setup safety.** Two `jackin workspace setup claude-token` runs against the same workspace at once — should the orchestrator hold a flock on `~/.config/jackin/config.toml`?
+3. **Default `op_account` discovery.** When the operator has multiple 1P accounts and no workspace pin, should the wizard prompt every time, or remember the last choice per workspace?
+4. **Doctor verbosity.** Should `doctor` print the `op://` reference in full, partially redacted, or only the resolution result? (Full path makes audits easy; partial redaction is friendlier in shared-screen demos.)
+5. **Apple Keychain follow-up timing.** Does Option 4 (keychain backend) ship in the same release or wait for the [Credential Source Pattern](/reference/roadmap/credential-source-pattern/) to land first?
+6. **Bulk migration.** Is `jackin workspace claude-token setup --all` worth shipping in v1, or does serial per-workspace remain sufficient until adoption demands batch?
 
 ## Related Files
 
-- <RepoFile path="src/instance/auth.rs" /> — `provision_claude_auth`
-  (token-mode behaviour stays untouched; this proposal feeds it via
-  the new canonical slot)
-- <RepoFile path="src/operator_env.rs" /> — `OpRunner`,
-  `OpStructRunner`, `EnvValue`, `resolve_op_uri_to_ref`
-- <RepoFile path="src/console/op_cache.rs" /> — read-only structural
-  cache (SAFETY contract preserved)
-- <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — existing
-  1P drill-down UI; new generate-action reuses the account/vault
-  selection logic
-- <RepoFile path="src/console/widgets/auth_panel/render.rs" /> —
-  Auth tab hosting the new `[G]` action
-- <RepoFile path="src/runtime/launch.rs" /> —
-  `inject_jackin_workspace_env`, launch-time env merge, expiry
-  diagnostic surface
+- <RepoFile path="src/instance/auth.rs" /> — `provision_claude_auth` (token-mode behaviour stays untouched; this proposal feeds it via the new canonical slot)
+- <RepoFile path="src/operator_env.rs" /> — `OpRunner`, `OpStructRunner`, `EnvValue`, `resolve_op_uri_to_ref`
+- <RepoFile path="src/console/op_cache.rs" /> — read-only structural cache (SAFETY contract preserved)
+- <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — existing 1P drill-down UI; new generate-action reuses the account/vault selection logic
+- <RepoFile path="src/console/widgets/auth_panel/render.rs" /> — Auth tab hosting the new `[G]` action
+- <RepoFile path="src/runtime/launch.rs" /> — `inject_jackin_workspace_env`, launch-time env merge, expiry diagnostic surface
 - <RepoFile path="src/tui/output.rs" /> — `format_auth_line`
-- <RepoFile path="src/workspace/mod.rs" /> — `WorkspaceConfig` and
-  `AgentAuthConfig` (proposed `oauth_token` slot lives here)
+- <RepoFile path="src/workspace/mod.rs" /> — `WorkspaceConfig` and `AgentAuthConfig` (proposed `oauth_token` slot lives here)
 - <RepoFile path="docs/src/content/docs/guides/authentication/agents.mdx" />
 - <RepoFile path="docs/src/content/docs/reference/roadmap/claude-auth-strategy.mdx" />

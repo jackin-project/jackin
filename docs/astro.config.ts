@@ -127,6 +127,7 @@ export default defineConfig({
             { label: 'Architecture', slug: 'reference/architecture' },
             { label: 'Configuration File', slug: 'reference/configuration' },
             { label: 'Codebase Map', slug: 'reference/codebase-map' },
+            { label: 'Claude Token Orchestrator', slug: 'reference/claude-token-orchestrator' },
             {
               // Roadmap groups are flat — every group below is open
               // work. Some groups happen to be phased programs that
