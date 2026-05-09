@@ -692,13 +692,10 @@ pub enum AuthRow {
 
 /// Build the row-shape vector for the Auth tab.
 ///
-/// `config` provides the live `[claude]` / `[codex]` / `[amp]` /
-/// `[github]` globals so the "does this mode need a credential?" check
-/// runs against the operator's actual configuration. The synthesized
-/// config (workspace pending merged onto the live globals) is built
-/// once here and reused for every credential-row check, regardless of
-/// how many
-/// roles are expanded.
+/// `config` supplies the global `[claude]` / `[codex]` / `[amp]` /
+/// `[github]` blocks. Synthesized config (workspace pending merged
+/// onto globals) is built once and reused for every credential-row
+/// check across expanded roles.
 pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthRow> {
     use crate::console::manager::auth_kind::AuthKind;
     let Some(kind) = editor.auth_selected_kind else {
@@ -1279,10 +1276,8 @@ fn render_auth_source_line(
     ratatui::text::Line::from(spans)
 }
 
-/// Pull the explicit workspace-level mode for a kind, if any.
-///
-/// Mirrors the existing Claude / Codex / Amp branches — Github uses its
-/// own mode enum so it threads through [`AuthMode::from_github`].
+/// Explicit workspace-level mode for a kind, if any. Github uses its
+/// own mode enum and threads through [`AuthMode::from_github`].
 fn explicit_workspace_mode(
     ws: &crate::workspace::WorkspaceConfig,
     kind: crate::console::manager::auth_kind::AuthKind,
@@ -1308,13 +1303,9 @@ fn explicit_workspace_mode(
     }
 }
 
-/// Walk the env layers for a credential lookup.
-///
-/// For Claude / Codex the env map lives directly on
-/// `[workspaces.<ws>(.roles.<role>).env]`. For Github the env map
-/// lives on `[workspaces.<ws>(.roles.<role>).github.env]` (parallel to
-/// the global `[github.env]`). The kind decides which family of layers
-/// the panel reads from.
+/// Walk env layers for a credential lookup. Github's env map lives
+/// under `[…github.env]` (parallel to global `[github.env]`); the
+/// agent kinds use `[…env]` directly.
 fn auth_source_value<'a>(
     synthesized: &'a AppConfig,
     workspace_name: &str,
@@ -1430,11 +1421,8 @@ pub(in crate::console) fn push_op_breadcrumb_spans(spans: &mut Vec<Span<'static>
     }
 }
 
-/// Synthesize an `AppConfig` whose `[claude]` / `[codex]` / `[amp]` /
-/// `[github]` come from the live global config and whose
-/// `[workspaces.<ws>]` mirrors `editor.pending`. The Auth panel reads
-/// from this so changes the operator makes via the auth-edit form show
-/// up immediately, before save.
+/// Merge live global blocks with `editor.pending` for the active
+/// workspace so the Auth panel renders pending edits before save.
 pub(in crate::console::manager) fn synthesize_appconfig_for_auth(
     state: &EditorState<'_>,
     config: &AppConfig,

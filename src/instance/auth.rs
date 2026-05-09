@@ -501,28 +501,17 @@ impl RoleState {
 }
 
 impl RoleState {
-    /// Provision Amp's host-side `secrets.json` according to the
-    /// chosen auth-forwarding strategy.
+    /// Provision Amp's host-side `secrets.json` per the chosen mode.
     ///
-    /// Source: `~/.local/share/amp/secrets.json` (XDG_DATA). The Amp
-    /// binary reads this file on startup; the canonical key is
-    /// `apiKey@https://ampcode.com/`. The XDG_CONFIG file
-    /// `~/.config/amp/settings.json` is preferences only and is
-    /// intentionally not forwarded — it never holds the token.
+    /// Source: `~/.local/share/amp/secrets.json` (XDG_DATA). The
+    /// XDG_CONFIG `~/.config/amp/settings.json` is preferences only
+    /// and never holds the token.
     ///
-    /// Returns `(outcome, mounted_secrets_json)` where
-    /// `mounted_secrets_json` is the role-state `secrets.json` path
-    /// when it should be bind-mounted into the container (file exists
-    /// post-call), or `None` when the mount must be skipped.
-    /// Centralising the decision here means `RoleState::prepare` does
-    /// not need to re-stat the file or reason about which outcome
-    /// implies which mount state — same shape as `provision_codex_auth`.
-    ///
-    /// `Sync` with the host file missing preserves any role-state
-    /// `secrets.json` from a prior run so an in-container login isn't
-    /// silently dropped. `OAuthToken` is parser-rejected for Amp; if a
-    /// config bypass ever reaches the defensive arm we wipe the role
-    /// state and log so the bypass is loud rather than silent.
+    /// `mounted_secrets_json` is `None` when the bind mount must be
+    /// skipped. `Sync` with no host file preserves any prior role-state
+    /// file so an in-container login isn't silently dropped.
+    /// `OAuthToken` is parser-rejected; the defensive arm wipes + logs
+    /// so a bypass is loud rather than silent.
     pub(super) fn provision_amp_auth(
         secrets_json: &Path,
         mode: AuthForwardMode,
@@ -530,18 +519,13 @@ impl RoleState {
     ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
         use anyhow::Context;
 
-        // Reject any pre-existing symlink at the role-state secrets.json
-        // BEFORE branching on mode (same defensive check as Codex).
-        // `reject_symlink` no-ops on `ENOENT` so no pre-stat needed.
+        // `reject_symlink` no-ops on ENOENT, so no pre-stat needed.
         reject_symlink(secrets_json)?;
 
         let host_secrets = host_home.join(".local/share/amp/secrets.json");
         let outcome = match mode {
-            // Parser-rejected for Amp. If we reach this arm the parser
-            // was bypassed; treat it as an env-driven mode (TokenMode)
-            // and wipe any prior Sync residue so forwarded credentials
-            // cannot survive into the container. Log loudly so the
-            // bypass is visible in operator output.
+            // Parser-rejected for Amp. Defensive arm: wipe + log loudly
+            // so a parser bypass cannot leak prior Sync residue.
             AuthForwardMode::OAuthToken => {
                 eprintln!(
                     "[jackin] internal: provision_amp_auth received unsupported \
@@ -576,10 +560,10 @@ impl RoleState {
                     AuthProvisionOutcome::HostMissing
                 }
                 Err(e) => {
-                    // Surface the underlying io::Error via the source
-                    // chain so {e:#} or `--debug` actually exposes the
-                    // kind (PermissionDenied, NotADirectory, etc.)
-                    // instead of misdiagnosing it as host-missing.
+                    // Preserve `io::Error` source chain so `{e:#}` /
+                    // `--debug` exposes the kind (PermissionDenied,
+                    // NotADirectory) instead of misdiagnosing as
+                    // host-missing.
                     let hint = match e.kind() {
                         std::io::ErrorKind::PermissionDenied => {
                             " (check host file permissions on the parent dir)"
@@ -606,10 +590,8 @@ impl RoleState {
     }
 }
 
-/// Remove any role-state `secrets.json` so a prior Sync run cannot
-/// leak forwarded credentials into the container under env-driven
-/// modes (`Ignore`, `ApiKey`); the agent then authenticates via
-/// `AMP_API_KEY` (`ApiKey`) or a fresh in-container login (`Ignore`).
+/// Remove role-state `secrets.json` so a prior Sync run cannot leak
+/// credentials under env-driven modes (`Ignore`, `ApiKey`).
 fn wipe_amp_state(secrets_json: &Path) -> anyhow::Result<()> {
     use anyhow::Context;
     wipe_file_if_present(secrets_json).with_context(|| {

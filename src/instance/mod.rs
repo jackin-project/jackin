@@ -207,19 +207,12 @@ pub enum AgentRuntimeState {
         auth_json: Option<PathBuf>,
     },
     Amp {
-        /// Host path mounted at `/jackin/amp/secrets.json` when the
-        /// file was synced from the host's
-        /// `~/.local/share/amp/secrets.json` on a previous launch (or
-        /// persists from a prior in-container login). `None` when the
-        /// mount must be skipped — env-driven modes (`ignore`/`api_key`)
-        /// wipe it; sync with no host file and no carry-over leaves
-        /// nothing to mount.
+        /// Host path mounted at `/jackin/amp/secrets.json`. `None`
+        /// when env-driven modes wiped it or sync had no host file
+        /// to copy and no carry-over to preserve.
         ///
-        /// `secrets.json` is the XDG_DATA file Amp reads on startup
-        /// (canonical key `apiKey@https://ampcode.com/`). The
-        /// XDG_CONFIG path `~/.config/amp/settings.json` is preferences
-        /// only — never holds the token — and is intentionally not
-        /// forwarded.
+        /// XDG_DATA path. `~/.config/amp/settings.json` (XDG_CONFIG)
+        /// holds preferences only and is intentionally not forwarded.
         secrets_json: Option<PathBuf>,
     },
 }
@@ -306,17 +299,8 @@ impl RoleState {
         }
     }
 
-    /// Host path to Amp's `secrets.json` (mounted at
-    /// `/jackin/amp/secrets.json` in the container). `None` when no
-    /// secrets file is available (env-driven mode wiped it / sync
-    /// host-missing with no prior file) or when this state was not
-    /// prepared for `Agent::Amp`.
-    ///
-    /// Reads/writes the Amp XDG_DATA file
-    /// `~/.local/share/amp/secrets.json` — the canonical credential
-    /// store named by the Amp binary. The XDG_CONFIG file
-    /// `~/.config/amp/settings.json` (preferences) is intentionally
-    /// not touched by the auth axis.
+    /// Host path to Amp's `secrets.json`. `None` when no file is
+    /// available or when this state was not prepared for `Agent::Amp`.
     #[must_use]
     pub fn amp_secrets_json(&self) -> Option<&Path> {
         match &self.agent_runtime {

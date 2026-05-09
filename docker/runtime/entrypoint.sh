@@ -110,11 +110,9 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     else
         echo "[entrypoint] amp: no secrets.json mounted and AMP_API_KEY unset — agent will require interactive login" >&2
     fi
-    # `--dangerously-allow-all` mirrors the Claude `--dangerously-skip-permissions`
-    # flag — required for the autonomous-container model jackin ships. The
-    # equivalent settings-file key is `amp.dangerouslyAllowAll: true`; we
-    # use the CLI flag so jackin does not need to write to the operator's
-    # XDG_CONFIG file.
+    # Mirrors Claude's `--dangerously-skip-permissions`. CLI flag chosen
+    # over `amp.dangerouslyAllowAll: true` so jackin doesn't write to the
+    # operator's XDG_CONFIG.
     LAUNCH=(amp --dangerously-allow-all)
     ;;
   *)

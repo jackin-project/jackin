@@ -253,16 +253,11 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         }
         AgentRuntimeState::Amp { secrets_json } => {
             let mut mounts = Vec::new();
-            // Bound read-write at the docker level (parallel to Codex's
-            // `auth.json`), but the runtime entrypoint copies the file
-            // into `~/.local/share/amp/secrets.json` rather than
-            // symlinking, so in-session token rotation lands in the
-            // container's writable layer and does NOT propagate back
-            // to the host role-state file today. Live bidirectional
-            // sync is tracked under the reactive-daemon roadmap; the
-            // mount is RW now so that future plumbing (symlink, bind
-            // re-mount) can rely on a writable target without a
-            // launch-side change.
+            // Bound RW at the docker level so future plumbing (symlink
+            // / bind re-mount) for live bidirectional sync — see
+            // `roadmap/live-auth-sync.mdx` — can rely on a writable
+            // target. The entrypoint currently `cp`s the file, so
+            // in-container rotation does not flow back today.
             if let Some(secrets_json) = secrets_json {
                 mounts.push(format!(
                     "{}:/jackin/amp/secrets.json",

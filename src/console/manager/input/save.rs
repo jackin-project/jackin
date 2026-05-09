@@ -806,20 +806,13 @@ fn build_prospective_mounts(
     out
 }
 
-/// Diff `claude` / `codex` / `amp` / `github` and per-role variants
-/// between `original` and `pending`, propagating each change to disk via
-/// the matching `ConfigEditor::set_*_auth_forward` setter.
+/// Diff per-axis auth blocks and propagate each change via
+/// `ConfigEditor::set_*_auth_forward`.
 ///
-/// `WorkspaceEdit` does not (yet) carry the auth-forward fields, so
-/// `edit_workspace` re-renders the entire workspace table from the parsed
-/// in-memory config — preserving whatever was on disk, NOT what the
-/// auth-form mutated in `editor.pending`. Calling this helper after
-/// `edit_workspace` resolves that drift: the typed setters reach into
-/// the freshly-rewritten `[workspaces.<name>.<kind>]` /
-/// `[workspaces.<name>.roles.<role>.<kind>]` blocks and apply the diff.
-///
-/// Roles present only in `original` get their auth blocks cleared. Roles
-/// present only in `pending` get their auth blocks written.
+/// `WorkspaceEdit` does not carry auth-forward fields, so
+/// `edit_workspace` re-renders the workspace table from disk (NOT from
+/// `editor.pending`). This helper runs after `edit_workspace` to
+/// reapply the pending diff.
 fn apply_auth_forward_diff(
     ce: &mut crate::config::ConfigEditor,
     workspace_name: &str,
