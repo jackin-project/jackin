@@ -4,6 +4,43 @@
     "config:recommended",
     "docker:pinDigests"
   ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^docker\\/construct\\/versions\\.env$/"
+      ],
+      "matchStrings": [
+        "TIRITH_VERSION=(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "sheeki03/tirith",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v?(?<version>.*)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^docker\\/construct\\/versions\\.env$/"
+      ],
+      "matchStrings": [
+        "SHELLFIRM_VERSION=(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "shellfirm",
+      "datasourceTemplate": "crate"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^docker\\/construct\\/versions\\.env$/"
+      ],
+      "matchStrings": [
+        "MISE_VERSION=(?<currentValue>\\S+)"
+      ],
+      "depNameTemplate": "mise",
+      "datasourceTemplate": "deb",
+      "registryUrlTemplate": "https://mise.jdx.dev/deb?suite=stable&components=main&binaryArch=amd64"
+    }
+  ],
   "prHourlyLimit": 0,
   "prConcurrentLimit": 20,
   "commitBody": "Signed-off-by: Renovate Bot <renovate@whitesourcesoftware.com>"
