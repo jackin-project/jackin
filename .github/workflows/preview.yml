@@ -117,8 +117,15 @@ jobs:
             # guard prevents a future maintainer from accidentally
             # adding a wildcard that would match it.
             [ -z "$path" ] && continue
+            # Path globs are intentionally a subset of ci.yml's `rust:`
+            # filter: tests/** and .github/workflows/ci.yml change the
+            # Rust build but don't change the binary that ships in the
+            # Homebrew tarball, so they don't need a preview republish.
+            # The shared paths (Cargo.*, rust-toolchain.toml, build.rs,
+            # src/, docker/runtime/) MUST drift together with ci.yml
+            # — when adding a new build input there, add it here too.
             case "$path" in
-              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/*|docker/runtime/*)
+              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/**|docker/runtime/**)
                 source=true
                 ;;
             esac
