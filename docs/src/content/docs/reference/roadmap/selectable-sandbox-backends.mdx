@@ -751,7 +751,7 @@ This keeps the operator UX stable while letting jackin pick the right provider f
 
 ### Docker Sandboxes Deep Comparison
 
-Docker Sandboxes (released January 2026, Docker Desktop 4.58) provides the most complete agent sandbox model available today. Understanding its architecture is essential for honest positioning of any jackin backend.
+Docker Sandboxes provides the most complete agent sandbox model available today. `sbx` itself does not require Docker Desktop, although custom template builds do. Understanding that split is essential for honest positioning of any jackin backend: the useful comparison is the sandbox architecture and operator surface, not an assumption that every Docker-owned capability maps to jackin.
 
 #### Docker Sandboxes Architecture
 
@@ -1147,6 +1147,6 @@ Both `microvm` provider paths close the two biggest DinD gaps (shared kernel, pr
 - <RepoFile path="src/derived_image.rs" /> - derived runtime layer generation
 - <RepoFile path="docker/construct/Dockerfile" /> - current Docker-oriented construct contract
 - <RepoFile path="docker/runtime/entrypoint.sh" /> - current runtime entrypoint behavior
-- <RepoFile path="docs/src/content/docs/reference/architecture.mdx" /> - current architecture story
-- <RepoFile path="docs/src/content/docs/guides/security-model.mdx" /> - current security boundary statement
-- <RepoFile path="docs/src/content/docs/guides/comparison.mdx" /> - comparison with Docker Sandboxes
+- [Architecture](/reference/architecture/) - current architecture story
+- [Security model](/guides/security-model/) - current security boundary statement
+- [Comparison](/guides/comparison/) - comparison with Docker Sandboxes

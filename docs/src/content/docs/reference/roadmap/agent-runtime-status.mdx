@@ -3,7 +3,7 @@ title: "Agent Runtime Status (Idle / Busy / Question)"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open — design proposal (Phase 2, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+**Status**: Open — design proposal (Phase 2, [Agent Orchestrator Research Program](/reference/roadmap/multicode-inspired-features/))
 
 ## Problem
 
@@ -41,8 +41,8 @@ that everything observable depends on.
 
 **Sources**:
 - No dedicated README section (implementation-only feature)
-- Source — [`lib/src/services/root_session_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/root_session_service.rs) (SSE event stream → status state)
-- Source — [`lib/src/services/opencode_client_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/opencode_client_service.rs) (the SSE client itself)
+- Source — [`lib/src/services/root_session_service.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/services/root_session_service.rs) (SSE event stream → status state)
+- Source — [`lib/src/services/opencode_client_service.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/services/opencode_client_service.rs) (the SSE client itself)
 
 multicode subscribes to the OpenCode SSE event stream and derives a
 three-state enum:
@@ -172,7 +172,7 @@ event plus container liveness.
 
 ## See Also
 
-- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Agent Orchestrator Research Program](/reference/roadmap/multicode-inspired-features/)
 - [Multi-runtime support](/reference/roadmap/multi-runtime-support/) —
   the runtime adapter abstraction this depends on
 - [Console resource panel](/reference/roadmap/console-resource-panel/) —

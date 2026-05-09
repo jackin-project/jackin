@@ -3,7 +3,7 @@ title: "Token & Cost Telemetry"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open — design proposal (Phase 3, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+**Status**: Open — design proposal (Phase 3, [Agent Orchestrator Research Program](/reference/roadmap/multicode-inspired-features/))
 
 ## Problem
 
@@ -38,10 +38,10 @@ telemetry primitives are simple; the value is high.
 
 **Sources**:
 - No dedicated README section (implementation-only feature)
-- Source — [`lib/src/services/usage_aggregation_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/usage_aggregation_service.rs) (token + cost aggregation)
-- Source — [`lib/src/services/resource_usage_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/resource_usage_service.rs) (CPU + RAM + OOM sampling)
+- Source — [`lib/src/services/usage_aggregation_service.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/services/usage_aggregation_service.rs) (token + cost aggregation)
+- Source — [`lib/src/services/resource_usage_service.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/services/resource_usage_service.rs) (CPU + RAM + OOM sampling)
 
-multicode's `usage_aggregation_service` (see [`lib/src/services/usage_aggregation_service.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/services/usage_aggregation_service.rs))
+multicode's `usage_aggregation_service` (see [`lib/src/services/usage_aggregation_service.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/services/usage_aggregation_service.rs))
 parses the OpenCode message history, sums input/output
 tokens per session, multiplies by a synthetic per-model cost table, and
 exposes:
@@ -196,7 +196,7 @@ $ jackin usage the-architect --json
 
 ## See Also
 
-- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Agent Orchestrator Research Program](/reference/roadmap/multicode-inspired-features/)
 - [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) —
   required (sample storage)
 - [Agent runtime status](/reference/roadmap/agent-runtime-status/) —

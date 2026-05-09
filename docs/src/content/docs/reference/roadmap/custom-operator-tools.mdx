@@ -3,7 +3,7 @@ title: "Custom Operator Tools (`[[tool]]` extension points)"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open — design proposal (Phase 2, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+**Status**: Open — design proposal (Phase 2, [Agent Orchestrator Research Program](/reference/roadmap/multicode-inspired-features/))
 
 ## Problem
 
@@ -36,8 +36,8 @@ else is operator-defined.
 
 **Sources**:
 - No dedicated README section
-- Config — [`config.toml` `[[tool]]` array](https://github.com/yawkat/multicode/blob/main/config.toml) (the example only shows one tool — `bash` on `b` — but the schema is the same)
-- Source — [`tui/src/app.rs`](https://github.com/yawkat/multicode/blob/main/tui/src/app.rs) (tool firing, reserved-key validation)
+- Config — [`config.toml` `[[tool]]` array](https://github.com/graemerocher/multicode/blob/main/config.toml) (the example only shows one tool — `bash` on `b` — but the schema is the same)
+- Source — [`tui/src/app.rs`](https://github.com/graemerocher/multicode/blob/main/tui/src/app.rs) (tool firing, reserved-key validation)
 
 ```toml
 [[tool]]
@@ -183,7 +183,7 @@ can `docker exec` from the tool command — explicit and intentional.
 
 ## See Also
 
-- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Agent Orchestrator Research Program](/reference/roadmap/multicode-inspired-features/)
 - [Operator handler system](/reference/roadmap/operator-handler-system/) —
   shared command-resolution machinery
 - [Agent tag protocol](/reference/roadmap/agent-tag-protocol/) — source

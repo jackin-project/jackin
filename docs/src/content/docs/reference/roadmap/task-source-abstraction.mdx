@@ -3,7 +3,7 @@ title: "Task Source Abstraction"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open — design proposal (Phase 4, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+**Status**: Open — design proposal (Phase 4, [Agent Orchestrator Research Program](/reference/roadmap/multicode-inspired-features/))
 
 ## Problem
 
@@ -32,7 +32,7 @@ all see tasks through the trait.
 
 **Sources**:
 - README — [Autonomous queueing](https://github.com/graemerocher/multicode#autonomous-queueing) (closest — describes the GitHub-issue scanner that this leaf generalizes)
-- *No abstraction in multicode* — this leaf proposes a `TaskSource` trait jackin'-side; multicode hardcodes GitHub. Source code: [`lib/src/manager.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/manager.rs) is where their queue logic lives.
+- *No abstraction in multicode* — this leaf proposes a `TaskSource` trait jackin'-side; multicode hardcodes GitHub. Source code: [`lib/src/manager.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/manager.rs) is where their queue logic lives.
 
 multicode's autonomous-issue-scanning has no abstraction — it talks directly
 to GitHub via Octocrab and turns issues into queued workspaces. Their
@@ -85,6 +85,30 @@ pub struct Task {
     pub created_at: SystemTime,
 }
 ```
+
+### Task policy
+
+Each source also returns or references a `TaskPolicy` so the queue does not
+hardcode GitHub issue assumptions:
+
+```rust
+pub struct TaskPolicy {
+    pub allowed_repositories: Vec<String>,
+    pub default_base_branch: Option<String>,
+    pub allowed_base_branches: Vec<String>,
+    pub required_labels: Vec<String>,
+    pub excluded_labels: Vec<String>,
+    pub write_target: WriteTarget,            // Worktree | Clone | RemoteBranchOnly
+    pub publish_mode: PublishMode,            // Never | ManualGate | AutoDraft | AutoReady
+    pub credential_source: Option<String>,
+    pub max_open_prs_per_repo: Option<u32>,
+    pub dedupe_key: String,
+}
+```
+
+The policy is user-facing because it controls what a queued agent may publish,
+where it may publish, and which manual gates are required. It belongs in the
+resolved session contract for every autonomous dispatch.
 
 ### V1 source: GitHub issues
 
@@ -199,7 +223,7 @@ CREATE TABLE tasks (
 
 ## See Also
 
-- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Agent Orchestrator Research Program](/reference/roadmap/multicode-inspired-features/)
 - [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) —
   primary consumer
 - [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) —
