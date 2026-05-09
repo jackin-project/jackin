@@ -526,9 +526,8 @@ impl RoleState {
 
         // Reject any pre-existing symlink at the role-state settings.json
         // BEFORE branching on mode (same defensive check as Codex).
-        if settings_json.exists() {
-            reject_symlink(settings_json)?;
-        }
+        // `reject_symlink` no-ops on `ENOENT` so no pre-stat needed.
+        reject_symlink(settings_json)?;
 
         let host_settings = host_home.join(".config/amp/settings.json");
         let outcome = match mode {
@@ -607,17 +606,14 @@ impl RoleState {
 /// `AMP_API_KEY` (`ApiKey`) or a fresh in-container login (`Ignore`).
 fn wipe_amp_state(settings_json: &Path) -> anyhow::Result<()> {
     use anyhow::Context;
-    if settings_json.exists() {
-        std::fs::remove_file(settings_json).with_context(|| {
-            format!(
-                "failed to wipe stale Amp settings.json at {} \
-                 (auth_forward switched to ignore/api_key); remove the file \
-                 manually if it has unexpected ownership",
-                settings_json.display()
-            )
-        })?;
-    }
-    Ok(())
+    wipe_file_if_present(settings_json).with_context(|| {
+        format!(
+            "failed to wipe stale Amp settings.json at {} \
+             (auth_forward switched to ignore/api_key); remove the file \
+             manually if it has unexpected ownership",
+            settings_json.display()
+        )
+    })
 }
 
 /// Copy the host's `.claude.json` into the container state, or write `{}`

@@ -1326,12 +1326,12 @@ fn auth_source_value<'a>(
     match kind {
         AuthKind::Github => github_source_value(synthesized, workspace_name, role, env_name),
         AuthKind::Claude | AuthKind::Codex | AuthKind::Amp => {
-            claude_codex_source_value(synthesized, workspace_name, role, env_name)
+            agent_env_source_value(synthesized, workspace_name, role, env_name)
         }
     }
 }
 
-fn claude_codex_source_value<'a>(
+fn agent_env_source_value<'a>(
     synthesized: &'a AppConfig,
     workspace_name: &str,
     role: &str,
