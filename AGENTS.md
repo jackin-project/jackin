@@ -2,6 +2,17 @@
 
 This repository uses `main` as its primary branch. This file is the canonical home for rules and restrictions that apply only to AI agents. Rules that apply equally to human contributors and agents live in topic-specific files linked under **Shared conventions** below.
 
+## Project staffing: solo maintainer (agent-only)
+
+Jackin has exactly one human contributor — the operator. There is no second reviewer available, and GitHub does not let a PR author approve their own pull request. This shapes several rules and tooling choices that an agent might otherwise expect to default differently:
+
+- Branch protection on `main` does **not** require an approving review (`required_approving_review_count = 0` in `jackin-github-terraform`). Do not propose raising it without a concrete plan for how a second human will review every PR.
+- "Get a second pair of eyes" is not an available pre-merge step. Pre-merge confidence comes from CI, the path-aware aggregator status checks, the strict up-to-date branch policy, and the agent following the rules in `PULL_REQUESTS.md` — not from a human reviewer the operator does not have.
+- Multi-agent review (running `code-reviewer` / `comment-analyzer` / `silent-failure-hunter` / etc. in parallel before requesting merge) is the substitute for the missing second human. Treat those review passes as load-bearing rather than optional polish.
+- For irreversible or high-blast-radius changes, prefer asking the operator to confirm one more time over assuming the green CI run is sufficient. The cost of pausing 30 seconds is much lower than the cost of a bad merge that an absent second reviewer would have caught.
+
+This rule retires when the project gains additional human reviewers.
+
 ## Project status: pre-release (agent-only)
 
 Jackin has no released version — it is a proof-of-concept. **Breaking changes are expected and acceptable.** When schemas change (config TOML, on-disk state layout, CLI flags, role manifests, role/workspace/agent shapes), do not write migration code, compatibility shims, fallback parsers for old field names, "tolerant ignore + warn" handlers, or deprecation warnings. Make the new shape the only shape; let stale configs fail with the standard parser error.
