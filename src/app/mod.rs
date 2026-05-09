@@ -1211,23 +1211,37 @@ fn delete_prior_op_item(
     new_ref: &crate::operator_env::OpRef,
     account: Option<String>,
 ) -> Result<()> {
+    let op_cli = crate::operator_env::OpCli::new().with_account(account);
+    delete_prior_op_item_with_runner(prior, new_ref, &op_cli)
+}
+
+fn delete_prior_op_item_with_runner(
+    prior: Option<crate::operator_env::EnvValue>,
+    new_ref: &crate::operator_env::OpRef,
+    op_writer: &dyn crate::operator_env::OpWriteRunner,
+) -> Result<()> {
     let Some(crate::operator_env::EnvValue::OpRef(prior_ref)) = prior else {
         return Ok(());
     };
     if prior_ref.op == new_ref.op {
-        eprintln!("[jackin] rotate: new op-ref matches prior — old item not deleted");
+        eprintln!(
+            "[jackin] rotate: new op-ref matches prior — this is unexpected for a successful \
+             rotate (`item_create` should always produce a new item id). The new token may not \
+             be the freshly-captured one. Re-run `claude-token doctor` to verify."
+        );
         return Ok(());
     }
     let Some(parts) = crate::operator_env::parse_op_reference(&prior_ref.op) else {
         eprintln!(
-            "[jackin] rotate: prior slot {path:?} is not in UUID form; \
+            "[jackin] rotate: prior slot {path:?} ({op}) is not in UUID form; \
              delete by hand if desired",
-            path = prior_ref.path
+            path = prior_ref.path,
+            op = prior_ref.op,
         );
         return Ok(());
     };
-    let op_cli = crate::operator_env::OpCli::new().with_account(account);
-    crate::operator_env::OpWriteRunner::item_delete(&op_cli, &parts.item, &parts.vault, None)
+    op_writer
+        .item_delete(&parts.item, &parts.vault, None)
         .map_err(|e| {
             anyhow::anyhow!(
                 "rotate: prior item ({path}) was NOT deleted: {e} \
@@ -1465,5 +1479,138 @@ mod auth_set_tests {
         assert!(out.contains("Isolation"));
         assert!(out.contains("worktree"));
         assert!(out.contains("shared"));
+    }
+
+    /// Test fake for [`crate::operator_env::OpWriteRunner`] used by
+    /// the rotate-cleanup tests below.
+    struct FakeOpWriter {
+        deletes: std::cell::RefCell<Vec<(String, String)>>,
+        fail_delete: bool,
+    }
+    impl FakeOpWriter {
+        fn new() -> Self {
+            Self {
+                deletes: std::cell::RefCell::new(Vec::new()),
+                fail_delete: false,
+            }
+        }
+        fn failing() -> Self {
+            Self {
+                deletes: std::cell::RefCell::new(Vec::new()),
+                fail_delete: true,
+            }
+        }
+    }
+    impl crate::operator_env::OpWriteRunner for FakeOpWriter {
+        fn item_create(
+            &self,
+            _params: crate::operator_env::OpItemCreateParams<'_>,
+        ) -> anyhow::Result<crate::operator_env::OpRef> {
+            unimplemented!("rotate-cleanup tests do not exercise item_create")
+        }
+        fn item_delete(
+            &self,
+            item_id: &str,
+            vault_id: &str,
+            _account: Option<&str>,
+        ) -> anyhow::Result<()> {
+            self.deletes
+                .borrow_mut()
+                .push((vault_id.to_string(), item_id.to_string()));
+            if self.fail_delete {
+                anyhow::bail!("simulated item_delete failure");
+            }
+            Ok(())
+        }
+    }
+
+    /// Rotate's prior-item cleanup parses the prior op:// reference,
+    /// issues a delete with the parsed UUIDs, and returns Ok.
+    #[test]
+    fn delete_prior_op_item_with_op_ref_calls_writer_with_parsed_uuids() {
+        let prior = Some(crate::operator_env::EnvValue::OpRef(
+            crate::operator_env::OpRef {
+                op: "op://VAULT_UUID/OLD_ITEM/FIELD".into(),
+                path: "Personal/Prior/token".into(),
+            },
+        ));
+        let new_ref = crate::operator_env::OpRef {
+            op: "op://VAULT_UUID/NEW_ITEM/FIELD".into(),
+            path: "Personal/New/token".into(),
+        };
+        let writer = FakeOpWriter::new();
+        delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap();
+        assert_eq!(
+            *writer.deletes.borrow(),
+            vec![("VAULT_UUID".to_string(), "OLD_ITEM".to_string())],
+        );
+    }
+
+    /// Rotate's prior-item cleanup is a no-op when the prior slot is
+    /// `None` or holds a literal token — jackin does not know where
+    /// the literal came from.
+    #[test]
+    fn delete_prior_op_item_skips_when_prior_is_none_or_literal() {
+        let new_ref = crate::operator_env::OpRef {
+            op: "op://V/I/F".into(),
+            path: "Personal/New/token".into(),
+        };
+        let writer = FakeOpWriter::new();
+        delete_prior_op_item_with_runner(None, &new_ref, &writer).unwrap();
+        assert!(writer.deletes.borrow().is_empty());
+
+        let writer = FakeOpWriter::new();
+        delete_prior_op_item_with_runner(
+            Some(crate::operator_env::EnvValue::Plain("literal".into())),
+            &new_ref,
+            &writer,
+        )
+        .unwrap();
+        assert!(writer.deletes.borrow().is_empty());
+    }
+
+    /// Rotate must NOT delete the new item it just created if the
+    /// new and prior `op://` references are equal — a same-ref result
+    /// indicates a deeper bug, but the safety guard prevents data
+    /// loss until the operator runs `doctor`.
+    #[test]
+    fn delete_prior_op_item_skips_when_new_ref_equals_prior() {
+        let same = crate::operator_env::OpRef {
+            op: "op://V/I/F".into(),
+            path: "Personal/Item/token".into(),
+        };
+        let writer = FakeOpWriter::new();
+        delete_prior_op_item_with_runner(
+            Some(crate::operator_env::EnvValue::OpRef(same.clone())),
+            &same,
+            &writer,
+        )
+        .unwrap();
+        assert!(writer.deletes.borrow().is_empty());
+    }
+
+    /// `op item delete` failure promotes to whole-rotate `Err` with
+    /// a copy-pasteable manual-delete command, so exit-code-driven
+    /// automation surfaces the orphan.
+    #[test]
+    fn delete_prior_op_item_propagates_err_with_actionable_hint() {
+        let prior = Some(crate::operator_env::EnvValue::OpRef(
+            crate::operator_env::OpRef {
+                op: "op://V_UUID/I_UUID/F".into(),
+                path: "Personal/Prior/token".into(),
+            },
+        ));
+        let new_ref = crate::operator_env::OpRef {
+            op: "op://V_UUID/I_NEW/F".into(),
+            path: "Personal/New/token".into(),
+        };
+        let writer = FakeOpWriter::failing();
+        let err = delete_prior_op_item_with_runner(prior, &new_ref, &writer).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("simulated item_delete failure"), "got: {msg}");
+        assert!(
+            msg.contains("op item delete I_UUID --vault V_UUID"),
+            "must include copy-pasteable recovery command, got: {msg}"
+        );
     }
 }

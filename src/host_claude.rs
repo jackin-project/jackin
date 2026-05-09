@@ -23,7 +23,6 @@
 
 use std::process::Command;
 
-/// Default binary name; overridable in tests via [`probe_with_binary`].
 const CLAUDE_DEFAULT_BIN: &str = "claude";
 
 /// Result of probing `<binary> --version` on the host.
@@ -98,36 +97,6 @@ fn parse_version_line(stdout: &str) -> Option<String> {
     stdout.split_whitespace().next().map(str::to_string)
 }
 
-/// Extract the OAuth token from `claude setup-token` stdout.
-///
-/// Upstream output (verified empirically; not a stable contract)
-/// renders the token as a standalone line starting with the
-/// well-known prefix. We scan for the first line whose trimmed form
-/// matches the [`TOKEN_PREFIX`] and return that line verbatim.
-///
-/// Returns `None` when no matching line is found — the orchestrator
-/// surfaces this as an actionable error suggesting the operator
-/// re-run with `--debug` so the raw output can be inspected.
-///
-/// This parser exists in a follow-up-friendly shape: when upstream
-/// adds a `--print-token-only` flag (Open Question #1 on the
-/// workspace-claude-token-setup roadmap), the orchestrator can stop
-/// scanning entirely and consume the whole stdout as the token. The
-/// parser stays as the fallback path.
-pub fn parse_setup_token_output(stdout: &str) -> Option<String> {
-    for line in stdout.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with(TOKEN_PREFIX) {
-            // Stop at first whitespace so trailing CRLF or in-line
-            // banner text after the token doesn't leak into the
-            // captured value.
-            let token = trimmed.split_whitespace().next().unwrap_or(trimmed);
-            return Some(token.to_string());
-        }
-    }
-    None
-}
-
 /// Long-lived OAuth token prefix emitted by `claude setup-token`.
 ///
 /// Documented at <https://code.claude.com/docs/en/iam>. Centralised
@@ -163,7 +132,15 @@ impl RawModeGuard {
 
 impl Drop for RawModeGuard {
     fn drop(&mut self) {
-        let _ = crossterm::terminal::disable_raw_mode();
+        // Surface restore failure: a stuck raw-mode terminal swallows
+        // line editing until the operator runs `stty sane` or opens
+        // a new shell. The error must not panic out of Drop.
+        if let Err(e) = crossterm::terminal::disable_raw_mode() {
+            eprintln!(
+                "[jackin] warning: failed to restore cooked terminal mode: {e} \
+                 (run `stty sane` if your terminal misbehaves)"
+            );
+        }
     }
 }
 
@@ -198,7 +175,7 @@ pub fn capture_setup_token() -> anyhow::Result<secrecy::SecretString> {
     capture_setup_token_with_binary(CLAUDE_DEFAULT_BIN)
 }
 
-/// Test-injectable variant.
+#[allow(clippy::too_many_lines)]
 pub fn capture_setup_token_with_binary(binary: &str) -> anyhow::Result<secrecy::SecretString> {
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
     use secrecy::SecretString;
@@ -271,7 +248,19 @@ pub fn capture_setup_token_with_binary(binary: &str) -> anyhow::Result<secrecy::
         let mut byte = [0u8; 1];
         loop {
             match std::io::stdin().read(&mut byte) {
-                Ok(0) | Err(_) => break,
+                Ok(0) => break,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(e) => {
+                    // A real read error (BrokenPipe, EIO, terminal
+                    // detach) silently terminates the pump. Without
+                    // this notice, claude appears to hang while the
+                    // operator's keystrokes are dropped on the floor.
+                    eprintln!(
+                        "[jackin] warning: stdin pump terminated mid-flow: {e} \
+                         (the OAuth prompt may now be unresponsive — Ctrl-C and retry)"
+                    );
+                    break;
+                }
                 Ok(_) => {
                     if master_writer.write_all(&byte).is_err() {
                         break;
@@ -412,6 +401,14 @@ fn forward_redacted_line(
 /// Handles CSI (`\x1b[`), OSC (`\x1b]`), and bare two-byte escapes.
 /// Returns the index of the first byte after the sequence, or `bytes.len()`
 /// if the sequence runs to end-of-slice.
+//
+// Hand-rolled per AGENTS.md "Prefer libraries" carve-out for
+// trivially-small parsers: `vte` (the canonical alternative used by
+// alacritty / wezterm) is a 4 KLOC state machine with a callback API
+// that would dominate this 30-line single-call-site helper. Replace
+// with `vte` if upstream output ever needs DCS / SOS / PM / APC
+// support — the current redactor only needs to skip past the cursor-
+// movement CSIs claude emits between the prefix and token body.
 fn skip_ansi_escape(bytes: &[u8], pos: usize) -> usize {
     let rest = &bytes[pos..];
     if rest.len() < 2 {
@@ -468,52 +465,6 @@ mod tests {
     fn parse_version_line_returns_none_for_empty() {
         assert_eq!(parse_version_line(""), None);
         assert_eq!(parse_version_line("   \n  "), None);
-    }
-
-    #[test]
-    fn parse_setup_token_finds_prefix_line() {
-        let out = "\
-Open this URL in your browser:
-  https://claude.com/auth/...
-
-After authorisation, your long-lived OAuth token is:
-
-sk-ant-oat01-EXAMPLEEXAMPLEEXAMPLE-thisisnotrealdontuse
-
-Save this token securely.
-";
-        assert_eq!(
-            parse_setup_token_output(out),
-            Some("sk-ant-oat01-EXAMPLEEXAMPLEEXAMPLE-thisisnotrealdontuse".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_setup_token_strips_trailing_whitespace_after_token() {
-        let out = "sk-ant-oat01-abc \t banner-text\n";
-        assert_eq!(
-            parse_setup_token_output(out),
-            Some("sk-ant-oat01-abc".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_setup_token_returns_none_when_no_prefix() {
-        let out = "Browser auth completed but no token was emitted.\n";
-        assert_eq!(parse_setup_token_output(out), None);
-    }
-
-    #[test]
-    fn parse_setup_token_picks_first_prefixed_line() {
-        let out = "\
-header
-sk-ant-oat01-first
-sk-ant-oat01-second
-";
-        assert_eq!(
-            parse_setup_token_output(out),
-            Some("sk-ant-oat01-first".to_string())
-        );
     }
 
     #[test]

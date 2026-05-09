@@ -434,12 +434,17 @@ impl RoleState {
     ///     state files (may carry forward an in-container login),
     ///     `forward_auth = true`. The launcher then mounts only the
     ///     files that actually exist on disk.
-    ///   * **`Ignore`/`ApiKey`/`OAuthToken`** → wipe both role-state
-    ///     files (revokes any forwarded creds from a prior Sync) and
-    ///     `forward_auth = false`. The agent authenticates via env vars
-    ///     (`CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`) or via a
-    ///     fresh in-container login that lives only in the writable
-    ///     layer (lost on `docker rm`, by design).
+    ///   * **`OAuthToken`** → remove any forwarded `credentials.json`
+    ///     (revokes prior Sync state) and write a
+    ///     `{"hasCompletedOnboarding":true}` skeleton at `account_json`,
+    ///     `forward_auth = true`. The skeleton suppresses the CLI's
+    ///     "Select login method" wizard so it reads the
+    ///     `CLAUDE_CODE_OAUTH_TOKEN` env var instead.
+    ///   * **`ApiKey`/`Ignore`** → wipe both role-state files and
+    ///     `forward_auth = false`. `ApiKey` authenticates via
+    ///     `ANTHROPIC_API_KEY`; `Ignore` forces a fresh in-container
+    ///     login that lives only in the writable layer (lost on
+    ///     `docker rm`, by design).
     ///
     /// On macOS the host credentials live in the system Keychain
     /// ("Claude Code-credentials"), not in a file. On Linux they are

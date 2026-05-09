@@ -815,8 +815,9 @@ pub trait OpWriteRunner {
     /// pointing at the named field. `value` lands on the child's
     /// stdin — never on argv.
     ///
-    /// `category` is an `op` item category (e.g. `"API Credential"`,
-    /// `"Password"`, `"Secure Note"`). `notes_plain` populates the
+    /// `category` is an `op` item category in the underscore form the
+    /// CLI accepts (`"API_CREDENTIAL"`, `"PASSWORD"`, `"SECURE_NOTE"`;
+    /// see `op item template list`). `notes_plain` populates the
     /// item's free-form notes block (used by the orchestrator to
     /// stamp `{workspace, host, created, expires, token_sha256_prefix}`).
     fn item_create(&self, params: OpItemCreateParams<'_>) -> anyhow::Result<OpRef>;
@@ -852,7 +853,8 @@ pub trait OpWriteRunner {
 pub struct OpItemCreateParams<'a> {
     pub vault_id: &'a str,
     pub title: &'a str,
-    /// `op` item category. Use `"API Credential"` for OAuth tokens.
+    /// `op` item category in the underscore form (e.g.
+    /// [`crate::workspace::token_setup::DEFAULT_ITEM_CATEGORY`]).
     pub category: &'a str,
     /// Field label (`"token"`, `"password"`, etc.).
     pub field_label: &'a str,
@@ -1349,10 +1351,6 @@ pub fn resolve_op_uri_to_ref(
     })
 }
 
-/// (key → (layer, value)) precedence-merged across the four config
-/// layers — global, role, workspace, workspace-role — for the given
-/// `(role, workspace)` selection. Later layers overwrite earlier ones,
-/// so the final layer attached to each key is the one that wins.
 fn record_layer(
     attributed: &mut std::collections::BTreeMap<String, (EnvLayer, EnvValue)>,
     layer: &EnvLayer,
@@ -1363,6 +1361,11 @@ fn record_layer(
     }
 }
 
+/// Build the (key → (layer, value)) attribution map by walking the
+/// four config layers in precedence order — global, role, workspace,
+/// workspace-role — for the given `(role, workspace)` selection.
+/// Later layers overwrite earlier ones, so the final layer attached
+/// to each key is the one that wins resolution.
 fn build_attributed_layers(
     config: &crate::config::AppConfig,
     role_selector: Option<&str>,
@@ -1405,10 +1408,11 @@ fn build_attributed_layers(
 
 /// Env var Claude Code reads for the long-lived OAuth token.
 ///
-/// Centralised so the canonical-slot synthesiser, the launch
-/// diagnostic, and the `Agent::required_env_var` accessor stay in
-/// sync. See <https://code.claude.com/docs/en/iam> for upstream
-/// precedence semantics.
+/// Centralised so [`crate::workspace::token_setup`], the launch
+/// diagnostic in [`crate::runtime::launch`], and
+/// [`crate::agent::Agent::required_env_var`] stay in sync. See
+/// <https://code.claude.com/docs/en/iam> for upstream precedence
+/// semantics.
 pub const CLAUDE_OAUTH_TOKEN_ENV: &str = "CLAUDE_CODE_OAUTH_TOKEN";
 
 /// Walk the env layers for the given `(role, workspace)` pair and

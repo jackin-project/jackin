@@ -216,12 +216,13 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
             forward_auth,
         } => {
             let mut mounts = Vec::new();
-            // Auth files only flow into the container under sync mode
-            // (`forward_auth = true`) AND only when the file exists on
-            // disk. Env-driven modes (api_key/oauth_token/ignore) leave
-            // `forward_auth = false`, keeping host filesystem state out
-            // of the container even though `wipe_claude_state` may have
-            // left a `{}` placeholder behind.
+            // `forward_auth = true` for Sync (host-derived credentials)
+            // and OAuthToken (the onboarding skeleton). ApiKey and
+            // Ignore set it to false so a `{}` placeholder left behind
+            // by `wipe_claude_state` never reaches the container.
+            // The per-file `exists()` guard keeps the OAuthToken arm
+            // from mounting a stale `credentials.json` if the
+            // provision-step removal failed silently.
             if *forward_auth {
                 if account_json.exists() {
                     mounts.push(format!(
@@ -1492,9 +1493,20 @@ fn load_role_with(
                 .as_deref()
                 .filter(|_| auth_mode == crate::config::AuthForwardMode::OAuthToken)
                 .and_then(|ws| {
-                    crate::workspace::token_setup::expiry_days_for_launch(paths, ws)
-                        .ok()
-                        .flatten()
+                    match crate::workspace::token_setup::expiry_days_for_launch(paths, ws) {
+                        Ok(days) => days,
+                        Err(e) => {
+                            // Malformed cache stamp: warn so the operator sees
+                            // it once on the next launch instead of having the
+                            // banner silently degrade to "no expiry known".
+                            eprintln!(
+                                "[jackin] note: token expiry cache for workspace {ws:?} \
+                                 is unreadable ({e}); re-run \
+                                 `jackin workspace claude-token setup {ws}` to refresh."
+                            );
+                            None
+                        }
+                    }
                 });
             tui::auth_mode_notice(
                 agent,
@@ -2461,6 +2473,62 @@ plugins = []
                 .iter()
                 .any(|m| m.contains("/jackin/claude/credentials.json") && !m.ends_with(":ro")),
             "credentials.json mount missing under /jackin/claude/: {mounts:?}",
+        );
+    }
+
+    #[test]
+    fn agent_mounts_for_claude_oauth_token_mode_mounts_skeleton_only() {
+        // OAuthToken mode writes a `{"hasCompletedOnboarding":true}`
+        // skeleton at account.json (so the in-container CLI does not
+        // run its login wizard) and removes credentials.json. The
+        // launcher must mount the skeleton AND must not mount any
+        // stale credentials.json that survived the provision step.
+        use crate::agent::Agent;
+        use crate::instance::RoleState;
+
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let manifest_temp = tempdir().unwrap();
+        std::fs::write(
+            manifest_temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            manifest_temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
+
+        let (state, _) = RoleState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            crate::config::AuthForwardMode::OAuthToken,
+            &crate::instance::GithubAuthContext::default(),
+            temp.path(),
+            Agent::Claude,
+        )
+        .unwrap();
+
+        let mounts = agent_mounts(&state);
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains("/jackin/claude/account.json")),
+            "account.json skeleton must be mounted under oauth_token mode: {mounts:?}",
+        );
+        assert!(
+            !mounts
+                .iter()
+                .any(|m| m.contains("/jackin/claude/credentials.json")),
+            "credentials.json must NOT be mounted under oauth_token mode \
+             (the env var is the credential): {mounts:?}",
         );
     }
 

@@ -1,6 +1,6 @@
 //! Workspace Claude token setup orchestrator.
 //!
-//! Imperative pipeline glueing four primitives together:
+//! Imperative pipeline glueing five primitives together:
 //!
 //! 1. [`crate::host_claude::probe_claude_cli`] — verify the upstream
 //!    `claude` CLI is on `PATH` and capture its version.
@@ -140,7 +140,7 @@ pub fn run_setup(
 /// The orchestrator's mutation path is gated behind these injection
 /// seams so the unit tests in this module never spawn `op` or
 /// `claude`.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub fn run_setup_with_runner<F>(
     paths: &JackinPaths,
     config: &mut AppConfig,
@@ -183,28 +183,42 @@ where
     // the comparison is meaningless and only doubles the biometric
     // prompt count.
     if created {
-        let cleanup_orphan = || {
-            if let Some(parts) = crate::operator_env::parse_op_reference(&op_ref.op) {
-                let _ = op_writer.item_delete(&parts.item, &parts.vault, args.account.as_deref());
+        // Returns the cleanup-attempt suffix to append to the bail
+        // message so the operator can tell whether the orphan was
+        // actually removed from 1Password.
+        let cleanup_orphan = || -> String {
+            let Some(parts) = crate::operator_env::parse_op_reference(&op_ref.op) else {
+                return format!(
+                    " orphan was NOT deleted: op-ref {:?} did not parse into vault/item ids; \
+                     remove the freshly-created item by hand from 1Password.",
+                    op_ref.op
+                );
+            };
+            match op_writer.item_delete(&parts.item, &parts.vault, args.account.as_deref()) {
+                Ok(()) => " The just-created 1P item was deleted.".to_string(),
+                Err(e) => format!(
+                    " The just-created 1P item was NOT deleted ({e}); \
+                     remove by hand: `op item delete {} --vault {}`.",
+                    parts.item, parts.vault,
+                ),
             }
         };
         let resolved = op_reader.read(&op_ref.op).map_err(|e| {
-            cleanup_orphan();
+            let cleanup = cleanup_orphan();
             anyhow::anyhow!(
                 "post-write validation failed: re-reading {:?} returned: {e} \
-                 (no on-disk config was changed; the just-created 1P item was \
-                 best-effort deleted)",
+                 (no on-disk config was changed.{cleanup})",
                 op_ref.path
             )
         })?;
-        if sha256_prefix(&resolved) != token_sha256_prefix {
-            cleanup_orphan();
+        let resolved_prefix = sha256_prefix(&resolved);
+        if resolved_prefix != token_sha256_prefix {
+            let cleanup = cleanup_orphan();
             anyhow::bail!(
                 "post-write validation failed: {:?} resolved to a value whose SHA-256 prefix \
-                 does not match the value just written. No on-disk config was changed; the \
-                 just-created 1P item was best-effort deleted. Re-run setup, or inspect the \
-                 1P item by hand if the deletion did not succeed.",
-                op_ref.path
+                 ({resolved_prefix}) does not match the captured value ({token_sha256_prefix}). \
+                 No on-disk config was changed.{cleanup} Re-run setup if the orphan is gone.",
+                op_ref.path,
             );
         }
     }
@@ -277,15 +291,30 @@ where
 /// `auth_forward` to `ignore`, and (optionally) delete the 1P item.
 ///
 /// `delete_op_item` requires that the workspace's existing
-/// `oauth_token` slot resolves to an `op://` reference and the item
-/// id can be parsed from it. Plain literal slots are cleared without
-/// any 1P-side action (jackin does not know where the literal came
-/// from).
+/// `oauth_token` slot resolves to an `op://` reference. If the
+/// operator passes `--delete-op-item` but the prior slot is a
+/// literal token or an unparseable URI, this returns `Err` rather
+/// than silently clearing the slot only — the operator explicitly
+/// asked for a 1P-side delete, and a no-op exit-zero would let the
+/// secret survive in the vault without any feedback.
 pub fn run_revoke(
     paths: &JackinPaths,
     config: &mut AppConfig,
     workspace: &str,
     delete_op_item: bool,
+) -> anyhow::Result<RevokeReport> {
+    let account = effective_account(config, workspace, None).map(str::to_string);
+    let op_cli = crate::operator_env::OpCli::new().with_account(account);
+    run_revoke_with_runner(paths, config, workspace, delete_op_item, &op_cli)
+}
+
+/// Test-injectable variant of [`run_revoke`].
+pub fn run_revoke_with_runner(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    workspace: &str,
+    delete_op_item: bool,
+    op_writer: &dyn OpWriteRunner,
 ) -> anyhow::Result<RevokeReport> {
     let prior = config
         .require_workspace(workspace)?
@@ -293,14 +322,34 @@ pub fn run_revoke(
         .get(CLAUDE_OAUTH_TOKEN_ENV)
         .cloned();
 
-    let deleted_item = if delete_op_item
-        && let Some(EnvValue::OpRef(r)) = &prior
-        && let Some(parts) = crate::operator_env::parse_op_reference(&r.op)
-    {
-        let account = effective_account(config, workspace, None).map(str::to_string);
-        let op_cli = crate::operator_env::OpCli::new().with_account(account);
-        op_cli.item_delete(&parts.item, &parts.vault, None)?;
-        true
+    let deleted_item = if delete_op_item {
+        match prior.as_ref() {
+            Some(EnvValue::OpRef(r)) => {
+                let parts = crate::operator_env::parse_op_reference(&r.op).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "--delete-op-item requested but slot {:?} did not parse into a \
+                         vault/item op-ref; clear the workspace via plain `revoke` and \
+                         delete the item by hand from 1Password.",
+                        r.op
+                    )
+                })?;
+                op_writer.item_delete(&parts.item, &parts.vault, None)?;
+                true
+            }
+            Some(EnvValue::Plain(_)) => {
+                anyhow::bail!(
+                    "--delete-op-item requested but workspace {workspace:?} has a literal \
+                     token slot (not an op:// reference); jackin does not know where the \
+                     literal came from. Re-run without --delete-op-item to clear the slot."
+                );
+            }
+            None => {
+                anyhow::bail!(
+                    "--delete-op-item requested but workspace {workspace:?} has no \
+                     CLAUDE_CODE_OAUTH_TOKEN slot to delete from."
+                );
+            }
+        }
     } else {
         false
     };
@@ -373,6 +422,17 @@ pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> 
 /// observe the auth banner; doctor's job is to confirm the
 /// canonical-slot config plumbing resolves without errors.
 pub fn run_doctor(config: &AppConfig, workspace: &str) -> anyhow::Result<DoctorReport> {
+    let account = effective_account(config, workspace, None).map(str::to_string);
+    let op_cli = crate::operator_env::OpCli::new().with_account(account);
+    run_doctor_with_runner(config, workspace, &op_cli)
+}
+
+/// Test-injectable variant of [`run_doctor`].
+pub fn run_doctor_with_runner(
+    config: &AppConfig,
+    workspace: &str,
+    op_reader: &dyn OpRunner,
+) -> anyhow::Result<DoctorReport> {
     let ws = config.require_workspace(workspace)?;
     let mode = ws
         .claude
@@ -385,17 +445,13 @@ pub fn run_doctor(config: &AppConfig, workspace: &str) -> anyhow::Result<DoctorR
              run `jackin workspace claude-token setup` first"
         )
     })?;
-
     let account = effective_account(config, workspace, None).map(str::to_string);
-    let op_cli = crate::operator_env::OpCli::new().with_account(account.clone());
-
-    let resolution = match token_decl {
-        EnvValue::Plain(t) => Ok(t.clone()),
-        EnvValue::OpRef(r) => op_cli
+    let token = match token_decl {
+        EnvValue::Plain(t) => t.clone(),
+        EnvValue::OpRef(r) => op_reader
             .read(&r.op)
-            .map_err(|e| anyhow::anyhow!("op read for {:?} failed: {e}", r.path)),
+            .map_err(|e| anyhow::anyhow!("op read for {:?} failed: {e}", r.path))?,
     };
-    let token = resolution?;
     let prefix = sha256_prefix(&token);
 
     Ok(DoctorReport {
@@ -616,6 +672,9 @@ mod tests {
         recorded_value: RefCell<Option<String>>,
         /// When `true`, `item_create` returns Err instead of recording.
         fail_create: bool,
+        /// When `true`, `item_delete` records the call AND returns Err
+        /// so revoke-error paths are exercisable.
+        fail_delete: bool,
         /// Records every `item_delete` call so cleanup-on-failure
         /// paths can be asserted.
         deletes: RefCell<Vec<(String, String)>>,
@@ -628,6 +687,7 @@ mod tests {
                 produced_ref,
                 recorded_value: RefCell::new(None),
                 fail_create: false,
+                fail_delete: false,
                 deletes: RefCell::new(Vec::new()),
             }
         }
@@ -640,8 +700,13 @@ mod tests {
                 },
                 recorded_value: RefCell::new(None),
                 fail_create: true,
+                fail_delete: false,
                 deletes: RefCell::new(Vec::new()),
             }
+        }
+        fn with_failing_delete(mut self) -> Self {
+            self.fail_delete = true;
+            self
         }
     }
 
@@ -667,6 +732,9 @@ mod tests {
             self.deletes
                 .borrow_mut()
                 .push((vault_id.to_string(), item_id.to_string()));
+            if self.fail_delete {
+                anyhow::bail!("simulated item_delete failure");
+            }
             Ok(())
         }
     }
@@ -1254,5 +1322,160 @@ mod tests {
             "literal slot has no op:// reference"
         );
         assert_eq!(report.mode, AuthForwardMode::OAuthToken);
+    }
+
+    /// `run_doctor` on a workspace whose `[env]` block is missing
+    /// `CLAUDE_CODE_OAUTH_TOKEN` returns the actionable "run setup
+    /// first" error rather than a generic miss.
+    #[test]
+    fn run_doctor_missing_env_var_returns_actionable_error() {
+        let mut cfg = AppConfig::default();
+        let ws = workspace("proj");
+        cfg.workspaces.insert("proj".into(), ws);
+
+        let reader = FakeOpReader::ok("unused");
+        let err = run_doctor_with_runner(&cfg, "proj", &reader).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("CLAUDE_CODE_OAUTH_TOKEN") && msg.contains("claude-token setup"),
+            "doctor must point the operator at `claude-token setup`, got: {msg}"
+        );
+    }
+
+    /// `run_doctor` wraps the `op read` failure in an operator-facing
+    /// error that names the resolved path.
+    #[test]
+    fn run_doctor_op_read_failure_wraps_error() {
+        let mut cfg = AppConfig::default();
+        let mut ws = workspace("proj");
+        ws.env.insert(
+            "CLAUDE_CODE_OAUTH_TOKEN".into(),
+            EnvValue::OpRef(OpRef {
+                op: "op://VID/IID/FID".into(),
+                path: "Personal/Item/token".into(),
+            }),
+        );
+        cfg.workspaces.insert("proj".into(), ws);
+
+        let reader = FakeOpReader::err("vault locked");
+        let err = run_doctor_with_runner(&cfg, "proj", &reader).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Personal/Item/token"), "got: {msg}");
+        assert!(msg.contains("vault locked"), "got: {msg}");
+    }
+
+    /// `run_revoke --delete-op-item` on a slot with a parseable op://
+    /// reference issues an `item_delete` with the parsed UUIDs and
+    /// then clears the canonical slot.
+    #[test]
+    fn run_revoke_with_runner_delete_op_item_calls_writer_with_parsed_uuids() {
+        let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
+        let mut ws = cfg.workspaces.get("proj").unwrap().clone();
+        ws.claude = Some(crate::config::AgentAuthConfig {
+            auth_forward: AuthForwardMode::OAuthToken,
+        });
+        ws.env.insert(
+            "CLAUDE_CODE_OAUTH_TOKEN".into(),
+            EnvValue::OpRef(OpRef {
+                op: "op://VAULT_UUID/ITEM_UUID/FIELD_UUID".into(),
+                path: "Personal/Item/token".into(),
+            }),
+        );
+        cfg.workspaces.insert("proj".into(), ws);
+        std::fs::write(&paths.config_file, toml::to_string(&cfg).unwrap()).unwrap();
+
+        let writer = FakeOpWriter::new(dummy_op_ref());
+        let report = run_revoke_with_runner(&paths, &mut cfg, "proj", true, &writer).unwrap();
+
+        assert!(report.cleared_slot);
+        assert!(report.deleted_op_item);
+        assert_eq!(
+            *writer.deletes.borrow(),
+            vec![("VAULT_UUID".to_string(), "ITEM_UUID".to_string())],
+            "delete must be issued against the parsed vault/item UUIDs"
+        );
+        assert!(
+            cfg.workspaces
+                .get("proj")
+                .and_then(|w| w.env.get("CLAUDE_CODE_OAUTH_TOKEN"))
+                .is_none(),
+            "slot must be cleared after a successful delete"
+        );
+    }
+
+    /// `run_revoke --delete-op-item` on a literal-token slot is an
+    /// explicit error: jackin does not know where the literal came
+    /// from, and a silent fall-through would let the secret survive
+    /// in 1Password without the operator knowing.
+    #[test]
+    fn run_revoke_with_runner_delete_op_item_on_literal_slot_bails() {
+        let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
+        let mut ws = cfg.workspaces.get("proj").unwrap().clone();
+        ws.claude = Some(crate::config::AgentAuthConfig {
+            auth_forward: AuthForwardMode::OAuthToken,
+        });
+        ws.env.insert(
+            "CLAUDE_CODE_OAUTH_TOKEN".into(),
+            EnvValue::Plain("sk-ant-oat01-LITERAL".into()),
+        );
+        cfg.workspaces.insert("proj".into(), ws);
+        std::fs::write(&paths.config_file, toml::to_string(&cfg).unwrap()).unwrap();
+
+        let writer = FakeOpWriter::new(dummy_op_ref());
+        let err = run_revoke_with_runner(&paths, &mut cfg, "proj", true, &writer).unwrap_err();
+
+        assert!(err.to_string().contains("literal token slot"));
+        assert!(
+            writer.deletes.borrow().is_empty(),
+            "no delete must fire on literal slots"
+        );
+        // Config must NOT have been mutated — caller can re-run
+        // without --delete-op-item to clear the slot.
+        assert!(
+            cfg.workspaces
+                .get("proj")
+                .and_then(|w| w.env.get("CLAUDE_CODE_OAUTH_TOKEN"))
+                .is_some()
+        );
+    }
+
+    /// `run_revoke --delete-op-item` where `op item delete` fails
+    /// propagates the error AND leaves the workspace config
+    /// untouched, so a re-run of `revoke` can complete the cleanup
+    /// without first having to re-stamp the slot.
+    #[test]
+    fn run_revoke_with_runner_delete_op_item_failure_does_not_save_config() {
+        let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
+        let mut ws = cfg.workspaces.get("proj").unwrap().clone();
+        ws.claude = Some(crate::config::AgentAuthConfig {
+            auth_forward: AuthForwardMode::OAuthToken,
+        });
+        ws.env.insert(
+            "CLAUDE_CODE_OAUTH_TOKEN".into(),
+            EnvValue::OpRef(OpRef {
+                op: "op://VID/IID/FID".into(),
+                path: "Personal/Item/token".into(),
+            }),
+        );
+        cfg.workspaces.insert("proj".into(), ws);
+        std::fs::write(&paths.config_file, toml::to_string(&cfg).unwrap()).unwrap();
+
+        let writer = FakeOpWriter::new(dummy_op_ref()).with_failing_delete();
+        let err = run_revoke_with_runner(&paths, &mut cfg, "proj", true, &writer).unwrap_err();
+
+        assert!(err.to_string().contains("simulated item_delete failure"));
+        // Slot must still be present on disk and in cfg — the
+        // `editor.save` step is reached only after `item_delete`
+        // succeeds.
+        let on_disk: AppConfig =
+            toml::from_str(&std::fs::read_to_string(&paths.config_file).unwrap()).unwrap();
+        assert!(
+            on_disk
+                .workspaces
+                .get("proj")
+                .and_then(|w| w.env.get("CLAUDE_CODE_OAUTH_TOKEN"))
+                .is_some(),
+            "delete-failure must not save the cleared slot to disk"
+        );
     }
 }
