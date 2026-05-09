@@ -8,7 +8,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     cargo install shellfirm --version "${SHELLFIRM_VERSION}" --locked
 
-FROM debian:trixie-20260421@sha256:35b8ff74ead4880f22090b617372daff0ccae742eb5674455d542bef71ef1999
+FROM debian:trixie-20260505@sha256:e2d08da6f42ef4b09b165d55528a12727aeed8240dc9edf888e3ec07e10ef9da
 
 COPY --from=security-tools /usr/local/cargo/bin/shellfirm /usr/local/bin/shellfirm
 
