@@ -127,6 +127,7 @@ export default defineConfig({
             { label: 'Architecture', slug: 'reference/architecture' },
             { label: 'Configuration File', slug: 'reference/configuration' },
             { label: 'Codebase Map', slug: 'reference/codebase-map' },
+            { label: 'Claude Token Orchestrator', slug: 'reference/claude-token-orchestrator' },
             {
               // Roadmap groups are flat — every group below is open
               // work. Some groups happen to be phased programs that
@@ -285,6 +286,7 @@ export default defineConfig({
                   items: [
                     { label: 'Multi-runtime support (Codex & Amp)', slug: 'reference/roadmap/multi-runtime-support' },
                     { label: 'Reliable Claude authentication strategy', slug: 'reference/roadmap/claude-auth-strategy' },
+                    { label: 'Workspace Claude token setup', slug: 'reference/roadmap/workspace-claude-token-setup' },
                     { label: 'GitHub CLI authentication strategy', slug: 'reference/roadmap/github-cli-auth-strategy' },
                     { label: '1Password integration', slug: 'reference/roadmap/onepassword-integration' },
                   ],

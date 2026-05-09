@@ -41,6 +41,10 @@ tabled = "0.20.0"
 open = "5.3.4"
 clap_mangen = "0.3"
 serde_yaml_ng = "0.10.0"
+secrecy = "0.10"
+portable-pty = "0.9"
+sha2 = "0.10"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [dev-dependencies]
 assert_cmd = "2.0"
