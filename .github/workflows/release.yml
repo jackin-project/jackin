@@ -9,6 +9,15 @@ on:
 permissions:
   contents: read
 
+# Two simultaneous tag pushes (or a tag push racing a workflow_dispatch
+# from main) would otherwise both reach `gh release create` and the
+# second loses to a 422 from a duplicate tag/release. Group key is
+# specifically `release-` (no ref) because we want serialization
+# across tags too.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   check-version:
     runs-on: ubuntu-latest
@@ -139,6 +148,11 @@ jobs:
             --generate-notes
 
   homebrew:
+    # Explicit success gate so a future change to the `release` job
+    # that turns a failure into a soft-error / continue-on-error path
+    # cannot silently let `bump-homebrew-formula-action` ship a
+    # formula update for an unreleased version.
+    if: needs.release.result == 'success'
     needs: [check-version, release]
     runs-on: ubuntu-latest
     steps:
