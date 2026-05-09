@@ -34,7 +34,7 @@ The prompt fires repeatedly even when the host repo is clean, the agent has just
 
 - **The prompt fires on every clean exit of every worktree-isolated container an agent has ever committed in.** Worktrees are reused across sessions (see `materialize_one` in <RepoFile path="src/isolation/materialize.rs" />), and the recorded `base_commit` is captured once at first creation and never updated. As soon as any commit lands on any branch in the worktree — which is what an agent does in the course of normal work — `HEAD != base_commit` becomes a sticky condition for the lifetime of the worktree.
 - **The wording trains operators to choose "preserve" defensively.** "Still has uncommitted changes" + a clearly clean tree + a recently merged PR creates cognitive dissonance. The safe-feeling default ("nothing is at risk, why is jackin asking me?") is option 2. Over time every long-lived agent accumulates an isolated worktree pinned at a stale `feature/...` branch whose squash-merged equivalent is already on `main`. None of those preserved worktrees are ever revisited, but they all keep showing up at every clean exit.
-- **The architectural assumption is stale.** The cleanup logic was written as if `record.scratch_branch` were the only branch to check. The per-mount-isolation design comment in <RepoFile path="docs/src/content/docs/reference/roadmap/per-mount-isolation.mdx" /> explicitly says agents rename the branch before opening a PR, so the cleanup contract has been wrong since V1 shipped — it has only become operator-visible now that more operators are running long-lived isolated agents.
+- **The architectural assumption is stale.** The cleanup logic was written as if `record.scratch_branch` were the only branch to check. The [per-mount isolation](/reference/roadmap/per-mount-isolation/) design comment explicitly says agents rename the branch before opening a PR, so the cleanup contract has been wrong since V1 shipped — it has only become operator-visible now that more operators are running long-lived isolated agents.
 - **The current behaviour silently disables the cleanup safety story.** The point of the post-attach finalizer is "auto-clean when nothing is at risk; prompt only when something might be lost." If the prompt fires on benign squash-merge state, the safety signal is destroyed by alarm fatigue — operators stop reading the prompt and start reflexively picking a single option. Either they pick 2 and grow a graveyard of stale worktrees, or they pick 3 (force delete) reflexively and one day discard a worktree that genuinely held unpushed work.
 
 ## Reproduction
@@ -165,7 +165,7 @@ For the captured-state case above, this evaluates as:
 
 ### Why the existing design comment was insufficient
 
-The "Foreground session finalization" bullet in <RepoFile path="docs/src/content/docs/reference/roadmap/per-mount-isolation.mdx" /> says:
+The "Foreground session finalization" bullet in [Per-mount isolation](/reference/roadmap/per-mount-isolation/) says:
 
 > Branch commits are considered safe to delete when `HEAD == base_commit`, or when the branch has an upstream/remote tracking branch and all local commits are reachable from that upstream.
 
@@ -245,7 +245,7 @@ The existing four "capture failure preserves unpushed" tests should be updated �
 
 The captured-state worktree is genuinely safe to discard — the squash-merged PR is on `main`, the scratch branch is at `base_commit`, and there is no other unpushed work. Operators encountering the prompt can choose option 3 (Force delete) safely, or run `jackin purge <container>` outside the prompt to drop the container plus all isolated state in one shot.
 
-For repeated occurrences on long-lived containers, the deterministic recovery is `jackin purge <container>` after the agent's PR has been merged, then re-run `jackin load <container>` to materialize a fresh worktree from the current host `HEAD`. This is the same recovery path documented for the "Mount mode flipped between loads" bullet in <RepoFile path="docs/src/content/docs/reference/roadmap/per-mount-isolation.mdx" />.
+For repeated occurrences on long-lived containers, the deterministic recovery is `jackin purge <container>` after the agent's PR has been merged, then re-run `jackin load <container>` to materialize a fresh worktree from the current host `HEAD`. This is the same recovery path documented for the "Mount mode flipped between loads" bullet in [Per-mount isolation](/reference/roadmap/per-mount-isolation/).
 
 ## Related Files
 
@@ -253,5 +253,5 @@ For repeated occurrences on long-lived containers, the deterministic recovery is
 - <RepoFile path="src/isolation/materialize.rs" /> — `materialize_one` (records `base_commit` once at first creation, reuses worktree on subsequent loads).
 - <RepoFile path="src/isolation/cleanup.rs" /> — `force_cleanup_isolated` (the destructive path option 3 invokes; unaffected by this fix but referenced by the prompt actions).
 - <RepoFile path="src/isolation/state.rs" /> — `IsolationRecord`, `CleanupStatus` (`PreservedDirty` / `PreservedUnpushed` variants whose semantics this fix sharpens).
-- <RepoFile path="docs/src/content/docs/reference/roadmap/per-mount-isolation.mdx" /> — V1 design doc; the "Foreground session finalization" bullet's safety contract is the one this fix corrects.
-- <RepoFile path="docs/src/content/docs/reference/architecture.mdx" /> — operator-facing explanation of clean-exit cleanup; user-facing wording changes from Piece 2 should land here too.
+- [Per-mount isolation](/reference/roadmap/per-mount-isolation/) — V1 design doc; the "Foreground session finalization" bullet's safety contract is the one this fix corrects.
+- [Architecture](/reference/architecture/) — operator-facing explanation of clean-exit cleanup; user-facing wording changes from Piece 2 should land here too.

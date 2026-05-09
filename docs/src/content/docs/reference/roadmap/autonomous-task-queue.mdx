@@ -3,7 +3,7 @@ title: "Autonomous Task Queue"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open — design proposal (Phase 4, [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/))
+**Status**: Open — design proposal (Phase 4, [Agent Orchestrator Research Program](/reference/roadmap/multicode-inspired-features/))
 
 ## Problem
 
@@ -33,8 +33,8 @@ becomes something an organization deploys instead of building their own.
 
 **Sources**:
 - README — [Autonomous queueing](https://github.com/graemerocher/multicode#autonomous-queueing) (full operator-facing description of every knob)
-- Config — [`config.toml` `[autonomous]` block](https://github.com/yawkat/multicode/blob/main/config.toml)
-- Source — [`lib/src/manager.rs`](https://github.com/yawkat/multicode/blob/main/lib/src/manager.rs) (dispatch loop)
+- Config — [`config.toml` `[autonomous]` block](https://github.com/graemerocher/multicode/blob/main/config.toml)
+- Source — [`lib/src/manager.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/manager.rs) (dispatch loop)
 
 ```toml
 [autonomous]
@@ -86,6 +86,7 @@ poll_interval_seconds = 600        # re-poll source every 10 min
 poll_on_startup = true             # dispatch immediately on console open
 budget_usd_per_day = 50.00         # optional; skip dispatch when exceeded
 auto_archive_completed = true      # archive instance after task completes
+manual_gates = ["publish_pr", "mark_ready", "request_review", "merge"]
 ```
 
 ### Mounts
@@ -166,6 +167,33 @@ Failures (exit non-zero, OOM, missing success signal) write
 `state = 'failed'` and preserve the data dir for inspection. They're
 not auto-retried in V1 — operator-driven re-queue only.
 
+### PR lifecycle
+
+The queue should track PR lifecycle separately from task lifecycle. A task can
+be `in_progress` while its PR is already open, or `completed` only after a
+manual merge gate passes.
+
+Lifecycle states:
+
+- `no_pr`
+- `draft_opened`
+- `ready_for_review`
+- `checks_pending`
+- `changes_requested`
+- `merged`
+- `closed_unmerged`
+
+Queue completion can require a PR lifecycle gate, not only container exit or
+tag emission. Each task record should keep the PR URL, branch, base branch,
+draft/ready state, review state, check conclusion, merge SHA, and final
+disposition.
+
+Manual gates are part of the V1 model even if the default is permissive:
+pause before publishing a PR, marking a draft ready, requesting review, and
+merge/auto-merge. This borrows multicode's useful operator actions while
+keeping jackin explicit about when an unattended agent is allowed to affect
+upstream project state.
+
 ### Budget enforcement
 
 If `budget_usd_per_day` is set, the queue checks the workspace's
@@ -190,6 +218,7 @@ jackin queue retry <workspace> <id>    # re-queue a failed task
 jackin queue cancel <workspace> <id>   # remove a pending task
 jackin queue pause <workspace>         # stop dispatching new tasks
 jackin queue resume <workspace>        # resume
+jackin queue approve <workspace> <id> <gate> # approve publish/review/merge gate
 ```
 
 ## Scope (V1)
@@ -201,6 +230,7 @@ jackin queue resume <workspace>        # resume
 - Per-task instance materialization using existing isolation +
   load primitives.
 - Completion detection via status bus + tag protocol.
+- PR lifecycle tracking with optional manual gates.
 - Budget gating against daily cost.
 - Auto-archive on success when configured.
 - `jackin queue` CLI subcommands above.
@@ -216,8 +246,9 @@ jackin queue resume <workspace>        # resume
   Out of V1.
 - Webhook-driven dispatch (GitHub webhook → immediate task dispatch
   instead of polling). Defer; the polling loop is sufficient.
-- Operator-attended task review ("dispatch a task, but pause for
-  approval before opening the PR"). Defer.
+- Rich review assignment policy. V1 only models manual gates and direct
+  request-review actions; team routing, reviewer rotation, and policy-driven
+  auto-merge wait for later.
 
 ## Open Questions
 
@@ -258,7 +289,7 @@ jackin queue resume <workspace>        # resume
 
 ## See Also
 
-- [Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)
+- [Agent Orchestrator Research Program](/reference/roadmap/multicode-inspired-features/)
 - [Task source abstraction](/reference/roadmap/task-source-abstraction/) —
   required input
 - [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) —

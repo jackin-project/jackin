@@ -113,7 +113,11 @@ bun install --frozen-lockfile
 - Link to docs pages with site-absolute routes such as `/guides/mounts/`.
   The generated-site lychee check is the authoritative guard for these links,
   including fragments.
-- Link to repository files with `<RepoFile path="src/runtime/image.rs" />`
+- Do not use GitHub blob links or `<RepoFile />` for pages that exist in the
+  published docs site under `src/content/docs/`. Use the site route instead
+  (for example, `/reference/roadmap/per-mount-isolation/`). GitHub is only for
+  external repositories and repo files that are not available as rendered docs.
+- Link to non-doc repository files with `<RepoFile path="src/runtime/image.rs" />`
   rather than plain code spans when the reader should be able to open the file.
   Import it from `src/components/RepoFile.astro` with the appropriate relative
   path for the MDX file. The component renders a GitHub `blob/main` URL, and the
@@ -122,7 +126,9 @@ bun install --frozen-lockfile
   reason they cannot point at a concrete file.
 - Plain inline-code references to existing repo files under `src/`, `docs/`,
   `docker/`, or `.github/` fail `bun run check:repo-links`; link them instead.
-  Proposed future files that do not exist yet may stay as code spans.
+  For published docs pages, use the docs route. For non-doc repo files, use
+  `<RepoFile />`. Proposed future files that do not exist yet may stay as code
+  spans.
 - `check:repo-links` exists because lychee only checks real links in rendered
   HTML. Plain code spans like `src/runtime/launch.rs` are not links, so lychee
   cannot detect when those files are renamed or deleted. The source check makes
@@ -133,7 +139,7 @@ bun install --frozen-lockfile
 - **Roadmap sidebar discipline.** Every MDX file under
   `src/content/docs/reference/roadmap/` must have a matching entry in
   the sidebar in `astro.config.ts` under one of the open-work
-  categories (`Universal Orchestrator Program`, `Codebase health`,
+  categories (`Agent Orchestrator Research`, `Codebase health`,
   `Agent runtimes & authentication`, `Isolation & security`,
   `Infrastructure`, `Documentation tooling`,
   `Configuration ergonomics`) or under `Resolved`, as appropriate for
@@ -191,7 +197,7 @@ bun install --frozen-lockfile
   The output lists items present in the directory but missing from
   the overview. It must be empty *unless* the missing items are
   intentionally umbrella-covered by a parent program entry (e.g.
-  Universal Orchestrator Program leaves, Codebase readability
+  Agent Orchestrator Research leaves, Codebase readability
   program leaves) — in which case the program entry itself must
   appear in the overview and explicitly say it covers them.
 - Use Starlight components for callouts (`<Aside type="note|tip|caution">`),
