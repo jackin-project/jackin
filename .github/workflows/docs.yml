@@ -166,11 +166,25 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
 
+      # Build a sitemap URL that is robust against future
+      # actions/deploy-pages versions changing whether `page_url`
+      # carries a trailing slash. The current contract has one, but
+      # normalising explicitly costs nothing and removes the implicit
+      # dependency.
+      - name: Resolve sitemap URL
+        id: sitemap
+        shell: bash
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          echo "url=${PAGE_URL%/}/sitemap-0.xml" >> "$GITHUB_OUTPUT"
+
       - name: Verify deployed docs links
         uses: ./.github/actions/check-deployed-docs
         with:
           lychee-version: ${{ env.LYCHEE_VERSION }}
-          sitemap-url: ${{ steps.deployment.outputs.page_url }}sitemap-0.xml
+          sitemap-url: ${{ steps.sitemap.outputs.url }}
           edit-url: ${{ env.JACKIN_REPO_EDIT_URL }}
           blob-url: ${{ env.JACKIN_REPO_BLOB_URL }}
           github-token: ${{ github.token }}

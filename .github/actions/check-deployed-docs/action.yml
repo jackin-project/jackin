@@ -25,6 +25,32 @@ inputs:
 runs:
   using: composite
   steps:
+    # Validate that the URL inputs match an http(s) shape with no
+    # shell-special characters before they flow into the
+    # lycheeverse/lychee-action `args:` block. lychee itself treats
+    # them as URL prefixes / regex remap rules, but a future caller
+    # passing an attacker-controlled value containing quotes or
+    # backslashes could break the embedded `--remap "<url>/(.*) …"`
+    # quoting. Today's two callers pass workflow-env constants and
+    # actions/deploy-pages output, so the check is forward-looking
+    # hardening — fail loud if a future caller deviates.
+    - name: Validate URL inputs
+      shell: bash
+      env:
+        SITEMAP_URL: ${{ inputs.sitemap-url }}
+        EDIT_URL: ${{ inputs.edit-url }}
+        BLOB_URL: ${{ inputs.blob-url }}
+      run: |
+        set -euo pipefail
+        url_re='^https?://[A-Za-z0-9._~:/?#@!$&'"'"'()*+,;=%-]+$'
+        for name in SITEMAP_URL EDIT_URL BLOB_URL; do
+          val="${!name}"
+          if [[ ! "$val" =~ $url_re ]]; then
+            echo "::error::check-deployed-docs: ${name} is not a plain http(s) URL: ${val}"
+            exit 1
+          fi
+        done
+
     - name: Restore lychee cache
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
       with:
