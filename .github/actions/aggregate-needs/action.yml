@@ -7,15 +7,16 @@ description: |
   stable check name regardless of which underlying jobs skipped.
 inputs:
   needs-json:
-    description: |
-      The caller's `${{ toJSON(needs) }}`. Composite actions cannot
-      read the parent job's `needs` context themselves, so the caller
-      must pass it in.
+    description: >-
+      JSON-serialized needs context from the calling job (typically
+      passed as toJSON of the caller's needs context). Composite actions
+      cannot read the parent job's needs themselves, so the caller has
+      to forward it.
     required: true
   workflow-label:
-    description: |
-      Short identifier interpolated into the failure log line ("CI",
-      "construct", "docs", etc.).
+    description: >-
+      Short identifier interpolated into the failure log line — for
+      example "CI", "construct", or "docs".
     required: true
 runs:
   using: composite
