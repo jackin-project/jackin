@@ -177,35 +177,41 @@ pub fn hint(prefix: &str, command: &str, suffix: &str) {
 
 /// Render the one-line launch diagnostic for the active auth mode.
 ///
-/// Shapes:
+/// Shapes (label varies by agent — `<agent> auth:`):
 ///   claude auth: host session (sync)
 ///   claude auth: none (ignore — /login required inside the container)
-///   claude auth: OAuth token (`CLAUDE_CODE_OAUTH_TOKEN` ← <source-reference>)
+///   amp auth: API key (`AMP_API_KEY` ← <source-reference>)
 ///
 /// `source_reference` is consulted only by the env-driven token/api-key
 /// arms; pass the resolver's source description for the relevant env
 /// entry (e.g. `"op://vault/claude/token"` or
 /// `"$CLAUDE_CODE_OAUTH_TOKEN"`). Other modes pass `None`.
-pub fn auth_mode_notice(mode: &str, source_reference: Option<&str>) {
+pub fn auth_mode_notice(agent: crate::agent::Agent, mode: &str, source_reference: Option<&str>) {
     eprintln!(
         "  {}",
-        format_auth_mode_notice_for_test(mode, source_reference)
+        format_auth_mode_notice_for_test(agent, mode, source_reference)
     );
 }
 
 /// Pure formatter extracted for unit-testing the exact output text.
 /// Returns the rendered line with ANSI color codes included.
-fn format_auth_mode_notice_for_test(mode: &str, source_reference: Option<&str>) -> String {
-    let label = "claude auth:".color(rgb(PHOSPHOR_GREEN)).bold().to_string();
+fn format_auth_mode_notice_for_test(
+    agent: crate::agent::Agent,
+    mode: &str,
+    source_reference: Option<&str>,
+) -> String {
+    use crate::config::AuthForwardMode;
+    let label_text = format!("{} auth:", agent.slug());
+    let label = label_text.color(rgb(PHOSPHOR_GREEN)).bold().to_string();
+    let env_default_for = |m: AuthForwardMode| agent.required_env_var(m).unwrap_or("");
     let body = match mode {
-        // Tasks 10/11 will split per-mode notices; today both env-driven
-        // modes render a token/key notice off the same source_reference.
         "oauth_token" => {
-            let src = source_reference.unwrap_or("CLAUDE_CODE_OAUTH_TOKEN");
+            let src =
+                source_reference.unwrap_or_else(|| env_default_for(AuthForwardMode::OAuthToken));
             format!("OAuth token ({src})")
         }
         "api_key" => {
-            let src = source_reference.unwrap_or("ANTHROPIC_API_KEY");
+            let src = source_reference.unwrap_or_else(|| env_default_for(AuthForwardMode::ApiKey));
             format!("API key ({src})")
         }
         "sync" => "host session (sync)".to_string(),
@@ -389,6 +395,7 @@ mod tests {
     #[test]
     fn auth_mode_notice_oauth_token_mentions_source_reference() {
         let line = format_auth_mode_notice_for_test(
+            crate::agent::Agent::Claude,
             "oauth_token",
             Some("CLAUDE_CODE_OAUTH_TOKEN ← op://vault/claude/token"),
         );
@@ -403,7 +410,11 @@ mod tests {
 
     #[test]
     fn auth_mode_notice_sync_has_one_liner() {
-        let clean = strip_ansi(&format_auth_mode_notice_for_test("sync", None));
+        let clean = strip_ansi(&format_auth_mode_notice_for_test(
+            crate::agent::Agent::Claude,
+            "sync",
+            None,
+        ));
         assert!(clean.contains("claude auth:"));
         assert!(clean.contains("host session"));
         assert!(clean.contains("sync"));
@@ -411,10 +422,24 @@ mod tests {
 
     #[test]
     fn auth_mode_notice_ignore_has_one_liner() {
-        let clean = strip_ansi(&format_auth_mode_notice_for_test("ignore", None));
+        let clean = strip_ansi(&format_auth_mode_notice_for_test(
+            crate::agent::Agent::Claude,
+            "ignore",
+            None,
+        ));
         assert!(clean.contains("claude auth:"));
         assert!(clean.contains("none"));
         assert!(clean.contains("ignore"));
+    }
+
+    #[test]
+    fn auth_mode_notice_uses_agent_specific_label_and_env_var_for_amp() {
+        let line = format_auth_mode_notice_for_test(crate::agent::Agent::Amp, "api_key", None);
+        let clean = strip_ansi(&line);
+        assert!(clean.contains("amp auth:"), "got: {clean}");
+        assert!(clean.contains("API key"), "got: {clean}");
+        assert!(clean.contains("AMP_API_KEY"), "got: {clean}");
+        assert!(!clean.contains("ANTHROPIC_API_KEY"), "got: {clean}");
     }
 
     #[test]

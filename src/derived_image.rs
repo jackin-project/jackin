@@ -29,8 +29,8 @@ USER agent
     });
 
     // Concatenate per-agent install blocks in a stable order (Claude
-    // first when present, Codex second). Each block declares its own
-    // `ARG JACKIN_CACHE_BUST=0` (see the per-agent blocks returned
+    // first when present, Codex second, Amp third). Each block declares
+    // its own `ARG JACKIN_CACHE_BUST=0` (see the per-agent blocks returned
     // by `Agent::install_block`), so layer cache keys advance
     // independently when `--build-arg JACKIN_CACHE_BUST=<ts>` is
     // passed. The stable ordering is for deterministic Dockerfile
@@ -41,6 +41,7 @@ USER agent
     sorted.sort_by_key(|h| match h {
         crate::agent::Agent::Claude => 0,
         crate::agent::Agent::Codex => 1,
+        crate::agent::Agent::Amp => 2,
     });
     for h in sorted {
         install_blocks.push_str(h.install_block());
@@ -324,16 +325,36 @@ mod tests {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             None,
-            &[Agent::Claude, Agent::Codex],
+            &[Agent::Amp, Agent::Claude, Agent::Codex],
             None,
         );
 
         assert!(dockerfile.contains("https://claude.ai/install.sh"));
         assert!(dockerfile.contains("openai/codex/releases"));
-        // Claude block precedes Codex: stable ordering for deterministic Dockerfile output.
+        assert!(dockerfile.contains("https://ampcode.com/install.sh"));
+        // Stable ordering for deterministic Dockerfile output.
         let claude_pos = dockerfile.find("claude.ai/install.sh").unwrap();
         let codex_pos = dockerfile.find("openai/codex/releases").unwrap();
+        let amp_pos = dockerfile.find("ampcode.com/install.sh").unwrap();
         assert!(claude_pos < codex_pos);
+        assert!(codex_pos < amp_pos);
+    }
+
+    #[test]
+    fn renders_amp_install_as_agent_user() {
+        let dockerfile = render_derived_dockerfile(
+            "FROM projectjackin/construct:trixie\n",
+            None,
+            &[Agent::Amp],
+            None,
+        );
+
+        let amp_block_pos = dockerfile.find("ampcode.com/install.sh").unwrap();
+        let agent_pos = dockerfile[..amp_block_pos].rfind("USER agent\n").unwrap();
+        assert!(agent_pos < amp_block_pos);
+        assert!(dockerfile.contains("RUN amp --version"));
+        assert!(!dockerfile.contains("https://claude.ai/install.sh"));
+        assert!(!dockerfile.contains("openai/codex/releases"));
     }
 
     #[test]
@@ -421,6 +442,7 @@ mod tests {
         assert!(ENTRYPOINT_SH.contains("case \"${JACKIN_AGENT:?"));
         assert!(ENTRYPOINT_SH.contains("  claude)"));
         assert!(ENTRYPOINT_SH.contains("  codex)"));
+        assert!(ENTRYPOINT_SH.contains("  amp)"));
     }
 
     #[test]
@@ -438,6 +460,20 @@ mod tests {
             .next()
             .unwrap();
         assert!(!codex_section.contains("install-claude-plugins.sh"));
+    }
+
+    #[test]
+    fn entrypoint_amp_branch_copies_secrets_and_launches_amp() {
+        let amp_section = ENTRYPOINT_SH
+            .split_once("\n  amp)")
+            .unwrap()
+            .1
+            .split(";;")
+            .next()
+            .unwrap();
+        assert!(amp_section.contains("/home/agent/.local/share/amp"));
+        assert!(amp_section.contains("/jackin/amp/secrets.json"));
+        assert!(amp_section.contains("LAUNCH=(amp --dangerously-allow-all)"));
     }
 
     #[test]

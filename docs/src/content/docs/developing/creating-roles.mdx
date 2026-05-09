@@ -168,13 +168,15 @@ An role can support more than one agent while keeping one shared Dockerfile:
 
 ```toml title="jackin.role.toml"
 dockerfile = "Dockerfile"
-agents = ["claude", "codex"]
+agents = ["claude", "codex", "amp"]
 
 [claude]
 plugins = ["code-review@claude-plugins-official"]
 
 [codex]
 model = "gpt-5"
+
+[amp]
 
 [identity]
 name = "My Agent"
@@ -183,7 +185,7 @@ name = "My Agent"
 The workspace chooses the default agent:
 
 ```bash
-jackin workspace create my-app --workdir ~/Projects/my-app --default-agent codex
+jackin workspace create my-app --workdir ~/Projects/my-app --default-agent amp
 ```
 
 You can override it for one launch:

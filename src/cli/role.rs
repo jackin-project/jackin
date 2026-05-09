@@ -63,7 +63,7 @@ pub struct LoadArgs {
     /// Acknowledge a dirty host working tree for isolated mounts.
     #[arg(long)]
     pub force: bool,
-    /// Agent to launch under (claude or codex). Overrides the
+    /// Agent to launch under (claude, codex, or amp). Overrides the
     /// workspace's `default_agent` field for this launch only. When
     /// neither is set, defaults to claude.
     #[arg(long, value_parser = parse_agent)]
@@ -165,8 +165,20 @@ mod tests {
     }
 
     #[test]
+    fn load_args_parses_amp_agent_flag() {
+        let cli = Cli::try_parse_from(["jackin", "load", "agent-smith", "--agent", "amp"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Load(super::LoadArgs {
+                agent: Some(crate::agent::Agent::Amp),
+                ..
+            }))
+        ));
+    }
+
+    #[test]
     fn load_args_rejects_unknown_agent() {
-        let res = Cli::try_parse_from(["jackin", "load", "agent-smith", "--agent", "amp"]);
+        let res = Cli::try_parse_from(["jackin", "load", "agent-smith", "--agent", "foo"]);
         assert!(res.is_err());
     }
 

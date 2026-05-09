@@ -3141,6 +3141,7 @@ plugins = []
                 env: ag_env,
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
             },
         );
@@ -3419,6 +3420,7 @@ plugins = []
                 env: ag_env,
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
             },
         );
@@ -3485,6 +3487,7 @@ plugins = []
                 env: ag_env,
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
             },
         );

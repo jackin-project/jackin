@@ -422,6 +422,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
             env: role_env,
             claude: None,
             codex: None,
+            amp: None,
             github: None,
         },
     );
@@ -1612,6 +1613,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
             env: role_env,
             claude: None,
             codex: None,
+            amp: None,
             github: None,
         },
     );
@@ -1770,6 +1772,7 @@ fn seed_override_picker_workspace(
                 env,
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
             },
         );
@@ -2668,7 +2671,7 @@ fn auth_row_idx(
 // the `ANTHROPIC_API_KEY` env var.
 //
 // The bug this guards against: prior to the C1 fixup, the auth-form
-// commit only mutated `editor.pending.{claude,codex,roles[*]…}`, but
+// commit only mutated per-agent auth blocks in `editor.pending`, but
 // `build_workspace_edit` / `WorkspaceEdit` carried no auth-forward
 // field, so `edit_workspace` re-rendered the workspace table from the
 // parsed-from-disk in-memory copy — silently overwriting the operator's

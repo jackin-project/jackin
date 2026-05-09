@@ -543,6 +543,7 @@ mod tests {
                 keep_awake: workspace::KeepAwakeConfig::default(),
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
                 git_pull_on_entry: false,
             },
@@ -590,6 +591,7 @@ mod tests {
                 keep_awake: workspace::KeepAwakeConfig::default(),
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
                 git_pull_on_entry: false,
             },
@@ -636,6 +638,7 @@ mod tests {
                 keep_awake: workspace::KeepAwakeConfig::default(),
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
                 git_pull_on_entry: false,
             },
@@ -690,6 +693,7 @@ mod tests {
                 keep_awake: workspace::KeepAwakeConfig::default(),
                 claude: None,
                 codex: None,
+                amp: None,
                 github: None,
                 git_pull_on_entry: false,
             },
@@ -963,6 +967,37 @@ plugins = []
         assert_eq!(
             agents,
             vec![crate::agent::Agent::Claude, crate::agent::Agent::Codex]
+        );
+    }
+
+    #[test]
+    fn requires_prompt_includes_amp_when_role_supports_three_agents() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let selector = crate::selector::RoleSelector::parse("the-architect").unwrap();
+        write_role_manifest(
+            &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
+            r#"dockerfile = "Dockerfile"
+agents = ["claude", "codex", "amp"]
+
+[claude]
+plugins = []
+
+[codex]
+
+[amp]
+"#,
+        );
+
+        let agents = supported_agents_requiring_prompt(&paths, &selector, None)
+            .expect("three-agent role with no workspace default must trigger a prompt");
+        assert_eq!(
+            agents,
+            vec![
+                crate::agent::Agent::Claude,
+                crate::agent::Agent::Codex,
+                crate::agent::Agent::Amp,
+            ]
         );
     }
 

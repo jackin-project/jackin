@@ -276,6 +276,13 @@ mod tests {
     }
 
     #[test]
+    fn amp_form_does_not_offer_oauth_token() {
+        let f = AuthForm::new(AuthKind::Amp);
+        let modes = f.available_modes();
+        assert!(!modes.contains(&AuthMode::OAuthToken));
+    }
+
+    #[test]
     fn save_emits_correct_env_var_name_for_claude_api_key() {
         let mut f = AuthForm::new(AuthKind::Claude);
         f.set_mode(AuthMode::ApiKey);
@@ -302,6 +309,15 @@ mod tests {
         f.set_literal("sk-test".into());
         let outcome = f.commit().unwrap();
         assert_eq!(outcome.env_var_name, Some("OPENAI_API_KEY"));
+    }
+
+    #[test]
+    fn save_emits_correct_env_var_name_for_amp_api_key() {
+        let mut f = AuthForm::new(AuthKind::Amp);
+        f.set_mode(AuthMode::ApiKey);
+        f.set_literal("sgamp-test".into());
+        let outcome = f.commit().unwrap();
+        assert_eq!(outcome.env_var_name, Some("AMP_API_KEY"));
     }
 
     #[test]

@@ -37,7 +37,7 @@ pub enum AuthForwardMode {
     #[serde(rename = "sync")]
     Sync,
     /// Use a short-lived API key sourced from the operator-resolved env
-    /// (e.g. `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`). The role state
+    /// (e.g. `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `AMP_API_KEY`). The role state
     /// directory is provisioned empty; the agent inside the container
     /// reads the key from its process environment.
     #[serde(rename = "api_key")]
@@ -191,6 +191,37 @@ impl std::ops::Deref for CodexAuthConfig {
     }
 }
 
+/// Newtype around `AgentAuthConfig` that rejects `oauth_token` at parse time.
+///
+/// Amp does not support `AuthForwardMode::OAuthToken` (the CLI authenticates
+/// via an `AMP_API_KEY` or its own settings file); rejecting it at
+/// deserialization time keeps the type system honest.
+#[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
+pub struct AmpAuthConfig(pub AgentAuthConfig);
+
+impl<'de> serde::Deserialize<'de> for AmpAuthConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let cfg = AgentAuthConfig::deserialize(deserializer)?;
+        if cfg.auth_forward == AuthForwardMode::OAuthToken {
+            return Err(serde::de::Error::custom(
+                "auth_forward 'oauth_token' is not supported for amp; \
+                 supported modes: sync, api_key, ignore",
+            ));
+        }
+        Ok(Self(cfg))
+    }
+}
+
+impl std::ops::Deref for AmpAuthConfig {
+    type Target = AgentAuthConfig;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoleSource {
@@ -216,6 +247,8 @@ pub struct AppConfig {
     pub claude: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex: Option<CodexAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amp: Option<AmpAuthConfig>,
     /// Global `[github]` block — bottom layer of the layered resolver
     /// (global → workspace → workspace × role). Operator-only; role
     /// manifests cannot set or override it.
@@ -473,13 +506,16 @@ auth_forward = "oauth_token"
     }
 
     #[test]
-    fn parse_app_config_claude_and_codex() {
+    fn parse_app_config_agent_auth_blocks() {
         let toml = r#"
 [claude]
 auth_forward = "sync"
 
 [codex]
 auth_forward = "api_key"
+
+[amp]
+auth_forward = "ignore"
 "#;
         let cfg: AppConfig = toml::from_str(toml).unwrap();
         assert_eq!(
@@ -489,6 +525,10 @@ auth_forward = "api_key"
         assert_eq!(
             cfg.codex.as_ref().unwrap().auth_forward,
             AuthForwardMode::ApiKey
+        );
+        assert_eq!(
+            cfg.amp.as_ref().unwrap().auth_forward,
+            AuthForwardMode::Ignore
         );
     }
 
@@ -504,6 +544,7 @@ auth_forward = "api_key"
             cfg.codex.is_none(),
             "codex must be None when [codex] absent"
         );
+        assert!(cfg.amp.is_none(), "amp must be None when [amp] absent");
     }
 
     #[test]
@@ -517,6 +558,20 @@ auth_forward = "oauth_token"
         assert!(
             msg.contains("not supported for codex"),
             "expected codex-rejection message, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn reject_amp_oauth_token_global() {
+        let toml = r#"
+[amp]
+auth_forward = "oauth_token"
+"#;
+        let err = toml::from_str::<AppConfig>(toml).expect_err("must reject");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not supported for amp"),
+            "expected amp-rejection message, got: {msg}"
         );
     }
 
