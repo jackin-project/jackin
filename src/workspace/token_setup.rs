@@ -514,10 +514,8 @@ fn effective_account<'a>(
     })
 }
 
-/// Construct the production [`crate::operator_env::OpCli`] pinned to
-/// `(workspace, explicit)`'s effective 1Password account. Shared by
-/// every `run_*` entry point so the account-resolution rule lives in
-/// one place.
+/// Single seam for the `effective_account` → `OpCli::with_account`
+/// prelude shared by `run_setup` / `run_revoke` / `run_doctor`.
 fn op_cli_for(
     config: &AppConfig,
     workspace: &str,
@@ -548,7 +546,7 @@ impl OrphanCleanup {
             Ok(()) => Self::Deleted,
             Err(e) => Self::DeleteFailed {
                 err: e.to_string(),
-                hint: crate::operator_env::manual_op_item_delete_hint(&parts.item, &parts.vault),
+                hint: parts.manual_delete_hint().to_string(),
             },
         }
     }
@@ -1511,5 +1509,102 @@ mod tests {
                 .is_some(),
             "delete-failure must not save the cleared slot to disk"
         );
+    }
+
+    /// Post-write read-failure where the cleanup-delete also fails:
+    /// bail message must surface the manual `op item delete <id>
+    /// --vault <vault>` recovery hint so the operator can clean up
+    /// the orphan that jackin couldn't.
+    #[test]
+    fn run_setup_with_runner_post_write_failure_with_failing_delete_surfaces_manual_hint() {
+        let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
+        let writer = FakeOpWriter::new(dummy_op_ref()).with_failing_delete();
+        let reader = FakeOpReader::err("op read failed: vault not found");
+        let probe = dummy_probe();
+        let err = run_setup_with_runner(
+            &paths,
+            &mut cfg,
+            "proj",
+            &TokenSetupArgs {
+                vault: Some("Personal".into()),
+                ..Default::default()
+            },
+            Some(&probe),
+            || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
+            &reader,
+            &writer,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("was NOT deleted"), "got: {msg}");
+        assert!(
+            msg.contains("op item delete IID --vault VID"),
+            "manual recovery hint missing: {msg}"
+        );
+        // The failed delete still recorded its attempt.
+        assert_eq!(writer.deletes.borrow().len(), 1);
+    }
+
+    /// Post-write failure where the produced op-ref does not parse:
+    /// orphan-cleanup skips the delete call entirely and the bail
+    /// message tells the operator to remove the item by hand.
+    #[test]
+    fn run_setup_with_runner_post_write_unparseable_op_ref_skips_delete_call() {
+        let (_t, paths, mut cfg) = seed_paths_with_workspace("proj");
+        let bogus_ref = OpRef {
+            op: "garbage-not-an-op-uri".into(),
+            path: "Personal/Item/token".into(),
+        };
+        let writer = FakeOpWriter::new(bogus_ref);
+        let reader = FakeOpReader::err("op read failed: bogus URI");
+        let probe = dummy_probe();
+        let err = run_setup_with_runner(
+            &paths,
+            &mut cfg,
+            "proj",
+            &TokenSetupArgs {
+                vault: Some("Personal".into()),
+                ..Default::default()
+            },
+            Some(&probe),
+            || Ok(secrecy::SecretString::from("sk-ant-oat01-X".to_string())),
+            &reader,
+            &writer,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("did not parse into vault/item ids"),
+            "got: {msg}"
+        );
+        assert!(
+            writer.deletes.borrow().is_empty(),
+            "no delete must fire on unparseable op-ref"
+        );
+    }
+
+    /// `OrphanCleanup::Display` wording is the operator-facing
+    /// contract — pin it here so a refactor cannot silently drop the
+    /// recovery instructions.
+    #[test]
+    fn orphan_cleanup_display_each_variant() {
+        assert_eq!(
+            OrphanCleanup::Deleted.to_string(),
+            "The just-created 1P item was deleted."
+        );
+        assert!(
+            OrphanCleanup::UnparseableRef {
+                op: "garbage".into(),
+            }
+            .to_string()
+            .contains("did not parse into vault/item ids")
+        );
+        let failed = OrphanCleanup::DeleteFailed {
+            err: "vault locked".into(),
+            hint: "op item delete X --vault Y".into(),
+        };
+        let s = failed.to_string();
+        assert!(s.contains("vault locked"));
+        assert!(s.contains("op item delete X --vault Y"));
     }
 }

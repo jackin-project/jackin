@@ -191,13 +191,26 @@ pub struct OpReferenceParts {
     pub field: String,
 }
 
-/// Operator-facing copy-pasteable `op item delete` invocation.
-///
-/// Surfaced in error messages where jackin could not finish a delete
-/// itself; centralised so the exact CLI shape stays in one place.
-#[must_use]
-pub fn manual_op_item_delete_hint(item_id: &str, vault_id: &str) -> String {
-    format!("op item delete {item_id} --vault {vault_id}")
+impl OpReferenceParts {
+    /// Operator-facing copy-pasteable `op item delete` invocation
+    /// for this parsed reference. Surfaced in error messages where
+    /// jackin could not finish a delete itself; the exact CLI shape
+    /// lives here.
+    pub fn manual_delete_hint(&self) -> impl std::fmt::Display + '_ {
+        struct Hint<'a> {
+            item: &'a str,
+            vault: &'a str,
+        }
+        impl std::fmt::Display for Hint<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "op item delete {} --vault {}", self.item, self.vault)
+            }
+        }
+        Hint {
+            item: &self.item,
+            vault: &self.vault,
+        }
+    }
 }
 
 #[must_use]
@@ -1656,6 +1669,20 @@ mod tests {
         assert!(parse_op_reference("op://only/two").is_none());
         assert!(parse_op_reference("op://a/b/c/d/e").is_none());
         assert!(parse_op_reference("op://").is_none());
+    }
+
+    /// `OpReferenceParts::manual_delete_hint` is the canonical CLI
+    /// recovery shape surfaced in two error-message paths
+    /// (rotate-failure + orphan-cleanup-failure). Pinning the exact
+    /// rendered string here means a typo in the format string fails
+    /// at PR time.
+    #[test]
+    fn op_reference_parts_manual_delete_hint_renders_canonical_cli() {
+        let parts = parse_op_reference("op://VAULT_UUID/ITEM_UUID/FIELD").unwrap();
+        assert_eq!(
+            parts.manual_delete_hint().to_string(),
+            "op item delete ITEM_UUID --vault VAULT_UUID",
+        );
     }
 
     struct TestOpRunner {
