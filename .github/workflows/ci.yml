@@ -1,3 +1,6 @@
+# NOTE: `preview.yml` triggers on `workflow_run.workflows: ["CI"]`,
+# so the workflow name below is load-bearing. Renaming this file's
+# `name:` field silently breaks the Homebrew preview publish chain.
 name: CI
 
 on:

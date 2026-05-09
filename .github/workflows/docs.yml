@@ -59,6 +59,7 @@ jobs:
           filters: |
             docs:
               - '.github/workflows/docs.yml'
+              - '.github/actions/check-deployed-docs/**'
               - 'docs/**'
 
   # The docs site links to repository files via the <RepoFile path="…" />
@@ -215,10 +216,14 @@ jobs:
           github-token: ${{ github.token }}
 
   # Skip on schedule because schedule runs only `check-deployed` and a
-  # one-job aggregator on schedule has no value.
+  # one-job aggregator on schedule has no value. `check-deployed` is
+  # included in needs so a failure on `workflow_dispatch` from
+  # non-main (the only non-schedule event where check-deployed runs)
+  # still surfaces in the aggregator instead of being silently
+  # absorbed by the four-other-skips-pass-as-success path.
   docs-required:
     if: always() && github.event_name != 'schedule'
-    needs: [changes, repo-link-check, docs-link-check, deploy]
+    needs: [changes, repo-link-check, docs-link-check, deploy, check-deployed]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
