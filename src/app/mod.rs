@@ -1245,10 +1245,9 @@ fn delete_prior_op_item_with_runner(
         .map_err(|e| {
             anyhow::anyhow!(
                 "rotate: prior item ({path}) was NOT deleted: {e} \
-                 (delete by hand: `op item delete {item} --vault {vault}`)",
+                 (delete by hand: `{hint}`)",
                 path = prior_ref.path,
-                item = parts.item,
-                vault = parts.vault,
+                hint = crate::operator_env::manual_op_item_delete_hint(&parts.item, &parts.vault),
             )
         })?;
     eprintln!("Deleted prior 1P item ({}).", prior_ref.path);

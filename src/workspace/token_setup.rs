@@ -106,9 +106,7 @@ pub fn run_setup(
     workspace: &str,
     args: &TokenSetupArgs,
 ) -> anyhow::Result<TokenSetupReport> {
-    let op_account =
-        effective_account(config, workspace, args.account.as_deref()).map(str::to_string);
-    let op_cli = crate::operator_env::OpCli::new().with_account(op_account);
+    let op_cli = op_cli_for(config, workspace, args.account.as_deref());
     // Probe `claude` only when we will actually mint a fresh token.
     // `--reuse` adopts an existing `op://` reference and never invokes
     // claude, so requiring it on PATH would block a legitimate flow.
@@ -183,31 +181,12 @@ where
     // the comparison is meaningless and only doubles the biometric
     // prompt count.
     if created {
-        // Returns the cleanup-attempt suffix to append to the bail
-        // message so the operator can tell whether the orphan was
-        // actually removed from 1Password.
-        let cleanup_orphan = || -> String {
-            let Some(parts) = crate::operator_env::parse_op_reference(&op_ref.op) else {
-                return format!(
-                    " orphan was NOT deleted: op-ref {:?} did not parse into vault/item ids; \
-                     remove the freshly-created item by hand from 1Password.",
-                    op_ref.op
-                );
-            };
-            match op_writer.item_delete(&parts.item, &parts.vault, args.account.as_deref()) {
-                Ok(()) => " The just-created 1P item was deleted.".to_string(),
-                Err(e) => format!(
-                    " The just-created 1P item was NOT deleted ({e}); \
-                     remove by hand: `op item delete {} --vault {}`.",
-                    parts.item, parts.vault,
-                ),
-            }
-        };
+        let cleanup_orphan = || OrphanCleanup::run(op_writer, &op_ref, args.account.as_deref());
         let resolved = op_reader.read(&op_ref.op).map_err(|e| {
             let cleanup = cleanup_orphan();
             anyhow::anyhow!(
                 "post-write validation failed: re-reading {:?} returned: {e} \
-                 (no on-disk config was changed.{cleanup})",
+                 (no on-disk config was changed). {cleanup}",
                 op_ref.path
             )
         })?;
@@ -217,7 +196,7 @@ where
             anyhow::bail!(
                 "post-write validation failed: {:?} resolved to a value whose SHA-256 prefix \
                  ({resolved_prefix}) does not match the captured value ({token_sha256_prefix}). \
-                 No on-disk config was changed.{cleanup} Re-run setup if the orphan is gone.",
+                 No on-disk config was changed. {cleanup} Re-run setup if the orphan is gone.",
                 op_ref.path,
             );
         }
@@ -303,8 +282,7 @@ pub fn run_revoke(
     workspace: &str,
     delete_op_item: bool,
 ) -> anyhow::Result<RevokeReport> {
-    let account = effective_account(config, workspace, None).map(str::to_string);
-    let op_cli = crate::operator_env::OpCli::new().with_account(account);
+    let op_cli = op_cli_for(config, workspace, None);
     run_revoke_with_runner(paths, config, workspace, delete_op_item, &op_cli)
 }
 
@@ -422,8 +400,7 @@ pub fn vault_for_rotate(cli_vault: Option<String>, prior: Option<&EnvValue>) -> 
 /// observe the auth banner; doctor's job is to confirm the
 /// canonical-slot config plumbing resolves without errors.
 pub fn run_doctor(config: &AppConfig, workspace: &str) -> anyhow::Result<DoctorReport> {
-    let account = effective_account(config, workspace, None).map(str::to_string);
-    let op_cli = crate::operator_env::OpCli::new().with_account(account);
+    let op_cli = op_cli_for(config, workspace, None);
     run_doctor_with_runner(config, workspace, &op_cli)
 }
 
@@ -535,6 +512,63 @@ fn effective_account<'a>(
             .get(workspace)
             .and_then(|ws| ws.op_account.as_deref())
     })
+}
+
+/// Construct the production [`crate::operator_env::OpCli`] pinned to
+/// `(workspace, explicit)`'s effective 1Password account. Shared by
+/// every `run_*` entry point so the account-resolution rule lives in
+/// one place.
+fn op_cli_for(
+    config: &AppConfig,
+    workspace: &str,
+    explicit: Option<&str>,
+) -> crate::operator_env::OpCli {
+    let account = effective_account(config, workspace, explicit).map(str::to_string);
+    crate::operator_env::OpCli::new().with_account(account)
+}
+
+/// Outcome of the post-write orphan-cleanup attempt that runs when
+/// validation fails inside `run_setup_with_runner`. Surfaced in the
+/// final bail message so the operator can tell whether the
+/// freshly-created 1P item still needs hand-removal.
+enum OrphanCleanup {
+    Deleted,
+    UnparseableRef { op: String },
+    DeleteFailed { err: String, hint: String },
+}
+
+impl OrphanCleanup {
+    fn run(op_writer: &dyn OpWriteRunner, op_ref: &OpRef, account: Option<&str>) -> Self {
+        let Some(parts) = crate::operator_env::parse_op_reference(&op_ref.op) else {
+            return Self::UnparseableRef {
+                op: op_ref.op.clone(),
+            };
+        };
+        match op_writer.item_delete(&parts.item, &parts.vault, account) {
+            Ok(()) => Self::Deleted,
+            Err(e) => Self::DeleteFailed {
+                err: e.to_string(),
+                hint: crate::operator_env::manual_op_item_delete_hint(&parts.item, &parts.vault),
+            },
+        }
+    }
+}
+
+impl std::fmt::Display for OrphanCleanup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Deleted => f.write_str("The just-created 1P item was deleted."),
+            Self::UnparseableRef { op } => write!(
+                f,
+                "Orphan was NOT deleted: op-ref {op:?} did not parse into vault/item ids; \
+                 remove the freshly-created item by hand from 1Password."
+            ),
+            Self::DeleteFailed { err, hint } => write!(
+                f,
+                "The just-created 1P item was NOT deleted ({err}); remove by hand: `{hint}`."
+            ),
+        }
+    }
 }
 
 fn sha256_prefix(value: &str) -> String {

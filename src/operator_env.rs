@@ -191,6 +191,15 @@ pub struct OpReferenceParts {
     pub field: String,
 }
 
+/// Operator-facing copy-pasteable `op item delete` invocation.
+///
+/// Surfaced in error messages where jackin could not finish a delete
+/// itself; centralised so the exact CLI shape stays in one place.
+#[must_use]
+pub fn manual_op_item_delete_hint(item_id: &str, vault_id: &str) -> String {
+    format!("op item delete {item_id} --vault {vault_id}")
+}
+
 #[must_use]
 pub fn parse_op_reference(value: &str) -> Option<OpReferenceParts> {
     let path = value.strip_prefix("op://")?;
