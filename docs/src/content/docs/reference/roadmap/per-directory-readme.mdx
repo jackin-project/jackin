@@ -7,7 +7,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-AI coding agents (Claude Code, Copilot, Cursor) load `README.md` automatically when they enter a directory context. Without these files, agents must open source files to get orientation. After the greenfield workspace split, each crate also needs an `AGENTS.md` for crate-specific agent rules.
+AI coding agents (Claude Code, Copilot, Cursor) load `README.md` automatically when they enter a directory context. Without these files, agents must open source files to get orientation. After the Cargo workspace split, each crate also needs an `AGENTS.md` for crate-specific agent rules.
 
 ## Target directories
 
@@ -22,7 +22,7 @@ AI coding agents (Claude Code, Copilot, Cursor) load `README.md` automatically w
 
 ## AGENTS.md per crate (after workspace split)
 
-When the greenfield workspace split creates `crates/jackin-console/`, `crates/jackin-runtime/`, etc., each crate should get its own `AGENTS.md` with crate-specific rules — shorter and more focused than the root `AGENTS.md`. Examples:
+When the Cargo workspace split creates `crates/jackin-console/`, `crates/jackin-runtime/`, etc., each crate should get its own `AGENTS.md` with crate-specific rules — shorter and more focused than the root `AGENTS.md`. Examples:
 
 - `crates/jackin-core/AGENTS.md` — "this crate has no I/O, no `std::process::Command`; keep it that way"
 - `crates/jackin-console/AGENTS.md` — "no import from `jackin-runtime`; this is enforced by Cargo"

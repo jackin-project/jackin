@@ -18,7 +18,7 @@ These items require no structural code changes and can be done in any order with
 | Item | Purpose | Depends on |
 |---|---|---|
 | [Module contracts](/reference/roadmap/module-contracts/) | Write `//!` docs for 10 priority files | — |
-| [Behavioral spec: runtime/launch.rs](/reference/roadmap/behavioral-spec-launch/) | Verified invariants for the `jackin load` critical path | Module contracts first |
+| [Behavioral spec: runtime/launch.rs](/reference/roadmap/behavioral-spec-runtime-launch/) | Verified invariants for the `jackin load` critical path | Module contracts first |
 | [Behavioral spec: op_picker](/reference/roadmap/behavioral-spec-op-picker/) | Invariants for the 1Password picker state machine | — |
 | [Per-directory README](/reference/roadmap/per-directory-readme/) | AI-native orientation files + per-crate AGENTS.md | — |
 | [Developer Reference setup](/reference/roadmap/developer-reference-setup/) | `jackin.tailrocks.com/internal/` Starlight section | — |
@@ -48,7 +48,7 @@ Do the behavioral spec for `runtime/launch.rs` before splitting it.
 
 | Item | Trigger |
 |---|---|
-| [Greenfield workspace split](/reference/roadmap/greenfield-workspace/) | LOC > 150K or external consumers |
+| [Cargo workspace split](/reference/roadmap/cargo-workspace-split/) | LOC > 150K or external consumers |
 | [rustdoc JSON → Starlight pipeline](/reference/roadmap/rustdoc-json-starlight/) | After `//!` coverage sprint |
 
 ## Execution order (recommended)
@@ -61,7 +61,7 @@ Do the behavioral spec for `runtime/launch.rs` before splitting it.
 
 ## Key structural insight
 
-`console/` has **zero imports from `runtime/` in production code** — this pre-existing clean boundary is the most important structural asset. The greenfield workspace split can enforce this boundary with the Rust compiler without moving any logic, only directories.
+`console/` has **zero imports from `runtime/` in production code** — this pre-existing clean boundary is the most important structural asset. The Cargo workspace split can enforce this boundary with the Rust compiler without moving any logic, only directories.
 
 ## Research archive
 
