@@ -2706,8 +2706,11 @@ mod amp_auth_tests {
         let amp_dir = host_home.join(".local/share/amp");
         std::fs::create_dir_all(&amp_dir).unwrap();
         let host_secrets = amp_dir.join("secrets.json");
-        std::fs::write(&host_secrets, "{\"apiKey@https://ampcode.com/\":\"sgamp_user_test\"}")
-            .unwrap();
+        std::fs::write(
+            &host_secrets,
+            "{\"apiKey@https://ampcode.com/\":\"sgamp_user_test\"}",
+        )
+        .unwrap();
         std::fs::set_permissions(&host_secrets, std::fs::Permissions::from_mode(0o000)).unwrap();
 
         let result =
