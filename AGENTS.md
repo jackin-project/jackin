@@ -77,6 +77,7 @@ All rules for opening, iterating on, refreshing, reviewing, and merging pull req
 - PR-body refresh policy: refresh **on operator request** or at merge-readiness, not after every iteration commit.
 - Documentation-only PR requirements (run the docs site locally + bold-URL-per-page format).
 - CI-must-be-green-before-merge, title/description reconciliation, squash-merge messages with PR-number + trailers.
+- Workflow / CI changes — third-party-CLI env vars must be scoped to the consuming job (workflow-level `env:` leaks into every job and breaks tools that read those vars as default-selection); changes to push-only / main-only / `workflow_run`-gated jobs must be smoke-tested via `gh workflow run --ref <feature-branch>` before merge because PR-time CI never exercises them; registry / production publish steps must hard-gate on `main` so PRs and feature-branch dispatches verify-build but never publish.
 
 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) is the canonical body shape with inline guidance. Copy it as the starting point and fill in the placeholders.
 
