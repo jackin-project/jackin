@@ -137,22 +137,26 @@ agents = ["amp"]
     assert!(run_cmd.contains("-e AMP_API_KEY=test-amp-key"), "{run_cmd}");
     assert!(!run_cmd.contains("/jackin/claude/"), "{run_cmd}");
     assert!(!run_cmd.contains("/jackin/codex/"), "{run_cmd}");
-    assert!(!run_cmd.contains("/jackin/amp/settings.json"), "{run_cmd}");
+    assert!(!run_cmd.contains("/jackin/amp/secrets.json"), "{run_cmd}");
 }
 
 #[test]
-fn amp_launch_under_sync_mounts_settings_json_in_docker_run() {
+fn amp_launch_under_sync_mounts_secrets_json_in_docker_run() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
 
-    // Stage host ~/.config/amp/settings.json under the test's fake
+    // Stage host ~/.local/share/amp/secrets.json under the test's fake
     // home (paths.home_dir, which load_role consults for host-side
     // auth state) so the Sync arm of provision_amp_auth produces a
     // non-None mounted path.
-    let amp_dir = paths.home_dir.join(".config/amp");
+    let amp_dir = paths.home_dir.join(".local/share/amp");
     std::fs::create_dir_all(&amp_dir).unwrap();
-    std::fs::write(amp_dir.join("settings.json"), "{\"amp\":true}").unwrap();
+    std::fs::write(
+        amp_dir.join("secrets.json"),
+        "{\"apiKey@https://ampcode.com/\":\"sgamp_user_test\"}",
+    )
+    .unwrap();
 
     std::fs::write(
         &paths.config_file,
@@ -216,8 +220,8 @@ agents = ["amp"]
         .find(|call| call.contains("docker run -d -it"))
         .expect("role docker run should run");
     assert!(
-        run_cmd.contains(":/jackin/amp/settings.json"),
-        "Sync mode must mount settings.json into the container: {run_cmd}"
+        run_cmd.contains(":/jackin/amp/secrets.json"),
+        "Sync mode must mount secrets.json into the container: {run_cmd}"
     );
     // No AMP_API_KEY in env config → no -e flag.
     assert!(

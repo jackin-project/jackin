@@ -251,11 +251,11 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
             }
             mounts
         }
-        AgentRuntimeState::Amp { settings_json } => {
+        AgentRuntimeState::Amp { secrets_json } => {
             let mut mounts = Vec::new();
             // Bound read-write at the docker level (parallel to Codex's
             // `auth.json`), but the runtime entrypoint copies the file
-            // into `~/.config/amp/settings.json` rather than
+            // into `~/.local/share/amp/secrets.json` rather than
             // symlinking, so in-session token rotation lands in the
             // container's writable layer and does NOT propagate back
             // to the host role-state file today. Live bidirectional
@@ -263,10 +263,10 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
             // mount is RW now so that future plumbing (symlink, bind
             // re-mount) can rely on a writable target without a
             // launch-side change.
-            if let Some(settings_json) = settings_json {
+            if let Some(secrets_json) = secrets_json {
                 mounts.push(format!(
-                    "{}:/jackin/amp/settings.json",
-                    settings_json.display()
+                    "{}:/jackin/amp/secrets.json",
+                    secrets_json.display()
                 ));
             }
             mounts
@@ -2680,7 +2680,7 @@ agents = ["codex"]
     }
 
     #[test]
-    fn agent_mounts_for_amp_synced_includes_settings_json() {
+    fn agent_mounts_for_amp_synced_includes_secrets_json() {
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -2704,10 +2704,10 @@ agents = ["amp"]
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
 
         let host_home = temp.path().join("host_home");
-        std::fs::create_dir_all(host_home.join(".config/amp")).unwrap();
+        std::fs::create_dir_all(host_home.join(".local/share/amp")).unwrap();
         std::fs::write(
-            host_home.join(".config/amp/settings.json"),
-            "{\"amp\":true}",
+            host_home.join(".local/share/amp/secrets.json"),
+            "{\"apiKey@https://ampcode.com/\":\"sgamp_user_test\"}",
         )
         .unwrap();
 
@@ -2724,7 +2724,7 @@ agents = ["amp"]
 
         let mounts = agent_mounts(&state);
         assert_eq!(mounts.len(), 1);
-        assert!(mounts[0].contains("/jackin/amp/settings.json"));
+        assert!(mounts[0].contains("/jackin/amp/secrets.json"));
         assert!(!mounts[0].ends_with(":ro"));
     }
 

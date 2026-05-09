@@ -120,7 +120,7 @@ That makes it obvious whether the right mode is in effect and whether the creden
 If the agent shows "Not logged in" or falls back to a different model tier (e.g. Sonnet instead of Opus), the credentials may not have been forwarded. Check:
 
 1. **What mode is effective?** Open the **Auth** tab in `jackin console` for that workspace, and look at the effective mode for the (role × agent) cell.
-2. **Does the host have credentials?** For `Claude` on macOS, check `security find-generic-password -s "Claude Code-credentials" -w`. On Linux, check `~/.claude/.credentials.json`. For `Codex`, check `~/.codex/auth.json`. For `Amp`, check `~/.config/amp/settings.json`.
+2. **Does the host have credentials?** For `Claude` on macOS, check `security find-generic-password -s "Claude Code-credentials" -w`. On Linux, check `~/.claude/.credentials.json`. For `Codex`, check `~/.codex/auth.json`. For `Amp`, check `~/.local/share/amp/secrets.json` (the file the Amp CLI writes the `apiKey@https://ampcode.com/` token into; the XDG_CONFIG file `~/.config/amp/settings.json` is preferences only and never holds the token).
 3. **Is this a pre-existing container?** In `sync` mode, host credentials are forwarded on every launch — but if the host has no credentials, the container's existing auth is preserved. If the container has stale auth and the host has fresh auth, restart the container (`jackin eject <role> && jackin load <role>`) or purge state (`jackin purge <role>`) to force a fresh sync.
 
 ### Revoking forwarded credentials

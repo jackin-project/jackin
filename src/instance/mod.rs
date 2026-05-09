@@ -156,13 +156,13 @@ pub enum GithubProvisionKind {
 ///
 /// All host paths land under `/jackin/<agent>/...` inside the
 /// container. The agent's expected home-relative paths
-/// (`~/.claude.json`, `~/.codex/auth.json`, `~/.config/amp/settings.json`,
+/// (`~/.claude.json`, `~/.codex/auth.json`, `~/.local/share/amp/secrets.json`,
 /// …) are NOT bind-mounted directly: jackin's entrypoint copies the
 /// relevant files from `/jackin/` into the agent's home before launch.
 /// This isolates the host→container handoff to a single tree (`/jackin/`)
 /// the operator can audit at a glance, and frees the agent's home tree
 /// (`/home/agent/.claude/`, `/home/agent/.codex/`,
-/// `/home/agent/.config/amp/`) to carry image-baked config without
+/// `/home/agent/.local/share/amp/`) to carry image-baked config without
 /// being masked by a runtime mount.
 ///
 /// The mount decision is encoded in `forward_auth` (Claude) or in the
@@ -207,13 +207,20 @@ pub enum AgentRuntimeState {
         auth_json: Option<PathBuf>,
     },
     Amp {
-        /// Host path mounted at `/jackin/amp/settings.json` when the
-        /// file was synced from the host's `~/.config/amp/settings.json`
-        /// on a previous launch (or persists from a prior in-container
-        /// login). `None` when the mount must be skipped — env-driven
-        /// modes (`ignore`/`api_key`) wipe it; sync with no host file
-        /// and no carry-over leaves nothing to mount.
-        settings_json: Option<PathBuf>,
+        /// Host path mounted at `/jackin/amp/secrets.json` when the
+        /// file was synced from the host's
+        /// `~/.local/share/amp/secrets.json` on a previous launch (or
+        /// persists from a prior in-container login). `None` when the
+        /// mount must be skipped — env-driven modes (`ignore`/`api_key`)
+        /// wipe it; sync with no host file and no carry-over leaves
+        /// nothing to mount.
+        ///
+        /// `secrets.json` is the XDG_DATA file Amp reads on startup
+        /// (canonical key `apiKey@https://ampcode.com/`). The
+        /// XDG_CONFIG path `~/.config/amp/settings.json` is preferences
+        /// only — never holds the token — and is intentionally not
+        /// forwarded.
+        secrets_json: Option<PathBuf>,
     },
 }
 
@@ -299,15 +306,21 @@ impl RoleState {
         }
     }
 
-    /// Host path to Amp's `settings.json` (mounted at
-    /// `/jackin/amp/settings.json` in the container). `None` when no
-    /// settings file is available (env-driven mode wiped it / sync
+    /// Host path to Amp's `secrets.json` (mounted at
+    /// `/jackin/amp/secrets.json` in the container). `None` when no
+    /// secrets file is available (env-driven mode wiped it / sync
     /// host-missing with no prior file) or when this state was not
     /// prepared for `Agent::Amp`.
+    ///
+    /// Reads/writes the Amp XDG_DATA file
+    /// `~/.local/share/amp/secrets.json` — the canonical credential
+    /// store named by the Amp binary. The XDG_CONFIG file
+    /// `~/.config/amp/settings.json` (preferences) is intentionally
+    /// not touched by the auth axis.
     #[must_use]
-    pub fn amp_settings_json(&self) -> Option<&Path> {
+    pub fn amp_secrets_json(&self) -> Option<&Path> {
         match &self.agent_runtime {
-            AgentRuntimeState::Amp { settings_json, .. } => settings_json.as_deref(),
+            AgentRuntimeState::Amp { secrets_json, .. } => secrets_json.as_deref(),
             AgentRuntimeState::Claude { .. } | AgentRuntimeState::Codex { .. } => None,
         }
     }
@@ -403,10 +416,10 @@ impl RoleState {
             crate::agent::Agent::Amp => {
                 let amp_dir = root.join("amp");
                 std::fs::create_dir_all(&amp_dir)?;
-                let settings_json_path = amp_dir.join("settings.json");
-                let (outcome, settings_json) =
-                    Self::provision_amp_auth(&settings_json_path, auth_forward, host_home)?;
-                (AgentRuntimeState::Amp { settings_json }, outcome)
+                let secrets_json_path = amp_dir.join("secrets.json");
+                let (outcome, secrets_json) =
+                    Self::provision_amp_auth(&secrets_json_path, auth_forward, host_home)?;
+                (AgentRuntimeState::Amp { secrets_json }, outcome)
             }
         };
 

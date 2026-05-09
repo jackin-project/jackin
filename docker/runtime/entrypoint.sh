@@ -100,17 +100,22 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     LAUNCH=(codex)
     ;;
   amp)
-    mkdir -p /home/agent/.config/amp
-    if [ -f /jackin/amp/settings.json ]; then
-        echo "[entrypoint] amp: forwarding host settings.json into ~/.config/amp/" >&2
-        cp /jackin/amp/settings.json /home/agent/.config/amp/settings.json
-        chmod 600 /home/agent/.config/amp/settings.json
+    mkdir -p /home/agent/.local/share/amp
+    if [ -f /jackin/amp/secrets.json ]; then
+        echo "[entrypoint] amp: forwarding host secrets.json into ~/.local/share/amp/" >&2
+        cp /jackin/amp/secrets.json /home/agent/.local/share/amp/secrets.json
+        chmod 600 /home/agent/.local/share/amp/secrets.json
     elif [ -n "${AMP_API_KEY:-}" ]; then
         echo "[entrypoint] amp: AMP_API_KEY present in env; agent will use api-key auth" >&2
     else
-        echo "[entrypoint] amp: no settings.json mounted and AMP_API_KEY unset — agent will require interactive login" >&2
+        echo "[entrypoint] amp: no secrets.json mounted and AMP_API_KEY unset — agent will require interactive login" >&2
     fi
-    LAUNCH=(amp)
+    # `--dangerously-allow-all` mirrors the Claude `--dangerously-skip-permissions`
+    # flag — required for the autonomous-container model jackin ships. The
+    # equivalent settings-file key is `amp.dangerouslyAllowAll: true`; we
+    # use the CLI flag so jackin does not need to write to the operator's
+    # XDG_CONFIG file.
+    LAUNCH=(amp --dangerously-allow-all)
     ;;
   *)
     echo "[entrypoint] unknown JACKIN_AGENT: $JACKIN_AGENT" >&2

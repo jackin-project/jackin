@@ -463,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn entrypoint_amp_branch_copies_settings_and_launches_amp() {
+    fn entrypoint_amp_branch_copies_secrets_and_launches_amp() {
         let amp_section = ENTRYPOINT_SH
             .split_once("\n  amp)")
             .unwrap()
@@ -471,9 +471,9 @@ mod tests {
             .split(";;")
             .next()
             .unwrap();
-        assert!(amp_section.contains("/home/agent/.config/amp"));
-        assert!(amp_section.contains("/jackin/amp/settings.json"));
-        assert!(amp_section.contains("LAUNCH=(amp)"));
+        assert!(amp_section.contains("/home/agent/.local/share/amp"));
+        assert!(amp_section.contains("/jackin/amp/secrets.json"));
+        assert!(amp_section.contains("LAUNCH=(amp --dangerously-allow-all)"));
     }
 
     #[test]
