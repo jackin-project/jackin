@@ -147,7 +147,7 @@ high-signal reference for jackin's security and trust surface.
 | Stack integrations | Optional, non-executable workspace hints for read-only toolchain/cache mounts, safe env selectors, warnings, and excludes | [Stack integration contracts](/reference/roadmap/stack-integration-contracts/) |
 | Docker tier decision | Treat host Docker daemon access as a policy boundary, not a convenience default | [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/), [network egress policy](/reference/roadmap/network-egress-policy/) |
 | Snapshot/rollback | Pre-session snapshots for dirty/non-git/long-autonomy work, with opt-in restore and visible host-side effects | [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/) |
-| Proof/governance boundary | Model launch/finalization ordering where host-side effects become complex | [Architecture decision records](/reference/roadmap/architecture-decision-records/), [behavioral launch spec](/reference/roadmap/behavioral-spec-launch/) |
+| Proof/governance boundary | Model launch/finalization ordering where host-side effects become complex | [Architecture decision records](/reference/roadmap/architecture-decision-records/), [behavioral runtime/launch spec](/reference/roadmap/behavioral-spec-runtime-launch/) |
 
 ## Critical read of Docker Sandboxes
 
@@ -360,7 +360,7 @@ launched, what can be reached, and how to recover.
 |---|---|---|
 | [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/) | Hazmat pre-session Kopia snapshots and restore | Persistent storage; stack integration contracts |
 | [Architecture decision records](/reference/roadmap/architecture-decision-records/) | Hazmat design assumptions and verification boundary | Codebase health track |
-| [Behavioral spec: launch](/reference/roadmap/behavioral-spec-launch/) | Hazmat TLA+ setup/launch ordering discipline | Codebase health track |
+| [Behavioral spec: runtime/launch](/reference/roadmap/behavioral-spec-runtime-launch/) | Hazmat TLA+ setup/launch ordering discipline | Codebase health track |
 
 ## Execution order
 

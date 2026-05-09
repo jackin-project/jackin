@@ -222,7 +222,7 @@ export default defineConfig({
                       collapsed: true,
                       items: [
                         { label: 'Module contracts', slug: 'reference/roadmap/module-contracts' },
-                        { label: 'Behavioral spec: launch.rs', slug: 'reference/roadmap/behavioral-spec-launch' },
+                        { label: 'Behavioral spec: runtime/launch.rs', slug: 'reference/roadmap/behavioral-spec-runtime-launch' },
                         { label: 'Behavioral spec: op_picker', slug: 'reference/roadmap/behavioral-spec-op-picker' },
                         { label: 'Per-directory README + AGENTS.md', slug: 'reference/roadmap/per-directory-readme' },
                         { label: 'Developer Reference setup', slug: 'reference/roadmap/developer-reference-setup' },
@@ -250,7 +250,7 @@ export default defineConfig({
                       label: 'Phase 3 — Future',
                       collapsed: true,
                       items: [
-                        { label: 'Greenfield workspace split', slug: 'reference/roadmap/greenfield-workspace' },
+                        { label: 'Cargo workspace split', slug: 'reference/roadmap/cargo-workspace-split' },
                         { label: 'rustdoc JSON → Starlight', slug: 'reference/roadmap/rustdoc-json-starlight' },
                       ],
                     },

@@ -87,6 +87,7 @@ jackin' is a functional proof of concept. **`Claude Code` and `Codex` ship today
 ### Codebase health
 
 - **[Codebase readability program](/reference/roadmap/codebase-readability/)** — multi-phase internal-quality work covering documentation/setup, behavioral specs, module-contract refactors, and test coverage. The full leaf list lives in the program doc and in the sidebar under **Reference → Roadmap → Codebase health**.
+- **[Cargo workspace split](/reference/roadmap/cargo-workspace-split/)** — deferred multi-crate Cargo workspace plan for when LOC, compile time, or external-consumer triggers make crate boundaries worth the overhead (status: deferred to Phase 3 — trigger not yet met, but architecture is ready)
 - **[Open review findings catalog](/reference/roadmap/open-review-findings/)** — living backlog of review findings with accepted-exception annotations. Code review and automated scanning consult this catalog (see <RepoFile path="AGENTS.md" /> → "Code review & automated scanning").
 
 ### Configuration ergonomics
@@ -95,7 +96,6 @@ jackin' is a functional proof of concept. **`Claude Code` and `Codex` ship today
 
 ### Documentation infrastructure
 
-- **[Greenfield workspace pattern](/reference/roadmap/greenfield-workspace/)** — workspace-onboarding pattern for empty projects (status: deferred to Phase 3 — trigger not yet met, but architecture is ready)
 - **[Markdown linting for docs](/reference/roadmap/docs-markdown-linting/)** — uniform Markdown lint pipeline for the docs site (status: proposed — design captured, no implementation committed)
 - **[Move documentation to a separate repository](/reference/roadmap/docs-separate-repository/)** — promote `docs/` out of the CLI repo into its own `jackin-project/jackin-docs` repo so the ecosystem-level docs have an ecosystem-level home; the load-bearing question is how to keep the docs as fresh as same-repo co-location makes them today (status: deferred — needs design pass on the cross-repo freshness story)
 - **[Rustdoc → Starlight integration](/reference/roadmap/rustdoc-json-starlight/)** — surface rustdoc JSON inside the Starlight docs site (status: deferred — Phase 3)
