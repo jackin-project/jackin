@@ -145,7 +145,7 @@ export default defineConfig({
                   label: 'Agent Orchestrator Research',
                   collapsed: true,
                   items: [
-                    { label: 'Overview', slug: 'reference/roadmap/multicode-inspired-features' },
+                    { label: 'Overview', slug: 'reference/roadmap/agent-orchestrator-research' },
                     {
                       label: 'Fleet phase 1 — Foundation gaps',
                       collapsed: true,
