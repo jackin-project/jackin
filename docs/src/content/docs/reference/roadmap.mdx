@@ -60,7 +60,7 @@ jackin' is a functional proof of concept. **`Claude Code` and `Codex` ship today
 
 ### Security improvements
 
-- **Network policy controls** — outbound domain filtering per role, similar to Docker Sandboxes' network policies. See [devcontainer parity](/reference/roadmap/devcontainer-parity/) for a comparison with the upstream `anthropics/claude-code` devcontainer's `iptables`/`ipset` egress-allowlist approach.
+- **[Network egress policy](/reference/roadmap/network-egress-policy/)** — outbound policy per role/workspace, with explicit enforcement-quality reporting across DinD, future microVM backends, SSH remotes, and Kubernetes. Inspired by Docker Sandboxes' host-side proxy model, Hazmat's network tiering, and the upstream `anthropics/claude-code` devcontainer allowlist approach (status: open — design proposal)
 - **Credential proxy** — proxy-based credential injection to avoid storing tokens inside containers
 - **[Agent version pinning](/reference/roadmap/reproducibility-pinning/)** — pin role repos to tagged versions for reproducible builds, with explicit `--update` to advance (status: needs design — brainstorming required before implementation)
 - **[Reliable Claude authentication strategy](/reference/roadmap/claude-auth-strategy/)** — move beyond copied session auth toward clearer, more durable modes for long-lived and concurrent agent runtimes (status: deferred — needs design work)
@@ -82,7 +82,7 @@ jackin' is a functional proof of concept. **`Claude Code` and `Codex` ship today
 
 ### Operator surface and fleet operations
 
-- **[Universal Orchestrator Program](/reference/roadmap/multicode-inspired-features/)** — phased program of 18 leaf items closing the gap between jackin's primitives and the operator surface that adjacent tools (notably [`multicode`](https://github.com/yawkat/multicode)) ship today. Covers live agent observability, per-instance persistent storage, declarative resource limits, autonomous task queue, remote operation, and skill mounts — the missing pieces that prevent jackin' from being the canonical orchestrator teams compose on instead of building their own. The full list of 18 leaves lives in the program doc and the sidebar under **Reference → Roadmap → Universal Orchestrator Program**.
+- **[Agent Orchestrator Research Program](/reference/roadmap/multicode-inspired-features/)** — phased research program comparing jackin against `multicode`, Hazmat, Docker Sandboxes, and adjacent devcontainer/native-worktree approaches. The fleet track covers live agent observability, per-instance persistent storage, declarative resource limits, autonomous task queue, remote operation, and skill mounts. The containment track adds [session contract and explain mode](/reference/roadmap/session-contract-explain-mode/), [stack integration contracts](/reference/roadmap/stack-integration-contracts/), [network egress policy](/reference/roadmap/network-egress-policy/), and [session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/) so contributors can see the Hazmat/Docker Sandboxes research as actionable roadmap work rather than loose notes. The full leaf list lives in the program doc and the sidebar under **Reference → Roadmap → Agent Orchestrator Research**.
 
 ### Codebase health
 
@@ -101,7 +101,7 @@ jackin' is a functional proof of concept. **`Claude Code` and `Codex` ship today
 - **[Rustdoc → Starlight integration](/reference/roadmap/rustdoc-json-starlight/)** — surface rustdoc JSON inside the Starlight docs site (status: deferred — Phase 3)
 
 <Aside type="tip">
-Detailed design documents for individual TODO items are linked from the sidebar under **Roadmap** (each open category — `Universal Orchestrator Program`, `Codebase health`, `Agent runtimes & authentication`, `Isolation & security`, `Infrastructure`, `Documentation tooling`, `Configuration ergonomics`) and **Roadmap → Resolved** for shipped items. Each page is a self-contained proposal with problem statement, options, and related files.
+Detailed design documents for individual TODO items are linked from the sidebar under **Roadmap** (each open category — `Agent Orchestrator Research`, `Codebase health`, `Agent runtimes & authentication`, `Isolation & security`, `Infrastructure`, `Documentation tooling`, `Configuration ergonomics`) and **Roadmap → Resolved** for shipped items. Each page is a self-contained proposal with problem statement, options, and related files.
 </Aside>
 ## Vision
 

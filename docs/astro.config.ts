@@ -130,8 +130,8 @@ export default defineConfig({
             {
               // Roadmap groups are flat — every group below is open
               // work. Some groups happen to be phased programs that
-              // should be read together (Universal Orchestrator
-              // Program, Codebase health); others are loose
+              // should be read together (Agent Orchestrator
+              // Research, Codebase health); others are loose
               // categories of standalone items. The shape difference
               // is informational, not a separate "active programs" /
               // "open items" distinction. The only real status axis
@@ -142,12 +142,12 @@ export default defineConfig({
               items: [
                 { label: 'Overview', slug: 'reference/roadmap' },
                 {
-                  label: 'Universal Orchestrator Program',
+                  label: 'Agent Orchestrator Research',
                   collapsed: true,
                   items: [
                     { label: 'Overview', slug: 'reference/roadmap/multicode-inspired-features' },
                     {
-                      label: 'Phase 1 — Foundation gaps',
+                      label: 'Fleet phase 1 — Foundation gaps',
                       collapsed: true,
                       items: [
                         { label: 'Workspace description', slug: 'reference/roadmap/workspace-description' },
@@ -158,7 +158,7 @@ export default defineConfig({
                       ],
                     },
                     {
-                      label: 'Phase 2 — Live operator surface',
+                      label: 'Fleet phase 2 — Live operator surface',
                       collapsed: true,
                       items: [
                         { label: 'Agent runtime status', slug: 'reference/roadmap/agent-runtime-status' },
@@ -169,7 +169,7 @@ export default defineConfig({
                       ],
                     },
                     {
-                      label: 'Phase 3 — Persistence & telemetry',
+                      label: 'Fleet phase 3 — Persistence & telemetry',
                       collapsed: true,
                       items: [
                         { label: 'Persistent storage layer', slug: 'reference/roadmap/persistent-storage-layer' },
@@ -177,7 +177,7 @@ export default defineConfig({
                       ],
                     },
                     {
-                      label: 'Phase 4 — Fleet operations',
+                      label: 'Fleet phase 4 — Fleet operations',
                       collapsed: true,
                       items: [
                         { label: 'Task source abstraction', slug: 'reference/roadmap/task-source-abstraction' },
@@ -186,12 +186,28 @@ export default defineConfig({
                       ],
                     },
                     {
-                      label: 'Phase 5 — Distributed & extensibility',
+                      label: 'Fleet phase 5 — Distributed & extensibility',
                       collapsed: true,
                       items: [
                         { label: 'jackin-remote', slug: 'reference/roadmap/jackin-remote' },
                         { label: 'Credential source pattern', slug: 'reference/roadmap/credential-source-pattern' },
                         { label: 'Workspace skills mount', slug: 'reference/roadmap/workspace-skills-mount' },
+                      ],
+                    },
+                    {
+                      label: 'Containment — Boundary contract',
+                      collapsed: true,
+                      items: [
+                        { label: 'Session contract and explain mode', slug: 'reference/roadmap/session-contract-explain-mode' },
+                        { label: 'Stack integration contracts', slug: 'reference/roadmap/stack-integration-contracts' },
+                      ],
+                    },
+                    {
+                      label: 'Containment — Egress & recovery',
+                      collapsed: true,
+                      items: [
+                        { label: 'Network egress policy', slug: 'reference/roadmap/network-egress-policy' },
+                        { label: 'Session snapshot and rollback', slug: 'reference/roadmap/session-snapshot-rollback' },
                       ],
                     },
                   ],

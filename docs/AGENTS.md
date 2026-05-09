@@ -133,7 +133,7 @@ bun install --frozen-lockfile
 - **Roadmap sidebar discipline.** Every MDX file under
   `src/content/docs/reference/roadmap/` must have a matching entry in
   the sidebar in `astro.config.ts` under one of the open-work
-  categories (`Universal Orchestrator Program`, `Codebase health`,
+  categories (`Agent Orchestrator Research`, `Codebase health`,
   `Agent runtimes & authentication`, `Isolation & security`,
   `Infrastructure`, `Documentation tooling`,
   `Configuration ergonomics`) or under `Resolved`, as appropriate for
@@ -191,7 +191,7 @@ bun install --frozen-lockfile
   The output lists items present in the directory but missing from
   the overview. It must be empty *unless* the missing items are
   intentionally umbrella-covered by a parent program entry (e.g.
-  Universal Orchestrator Program leaves, Codebase readability
+  Agent Orchestrator Research leaves, Codebase readability
   program leaves) — in which case the program entry itself must
   appear in the overview and explicitly say it covers them.
 - Use Starlight components for callouts (`<Aside type="note|tip|caution">`),
