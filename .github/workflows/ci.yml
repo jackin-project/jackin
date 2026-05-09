@@ -5,23 +5,63 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.dispatch.outputs.rust || steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Force rust=true on workflow_dispatch
+        id: dispatch
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: echo "rust=true" >> "$GITHUB_OUTPUT"
+
+      # build.rs supplies compile-time version metadata and
+      # docker/runtime/entrypoint.sh is include_str!'d by
+      # src/derived_image.rs — both affect the produced binary even
+      # though they live outside src/ and tests/.
+      - name: Classify changed paths
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        with:
+          filters: |
+            rust:
+              - '.github/workflows/ci.yml'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'build.rs'
+              - 'src/**'
+              - 'tests/**'
+              - 'docker/runtime/**'
+
   check:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
         with:
-          # Toolchain channel comes from rust-toolchain.toml.
           components: clippy, rustfmt
-          # `-D warnings` is enforced explicitly on the clippy step below;
-          # leaving the action's default RUSTFLAGS would also apply it to
-          # `cargo build`/`cargo check`/`cargo nextest run`, which is a
-          # behavioral change we don't want to bundle into this PR.
+          # `-D warnings` is enforced explicitly on the clippy step
+          # below; leaving the action's default RUSTFLAGS would also
+          # apply it to `cargo build`/`cargo check`/`cargo nextest run`.
           rustflags: ""
       - uses: taiki-e/install-action@cca35edeb1d01366c2843b68fc3ca441446d73d3 # v2.77.1
         with:
@@ -31,6 +71,8 @@ jobs:
       - run: cargo nextest run
 
   msrv:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     # Verify that the crate still builds on its declared MSRV
     # (`rust-version` in Cargo.toml). This is independent of the toolchain
     # pin in rust-toolchain.toml, which tracks the latest tested stable
@@ -51,8 +93,15 @@ jobs:
           RUSTUP_TOOLCHAIN: "1.94.0"
 
   build-validator:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: check
+    needs: [changes, check]
+    # Run on push-to-main when Rust inputs change, and on any
+    # workflow_dispatch so a maintainer can re-build the validator
+    # artifacts on demand without waiting for a Rust-touching push.
+    if: >-
+      (github.event_name == 'push' &&
+       github.ref == 'refs/heads/main' &&
+       needs.changes.outputs.rust == 'true') ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -61,10 +110,9 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             cross: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
         with:
-          # Toolchain channel comes from rust-toolchain.toml.
           target: ${{ matrix.target }}
           cache-key: validator-${{ matrix.target }}
           rustflags: ""
@@ -87,10 +135,23 @@ jobs:
           tar -czf "$archive" -C "target/${{ matrix.target }}/release" jackin-validate
           sha256sum "$archive" > "$archive.sha256"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jackin-validate-${{ matrix.target }}
           path: |
             jackin-validate-${{ matrix.target }}.tar.gz
             jackin-validate-${{ matrix.target }}.tar.gz.sha256
           retention-days: 7
+
+  # Single stable check name for branch-protection required-status,
+  # regardless of which gated jobs skipped under it.
+  ci-required:
+    if: always()
+    needs: [changes, check, msrv, build-validator]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: ./.github/actions/aggregate-needs
+        with:
+          needs-json: ${{ toJSON(needs) }}
+          workflow-label: CI

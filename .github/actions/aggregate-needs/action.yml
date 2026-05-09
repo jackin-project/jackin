@@ -1,0 +1,35 @@
+name: Aggregate gated job results
+description: |
+  Fail the calling job if any upstream listed in `needs:` failed or was
+  cancelled. Skipped is treated as success — that is the entire point
+  of path-aware gating. Used by each path-aware workflow's
+  `*-required` aggregator job to give branch protection a single
+  stable check name regardless of which underlying jobs skipped.
+inputs:
+  needs-json:
+    description: >-
+      JSON-serialized needs context from the calling job (typically
+      passed as toJSON of the caller's needs context). Composite actions
+      cannot read the parent job's needs themselves, so the caller has
+      to forward it.
+    required: true
+  workflow-label:
+    description: >-
+      Short identifier interpolated into the failure log line — for
+      example "CI", "construct", or "docs".
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Aggregate gated job results
+      shell: bash
+      env:
+        NEEDS_RESULT: ${{ inputs.needs-json }}
+        WORKFLOW_LABEL: ${{ inputs.workflow-label }}
+      run: |
+        set -euo pipefail
+        printf '%s\n' "$NEEDS_RESULT"
+        if printf '%s' "$NEEDS_RESULT" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
+          echo "::error::one or more gated ${WORKFLOW_LABEL} jobs failed or were cancelled"
+          exit 1
+        fi

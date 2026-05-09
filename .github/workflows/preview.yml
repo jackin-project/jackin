@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  publish-preview:
+  source-changed:
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_run' &&
@@ -24,20 +24,116 @@ jobs:
        github.event.workflow_run.head_repository.full_name == github.repository &&
        github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
+    outputs:
+      source: ${{ steps.filter.outputs.source }}
+      sha: ${{ steps.source.outputs.sha }}
     steps:
       - name: Resolve source SHA
         id: source
+        env:
+          # Pre-resolve into env vars so the inline shell never sees a
+          # template substitution — keeps the script style identical to
+          # the rest of this workflow's run blocks.
+          DISPATCH_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            echo "sha=${DISPATCH_SHA}" >> "$GITHUB_OUTPUT"
           else
-            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+            echo "sha=${WORKFLOW_RUN_SHA}" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          repository: jackin-project/jackin
           ref: ${{ steps.source.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Classify changed paths
+        id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "source=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          sha="${{ steps.source.outputs.sha }}"
+
+          # Diff base for the source-change classification is the
+          # previously-published preview SHA, not the current head's
+          # first parent. A multi-commit push (rebase merge, linear
+          # merge, direct push of N commits) can land a source change
+          # in an earlier commit and a docs-only final commit;
+          # classifying against `${sha}^1` would see only the docs and
+          # silently skip a real publish. The prior SHA is read out of
+          # the live homebrew-tap formula on raw.githubusercontent.com
+          # — no checkout of the tap repo required.
+          old_sha=""
+          formula_err=""
+          if formula_body=$(curl -fsSL --max-time 30 "https://raw.githubusercontent.com/jackin-project/homebrew-tap/main/Formula/jackin-preview.rb" 2>&1); then
+            # Strict 40-hex-char regex: a captive-portal HTML response
+            # that happens to return HTTP 200 will not match here, so the
+            # downstream "old_sha empty" branch handles that case as a
+            # legitimate "no prior preview" rather than as a silent skip.
+            old_sha=$(printf '%s\n' "$formula_body" | sed -n 's|^[[:space:]]*url "https://github.com/jackin-project/jackin/archive/\([0-9a-f]\{40\}\)\.tar\.gz"$|\1|p' | head -1)
+          else
+            formula_err="$formula_body"
+            echo "::warning::failed to fetch homebrew-tap formula: ${formula_err}; falling open"
+          fi
+
+          # Fall open to source=true when curl failed, when there is no
+          # prior published SHA, when the head SHA is already published,
+          # or when the prior SHA is not reachable in the current
+          # checkout. The publish job's `git diff --cached --quiet`
+          # guard catches a no-op formula rewrite, so a spurious "true"
+          # at most costs a wasted run — never a silently-missed source
+          # change.
+          if [ -n "$formula_err" ] || [ -z "$old_sha" ] || [ "$old_sha" = "$sha" ] \
+             || ! git rev-parse --verify "${old_sha}^{commit}" >/dev/null 2>&1; then
+            echo "source=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Capture the diff via command substitution wrapped in `if !`,
+          # which suppresses `set -e` propagation so we can branch on
+          # the exit code explicitly. stderr is captured to a separate
+          # variable so a benign git warning (e.g. an ambiguous-ref
+          # warning written to stderr while exit is still 0) cannot
+          # contaminate the file list the case statement scans.
+          diff_err=""
+          if ! { diff_files=$(git diff --name-only "${old_sha}...${sha}" 2>/tmp/diff.err); }; then
+            diff_err=$(cat /tmp/diff.err)
+            echo "::warning::diff failed for ${old_sha}...${sha}: ${diff_err}; falling open"
+            echo "source=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          source=false
+          while IFS= read -r path; do
+            # Skip the trailing-newline empty iteration — an empty path
+            # cannot match any of the source globs, but the explicit
+            # guard prevents a future maintainer from accidentally
+            # adding a wildcard that would match it.
+            [ -z "$path" ] && continue
+            case "$path" in
+              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/*|docker/runtime/*)
+                source=true
+                ;;
+            esac
+          done <<< "$diff_files"
+
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+
+  publish-preview:
+    needs: source-changed
+    if: needs.source-changed.outputs.source == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.source-changed.outputs.sha }}
           fetch-depth: 0
 
       - name: Verify source SHA is on main
@@ -50,7 +146,7 @@ jobs:
           # behaved like it only had a one-commit checkout even with
           # fetch-depth: 0, so local git ancestry checks were no longer
           # reliable enough for preview versioning.
-          full_sha="${{ steps.source.outputs.sha }}"
+          full_sha="${{ needs.source-changed.outputs.sha }}"
           compare_status=$(
             curl -fsSL \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
@@ -74,7 +170,7 @@ jobs:
         run: |
           base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           base_version=${base_version%-dev}
-          full_sha="${{ steps.source.outputs.sha }}"
+          full_sha="${{ needs.source-changed.outputs.sha }}"
           short_sha=$(printf '%s' "$full_sha" | cut -c1-7)
           # Derive the preview counter from GitHub's server-side commit history
           # instead of `git rev-list --count HEAD` so the version stays
