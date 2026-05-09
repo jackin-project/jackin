@@ -144,3 +144,29 @@ jobs:
             jackin-validate-${{ matrix.target }}.tar.gz
             jackin-validate-${{ matrix.target }}.tar.gz.sha256
           retention-days: 7
+
+  # Aggregator job — single stable check name for branch-protection
+  # required-status to point at, regardless of how many gated jobs
+  # are added or skipped under it. `if: always()` runs even when an
+  # upstream job fails or skips; the success condition is "no upstream
+  # failed and no upstream cancelled".
+  ci-required:
+    if: always()
+    needs: [changes, check, msrv, build-validator]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate gated job results
+        shell: bash
+        env:
+          NEEDS_RESULT: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          # Fail if any need failed or was cancelled. Skipped is
+          # treated as success — that is the entire point of the
+          # path-aware gating: jobs that were not relevant to the
+          # change correctly skip without blocking.
+          printf '%s\n' "$NEEDS_RESULT"
+          if printf '%s' "$NEEDS_RESULT" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
+            echo "::error::one or more gated CI jobs failed or were cancelled"
+            exit 1
+          fi

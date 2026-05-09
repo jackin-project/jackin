@@ -11,6 +11,13 @@ concurrency:
   group: construct-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  # Builder name used by every step that calls `just construct-*`.
+  BUILDX_BUILDER: jackin-construct
+  # Single source of truth for the digest directory used by both the
+  # build jobs (write) and the publish-manifest job (read).
+  DIGEST_DIR: /tmp/jackin-construct-digests
+
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -40,14 +47,25 @@ jobs:
               - 'docker-bake.hcl'
               - 'docker/construct/**'
 
-  build-amd64:
-    name: amd64
+  # amd64 and arm64 share every step except runner label and platform
+  # string. Matrix collapse keeps the per-platform fail-fast=false
+  # behavior (one arch failing must not cancel the other) while
+  # eliminating ~60 lines of cross-job copy-paste.
+  build:
+    name: ${{ matrix.platform }}
     needs: changes
     if: needs.changes.outputs.construct == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: amd64
+            runner: ubuntu-24.04
+          - platform: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -58,7 +76,7 @@ jobs:
       - name: Install Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
         with:
-          name: jackin-construct
+          name: ${{ env.BUILDX_BUILDER }}
           driver: docker-container
 
       - name: Log in to Docker Hub
@@ -75,84 +93,26 @@ jobs:
         if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
         uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
 
-      - name: Build amd64 without push
+      - name: Build ${{ matrix.platform }} without push
         if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
         env:
-          CACHE_FROM: type=gha,scope=construct-pr-amd64
-          CACHE_TO: type=gha,scope=construct-pr-amd64,mode=max
-        run: just construct-build-platform amd64
+          CACHE_FROM: type=gha,scope=construct-pr-${{ matrix.platform }}
+          CACHE_TO: type=gha,scope=construct-pr-${{ matrix.platform }},mode=max
+        run: just construct-build-platform ${{ matrix.platform }}
 
-      - name: Push amd64 image by digest
+      - name: Push ${{ matrix.platform }} image by digest
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
         env:
-          CACHE_FROM: type=registry,ref=projectjackin/construct:buildcache-amd64
-          CACHE_TO: type=registry,ref=projectjackin/construct:buildcache-amd64,mode=max
-        run: just construct-push-platform amd64
+          CACHE_FROM: type=registry,ref=projectjackin/construct:buildcache-${{ matrix.platform }}
+          CACHE_TO: type=registry,ref=projectjackin/construct:buildcache-${{ matrix.platform }},mode=max
+        run: just construct-push-platform ${{ matrix.platform }}
 
-      - name: Upload amd64 digest
+      - name: Upload ${{ matrix.platform }} digest
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: construct-digest-amd64
-          path: /tmp/jackin-construct-digests/amd64.digest
-          if-no-files-found: error
-          retention-days: 1
-
-  build-arm64:
-    name: arm64
-    needs: changes
-    if: needs.changes.outputs.construct == 'true'
-    runs-on: ubuntu-24.04-arm
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Install just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
-
-      - name: Install Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-        with:
-          name: jackin-construct
-          driver: docker-container
-
-      - name: Log in to Docker Hub
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Bootstrap buildx
-        run: just construct-init-buildx
-
-      - name: Expose GitHub Actions cache runtime
-        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
-        uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
-
-      - name: Build arm64 without push
-        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main')
-        env:
-          CACHE_FROM: type=gha,scope=construct-pr-arm64
-          CACHE_TO: type=gha,scope=construct-pr-arm64,mode=max
-        run: just construct-build-platform arm64
-
-      - name: Push arm64 image by digest
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
-        env:
-          CACHE_FROM: type=registry,ref=projectjackin/construct:buildcache-arm64
-          CACHE_TO: type=registry,ref=projectjackin/construct:buildcache-arm64,mode=max
-        run: just construct-push-platform arm64
-
-      - name: Upload arm64 digest
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: construct-digest-arm64
-          path: /tmp/jackin-construct-digests/arm64.digest
+          name: construct-digest-${{ matrix.platform }}
+          path: ${{ env.DIGEST_DIR }}/${{ matrix.platform }}.digest
           if-no-files-found: error
           retention-days: 1
 
@@ -162,7 +122,7 @@ jobs:
       (github.event_name == 'push' ||
        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) &&
       needs.changes.outputs.construct == 'true'
-    needs: [changes, build-amd64, build-arm64]
+    needs: [changes, build]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -174,11 +134,13 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
 
-      - name: Install Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
-        with:
-          name: jackin-construct
-          driver: docker-container
+      # publish-manifest only invokes `docker buildx imagetools create`
+      # and `inspect`, both registry-side operations. They use the
+      # buildx CLI plugin (bundled with Docker on ubuntu-24.04) but
+      # need no local builder container, so the previous
+      # `setup-buildx-action` + `construct-init-buildx` pair has been
+      # dropped here. Build jobs above keep them because actual layer
+      # builds do require the docker-container driver.
 
       - name: Log in to Docker Hub
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
@@ -186,15 +148,31 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Bootstrap buildx
-        run: just construct-init-buildx
-
       - name: Download platform digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: construct-digest-*
-          path: /tmp/jackin-construct-digests
+          path: ${{ env.DIGEST_DIR }}
           merge-multiple: true
 
       - name: Publish multi-platform manifest
         run: just construct-publish-manifest
+
+  # Single stable check name for branch-protection required-status.
+  # See ci.yml's `ci-required` job for the same pattern + rationale.
+  construct-required:
+    if: always()
+    needs: [changes, build, publish-manifest]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate gated job results
+        shell: bash
+        env:
+          NEEDS_RESULT: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$NEEDS_RESULT"
+          if printf '%s' "$NEEDS_RESULT" | jq -e 'to_entries | map(.value.result) | any(. == "failure" or . == "cancelled")' >/dev/null; then
+            echo "::error::one or more gated construct jobs failed or were cancelled"
+            exit 1
+          fi
