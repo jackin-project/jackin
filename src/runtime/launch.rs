@@ -738,6 +738,8 @@ async fn launch_role_runtime(
     let agent_specific_mounts = agent_mounts(state);
     let gh_config_mount = format!("{}:/home/agent/.config/gh", state.gh_config_dir.display());
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
+    let daemon_socket = paths.run_dir.join("jackin-daemon.sock");
+    let daemon_socket_mount = format!("{}:/jackin/daemon.sock", daemon_socket.display());
 
     // Start detached with a persistent TTY, then attach separately.  This
     // decouples the container's lifetime from the foreground attach, so
@@ -917,6 +919,9 @@ async fn launch_role_runtime(
         run_args.push(env_str);
     }
     run_args.extend_from_slice(&["-v", &certs_agent_mount, "-v", &gh_config_mount]);
+    if daemon_socket.exists() {
+        run_args.extend_from_slice(&["-e", "JACKIN_DAEMON_SOCKET=/jackin/daemon.sock"]);
+    }
     for mount in &agent_specific_mounts {
         run_args.push("-v");
         run_args.push(mount);
@@ -983,6 +988,9 @@ async fn launch_role_runtime(
         "launch",
         "prepared host socket dir {socket_dir_str} (0o700) and Capsule config for bind-mount at /jackin/run",
     );
+    if daemon_socket.exists() {
+        run_args.extend_from_slice(&["-v", &daemon_socket_mount]);
+    }
     run_args.push(image);
     // Pass the initial agent as the container command argument. The
     // daemon uses it only to choose the first tab; per-session

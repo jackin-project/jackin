@@ -4,7 +4,7 @@ title: "Agent Attention Prompts"
 import RepoFile from '../../../../components/RepoFile.astro'
 
 
-**Status**: Open — design proposal
+**Status**: In progress — daemon bridge foundation landed
 
 ## Problem
 
@@ -13,6 +13,18 @@ The biggest hidden cost of running AI coding agents today is **idle wall-clock**
 Every minute the agent waits is a minute of compounding throughput loss across however many agents the operator is running in parallel. The point of jackin' is to make running many agents safe and convenient; "many agents" is only a real win if the operator can stay in flow and only context-switch when an agent actually needs them.
 
 This roadmap item proposes **agent attention prompts**: an opt-in, per-workspace, per-role notification channel that fires a host-side OS notification when an agent inside a Capsule-managed role container is waiting on operator input, with optional escalation to sound and a click action that focuses the right terminal tab.
+
+The daemon work now provides the transport this feature needs:
+
+- The host daemon owns macOS Notification Center dispatch.
+- Role containers receive `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock`.
+- The construct image includes `jackin-notify`, a hook-friendly helper:
+
+```sh
+jackin-notify --title "agent waiting" --body "Need operator input" --urgency normal
+```
+
+This is intentionally lower-level than the final MCP server. It lets role hooks and agent-authored scripts send attention pings immediately while the MCP contract and runtime auto-registration are completed.
 
 ## What the operator gets
 
@@ -47,6 +59,7 @@ The pieces:
   - macOS — `osascript -e 'display notification …'` or the `UserNotifications` framework via a small Swift helper. Sound escalation via `afplay` / `NSSound`.
   - Linux — `notify-send` (libnotify) or the org.freedesktop.Notifications D-Bus API. Sound via `paplay` / `aplay`.
   - Windows — out of scope for the first phase; revisit when jackin' supports Windows hosts.
+- **Bridge helper while the MCP/event path matures.** Until the MCP server and event stream land, `jackin-notify` exposes the same host-notification path for hooks and scripts over the daemon socket mounted at `/jackin/daemon.sock`. This validates the container-to-host notification transport without making it the final state source.
 - **Click-to-focus adapter.** The notification carries an action that, when activated, runs a host-side command to focus the right terminal tab. The first Desktop slice should implement Ghostty only, matching the [jackin' Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) v1 launch contract. Other terminal emulators get a notification without click focus until their adapters are deliberately added.
 
 ## Per-workspace / per-role policy
@@ -108,10 +121,10 @@ A minimal cut to validate the shape:
 
 1. Consume effective `blocked` and derived `done` transitions from the [agent runtime status authority](/reference/roadmap/agent-runtime-status/).
 2. Optional `jackin-attention` MCP server, baked into construct, auto-registered for every agent runtime jackin' supports, carrying note/urgency metadata rather than acting as the canonical state source.
-3. Daemon adapter listening on the per-container control channel, dispatching macOS Notification Center notifications.
+3. Daemon adapter listening on the per-container control channel, dispatching macOS Notification Center notifications. The base adapter has landed through `jackin daemon notify` and `jackin-notify`; high urgency requests the native `Glass` notification sound.
 4. Click action wired for Ghostty first; other terminals get the notification with no click action and a one-line "open this terminal manually" hint.
 5. `Notifications` tab in `jackin console` workspace editor — enable / mute / sound-escalation duration. No per-role overrides in v1.
-6. Linux `notify-send` adapter as part of the same phase (it's small and operators on Linux deserve parity from day one).
+6. Linux `notify-send` adapter later, after the macOS flow is validated.
 
 Not in phase 1: independent PTY-idle inference in the notification adapter, sound files beyond a single default, urgency-based sound differentiation, cross-terminal click-to-focus matrix, Windows support.
 
