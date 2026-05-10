@@ -40,10 +40,11 @@ pub enum SchemaVersion {
     Kubernetes(KubernetesVersion),
 }
 
+/// Field order is load-bearing: derived `Ord` compares `major` first, then
+/// `channel`, which gives the expected `v1alpha1 < v1beta1 < v1 < v2alpha1`
+/// ordering.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct KubernetesVersion {
-    /// Lexicographic compare goes major-then-channel, which is the intended
-    /// ordering for `vMAJORcCHANNEL_SEQ` schemas.
     major: NonZeroU32,
     channel: Channel,
 }
@@ -105,9 +106,10 @@ pub fn migrate_workspace_file_if_needed(path: &Path) -> anyhow::Result<bool> {
 /// Read `path`, run any pending migrations, write the result back atomically.
 ///
 /// Returns `Some(old_version)` when a migration ran, `None` when the file
-/// was already at `current_raw`. The caller is free to ignore the value;
-/// `migrate_manifest_file` uses it to print an operator-facing
-/// "Migrated manifest X -> Y" line.
+/// was already at `current_raw`. The framework also writes a
+/// `[jackin] {label} migrated {old} -> {current_raw}` line to stderr;
+/// callers that need the old version (e.g. `jackin-validate` for the role
+/// manifest line in `bin/validate.rs`) read it from this return value.
 pub fn migrate_file_if_needed(
     path: &Path,
     label: &str,
@@ -478,6 +480,48 @@ mod tests {
         assert!(Channel::Beta(nz(1)) < Channel::Stable);
         // Within a channel, sequence orders.
         assert!(Channel::Alpha(nz(1)) < Channel::Alpha(nz(2)));
+        // Cross-channel beats sequence: a high alpha is still less than any
+        // beta. A reorder that swapped Alpha/Beta in the declaration would
+        // pass the previous assertions but break this one.
+        assert!(Channel::Alpha(nz(99)) < Channel::Beta(nz(1)));
+    }
+
+    fn assert_registry_reaches(migrations: &[MigrationStep], current_raw: &str) {
+        let current = parse_version(current_raw).expect("current version parses");
+        let mut cursor = SchemaVersion::Legacy;
+        let mut steps_taken = 0;
+        while cursor < current {
+            let step = migrations
+                .iter()
+                .find(|s| {
+                    parse_registry_version(s.from)
+                        .map(|v| v == cursor)
+                        .unwrap_or(false)
+                })
+                .unwrap_or_else(|| panic!("no step from {cursor} in registry"));
+            let next = parse_registry_version(step.to)
+                .unwrap_or_else(|_| panic!("step.to {:?} does not parse", step.to));
+            assert!(
+                next > cursor,
+                "step {} -> {} is not strictly forward",
+                step.from,
+                step.to
+            );
+            cursor = next;
+            steps_taken += 1;
+            assert!(steps_taken <= migrations.len(), "registry has a cycle");
+        }
+        assert_eq!(cursor, current, "registry does not reach {current_raw}");
+    }
+
+    #[test]
+    fn config_migrations_chain_reaches_current() {
+        assert_registry_reaches(CONFIG_MIGRATIONS, CURRENT_CONFIG_VERSION);
+    }
+
+    #[test]
+    fn workspace_migrations_chain_reaches_current() {
+        assert_registry_reaches(WORKSPACE_MIGRATIONS, CURRENT_WORKSPACE_VERSION);
     }
 
     #[test]

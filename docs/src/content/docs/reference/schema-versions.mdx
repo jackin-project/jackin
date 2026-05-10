@@ -156,7 +156,9 @@ does not auto-write role repositories during normal role loading. Run
 | `[[claude.marketplaces]].sparse` | string array | No | `legacy` | Sparse checkout paths |
 | `[codex].model` | string | No | `legacy` | Codex model override |
 | `[amp]` | table | No | `legacy` | Empty marker table for Amp support |
-| `[hooks].pre_launch` | string | No | `legacy` | Relative pre-launch hook path |
+| `[hooks].setup_once` | string | No | `legacy` | Relative path to a one-time install script gated by a marker on the container writable layer |
+| `[hooks].source` | string | No | `legacy` | Relative path to a script dot-sourced into the entrypoint shell so `export` and `PATH` mutations reach the launched agent |
+| `[hooks].preflight` | string | No | `legacy` | Relative path to a per-start preflight script |
 | `[env.<NAME>]` | table | No | `legacy` | Interactive env prompt declaration |
 | `[env.<NAME>].default` | string | No | `legacy` | Default env value |
 | `[env.<NAME>].interactive` | bool | No | `legacy` | Prompt operator before launch |

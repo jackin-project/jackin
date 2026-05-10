@@ -75,11 +75,17 @@ pub fn load_workspace_files(
     let entries = match std::fs::read_dir(workspaces_dir) {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(workspaces),
-        Err(e) => return Err(e.into()),
+        Err(e) => {
+            return Err(e).with_context(|| {
+                format!("reading workspaces directory {}", workspaces_dir.display())
+            });
+        }
     };
 
     for entry in entries {
-        let entry = entry?;
+        let entry = entry.with_context(|| {
+            format!("scanning workspaces directory {}", workspaces_dir.display())
+        })?;
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
@@ -150,7 +156,8 @@ fn migrate_legacy_workspaces(
 
 pub fn atomic_write(path: &Path, contents: &str) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating parent directory {}", parent.display()))?;
     }
     // Suffix shape: `<filename>.tmp.<pid>.<counter>`. PID covers cross-process
     // collisions; the counter covers concurrent writers in the same process.
@@ -212,11 +219,17 @@ impl AppConfig {
                     Some(raw)
                 } else {
                     crate::config::migrations::migrate_config_file_if_needed(&paths.config_file)?;
-                    Some(std::fs::read_to_string(&paths.config_file)?)
+                    Some(
+                        std::fs::read_to_string(&paths.config_file).with_context(|| {
+                            format!("re-reading {} after migration", paths.config_file.display())
+                        })?,
+                    )
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(e.into()),
+            Err(e) => {
+                return Err(e).with_context(|| format!("reading {}", paths.config_file.display()));
+            }
         };
 
         let mut config = load_split_config(paths, contents_opt)?;
@@ -568,6 +581,31 @@ workdir = "/workspace/prod"
             })
             .collect();
         assert!(leaks.is_empty(), "leftover staged files: {leaks:?}");
+    }
+
+    #[test]
+    fn load_workspace_files_migrates_legacy_split_file_in_place() {
+        // Pin the contract that legacy `workspaces/<name>.toml` files (no
+        // `version` key) get rewritten on first load. Without this test the
+        // migrate-on-scan call in `load_workspace_files` is unreachable in
+        // tests — every other workspace fixture uses `version = "v1alpha1"`.
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+        std::fs::write(
+            paths.workspaces_dir.join("prod.toml"),
+            "# keep me\nworkdir = \"/workspace/prod\"\n",
+        )
+        .unwrap();
+
+        let map = load_workspace_files(&paths.workspaces_dir).unwrap();
+        assert!(map.contains_key("prod"));
+
+        let on_disk = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
+        let parsed: toml::Value = toml::from_str(&on_disk).unwrap();
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha1");
+        assert!(on_disk.contains("# keep me"), "{on_disk}");
     }
 
     #[test]

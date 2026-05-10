@@ -113,9 +113,9 @@ This makes it practical for the jackin maintainer to migrate all first-party rol
 
 ## Relationship to the pre-release rule
 
-<RepoFile path="AGENTS.md" /> currently states: "Do not write migration code, compatibility shims, fallback parsers for old field names, 'tolerant ignore + warn' handlers, or deprecation warnings. Make the new shape the only shape; let stale configs fail with the standard parser error." That rule was written for a pre-release project where breaking changes were expected and no users had long-lived configs worth preserving.
+<RepoFile path="AGENTS.md" /> states: "Do not write migration code, compatibility shims, fallback parsers for old field names, 'tolerant ignore + warn' handlers, or deprecation warnings. Make the new shape the only shape; let stale configs fail with the standard parser error." This rule keeps the project moving fast on surfaces where breaking changes are cheap.
 
-This roadmap item is the **transition point** out of that rule for config and manifest files. Once the migration framework ships, the AGENTS.md pre-release exemption retires for `config.toml`, per-workspace files, and `jackin.role.toml`: breaking schema changes must be accompanied by a migration function and a version bump. The pre-release exemption remains in force for other surfaces (CLI flags, internal Rust APIs) until the first tagged release.
+The migration framework carves out an exception for the three file kinds operators and role authors actively edit: `config.toml`, per-workspace files, and `jackin.role.toml`. Breaking schema changes to those files must bump the version and add a migration step. The pre-release exemption stays in force for other surfaces (CLI flags, internal Rust APIs) until the first tagged release.
 
 ## Implementation phases
 
@@ -154,5 +154,5 @@ This roadmap item is the **transition point** out of that rule for config and ma
 - <RepoFile path="src/config/mod.rs" /> — `AppConfig` and workspace config structs.
 - [Split config.toml into per-workspace files](/reference/roadmap/split-workspace-config-files/) — sibling ergonomics item; migration must handle both the monolithic and split layouts if both can exist in the field.
 - [Agent version pinning](/reference/roadmap/reproducibility-pinning/) — related: pinning roles to tagged versions implies a version relationship between the jackin binary and the role manifest schema.
-- [Configuration File](/reference/configuration/) — internals reference; `version` and migration behavior are documented here once Phase 1 ships.
+- [Configuration File](/reference/configuration/) — internals reference; covers `version` and migration behavior.
 - [Schema Versions](/reference/schema-versions/) — canonical history of schema versions, fields, and migration changes.
