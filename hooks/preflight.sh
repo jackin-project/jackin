@@ -10,20 +10,6 @@ log()  { printf '[brown-pre-launch] %s\n' "$*"; }
 warn() { printf '[brown-pre-launch] WARNING: %s\n' "$*" >&2; }
 err()  { printf '[brown-pre-launch] ERROR: %s\n'   "$*" >&2; }
 
-# Gradle reads POSTGRESQL_DB_HOST to reach the docker-compose Postgres.
-# TODO: drop the DOCKER_HOST fallback once jackin-project/jackin#32
-# ships and JACKIN_DIND_HOSTNAME is always set.
-if [ -n "${JACKIN_DIND_HOSTNAME:-}" ]; then
-    export POSTGRESQL_DB_HOST="$JACKIN_DIND_HOSTNAME"
-elif [ -n "${DOCKER_HOST:-}" ]; then
-    export POSTGRESQL_DB_HOST
-    POSTGRESQL_DB_HOST="$(echo "$DOCKER_HOST" | sed 's|tcp://||;s|:.*||')"
-    if [ -z "${POSTGRESQL_DB_HOST}" ]; then
-        err "failed to derive POSTGRESQL_DB_HOST from DOCKER_HOST=${DOCKER_HOST}"
-        exit 1
-    fi
-fi
-
 if [ -n "${CONTEXT7_API_KEY:-}" ]; then
     log "configuring Context7 MCP server"
     # Pass via env, not `--api-key`, to keep the key out of /proc/<pid>/cmdline.
