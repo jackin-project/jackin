@@ -1,13 +1,17 @@
 pub use crate::env_model::{JACKIN_DIND_HOSTNAME_ENV_NAME, JACKIN_ENV_NAME, JACKIN_ENV_VALUE};
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 
+pub mod migrations;
 pub mod validate;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoleManifest {
+    #[serde(default = "migrations::current_manifest_version", rename = "version")]
+    pub version: String,
     pub dockerfile: String,
     /// Pre-built Docker image published to a registry. When set, `jackin
     /// console` pulls this image and layers only the agent install on top,
@@ -131,6 +135,10 @@ impl RoleManifest {
     pub fn load(repo_dir: &Path) -> anyhow::Result<Self> {
         let manifest_path = repo_dir.join("jackin.role.toml");
         let contents = std::fs::read_to_string(&manifest_path)?;
+        let doc: toml_edit::DocumentMut = contents
+            .parse()
+            .with_context(|| format!("parsing {}", manifest_path.display()))?;
+        crate::manifest::migrations::validate_manifest_version(&doc, &display_role_name(repo_dir))?;
         let manifest: Self = toml::from_str(&contents)?;
         let _warnings = crate::manifest::validate::validate_agent_consistency(&manifest)?;
         Ok(manifest)
@@ -151,6 +159,19 @@ impl RoleManifest {
     }
 }
 
+fn display_role_name(repo_dir: &Path) -> String {
+    let leaf = repo_dir.file_name().and_then(|name| name.to_str());
+    let parent = repo_dir
+        .parent()
+        .and_then(|path| path.file_name())
+        .and_then(|name| name.to_str());
+    match (parent, leaf) {
+        (Some(parent), Some("default" | "branches")) => parent.to_string(),
+        (_, Some(name)) => name.to_string(),
+        _ => repo_dir.display().to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,7 +182,8 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp"]
 
 [claude]
@@ -192,7 +214,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 model = "sonnet"
@@ -211,7 +234,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["codex"]
 
 [codex]
@@ -230,7 +254,8 @@ model = "gpt-5"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["claude", "foo"]
 
 [claude]
@@ -244,11 +269,49 @@ plugins = []
     }
 
     #[test]
-    fn loads_manifest_with_plugins() {
+    fn rejects_legacy_manifest_without_migrate() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
             r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let err = RoleManifest::load(temp.path()).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("manifest is at legacy"), "{msg}");
+        assert!(msg.contains("jackin-validate --migrate"), "{msg}");
+    }
+
+    #[test]
+    fn rejects_newer_manifest_version() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"version = "v2alpha1"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let err = RoleManifest::load(temp.path()).unwrap_err();
+        assert!(err.to_string().contains("only understands up to v1alpha1"));
+    }
+
+    #[test]
+    fn loads_manifest_with_plugins() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = ["code-review@claude-plugins-official"]
@@ -269,7 +332,8 @@ plugins = ["code-review@claude-plugins-official"]
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = ["superpowers@superpowers-marketplace"]
@@ -302,7 +366,8 @@ sparse = ["plugins", ".claude-plugin"]
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -331,7 +396,8 @@ source = "jackin-project/jackin-marketplace"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 
@@ -352,7 +418,8 @@ source = "obra/superpowers-marketplace"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [identity]
 name = "Agent Smith"
@@ -373,7 +440,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [identity]
 name = "Agent Smith"
@@ -394,7 +462,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -412,7 +481,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 published_image = "docker.io/myorg/my-role:latest"
 
 [claude]
@@ -434,7 +504,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -452,7 +523,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 unknown_field = true
 
 [claude]
@@ -471,7 +543,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -490,7 +563,8 @@ typo = "oops"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [identity]
 name = "Smith"
@@ -512,7 +586,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -536,7 +611,8 @@ pre_launch = "hooks/pre-launch.sh"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -554,7 +630,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -576,7 +653,8 @@ post_launch = "bad"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -600,7 +678,8 @@ default = "docker"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -626,7 +705,8 @@ options = ["project1", "project2"]
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -655,7 +735,8 @@ prompt = "Branch:"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -679,7 +760,8 @@ prompt = "API key (optional):"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -697,7 +779,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []

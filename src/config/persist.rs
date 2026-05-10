@@ -3,6 +3,7 @@ use crate::paths::JackinPaths;
 use anyhow::Context;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use toml_edit::DocumentMut;
 
 pub fn validate_workspace_file_stem(name: &str) -> anyhow::Result<()> {
     if name.is_empty() {
@@ -81,6 +82,7 @@ pub fn load_workspace_files(
             .ok_or_else(|| anyhow::anyhow!("invalid workspace filename {}", path.display()))?;
         validate_workspace_file_stem(stem)
             .with_context(|| format!("invalid workspace filename {}", path.display()))?;
+        crate::config::migrations::migrate_workspace_file_if_needed(&path)?;
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("reading workspace config {}", path.display()))?;
         let workspace = toml::from_str(&raw)
@@ -155,7 +157,14 @@ impl AppConfig {
         paths.ensure_base_dirs()?;
 
         let contents_opt = match std::fs::read_to_string(&paths.config_file) {
-            Ok(c) => Some(c),
+            Ok(raw) => {
+                if config_needs_split_migration(&raw)? {
+                    Some(raw)
+                } else {
+                    crate::config::migrations::migrate_config_file_if_needed(&paths.config_file)?;
+                    Some(std::fs::read_to_string(&paths.config_file)?)
+                }
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(e.into()),
         };
@@ -203,6 +212,16 @@ impl AppConfig {
         config.validate_workspaces()?;
         Ok(config)
     }
+}
+
+fn config_needs_split_migration(raw: &str) -> anyhow::Result<bool> {
+    let doc: DocumentMut = raw.parse().context("parsing config.toml")?;
+    let version = crate::config::migrations::doc_version(&doc, "config")?;
+    let has_legacy_workspaces = doc
+        .get("workspaces")
+        .and_then(toml_edit::Item::as_table)
+        .is_some_and(|workspaces| !workspaces.is_empty());
+    Ok(version == crate::config::migrations::SchemaVersion::Legacy && has_legacy_workspaces)
 }
 
 #[cfg(test)]
@@ -259,6 +278,41 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
             msg.contains("unknown variant `bogus`") || msg.contains("invalid auth_forward mode"),
             "expected parse error rejecting `bogus`, got: {msg}"
         );
+    }
+
+    #[test]
+    fn load_or_init_migrates_legacy_config_version() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"# keep me
+
+[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+"#,
+        )
+        .unwrap();
+
+        let config = AppConfig::load_or_init(&paths).unwrap();
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+
+        assert_eq!(config.version, crate::config::CURRENT_CONFIG_VERSION);
+        assert!(out.contains(r#"version = "v1alpha1""#), "{out}");
+        assert!(out.contains("# keep me"), "{out}");
+    }
+
+    #[test]
+    fn load_or_init_rejects_newer_config_version() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, r#"version = "v2alpha1""#).unwrap();
+
+        let err = AppConfig::load_or_init(&paths).unwrap_err();
+
+        assert!(err.to_string().contains("only understands up to v1alpha1"));
     }
 
     #[test]
@@ -338,16 +392,60 @@ LOCAL = "only-prod"
         assert!(config.workspaces.contains_key("prod"));
 
         let global = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(global.contains(r#"version = "v1alpha1""#), "{global}");
         assert!(global.contains("[env]"), "{global}");
         assert!(!global.contains("[workspaces."), "{global}");
 
         let workspace = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
+        assert!(workspace.contains(r#"version = "v1alpha1""#), "{workspace}");
         assert!(
             workspace.contains(r#"workdir = "/workspace/prod""#),
             "{workspace}"
         );
         assert!(workspace.contains("[env]"), "{workspace}");
         assert!(workspace.contains(r#"LOCAL = "only-prod""#), "{workspace}");
+    }
+
+    #[test]
+    fn failed_split_migration_leaves_legacy_config_unchanged() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+        std::fs::write(
+            paths.workspaces_dir.join("prod.toml"),
+            r#"version = "v1alpha1"
+workdir = "/other"
+"#,
+        )
+        .unwrap();
+        let legacy = r#"[workspaces.prod]
+workdir = "/workspace/prod"
+"#;
+        std::fs::write(&paths.config_file, legacy).unwrap();
+
+        let err = AppConfig::load_or_init(&paths).unwrap_err();
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+
+        assert!(
+            err.to_string()
+                .contains("already exists with different contents")
+        );
+        assert_eq!(out, legacy);
+    }
+
+    #[test]
+    fn empty_legacy_workspaces_table_still_gets_version_stamp() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "[workspaces]\n").unwrap();
+
+        let config = AppConfig::load_or_init(&paths).unwrap();
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+
+        assert_eq!(config.version, crate::config::CURRENT_CONFIG_VERSION);
+        assert!(out.contains(r#"version = "v1alpha1""#), "{out}");
     }
 
     #[test]

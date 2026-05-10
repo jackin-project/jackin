@@ -12,7 +12,12 @@ fn validate_passes_for_valid_agent_repo() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
     )
     .unwrap();
     std::fs::write(temp.path().join(".dockerignore"), ".git\n").unwrap();
@@ -36,7 +41,12 @@ fn validate_fails_for_wrong_base_image() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
     )
     .unwrap();
     std::fs::write(temp.path().join(".dockerignore"), ".git\n").unwrap();
@@ -60,7 +70,12 @@ fn validate_allows_missing_dockerignore() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
     )
     .unwrap();
     std::fs::write(temp.path().join(".gitignore"), "target/\n").unwrap();
@@ -83,7 +98,13 @@ fn validate_fails_for_invalid_manifest() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        "dockerfile = \"Dockerfile\"\nunknown_field = true\n\n[claude]\nplugins = []\n",
+        r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
+unknown_field = true
+
+[claude]
+plugins = []
+"#,
     )
     .unwrap();
     std::fs::write(temp.path().join(".dockerignore"), ".git\n").unwrap();
@@ -108,7 +129,12 @@ fn validate_passes_when_manifest_uses_dockerfile_in_subdirectory() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        "dockerfile = \"docker/role.Dockerfile\"\n\n[claude]\nplugins = []\n",
+        r#"version = "v1alpha1"
+dockerfile = "docker/role.Dockerfile"
+
+[claude]
+plugins = []
+"#,
     )
     .unwrap();
 
@@ -130,7 +156,15 @@ fn validate_fails_for_invalid_pre_launch_hook() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        "dockerfile = \"Dockerfile\"\n\n[hooks]\npre_launch = \"hooks/pre-launch.sh\"\n\n[claude]\nplugins = []\n",
+        r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
+
+[hooks]
+pre_launch = "hooks/pre-launch.sh"
+
+[claude]
+plugins = []
+"#,
     )
     .unwrap();
 
@@ -149,4 +183,32 @@ fn validate_fails_with_no_args() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("Usage"));
+}
+
+#[test]
+fn validate_migrate_updates_legacy_manifest() {
+    let temp = tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+    )
+    .unwrap();
+
+    Command::cargo_bin("jackin-validate")
+        .unwrap()
+        .args(["--migrate", temp.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Migrated manifest legacy -> v1alpha1",
+        ))
+        .stdout(predicate::str::contains("All checks passed"));
+
+    let out = std::fs::read_to_string(temp.path().join("jackin.role.toml")).unwrap();
+    assert!(out.contains(r#"version = "v1alpha1""#), "{out}");
 }

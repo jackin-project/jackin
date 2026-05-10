@@ -80,7 +80,8 @@ trusted = true
     .unwrap();
     std::fs::write(
         repo_dir.join("jackin.role.toml"),
-        r#"dockerfile = "Dockerfile"
+        r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
 [claude]
@@ -188,7 +189,8 @@ trusted = true
     .unwrap();
     std::fs::write(
         repo_dir.join("jackin.role.toml"),
-        r#"dockerfile = "Dockerfile"
+        r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
 [claude]

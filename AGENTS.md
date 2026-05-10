@@ -15,7 +15,9 @@ This rule retires when the project gains additional human reviewers.
 
 ## Project status: pre-release (agent-only)
 
-Jackin has no released version — it is a proof-of-concept. **Breaking changes are expected and acceptable.** When schemas change (config TOML, on-disk state layout, CLI flags, role manifests, role/workspace/agent shapes), do not write migration code, compatibility shims, fallback parsers for old field names, "tolerant ignore + warn" handlers, or deprecation warnings. Make the new shape the only shape; let stale configs fail with the standard parser error.
+Jackin has no released version — it is a proof-of-concept. **Breaking changes are expected and acceptable.** When schemas change (on-disk state layout, CLI flags, role/workspace/agent shapes outside `config.toml` and `jackin.role.toml`), do not write migration code, compatibility shims, fallback parsers for old field names, "tolerant ignore + warn" handlers, or deprecation warnings. Make the new shape the only shape; let stale data fail with the standard parser error.
+
+`config.toml` and `jackin.role.toml` are exceptions: both are versioned schemas. Breaking changes to either file must bump the schema version and add a migration step.
 
 Do not memorialize old shapes in code comments ("formerly named X", "old location was Y") or in documentation files outside the changelog. The git history is the record of what changed; the code should describe only the current shape.
 

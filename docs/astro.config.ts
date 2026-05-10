@@ -126,6 +126,7 @@ export default defineConfig({
           items: [
             { label: 'Architecture', slug: 'reference/architecture' },
             { label: 'Configuration File', slug: 'reference/configuration' },
+            { label: 'Schema Versions', slug: 'reference/schema-versions' },
             { label: 'Codebase Map', slug: 'reference/codebase-map' },
             { label: 'Claude Token Orchestrator', slug: 'reference/claude-token-orchestrator' },
             {

@@ -52,6 +52,7 @@ impl ConfigEditor {
     /// materialize defaults, then reopens the resulting file.
     pub fn open(paths: &JackinPaths) -> anyhow::Result<Self> {
         if paths.config_file.exists() {
+            crate::config::migrations::migrate_config_file_if_needed(&paths.config_file)?;
             let raw = std::fs::read_to_string(&paths.config_file)
                 .with_context(|| format!("reading {}", paths.config_file.display()))?;
             let _ = crate::config::persist::load_split_config(paths, Some(raw))?;
@@ -1184,7 +1185,8 @@ workdir = "/b"
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        let original = r#"# Top-of-file note about this config
+        let original = r#"version = "v1alpha1"
+# Top-of-file note about this config
 [claude]
 auth_forward = "sync"
 

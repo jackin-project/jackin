@@ -30,12 +30,16 @@ The configuration is TOML. Global settings live at
 `~/.config/jackin/workspaces/`. The CLI and console manage both locations
 for you, so you generally don't need to edit them by hand.
 
+Top-level `version` is the config schema version. jackin' writes `version = "v1alpha1"` today. Older config files with no `version` are treated as legacy and migrated automatically on startup before parsing. See [Schema Versions](/reference/schema-versions/) for the full version history and migration matrix.
+
 ### Agent auth-forward settings
 
 `auth_forward` is configured per agent (`claude`, `codex`, `amp`) at three
 layers, with most-specific wins:
 
 ```toml
+version = "v1alpha1"
+
 # Layer 1 — global default (per agent)
 [claude]
 auth_forward = "sync"  # "sync" (default), "api_key", "oauth_token", or "ignore"

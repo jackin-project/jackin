@@ -1069,6 +1069,7 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
 
         let original = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/workspace/project".into(),
             mounts: vec![mount(tmp.path().to_str().unwrap(), "/workspace/project")],
             ..WorkspaceConfig::default()
@@ -1118,6 +1119,7 @@ mod tests {
         // `edit_workspace_toggles_keep_awake_when_set` enforces.
         use crate::workspace::KeepAwakeConfig;
         let original = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/workspace/proj".into(),
             mounts: vec![mount("/work", "/workspace/proj")],
             keep_awake: KeepAwakeConfig { enabled: false },
@@ -1153,6 +1155,7 @@ mod tests {
     #[test]
     fn save_editor_opens_confirm_save_on_edit_driven_collapse() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
             ..Default::default()
@@ -1195,6 +1198,7 @@ mod tests {
         // PendingCommit, drive commit_editor_save, and write the
         // collapsed mount set.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
             ..Default::default()
@@ -1229,6 +1233,7 @@ mod tests {
     #[test]
     fn cancelling_confirm_save_keeps_pending_intact() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
             ..Default::default()
@@ -1281,6 +1286,7 @@ mod tests {
         // planner errors surface as an inline banner, NOT as the new
         // ErrorPopup (which is reserved for commit-time failures).
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work/sub".into(),
             mounts: vec![ro_mount("/work/sub", "/work/sub")],
             ..Default::default()
@@ -1320,6 +1326,7 @@ mod tests {
         // "missing workspace name" — gating prevents the operator from
         // committing a nameless workspace.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/seed".into(),
             mounts: vec![mount("/seed", "/seed")],
             ..Default::default()
@@ -1356,6 +1363,7 @@ mod tests {
         // edit-mode behavior covered by
         // `readonly_mismatch_produces_error_banner_no_write`.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/seed".into(),
             mounts: vec![mount("/seed", "/seed")],
             ..Default::default()
@@ -1392,6 +1400,7 @@ mod tests {
     #[test]
     fn pre_existing_collapse_produces_prune_error_banner() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work".into(),
             mounts: vec![
                 mount("/work", "/work"),
@@ -1435,6 +1444,7 @@ mod tests {
     #[test]
     fn s_with_zero_changes_is_noop() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
@@ -1461,6 +1471,7 @@ mod tests {
     #[test]
     fn s_with_changes_opens_confirm_save_modal() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
@@ -1492,6 +1503,7 @@ mod tests {
         // `ExitIntent::Save` dispatcher). After Enter on the resulting
         // ConfirmSave modal, we should land back on ManagerStage::List.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
@@ -1520,6 +1532,7 @@ mod tests {
         // on "z-second" (screen index 2 = 1 + 1), not on "a-first" or the
         // CWD row.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
@@ -1528,6 +1541,7 @@ mod tests {
         config.workspaces.insert(
             "a-first".to_string(),
             WorkspaceConfig {
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                 workdir: "/a".into(),
                 mounts: vec![mount("/a", "/a")],
                 ..Default::default()
@@ -1560,6 +1574,7 @@ mod tests {
     #[test]
     fn exit_on_success_save_does_not_show_success_toast() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
@@ -1603,6 +1618,7 @@ mod tests {
         // against the live mount list and bails out with
         // "unknown workspace mount destination".
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
@@ -1699,6 +1715,7 @@ mod tests {
         // `s` + Enter on ConfirmSave returns the operator to the list,
         // consistent with the Esc→Save path.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
@@ -1727,11 +1744,13 @@ mod tests {
         // write hits ConfigEditor::rename_workspace's duplicate-name
         // guard and we expect an ErrorPopup.
         let ws_a = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/a".into(),
             mounts: vec![mount("/a", "/a")],
             ..Default::default()
         };
         let ws_b = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/b".into(),
             mounts: vec![mount("/b", "/b")],
             ..Default::default()
@@ -1766,11 +1785,13 @@ mod tests {
     #[test]
     fn error_popup_dismiss_returns_to_editor_with_changes_intact() {
         let ws_a = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/a".into(),
             mounts: vec![mount("/a", "/a")],
             ..Default::default()
         };
         let ws_b = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/b".into(),
             mounts: vec![mount("/b", "/b")],
             ..Default::default()
@@ -1909,6 +1930,7 @@ mod tests {
     #[test]
     fn edit_mode_confirm_save_shows_diff() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/old".into(),
             mounts: vec![mount("/old", "/old")],
             ..Default::default()
@@ -1945,6 +1967,7 @@ mod tests {
         // on-disk write was already correct; this pins the modal preview
         // so a future refactor cannot silently re-omit the diff line.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             keep_awake: KeepAwakeConfig { enabled: false },
@@ -2000,6 +2023,7 @@ mod tests {
         // validation, so anchor it on `dst`. The drift safeguard cares
         // about `src`, not `workdir`, so this doesn't perturb the test.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: dst.into(),
             mounts: vec![MountConfig {
                 src: original_src.into(),
@@ -2191,6 +2215,7 @@ mod tests {
     #[test]
     fn confirm_save_integrates_mount_collapse_section_when_plan_has_collapses() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
             ..Default::default()
