@@ -11,7 +11,7 @@ fn main() -> ExitCode {
     let (migrate, repo_arg) = match parse_args(&args[1..]) {
         Ok(parsed) => parsed,
         Err(err) => {
-            eprintln!("{err}");
+            eprintln!("error: {err}");
             eprintln!("Usage: jackin-validate [--migrate] <role-repo-path>");
             return ExitCode::FAILURE;
         }
@@ -19,7 +19,7 @@ fn main() -> ExitCode {
 
     let repo_dir = PathBuf::from(repo_arg);
     if !repo_dir.is_dir() {
-        eprintln!("Error: {} is not a directory", repo_dir.display());
+        eprintln!("error: {} is not a directory", repo_dir.display());
         return ExitCode::FAILURE;
     }
 
@@ -48,24 +48,25 @@ fn main() -> ExitCode {
 }
 
 // Accept `--migrate` in any position so `jackin-validate <path> --migrate`
-// works as well as `jackin-validate --migrate <path>`.
+// works as well as `jackin-validate --migrate <path>`. Errors return plain
+// messages; main prepends a single `error:` prefix at print time.
 fn parse_args(args: &[String]) -> Result<(bool, &str), String> {
     let mut migrate = false;
     let mut repo: Option<&str> = None;
     for arg in args {
         if arg == "--migrate" {
             if migrate {
-                return Err("error: --migrate specified twice".into());
+                return Err("--migrate specified twice".into());
             }
             migrate = true;
         } else if arg.starts_with("--") {
-            return Err(format!("error: unknown flag {arg}"));
+            return Err(format!("unknown flag {arg}"));
         } else if repo.is_some() {
-            return Err("error: too many positional arguments".into());
+            return Err("too many positional arguments".into());
         } else {
             repo = Some(arg);
         }
     }
-    let repo = repo.ok_or_else(|| "error: missing role-repo-path".to_string())?;
+    let repo = repo.ok_or_else(|| "missing role-repo-path".to_string())?;
     Ok((migrate, repo))
 }

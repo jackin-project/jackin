@@ -21,8 +21,8 @@ pub fn current_manifest_version() -> String {
 ///
 /// Returns `Some((old, new))` when a migration ran, `None` when the manifest
 /// was already current. `old` and `new` are display strings (`"legacy"`,
-/// `"v1alpha1"`) rather than `SchemaVersion` to keep the internal type
-/// `pub(crate)`.
+/// `"v1alpha1"`) — `jackin-validate --migrate` prints them as-is and does
+/// not need the structured `SchemaVersion`.
 pub fn migrate_manifest_file(path: &Path) -> anyhow::Result<Option<(String, String)>> {
     let outcome = crate::config::migrations::migrate_file_if_needed(
         path,
