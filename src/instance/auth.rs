@@ -811,7 +811,8 @@ mod tests {
     fn simple_manifest(temp: &tempfile::TempDir) -> crate::manifest::RoleManifest {
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -1909,7 +1910,7 @@ mod github_auth_tests {
     }
 
     /// Malformed YAML (e.g. mismatched quotes) must NOT yield a
-    /// partial result. The serde_yaml_ng parser returns an error;
+    /// partial result. The `serde_yaml_ng` parser returns an error;
     /// `parse_gh_hosts_yml` maps that to `None` so callers fall
     /// through to `HostMissing` instead of writing a bogus token.
     #[test]

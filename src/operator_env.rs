@@ -400,24 +400,54 @@ impl OpRunner for OpCli {
         use std::io::Read;
         use std::process::{Command, Stdio};
 
-        let mut cmd = Command::new(&self.binary);
-        if let Some(account) = self.account.as_deref() {
-            cmd.args(["--account", account]);
-        }
-        let mut child = cmd
-            .args(["read", reference])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "failed to spawn 1Password CLI {:?}: {e} \
-                     (is `op` installed and on your PATH? see \
-                     https://developer.1password.com/docs/cli/)",
-                    self.binary
-                )
-            })?;
+        let mut child = {
+            let mut child = None;
+            let mut last_err = None;
+            for _ in 0..5 {
+                let mut cmd = Command::new(&self.binary);
+                if let Some(account) = self.account.as_deref() {
+                    cmd.args(["--account", account]);
+                }
+                match cmd
+                    .args(["read", reference])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                {
+                    Ok(spawned) => {
+                        child = Some(spawned);
+                        break;
+                    }
+                    Err(e) if e.raw_os_error() == Some(26) => {
+                        last_err = Some(e);
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    Err(e) => {
+                        return Err(anyhow::anyhow!(
+                            "failed to spawn 1Password CLI {:?}: {e} \
+                             (is `op` installed and on your PATH? see \
+                             https://developer.1password.com/docs/cli/)",
+                            self.binary
+                        ));
+                    }
+                }
+            }
+            child.map_or_else(
+                || {
+                    Err(anyhow::anyhow!(
+                        "failed to spawn 1Password CLI {:?}: {} \
+                         (is `op` installed and on your PATH? see \
+                         https://developer.1password.com/docs/cli/)",
+                        self.binary,
+                        last_err
+                            .as_ref()
+                            .map_or_else(|| "unknown error".to_string(), ToString::to_string)
+                    ))
+                },
+                Ok,
+            )?
+        };
 
         // Channel-and-thread wait pattern so we avoid a new async dep,
         // and the wait thread never holds the mutex across a blocking
@@ -1839,12 +1869,10 @@ mod tests {
     fn op_cli_invokes_binary_and_returns_stdout() {
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op");
-        std::fs::write(
+        write_fake_op(
             &bin_path,
             "#!/bin/sh\nif [ \"$1\" = \"read\" ] && [ \"$2\" = \"op://Personal/api/token\" ]; then printf '%s' 'tok-123'; exit 0; fi\nexit 99\n",
-        )
-        .unwrap();
-        make_executable(&bin_path);
+        );
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let out = runner.read("op://Personal/api/token").unwrap();
@@ -1855,8 +1883,7 @@ mod tests {
     fn op_cli_strips_trailing_newline_from_op_read_output() {
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-newline");
-        std::fs::write(&bin_path, "#!/bin/sh\nprintf 'tok-123\\n'\nexit 0\n").unwrap();
-        make_executable(&bin_path);
+        write_fake_op(&bin_path, "#!/bin/sh\nprintf 'tok-123\\n'\nexit 0\n");
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let out = runner.read("op://Personal/api/token").unwrap();
@@ -1873,8 +1900,7 @@ mod tests {
     fn op_cli_strips_only_one_trailing_newline_preserves_value_newline() {
         let dir = tempfile::tempdir().unwrap();
         let bin_path = dir.path().join("fake-op-double-newline");
-        std::fs::write(&bin_path, "#!/bin/sh\nprintf 'line1\\nline2\\n'\nexit 0\n").unwrap();
-        make_executable(&bin_path);
+        write_fake_op(&bin_path, "#!/bin/sh\nprintf 'line1\\nline2\\n'\nexit 0\n");
 
         let runner = OpCli::with_binary(bin_path.to_string_lossy().to_string());
         let out = runner.read("op://Personal/api/multi").unwrap();
@@ -2028,6 +2054,15 @@ mod tests {
 
     #[cfg(not(unix))]
     fn make_executable(_path: &std::path::Path) {}
+
+    fn write_fake_op(path: &std::path::Path, script: &str) {
+        use std::io::Write;
+        let mut file = std::fs::File::create(path).unwrap();
+        file.write_all(script.as_bytes()).unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+        make_executable(path);
+    }
 
     #[test]
     fn truncate_stderr_returns_input_for_short_string() {

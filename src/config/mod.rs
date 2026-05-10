@@ -6,12 +6,17 @@ pub use crate::workspace::MountConfig;
 pub use crate::workspace::WorkspaceRoleOverride;
 
 pub mod editor;
+pub(crate) mod migrations;
 mod mounts;
-mod persist;
+pub(crate) mod persist;
 mod roles;
 mod workspaces;
 
 pub use editor::{ConfigEditor, EnvScope};
+pub use migrations::{
+    CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, migrate_config_file_if_needed,
+    migrate_workspace_file_if_needed,
+};
 pub use mounts::DockerMounts;
 pub(crate) use mounts::MountEntry;
 pub use roles::{build_github_env_layers, resolve_github_mode, resolve_mode};
@@ -266,8 +271,10 @@ pub struct DockerConfig {
     pub mounts: DockerMounts,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(default = "migrations::current_config_version", rename = "version")]
+    pub version: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -289,6 +296,22 @@ pub struct AppConfig {
     pub docker: DockerConfig,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub workspaces: BTreeMap<String, WorkspaceConfig>,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            version: CURRENT_CONFIG_VERSION.to_string(),
+            claude: None,
+            codex: None,
+            amp: None,
+            github: None,
+            env: BTreeMap::new(),
+            roles: BTreeMap::new(),
+            docker: DockerConfig::default(),
+            workspaces: BTreeMap::new(),
+        }
+    }
 }
 
 #[cfg(test)]

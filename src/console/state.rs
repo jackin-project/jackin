@@ -180,6 +180,7 @@ mod tests {
         config.workspaces.insert(
             "ws".to_string(),
             crate::workspace::WorkspaceConfig {
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                 workdir: workdir.clone(),
                 mounts: vec![crate::workspace::MountConfig {
                     src: workdir.clone(),
@@ -226,6 +227,7 @@ mod tests {
 
     fn workspace_with_allowed(allowed: &[&str]) -> crate::workspace::WorkspaceConfig {
         crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work".to_string(),
             mounts: vec![],
             allowed_roles: allowed.iter().map(|s| (*s).to_string()).collect(),

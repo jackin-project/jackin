@@ -175,7 +175,11 @@ The PR body is read in GitHub's renderer, which already wraps long lines at the 
 
 ## Reviewing a PR
 
-Two cross-cutting rules apply to every PR review (manual, agent-driven, or automated) before output ships:
+Three cross-cutting rules apply to every PR review (manual, agent-driven, or automated) before output ships:
+
+### Versioned-schema migration check
+
+Missing or stale fixtures under `tests/fixtures/migrations/` break the smooth-migration guarantee for operators upgrading from older versions. When the diff touches a struct serialized into `config.toml`, `~/.config/jackin/workspaces/<name>.toml`, or `jackin.role.toml`, verify the PR ships with all five required artifacts: version bump, migration step, new fixture directory, re-baked `after.toml` files for every existing `from_version`, and a new entry in the `schema-versions.mdx` timeline. The full rule lives in `AGENTS.md` under "Project status: pre-release."
 
 ### Accepted-exceptions catalog
 

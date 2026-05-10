@@ -1722,7 +1722,11 @@ mod tests {
         // The picker exposes its candidate list as the `roles` field —
         // pull the keys and assert "brown" was filtered out before the
         // picker was even seeded.
-        let labels: Vec<String> = picker.roles.iter().map(|c| c.key()).collect();
+        let labels: Vec<String> = picker
+            .roles
+            .iter()
+            .map(crate::selector::RoleSelector::key)
+            .collect();
         assert!(
             labels.iter().any(|s| s == "smith"),
             "smith must remain a candidate; got {labels:?}"

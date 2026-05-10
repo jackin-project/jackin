@@ -47,11 +47,14 @@ pub struct ConfigEditor {
 }
 
 impl ConfigEditor {
-    /// Loads the existing config file as a `DocumentMut`. If the file
-    /// does not exist, delegates to `AppConfig::load_or_init` to
-    /// materialize defaults, then reopens the resulting file.
+    /// Loads the existing config file as a `DocumentMut`. Performs both
+    /// schema-version and split-workspace migration before reading, so the
+    /// on-disk result matches what `AppConfig::load_or_init` would produce.
+    /// The recursion-when-missing branch covers the fresh-install case
+    /// where the file does not yet exist.
     pub fn open(paths: &JackinPaths) -> anyhow::Result<Self> {
         if paths.config_file.exists() {
+            crate::config::migrations::migrate_config_file_if_needed(&paths.config_file)?;
             let raw = std::fs::read_to_string(&paths.config_file)
                 .with_context(|| format!("reading {}", paths.config_file.display()))?;
             let _ = crate::config::persist::load_split_config(paths, Some(raw))?;
@@ -1169,9 +1172,8 @@ workdir = "/b"
         editor.save().unwrap();
 
         let round_tripped = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert_eq!(
-            round_tripped.contains("[workspaces."),
-            false,
+        assert!(
+            !round_tripped.contains("[workspaces."),
             "global file should contain only global config after split:\n{round_tripped}"
         );
         assert!(paths.workspaces_dir.join("prod.toml").exists());
@@ -1184,7 +1186,8 @@ workdir = "/b"
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        let original = r#"# Top-of-file note about this config
+        let original = r#"version = "v1alpha1"
+# Top-of-file note about this config
 [claude]
 auth_forward = "sync"
 
@@ -1865,10 +1868,10 @@ dst = "/a"
 
         let err = editor.save().unwrap_err();
 
+        let chain = format!("{err:#}");
         assert!(
-            err.to_string().contains("Is a directory")
-                || err.to_string().contains("is a directory"),
-            "{err}"
+            chain.contains("Is a directory") || chain.contains("is a directory"),
+            "{chain}"
         );
         assert!(
             paths.workspaces_dir.join("old-name.toml").exists(),
@@ -2149,7 +2152,7 @@ GH_TOKEN = "ghp_real"
         );
     }
 
-    /// Workspace with sibling content (allowed_roles, mounts) must
+    /// Workspace with sibling content (`allowed_roles`, mounts) must
     /// survive a github clear. Position-based prune bound prevents
     /// the walker from reaching the workspace identifier slot.
     #[test]

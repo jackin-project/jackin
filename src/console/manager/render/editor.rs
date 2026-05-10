@@ -2860,12 +2860,16 @@ mod auth_flat_rows_tests {
     fn role_with_override_renders_collapsed_header_then_sentinel() {
         use crate::config::{AgentAuthConfig, AuthForwardMode};
         use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
-        let mut ws = WorkspaceConfig::default();
-        ws.allowed_roles = vec!["the-architect".into(), "agent-smith".into()];
-        let mut over = WorkspaceRoleOverride::default();
-        over.claude = Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::Ignore,
-        });
+        let mut ws = WorkspaceConfig {
+            allowed_roles: vec!["the-architect".into(), "agent-smith".into()],
+            ..Default::default()
+        };
+        let over = WorkspaceRoleOverride {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::Ignore,
+            }),
+            ..Default::default()
+        };
         ws.roles.insert("the-architect".into(), over);
 
         let mut editor = EditorState::new_edit("ws".into(), ws);
@@ -2899,15 +2903,19 @@ mod auth_flat_rows_tests {
     fn role_with_override_when_expanded_emits_kind_rows() {
         use crate::config::{AgentAuthConfig, AuthForwardMode, CodexAuthConfig};
         use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
-        let mut ws = WorkspaceConfig::default();
-        ws.allowed_roles = vec!["the-architect".into()];
-        let mut over = WorkspaceRoleOverride::default();
-        over.claude = Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::Ignore,
-        });
-        over.codex = Some(CodexAuthConfig(AgentAuthConfig {
-            auth_forward: AuthForwardMode::ApiKey,
-        }));
+        let mut ws = WorkspaceConfig {
+            allowed_roles: vec!["the-architect".into()],
+            ..Default::default()
+        };
+        let over = WorkspaceRoleOverride {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::Ignore,
+            }),
+            codex: Some(CodexAuthConfig(AgentAuthConfig {
+                auth_forward: AuthForwardMode::ApiKey,
+            })),
+            ..Default::default()
+        };
         ws.roles.insert("the-architect".into(), over);
 
         let mut editor = EditorState::new_edit("ws".into(), ws);
@@ -3065,13 +3073,17 @@ mod auth_flat_rows_tests {
     fn github_role_override_emits_role_header_when_override_present() {
         use crate::config::{GithubAuthConfig, GithubAuthMode};
         use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
-        let mut ws = WorkspaceConfig::default();
-        ws.allowed_roles = vec!["the-architect".into()];
-        let mut over = WorkspaceRoleOverride::default();
-        over.github = Some(GithubAuthConfig {
-            auth_forward: GithubAuthMode::Ignore,
+        let mut ws = WorkspaceConfig {
+            allowed_roles: vec!["the-architect".into()],
             ..Default::default()
-        });
+        };
+        let over = WorkspaceRoleOverride {
+            github: Some(GithubAuthConfig {
+                auth_forward: GithubAuthMode::Ignore,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
         ws.roles.insert("the-architect".into(), over);
 
         let mut editor = EditorState::new_edit("ws".into(), ws);

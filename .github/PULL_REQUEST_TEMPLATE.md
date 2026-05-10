@@ -68,13 +68,14 @@ git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
 
 ```sh
 cargo fmt --check
-cargo clippy --lib
+cargo clippy --all-targets --all-features -- -D warnings
 ```
 
 ### Tests
 
 ```sh
-cargo test --lib -- <SCOPED_TEST_FILTER>
+cargo nextest run -E '<SCOPED_TEST_FILTER>'
+cargo nextest run --all-features
 ```
 
 <One sentence describing what the tests cover — provisioning, parser, error
