@@ -25,7 +25,7 @@ what you're after.
 
 ### One file per workspace, by design
 
-Saved workspaces live one-per-file under `~/.config/jackin/workspaces/` rather than as `[workspaces.<name>]` tables inside a single `config.toml`. The layout works directly with **dotfile managers** ([chezmoi](https://www.chezmoi.io/), [yadm](https://yadm.io/), or a plain git repository tracking `~/.config/jackin/`). Operators commonly want to:
+Saved workspaces live one-per-file under `~/.config/jackin/workspaces/` rather than as `[workspaces.<name>]` tables inside a single `config.toml`. The layout works directly with a **dotfile manager** like [chezmoi](https://www.chezmoi.io/) tracking `~/.config/jackin/`. Operators commonly want to:
 
 - **Version-control selectively** — track `config.toml` globally, include only team-relevant workspace files, leave the rest out via `.gitignore`, or keep workspaces private per-machine.
 - **Restore the full setup on a new machine** by checking out the dotfile repo and running `chezmoi apply` (or equivalent), with no manual TOML reconstruction.
