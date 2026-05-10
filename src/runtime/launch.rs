@@ -358,13 +358,22 @@ fn resolve_terminal_setup(cache_dir: &std::path::Path) -> (String, Option<String
     }
 
     // Exotic terminal — try to export and compile the terminfo entry.
-    export_host_terminfo(&host_term, cache_dir).map_or_else(
-        |_| ("xterm-256color".to_string(), None),
-        |terminfo_dir| {
+    // Errors here are recoverable: fall back to xterm-256color so the
+    // session still launches, but log the cause so an operator running
+    // with `--debug` can see why their host's TERM didn't make it in.
+    match export_host_terminfo(&host_term, cache_dir) {
+        Ok(terminfo_dir) => {
             let mount = format!("{}:/home/agent/.terminfo:ro", terminfo_dir.display());
             (host_term, Some(mount))
-        },
-    )
+        }
+        Err(e) => {
+            crate::debug_log!(
+                "terminfo",
+                "export failed for TERM={host_term}: {e:#}; falling back to xterm-256color (container loses {host_term}-specific capabilities)",
+            );
+            ("xterm-256color".to_string(), None)
+        }
+    }
 }
 
 /// Export the host's terminfo entry for `term` into `cache_dir/terminfo/`.
@@ -376,76 +385,147 @@ fn export_host_terminfo(
     term: &str,
     cache_dir: &std::path::Path,
 ) -> anyhow::Result<std::path::PathBuf> {
+    anyhow::ensure!(!term.is_empty(), "terminal name is empty");
     let terminfo_dir = cache_dir.join("terminfo");
 
-    // Check if already cached using the directory layout Linux ncurses
-    // expects (`x/xterm-ghostty`, `g/ghostty`, ...).
-    let entry_path = linux_terminfo_entry_path(&terminfo_dir, term);
-    if entry_path.exists() {
+    let linux_entry_path = linux_terminfo_entry_path(&terminfo_dir, term);
+    if linux_entry_path.exists() {
+        return Ok(terminfo_dir);
+    }
+
+    // A cache built by an earlier jackin on macOS lives only under the
+    // hex-byte dir; relocate it instead of re-running infocmp+tic.
+    let hex_entry_path = macos_terminfo_entry_path(&terminfo_dir, term);
+    if hex_entry_path.exists() {
+        copy_to_linux_layout(&hex_entry_path, &linux_entry_path)?;
         return Ok(terminfo_dir);
     }
 
     // Export the source from the host.
+    crate::debug_log!("terminfo", "infocmp -x {term}");
     let infocmp = std::process::Command::new("infocmp")
         .args(["-x", term])
         .output()?;
-    anyhow::ensure!(infocmp.status.success(), "infocmp failed for {term}");
+    anyhow::ensure!(
+        infocmp.status.success(),
+        "infocmp failed for {term}: {}",
+        String::from_utf8_lossy(&infocmp.stderr).trim()
+    );
 
     std::fs::create_dir_all(&terminfo_dir)?;
 
-    // Compile into the cache directory.
-    // Suppress stderr — tic emits harmless warnings for some terminal
-    // entries (e.g. Ghostty's "alias multiply defined" notice).
-    let tic = std::process::Command::new("tic")
+    // Compile into the cache directory. Capture (don't suppress) stderr
+    // so a non-zero `tic` exit surfaces the real cause instead of the
+    // generic "tic failed" message; `tic`'s harmless success-time
+    // warnings (e.g. Ghostty's "alias multiply defined") are dropped on
+    // the success branch below.
+    crate::debug_log!("terminfo", "tic -x -o {} -", terminfo_dir.display());
+    let mut tic = std::process::Command::new("tic")
         .args(["-x", "-o"])
         .arg(&terminfo_dir)
         .arg("-")
         .stdin(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn();
-    let mut tic = tic?;
-    if let Some(ref mut stdin) = tic.stdin {
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    {
         use std::io::Write;
+        let mut stdin = tic
+            .stdin
+            .take()
+            .expect("tic stdin was configured as Stdio::piped");
         stdin.write_all(&infocmp.stdout)?;
     }
-    let status = tic.wait()?;
-    anyhow::ensure!(
-        status.success(),
-        "tic failed to compile terminfo for {term}"
-    );
+    let output = tic.wait_with_output()?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "tic failed to compile terminfo for {term}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
     normalize_terminfo_entry_path(&terminfo_dir, term)?;
 
     Ok(terminfo_dir)
 }
 
+/// Path Linux ncurses (inside the role container) reads to resolve
+/// `term`: `<first-char>/<term>`, e.g. `x/xterm-ghostty`. Caller
+/// guarantees `term` is non-empty; ASCII first char is assumed (every
+/// real terminfo name follows that — `xterm-*`, `ghostty`, `screen-*`,
+/// `kitty`, ...).
 fn linux_terminfo_entry_path(terminfo_dir: &std::path::Path, term: &str) -> std::path::PathBuf {
-    let first_char = term.chars().next().unwrap_or('x');
-    terminfo_dir.join(first_char.to_string()).join(term)
+    let first = term
+        .chars()
+        .next()
+        .expect("non-empty term checked by caller");
+    terminfo_dir.join(first.to_string()).join(term)
 }
 
+/// Path macOS BSD `tic` writes to: `<hex-byte>/<term>`, e.g.
+/// `78/xterm-ghostty` (since `'x' == 0x78`). Hex is lowercase to match
+/// what BSD `tic` actually emits. Caller guarantees `term` is
+/// non-empty.
+fn macos_terminfo_entry_path(terminfo_dir: &std::path::Path, term: &str) -> std::path::PathBuf {
+    let first_byte = term
+        .bytes()
+        .next()
+        .expect("non-empty term checked by caller");
+    terminfo_dir.join(format!("{first_byte:x}")).join(term)
+}
+
+/// Reconcile macOS-`tic`'s hex-byte directory layout with the
+/// first-char layout Linux ncurses expects so the mounted cache
+/// resolves inside containers. No-op on Linux hosts (where `tic`
+/// already wrote the Linux layout) and on caches normalized by a
+/// previous run.
 fn normalize_terminfo_entry_path(terminfo_dir: &std::path::Path, term: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(!term.is_empty(), "terminal name is empty");
+
     let linux_entry_path = linux_terminfo_entry_path(terminfo_dir, term);
     if linux_entry_path.exists() {
         return Ok(());
     }
 
-    let Some(first_byte) = term.as_bytes().first() else {
-        anyhow::bail!("terminal name is empty");
-    };
-    let hex_entry_path = terminfo_dir.join(format!("{first_byte:x}")).join(term);
-    if !hex_entry_path.exists() {
-        anyhow::bail!(
-            "compiled terminfo entry for {term} not found at {} or {}",
-            linux_entry_path.display(),
-            hex_entry_path.display()
-        );
-    }
+    let hex_entry_path = macos_terminfo_entry_path(terminfo_dir, term);
+    anyhow::ensure!(
+        hex_entry_path.exists(),
+        "compiled terminfo entry for {term} not found at {} or {}",
+        linux_entry_path.display(),
+        hex_entry_path.display()
+    );
 
-    if let Some(parent) = linux_entry_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::copy(&hex_entry_path, &linux_entry_path)?;
+    copy_to_linux_layout(&hex_entry_path, &linux_entry_path)
+}
 
+/// Copy a terminfo entry from `hex_entry_path` into `linux_entry_path`
+/// atomically: write to a sibling temp file then `rename` so a
+/// concurrent jackin reader on the same cache never observes a partial
+/// or truncated entry. Both paths must live on the same filesystem
+/// (caller already routes them under a single `terminfo_dir`, so
+/// `rename` stays cross-device-safe).
+fn copy_to_linux_layout(
+    hex_entry_path: &std::path::Path,
+    linux_entry_path: &std::path::Path,
+) -> anyhow::Result<()> {
+    let parent = linux_entry_path.parent().ok_or_else(|| {
+        anyhow::anyhow!(
+            "linux terminfo entry path {} has no parent directory",
+            linux_entry_path.display()
+        )
+    })?;
+    std::fs::create_dir_all(parent)?;
+
+    let file_name = linux_entry_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "linux terminfo entry path {} has no file name",
+                linux_entry_path.display()
+            )
+        })?;
+    let tmp_path = parent.join(format!(".{file_name}.tmp.{}", std::process::id()));
+    std::fs::copy(hex_entry_path, &tmp_path)?;
+    std::fs::rename(&tmp_path, linux_entry_path)?;
     Ok(())
 }
 
@@ -2352,6 +2432,125 @@ mod tests {
         assert_eq!(
             std::fs::read(linux_dir.join("ghostty")).unwrap(),
             b"compiled-entry"
+        );
+        assert!(
+            !terminfo_dir.join("67").exists(),
+            "no-op normalize must not create the macOS hex dir"
+        );
+    }
+
+    #[test]
+    fn normalize_terminfo_entry_path_errors_when_neither_layout_present() {
+        let tmp = tempdir().unwrap();
+        let terminfo_dir = tmp.path().join("terminfo");
+
+        let err = normalize_terminfo_entry_path(&terminfo_dir, "xterm-ghostty").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("not found"), "got: {msg}");
+        assert!(msg.contains("x/xterm-ghostty"), "got: {msg}");
+        assert!(msg.contains("78/xterm-ghostty"), "got: {msg}");
+    }
+
+    #[test]
+    fn normalize_terminfo_entry_path_errors_on_empty_term() {
+        let tmp = tempdir().unwrap();
+        let err = normalize_terminfo_entry_path(&tmp.path().join("terminfo"), "").unwrap_err();
+        assert!(
+            err.to_string().contains("terminal name is empty"),
+            "got: {err}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn normalize_terminfo_entry_path_resolves_alias_symlink_in_hex_dir() {
+        // Ghostty terminfo source has `xterm-ghostty|ghostty,...`; BSD
+        // `tic` writes one file plus alias symlinks. `fs::copy` follows
+        // symlinks, so the Linux destination ends up with the file
+        // content rather than a dangling link.
+        let tmp = tempdir().unwrap();
+        let terminfo_dir = tmp.path().join("terminfo");
+        let primary_dir = terminfo_dir.join("78");
+        let alias_dir = terminfo_dir.join("67");
+        std::fs::create_dir_all(&primary_dir).unwrap();
+        std::fs::create_dir_all(&alias_dir).unwrap();
+        let primary = primary_dir.join("xterm-ghostty");
+        std::fs::write(&primary, b"compiled-entry").unwrap();
+        std::os::unix::fs::symlink(&primary, alias_dir.join("ghostty")).unwrap();
+
+        normalize_terminfo_entry_path(&terminfo_dir, "ghostty").unwrap();
+
+        assert_eq!(
+            std::fs::read(terminfo_dir.join("g").join("ghostty")).unwrap(),
+            b"compiled-entry",
+            "alias symlink in hex dir must resolve to the primary entry's content"
+        );
+    }
+
+    #[test]
+    fn macos_terminfo_entry_path_lowercase_hex_letter_for_kitty() {
+        // 'k' = 0x6b. BSD `tic` formats the byte as lowercase hex; an
+        // accidental {:X} (uppercase) would silently break lookups.
+        let dir = std::path::Path::new("/tmp/test-cache");
+        assert_eq!(
+            macos_terminfo_entry_path(dir, "kitty"),
+            dir.join("6b").join("kitty"),
+        );
+        assert_eq!(
+            linux_terminfo_entry_path(dir, "kitty"),
+            dir.join("k").join("kitty"),
+        );
+    }
+
+    #[test]
+    fn export_host_terminfo_returns_cached_linux_entry_without_invoking_subprocess() {
+        // Pre-populated linux entry → early return before infocmp/tic.
+        // Test passes on hosts without infocmp/tic installed because the
+        // happy path never reaches the subprocess fork.
+        let tmp = tempdir().unwrap();
+        let cache_dir = tmp.path();
+        let terminfo_dir = cache_dir.join("terminfo");
+        let linux_dir = terminfo_dir.join("x");
+        std::fs::create_dir_all(&linux_dir).unwrap();
+        std::fs::write(linux_dir.join("xterm-ghostty"), b"pre-existing").unwrap();
+
+        let result = export_host_terminfo("xterm-ghostty", cache_dir).unwrap();
+        assert_eq!(result, terminfo_dir);
+        assert_eq!(
+            std::fs::read(linux_dir.join("xterm-ghostty")).unwrap(),
+            b"pre-existing",
+            "cache-hit must not rewrite the existing entry"
+        );
+    }
+
+    #[test]
+    fn export_host_terminfo_relocates_macos_hex_layout_without_invoking_subprocess() {
+        // Pre-populated hex entry → upgrade-path branch fires before
+        // infocmp/tic. Operators who built the cache before this PR
+        // should not pay the subprocess cost on every launch.
+        let tmp = tempdir().unwrap();
+        let cache_dir = tmp.path();
+        let terminfo_dir = cache_dir.join("terminfo");
+        let hex_dir = terminfo_dir.join("78");
+        std::fs::create_dir_all(&hex_dir).unwrap();
+        std::fs::write(hex_dir.join("xterm-ghostty"), b"stale-cache").unwrap();
+
+        let result = export_host_terminfo("xterm-ghostty", cache_dir).unwrap();
+        assert_eq!(result, terminfo_dir);
+        assert_eq!(
+            std::fs::read(terminfo_dir.join("x").join("xterm-ghostty")).unwrap(),
+            b"stale-cache",
+            "upgrade-path must relocate the hex entry into the linux layout"
+        );
+    }
+
+    #[test]
+    fn export_host_terminfo_errors_on_empty_term() {
+        let tmp = tempdir().unwrap();
+        let err = export_host_terminfo("", tmp.path()).unwrap_err();
+        assert!(
+            err.to_string().contains("terminal name is empty"),
+            "got: {err}"
         );
     }
 
