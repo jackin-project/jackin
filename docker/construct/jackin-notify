@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    echo "usage: jackin-notify --title TITLE --body BODY [--urgency low|normal|high]" >&2
+}
+
+title=""
+body=""
+urgency="normal"
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --title)
+            title="${2:-}"
+            shift 2
+            ;;
+        --body)
+            body="${2:-}"
+            shift 2
+            ;;
+        --urgency)
+            urgency="${2:-normal}"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            usage
+            exit 2
+            ;;
+    esac
+done
+
+if [ -z "$title" ] || [ -z "$body" ]; then
+    usage
+    exit 2
+fi
+
+socket="${JACKIN_DAEMON_SOCKET:-/jackin/daemon.sock}"
+if [ ! -S "$socket" ]; then
+    echo "jackin-notify: daemon socket not available at $socket" >&2
+    exit 1
+fi
+
+jq -nc \
+    --arg title "$title" \
+    --arg body "$body" \
+    --arg urgency "$urgency" \
+    '{type:"notify", protocol:2, title:$title, body:$body, urgency:$urgency}' \
+    | socat - "UNIX-CONNECT:${socket}"

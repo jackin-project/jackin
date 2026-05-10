@@ -5,7 +5,7 @@ import { Aside } from '@astrojs/starlight/components'
 import RepoFile from '../../../../components/RepoFile.astro'
 
 
-**Status**: Open — design proposal
+**Status**: In progress — daemon bridge foundation landed
 
 ## Problem
 
@@ -14,6 +14,18 @@ The biggest hidden cost of running AI coding agents today is **idle wall-clock**
 Every minute the agent waits is a minute of compounding throughput loss across however many agents the operator is running in parallel. The point of jackin' is to make running many agents safe and convenient; "many agents" is only a real win if the operator can stay in flow and only context-switch when an agent actually needs them.
 
 This roadmap item proposes **agent attention prompts**: an opt-in, per-workspace, per-role notification channel that fires a host-side OS notification when an agent inside a jackin' container is waiting on operator input, with optional escalation to sound and a click action that focuses the right terminal tab.
+
+The daemon work now provides the transport this feature needs:
+
+- The host daemon owns macOS Notification Center dispatch.
+- Role containers receive `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock`.
+- The construct image includes `jackin-notify`, a hook-friendly helper:
+
+```sh
+jackin-notify --title "agent waiting" --body "Need operator input" --urgency normal
+```
+
+This is intentionally lower-level than the final MCP server. It lets role hooks and agent-authored scripts send attention pings immediately while the MCP contract and runtime auto-registration are completed.
 
 ## What the operator gets
 
@@ -45,10 +57,8 @@ Path 1 is the primary, path 2 the fallback, path 3 a future hook for runtimes th
 
 The pieces:
 
-- **`jackin-attention` MCP server.** Static binary baked into the construct image. Registered automatically in each agent's MCP config at container launch — extending the registration pattern <RepoFile path="docker/runtime/entrypoint.sh" /> uses today for the Claude runtime's `tirith` / `shellfirm` to every supported runtime. When the agent calls `attention.waiting`, the MCP server pushes the event over the existing per-container control channel (the same bind-mount or pipe used for daemon ↔ container coordination — see [jackin daemon](/reference/roadmap/jackin-daemon/) for the channel design).
-- **The jackin daemon dispatches the host-side notification.** Per the [jackin daemon](/reference/roadmap/jackin-daemon/) plug-in surface, this feature is one adapter that listens for attention events from any running container and translates them to OS-native notifications:
-  - macOS — `osascript -e 'display notification …'` or the `UserNotifications` framework via a small Swift helper. Sound escalation via `afplay` / `NSSound`.
-  - Linux — `notify-send` (libnotify) or the org.freedesktop.Notifications D-Bus API. Sound via `paplay` / `aplay`.
+- **`jackin-attention` MCP server.** Static binary baked into the construct image. Registered automatically in each agent's MCP config at container launch — extending the registration pattern <RepoFile path="docker/runtime/entrypoint.sh" /> uses today for the Claude runtime's `tirith` / `shellfirm` to every supported runtime. When the agent calls `attention.waiting`, the MCP server pushes the event over the daemon socket mounted at `/jackin/daemon.sock` — see [jackin daemon](/reference/roadmap/jackin-daemon/) for the channel design. Until the MCP server lands, `jackin-notify` exposes the same host-notification path for hooks and scripts.
+- **The jackin daemon dispatches the host-side notification.** Per the [jackin daemon](/reference/roadmap/jackin-daemon/) plug-in surface, this feature is one adapter that listens for attention events from any running container and translates them to native macOS Notification Center toasts via `osascript display notification`. Linux and Windows adapters are out of scope for this first pass.
   - Windows — out of scope for the first phase; revisit when jackin' supports Windows hosts.
 - **Click-to-focus adapter.** The notification carries an action that, when activated, runs a host-side command to focus the right terminal tab. Each terminal emulator gets a small adapter:
   - Ghostty — `ghostty +cli focus-tab <id>` or AppleScript / D-Bus.
@@ -119,10 +129,10 @@ A minimal cut to validate the shape:
 
 1. `jackin-attention` MCP server, baked into construct, auto-registered for every agent runtime jackin' supports (Claude Code first, Codex / Amp as part of the same phase to close the runtime-coverage gap left by today's Claude-only `tirith` / `shellfirm` registration).
 2. The two-tool surface `attention.waiting` / `attention.resolved`.
-3. Daemon adapter listening on the per-container control channel, dispatching macOS Notification Center notifications.
+3. Daemon adapter listening on the per-container control channel, dispatching macOS Notification Center notifications. The base adapter has landed through `jackin daemon notify` and `jackin-notify`; high urgency requests the native `Glass` notification sound.
 4. Click action wired for the operator's current terminal (detected at launch from `TERM_PROGRAM`); other terminals get the notification with no click action and a one-line "open this terminal manually" hint.
 5. `Notifications` tab in `jackin console` workspace editor — enable / mute / sound-escalation duration. No per-role overrides in v1.
-6. Linux `notify-send` adapter as part of the same phase (it's small and operators on Linux deserve parity from day one).
+6. Linux `notify-send` adapter later, after the macOS flow is validated.
 
 Not in phase 1: PTY-idle inference fallback, sound files beyond a single default, urgency-based sound differentiation, cross-terminal click-to-focus matrix, Windows support.
 

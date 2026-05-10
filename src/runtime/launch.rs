@@ -696,6 +696,8 @@ fn launch_role_runtime(
         crate::env_model::JACKIN_ROLE_ENV_NAME,
         selector.key()
     );
+    let daemon_socket = paths.run_dir.join("jackin-daemon.sock");
+    let daemon_socket_mount = format!("{}:/jackin/daemon.sock", daemon_socket.display());
 
     // Forward the host TERM so the container's terminal type matches what the
     // terminal emulator actually supports.  Docker defaults to TERM=xterm which
@@ -844,6 +846,8 @@ fn launch_role_runtime(
         &jackin_agent_env,
         "-e",
         &jackin_role_env,
+        "-e",
+        "JACKIN_DAEMON_SOCKET=/jackin/daemon.sock",
         "-v",
         &certs_agent_mount,
         "-v",
@@ -862,6 +866,9 @@ fn launch_role_runtime(
     for ms in &mount_strings {
         run_args.push("-v");
         run_args.push(ms);
+    }
+    if daemon_socket.exists() {
+        run_args.extend_from_slice(&["-v", &daemon_socket_mount]);
     }
     run_args.push(image);
     runner.run("docker", &run_args, None, &docker_run_opts)?;

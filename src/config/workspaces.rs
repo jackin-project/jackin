@@ -595,6 +595,7 @@ mod tests {
                 roles_dir: data.into(),
                 data_dir: data.into(),
                 cache_dir: data.into(),
+                run_dir: data.into(),
             }
         }
 
