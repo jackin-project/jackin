@@ -1,3 +1,4 @@
+version = "v1alpha2"
 dockerfile = "Dockerfile"
 published_image = "docker.io/chainargos/jackin-agent-brown:latest"
 agents = ["claude", "codex", "amp"]
