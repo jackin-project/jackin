@@ -574,7 +574,7 @@ workdir = "/workspace/prod"
         // No `.tmp.<pid>.<n>` leftovers in the parent directory.
         let leaks: Vec<_> = std::fs::read_dir(temp.path())
             .unwrap()
-            .filter_map(|e| e.ok())
+            .filter_map(Result::ok)
             .filter(|e| {
                 e.file_name()
                     .to_string_lossy()

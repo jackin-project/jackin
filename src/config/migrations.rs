@@ -286,7 +286,7 @@ pub const fn noop_migration(_doc: &mut DocumentMut) -> anyhow::Result<()> {
 /// this from a `#[test]` so a registry mistake fails CI rather than
 /// surfacing on an operator's machine.
 #[cfg(test)]
-pub(crate) fn assert_registry_chain(migrations: &[MigrationStep], current_raw: &str) {
+pub fn assert_registry_chain(migrations: &[MigrationStep], current_raw: &str) {
     let mut seen_froms = std::collections::BTreeSet::new();
     for step in migrations {
         let from = parse_registry_version(step.from)
@@ -304,11 +304,7 @@ pub(crate) fn assert_registry_chain(migrations: &[MigrationStep], current_raw: &
     while cursor < current {
         let step = migrations
             .iter()
-            .find(|s| {
-                parse_registry_version(s.from)
-                    .map(|v| v == cursor)
-                    .unwrap_or(false)
-            })
+            .find(|s| parse_registry_version(s.from).is_ok_and(|v| v == cursor))
             .unwrap_or_else(|| panic!("no step from {cursor} in registry"));
         let next = parse_registry_version(step.to)
             .unwrap_or_else(|_| panic!("step.to {:?} does not parse", step.to));
@@ -659,19 +655,24 @@ mod tests {
         );
     }
 
+    // Migration fn pointers must return Result to match the
+    // `Migration` type alias even when the test bodies always succeed.
+    #[allow(clippy::unnecessary_wraps)]
+    fn alpha1_to_alpha2(doc: &mut DocumentMut) -> anyhow::Result<()> {
+        doc["alpha1_to_alpha2"] = toml_edit::value(true);
+        Ok(())
+    }
+    #[allow(clippy::unnecessary_wraps)]
+    fn alpha2_to_alpha3(doc: &mut DocumentMut) -> anyhow::Result<()> {
+        doc["alpha2_to_alpha3"] = toml_edit::value(true);
+        Ok(())
+    }
+
     #[test]
     fn applies_multi_step_chain_in_order() {
         // Each step appends a marker key so the final doc captures the
         // execution order — a regression that double-applies, skips, or
         // reorders steps changes the marker.
-        fn alpha1_to_alpha2(doc: &mut DocumentMut) -> anyhow::Result<()> {
-            doc["alpha1_to_alpha2"] = toml_edit::value(true);
-            Ok(())
-        }
-        fn alpha2_to_alpha3(doc: &mut DocumentMut) -> anyhow::Result<()> {
-            doc["alpha2_to_alpha3"] = toml_edit::value(true);
-            Ok(())
-        }
 
         let old = parse_version("v1alpha1").unwrap();
         let current = parse_version("v1alpha3").unwrap();
