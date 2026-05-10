@@ -13,7 +13,10 @@ mod roles;
 mod workspaces;
 
 pub use editor::{ConfigEditor, EnvScope};
-pub use migrations::{CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION};
+pub use migrations::{
+    CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, migrate_config_file_if_needed,
+    migrate_workspace_file_if_needed,
+};
 pub use mounts::DockerMounts;
 pub(crate) use mounts::MountEntry;
 pub use roles::{build_github_env_layers, resolve_github_mode, resolve_mode};

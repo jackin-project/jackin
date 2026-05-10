@@ -1,0 +1,4 @@
+from_version = "legacy"
+target_version = "v1alpha1"
+target_version_shipped = "2026-05-10"
+summary = "Legacy role manifest has no top-level `version` field. Migration adds `version = \"v1alpha1\"` and leaves all existing keys, comments, and tables untouched. Run `jackin-validate --migrate <role-repo-path>` to apply."

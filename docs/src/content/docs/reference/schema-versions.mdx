@@ -30,14 +30,37 @@ The split-workspace layout described in [Configuration File](/reference/configur
 
 ## Timeline
 
-| Version | File kind | Status | Summary |
-|---|---|---|---|
-| `legacy` | Config, workspace, manifest | Supported for migration | No top-level `version` field |
-| `v1alpha1` | Config | Current | Adds `version = "v1alpha1"` |
-| `v1alpha1` | Workspace | Current | Adds `version = "v1alpha1"` to per-workspace files |
-| `v1alpha1` | Manifest | Current | Adds required `version = "v1alpha1"` to `jackin.role.toml` |
+Each entry below documents one migration the current binary still applies. The fixture link points at the canonical before/after pair the test suite walks through the live migration code on every CI run (see <RepoFile path="tests/migration_fixtures.rs" />), so a regression breaks here before it breaks on a delayed operator's machine. Newest version first; entries get appended (not edited) when a `CURRENT_*_VERSION` is bumped.
 
-Splitting legacy `[workspaces.<name>]` tables out of `config.toml` runs as a separate startup step (see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design)); the version migration above is independent of that split.
+### `v1alpha1` — 2026-05-10
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `legacy` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/config/from-legacy/meta.toml" /> |
+| Workspace (`workspaces/<name>.toml`) | `legacy` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/workspace/from-legacy/meta.toml" /> |
+| Manifest (`jackin.role.toml`) | `legacy` | Explicit `jackin-validate --migrate <role-repo-path>` | <RepoFile path="tests/fixtures/migrations/manifest/from-legacy/meta.toml" /> |
+
+**Summary**: introduces the top-level `version` field. The migration adds `version = "v1alpha1"` to every file kind and leaves all existing keys, comments, and section ordering untouched. Splitting legacy `[workspaces.<name>]` tables out of `config.toml` runs as a separate startup step (see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design)); the version migration above is independent of that split.
+
+**Before** (legacy operator config — excerpt):
+
+```toml
+[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+```
+
+**After** (v1alpha1):
+
+```toml
+version = "v1alpha1"
+
+[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+```
+
+The full before/after for each file kind lives in the linked fixture directories, which the migration test harness reads directly.
 
 ## Version format
 

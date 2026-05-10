@@ -1,0 +1,11 @@
+# Representative legacy per-workspace file (pre-versioning).
+# Schema version: legacy (no top-level `version` field).
+
+workdir = "/workspace/prod"
+
+[[mounts]]
+src = "/home/operator/projects/prod"
+dst = "/workspace/prod"
+
+[env]
+LOCAL_ENV = "only-prod"

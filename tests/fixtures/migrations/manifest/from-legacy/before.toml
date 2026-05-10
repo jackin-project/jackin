@@ -1,0 +1,11 @@
+# Representative legacy role manifest (pre-versioning).
+# Schema version: legacy (no top-level `version` field).
+
+dockerfile = "Dockerfile"
+agents = ["claude"]
+
+[claude]
+plugins = []
+
+[identity]
+name = "the-architect"

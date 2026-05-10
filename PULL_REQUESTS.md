@@ -179,7 +179,7 @@ Three cross-cutting rules apply to every PR review (manual, agent-driven, or aut
 
 ### Versioned-schema migration check
 
-When the diff touches a struct serialized into `config.toml`, `~/.config/jackin/workspaces/<name>.toml`, or `jackin.role.toml`, verify the PR ships with the version bump + migration step + `schema-versions.mdx` update. The full rule, including the affected types, lives in `AGENTS.md` under "Project status: pre-release."
+When the diff touches a struct serialized into `config.toml`, `~/.config/jackin/workspaces/<name>.toml`, or `jackin.role.toml`, verify the PR ships with all five required artifacts: version bump, migration step, new fixture directory under `tests/fixtures/migrations/`, re-baked `after.toml` files for every existing `from_version`, and a new entry in the `schema-versions.mdx` timeline. The full rule lives in `AGENTS.md` under "Project status: pre-release." The re-baked fixtures are the proof that the migration chain still composes cleanly for operators upgrading from older versions; missing or stale `after.toml` files break the smooth-migration guarantee.
 
 ### Accepted-exceptions catalog
 

@@ -1,0 +1,13 @@
+version = "v1alpha1"
+# Representative legacy operator config (pre-versioning).
+# Schema version: legacy (no top-level `version` field).
+
+[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+
+[claude]
+auth_forward = "sync"
+
+[env]
+OPERATOR_ORG = "acme"
