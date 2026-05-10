@@ -788,33 +788,42 @@ fn launch_role_runtime(
         crate::env_model::JACKIN_ENV_NAME,
         crate::env_model::JACKIN_ENV_VALUE
     ));
-    let mut has_proxy_env = false;
-    let mut has_upper_no_proxy = false;
-    let mut has_lower_no_proxy = false;
+    // DinD reachable only via Docker network; route past HTTP_PROXY by adding
+    // hostname to NO_PROXY in both casings — Go reads upper, curl/Python
+    // requests/wget read lower. Mirror the merged value across both casings
+    // so an operator who declared only one variant still gets full bypass
+    // coverage for tools that read the other.
+    let proxy_seen = resolved_env.vars.iter().any(|(k, _)| is_proxy_env_name(k));
+    let upper_existing = resolved_env
+        .vars
+        .iter()
+        .find_map(|(k, v)| (k == NO_PROXY_UPPER).then_some(v.as_str()));
+    let lower_existing = resolved_env
+        .vars
+        .iter()
+        .find_map(|(k, v)| (k == NO_PROXY_LOWER).then_some(v.as_str()));
     for (key, value) in &resolved_env.vars {
         if crate::env_model::is_reserved(key) {
             continue;
         }
-        has_proxy_env |= is_proxy_env_name(key);
-        match key.as_str() {
-            "NO_PROXY" => {
-                has_upper_no_proxy = true;
-                env_strings.push(format!("{key}={}", append_no_proxy_host(value, dind)));
-            }
-            "no_proxy" => {
-                has_lower_no_proxy = true;
-                env_strings.push(format!("{key}={}", append_no_proxy_host(value, dind)));
-            }
-            _ => env_strings.push(format!("{key}={value}")),
+        if key == NO_PROXY_UPPER || key == NO_PROXY_LOWER {
+            // Synthesized below from merged casing — skip the inline emit.
+            continue;
         }
+        env_strings.push(format!("{key}={value}"));
     }
-    if has_proxy_env {
-        if !has_upper_no_proxy {
-            env_strings.push(format!("NO_PROXY={dind}"));
-        }
-        if !has_lower_no_proxy {
-            env_strings.push(format!("no_proxy={dind}"));
-        }
+    // Trigger synth when any proxy class OR any NO_PROXY casing is declared.
+    // The latter covers operators who set NO_PROXY without an HTTP_PROXY
+    // (transparent proxy, /etc/environment, container-injected proxy vars).
+    if proxy_seen || upper_existing.is_some() || lower_existing.is_some() {
+        let upper_value = upper_existing
+            .or(lower_existing)
+            .map_or_else(|| dind.to_string(), |v| append_no_proxy_host(v, dind));
+        let lower_value = lower_existing
+            .or(upper_existing)
+            .map_or_else(|| dind.to_string(), |v| append_no_proxy_host(v, dind));
+        env_strings.push(format!("{NO_PROXY_UPPER}={upper_value}"));
+        env_strings.push(format!("{NO_PROXY_LOWER}={lower_value}"));
     }
 
     // GitHub auth env wiring. Token mode and Sync-with-host-token both
@@ -2212,11 +2221,23 @@ fn push_env_if_present(env_strings: &mut Vec<String>, key: &str, value: Option<&
     }
 }
 
+/// Canonical CLI proxy env vars `curl`, `wget`, and Go's HTTP client read.
+/// `FTP_PROXY` / `RSYNC_PROXY` are intentionally out of scope: they don't
+/// reach `DinD`'s daemon socket, so adding them here would only widen the
+/// detection surface without changing bypass behavior.
+const PROXY_VAR_NAMES: &[&str] = &[
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+];
+const NO_PROXY_UPPER: &str = "NO_PROXY";
+const NO_PROXY_LOWER: &str = "no_proxy";
+
 fn is_proxy_env_name(key: &str) -> bool {
-    matches!(
-        key,
-        "HTTP_PROXY" | "HTTPS_PROXY" | "ALL_PROXY" | "http_proxy" | "https_proxy" | "all_proxy"
-    )
+    PROXY_VAR_NAMES.contains(&key)
 }
 
 fn append_no_proxy_host(value: &str, host: &str) -> String {
@@ -4298,8 +4319,111 @@ plugins = []
             .find(|call| call.contains("docker run -d -it"))
             .unwrap();
         assert!(run_cmd.contains("HTTPS_PROXY=http://proxy.internal:8305"));
+        // Both casings carry the merged list — operator's localhost,127.0.0.1
+        // must survive into the lowercase synthesized variant for tools that
+        // only read `no_proxy`.
         assert!(run_cmd.contains("NO_PROXY=localhost,127.0.0.1,jackin-agent-smith-dind"));
+        assert!(run_cmd.contains("no_proxy=localhost,127.0.0.1,jackin-agent-smith-dind"));
+    }
+
+    #[test]
+    fn load_agent_synthesizes_both_no_proxy_casings_when_only_proxy_set() {
+        let (run_cmd, _temp) = run_load_with_env(&[("HTTPS_PROXY", "http://proxy.internal:8305")]);
+        assert!(run_cmd.contains("NO_PROXY=jackin-agent-smith-dind"));
         assert!(run_cmd.contains("no_proxy=jackin-agent-smith-dind"));
+    }
+
+    #[test]
+    fn load_agent_mirrors_no_proxy_to_missing_lower_casing() {
+        let (run_cmd, _temp) = run_load_with_env(&[
+            ("HTTPS_PROXY", "http://proxy.internal:8305"),
+            ("NO_PROXY", "internal.corp"),
+        ]);
+        assert!(run_cmd.contains("NO_PROXY=internal.corp,jackin-agent-smith-dind"));
+        assert!(run_cmd.contains("no_proxy=internal.corp,jackin-agent-smith-dind"));
+    }
+
+    #[test]
+    fn load_agent_mirrors_lower_no_proxy_to_missing_upper_casing() {
+        let (run_cmd, _temp) = run_load_with_env(&[
+            ("https_proxy", "http://proxy.internal:8305"),
+            ("no_proxy", "internal.corp"),
+        ]);
+        assert!(run_cmd.contains("NO_PROXY=internal.corp,jackin-agent-smith-dind"));
+        assert!(run_cmd.contains("no_proxy=internal.corp,jackin-agent-smith-dind"));
+    }
+
+    #[test]
+    fn load_agent_synthesizes_both_casings_when_only_no_proxy_declared() {
+        // Operator may have proxy injected by /etc/environment, transparent
+        // proxy, or container-injected vars; jackin only sees NO_PROXY.
+        // Both casings must still receive the DinD bypass.
+        let (run_cmd, _temp) = run_load_with_env(&[("NO_PROXY", "internal.corp")]);
+        assert!(run_cmd.contains("NO_PROXY=internal.corp,jackin-agent-smith-dind"));
+        assert!(run_cmd.contains("no_proxy=internal.corp,jackin-agent-smith-dind"));
+    }
+
+    #[test]
+    fn load_agent_omits_no_proxy_when_no_proxy_env_declared() {
+        let (run_cmd, _temp) = run_load_with_env(&[]);
+        assert!(!run_cmd.contains("NO_PROXY="));
+        assert!(!run_cmd.contains("no_proxy="));
+    }
+
+    fn run_load_with_env(entries: &[(&str, &str)]) -> (String, tempfile::TempDir) {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        for (k, v) in entries {
+            config.env.insert(
+                (*k).to_string(),
+                crate::operator_env::EnvValue::Plain((*v).to_string()),
+            );
+        }
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it"))
+            .unwrap()
+            .clone();
+        (run_cmd, temp)
     }
 
     #[test]
