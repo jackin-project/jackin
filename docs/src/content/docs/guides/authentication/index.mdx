@@ -40,7 +40,7 @@ jackin console
 
 …then select your workspace and switch to the **Auth** tab. The same tab covers every authentication axis jackin' supports. You pick the mode through a mode-picker; for modes that need a credential, the form opens the same `1Password` / host-env / literal source picker used by the env-vars editor; the form refuses to save until the credential resolves.
 
-You should not need to hand-edit any configuration file. Operators who prefer the CLI for the global default can use `jackin config auth …`; everything more specific (per-workspace, per-(workspace × role × agent)) lives in the console's **Auth** tab and stays there.
+You should not need to hand-edit any configuration file. Operators who prefer the CLI for global agent defaults can use `jackin config auth …`; GitHub CLI global defaults and all more-specific settings live in the console's **Auth** tab today.
 
 The per-axis pages in this group (Agent / `GitHub CLI`) describe the modes and the launch-summary line each axis prints, but the *interface* for managing those modes is uniform.
 

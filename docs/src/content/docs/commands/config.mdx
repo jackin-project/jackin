@@ -9,7 +9,7 @@ description: "View and modify operator configuration"
 jackin config <SUBCOMMAND>
 ```
 
-Manage global operator configuration — mounts, agent trust, and Claude Code authentication forwarding.
+Manage global operator configuration — mounts, agent trust, and agent authentication forwarding.
 
 ## `config mount`
 
@@ -76,7 +76,7 @@ jackin config mount remove secrets --scope "chainargos/*"
 
 ## `config auth`
 
-Manage the **global** Claude auth-forwarding mode. See the
+Manage **global** agent auth-forwarding modes. See the
 [Authentication Forwarding](/guides/authentication) guide for the full
 layered model. Workspace and per (workspace × role × agent) overrides
 are configured through the **Auth** tab in the `jackin console`
@@ -88,13 +88,16 @@ workspace editor (or by hand-editing TOML).
 jackin config auth set <MODE>
 ```
 
-Set the global Claude auth-forwarding mode (the default mode for every `Claude Code` launch unless a workspace or per-role override changes it).
+Set the global auth-forwarding mode. Without `--agent`, this targets
+`Claude Code`; use `--agent codex` or `--agent amp` for the other
+built-in agents. GitHub CLI auth is managed in `jackin console` today;
+the dedicated `--target github` CLI is still planned.
 
 | Mode | Description |
 |---|---|
 | `sync` | Overwrite from host on each launch when host auth exists; preserve container auth when absent (default) |
-| `api_key` | Inject `ANTHROPIC_API_KEY` from your operator env vars |
-| `oauth_token` | Inject `CLAUDE_CODE_OAUTH_TOKEN` from your operator env vars |
+| `api_key` | Inject the selected agent's API-key env var from your operator env vars |
+| `oauth_token` | Claude only: inject `CLAUDE_CODE_OAUTH_TOKEN` from your operator env vars |
 | `ignore` | Never forward; revoke any previously forwarded credentials |
 
 ```bash
@@ -102,6 +105,8 @@ jackin config auth set sync
 jackin config auth set ignore
 jackin config auth set oauth_token
 jackin config auth set api_key
+jackin config auth set api_key --agent codex
+jackin config auth set sync --agent amp
 ```
 
 ### `config auth show`
@@ -110,7 +115,8 @@ jackin config auth set api_key
 jackin config auth show
 ```
 
-Show the current global Claude auth-forwarding mode.
+Show the current global auth-forwarding modes for Claude Code, Codex,
+and Amp.
 
 ```bash
 jackin config auth show

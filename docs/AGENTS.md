@@ -109,6 +109,8 @@ bun install --frozen-lockfile
 
   An item that exists in `roadmap/` but is not reachable from `roadmap.mdx` is half-hidden: an operator who only reads the overview thinks the work does not exist, and an operator who only browses the sidebar sees the title without status context. Both must agree.
 
+  Roadmap pages should not duplicate shipped feature documentation. When work lands, move durable operator details to the appropriate guide/command/reference page and keep the roadmap item to status, canonical-doc links, and remaining/future work. Long implementation walkthroughs belong in contributor references, not in roadmap items.
+
   To audit which roadmap items are missing from the overview:
 
   ```sh

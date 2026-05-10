@@ -76,6 +76,16 @@ The changelog exists to communicate breaking changes and new features to *users 
 
 When the first release is being cut, the operator will explicitly ask for the changelog to be populated. Until then, leave `CHANGELOG.md` unchanged.
 
+## Roadmap freshness (agent-only)
+
+Before marking any PR ready to land, and again whenever the operator asks to merge a PR, check whether the change ships, advances, defers, or invalidates anything under `docs/src/content/docs/reference/roadmap/`. If yes, update the roadmap item's `**Status**`, related files, and implementation notes in the same PR, then update `docs/src/content/docs/reference/roadmap.mdx` so the item appears only in the correct overview section.
+
+Do this check even when the PR is mostly code, tests, CI, or rule changes. The roadmap is an operator-facing source of truth, not a retrospective cleanup task. A feature that lands without moving its roadmap item leaves stale planning docs behind and should be treated as an incomplete PR. If a merge request reveals stale roadmap state, stop before merging, update the roadmap and PR description, and only then continue with normal merge verification.
+
+Run the sidebar and overview audits documented in `docs/AGENTS.md` after any roadmap status or file movement. If a roadmap item is partially shipped, keep it in **Partially implemented** with the remaining phases named; do not duplicate the same item under **Planned**.
+
+Roadmap pages are for planned, researched, designed, deferred, or remaining work. Once behavior ships, move the operator details to normal docs (`guides/`, `commands/`, `reference/`) and replace roadmap detail with a short status plus canonical-doc links. Do not keep long copied implementation walkthroughs in roadmap items after the feature is documented elsewhere.
+
 ## Pull requests (agent-only) — see `PULL_REQUESTS.md`
 
 All rules for opening, iterating on, refreshing, reviewing, and merging pull requests live in [`PULL_REQUESTS.md`](PULL_REQUESTS.md). **Read that file before opening any PR.** It covers:

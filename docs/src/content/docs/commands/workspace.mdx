@@ -250,7 +250,7 @@ jackin workspace claude-token <SUBCOMMAND>
 | `setup`  | Generate (or adopt) a token, store it, switch the workspace to OAuth-token mode. |
 | `rotate` | Replace the workspace's current token with a freshly-captured one and delete the prior 1P item. |
 | `revoke` | Clear the wired token and switch the workspace's Claude auth back to `ignore`. Optionally delete the 1P item. |
-| `doctor` | Resolve the wired token via `op` and report its SHA-256 prefix so the operator can confirm the canonical slot points at a real, readable item. |
+| `doctor` | Resolve the wired token via `op` and report its SHA-256 prefix so the operator can confirm the managed token source points at a real, readable item. |
 
 Every subcommand needs `claude` and `op` on `PATH`. `setup` and `rotate` drive `claude setup-token` interactively under a PTY — the operator completes the OAuth flow in their browser. The token is captured into a redacted in-memory secret and never echoed to stdout, scrollback, or shell history.
 
@@ -267,7 +267,7 @@ jackin workspace claude-token setup <WORKSPACE> --vault <VAULT> [OPTIONS]
 | `--op-account <ACCOUNT>` | Pin every `op` invocation to a specific 1P account. Persists onto the workspace so subsequent `rotate` / `revoke` use the same account. |
 | `--reuse <OP_REF>`       | Skip token generation and adopt the supplied `op://Vault/Item/field` reference verbatim. Use when an item already exists in 1Password. |
 
-On success the workspace's Claude auth flips to OAuth-token mode and the new (or reused) `op://` reference becomes the canonical slot. An "expires in N days" countdown is stamped into the local cache so the launch banner can surface it. On failure no on-disk config is changed and any orphan 1P item is best-effort deleted; if the cleanup itself fails the error message includes the exact `op item delete` command to run by hand.
+On success the workspace's Claude auth flips to OAuth-token mode and the new (or reused) `op://` reference is written as the managed `CLAUDE_CODE_OAUTH_TOKEN` env value for that workspace. An "expires in N days" countdown is stamped into the local cache so the launch banner can surface it. On failure no on-disk config is changed and any orphan 1P item is best-effort deleted; if the cleanup itself fails the error message includes the exact `op item delete` command to run by hand.
 
 ```bash
 # First-time setup — opens the browser for the OAuth flow
