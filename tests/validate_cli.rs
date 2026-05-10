@@ -156,7 +156,15 @@ fn validate_fails_for_invalid_preflight_hook() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        "version = \"v1alpha1\"\ndockerfile = \"Dockerfile\"\n\n[hooks]\npreflight = \"hooks/preflight.sh\"\n\n[claude]\nplugins = []\n",
+        r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
+
+[hooks]
+preflight = "hooks/preflight.sh"
+
+[claude]
+plugins = []
+"#,
     )
     .unwrap();
 
