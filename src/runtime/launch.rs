@@ -378,9 +378,9 @@ fn export_host_terminfo(
 ) -> anyhow::Result<std::path::PathBuf> {
     let terminfo_dir = cache_dir.join("terminfo");
 
-    // Check if already cached (first letter dir + entry file).
-    let first_char = term.chars().next().unwrap_or('x');
-    let entry_path = terminfo_dir.join(first_char.to_string()).join(term);
+    // Check if already cached using the directory layout Linux ncurses
+    // expects (`x/xterm-ghostty`, `g/ghostty`, ...).
+    let entry_path = linux_terminfo_entry_path(&terminfo_dir, term);
     if entry_path.exists() {
         return Ok(terminfo_dir);
     }
@@ -413,8 +413,40 @@ fn export_host_terminfo(
         status.success(),
         "tic failed to compile terminfo for {term}"
     );
+    normalize_terminfo_entry_path(&terminfo_dir, term)?;
 
     Ok(terminfo_dir)
+}
+
+fn linux_terminfo_entry_path(terminfo_dir: &std::path::Path, term: &str) -> std::path::PathBuf {
+    let first_char = term.chars().next().unwrap_or('x');
+    terminfo_dir.join(first_char.to_string()).join(term)
+}
+
+fn normalize_terminfo_entry_path(terminfo_dir: &std::path::Path, term: &str) -> anyhow::Result<()> {
+    let linux_entry_path = linux_terminfo_entry_path(terminfo_dir, term);
+    if linux_entry_path.exists() {
+        return Ok(());
+    }
+
+    let Some(first_byte) = term.as_bytes().first() else {
+        anyhow::bail!("terminal name is empty");
+    };
+    let hex_entry_path = terminfo_dir.join(format!("{first_byte:x}")).join(term);
+    if !hex_entry_path.exists() {
+        anyhow::bail!(
+            "compiled terminfo entry for {term} not found at {} or {}",
+            linux_entry_path.display(),
+            hex_entry_path.display()
+        );
+    }
+
+    if let Some(parent) = linux_entry_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::copy(&hex_entry_path, &linux_entry_path)?;
+
+    Ok(())
 }
 
 // ── Role source trust ───────────────────────────────────────────────────
@@ -2288,6 +2320,40 @@ mod tests {
     use crate::selector::RoleSelector;
     use std::collections::VecDeque;
     use tempfile::tempdir;
+
+    #[test]
+    fn normalize_terminfo_entry_path_copies_macos_hex_dir_to_linux_char_dir() {
+        let tmp = tempdir().unwrap();
+        let terminfo_dir = tmp.path().join("terminfo");
+        let macos_dir = terminfo_dir.join("78");
+        std::fs::create_dir_all(&macos_dir).unwrap();
+        std::fs::write(macos_dir.join("xterm-ghostty"), b"compiled-entry").unwrap();
+
+        normalize_terminfo_entry_path(&terminfo_dir, "xterm-ghostty").unwrap();
+
+        let linux_entry = terminfo_dir.join("x").join("xterm-ghostty");
+        assert_eq!(
+            std::fs::read(linux_entry).unwrap(),
+            b"compiled-entry",
+            "Linux ncurses must be able to find macOS-compiled Ghostty terminfo"
+        );
+    }
+
+    #[test]
+    fn normalize_terminfo_entry_path_accepts_existing_linux_char_dir() {
+        let tmp = tempdir().unwrap();
+        let terminfo_dir = tmp.path().join("terminfo");
+        let linux_dir = terminfo_dir.join("g");
+        std::fs::create_dir_all(&linux_dir).unwrap();
+        std::fs::write(linux_dir.join("ghostty"), b"compiled-entry").unwrap();
+
+        normalize_terminfo_entry_path(&terminfo_dir, "ghostty").unwrap();
+
+        assert_eq!(
+            std::fs::read(linux_dir.join("ghostty")).unwrap(),
+            b"compiled-entry"
+        );
+    }
 
     #[test]
     fn diagnose_premature_exit_returns_none_when_container_running() {
