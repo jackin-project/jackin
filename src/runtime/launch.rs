@@ -203,9 +203,8 @@ const STANDARD_TERMS: &[&str] = &[
 /// than passed in — the prior shape took a separate `agent` parameter
 /// plus an `Option<PathBuf>` field on the state, with a runtime
 /// `expect()` enforcing "Some iff agent == Codex" across two
-/// functions. The enum variant on `RoleState` makes that invariant
-/// compile-checked: an exhaustive match here cannot construct a
-/// codex-mounts arm without a `config_toml` path in scope.
+/// functions. The enum variant on `RoleState` keeps the per-agent
+/// mount surface explicit.
 fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
     use crate::instance::AgentRuntimeState;
 
@@ -214,6 +213,7 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
             account_json,
             credentials_json,
             forward_auth,
+            ..
         } => {
             let mut mounts = Vec::new();
             // `forward_auth = true` for Sync (host-derived credentials)
@@ -239,14 +239,8 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
             }
             mounts
         }
-        AgentRuntimeState::Codex {
-            config_toml,
-            auth_json,
-        } => {
-            let mut mounts = vec![format!(
-                "{}:/jackin/codex/config.toml",
-                config_toml.display()
-            )];
+        AgentRuntimeState::Codex { auth_json, .. } => {
+            let mut mounts = Vec::new();
             if let Some(auth_json) = auth_json {
                 mounts.push(format!("{}:/jackin/codex/auth.json", auth_json.display()));
             }
@@ -788,7 +782,6 @@ fn launch_role_runtime(
         run_args.push("-e");
         run_args.push(env_str);
     }
-
     let mut env_strings: Vec<String> = Vec::new();
     env_strings.push(format!(
         "{}={}",
@@ -864,6 +857,14 @@ fn launch_role_runtime(
         run_args.push(ms);
     }
     run_args.push(image);
+    if let Some(model) = state.claude_model() {
+        run_args.push("--model");
+        run_args.push(model);
+    }
+    if let Some(model) = state.codex_model() {
+        run_args.push("-m");
+        run_args.push(model);
+    }
     runner.run("docker", &run_args, None, &docker_run_opts)?;
 
     // Reconcile keep_awake AFTER the role container is running but
@@ -2533,7 +2534,7 @@ plugins = []
     }
 
     #[test]
-    fn agent_mounts_for_codex_only_has_config_toml() {
+    fn agent_mounts_for_codex_without_auth_has_no_mounts() {
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -2568,9 +2569,10 @@ agents = ["codex"]
         .unwrap();
 
         let mounts = agent_mounts(&state);
-        assert_eq!(mounts.len(), 1);
-        assert!(mounts[0].contains("/jackin/codex/config.toml"));
-        assert!(!mounts[0].ends_with(":ro"));
+        assert!(
+            mounts.is_empty(),
+            "no generated codex config mount: {mounts:?}"
+        );
     }
 
     #[test]
@@ -2618,10 +2620,9 @@ agents = ["codex"]
         .unwrap();
 
         let mounts = agent_mounts(&state);
-        assert_eq!(mounts.len(), 2);
-        assert!(mounts[0].contains("/jackin/codex/config.toml"));
-        assert!(mounts[1].contains("/jackin/codex/auth.json"));
-        assert!(!mounts[1].ends_with(":ro"));
+        assert_eq!(mounts.len(), 1);
+        assert!(mounts[0].contains("/jackin/codex/auth.json"));
+        assert!(!mounts[0].ends_with(":ro"));
     }
 
     #[test]
@@ -2662,10 +2663,9 @@ agents = ["codex"]
         let mounts = agent_mounts(&state);
         assert_eq!(
             mounts.len(),
-            1,
+            0,
             "no auth.json bind when host has no ~/.codex/auth.json: {mounts:?}"
         );
-        assert!(mounts[0].contains("/jackin/codex/config.toml"));
     }
 
     #[test]
@@ -3211,6 +3211,7 @@ plugins = []
             r#"dockerfile = "Dockerfile"
 
 [claude]
+model = "sonnet"
 plugins = ["code-review@claude-plugins-official"]
 "#,
         )
@@ -3247,9 +3248,13 @@ plugins = ["code-review@claude-plugins-official"]
                 "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-chainargos__the-architect",
             )
         }));
-        assert!(runner.recorded.iter().any(|call| {
-            call.contains("docker run -d -it --name jackin-chainargos__the-architect")
-        }));
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it --name jackin-chainargos__the-architect"))
+            .unwrap();
+        assert!(run_cmd.contains(" --model sonnet"));
+        assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"));
         assert!(
             !runner
                 .recorded
@@ -3541,18 +3546,20 @@ model = "gpt-5"
             .find(|call| call.contains("docker run -d -it"))
             .unwrap();
         assert!(run_cmd.contains("-e JACKIN_AGENT=codex"));
+        assert!(run_cmd.contains(" -m gpt-5"));
+        assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"));
         assert!(run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"));
-        assert!(run_cmd.contains("/jackin/codex/config.toml"));
+        assert!(!run_cmd.contains("/jackin/codex/config.toml"));
         // Codex container must not receive any Claude-side mounts.
         assert!(!run_cmd.contains("/jackin/claude/"));
         assert!(!run_cmd.contains("/home/agent/.claude"));
         assert!(
-            paths
+            !paths
                 .data_dir
                 .join("jackin-agent-smith")
                 .join("codex")
                 .join("config.toml")
-                .is_file()
+                .exists()
         );
     }
 

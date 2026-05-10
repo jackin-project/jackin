@@ -178,6 +178,9 @@ pub enum GithubProvisionKind {
 #[non_exhaustive]
 pub enum AgentRuntimeState {
     Claude {
+        /// Optional Claude model override from `[claude].model`. Passed
+        /// to the interactive CLI with `--model` at launch time.
+        model: Option<String>,
         /// Host path to Claude's account-metadata file. Always
         /// populated by `prepare` (as `{}` for non-sync modes); only
         /// bind-mounted when `forward_auth` is `true` *and* the file
@@ -195,9 +198,9 @@ pub enum AgentRuntimeState {
         forward_auth: bool,
     },
     Codex {
-        /// Host path mounted at `/jackin/codex/config.toml` (always —
-        /// generated from the manifest, not auth state).
-        config_toml: PathBuf,
+        /// Optional Codex model override from `[codex].model`. Passed
+        /// to the interactive CLI with `-m` at launch time.
+        model: Option<String>,
         /// Host path mounted at `/jackin/codex/auth.json` when the
         /// file was synced from the host's `~/.codex/auth.json` on a
         /// previous launch. `None` when the host had no auth.json at
@@ -244,6 +247,15 @@ impl RoleState {
         }
     }
 
+    /// Claude model override, if the role manifest declared one.
+    #[must_use]
+    pub fn claude_model(&self) -> Option<&str> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Claude { model, .. } => model.as_deref(),
+            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp { .. } => None,
+        }
+    }
+
     /// Host path to Claude's OAuth credentials file. `None` when not
     /// prepared for `Agent::Claude`. As with [`Self::claude_account_json`],
     /// the path is returned regardless of whether the file currently
@@ -275,13 +287,11 @@ impl RoleState {
         )
     }
 
-    /// Host path to Codex's `config.toml` (mounted at
-    /// `/jackin/codex/config.toml` in the container). `None`
-    /// if this state was not prepared for `Agent::Codex`.
+    /// Codex model override, if the role manifest declared one.
     #[must_use]
-    pub fn codex_config_toml(&self) -> Option<&Path> {
+    pub fn codex_model(&self) -> Option<&str> {
         match &self.agent_runtime {
-            AgentRuntimeState::Codex { config_toml, .. } => Some(config_toml),
+            AgentRuntimeState::Codex { model, .. } => model.as_deref(),
             AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp { .. } => None,
         }
     }
@@ -370,6 +380,7 @@ impl RoleState {
 
                 (
                     AgentRuntimeState::Claude {
+                        model: manifest.claude.as_ref().and_then(|cfg| cfg.model.clone()),
                         account_json,
                         credentials_json,
                         forward_auth,
@@ -380,18 +391,12 @@ impl RoleState {
             crate::agent::Agent::Codex => {
                 let codex_dir = root.join("codex");
                 std::fs::create_dir_all(&codex_dir)?;
-                let config_toml = codex_dir.join("config.toml");
                 let auth_json_path = codex_dir.join("auth.json");
-                let (outcome, auth_json) = Self::provision_codex_auth(
-                    &config_toml,
-                    &auth_json_path,
-                    manifest,
-                    auth_forward,
-                    host_home,
-                )?;
+                let (outcome, auth_json) =
+                    Self::provision_codex_auth(&auth_json_path, auth_forward, host_home)?;
                 (
                     AgentRuntimeState::Codex {
-                        config_toml,
+                        model: manifest.codex.as_ref().and_then(|cfg| cfg.model.clone()),
                         auth_json,
                     },
                     outcome,
@@ -470,7 +475,8 @@ plugins = []
             !state.claude_forwards_auth(),
             "Ignore mode must not forward auth into the container",
         );
-        assert!(state.codex_config_toml().is_none());
+        assert!(state.claude_model().is_none());
+        assert!(state.codex_model().is_none());
 
         // Pin the host-side grouped layout: a regression to the legacy
         // flat shape (`.claude/state/.credentials.json` at the data-dir
@@ -490,7 +496,7 @@ plugins = []
     }
 
     #[test]
-    fn prepares_codex_state_writes_config_toml() {
+    fn prepares_codex_state_carries_model_without_config_toml() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
 
@@ -500,6 +506,7 @@ plugins = []
 agents = ["codex"]
 
 [codex]
+model = "gpt-5"
 "#,
         )
         .unwrap();
@@ -523,8 +530,15 @@ agents = ["codex"]
         .unwrap();
 
         assert_eq!(outcome, AuthProvisionOutcome::Skipped);
-        assert!(state.codex_config_toml().is_some());
-        assert!(state.codex_config_toml().unwrap().is_file());
+        assert_eq!(state.codex_model(), Some("gpt-5"));
+        assert!(
+            !paths
+                .data_dir
+                .join("jackin-agent-smith")
+                .join("codex")
+                .join("config.toml")
+                .exists()
+        );
         // Codex state carries no Claude auth paths — the typed enum
         // makes the absence structural rather than a runtime nil.
         assert!(state.claude_account_json().is_none());
