@@ -1,5 +1,154 @@
 use super::AppConfig;
 use crate::paths::JackinPaths;
+use anyhow::Context;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+pub fn validate_workspace_file_stem(name: &str) -> anyhow::Result<()> {
+    if name.is_empty() {
+        anyhow::bail!("workspace name cannot be empty");
+    }
+    if name == "." || name == ".." {
+        anyhow::bail!("workspace name {name:?} is reserved");
+    }
+    if name.contains('/') || name.contains('\\') {
+        anyhow::bail!("workspace name {name:?} cannot contain path separators");
+    }
+    #[cfg(windows)]
+    {
+        const RESERVED: &[&str] = &[
+            "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
+            "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        ];
+        if RESERVED
+            .iter()
+            .any(|reserved| name.eq_ignore_ascii_case(reserved))
+        {
+            anyhow::bail!("workspace name {name:?} is reserved on Windows");
+        }
+        if name.ends_with('.') || name.ends_with(' ') {
+            anyhow::bail!("workspace name {name:?} cannot end with a dot or space on Windows");
+        }
+    }
+    Ok(())
+}
+
+pub fn workspace_file_path(paths: &JackinPaths, name: &str) -> PathBuf {
+    paths.workspaces_dir.join(format!("{name}.toml"))
+}
+
+pub fn load_split_config(
+    paths: &JackinPaths,
+    contents_opt: Option<String>,
+) -> anyhow::Result<AppConfig> {
+    let mut config: AppConfig = match contents_opt {
+        Some(c) => toml::from_str(&c)?,
+        None => AppConfig::default(),
+    };
+
+    let legacy_workspaces = std::mem::take(&mut config.workspaces);
+    if !legacy_workspaces.is_empty() {
+        migrate_legacy_workspaces(paths, &config, &legacy_workspaces)?;
+        eprintln!(
+            "jackin migrated saved workspaces into {}",
+            paths.workspaces_dir.display()
+        );
+    }
+
+    config.workspaces = load_workspace_files(&paths.workspaces_dir)?;
+    Ok(config)
+}
+
+pub fn load_workspace_files(
+    workspaces_dir: &Path,
+) -> anyhow::Result<BTreeMap<String, crate::workspace::WorkspaceConfig>> {
+    let mut workspaces = BTreeMap::new();
+    let entries = match std::fs::read_dir(workspaces_dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(workspaces),
+        Err(e) => return Err(e.into()),
+    };
+
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| anyhow::anyhow!("invalid workspace filename {}", path.display()))?;
+        validate_workspace_file_stem(stem)
+            .with_context(|| format!("invalid workspace filename {}", path.display()))?;
+        let raw = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading workspace config {}", path.display()))?;
+        let workspace = toml::from_str(&raw)
+            .with_context(|| format!("parsing workspace config {}", path.display()))?;
+        workspaces.insert(stem.to_string(), workspace);
+    }
+    Ok(workspaces)
+}
+
+fn migrate_legacy_workspaces(
+    paths: &JackinPaths,
+    global_config: &AppConfig,
+    workspaces: &BTreeMap<String, crate::workspace::WorkspaceConfig>,
+) -> anyhow::Result<()> {
+    std::fs::create_dir_all(&paths.workspaces_dir)?;
+    for (name, workspace) in workspaces {
+        validate_workspace_file_stem(name)?;
+        let path = workspace_file_path(paths, name);
+        if path.exists() {
+            let existing: crate::workspace::WorkspaceConfig = toml::from_str(
+                &std::fs::read_to_string(&path)
+                    .with_context(|| format!("reading existing workspace {}", path.display()))?,
+            )
+            .with_context(|| format!("parsing existing workspace {}", path.display()))?;
+            if &existing == workspace {
+                continue;
+            }
+            anyhow::bail!(
+                "cannot migrate workspace {name:?}: {} already exists with different contents",
+                path.display()
+            );
+        }
+        let contents = toml::to_string_pretty(workspace)
+            .with_context(|| format!("serializing workspace {name:?}"))?;
+        atomic_write(&path, &contents)?;
+    }
+
+    let global_contents = toml::to_string_pretty(global_config)?;
+    atomic_write(&paths.config_file, &global_contents)?;
+    Ok(())
+}
+
+pub fn atomic_write(path: &Path, contents: &str) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("tmp");
+
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&tmp)?;
+        file.write_all(contents.as_bytes())?;
+        file.sync_all()?;
+    }
+
+    #[cfg(not(unix))]
+    std::fs::write(&tmp, contents)?;
+
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
 
 impl AppConfig {
     pub fn load_or_init(paths: &JackinPaths) -> anyhow::Result<Self> {
@@ -11,10 +160,7 @@ impl AppConfig {
             Err(e) => return Err(e.into()),
         };
 
-        let mut config: Self = match contents_opt {
-            Some(c) => toml::from_str(&c)?,
-            None => Self::default(),
-        };
+        let mut config = load_split_config(paths, contents_opt)?;
 
         // Run the reserved-name validation against the on-disk shape
         // BEFORE the builtin-sync editor save below. `ConfigEditor::save`
@@ -35,29 +181,8 @@ impl AppConfig {
             // through the lossy serde path first — that would destroy
             // every user comment before the editor could preserve them.
             if !paths.config_file.exists() {
-                // Inline of the removed AppConfig::save. Atomic write:
-                // serialize → .tmp (0o600 on unix, fsync) → rename.
                 let contents = toml::to_string_pretty(&config)?;
-                let tmp = paths.config_file.with_extension("tmp");
-
-                #[cfg(unix)]
-                {
-                    use std::io::Write;
-                    use std::os::unix::fs::OpenOptionsExt;
-                    let mut file = std::fs::OpenOptions::new()
-                        .write(true)
-                        .create(true)
-                        .truncate(true)
-                        .mode(0o600)
-                        .open(&tmp)?;
-                    file.write_all(contents.as_bytes())?;
-                    file.sync_all()?;
-                }
-
-                #[cfg(not(unix))]
-                std::fs::write(&tmp, &contents)?;
-
-                std::fs::rename(&tmp, &paths.config_file)?;
+                atomic_write(&paths.config_file, &contents)?;
             }
             let mut editor = crate::config::ConfigEditor::open(paths)?;
             for &(name, git) in crate::config::roles::BUILTIN_ROLES {
@@ -181,5 +306,60 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
             .unwrap();
 
         assert_eq!(mtime_before, mtime_after);
+    }
+
+    #[test]
+    fn load_migrates_legacy_workspaces_into_split_files() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"[env]
+GLOBAL = "yes"
+
+[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+
+[workspaces.prod]
+workdir = "/workspace/prod"
+
+[[workspaces.prod.mounts]]
+src = "/tmp/prod"
+dst = "/workspace/prod"
+
+[workspaces.prod.env]
+LOCAL = "only-prod"
+"#,
+        )
+        .unwrap();
+
+        let config = AppConfig::load_or_init(&paths).unwrap();
+        assert!(config.workspaces.contains_key("prod"));
+
+        let global = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(global.contains("[env]"), "{global}");
+        assert!(!global.contains("[workspaces."), "{global}");
+
+        let workspace = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
+        assert!(
+            workspace.contains(r#"workdir = "/workspace/prod""#),
+            "{workspace}"
+        );
+        assert!(workspace.contains("[env]"), "{workspace}");
+        assert!(workspace.contains(r#"LOCAL = "only-prod""#), "{workspace}");
+    }
+
+    #[test]
+    fn load_rejects_invalid_workspace_filename() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+        std::fs::write(paths.workspaces_dir.join("..toml"), "").unwrap();
+
+        let err = AppConfig::load_or_init(&paths).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("invalid workspace filename"), "{msg}");
     }
 }
