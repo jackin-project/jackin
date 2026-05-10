@@ -2371,7 +2371,8 @@ mod tests {
         let manifest_temp = tempdir().unwrap();
         std::fs::write(
             manifest_temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -2423,7 +2424,8 @@ plugins = []
         let manifest_temp = tempdir().unwrap();
         std::fs::write(
             manifest_temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -2492,7 +2494,8 @@ plugins = []
         let manifest_temp = tempdir().unwrap();
         std::fs::write(
             manifest_temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -2543,7 +2546,8 @@ plugins = []
         let manifest_temp = tempdir().unwrap();
         std::fs::write(
             manifest_temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["codex"]
 
 [codex]
@@ -2585,7 +2589,8 @@ agents = ["codex"]
         let manifest_temp = tempdir().unwrap();
         std::fs::write(
             manifest_temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["codex"]
 
 [codex]
@@ -2635,7 +2640,8 @@ agents = ["codex"]
         let manifest_temp = tempdir().unwrap();
         std::fs::write(
             manifest_temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["codex"]
 
 [codex]
@@ -2678,7 +2684,8 @@ agents = ["codex"]
         let manifest_temp = tempdir().unwrap();
         std::fs::write(
             manifest_temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["amp"]
 
 [amp]
@@ -2727,7 +2734,8 @@ agents = ["amp"]
         let manifest_temp = tempdir().unwrap();
         std::fs::write(
             manifest_temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["amp"]
 
 [amp]
@@ -3132,7 +3140,8 @@ echo "pulled $2"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -3208,7 +3217,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 model = "sonnet"
@@ -3296,7 +3306,8 @@ plugins = ["code-review@claude-plugins-official"]
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -3348,7 +3359,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -3424,7 +3436,8 @@ trusted = true
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = ["code-review@claude-plugins-official"]
@@ -3508,7 +3521,8 @@ trusted = true
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
 [claude]
@@ -3591,7 +3605,8 @@ trusted = true
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["codex"]
 
 [codex]
@@ -3643,7 +3658,8 @@ agents = ["codex"]
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -3714,7 +3730,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -3781,7 +3798,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -3827,7 +3845,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -3876,7 +3895,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 published_image = "docker.io/myorg/my-role:latest"
 
 [claude]
@@ -3925,7 +3945,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 published_image = "docker.io/myorg/my-role:latest"
 
 [claude]
@@ -3983,7 +4004,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = ["code-review@claude-plugins-official"]
@@ -4056,7 +4078,8 @@ plugins = ["code-review@claude-plugins-official"]
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -4125,7 +4148,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -4220,7 +4244,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [identity]
 name = "Agent Smith"
@@ -4273,7 +4298,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [identity]
 name = "Agent Smith"
@@ -4332,7 +4358,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [identity]
 name = "Agent Smith"
@@ -4390,7 +4417,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -4442,7 +4470,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -4545,7 +4574,8 @@ trusted = true
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -4616,7 +4646,8 @@ dst = "/workspace"
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -4718,7 +4749,8 @@ trusted = true
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [env.OPERATOR_SMOKE]
 default = "manifest-default"
@@ -4797,7 +4829,8 @@ trusted = true
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -4893,7 +4926,8 @@ trusted = true
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []

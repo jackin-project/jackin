@@ -23,6 +23,16 @@ what you're after.
 | `~/.jackin/roles/` | Cached role repository checkouts |
 | `~/.jackin/data/<container-name>/` | Persisted agent state (Claude history, settings, GitHub CLI config, plugins) |
 
+### One file per workspace, by design
+
+Saved workspaces live one-per-file under `~/.config/jackin/workspaces/` rather than as `[workspaces.<name>]` tables inside a single `config.toml`. The layout works directly with a **dotfile manager** like [chezmoi](https://www.chezmoi.io/) tracking `~/.config/jackin/`. Operators commonly want to:
+
+- **Version-control selectively** — track `config.toml` globally, include only team-relevant workspace files, leave the rest out via `.gitignore`, or keep workspaces private per-machine.
+- **Restore the full setup on a new machine** by checking out the dotfile repo and running `chezmoi apply` (or equivalent), with no manual TOML reconstruction.
+- **Diff a single workspace** in PR review without seeing churn in unrelated workspaces, which is impossible when every change touches a shared `[workspaces.*]` block.
+
+Each file carries its own `version = "v1alpha1"` stamp, so a dotfile-managed setup that is partially old (some workspaces stamped, some not) migrates per-file on first load. See [Schema Versions](/reference/schema-versions/) for the full version history and the legacy-to-`v1alpha1` migration matrix.
+
 ## config.toml schema
 
 The configuration is TOML. Global settings live at
@@ -30,12 +40,16 @@ The configuration is TOML. Global settings live at
 `~/.config/jackin/workspaces/`. The CLI and console manage both locations
 for you, so you generally don't need to edit them by hand.
 
+Top-level `version` is the config schema version. jackin' writes `version = "v1alpha1"` today. Older config files with no `version` are treated as legacy and migrated automatically on startup before parsing. See [Schema Versions](/reference/schema-versions/) for the full version history and migration matrix.
+
 ### Agent auth-forward settings
 
 `auth_forward` is configured per agent (`claude`, `codex`, `amp`) at three
 layers, with most-specific wins:
 
 ```toml
+version = "v1alpha1"
+
 # Layer 1 — global default (per agent)
 [claude]
 auth_forward = "sync"  # "sync" (default), "api_key", "oauth_token", or "ignore"

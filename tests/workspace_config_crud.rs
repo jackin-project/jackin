@@ -1,6 +1,26 @@
 use jackin::config::ConfigEditor;
 use jackin::paths::JackinPaths;
 use jackin::workspace::{self, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_resolved};
+use std::path::Path;
+use std::sync::{Mutex, OnceLock};
+
+fn with_cwd<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
+    static CWD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let _guard = CWD_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let fallback = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
+    let original = std::env::current_dir().unwrap_or_else(|_| fallback.clone());
+    std::env::set_current_dir(dir).unwrap();
+    struct RestoreCwd(std::path::PathBuf);
+    impl Drop for RestoreCwd {
+        fn drop(&mut self) {
+            let fallback = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
+            let target = if self.0.exists() { &self.0 } else { &fallback };
+            let _ = std::env::set_current_dir(target);
+        }
+    }
+    let _restore = RestoreCwd(original);
+    f()
+}
 
 /// Bootstrap a fresh, empty config file for a ConfigEditor-based test.
 ///
@@ -28,31 +48,27 @@ fn workspace_create_resolves_relative_workdir_and_mounts() {
     std::fs::create_dir_all(&workdir_dir).unwrap();
     std::fs::create_dir_all(&mount_dir).unwrap();
 
-    let original_cwd = std::env::current_dir().unwrap();
-    std::env::set_current_dir(temp.path()).unwrap();
-
-    let expanded_workdir = workspace::resolve_path("jackin");
-    let mount = parse_mount_spec_resolved("sibling-project").unwrap();
-
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    let result = editor.create_workspace(
-        "jackin",
-        WorkspaceConfig {
-            workdir: expanded_workdir.clone(),
-            mounts: vec![
-                workspace::MountConfig {
-                    src: expanded_workdir.clone(),
-                    dst: expanded_workdir,
-                    readonly: false,
-                    isolation: jackin::isolation::MountIsolation::Shared,
-                },
-                mount,
-            ],
-            ..Default::default()
-        },
-    );
-
-    std::env::set_current_dir(original_cwd).unwrap();
+    let result = with_cwd(temp.path(), || {
+        let expanded_workdir = workspace::resolve_path("jackin");
+        let mount = parse_mount_spec_resolved("sibling-project").unwrap();
+        editor.create_workspace(
+            "jackin",
+            WorkspaceConfig {
+                workdir: expanded_workdir.clone(),
+                mounts: vec![
+                    workspace::MountConfig {
+                        src: expanded_workdir.clone(),
+                        dst: expanded_workdir,
+                        readonly: false,
+                        isolation: jackin::isolation::MountIsolation::Shared,
+                    },
+                    mount,
+                ],
+                ..Default::default()
+            },
+        )
+    });
 
     result.unwrap();
     let config = editor.save().unwrap();
@@ -75,37 +91,36 @@ fn workspace_create_resolves_dot_workdir_and_dotdot_mount() {
     std::fs::create_dir_all(&workdir_dir).unwrap();
     std::fs::create_dir_all(&sibling_dir).unwrap();
 
-    let original_cwd = std::env::current_dir().unwrap();
-    std::env::set_current_dir(&workdir_dir).unwrap();
-
-    let expanded_workdir = workspace::resolve_path(".");
-    let mount = parse_mount_spec_resolved("../jackin-agent-smith").unwrap();
-
     let mut editor = ConfigEditor::open(&paths).unwrap();
-    let result = editor.create_workspace(
-        "jackin",
-        WorkspaceConfig {
-            workdir: expanded_workdir.clone(),
-            mounts: vec![
-                workspace::MountConfig {
-                    src: expanded_workdir.clone(),
-                    dst: expanded_workdir,
-                    readonly: false,
-                    isolation: jackin::isolation::MountIsolation::Shared,
-                },
-                mount.clone(),
-            ],
-            ..Default::default()
-        },
-    );
-
-    std::env::set_current_dir(original_cwd).unwrap();
+    let mut mount_for_assert = None;
+    let result = with_cwd(&workdir_dir, || {
+        let expanded_workdir = workspace::resolve_path(".");
+        let mount = parse_mount_spec_resolved("../jackin-agent-smith").unwrap();
+        mount_for_assert = Some(mount.clone());
+        editor.create_workspace(
+            "jackin",
+            WorkspaceConfig {
+                workdir: expanded_workdir.clone(),
+                mounts: vec![
+                    workspace::MountConfig {
+                        src: expanded_workdir.clone(),
+                        dst: expanded_workdir,
+                        readonly: false,
+                        isolation: jackin::isolation::MountIsolation::Shared,
+                    },
+                    mount,
+                ],
+                ..Default::default()
+            },
+        )
+    });
 
     result.unwrap();
     let config = editor.save().unwrap();
     let ws = config.workspaces.get("jackin").unwrap();
     assert!(ws.workdir.starts_with('/'));
     assert!(!ws.workdir.contains(".."));
+    let mount = mount_for_assert.unwrap();
     assert!(!mount.src.contains(".."), "mount src must not contain '..'");
     assert!(mount.src.ends_with("/jackin-agent-smith"));
 }
@@ -249,21 +264,17 @@ fn workspace_edit_resolves_relative_mount() {
     editor.save().unwrap();
 
     // Now edit it
-    let original_cwd = std::env::current_dir().unwrap();
-    std::env::set_current_dir(temp.path()).unwrap();
-
-    let mount = parse_mount_spec_resolved("jackin-dev").unwrap();
-
     let mut editor2 = ConfigEditor::open(&paths).unwrap();
-    let result = editor2.edit_workspace(
-        "jackin",
-        WorkspaceEdit {
-            upsert_mounts: vec![mount],
-            ..WorkspaceEdit::default()
-        },
-    );
-
-    std::env::set_current_dir(original_cwd).unwrap();
+    let result = with_cwd(temp.path(), || {
+        let mount = parse_mount_spec_resolved("jackin-dev").unwrap();
+        editor2.edit_workspace(
+            "jackin",
+            WorkspaceEdit {
+                upsert_mounts: vec![mount],
+                ..WorkspaceEdit::default()
+            },
+        )
+    });
 
     result.unwrap();
     let config = editor2.save().unwrap();

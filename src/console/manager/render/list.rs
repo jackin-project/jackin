@@ -998,6 +998,7 @@ mod subpanel_padding_tests {
 
     fn ws_config_with_allowed(names: &[&str], default: Option<&str>) -> WorkspaceConfig {
         WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/tmp/demo".into(),
             mounts: vec![],
             allowed_roles: names.iter().map(|s| (*s).into()).collect(),

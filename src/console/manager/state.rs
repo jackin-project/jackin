@@ -915,6 +915,7 @@ mod tests {
 
     fn empty_ws(workdir: &str) -> WorkspaceConfig {
         WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: workdir.into(),
             ..Default::default()
         }
@@ -923,6 +924,7 @@ mod tests {
     #[test]
     fn summary_counts_mounts_and_readonly() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/a".into(),
             mounts: vec![
                 MountConfig {
@@ -971,6 +973,7 @@ mod tests {
         config.workspaces.insert(
             "big-monorepo".into(),
             WorkspaceConfig {
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                 workdir: workdir.clone(),
                 mounts: vec![MountConfig {
                     src: workdir.clone(),
@@ -1375,6 +1378,7 @@ mod tests {
     fn editor_with_one_shared_mount() -> EditorState<'static> {
         use std::collections::BTreeMap;
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: String::new(),
             mounts: vec![MountConfig {
                 src: "/host/a".into(),

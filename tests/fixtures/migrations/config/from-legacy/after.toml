@@ -1,0 +1,12 @@
+version = "v1alpha1"
+# Sample operator config carried through the legacy -> v1alpha1 migration test.
+
+[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+
+[claude]
+auth_forward = "sync"
+
+[env]
+OPERATOR_ORG = "acme"

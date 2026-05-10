@@ -41,8 +41,13 @@ pub struct MountConfig {
     pub isolation: crate::isolation::MountIsolation,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkspaceConfig {
+    #[serde(
+        default = "crate::config::migrations::current_workspace_version",
+        rename = "version"
+    )]
+    pub version: String,
     pub workdir: String,
     #[serde(default)]
     pub mounts: Vec<MountConfig>,
@@ -106,6 +111,29 @@ pub struct WorkspaceConfig {
     pub github: Option<crate::config::GithubAuthConfig>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub git_pull_on_entry: bool,
+}
+
+impl Default for WorkspaceConfig {
+    fn default() -> Self {
+        Self {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            workdir: String::new(),
+            mounts: Vec::new(),
+            allowed_roles: Vec::new(),
+            default_role: None,
+            default_agent: None,
+            last_role: None,
+            env: std::collections::BTreeMap::new(),
+            roles: std::collections::BTreeMap::new(),
+            keep_awake: KeepAwakeConfig::default(),
+            op_account: None,
+            claude: None,
+            codex: None,
+            amp: None,
+            github: None,
+            git_pull_on_entry: false,
+        }
+    }
 }
 
 /// Per-workspace power-management opt-in.
@@ -328,6 +356,7 @@ mod tests {
 
     fn workspace_with_workdir_and_dst(workdir: &str, dst: &str) -> WorkspaceConfig {
         WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: workdir.to_string(),
             mounts: vec![MountConfig {
                 src: "/tmp/src".to_string(),
@@ -342,6 +371,7 @@ mod tests {
     #[test]
     fn workspace_serializes_default_agent_when_set() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/tmp/x".to_string(),
             default_agent: Some(crate::agent::Agent::Codex),
             ..Default::default()
@@ -354,6 +384,7 @@ mod tests {
     #[test]
     fn workspace_omits_default_agent_field_when_unset() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/tmp/x".to_string(),
             ..Default::default()
         };
@@ -365,6 +396,7 @@ mod tests {
     #[test]
     fn workspace_resolves_to_claude_when_unset() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/tmp/x".to_string(),
             ..Default::default()
         };
@@ -374,6 +406,7 @@ mod tests {
     #[test]
     fn workspace_resolves_to_codex_when_set() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/tmp/x".to_string(),
             default_agent: Some(crate::agent::Agent::Codex),
             ..Default::default()
@@ -524,6 +557,7 @@ mystery_field = 7
     #[test]
     fn validate_workdir_parent_of_any_mount_dst() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/workspace".to_string(),
             mounts: vec![
                 MountConfig {
@@ -755,6 +789,7 @@ isolation = "clone"
     fn validate_workspace_config_surfaces_isolation_layout_errors() {
         use std::collections::BTreeMap;
         let workspace = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/workspace/proj".into(),
             mounts: vec![
                 worktree_mount("/tmp/a", "/workspace/proj"),
@@ -989,6 +1024,7 @@ allowed_roles = ["smith"]
     #[test]
     fn workspace_config_round_trips_op_account() {
         let original = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/x".into(),
             op_account: Some("Personal".into()),
             ..Default::default()
@@ -1007,6 +1043,7 @@ allowed_roles = ["smith"]
     #[test]
     fn workspace_config_omits_op_account_when_none() {
         let cfg = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/x".into(),
             ..Default::default()
         };

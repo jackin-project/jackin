@@ -256,6 +256,7 @@ mod tests {
         let temp = tempdir().unwrap();
         let mut config = AppConfig::default();
         let original = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/workspace/project".to_string(),
             mounts: vec![MountConfig {
                 src: temp.path().display().to_string(),
@@ -308,6 +309,7 @@ mod tests {
             .create_workspace(
                 "my-app",
                 WorkspaceConfig {
+                    version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                     workdir: "/workspace/proj".to_string(),
                     mounts: vec![MountConfig {
                         src: temp.path().display().to_string(),
@@ -369,6 +371,7 @@ mod tests {
             .create_workspace(
                 "my-app",
                 WorkspaceConfig {
+                    version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                     workdir: "/workspace/proj".to_string(),
                     mounts: vec![MountConfig {
                         src: temp.path().display().to_string(),
@@ -427,6 +430,7 @@ mod tests {
         let temp = tempdir().unwrap();
         let mut config = AppConfig::default();
         let original = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/workspace/project".to_string(),
             mounts: vec![MountConfig {
                 src: temp.path().display().to_string(),
@@ -444,6 +448,7 @@ mod tests {
             .create_workspace(
                 "big-monorepo",
                 WorkspaceConfig {
+                    version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                     workdir: "/workspace/other".to_string(),
                     mounts: vec![MountConfig {
                         src: temp.path().display().to_string(),
@@ -474,6 +479,7 @@ mod tests {
 
         let mut config = AppConfig::default();
         let original = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/workspace/project".to_string(),
             mounts: vec![MountConfig {
                 src: original_src.display().to_string(),
@@ -525,6 +531,7 @@ mod tests {
 
         let mut config = AppConfig::default();
         let original = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/workspace/project".to_string(),
             mounts: vec![MountConfig {
                 src: original_src.display().to_string(),
