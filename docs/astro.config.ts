@@ -322,6 +322,7 @@ export default defineConfig({
                   label: 'Configuration ergonomics',
                   collapsed: true,
                   items: [
+                    { label: 'Config versioning and migration', slug: 'reference/roadmap/config-versioning-migration' },
                     { label: 'Split config.toml into per-workspace files', slug: 'reference/roadmap/split-workspace-config-files' },
                   ],
                 },

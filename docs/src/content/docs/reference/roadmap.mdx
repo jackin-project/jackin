@@ -93,6 +93,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 
 ### Configuration ergonomics
 
+- **[Config versioning and migration framework](/reference/roadmap/config-versioning-migration/)** — add a `version` integer to `config.toml` and `jackin.role.toml` so jackin can detect stale files and migrate them automatically (operator config) or guide role authors through an explicit upgrade path (role manifests). Includes a `jackin validate --migrate` subcommand and an optional `--pr` flag that opens a migration pull request in the role repo (status: open — design proposal).
 - **[Split `config.toml` into per-workspace files](/reference/roadmap/split-workspace-config-files/)** — keep the TOML format, but move every workspace into `~/.config/jackin/workspaces/<name>.toml`, leaving `config.toml` for global settings only. Designed for one-file sharing, fresh-machine reuse, and selective version control (e.g. via [chezmoi](https://www.chezmoi.io/)).
 
 ### Documentation infrastructure
