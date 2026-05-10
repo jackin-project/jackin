@@ -70,8 +70,15 @@ jobs:
         with:
           tool: cargo-nextest
       - run: cargo fmt --check
-      - run: cargo clippy -- -D warnings
-      - run: cargo nextest run
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      # Verify the default-features compile path. Clippy above runs with
+      # --all-features, so without this step the default build is otherwise
+      # untouched in CI. The `e2e` feature is purely additive (empty `e2e
+      # = []` plus a single `#![cfg(feature = "e2e")]` test file), so
+      # running nextest both with and without it would re-execute every
+      # non-feature-gated test for no extra coverage.
+      - run: cargo check --all-targets
+      - run: cargo nextest run --all-features
 
   msrv:
     needs: changes

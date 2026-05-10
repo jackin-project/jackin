@@ -1199,6 +1199,7 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
 /// is the bare `op://Vault/Item/Field` form (account scope is not
 /// encoded in the path).
 #[test]
+#[allow(clippy::too_many_lines)]
 fn op_picker_multi_account_flow() -> Result<()> {
     use jackin::console::widgets::op_picker::{OpLoadState, OpPickerStage};
     use jackin::operator_env::{OpAccount, OpField, OpItem, OpVault};
@@ -2699,6 +2700,7 @@ fn auth_row_idx(
 // separately) but the mode never reached disk; on reload, the resolver
 // fell back to the global default and ignored the freshly-written key.
 #[test]
+#[allow(clippy::too_many_lines)]
 fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
@@ -2964,10 +2966,12 @@ fn auth_role_header_left_right_toggles_expansion() -> Result<()> {
     let cwd = temp.path();
 
     let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
-    let mut over = WorkspaceRoleOverride::default();
-    over.claude = Some(jackin::config::AgentAuthConfig {
-        auth_forward: jackin::config::AuthForwardMode::Ignore,
-    });
+    let over = WorkspaceRoleOverride {
+        claude: Some(jackin::config::AgentAuthConfig {
+            auth_forward: jackin::config::AuthForwardMode::Ignore,
+        }),
+        ..Default::default()
+    };
     ws.roles.insert("the-architect".into(), over);
 
     let mut state = ManagerState::from_config(&config, cwd);
@@ -2993,16 +2997,18 @@ fn auth_role_header_d_clears_selected_auth_kind_override() -> Result<()> {
     let cwd = temp.path();
 
     let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
-    let mut over = WorkspaceRoleOverride::default();
-    over.claude = Some(jackin::config::AgentAuthConfig {
-        auth_forward: jackin::config::AuthForwardMode::Ignore,
-    });
-    over.codex = Some(
-        jackin::config::CodexAuthConfig::new(jackin::config::AgentAuthConfig {
-            auth_forward: jackin::config::AuthForwardMode::ApiKey,
-        })
-        .unwrap(),
-    );
+    let over = WorkspaceRoleOverride {
+        claude: Some(jackin::config::AgentAuthConfig {
+            auth_forward: jackin::config::AuthForwardMode::Ignore,
+        }),
+        codex: Some(
+            jackin::config::CodexAuthConfig::new(jackin::config::AgentAuthConfig {
+                auth_forward: jackin::config::AuthForwardMode::ApiKey,
+            })
+            .unwrap(),
+        ),
+        ..Default::default()
+    };
     ws.roles.insert("the-architect".into(), over);
 
     let mut state = ManagerState::from_config(&config, cwd);
@@ -3045,16 +3051,18 @@ fn auth_role_agent_row_d_silently_clears_single_agent() -> Result<()> {
     let cwd = temp.path();
 
     let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
-    let mut over = WorkspaceRoleOverride::default();
-    over.claude = Some(jackin::config::AgentAuthConfig {
-        auth_forward: jackin::config::AuthForwardMode::Ignore,
-    });
-    over.codex = Some(
-        jackin::config::CodexAuthConfig::new(jackin::config::AgentAuthConfig {
-            auth_forward: jackin::config::AuthForwardMode::ApiKey,
-        })
-        .unwrap(),
-    );
+    let over = WorkspaceRoleOverride {
+        claude: Some(jackin::config::AgentAuthConfig {
+            auth_forward: jackin::config::AuthForwardMode::Ignore,
+        }),
+        codex: Some(
+            jackin::config::CodexAuthConfig::new(jackin::config::AgentAuthConfig {
+                auth_forward: jackin::config::AuthForwardMode::ApiKey,
+            })
+            .unwrap(),
+        ),
+        ..Default::default()
+    };
     ws.roles.insert("the-architect".into(), over);
 
     let mut state = ManagerState::from_config(&config, cwd);
@@ -3637,7 +3645,11 @@ fn github_role_override_picker_filters_already_overridden_roles_via_dispatcher()
             editor(&state).modal
         );
     };
-    let labels: Vec<String> = picker.roles.iter().map(|c| c.key()).collect();
+    let labels: Vec<String> = picker
+        .roles
+        .iter()
+        .map(jackin::selector::RoleSelector::key)
+        .collect();
     assert!(
         !labels.iter().any(|s| s == "the-architect"),
         "the-architect already has a github override and must be filtered out; got {labels:?}"

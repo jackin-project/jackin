@@ -137,7 +137,10 @@ RUN claude plugin marketplace add anthropics/claude-plugins-official || true
     block
 }
 
-fn shell_quote(value: &str) -> String {
+/// Single-quote `value` for safe inclusion in a `/bin/sh -c` string. Embedded
+/// single quotes are escaped via the POSIX `'"'"'` idiom; an empty string
+/// becomes `''` so it survives shell word splitting.
+pub fn shell_quote(value: &str) -> String {
     if value.is_empty() {
         return "''".to_string();
     }
@@ -421,8 +424,7 @@ mod tests {
         );
         let last_user = dockerfile
             .lines()
-            .filter(|l| l.starts_with("USER "))
-            .last()
+            .rfind(|l| l.starts_with("USER "))
             .unwrap();
         assert_eq!(last_user, "USER agent");
     }
