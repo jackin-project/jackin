@@ -90,10 +90,10 @@ RUN current_gid=\"$(id -g agent)\" \
        fi \
     && chown -R agent:agent /home/agent
 {install_blocks}{hook_section}USER root
-COPY .jackin-runtime/entrypoint.sh /home/agent/entrypoint.sh
-RUN chmod +x /home/agent/entrypoint.sh
+COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
+RUN chmod +x /jackin/runtime/entrypoint.sh
 USER agent
-ENTRYPOINT [\"/home/agent/entrypoint.sh\"]
+ENTRYPOINT [\"/jackin/runtime/entrypoint.sh\"]
 "
     )
 }
@@ -275,9 +275,9 @@ mod tests {
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
         assert!(!dockerfile.contains("WORKDIR"));
         assert!(
-            dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /home/agent/entrypoint.sh")
+            dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
         );
-        assert!(dockerfile.contains("ENTRYPOINT [\"/home/agent/entrypoint.sh\"]"));
+        assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/entrypoint.sh\"]"));
     }
 
     #[test]
@@ -294,7 +294,7 @@ mod tests {
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
         assert!(dockerfile.contains("RUN claude --version"));
         assert!(
-            dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /home/agent/entrypoint.sh")
+            dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
         );
     }
 
@@ -453,7 +453,7 @@ mod tests {
 
         assert!(dockerfile.contains("/home/agent"));
         assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" agent"));
-        assert!(dockerfile.contains("ENTRYPOINT [\"/home/agent/entrypoint.sh\"]"));
+        assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/entrypoint.sh\"]"));
     }
 
     #[test]
