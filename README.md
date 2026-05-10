@@ -44,11 +44,18 @@ Declared in [`jackin.role.toml`](./jackin.role.toml) under `[claude].plugins` an
 
 Trust rationale: see [AGENTS.md § Threat model](./AGENTS.md#threat-model).
 
-## Pre-launch hooks
+## Runtime hooks
 
-The `hooks/pre-launch.sh` script runs before the agent CLI starts:
+Two hooks run before the agent CLI starts:
 
-1. **PostgreSQL host** — derives `POSTGRESQL_DB_HOST` from `JACKIN_DIND_HOSTNAME` / `DOCKER_HOST` so Gradle can reach the docker-compose Postgres
-2. **Context7 MCP** — configures the MCP server if `CONTEXT7_API_KEY` is provided (prompted at launch, skippable)
-3. **caveman-shrink MCP** — registers caveman-shrink as a Claude MCP middleware (claude agent only, idempotent; fails launch if the claude CLI is missing — see hook header for the contract)
-4. **Codex caveman skills check** — fails launch if `~/.agents/skills/caveman/SKILL.md` is missing (codex agent only); a missing file means the image was built wrong
+`hooks/source.sh` is sourced into the entrypoint shell so its exports propagate to the agent:
+
+1. **PostgreSQL host** — sets `POSTGRESQL_DB_HOST` from jackin's runtime-managed `JACKIN_DIND_HOSTNAME` so Gradle can reach the docker-compose Postgres. Hard-fails if `JACKIN_DIND_HOSTNAME` is unset, since that means the role is being launched outside the jackin runtime contract.
+
+`hooks/preflight.sh` runs as a child process for per-start validation and MCP setup:
+
+1. **Context7 MCP** — configures the MCP server if `CONTEXT7_API_KEY` is provided (prompted at launch, skippable)
+2. **caveman-shrink MCP** — registers caveman-shrink as a Claude MCP middleware (claude agent only, idempotent; fails launch if the claude CLI is missing — see hook header for the contract)
+3. **Codex caveman skills check** — fails launch if `~/.agents/skills/caveman/SKILL.md` is missing (codex agent only); a missing file means the image was built wrong
+
+Agent Brown requires a jackin runtime that sets `JACKIN_DIND_HOSTNAME`.
