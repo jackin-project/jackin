@@ -51,9 +51,10 @@ through to the container unchanged.
 
 `sync` is the default. You only need to do anything here if you want `token` or `ignore` for a specific workspace or role. Manage `gh` modes through the same surface as agent auth: `jackin console` → select the workspace → **Auth** tab — see the [overview](/guides/authentication/#managing-auth--always-through-the-operator-console) for the management story shared across every auth axis.
 
-<Aside type="note">
-The dedicated `GitHub CLI` row in the console's **Auth** tab (and a `jackin config auth set --target github` CLI subcommand) are not yet wired — both are planned. Until they land, leave the global default at `sync` (the out-of-the-box behaviour) and rely on the launch-summary notice (below) to confirm the mode on every container start.
-</Aside>
+The dedicated `GitHub CLI` row in the console's **Auth** tab is wired
+for workspace and per-role modes. A dedicated
+`jackin config auth set --target github` CLI subcommand is still
+planned; use the console for non-default workspace and role settings.
 
 ## Launch-time messaging
 

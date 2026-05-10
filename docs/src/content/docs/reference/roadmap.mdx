@@ -41,19 +41,12 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 
 ## Partially implemented
 
-- [1Password integration](/reference/roadmap/onepassword-integration/) — workspace-managed `op://` env references shipped; file-mount generation (option 4) still deferred
-- [Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/) — `Claude Code`, `Codex`, and `Amp` all shipped as built-in runtimes; full feature parity across `claude` / `codex` / `amp` still in flight
-- [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/) — three-mode auth-forward (`sync` / `token` / `ignore`) at all three layers shipped, plus container HTTPS-normalize, `gh` credential helper wiring, and the auth-tab GitHub CLI row in `jackin console`; dedicated CLI subcommand, scope pre-flight, and bidirectional shared-store sync still pending
-- [Workspace Claude token setup](/reference/roadmap/workspace-claude-token-setup/) — `jackin workspace claude-token setup|rotate|revoke|doctor` orchestrator with PTY-captured tokens, 1Password write, post-write SHA validation, the in-container OAuth-token onboarding skeleton, and the launch-banner expiry countdown all shipped; TUI `[G] Generate token` action, Apple Keychain backend, and bulk `--all` migration flag remain. Under-the-hood mechanics at [Claude Token Orchestrator](/reference/claude-token-orchestrator/)
+- [1Password integration](/reference/roadmap/onepassword-integration/) — env references and picker flows are documented in standard docs; roadmap tracks future read-only secret file mounts
+- [Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/) — built-in runtime launch is documented in standard docs; roadmap tracks deeper runtime parity
+- [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/) — shipped GitHub auth forwarding is documented in standard docs; roadmap tracks the CLI subcommand, scope pre-flight, and deeper GHE coverage
+- [Workspace Claude token setup](/reference/roadmap/workspace-claude-token-setup/) — shipped token commands are documented in standard docs; roadmap tracks the canonical auth slot, TUI generate action, Apple Keychain backend, validity probe, and bulk migration
 
 ## Planned
-
-### Agent runtimes
-
-<Aside type="note">
-`Claude Code`, `Codex`, and `Amp` are all built-in runtimes today (see Partially implemented above). The remaining work to reach full `claude` / `codex` / `amp` feature parity — runtime-specific auth, config, state, and entrypoint behaviour — continues under the same roadmap item.
-</Aside>
-- **[Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/)** — finish deeper runtime parity beyond basic launch/auth support. Phase 1 focuses on secure local usability, not full Claude-feature parity.
 
 ### Platform expansion
 

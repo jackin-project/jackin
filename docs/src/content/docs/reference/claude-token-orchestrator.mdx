@@ -152,7 +152,7 @@ The function returns `Result<Option<i64>>` precisely so a malformed stamp surfac
 
 The `--reuse` setup path does **not** write a stamp. jackin did not mint the token in that flow, so the issuance date is unknown and any stamp would mislead the operator.
 
-`revoke` removes the stamp so the launch banner stops showing a countdown for a workspace whose canonical slot is gone.
+`revoke` removes the stamp so the launch banner stops showing a countdown for a workspace whose managed token source is gone.
 
 ## Revoke
 
@@ -178,7 +178,7 @@ The `--reuse` setup path does **not** write a stamp. jackin did not mint the tok
 
 ## Doctor
 
-`run_doctor` is a structural / connectivity check — it does not contact Claude's API. The cheapest reliable way to confirm an OAuth token is *valid* upstream is to launch a workspace and observe the auth banner; doctor's job is to confirm the canonical-slot config plumbing resolves without errors:
+`run_doctor` is a structural / connectivity check — it does not contact Claude's API. The cheapest reliable way to confirm an OAuth token is *valid* upstream is to launch a workspace and observe the auth banner; doctor's job is to confirm the managed workspace env slot resolves without errors:
 
 1. Read the workspace's `CLAUDE_CODE_OAUTH_TOKEN`. Missing slot → actionable "run setup first" error.
 2. If the slot holds an `op://` reference, resolve through `op read`. The resolution failure is wrapped with the resolved path so the operator's terminal output matches what they see in 1P.
@@ -214,7 +214,7 @@ When extending the orchestrator, prefer to extend an existing `_with_runner` shi
 - **Config persisted last** — a partial failure earlier must never leave a wired-but-broken slot. The editor open + save sequence is gated behind the validation result.
 - **OAuthToken onboarding skeleton** — without `{"hasCompletedOnboarding":true}` in `account.json`, the in-container Claude CLI ignores `CLAUDE_CODE_OAUTH_TOKEN` and shows the login wizard. The skeleton is jackin-managed and bind-mounted; it is the *only* file mounted into the container under OAuth-token mode.
 - **`expiry_days_for_launch` returns `Result<Option<i64>>`** — splitting "absent stamp" (the normal case) from "malformed stamp" (the should-warn case) so a corrupt cache surfaces once on the next launch instead of silently disappearing the countdown.
-- **Revoke `--delete-op-item` is hard-error on literals** — the operator opted into a 1P-side delete; a silent fall-through when the slot can't be deleted would let the secret survive.
+- **Revoke `--delete-op-item` is hard-error on literals** — the operator opted into a 1P-side delete; a silent fall-through when the managed env slot can't be deleted would let the secret survive.
 - **Same-ref guard in rotate** — protects against deleting the freshly-created item if the new and prior `op://` references ever match.
 
 When changing any of the above, update this page in the same PR.

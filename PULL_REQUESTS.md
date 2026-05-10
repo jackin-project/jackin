@@ -241,6 +241,7 @@ When the operator confirms a PR can be merged, verify the PR's title and descrip
 
 - Read the current metadata: `gh pr view <PR>`.
 - Read the actual diff being merged: `gh pr diff <PR>` (and `git log` on the PR branch if the diff is large).
+- Check whether the PR ships, advances, defers, or invalidates any roadmap item under `docs/src/content/docs/reference/roadmap/`. If the roadmap is stale, update the roadmap item and `docs/src/content/docs/reference/roadmap.mdx`, refresh the PR description, push that change, and only then continue toward merge. A merge request is the final freshness gate, even if earlier review missed the roadmap update.
 - Compare. The metadata is stale if any of these are true: commits added scope that the title/body doesn't reflect; a feature was descoped after the PR opened; the test plan is wrong relative to what was actually verified; file paths cited in the body have moved or been renamed; the title still says "design doc only" / "WIP" / etc. while the PR now contains implementation.
 - If stale, update the title and/or body via `gh pr edit <PR>` *before* running the merge. Squash-merge writes the PR title verbatim into the commit message; merging with stale metadata bakes the drift into history permanently.
 
