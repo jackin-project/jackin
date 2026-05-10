@@ -186,6 +186,122 @@ fn validate_fails_with_no_args() {
 }
 
 #[test]
+fn validate_migrate_accepts_flag_after_path() {
+    // `--migrate` may appear in any position relative to <role-repo-path>.
+    let temp = tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+    )
+    .unwrap();
+
+    Command::cargo_bin("jackin-validate")
+        .unwrap()
+        .args([temp.path().to_str().unwrap(), "--migrate"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Migrated manifest legacy -> v1alpha1",
+        ));
+}
+
+#[test]
+fn validate_migrate_is_noop_for_current_manifest() {
+    let temp = tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        "version = \"v1alpha1\"\ndockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+    )
+    .unwrap();
+
+    Command::cargo_bin("jackin-validate")
+        .unwrap()
+        .args(["--migrate", temp.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Manifest already at current version",
+        ));
+}
+
+#[test]
+fn validate_migrate_rejects_newer_manifest_version() {
+    let temp = tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("Dockerfile"),
+        "FROM projectjackin/construct:trixie\n",
+    )
+    .unwrap();
+    std::fs::write(
+        temp.path().join("jackin.role.toml"),
+        "version = \"v2alpha1\"\ndockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+    )
+    .unwrap();
+
+    Command::cargo_bin("jackin-validate")
+        .unwrap()
+        .args(["--migrate", temp.path().to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("only understands up to v1alpha1"));
+}
+
+#[test]
+fn validate_migrate_reports_missing_manifest() {
+    let temp = tempdir().unwrap();
+
+    Command::cargo_bin("jackin-validate")
+        .unwrap()
+        .args(["--migrate", temp.path().to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("reading"));
+}
+
+#[test]
+fn validate_migrate_reports_malformed_manifest() {
+    let temp = tempdir().unwrap();
+    std::fs::write(temp.path().join("jackin.role.toml"), "this = is = invalid").unwrap();
+
+    Command::cargo_bin("jackin-validate")
+        .unwrap()
+        .args(["--migrate", temp.path().to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("parsing"));
+}
+
+#[test]
+fn validate_rejects_unknown_flag() {
+    Command::cargo_bin("jackin-validate")
+        .unwrap()
+        .args(["--unknown", "/tmp"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown flag"));
+}
+
+#[test]
+fn validate_rejects_too_many_positional_args() {
+    Command::cargo_bin("jackin-validate")
+        .unwrap()
+        .args(["/tmp/a", "/tmp/b"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("too many positional arguments"));
+}
+
+#[test]
 fn validate_migrate_updates_legacy_manifest() {
     let temp = tempdir().unwrap();
     std::fs::write(

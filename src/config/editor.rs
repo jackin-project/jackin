@@ -50,6 +50,14 @@ impl ConfigEditor {
     /// Loads the existing config file as a `DocumentMut`. If the file
     /// does not exist, delegates to `AppConfig::load_or_init` to
     /// materialize defaults, then reopens the resulting file.
+    ///
+    /// Precondition: `AppConfig::load_or_init` has run for `paths` at
+    /// least once so any legacy `[workspaces.X]` tables already moved
+    /// into split files. Calling `open` against a legacy monolithic
+    /// config rewrites it through the lossy serde path and drops
+    /// operator comments. Production callers always run `load_or_init`
+    /// first; the recursion-when-missing branch below covers the
+    /// fresh-install case.
     pub fn open(paths: &JackinPaths) -> anyhow::Result<Self> {
         if paths.config_file.exists() {
             crate::config::migrations::migrate_config_file_if_needed(&paths.config_file)?;
@@ -1867,10 +1875,10 @@ dst = "/a"
 
         let err = editor.save().unwrap_err();
 
+        let chain = format!("{err:#}");
         assert!(
-            err.to_string().contains("Is a directory")
-                || err.to_string().contains("is a directory"),
-            "{err}"
+            chain.contains("Is a directory") || chain.contains("is a directory"),
+            "{chain}"
         );
         assert!(
             paths.workspaces_dir.join("old-name.toml").exists(),

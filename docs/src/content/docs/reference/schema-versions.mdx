@@ -19,12 +19,12 @@ which fields exist in which schema version.
 
 ## Timeline
 
-| Version | File kind | Status | Introduced | Summary |
-|---|---|---|---|---|
-| `legacy` | Config, workspace, manifest | Supported for migration | Pre-versioning | No top-level `version` field |
-| `v1alpha1` | Config | Current | jackin-project/jackin#291 | Adds `version = "v1alpha1"`; migrates legacy monolithic workspace tables into split workspace files |
-| `v1alpha1` | Workspace | Current | jackin-project/jackin#291 | Adds `version = "v1alpha1"` to per-workspace files |
-| `v1alpha1` | Manifest | Current | jackin-project/jackin#291 | Adds required `version = "v1alpha1"` to `jackin.role.toml` |
+| Version | File kind | Status | Summary |
+|---|---|---|---|
+| `legacy` | Config, workspace, manifest | Supported for migration | No top-level `version` field |
+| `v1alpha1` | Config | Current | Adds `version = "v1alpha1"`; migrates legacy monolithic workspace tables into split workspace files |
+| `v1alpha1` | Workspace | Current | Adds `version = "v1alpha1"` to per-workspace files |
+| `v1alpha1` | Manifest | Current | Adds required `version = "v1alpha1"` to `jackin.role.toml` |
 
 ## Version format
 

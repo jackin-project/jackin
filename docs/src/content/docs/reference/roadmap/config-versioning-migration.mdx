@@ -14,7 +14,7 @@ Two classes of files are affected differently:
 - **Jackin-owned files** (`config.toml`, per-workspace files once [Split config.toml into per-workspace files](/reference/roadmap/split-workspace-config-files/) ships) — jackin writes these. It can migrate them silently on startup before the operator touches anything.
 - **Role-owned files** (`jackin.role.toml` in each role repo) — the role author writes these. Jackin reads them but has no write authority without an explicit operator action. A breaking change in the manifest schema forces every role author to update their repo manually and with no guidance beyond "it broke."
 
-Before this work, neither class had a `version` field. Jackin could not distinguish "file was never created" from "file predates the current schema" from "file was written by a newer binary this older binary cannot read."
+A file with no `version` is ambiguous: it could be a file that was never created, a file that predates the current schema, or a file that was written by a newer binary the current one cannot read. The migration framework collapses the first two into a single legacy bucket and rejects the third with an "upgrade jackin" message.
 
 ## Why it matters
 
@@ -91,7 +91,7 @@ Role manifests live in role repos that jackin does not own. The policy is:
 - **Version absent or older than expected**: jackin refuses to use the role and emits a human-readable error: `role "the-architect" manifest is at {old}, expected {current}; run "jackin-validate --migrate <role-repo-path>" to upgrade the local copy`.
 - **Version newer than expected**: jackin refuses and emits: `role manifest is at {new}, this binary only understands up to {current}; upgrade jackin`.
 
-The `jackin validate --migrate <role>` subcommand applies the manifest migration chain to the local role clone and writes the result back. The operator can then inspect the diff, commit, and push.
+The `jackin-validate --migrate <role-repo-path>` binary applies the manifest migration chain to the local role clone and writes the result back. The operator can then inspect the diff, commit, and push.
 
 The `--pr` path remains future work. When implemented, it will have jackin open a pull request in the role repo automatically via `gh`.
 
@@ -131,7 +131,7 @@ This roadmap item is the **transition point** out of that rule for config and ma
 1. Add `version: String` (`version` in TOML) to `RoleManifest` in <RepoFile path="src/manifest/mod.rs" />.
 2. Implement the version-gate logic at manifest load time with the error messages described above.
 3. Ship with `CURRENT_MANIFEST_VERSION = "v1alpha1"`; treat missing `version` as legacy.
-4. Add `jackin validate --migrate <role>` that applies the migration chain and writes the updated manifest back to the local role clone.
+4. Add `jackin-validate --migrate <role-repo-path>` that applies the migration chain and writes the updated manifest back to the local role clone.
 
 **Phase 3 — `--pr` auto-migration**
 
@@ -142,7 +142,7 @@ This roadmap item is the **transition point** out of that rule for config and ma
 ## Open questions
 
 - **Retention window.** Jackin does not keep old migration code forever. When an old `version` leaves the supported window, jackin errors instead of migrating directly; operators upgrade through an older jackin first.
-- **Comment preservation during migration.** `toml_edit` preserves document structure for unchanged tables; migrated tables (renamed keys, restructured sections) lose their original comments. Acceptable for a first cut; document it.
+- **Comment preservation during migration.** `toml_edit` preserves document structure for unchanged tables; migrated tables (renamed keys, restructured sections) lose their original comments. The migration message in stderr names this so the operator knows comments on rewritten sections must be re-applied by hand.
 - **Config migration failure recovery.** If the migration write fails (disk full, permissions), the in-memory migrated config is valid but the file is stale. Atomic rename (write to a temp file, `rename(2)`) is the right answer; a failed rename should abort startup with a clear error rather than silently proceeding with a stale file.
 - **Schema changelog.** Each version bump needs a companion note: "what changed between v1alphaN and v1alphaN+1, and why." This belongs in the jackin changelog (once it activates at first release) or in a dedicated schema changelog reference page. Decide location before the first follow-up bump.
 

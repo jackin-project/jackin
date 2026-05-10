@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::{Context, bail};
+use anyhow::bail;
 use toml_edit::DocumentMut;
 
 pub const CURRENT_MANIFEST_VERSION: &str = "v1alpha1";
@@ -8,47 +8,32 @@ pub const CURRENT_MANIFEST_VERSION: &str = "v1alpha1";
 const MANIFEST_MIGRATIONS: &[crate::config::migrations::MigrationStep] =
     &[crate::config::migrations::MigrationStep {
         from: crate::config::migrations::LEGACY_VERSION,
-        to: "v1alpha1",
-        migrate: migrate_manifest_legacy_to_v1alpha1,
+        to: CURRENT_MANIFEST_VERSION,
+        migrate: crate::config::migrations::noop_migration,
     }];
 
 pub fn current_manifest_version() -> String {
     CURRENT_MANIFEST_VERSION.to_string()
 }
 
-pub fn migrate_manifest_file(
-    path: &Path,
-) -> anyhow::Result<Option<(crate::config::migrations::SchemaVersion, String)>> {
-    let raw =
-        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut doc: DocumentMut = raw
-        .parse()
-        .with_context(|| format!("parsing {}", path.display()))?;
-    let old_version = crate::config::migrations::doc_version(&doc, "role manifest")?;
-    let current = crate::config::migrations::parse_version(CURRENT_MANIFEST_VERSION)?;
-
-    if old_version > current {
-        bail!(
-            "role manifest is at {old_version}, this binary only understands up to {CURRENT_MANIFEST_VERSION}; upgrade jackin"
-        );
-    }
-    if old_version == current {
-        return Ok(None);
-    }
-
-    crate::config::migrations::apply_migrations(
-        &mut doc,
-        &old_version,
-        &current,
-        MANIFEST_MIGRATIONS,
+/// Migrate `path` (typically `<repo>/jackin.role.toml`) to
+/// `CURRENT_MANIFEST_VERSION`.
+///
+/// Returns `Some((old, new))` when a migration ran, `None` when the manifest
+/// was already current. `old` and `new` are display strings (`"legacy"`,
+/// `"v1alpha1"`) rather than `SchemaVersion` to keep the internal type
+/// `pub(crate)`.
+pub fn migrate_manifest_file(path: &Path) -> anyhow::Result<Option<(String, String)>> {
+    let outcome = crate::config::migrations::migrate_file_if_needed(
+        path,
         "role manifest",
+        CURRENT_MANIFEST_VERSION,
+        MANIFEST_MIGRATIONS,
     )?;
-    crate::config::migrations::set_doc_version(&mut doc, CURRENT_MANIFEST_VERSION);
-    crate::config::persist::atomic_write(path, &doc.to_string())?;
-    Ok(Some((old_version, CURRENT_MANIFEST_VERSION.to_string())))
+    Ok(outcome.map(|old| (old.to_string(), CURRENT_MANIFEST_VERSION.to_string())))
 }
 
-pub fn validate_manifest_version(doc: &DocumentMut, role_name: &str) -> anyhow::Result<()> {
+pub(crate) fn validate_manifest_version(doc: &DocumentMut, role_name: &str) -> anyhow::Result<()> {
     let version = crate::config::migrations::doc_version(doc, "role manifest")?;
     let current = crate::config::migrations::parse_version(CURRENT_MANIFEST_VERSION)?;
     match version.cmp(&current) {
@@ -60,12 +45,6 @@ pub fn validate_manifest_version(doc: &DocumentMut, role_name: &str) -> anyhow::
         ),
         std::cmp::Ordering::Equal => Ok(()),
     }
-}
-
-#[allow(clippy::unnecessary_wraps)]
-fn migrate_manifest_legacy_to_v1alpha1(doc: &mut DocumentMut) -> anyhow::Result<()> {
-    crate::config::migrations::set_doc_version(doc, CURRENT_MANIFEST_VERSION);
-    Ok(())
 }
 
 #[cfg(test)]
@@ -81,10 +60,11 @@ mod tests {
 
         let (old, new) = migrate_manifest_file(&path).unwrap().unwrap();
         let out = std::fs::read_to_string(&path).unwrap();
+        let parsed: toml::Value = toml::from_str(&out).unwrap();
 
-        assert_eq!(old.to_string(), "legacy");
+        assert_eq!(old, "legacy");
         assert_eq!(new, "v1alpha1");
-        assert!(out.contains(r#"version = "v1alpha1""#), "{out}");
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha1");
         assert!(out.contains("# keep me"), "{out}");
     }
 
@@ -99,5 +79,46 @@ mod tests {
         .unwrap();
 
         assert!(migrate_manifest_file(&path).unwrap().is_none());
+    }
+
+    #[test]
+    fn rejects_newer_manifest_version() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("jackin.role.toml");
+        std::fs::write(
+            &path,
+            "version = \"v2alpha1\"\ndockerfile = \"Dockerfile\"\n",
+        )
+        .unwrap();
+
+        let err = migrate_manifest_file(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("only understands up to v1alpha1"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn validate_manifest_version_accepts_current() {
+        let doc: DocumentMut = "version = \"v1alpha1\"\n".parse().unwrap();
+        validate_manifest_version(&doc, "test-role").unwrap();
+    }
+
+    #[test]
+    fn validate_manifest_version_rejects_legacy_with_migrate_hint() {
+        let doc: DocumentMut = "dockerfile = \"Dockerfile\"\n".parse().unwrap();
+        let err = validate_manifest_version(&doc, "the-architect").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("\"the-architect\""), "{msg}");
+        assert!(msg.contains("at legacy"), "{msg}");
+        assert!(msg.contains("jackin-validate --migrate"), "{msg}");
+    }
+
+    #[test]
+    fn validate_manifest_version_rejects_newer() {
+        let doc: DocumentMut = "version = \"v2alpha1\"\n".parse().unwrap();
+        let err = validate_manifest_version(&doc, "test-role").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("only understands up to v1alpha1"), "{msg}");
     }
 }

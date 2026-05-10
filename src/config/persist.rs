@@ -3,7 +3,15 @@ use crate::paths::JackinPaths;
 use anyhow::Context;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use toml_edit::DocumentMut;
+
+// Per-process counter mixed with the PID into the staged-write filename.
+// Combined with the PID it produces unique suffixes across concurrent
+// migrations, so two writers cannot clobber each other's staged file before
+// rename, and a leftover staged file cannot truncate an operator-created
+// `<name>.tmp` workspace file.
+static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub fn validate_workspace_file_stem(name: &str) -> anyhow::Result<()> {
     if name.is_empty() {
@@ -97,6 +105,14 @@ fn migrate_legacy_workspaces(
     global_config: &AppConfig,
     workspaces: &BTreeMap<String, crate::workspace::WorkspaceConfig>,
 ) -> anyhow::Result<()> {
+    // Recovery invariant: split files are written first, then the legacy
+    // `config.toml` is rewritten *last*. The global rewrite is the
+    // commit-point — failure before it leaves split files on disk plus the
+    // legacy `[workspaces.*]` tables intact, and the next load_or_init
+    // re-enters this function. The exists-check below makes that re-entry
+    // idempotent for split files whose contents already match the legacy
+    // source, so the operator never sees a confusing partial state unless
+    // they hand-edited a split file between attempts.
     std::fs::create_dir_all(&paths.workspaces_dir)?;
     for (name, workspace) in workspaces {
         validate_workspace_file_stem(name)?;
@@ -111,7 +127,10 @@ fn migrate_legacy_workspaces(
                 continue;
             }
             anyhow::bail!(
-                "cannot migrate workspace {name:?}: {} already exists with different contents",
+                "cannot migrate workspace {name:?}: {} already exists with different contents \
+                 than the legacy config.toml. Reconcile the two copies (delete the split file to \
+                 take the legacy version, or remove [workspaces.{name}] from config.toml to take \
+                 the split file) and re-run.",
                 path.display()
             );
         }
@@ -120,6 +139,10 @@ fn migrate_legacy_workspaces(
         atomic_write(&path, &contents)?;
     }
 
+    // Lossy rewrite: the serde round-trip drops top-of-file comments from
+    // the legacy `config.toml`. The non-workspace data survives because it
+    // round-trips through `AppConfig`; comments don't. Operators relying on
+    // those comments must recover them from git history.
     let global_contents = toml::to_string_pretty(global_config)?;
     atomic_write(&paths.config_file, &global_contents)?;
     Ok(())
@@ -129,8 +152,36 @@ pub fn atomic_write(path: &Path, contents: &str) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let tmp = path.with_extension("tmp");
+    // Suffix shape: `<filename>.tmp.<pid>.<counter>`. PID covers cross-process
+    // collisions; the counter covers concurrent writers in the same process.
+    // The `.tmp` segment is in the middle (not the file's extension) so the
+    // workspace-directory scan in `load_workspace_files`, which filters by
+    // `extension == "toml"`, ignores leftover staged files automatically.
+    let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mut staged_name = path
+        .file_name()
+        .map(std::ffi::OsStr::to_os_string)
+        .unwrap_or_default();
+    staged_name.push(format!(".tmp.{}.{counter}", std::process::id()));
+    let tmp = path.with_file_name(staged_name);
 
+    let staged = stage_write(&tmp, contents);
+    if let Err(err) = staged {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(err);
+    }
+
+    if let Err(rename_err) = std::fs::rename(&tmp, path) {
+        // Rename failure leaves the staged file behind; clean up so it does
+        // not accumulate.
+        let _ = std::fs::remove_file(&tmp);
+        return Err(rename_err)
+            .with_context(|| format!("renaming {} -> {}", tmp.display(), path.display()));
+    }
+    Ok(())
+}
+
+fn stage_write(tmp: &Path, contents: &str) -> anyhow::Result<()> {
     #[cfg(unix)]
     {
         use std::io::Write;
@@ -140,15 +191,14 @@ pub fn atomic_write(path: &Path, contents: &str) -> anyhow::Result<()> {
             .create(true)
             .truncate(true)
             .mode(0o600)
-            .open(&tmp)?;
+            .open(tmp)?;
         file.write_all(contents.as_bytes())?;
         file.sync_all()?;
     }
 
     #[cfg(not(unix))]
-    std::fs::write(&tmp, contents)?;
+    std::fs::write(tmp, contents)?;
 
-    std::fs::rename(&tmp, path)?;
     Ok(())
 }
 
@@ -171,24 +221,20 @@ impl AppConfig {
 
         let mut config = load_split_config(paths, contents_opt)?;
 
-        // Run the reserved-name validation against the on-disk shape
-        // BEFORE the builtin-sync editor save below. `ConfigEditor::save`
-        // also runs this check as a safety net, but doing it here first
-        // means the operator gets the canonical
-        // `validate_reserved_names` error directly — without the
-        // "rejecting candidate config" wrapper that save() adds when it
-        // rolls back a write.
+        // Pre-sync validation: gives the operator the canonical
+        // validate_reserved_names error rather than save()'s "rejecting
+        // candidate config" wrapper. ConfigEditor::save runs the same check
+        // via validate_candidate; this call covers the path where save() is
+        // never invoked because builtins did not drift.
         crate::operator_env::validate_reserved_names(&config)?;
 
         let builtins_changed = config.sync_builtin_agents();
 
         if builtins_changed {
-            // Bootstrap only when the file doesn't exist yet. Without this
-            // gate, ConfigEditor::open would call load_or_init for the
-            // missing file and recurse. When the file DOES exist (the
-            // builtins-drifted upgrade path), we must NOT rewrite it
-            // through the lossy serde path first — that would destroy
-            // every user comment before the editor could preserve them.
+            // ConfigEditor::open recurses into load_or_init when the file is
+            // missing; bootstrap once here so the editor sees an existing
+            // file and preserves operator comments rather than going through
+            // the lossy serde rewrite.
             if !paths.config_file.exists() {
                 let contents = toml::to_string_pretty(&config)?;
                 atomic_write(&paths.config_file, &contents)?;
@@ -197,17 +243,10 @@ impl AppConfig {
             for &(name, git) in crate::config::roles::BUILTIN_ROLES {
                 editor.upsert_builtin_agent(name, git);
             }
-            // editor.save() returns an AppConfig parsed from the on-disk file,
-            // which has [roles.X.env] preserved (upsert_builtin_agent doesn't
-            // touch env). The in-memory `config` from sync_builtin_agents has
-            // env cleared. Replace the in-memory config with the preserved one.
+            // Take save()'s post-write parse: it preserves [roles.X.env] that
+            // sync_builtin_agents cleared in-memory.
             config = editor.save()?;
         }
-
-        // Reject operator env maps that declare reserved runtime names.
-        // Runs at load, before validate_workspaces, so misconfigurations
-        // fail fast regardless of which subcommand is about to execute.
-        crate::operator_env::validate_reserved_names(&config)?;
 
         config.validate_workspaces()?;
         Ok(config)
@@ -459,5 +498,99 @@ workdir = "/workspace/prod"
         let err = AppConfig::load_or_init(&paths).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("invalid workspace filename"), "{msg}");
+    }
+
+    #[test]
+    fn config_needs_split_migration_returns_false_for_legacy_without_workspaces() {
+        let raw = "[roles.agent-smith]\ngit = \"https://example.test/role.git\"\n";
+        assert!(!config_needs_split_migration(raw).unwrap());
+    }
+
+    #[test]
+    fn config_needs_split_migration_returns_false_for_versioned_with_workspaces() {
+        // Paradox case: a current-version config that still carries a
+        // `[workspaces.X]` table. Treated as "no split migration needed" so
+        // the version-migrate path runs first; load_split_config then
+        // pulls the workspaces out via `std::mem::take`. Test pins the
+        // current behavior so a future change to bail noisily here is a
+        // visible decision.
+        let raw = "version = \"v1alpha1\"\n\n[workspaces.prod]\nworkdir = \"/workspace/prod\"\n";
+        assert!(!config_needs_split_migration(raw).unwrap());
+    }
+
+    #[test]
+    fn config_needs_split_migration_returns_true_for_legacy_with_workspaces() {
+        let raw = "[workspaces.prod]\nworkdir = \"/workspace/prod\"\n";
+        assert!(config_needs_split_migration(raw).unwrap());
+    }
+
+    #[test]
+    fn config_needs_split_migration_returns_false_for_empty_workspaces_table() {
+        let raw = "[workspaces]\n";
+        assert!(!config_needs_split_migration(raw).unwrap());
+    }
+
+    #[test]
+    fn atomic_write_creates_parent_directories() {
+        let temp = tempdir().unwrap();
+        let nested = temp.path().join("a/b/c/file.toml");
+        atomic_write(&nested, "k = 1\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&nested).unwrap(), "k = 1\n");
+    }
+
+    #[test]
+    fn atomic_write_overwrites_existing_file() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("file.toml");
+        atomic_write(&path, "k = 1\n").unwrap();
+        atomic_write(&path, "k = 2\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "k = 2\n");
+    }
+
+    #[test]
+    fn atomic_write_cleans_staged_file_on_rename_failure() {
+        // Force rename to fail by placing a directory at the destination.
+        let temp = tempdir().unwrap();
+        let target = temp.path().join("target.toml");
+        std::fs::create_dir(&target).unwrap();
+
+        let err = atomic_write(&target, "k = 1\n").unwrap_err();
+        assert!(format!("{err:#}").contains("renaming"), "{err}");
+
+        // No `.tmp.<pid>.<n>` leftovers in the parent directory.
+        let leaks: Vec<_> = std::fs::read_dir(temp.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("target.toml.tmp.")
+            })
+            .collect();
+        assert!(leaks.is_empty(), "leftover staged files: {leaks:?}");
+    }
+
+    #[test]
+    fn load_workspace_files_ignores_leftover_staged_files() {
+        // A `.tmp.<pid>.<n>` file in workspaces/ must not be treated as a
+        // workspace file (extension filter is `.toml`).
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+        std::fs::write(
+            paths.workspaces_dir.join("real.toml"),
+            "version = \"v1alpha1\"\nworkdir = \"/w\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            paths.workspaces_dir.join("real.toml.tmp.99999.0"),
+            "garbage",
+        )
+        .unwrap();
+
+        let map = load_workspace_files(&paths.workspaces_dir).unwrap();
+        assert!(map.contains_key("real"));
+        assert_eq!(map.len(), 1);
     }
 }

@@ -120,26 +120,25 @@ impl ManifestWarning {
 }
 
 impl RoleManifest {
-    /// Parse `jackin.role.toml` and enforce the `agents`/[<agent>] table
-    /// consistency rules.
+    /// Parse `jackin.role.toml` and pin the load-time invariants other code
+    /// relies on: `version` matches `CURRENT_MANIFEST_VERSION` (operator
+    /// gets a `--migrate` hint on mismatch) and the `agents` / `[<agent>]`
+    /// tables are consistent (so `instance::prepare` can dereference
+    /// `manifest.codex` / `manifest.claude` without re-checking).
     ///
-    /// `validate_agent_consistency` runs here (not just inside the
-    /// fuller `validate()`) so any caller that loads a manifest gets
-    /// a structurally + semantically valid value: consumers like
-    /// `instance/mod.rs::prepare` can dereference `manifest.codex` /
-    /// `manifest.claude` without re-checking. Env-var validation,
-    /// interpolation cycle detection, and the rest of `validate()`
-    /// still need to be called explicitly because they produce
-    /// warnings the load path can't surface — but the invariants
-    /// other code unconditionally relies on are pinned at load time.
+    /// Env-var validation, interpolation cycle detection, and the rest of
+    /// `validate()` still need explicit calls — they emit warnings the load
+    /// path cannot surface.
     pub fn load(repo_dir: &Path) -> anyhow::Result<Self> {
         let manifest_path = repo_dir.join("jackin.role.toml");
-        let contents = std::fs::read_to_string(&manifest_path)?;
+        let contents = std::fs::read_to_string(&manifest_path)
+            .with_context(|| format!("reading {}", manifest_path.display()))?;
         let doc: toml_edit::DocumentMut = contents
             .parse()
             .with_context(|| format!("parsing {}", manifest_path.display()))?;
         crate::manifest::migrations::validate_manifest_version(&doc, &display_role_name(repo_dir))?;
-        let manifest: Self = toml::from_str(&contents)?;
+        let manifest: Self = toml::from_str(&contents)
+            .with_context(|| format!("parsing {} as RoleManifest", manifest_path.display()))?;
         let _warnings = crate::manifest::validate::validate_agent_consistency(&manifest)?;
         Ok(manifest)
     }
@@ -265,7 +264,11 @@ plugins = []
         .unwrap();
 
         let err = RoleManifest::load(temp.path()).unwrap_err();
-        assert!(err.to_string().contains("foo") || err.to_string().contains("unknown"));
+        let chain = format!("{err:#}");
+        assert!(
+            chain.contains("foo") || chain.contains("unknown"),
+            "{chain}"
+        );
     }
 
     #[test]
@@ -535,7 +538,7 @@ plugins = []
 
         let error = RoleManifest::load(temp.path()).unwrap_err();
 
-        assert!(error.to_string().contains("unknown field"));
+        assert!(format!("{error:#}").contains("unknown field"));
     }
 
     #[test]
@@ -555,7 +558,7 @@ typo = "oops"
 
         let error = RoleManifest::load(temp.path()).unwrap_err();
 
-        assert!(error.to_string().contains("unknown field"));
+        assert!(format!("{error:#}").contains("unknown field"));
     }
 
     #[test]
@@ -578,7 +581,7 @@ plugins = []
 
         let error = RoleManifest::load(temp.path()).unwrap_err();
 
-        assert!(error.to_string().contains("unknown field"));
+        assert!(format!("{error:#}").contains("unknown field"));
     }
 
     #[test]
@@ -645,7 +648,7 @@ post_launch = "bad"
 
         let error = RoleManifest::load(temp.path()).unwrap_err();
 
-        assert!(error.to_string().contains("unknown field"));
+        assert!(format!("{error:#}").contains("unknown field"));
     }
 
     #[test]
@@ -794,6 +797,6 @@ typo = true
 
         let error = RoleManifest::load(temp.path()).unwrap_err();
 
-        assert!(error.to_string().contains("unknown field"));
+        assert!(format!("{error:#}").contains("unknown field"));
     }
 }
