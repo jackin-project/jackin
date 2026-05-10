@@ -240,12 +240,11 @@ Each running role stores state at `~/.jackin/data/<container-name>/`:
 |---|---|
 | `claude/account.json` | Claude Code account metadata (mounted at `/jackin/claude/account.json` in the container; only forwarded under `auth_forward = "sync"`) |
 | `claude/credentials.json` | Claude Code OAuth credentials (mounted at `/jackin/claude/credentials.json`; only forwarded under `auth_forward = "sync"`) |
-| `codex/config.toml` | Codex config generated at launch (mounted at `/jackin/codex/config.toml`) |
 | `codex/auth.json` | Synced copy of host `~/.codex/auth.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/jackin/codex/auth.json`; absent when host has no auth.json) |
 | `amp/secrets.json` | Synced copy of host `~/.local/share/amp/secrets.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/jackin/amp/secrets.json`; absent when host has no secrets.json). `secrets.json` is the XDG_DATA file the Amp CLI writes the `apiKey@https://ampcode.com/` token into; the XDG_CONFIG path `~/.config/amp/settings.json` is preferences only and is intentionally not forwarded |
 | `.config/gh/` | GitHub CLI authentication and settings (agent-neutral) |
 
-All host→container handoff lives under a single tree (`/jackin/`) the operator can audit at a glance. The agent's home directory (`~/.claude/`, `~/.codex/`, `~/.local/share/amp/`) is image-baked and not bind-mounted; the runtime entrypoint copies the relevant files from `/jackin/` into the agent's home before launch. This isolates configuration that ships in the image (`settings.json`, hooks, memory) from auth/state forwarded by the host, and keeps in-container writes (token rotation, conversation history) inside the writable layer rather than leaking back to the host.
+All host→container handoff lives under a single tree (`/jackin/`) the operator can audit at a glance. The agent's home directory (`~/.claude/`, `~/.codex/`, `~/.local/share/amp/`) is image-baked and not bind-mounted; the runtime entrypoint copies the relevant auth files from `/jackin/` into the agent's home before launch. This isolates configuration that ships in the image (`settings.json`, hooks, memory) from auth/state forwarded by the host, and keeps in-container writes (token rotation, conversation history) inside the writable layer rather than leaking back to the host.
 
 `claude/account.json` is rebuilt as `{}` (empty object) by every non-sync auth mode so it is always present on disk; the bind mount is the gate for whether the file flows into the container, not the file's existence. `claude/credentials.json` is wiped on every non-sync mode and never bind-mounted under `ignore`/`api_key`/`oauth_token`.
 

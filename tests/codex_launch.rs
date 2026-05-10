@@ -143,19 +143,21 @@ model = "gpt-5"
         run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"),
         "{run_cmd}"
     );
-    assert!(run_cmd.contains("/jackin/codex/config.toml"), "{run_cmd}");
+    assert!(run_cmd.contains(" -m gpt-5"), "{run_cmd}");
+    assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"), "{run_cmd}");
+    assert!(!run_cmd.contains("/jackin/codex/config.toml"), "{run_cmd}");
     // Codex container must not receive any Claude-side mounts, and the
     // legacy ~/.claude / ~/.jackin paths must not surface.
     assert!(!run_cmd.contains("/jackin/claude/"), "{run_cmd}");
     assert!(!run_cmd.contains("/home/agent/.claude"), "{run_cmd}");
     assert!(!run_cmd.contains("/home/agent/.jackin"), "{run_cmd}");
     assert!(
-        paths
+        !paths
             .data_dir
             .join("jackin-agent-smith")
             .join("codex")
             .join("config.toml")
-            .is_file()
+            .exists()
     );
 }
 

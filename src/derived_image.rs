@@ -463,6 +463,20 @@ mod tests {
     }
 
     #[test]
+    fn entrypoint_codex_branch_uses_cli_flags_not_generated_config() {
+        let codex_section = ENTRYPOINT_SH
+            .split("codex)")
+            .nth(1)
+            .unwrap()
+            .split(";;")
+            .next()
+            .unwrap();
+        assert!(codex_section.contains("codex --dangerously-bypass-approvals-and-sandbox"));
+        assert!(codex_section.contains("LAUNCH+=(\"$@\")"));
+        assert!(!codex_section.contains("config.toml"));
+    }
+
+    #[test]
     fn entrypoint_amp_branch_copies_secrets_and_launches_amp() {
         let amp_section = ENTRYPOINT_SH
             .split_once("\n  amp)")
@@ -479,6 +493,7 @@ mod tests {
     #[test]
     fn renders_claude_plugin_installs_after_claude_cli() {
         let config = crate::manifest::ClaudeConfig {
+            model: None,
             marketplaces: vec![crate::manifest::ClaudeMarketplaceConfig {
                 source: "obra/superpowers-marketplace".to_string(),
                 sparse: vec!["plugins".to_string(), ".claude-plugin".to_string()],
@@ -521,6 +536,7 @@ mod tests {
             .split(";;")
             .next()
             .unwrap();
+        assert!(claude_section.contains("LAUNCH+=(\"$@\")"));
         assert!(claude_section.contains("claude mcp add tirith -- tirith mcp-server"));
         assert!(claude_section.contains("claude mcp add shellfirm -- shellfirm mcp"));
     }
