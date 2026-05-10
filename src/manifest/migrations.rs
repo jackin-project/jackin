@@ -3,14 +3,20 @@ use std::path::Path;
 use anyhow::bail;
 use toml_edit::DocumentMut;
 
-pub const CURRENT_MANIFEST_VERSION: &str = "v1alpha1";
+pub const CURRENT_MANIFEST_VERSION: &str = "v1alpha2";
 
-const MANIFEST_MIGRATIONS: &[crate::config::migrations::MigrationStep] =
-    &[crate::config::migrations::MigrationStep {
+const MANIFEST_MIGRATIONS: &[crate::config::migrations::MigrationStep] = &[
+    crate::config::migrations::MigrationStep {
         from: crate::config::migrations::LEGACY_VERSION,
+        to: "v1alpha1",
+        migrate: crate::config::migrations::noop_migration,
+    },
+    crate::config::migrations::MigrationStep {
+        from: "v1alpha1",
         to: CURRENT_MANIFEST_VERSION,
         migrate: crate::config::migrations::noop_migration,
-    }];
+    },
+];
 
 pub fn current_manifest_version() -> String {
     CURRENT_MANIFEST_VERSION.to_string()
@@ -21,7 +27,7 @@ pub fn current_manifest_version() -> String {
 ///
 /// Returns `Some((old, new))` when a migration ran, `None` when the manifest
 /// was already current. `old` and `new` are display strings (`"legacy"`,
-/// `"v1alpha1"`) — `jackin-validate --migrate` prints them as-is and does
+/// `"v1alpha2"`) — `jackin-validate --migrate` prints them as-is and does
 /// not need the structured `SchemaVersion`.
 pub fn migrate_manifest_file(path: &Path) -> anyhow::Result<Option<(String, String)>> {
     let outcome = crate::config::migrations::migrate_file_if_needed(
@@ -63,13 +69,14 @@ mod tests {
         let parsed: toml::Value = toml::from_str(&out).unwrap();
 
         assert_eq!(old, "legacy");
-        assert_eq!(new, "v1alpha1");
-        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha1");
+        assert_eq!(new, "v1alpha2");
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha2");
+        assert!(out.starts_with("version = \"v1alpha2\""), "{out}");
         assert!(out.contains("# keep me"), "{out}");
     }
 
     #[test]
-    fn current_manifest_migration_is_noop() {
+    fn migrates_v1alpha1_manifest_to_v1alpha2() {
         let temp = tempdir().unwrap();
         let path = temp.path().join("jackin.role.toml");
         std::fs::write(
@@ -78,7 +85,23 @@ mod tests {
         )
         .unwrap();
 
+        let (old, new) = migrate_manifest_file(&path).unwrap().unwrap();
+        let out = std::fs::read_to_string(&path).unwrap();
+
+        assert_eq!(old, "v1alpha1");
+        assert_eq!(new, "v1alpha2");
+        assert!(out.starts_with("version = \"v1alpha2\""), "{out}");
+    }
+
+    #[test]
+    fn current_manifest_migration_is_noop() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("jackin.role.toml");
+        let manifest = "version = \"v1alpha2\"\ndockerfile = \"Dockerfile\"\n";
+        std::fs::write(&path, manifest).unwrap();
+
         assert!(migrate_manifest_file(&path).unwrap().is_none());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), manifest);
     }
 
     #[test]
@@ -93,14 +116,14 @@ mod tests {
 
         let err = migrate_manifest_file(&path).unwrap_err();
         assert!(
-            err.to_string().contains("only understands up to v1alpha1"),
+            err.to_string().contains("only understands up to v1alpha2"),
             "{err}"
         );
     }
 
     #[test]
     fn validate_manifest_version_accepts_current() {
-        let doc: DocumentMut = "version = \"v1alpha1\"\n".parse().unwrap();
+        let doc: DocumentMut = "version = \"v1alpha2\"\n".parse().unwrap();
         validate_manifest_version(&doc, "test-role").unwrap();
     }
 
@@ -119,7 +142,7 @@ mod tests {
         let doc: DocumentMut = "version = \"v2alpha1\"\n".parse().unwrap();
         let err = validate_manifest_version(&doc, "test-role").unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("only understands up to v1alpha1"), "{msg}");
+        assert!(msg.contains("only understands up to v1alpha2"), "{msg}");
     }
 
     #[test]

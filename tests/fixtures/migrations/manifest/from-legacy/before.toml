@@ -1,4 +1,4 @@
-# Sample role manifest carried through the legacy -> v1alpha1 migration test.
+# Sample role manifest carried through the legacy migration chain.
 
 dockerfile = "Dockerfile"
 agents = ["claude"]
