@@ -1,0 +1,222 @@
+---
+title: Schema Versions
+description: "Historical config, workspace, and role manifest schema versions"
+---
+import RepoFile from '../../../components/RepoFile.astro'
+
+This page is the canonical schema-version history for jackin-owned
+configuration files and role manifests. It is written for operators,
+role authors, migration authors, and agents that need to understand
+which fields exist in which schema version.
+
+## Why versioning
+
+Breaking changes to schemas are expected — that is how the project explores ideas without dragging compatibility shims forward. The trade-off is that operators and role authors should never have to hand-edit a TOML file to recover from an upgrade. Versioning resolves the tension:
+
+- **Each schema file carries its own `version` stamp.** When jackin reads the file, it compares the on-disk version against the binary's `CURRENT_*_VERSION` and applies any pending migration steps before parsing, so operators see a working setup after every upgrade.
+- **Operator-owned files migrate automatically.** `config.toml` and `~/.config/jackin/workspaces/<name>.toml` are rewritten in place on startup; the operator does nothing.
+- **Role-owned files migrate explicitly.** Role authors run `jackin-validate --migrate <role-repo-path>` to rewrite a `jackin.role.toml` against the latest schema, then commit and push the result. Jackin never writes back into a role repo on its own — that would silently mutate someone else's source tree.
+- **Migrations are a hard PR-review rule.** Every change to one of the three versioned files must bump the corresponding `CURRENT_*_VERSION`, add a migration step, and update this page. The full rule lives in <RepoFile path="AGENTS.md" /> and <RepoFile path="PULL_REQUESTS.md" />.
+
+The split-workspace layout described in [Configuration File](/reference/configuration/#one-file-per-workspace-by-design) makes per-file migration tractable: legacy global files and per-workspace files migrate independently, so a dotfile repo that is partially old still upgrades cleanly.
+
+## Current versions
+
+| File | Current version | Owner | Migration mode |
+|---|---|---|---|
+| `~/.config/jackin/config.toml` | `v1alpha1` | jackin | Automatic on startup |
+| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha1` | jackin | Automatic on startup |
+| `jackin.role.toml` | `v1alpha1` | Role repository | Explicit `jackin-validate --migrate <role-repo-path>` |
+
+## Timeline
+
+Each entry is one upgrade path the current binary applies. <RepoFile path="tests/migration_fixtures.rs" /> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+
+### `v1alpha1` — 2026-05-10
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `legacy` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/config/from-legacy/meta.toml" /> |
+| Workspace (`workspaces/<name>.toml`) | `legacy` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/workspace/from-legacy/meta.toml" /> |
+| Manifest (`jackin.role.toml`) | `legacy` | Explicit `jackin-validate --migrate <role-repo-path>` | <RepoFile path="tests/fixtures/migrations/manifest/from-legacy/meta.toml" /> |
+
+**Summary**: introduces the top-level `version` field. The migration adds `version = "v1alpha1"` to every file kind and leaves all existing keys, comments, and section ordering untouched. Splitting legacy `[workspaces.<name>]` tables out of `config.toml` runs as a separate startup step (see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design)); the version migration above is independent of that split.
+
+**Before** (legacy operator config — excerpt):
+
+```toml
+[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+```
+
+**After** (v1alpha1):
+
+```toml
+version = "v1alpha1"
+
+[roles.agent-smith]
+git = "https://github.com/jackin-project/jackin-agent-smith.git"
+trusted = true
+```
+
+## Version format
+
+Schema versions use Kubernetes-style names:
+
+| Form | Meaning |
+|---|---|
+| `v1alpha1` | Unstable schema for the future stable `v1` family |
+| `v1alpha2` | Next unstable schema in the same family |
+| `v1beta1` | More mature but still not stable |
+| `v1` | Stable schema |
+
+The current project is still unstable, so all current schemas start at
+`v1alpha1`.
+
+## `config.toml`
+
+### `legacy`
+
+`legacy` means the file has no top-level `version` field. For operator
+config, jackin migrates this automatically before parsing.
+
+| Change to `v1alpha1` | Detail |
+|---|---|
+| Added | `version = "v1alpha1"` |
+| Preserved | Global agent auth, GitHub auth, env, role sources, Docker mounts |
+| Removed | None |
+| Renamed | None |
+
+The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs as a separate startup migration alongside the version stamp; see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design).
+
+### `v1alpha1`
+
+| Field | Type | Required | Since | Notes |
+|---|---|---|---|---|
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha1` |
+| `[claude].auth_forward` | string | No | `legacy` | `sync`, `api_key`, `oauth_token`, or `ignore` |
+| `[codex].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
+| `[amp].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
+| `[github].auth_forward` | string | No | `legacy` | `sync`, `token`, or `ignore` |
+| `[github.env]` | table | No | `legacy` | Operator env values for GitHub token auth |
+| `[env]` | table | No | `legacy` | Global operator env layer |
+| `[roles.<role>]` | table | No | `legacy` | Role source config |
+| `[roles.<role>].git` | string | Yes when role is declared | `legacy` | Role repository URL |
+| `[roles.<role>].trusted` | bool | No | `legacy` | Trust-on-first-use state |
+| `[roles.<role>.env]` | table | No | `legacy` | Per-role operator env layer |
+| `[docker.mounts]` | table | No | `legacy` | Global and scoped Docker mount config |
+| `[workspaces]` | table | No | `legacy` | Legacy read-only compatibility location; migrated into workspace files |
+
+Full operator configuration examples live in
+[Configuration File](/reference/configuration/).
+
+## Workspace files
+
+Workspace files live at `~/.config/jackin/workspaces/<name>.toml`.
+
+### `legacy`
+
+`legacy` means either a standalone workspace file with no `version`, or
+a `[workspaces.<name>]` table embedded in legacy `config.toml`.
+
+| Change to `v1alpha1` | Detail |
+|---|---|
+| Added | `version = "v1alpha1"` |
+| Preserved | Workdir, mounts, role selection, env, auth overrides, keep-awake, 1Password account |
+| Removed | None |
+| Renamed | None |
+
+Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per-workspace files by a separate startup migration; see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design).
+
+### `v1alpha1`
+
+| Field | Type | Required | Since | Notes |
+|---|---|---|---|---|
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha1` |
+| `workdir` | string | Yes | `legacy` | Container working directory |
+| `allowed_roles` | string array | No | `legacy` | Roles allowed in this workspace |
+| `default_role` | string | No | `legacy` | Preferred role for new sessions |
+| `default_agent` | string | No | `legacy` | `claude`, `codex`, or `amp`; omitted defaults to Claude |
+| `last_role` | string | No | `legacy` | Last role selected by the operator |
+| `op_account` | string | No | `legacy` | 1Password account selector |
+| `git_pull_on_entry` | bool | No | `legacy` | Pull mounted repositories on entry |
+| `[env]` | table | No | `legacy` | Workspace operator env layer |
+| `[[mounts]]` | array of tables | No | `legacy` | Workspace mounts |
+| `[[mounts]].src` | string | Yes | `legacy` | Host path |
+| `[[mounts]].dst` | string | Yes | `legacy` | Container path |
+| `[[mounts]].readonly` | bool | No | `legacy` | Defaults to `false` |
+| `[[mounts]].isolation` | string | No | `legacy` | `shared`, `worktree`, or `clone`; legacy default is `shared` |
+| `[keep_awake].enabled` | bool | No | `legacy` | macOS keep-awake toggle |
+| `[claude].auth_forward` | string | No | `legacy` | Workspace Claude auth override |
+| `[codex].auth_forward` | string | No | `legacy` | Workspace Codex auth override |
+| `[amp].auth_forward` | string | No | `legacy` | Workspace Amp auth override |
+| `[github].auth_forward` | string | No | `legacy` | Workspace GitHub auth override |
+| `[github.env]` | table | No | `legacy` | Workspace GitHub token env values |
+| `[roles.<role>.env]` | table | No | `legacy` | Per-workspace, per-role env override |
+| `[roles.<role>.claude].auth_forward` | string | No | `legacy` | Per-workspace, per-role Claude auth override |
+| `[roles.<role>.codex].auth_forward` | string | No | `legacy` | Per-workspace, per-role Codex auth override |
+| `[roles.<role>.amp].auth_forward` | string | No | `legacy` | Per-workspace, per-role Amp auth override |
+| `[roles.<role>.github].auth_forward` | string | No | `legacy` | Per-workspace, per-role GitHub auth override |
+| `[roles.<role>.github.env]` | table | No | `legacy` | Per-workspace, per-role GitHub token env values |
+
+## `jackin.role.toml`
+
+### `legacy`
+
+`legacy` means the manifest has no top-level `version` field. Jackin
+does not auto-write role repositories during normal role loading. Run
+`jackin-validate --migrate <role-repo-path>` to rewrite a local copy.
+
+| Change to `v1alpha1` | Detail |
+|---|---|
+| Added | `version = "v1alpha1"` |
+| Moved | None |
+| Preserved | Dockerfile, published image, identity, agents, runtime settings, hooks, env prompts |
+| Removed | None |
+| Renamed | None |
+
+### `v1alpha1`
+
+| Field | Type | Required | Since | Notes |
+|---|---|---|---|---|
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha1` |
+| `dockerfile` | string | Yes | `legacy` | Relative path to role Dockerfile |
+| `published_image` | string | No | `legacy` | Pre-built role image override |
+| `agents` | string array | No | `legacy` | `claude`, `codex`, and/or `amp`; omitted means Claude-only |
+| `[identity].name` | string | No | `legacy` | Display name |
+| `[claude].model` | string | No | `legacy` | Claude model override |
+| `[claude].plugins` | string array | No | `legacy` | Claude plugin identifiers |
+| `[[claude.marketplaces]]` | array of tables | No | `legacy` | Claude plugin marketplace registrations |
+| `[[claude.marketplaces]].source` | string | Yes | `legacy` | Marketplace source |
+| `[[claude.marketplaces]].sparse` | string array | No | `legacy` | Sparse checkout paths |
+| `[codex].model` | string | No | `legacy` | Codex model override |
+| `[amp]` | table | No | `legacy` | Empty marker table for Amp support |
+| `[hooks].setup_once` | string | No | `legacy` | Relative path to a one-time install script that runs on first launch only |
+| `[hooks].source` | string | No | `legacy` | Relative path to a script dot-sourced into the entrypoint shell so `export` and `PATH` mutations reach the launched agent |
+| `[hooks].preflight` | string | No | `legacy` | Relative path to a per-start preflight script |
+| `[env.<NAME>]` | table | No | `legacy` | Interactive env prompt declaration |
+| `[env.<NAME>].default` | string | No | `legacy` | Default env value |
+| `[env.<NAME>].interactive` | bool | No | `legacy` | Prompt operator before launch |
+| `[env.<NAME>].skippable` | bool | No | `legacy` | Allow empty response |
+| `[env.<NAME>].prompt` | string | No | `legacy` | Prompt text |
+| `[env.<NAME>].options` | string array | No | `legacy` | Fixed choices |
+| `[env.<NAME>].depends_on` | string array | No | `legacy` | Dependency references such as `env.PROJECT` |
+
+Full role manifest examples live in
+[Role Manifest](/developing/role-manifest/).
+
+## Migration retention
+
+Jackin does not keep every migration forever. If a file is too old and
+the current binary no longer includes the full path to the current
+schema, jackin errors and tells the operator to upgrade through an older
+jackin first.
+
+Migration entry points:
+
+| File kind | Code entry point |
+|---|---|
+| Config | <RepoFile path="src/config/migrations.rs" /> |
+| Workspace | <RepoFile path="src/config/migrations.rs" /> |
+| Role manifest | <RepoFile path="src/manifest/migrations.rs" /> |

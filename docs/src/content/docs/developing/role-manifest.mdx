@@ -16,11 +16,12 @@ roles never edit this file.
 
 Every role repo must contain a `jackin.role.toml` file at the repository root. This manifest tells jackin' how to build, configure, and identify the agent.
 
-jackin' enforces **strict parsing** — unknown fields are rejected with an error. This catches typos and prevents silent misconfiguration.
+jackin' enforces **strict parsing** — unknown fields are rejected with an error. This catches typos and prevents silent misconfiguration. Top-level `version` is required; use `jackin-validate --migrate <role-repo-path>` to update an older local manifest. See [Schema Versions](/reference/schema-versions/) for the full version history and migration matrix.
 
 ## Full schema
 
 ```toml title="jackin.role.toml"
+version = "v1alpha1"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp"]
 
@@ -69,6 +70,7 @@ default = "feature/${env.PROJECT}"
 
 | Field | Required | Description |
 |---|---|---|
+| `version` | Yes | Manifest schema version. Current value is `v1alpha1`. |
 | `dockerfile` | Yes | Relative path to the Dockerfile within the repo |
 | `agents` | No | Non-empty list of agent slugs this role supports: `"claude"`, `"codex"`, or `"amp"`. When omitted, jackin treats the manifest as Claude-only. |
 
@@ -82,6 +84,7 @@ The Dockerfile path must:
 Every agent listed in `agents` must have a matching `[<agent>]` table, even when that table is empty. A manifest with `agents = ["claude", "codex", "amp"]` needs `[claude]`, `[codex]`, and `[amp]`.
 
 ```toml title="jackin.role.toml"
+version = "v1alpha1"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp"]
 
@@ -105,6 +108,7 @@ model = "gpt-5"
 Example values:
 
 ```toml title="jackin.role.toml"
+version = "v1alpha1"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -135,6 +139,7 @@ The `[codex]` table is required when `"codex"` appears in `agents`.
 | `model` | No | Optional Codex model passed to `codex -m` at launch |
 
 ```toml title="jackin.role.toml"
+version = "v1alpha1"
 dockerfile = "Dockerfile"
 agents = ["codex"]
 
@@ -147,6 +152,7 @@ model = "gpt-5"
 The `[amp]` table is required when `"amp"` appears in `agents`. It is empty today and reserved for future Amp-specific settings.
 
 ```toml title="jackin.role.toml"
+version = "v1alpha1"
 dockerfile = "Dockerfile"
 agents = ["amp"]
 
@@ -360,6 +366,7 @@ Interactive prompts happen before the Docker image build, so you won't wait thro
 The smallest valid manifest:
 
 ```toml title="jackin.role.toml"
+version = "v1alpha1"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -369,6 +376,7 @@ plugins = []
 ## Complete example
 
 ```toml title="jackin.role.toml"
+version = "v1alpha1"
 dockerfile = "docker/Dockerfile.agent"
 
 [identity]

@@ -466,8 +466,8 @@ mod tests {
         use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
         let s = ConfirmState::role_trust(
-            "scentbird/agent-jones",
-            "https://github.com/scentbird/jackin-agent-jones.git",
+            "acme/agent-jones",
+            "https://github.com/acme/jackin-agent-jones.git",
         );
         let area = Rect::new(0, 0, 100, required_height(&s));
         let backend = TestBackend::new(area.width, area.height);
@@ -484,10 +484,8 @@ mod tests {
         }
 
         assert!(rendered.contains("Trust role source"));
-        assert!(rendered.contains("Role: scentbird/agent-jones"));
-        assert!(
-            rendered.contains("Repository: https://github.com/scentbird/jackin-agent-jones.git")
-        );
+        assert!(rendered.contains("Role: acme/agent-jones"));
+        assert!(rendered.contains("Repository: https://github.com/acme/jackin-agent-jones.git"));
         assert!(rendered.contains("Dockerfile can run during image builds."));
         assert!(rendered.contains("The role can access mounted workspace files."));
     }
