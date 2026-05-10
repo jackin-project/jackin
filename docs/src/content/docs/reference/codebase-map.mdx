@@ -26,7 +26,7 @@ sends readers here for the actual module-level detail.
 |---|---|
 | `src/` | Rust CLI binary — every command jackin' implements |
 | `docker/construct/` | Source for the shared base Docker image (`projectjackin/construct:trixie`) |
-| <RepoFile path="docker/runtime/entrypoint.sh" /> | The entrypoint script jackin' injects into every derived image |
+| <RepoFile path="docker/runtime/entrypoint.sh" /> | The entrypoint script jackin' injects into every derived image at `/jackin/runtime/entrypoint.sh` |
 | `docs/` | This documentation site (Astro + Starlight) |
 | `.github/workflows/` | CI for jackin', the construct image, and the docs site |
 | `tests/` | End-to-end and integration tests |
