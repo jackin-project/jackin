@@ -287,7 +287,7 @@ pub struct AppConfig {
     pub roles: BTreeMap<String, RoleSource>,
     #[serde(default)]
     pub docker: DockerConfig,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub workspaces: BTreeMap<String, WorkspaceConfig>,
 }
 

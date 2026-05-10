@@ -2811,7 +2811,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     assert_eq!(
         ws_on_disk.claude.as_ref().map(|c| c.auth_forward),
         Some(jackin::config::AuthForwardMode::ApiKey),
-        "reload must see [workspaces.big-monorepo.claude] auth_forward = api_key"
+        "reload must see [claude] auth_forward = api_key in the workspace file"
     );
     let env_value = ws_on_disk
         .env
@@ -2827,9 +2827,9 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     // Belt-and-braces: read the raw TOML and confirm the literal text is
     // there. Catches a future regression where a typed accessor papered
     // over a missing block (e.g. resolver fall-through).
-    let toml = std::fs::read_to_string(&paths.config_file)?;
+    let toml = std::fs::read_to_string(paths.workspaces_dir.join("big-monorepo.toml"))?;
     assert!(
-        toml.contains("[workspaces.big-monorepo.claude]"),
+        toml.contains("[claude]"),
         "raw TOML must carry the workspace claude block; got:\n{toml}"
     );
     assert!(
@@ -3386,9 +3386,9 @@ fn auth_source_picker_op_disabled_when_op_missing() -> Result<()> {
 // Mirror-shape with `auth_form_save_persists_mode_and_credential_to_disk`
 // for Claude — open the form on the workspace × Github row, set mode =
 // token + a literal `GH_TOKEN`, commit, save, reload from disk, and
-// assert the persisted TOML carries BOTH the
-// `[workspaces.<ws>.github] auth_forward = "token"` block AND the
-// `GH_TOKEN` env var on the matching `[github.env]` block.
+// assert the persisted TOML carries BOTH the `[github]`
+// auth_forward = "token" block AND the `GH_TOKEN` env var on the
+// matching `[github.env]` block.
 #[allow(clippy::too_many_lines)]
 #[test]
 fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()> {
@@ -3505,7 +3505,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
     let github_on_disk = ws_on_disk
         .github
         .as_ref()
-        .expect("[workspaces.big-monorepo.github] block must be on disk after save");
+        .expect("[github] block must be on disk after save");
     assert_eq!(
         github_on_disk.auth_forward,
         jackin::config::GithubAuthMode::Token
@@ -3522,16 +3522,14 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
     // reload (the kind-scoped layer is the only place it should live).
     assert!(
         !ws_on_disk.env.contains_key("GH_TOKEN"),
-        "GH_TOKEN must not appear in [workspaces.<ws>.env]; only in [workspaces.<ws>.github.env]"
+        "GH_TOKEN must not appear in [env]; only in [github.env]"
     );
 
-    // Belt-and-braces: read the raw TOML and confirm the literal text
-    // landed on `[workspaces.big-monorepo.github]` and
-    // `[workspaces.big-monorepo.github.env]`, not on
-    // `[workspaces.big-monorepo.env]`.
-    let toml = std::fs::read_to_string(&paths.config_file)?;
+    // Belt-and-braces: read the raw workspace TOML and confirm the
+    // literal text landed on `[github]` / `[github.env]`, not `[env]`.
+    let toml = std::fs::read_to_string(paths.workspaces_dir.join("big-monorepo.toml"))?;
     assert!(
-        toml.contains("[workspaces.big-monorepo.github]"),
+        toml.contains("[github]"),
         "raw TOML must carry the workspace github block; got:\n{toml}"
     );
     assert!(
@@ -3546,7 +3544,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
 }
 
 /// `D` on a Github `RoleHeader` clears the role's
-/// `[workspaces.<ws>.roles.<role>.github]` override end-to-end through
+/// `[roles.<role>.github]` override end-to-end through
 /// the input dispatcher (in addition to the unit-level coverage in
 /// `src/console/manager/input/auth.rs`).
 #[test]

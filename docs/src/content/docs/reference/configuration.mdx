@@ -18,13 +18,17 @@ what you're after.
 
 | Path | Purpose |
 |---|---|
-| `~/.config/jackin/config.toml` | Operator configuration (workspaces, global mounts) |
+| `~/.config/jackin/config.toml` | Global operator configuration (auth defaults, role trust/source, global mounts, global env) |
+| `~/.config/jackin/workspaces/<name>.toml` | One saved workspace per file. The workspace name is the filename stem. |
 | `~/.jackin/roles/` | Cached role repository checkouts |
 | `~/.jackin/data/<container-name>/` | Persisted agent state (Claude history, settings, GitHub CLI config, plugins) |
 
 ## config.toml schema
 
-The configuration file is TOML format at `~/.config/jackin/config.toml`. It's managed through CLI commands — you generally don't need to edit it by hand.
+The configuration is TOML. Global settings live at
+`~/.config/jackin/config.toml`; saved workspaces live one-per-file under
+`~/.config/jackin/workspaces/`. The CLI and console manage both locations
+for you, so you generally don't need to edit them by hand.
 
 ### Agent auth-forward settings
 
@@ -43,25 +47,29 @@ auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — Codex reje
 auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — Amp rejects "oauth_token"
 
 # Layer 2 — workspace-wide override
-[workspaces.my-app.claude]
+[claude]
 auth_forward = "oauth_token"
 
-[workspaces.my-app.codex]
+[codex]
 auth_forward = "api_key"
 
-[workspaces.my-app.amp]
+[amp]
 auth_forward = "api_key"
 
 # Layer 3 — most-specific (workspace × role × agent) override
-[workspaces.my-app.roles.agent-smith.claude]
+[roles.agent-smith.claude]
 auth_forward = "ignore"
 
-[workspaces.my-app.roles.agent-smith.codex]
+[roles.agent-smith.codex]
 auth_forward = "sync"
 
-[workspaces.my-app.roles.agent-smith.amp]
+[roles.agent-smith.amp]
 auth_forward = "ignore"
 ```
+
+The layer 2 and 3 examples above belong in
+`~/.config/jackin/workspaces/my-app.toml`; the global defaults belong in
+`config.toml`.
 
 | Field | Description | Default |
 |---|---|---|
@@ -74,12 +82,12 @@ Accepted values: `sync` \| `api_key` \| `oauth_token` \| `ignore`.
 Locations the field may appear at, in resolution order
 (most-specific first):
 
-- `[workspaces.<ws>.roles.<role>.claude].auth_forward`
-- `[workspaces.<ws>.roles.<role>.codex].auth_forward`
-- `[workspaces.<ws>.roles.<role>.amp].auth_forward`
-- `[workspaces.<ws>.claude].auth_forward`
-- `[workspaces.<ws>.codex].auth_forward`
-- `[workspaces.<ws>.amp].auth_forward`
+- `[roles.<role>.claude].auth_forward` in `workspaces/<ws>.toml`
+- `[roles.<role>.codex].auth_forward` in `workspaces/<ws>.toml`
+- `[roles.<role>.amp].auth_forward` in `workspaces/<ws>.toml`
+- `[claude].auth_forward` in `workspaces/<ws>.toml`
+- `[codex].auth_forward` in `workspaces/<ws>.toml`
+- `[amp].auth_forward` in `workspaces/<ws>.toml`
 - `[claude].auth_forward` (global default)
 - `[codex].auth_forward` (global default)
 - `[amp].auth_forward` (global default)
@@ -101,23 +109,26 @@ agent in the container.
 auth_forward = "sync"   # "sync" (default), "token", or "ignore"
 
 # Layer 2 — workspace-wide override (e.g. a customer-facing PAT)
-[workspaces.customer-acme.github]
+[github]
 auth_forward = "token"
 
-[workspaces.customer-acme.github.env]
+[github.env]
 GH_TOKEN = { op = "op://abc.../def.../fld...", path = "Work/ACME/github-fine-grained-pat" }
 
 # Layer 3 — workspace × role override (e.g. a tighter release-bot token)
-[workspaces.customer-acme.roles.release-bot.github]
+[roles.release-bot.github]
 auth_forward = "token"
 
-[workspaces.customer-acme.roles.release-bot.github.env]
+[roles.release-bot.github.env]
 GH_TOKEN = { op = "op://abc.../def.../fld...", path = "Work/ACME/github-release-pat" }
 
 # Per-role opt-out — throwaway role with no GitHub access
-[workspaces.customer-acme.roles.scratch.github]
+[roles.scratch.github]
 auth_forward = "ignore"
 ```
+
+Workspace-scoped GitHub blocks live in
+`~/.config/jackin/workspaces/customer-acme.toml`.
 
 Mode behaviour:
 
@@ -133,8 +144,8 @@ Mode behaviour:
 
 Resolution order, most-specific first:
 
-- `[workspaces.<ws>.roles.<role>.github].auth_forward`
-- `[workspaces.<ws>.github].auth_forward`
+- `[roles.<role>.github].auth_forward` in `workspaces/<ws>.toml`
+- `[github].auth_forward` in `workspaces/<ws>.toml`
 - `[github].auth_forward` (global default)
 
 Operator-only — role manifests cannot set or override `[github]`,
@@ -156,13 +167,16 @@ OPERATOR_ORG = "acme-corp"
 API_TOKEN = "op://Personal/api/token"
 
 # Layer 3 — per workspace
-[workspaces.big-monorepo.env]
+[env]
 REGISTRY = "${COMPANY_REGISTRY_URL}"
 
 # Layer 4 — per (workspace, role)
-[workspaces.big-monorepo.roles.agent-smith.env]
+[roles.agent-smith.env]
 API_TOKEN = "op://Work/shared-smith/token"
 ```
+
+Layer 3 and 4 env blocks are stored in
+`~/.config/jackin/workspaces/big-monorepo.toml`.
 
 Values can be:
 
@@ -179,29 +193,32 @@ See [Environment Variables](/guides/environment-variables/) for the full guide.
 ### Workspaces
 
 ```toml
-[workspaces.my-app]
 workdir = "/home/user/Projects/my-app"
 allowed_roles = ["agent-smith", "the-architect"]
 default_role = "agent-smith"
 default_agent = "amp"
 last_role = "the-architect"
 
-[[workspaces.my-app.mounts]]
+[[mounts]]
 src = "/home/user/Projects/my-app"
 dst = "/home/user/Projects/my-app"
 readonly = false
 isolation = "worktree"
 
-[[workspaces.my-app.mounts]]
+[[mounts]]
 src = "/home/user/cache"
 dst = "/cache"
 readonly = true
 
-[workspaces.my-app.keep_awake]
+[keep_awake]
 enabled = true
 
 git_pull_on_entry = true
 ```
+
+This example is the contents of
+`~/.config/jackin/workspaces/my-app.toml`; there is no
+`[workspaces.my-app]` header inside the file.
 
 | Field | Description |
 |---|---|
@@ -210,7 +227,7 @@ git_pull_on_entry = true
 | `mounts[].src` | Host path |
 | `mounts[].dst` | Container path |
 | `mounts[].readonly` | Read-only flag |
-| `mounts[].isolation` | Per-mount isolation mode: `shared` (default), `worktree`, or `clone`. Omitting the field deserializes to `shared`, but every save writes the field explicitly so old configs migrate to the new shape on first save. Global mounts (under `[docker.mounts]` or `[[mounts]]`) reject this field at parse time. See [Per-mount isolation](/guides/workspaces/#per-mount-isolation). |
+| `mounts[].isolation` | Per-mount isolation mode: `shared` (default), `worktree`, or `clone`. Omitting the field deserializes to `shared`, but every save writes the field explicitly so old configs migrate to the new shape on first save. Global mounts (under `[docker.mounts]`) reject this field at parse time. See [Per-mount isolation](/guides/workspaces/#per-mount-isolation). |
 | `allowed_roles` | List of allowed role selectors |
 | `default_role` | Default role selector |
 | `default_agent` | Optional workspace default agent (`"claude"`, `"codex"`, or `"amp"`). Omit to default to Claude. |
