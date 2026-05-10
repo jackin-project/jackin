@@ -65,6 +65,7 @@ mod tests {
         assert_eq!(old, "legacy");
         assert_eq!(new, "v1alpha1");
         assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha1");
+        assert!(out.starts_with("version = \"v1alpha1\""), "{out}");
         assert!(out.contains("# keep me"), "{out}");
     }
 

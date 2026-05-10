@@ -268,6 +268,13 @@ fn split_first_nondigit(s: &str) -> Option<(&str, &str)> {
 
 pub fn set_doc_version(doc: &mut DocumentMut, version: &str) {
     doc["version"] = toml_edit::value(version);
+    doc.as_table_mut().sort_values_by(|left, _, right, _| {
+        match (left.get() == "version", right.get() == "version") {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => std::cmp::Ordering::Equal,
+        }
+    });
 }
 
 // Stamp-only registry slot for transitions whose only delta is `version`.
@@ -698,18 +705,15 @@ mod tests {
     }
 
     #[test]
-    fn version_field_position_with_top_level_keys_first() {
-        // toml_edit appends `version` after existing top-level keys when no
-        // table headers precede them; the file stays human-readable and the
-        // operator's `workdir = ...` first-line layout survives.
+    fn version_field_is_migrated_to_first_line() {
         let temp = tempdir().unwrap();
         let path = temp.path().join("prod.toml");
         std::fs::write(&path, "workdir = \"/workspace/prod\"\n# trailing comment\n").unwrap();
 
         assert!(migrate_workspace_file_if_needed(&path).unwrap());
         let out = std::fs::read_to_string(&path).unwrap();
-        assert!(out.starts_with("workdir ="), "{out}");
+        assert!(out.starts_with("version = \"v1alpha1\""), "{out}");
+        assert!(out.contains("workdir = \"/workspace/prod\""), "{out}");
         assert!(out.contains("# trailing comment"), "{out}");
-        assert!(out.contains(r#"version = "v1alpha1""#), "{out}");
     }
 }

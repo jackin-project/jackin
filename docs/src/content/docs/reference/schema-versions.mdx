@@ -40,7 +40,7 @@ Each entry is one upgrade path the current binary applies. <RepoFile path="tests
 | Workspace (`workspaces/<name>.toml`) | `legacy` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/workspace/from-legacy/meta.toml" /> |
 | Manifest (`jackin.role.toml`) | `legacy` | Explicit `jackin-validate --migrate <role-repo-path>` | <RepoFile path="tests/fixtures/migrations/manifest/from-legacy/meta.toml" /> |
 
-**Summary**: introduces the top-level `version` field. The migration adds `version = "v1alpha1"` to every file kind and leaves all existing keys, comments, and section ordering untouched. Splitting legacy `[workspaces.<name>]` tables out of `config.toml` runs as a separate startup step (see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design)); the version migration above is independent of that split.
+**Summary**: introduces the top-level `version` field. The migration writes `version = "v1alpha1"` as the first line in every file kind, then preserves existing keys, comments, and section ordering below it. Splitting legacy `[workspaces.<name>]` tables out of `config.toml` runs as a separate startup step (see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design)); the version migration above is independent of that split.
 
 **Before** (legacy operator config — excerpt):
 
@@ -83,7 +83,7 @@ config, jackin migrates this automatically before parsing.
 
 | Change to `v1alpha1` | Detail |
 |---|---|
-| Added | `version = "v1alpha1"` |
+| Added | `version = "v1alpha1"` as the first line |
 | Preserved | Global agent auth, GitHub auth, env, role sources, Docker mounts |
 | Removed | None |
 | Renamed | None |
@@ -122,7 +122,7 @@ a `[workspaces.<name>]` table embedded in legacy `config.toml`.
 
 | Change to `v1alpha1` | Detail |
 |---|---|
-| Added | `version = "v1alpha1"` |
+| Added | `version = "v1alpha1"` as the first line |
 | Preserved | Workdir, mounts, role selection, env, auth overrides, keep-awake, 1Password account |
 | Removed | None |
 | Renamed | None |
@@ -170,7 +170,7 @@ does not auto-write role repositories during normal role loading. Run
 
 | Change to `v1alpha1` | Detail |
 |---|---|
-| Added | `version = "v1alpha1"` |
+| Added | `version = "v1alpha1"` as the first line |
 | Moved | None |
 | Preserved | Dockerfile, published image, identity, agents, runtime settings, hooks, env prompts |
 | Removed | None |
