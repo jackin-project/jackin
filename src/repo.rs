@@ -103,12 +103,13 @@ pub fn validate_role_repo(repo_dir: &Path) -> Result<ValidatedRoleRepo, RoleRepo
     let dockerfile = validate_agent_dockerfile(&dockerfile_path)?;
 
     if let Some(ref hooks) = manifest.hooks {
-        for (label, hook) in hooks.paths() {
-            let hook_path = validate_relative_path(repo_dir, hook, label)?;
-            let contents = std::fs::read_to_string(&hook_path)?;
-            if contents.is_empty() {
+        for entry in hooks.entries() {
+            let hook_path = validate_relative_path(repo_dir, entry.path, entry.label)?;
+            // metadata().len() avoids slurping a potentially large hook
+            // script into memory just to check emptiness.
+            if std::fs::metadata(&hook_path)?.len() == 0 {
                 return Err(RoleRepoValidationError::EmptyHook {
-                    label,
+                    label: entry.label,
                     path: hook_path,
                 });
             }

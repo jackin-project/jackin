@@ -69,7 +69,7 @@ pub struct EnvVarDecl {
     pub depends_on: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HooksConfig {
     #[serde(default)]
@@ -80,19 +80,37 @@ pub struct HooksConfig {
     pub preflight: Option<String>,
 }
 
+/// Centralizes the (label, in-image filename, repo-relative path) triple
+/// so repo validation, Dockerfile rendering, and `.dockerignore`
+/// allowlisting cannot disagree about a hook's identity.
+#[derive(Debug, Clone, Copy)]
+pub struct HookEntry<'a> {
+    pub(crate) label: &'static str,
+    pub(crate) filename: &'static str,
+    pub(crate) path: &'a str,
+}
+
 impl HooksConfig {
-    pub fn paths(&self) -> Vec<(&'static str, &str)> {
-        let mut paths = Vec::new();
-        if let Some(path) = self.setup_once.as_deref() {
-            paths.push(("setup_once hook", path));
-        }
-        if let Some(path) = self.source.as_deref() {
-            paths.push(("source hook", path));
-        }
-        if let Some(path) = self.preflight.as_deref() {
-            paths.push(("preflight hook", path));
-        }
-        paths
+    pub fn entries(&self) -> impl Iterator<Item = HookEntry<'_>> {
+        // Order is the entrypoint.sh runtime contract; pinned by
+        // `hook_entries_yield_runtime_contract_order`.
+        [
+            (
+                "setup_once hook",
+                "setup-once.sh",
+                self.setup_once.as_deref(),
+            ),
+            ("source hook", "source.sh", self.source.as_deref()),
+            ("preflight hook", "preflight.sh", self.preflight.as_deref()),
+        ]
+        .into_iter()
+        .filter_map(|(label, filename, path)| {
+            path.map(|path| HookEntry {
+                label,
+                filename,
+                path,
+            })
+        })
     }
 }
 
@@ -526,6 +544,30 @@ plugins = []
         let error = RoleManifest::load(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn hook_entries_yield_runtime_contract_order() {
+        let hooks = HooksConfig {
+            setup_once: Some("a.sh".to_string()),
+            source: Some("b.sh".to_string()),
+            preflight: Some("c.sh".to_string()),
+        };
+        let labels: Vec<_> = hooks.entries().map(|e| e.label).collect();
+        assert_eq!(labels, ["setup_once hook", "source hook", "preflight hook"]);
+    }
+
+    #[test]
+    fn hook_entries_skip_absent_and_preserve_order() {
+        // Mixed presence: only source + preflight. Order must follow
+        // the canonical sequence, not the order fields are populated.
+        let hooks = HooksConfig {
+            setup_once: None,
+            source: Some("b.sh".to_string()),
+            preflight: Some("c.sh".to_string()),
+        };
+        let labels: Vec<_> = hooks.entries().map(|e| e.label).collect();
+        assert_eq!(labels, ["source hook", "preflight hook"]);
     }
 
     #[test]
