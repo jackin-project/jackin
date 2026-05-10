@@ -421,8 +421,7 @@ mod tests {
         );
         let last_user = dockerfile
             .lines()
-            .filter(|l| l.starts_with("USER "))
-            .last()
+            .rfind(|l| l.starts_with("USER "))
             .unwrap();
         assert_eq!(last_user, "USER agent");
     }

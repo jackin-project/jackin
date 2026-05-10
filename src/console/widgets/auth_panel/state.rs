@@ -98,7 +98,7 @@ mod badge_for_tests {
         cfg
     }
 
-    /// Sync mode has no required env var, so badge must be NotApplicable
+    /// Sync mode has no required env var, so badge must be `NotApplicable`
     /// regardless of what the operator env contains.
     #[test]
     fn credential_badge_not_applicable_for_sync() {
@@ -107,7 +107,7 @@ mod badge_for_tests {
         assert_eq!(badge, CredentialBadge::NotApplicable);
     }
 
-    /// ApiKey mode requires ANTHROPIC_API_KEY, which is absent at all 4
+    /// `ApiKey` mode requires `ANTHROPIC_API_KEY`, which is absent at all 4
     /// layers — badge must be Unset.
     #[test]
     fn credential_badge_unset_when_required_var_empty() {
@@ -126,7 +126,7 @@ mod badge_for_tests {
         assert_eq!(badge, CredentialBadge::Unset);
     }
 
-    /// ApiKey mode with ANTHROPIC_API_KEY present at the workspace × role
+    /// `ApiKey` mode with `ANTHROPIC_API_KEY` present at the workspace × role
     /// layer (most specific) must yield Resolves.
     #[test]
     fn credential_badge_resolves_when_env_var_present() {

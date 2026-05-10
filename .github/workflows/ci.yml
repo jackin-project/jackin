@@ -70,10 +70,9 @@ jobs:
         with:
           tool: cargo-nextest
       - run: cargo fmt --check
-      - run: cargo clippy -- -D warnings
-      - run: cargo clippy --features e2e --test dind_e2e -- -D warnings
+      - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo nextest run
-      - run: cargo nextest run --features e2e -E 'binary(dind_e2e)'
+      - run: cargo nextest run --all-features
 
   msrv:
     needs: changes

@@ -1200,7 +1200,7 @@ mod tests {
             .to_string();
         write_expiry_stamp(&paths, "ws", &future).unwrap();
         let days = expiry_days_for_launch(&paths, "ws").unwrap().unwrap();
-        assert!(days >= 6 && days <= 7, "days = {days}");
+        assert!((6..=7).contains(&days), "days = {days}");
 
         // Present + malformed → Err.
         std::fs::write(expiry_cache_path(&paths, "ws"), "not-a-date\n").unwrap();

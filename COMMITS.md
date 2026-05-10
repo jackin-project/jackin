@@ -83,10 +83,13 @@ when a pull request is ready to be merged, or earlier only when the operator
 explicitly asks for it. The merge-readiness check is:
 
 ```sh
-cargo fmt -- --check && cargo clippy -- -D warnings && cargo nextest run
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo nextest run
+cargo nextest run --all-features
 ```
 
-The `-- -D warnings` flag promotes clippy warnings to hard errors, matching what CI runs. Without it, lints like `clippy::branches_sharing_code` and `clippy::doc_markdown` exit clippy with status 0 locally but fail CI — wasting a round-trip. Use the strict invocation locally so CI never catches a lint your local check missed.
+CI runs clippy across all targets with all enabled features, and runs nextest against both the default feature set and all enabled features, including feature-gated integration tests. Local merge-readiness should do the same. The `-- -D warnings` flag promotes clippy warnings to hard errors, matching what CI runs. Without it, lints like `clippy::branches_sharing_code` and `clippy::doc_markdown` exit clippy with status 0 locally but fail CI — wasting a round-trip. Use the strict invocation locally so CI never catches a lint your local check missed.
 
 If formatting fails, run `cargo fmt` to fix it, then re-run the checks.
 
