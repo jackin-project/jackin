@@ -1825,7 +1825,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]

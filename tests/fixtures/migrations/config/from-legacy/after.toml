@@ -1,5 +1,5 @@
-version = "v1alpha1"
-# Sample operator config carried through the legacy -> v1alpha1 migration test.
+version = "v1alpha2"
+# Sample operator config carried through the legacy migration chain.
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"

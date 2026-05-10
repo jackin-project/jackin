@@ -1,4 +1,4 @@
 from_version = "legacy"
-target_version = "v1alpha1"
-target_version_shipped = "2026-05-10"
-summary = "Adds version = \"v1alpha1\" as the first line. Comments, existing keys, mounts, and env tables are preserved."
+target_version = "v1alpha2"
+target_version_shipped = "2026-05-11"
+summary = "Migrates legacy workspace config through v1alpha1 to v1alpha2. Comments, existing keys, mounts, and env tables are preserved, with version written first."

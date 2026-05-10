@@ -1,5 +1,5 @@
-version = "v1alpha1"
-# Sample role manifest carried through the legacy -> v1alpha1 migration test.
+version = "v1alpha2"
+# Sample role manifest carried through the legacy migration chain.
 
 dockerfile = "Dockerfile"
 agents = ["claude"]

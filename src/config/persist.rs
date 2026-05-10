@@ -355,7 +355,7 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
 
         assert_eq!(config.version, crate::config::CURRENT_CONFIG_VERSION);
-        assert!(out.contains(r#"version = "v1alpha1""#), "{out}");
+        assert!(out.contains(r#"version = "v1alpha2""#), "{out}");
         assert!(out.contains("# keep me"), "{out}");
     }
 
@@ -368,7 +368,7 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
         let err = AppConfig::load_or_init(&paths).unwrap_err();
 
-        assert!(err.to_string().contains("only understands up to v1alpha1"));
+        assert!(err.to_string().contains("only understands up to v1alpha2"));
     }
 
     #[test]
@@ -448,12 +448,12 @@ LOCAL = "only-prod"
         assert!(config.workspaces.contains_key("prod"));
 
         let global = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(global.contains(r#"version = "v1alpha1""#), "{global}");
+        assert!(global.contains(r#"version = "v1alpha2""#), "{global}");
         assert!(global.contains("[env]"), "{global}");
         assert!(!global.contains("[workspaces."), "{global}");
 
         let workspace = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
-        assert!(workspace.contains(r#"version = "v1alpha1""#), "{workspace}");
+        assert!(workspace.contains(r#"version = "v1alpha2""#), "{workspace}");
         assert!(
             workspace.contains(r#"workdir = "/workspace/prod""#),
             "{workspace}"
@@ -470,7 +470,7 @@ LOCAL = "only-prod"
         std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
         std::fs::write(
             paths.workspaces_dir.join("prod.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 workdir = "/other"
 "#,
         )
@@ -501,7 +501,7 @@ workdir = "/workspace/prod"
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
 
         assert_eq!(config.version, crate::config::CURRENT_CONFIG_VERSION);
-        assert!(out.contains(r#"version = "v1alpha1""#), "{out}");
+        assert!(out.contains(r#"version = "v1alpha2""#), "{out}");
     }
 
     #[test]
@@ -588,7 +588,7 @@ workdir = "/workspace/prod"
     fn load_or_init_dual_migrates_legacy_config_with_legacy_workspaces() {
         // Pin the dual-migration contract: a legacy `config.toml` (no
         // `version`) carrying `[workspaces.X]` tables ends up with
-        // `version = "v1alpha1"` on the global file AND on each split
+        // `version = "v1alpha2"` on the global file AND on each split
         // workspace file after one load. The current registries are
         // no-ops; once a real content-changing config migration lands,
         // this test guards the ordering that the version migration runs
@@ -617,12 +617,12 @@ dst = "/workspace/prod"
 
         let global_on_disk = std::fs::read_to_string(&paths.config_file).unwrap();
         let global_parsed: toml::Value = toml::from_str(&global_on_disk).unwrap();
-        assert_eq!(global_parsed["version"].as_str().unwrap(), "v1alpha1");
+        assert_eq!(global_parsed["version"].as_str().unwrap(), "v1alpha2");
         assert!(!global_on_disk.contains("[workspaces."), "{global_on_disk}");
 
         let prod_on_disk = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
         let prod_parsed: toml::Value = toml::from_str(&prod_on_disk).unwrap();
-        assert_eq!(prod_parsed["version"].as_str().unwrap(), "v1alpha1");
+        assert_eq!(prod_parsed["version"].as_str().unwrap(), "v1alpha2");
 
         // Re-running is a no-op: file content stays byte-identical.
         let global_before = std::fs::read(&paths.config_file).unwrap();
@@ -639,7 +639,7 @@ dst = "/workspace/prod"
         // Pin the contract that legacy `workspaces/<name>.toml` files (no
         // `version` key) get rewritten on first load. Without this test the
         // migrate-on-scan call in `load_workspace_files` is unreachable in
-        // tests — every other workspace fixture uses `version = "v1alpha1"`.
+        // tests — every other workspace fixture uses `version = "v1alpha2"`.
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -655,7 +655,7 @@ dst = "/workspace/prod"
 
         let on_disk = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
         let parsed: toml::Value = toml::from_str(&on_disk).unwrap();
-        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha1");
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha2");
         assert!(on_disk.contains("# keep me"), "{on_disk}");
     }
 
@@ -669,7 +669,7 @@ dst = "/workspace/prod"
         std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
         std::fs::write(
             paths.workspaces_dir.join("real.toml"),
-            "version = \"v1alpha1\"\nworkdir = \"/w\"\n",
+            "version = \"v1alpha2\"\nworkdir = \"/w\"\n",
         )
         .unwrap();
         std::fs::write(

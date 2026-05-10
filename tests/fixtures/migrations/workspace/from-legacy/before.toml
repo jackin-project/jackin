@@ -1,4 +1,4 @@
-# Sample per-workspace file carried through the legacy -> v1alpha1 migration test.
+# Sample per-workspace file carried through the legacy migration chain.
 
 workdir = "/workspace/prod"
 
