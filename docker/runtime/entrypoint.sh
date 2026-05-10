@@ -144,10 +144,19 @@ esac
 if [ -x /jackin/runtime/hooks/setup-once.sh ]; then
     setup_once_marker="/jackin/state/hooks/setup-once.done"
     if [ ! -e "$setup_once_marker" ]; then
-        mkdir -p "$(dirname "$setup_once_marker")"
+        if ! mkdir -p "$(dirname "$setup_once_marker")"; then
+            echo "[entrypoint] failed to create marker directory $(dirname "$setup_once_marker")" >&2
+            exit 1
+        fi
         run_hook setup-once /jackin/runtime/hooks/setup-once.sh \
             "marker not written, will retry next launch"
-        touch "$setup_once_marker"
+        # Wrap touch so the post-success failure surfaces as an attributed
+        # log; otherwise `set -e` aborts silently and the next launch
+        # silently re-runs setup-once with no operator-visible reason.
+        if ! touch "$setup_once_marker"; then
+            echo "[entrypoint] setup-once succeeded but marker write failed; will retry next launch" >&2
+            exit 1
+        fi
     fi
 fi
 
@@ -160,15 +169,15 @@ if [ -x /jackin/runtime/hooks/source.sh ]; then
     # JACKIN_DEBUG xtrace would dump expanded `export SECRET=...` lines
     # from the sourced shell into operator logs; suspend around source.
     case $- in *x*) source_xtrace=1; set +x ;; esac
-    # Capture rc before the test — `$?` after `if ! .` is 0 (see run_hook).
+    # Capture rc before the test — `$?` after `if ! .` is 0.
     rc=0
     # shellcheck source=/dev/null
     . /jackin/runtime/hooks/source.sh || rc=$?
-    [ "${source_xtrace:-0}" = "1" ] && set -x
     if [ "$rc" -ne 0 ]; then
         echo "[entrypoint] source hook returned non-zero (exit $rc); aborting before agent launch" >&2
         exit "$rc"
     fi
+    [ "${source_xtrace:-0}" = "1" ] && set -x
     trap - ERR
     if ! cd "$source_pwd"; then
         echo "[entrypoint] saved PWD ($source_pwd) vanished after source hook; falling back to /" >&2

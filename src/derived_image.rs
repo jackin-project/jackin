@@ -29,7 +29,9 @@ pub fn render_derived_dockerfile(
         .flat_map(HooksConfig::entries)
         .peekable();
     if entries.peek().is_some() {
-        // chown only /jackin/state — marker dir needs agent write.
+        // chown only /jackin/state — agent writes the marker here.
+        // /jackin/runtime/hooks gets per-file ownership from
+        // `COPY --chown=agent:agent` below; the dir itself stays root.
         hook_section.push_str(
             "\
 USER root
@@ -349,8 +351,6 @@ mod tests {
         assert!(!dockerfile.contains("setup-once.sh"));
         assert!(!dockerfile.contains("source.sh"));
         assert!(!dockerfile.contains("preflight.sh"));
-        // Header block (mkdir + chown) must not be emitted when no
-        // hooks declared — gates on `entries().peek().is_some()`.
         assert!(!dockerfile.contains("/jackin/runtime/hooks"));
         assert!(!dockerfile.contains("/jackin/state/hooks"));
     }
@@ -649,6 +649,14 @@ mod tests {
         assert!(block.contains("case $- in *x*)"));
         assert!(block.contains(". /jackin/runtime/hooks/source.sh || rc=$?"));
         assert!(block.contains("trap - ERR"));
+        let xtrace_suspend_pos = block.find("case $- in *x*)").unwrap();
+        let source_pos = block
+            .find(". /jackin/runtime/hooks/source.sh")
+            .unwrap();
+        assert!(
+            xtrace_suspend_pos < source_pos,
+            "xtrace suspend must precede the dot-source"
+        );
         let trap_pos = block.find("trap - ERR").unwrap();
         let cd_pos = block.find("cd \"$source_pwd\"").unwrap();
         assert!(trap_pos < cd_pos, "trap - ERR must precede the cd back to source_pwd");
@@ -676,6 +684,43 @@ mod tests {
         assert!(!dockerfile.contains("setup-once.sh"));
         assert!(!dockerfile.contains("preflight.sh"));
         assert_eq!(dockerfile.matches("COPY --chown=agent:agent hooks/").count(), 1);
+    }
+
+    #[test]
+    fn build_context_dockerignore_allowlists_only_declared_hooks() {
+        // ensure_runtime_assets_are_included must allowlist exactly the
+        // hook source paths in the manifest. A regression that dropped
+        // the per-hook loop would silently filter scripts out of the
+        // build context and fail at docker build time only.
+        let repo = tempdir().unwrap();
+        std::fs::create_dir_all(repo.path().join("hooks")).unwrap();
+        std::fs::write(repo.path().join("hooks/source.sh"), "#!/bin/bash\n").unwrap();
+        std::fs::write(
+            repo.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[hooks]
+source = "hooks/source.sh"
+"#,
+        )
+        .unwrap();
+
+        let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
+        let build = create_derived_build_context(repo.path(), &validated, None).unwrap();
+        let dockerignore =
+            std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
+
+        assert!(dockerignore.contains("!hooks/source.sh"));
+        assert!(!dockerignore.contains("!hooks/setup-once.sh"));
+        assert!(!dockerignore.contains("!hooks/preflight.sh"));
     }
 
     #[test]

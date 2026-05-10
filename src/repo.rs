@@ -470,9 +470,26 @@ preflight = "/etc/evil.sh"
 
     #[test]
     fn rejects_empty_preflight_hook() {
+        let error = empty_hook_error("preflight", "hooks/preflight.sh");
+        assert!(error.contains("preflight hook is empty"));
+    }
+
+    #[test]
+    fn rejects_empty_setup_once_hook() {
+        let error = empty_hook_error("setup_once", "hooks/setup-once.sh");
+        assert!(error.contains("setup_once hook is empty"));
+    }
+
+    #[test]
+    fn rejects_empty_source_hook() {
+        let error = empty_hook_error("source", "hooks/source.sh");
+        assert!(error.contains("source hook is empty"));
+    }
+
+    fn empty_hook_error(field: &str, path: &str) -> String {
         let temp = tempdir().unwrap();
         std::fs::create_dir_all(temp.path().join("hooks")).unwrap();
-        std::fs::write(temp.path().join("hooks/preflight.sh"), "").unwrap();
+        std::fs::write(temp.path().join(path), "").unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
             "FROM projectjackin/construct:trixie\n",
@@ -480,20 +497,20 @@ preflight = "/etc/evil.sh"
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            format!(
+                r#"dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
 
 [hooks]
-preflight = "hooks/preflight.sh"
-"#,
+{field} = "{path}"
+"#
+            ),
         )
         .unwrap();
 
-        let error = validate_role_repo(temp.path()).unwrap_err();
-
-        assert!(error.to_string().contains("empty"));
+        validate_role_repo(temp.path()).unwrap_err().to_string()
     }
 
     #[cfg(unix)]

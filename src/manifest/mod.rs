@@ -553,8 +553,18 @@ plugins = []
             source: Some("b.sh".to_string()),
             preflight: Some("c.sh".to_string()),
         };
-        let labels: Vec<_> = hooks.entries().map(|e| e.label).collect();
-        assert_eq!(labels, ["setup_once hook", "source hook", "preflight hook"]);
+        let triples: Vec<_> = hooks
+            .entries()
+            .map(|e| (e.label, e.filename, e.path))
+            .collect();
+        assert_eq!(
+            triples,
+            [
+                ("setup_once hook", "setup-once.sh", "a.sh"),
+                ("source hook", "source.sh", "b.sh"),
+                ("preflight hook", "preflight.sh", "c.sh"),
+            ]
+        );
     }
 
     #[test]
