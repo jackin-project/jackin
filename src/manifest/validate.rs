@@ -257,7 +257,7 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 agents = []
 
@@ -276,7 +276,7 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
@@ -295,7 +295,7 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 agents = ["claude", "amp"]
 
@@ -314,7 +314,7 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -336,7 +336,7 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 agents = ["claude"]
 
@@ -360,7 +360,7 @@ model = "gpt-5"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 agents = ["claude"]
 
@@ -385,7 +385,7 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 agents = ["codex"]
 
@@ -407,7 +407,7 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -430,7 +430,7 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -455,7 +455,7 @@ options = ["a", "b"]
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -481,7 +481,7 @@ prompt = "Branch:"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -507,7 +507,7 @@ prompt = "Value:"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -538,7 +538,7 @@ prompt = "B:"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -568,7 +568,7 @@ prompt = "Branch:"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -602,7 +602,7 @@ default = "main"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -626,7 +626,7 @@ default = "docker"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -657,7 +657,7 @@ default = "sidecar"
             std::fs::write(
                 temp.path().join("jackin.role.toml"),
                 format!(
-                    r#"version = "v1alpha1"
+                    r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -686,7 +686,7 @@ default = "override"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -711,7 +711,7 @@ prompt = "This is ignored"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -736,7 +736,7 @@ skippable = true
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -767,7 +767,7 @@ default = "feature/${env.PROJECT}"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -793,7 +793,7 @@ prompt = "Branch for ${env.NONEXISTENT}:"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -825,7 +825,7 @@ prompt = "Branch for ${env.PROJECT}:"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -852,7 +852,7 @@ prompt = "Branch:"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -876,7 +876,7 @@ default = "value"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -900,7 +900,7 @@ default = "value"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -929,7 +929,7 @@ default = "c"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -966,7 +966,7 @@ prompt = "Branch:"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -991,7 +991,7 @@ prompt = "Value (use ${other.THING} for other):"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -1024,7 +1024,7 @@ default = "feature/${env.PROJECT}"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -1055,7 +1055,7 @@ prompt = "Label for ${env.PROJECT} in ${env.MISSING}:"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -1080,7 +1080,7 @@ prompt = "Value: ${env.}"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -1111,7 +1111,7 @@ prompt = "Value: ${env.MY-VAR}"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -1137,7 +1137,7 @@ default = "prefix-${env.}"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -1163,7 +1163,7 @@ prompt = "Value:"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -1194,7 +1194,7 @@ prompt = "Value:"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha1"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
