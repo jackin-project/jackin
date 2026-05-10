@@ -1,23 +1,4 @@
-# Migration fixture metadata.
-#
-# This directory captures one user-visible upgrade path: a `config.toml`
-# that is at `from_version` on the operator's disk gets migrated all the
-# way to `target_version` by `migrate_config_file_if_needed`. The test in
-# `tests/migration_fixtures.rs` reads `before.toml`, runs the migration,
-# and asserts the result is byte-equal to `after.toml`. The pair lives in
-# the repo so a regression in any step of the chain breaks CI rather than
-# breaking on a delayed operator's machine.
-
-# The schema version of `before.toml`.
 from_version = "legacy"
-
-# The schema version of `after.toml` — current at the time this fixture
-# was written. Re-bake `after.toml` (and bump `target_version_shipped`)
-# whenever a new step is appended to `CONFIG_MIGRATIONS`.
 target_version = "v1alpha1"
-
-# Date the migration chain producing `after.toml` shipped.
 target_version_shipped = "2026-05-10"
-
-# Short human summary of what the migration does.
-summary = "Legacy operator config has no top-level `version` field. Migration adds `version = \"v1alpha1\"` and leaves all existing keys, comments, and section ordering untouched."
+summary = "Legacy operator config has no top-level `version` field. Migration adds `version = \"v1alpha1\"`; comments and existing keys are preserved (toml_edit inserts the new key at the top of the document)."

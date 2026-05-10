@@ -30,7 +30,7 @@ The split-workspace layout described in [Configuration File](/reference/configur
 
 ## Timeline
 
-Each entry below documents one migration the current binary still applies. The fixture link points at the canonical before/after pair the test suite walks through the live migration code on every CI run (see <RepoFile path="tests/migration_fixtures.rs" />), so a regression breaks here before it breaks on a delayed operator's machine. Newest version first; entries get appended (not edited) when a `CURRENT_*_VERSION` is bumped.
+Each entry is one upgrade path the current binary applies. <RepoFile path="tests/migration_fixtures.rs" /> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
 
 ### `v1alpha1` — 2026-05-10
 
@@ -59,8 +59,6 @@ version = "v1alpha1"
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
 trusted = true
 ```
-
-The full before/after for each file kind lives in the linked fixture directories, which the migration test harness reads directly.
 
 ## Version format
 

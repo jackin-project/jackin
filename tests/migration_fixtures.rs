@@ -4,29 +4,47 @@
 //! version after several `CURRENT_*_VERSION` bumps — exercise exactly the
 //! same chain this test covers, so a fixture mismatch is the regression that
 //! would break their upgrade.
+//!
+//! Per fixture directory: `meta.toml` carries `from_version`,
+//! `target_version`, `target_version_shipped`, and `summary`; `before.toml`
+//! is the input; `after.toml` is the byte-equal expected output. Re-bake
+//! `after.toml` whenever a new step is appended to the relevant registry.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[test]
-fn config_fixtures_round_trip_to_current() {
-    walk_fixtures(&fixture_root().join("config"), &|path| {
-        jackin::config::migrate_config_file_if_needed(path).map(|_| ())
-    });
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct FixtureMeta {
+    #[allow(dead_code)]
+    from_version: String,
+    #[allow(dead_code)]
+    target_version: String,
+    #[allow(dead_code)]
+    target_version_shipped: String,
+    #[allow(dead_code)]
+    summary: String,
 }
 
-#[test]
-fn workspace_fixtures_round_trip_to_current() {
-    walk_fixtures(&fixture_root().join("workspace"), &|path| {
-        jackin::config::migrate_workspace_file_if_needed(path).map(|_| ())
-    });
-}
+type MigrateFn = fn(&Path) -> anyhow::Result<()>;
 
 #[test]
-fn manifest_fixtures_round_trip_to_current() {
-    walk_fixtures(&fixture_root().join("manifest"), &|path| {
-        jackin::manifest::migrations::migrate_manifest_file(path).map(|_| ())
-    });
+fn fixtures_round_trip_to_current() {
+    let cases: &[(&str, MigrateFn)] = &[
+        ("config", |p| {
+            jackin::config::migrate_config_file_if_needed(p).map(|_| ())
+        }),
+        ("workspace", |p| {
+            jackin::config::migrate_workspace_file_if_needed(p).map(|_| ())
+        }),
+        ("manifest", |p| {
+            jackin::manifest::migrations::migrate_manifest_file(p).map(|_| ())
+        }),
+    ];
+    for (kind, migrate) in cases {
+        walk_fixtures(kind, *migrate);
+    }
 }
 
 fn fixture_root() -> PathBuf {
@@ -36,17 +54,21 @@ fn fixture_root() -> PathBuf {
         .join("migrations")
 }
 
-fn walk_fixtures(file_kind_dir: &Path, migrate: &dyn Fn(&Path) -> anyhow::Result<()>) {
-    let entries: Vec<_> = fs::read_dir(file_kind_dir)
+fn walk_fixtures(file_kind: &str, migrate: MigrateFn) {
+    let file_kind_dir = fixture_root().join(file_kind);
+    let entries: Vec<_> = fs::read_dir(&file_kind_dir)
         .unwrap_or_else(|e| panic!("reading {}: {e}", file_kind_dir.display()))
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
         .collect();
     assert!(
         !entries.is_empty(),
         "no fixtures under {} — every supported `from_version` needs a directory",
         file_kind_dir.display()
     );
+
+    let temp = tempfile::tempdir().unwrap();
+    let target = temp.path().join(filename_for(file_kind));
 
     for entry in entries {
         let dir = entry.path();
@@ -57,29 +79,11 @@ fn walk_fixtures(file_kind_dir: &Path, migrate: &dyn Fn(&Path) -> anyhow::Result
             .unwrap_or_else(|e| panic!("reading {name}/after.toml: {e}"));
         let meta_raw = fs::read_to_string(dir.join("meta.toml"))
             .unwrap_or_else(|e| panic!("reading {name}/meta.toml: {e}"));
-        let meta: toml::Value =
+        let _meta: FixtureMeta =
             toml::from_str(&meta_raw).unwrap_or_else(|e| panic!("parsing {name}/meta.toml: {e}"));
-        assert!(
-            meta.get("from_version").and_then(|v| v.as_str()).is_some(),
-            "{name}/meta.toml missing `from_version` string"
-        );
-        assert!(
-            meta.get("target_version")
-                .and_then(|v| v.as_str())
-                .is_some(),
-            "{name}/meta.toml missing `target_version` string"
-        );
-        assert!(
-            meta.get("summary").and_then(|v| v.as_str()).is_some(),
-            "{name}/meta.toml missing `summary` string"
-        );
 
-        let temp = tempfile::tempdir().unwrap();
-        let target = temp.path().join(filename_for(file_kind_dir));
         fs::write(&target, &before).unwrap();
-
         migrate(&target).unwrap_or_else(|e| panic!("migrating {name}: {e:#}"));
-
         let actual_after = fs::read_to_string(&target).unwrap();
         assert_eq!(
             actual_after, expected_after,
@@ -88,16 +92,10 @@ fn walk_fixtures(file_kind_dir: &Path, migrate: &dyn Fn(&Path) -> anyhow::Result
     }
 }
 
-fn filename_for(file_kind_dir: &Path) -> &'static str {
-    match file_kind_dir
-        .file_name()
-        .unwrap()
-        .to_string_lossy()
-        .as_ref()
-    {
-        // Manifest migrations operate on the role-repo file by name.
+fn filename_for(file_kind: &str) -> &'static str {
+    match file_kind {
+        "config" | "workspace" => "test.toml",
         "manifest" => "jackin.role.toml",
-        // Config and workspace migrations work on any `.toml` path.
-        _ => "test.toml",
+        other => panic!("unknown file_kind {other:?}; add an arm to filename_for"),
     }
 }
