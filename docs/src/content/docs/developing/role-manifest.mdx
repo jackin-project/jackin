@@ -28,6 +28,7 @@ agents = ["claude", "codex", "amp"]
 name = "The Architect"
 
 [claude]
+model = "sonnet"
 plugins = [
   "code-review@claude-plugins-official",
   "feature-dev@claude-plugins-official",
@@ -95,6 +96,7 @@ model = "gpt-5"
 
 | Field | Required | Description |
 |---|---|---|
+| `model` | No | Optional Claude Code model passed to `claude --model` at launch |
 | `plugins` | No | List of Claude plugin identifiers to install in the derived image |
 | `marketplaces` | No | List of marketplace registrations to add before plugin installation |
 
@@ -104,6 +106,7 @@ Example values:
 dockerfile = "Dockerfile"
 
 [claude]
+model = "sonnet"
 plugins = [
   "code-review@claude-plugins-official",
   "feature-dev@claude-plugins-official",
@@ -127,7 +130,7 @@ The `[codex]` table is required when `"codex"` appears in `agents`.
 
 | Field | Required | Description |
 |---|---|---|
-| `model` | No | Optional Codex model written into jackin's generated `config.toml` |
+| `model` | No | Optional Codex model passed to `codex -m` at launch |
 
 ```toml title="jackin.role.toml"
 dockerfile = "Dockerfile"

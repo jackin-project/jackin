@@ -86,18 +86,20 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     fi
 
     LAUNCH=(claude --dangerously-skip-permissions --verbose)
+    if [ "$#" -gt 0 ]; then
+        LAUNCH+=("$@")
+    fi
     ;;
   codex)
     mkdir -p /home/agent/.codex
-    if [ -f /jackin/codex/config.toml ]; then
-        cp /jackin/codex/config.toml /home/agent/.codex/config.toml
-        chmod 600 /home/agent/.codex/config.toml
-    fi
     if [ -f /jackin/codex/auth.json ]; then
         cp /jackin/codex/auth.json /home/agent/.codex/auth.json
         chmod 600 /home/agent/.codex/auth.json
     fi
-    LAUNCH=(codex)
+    LAUNCH=(codex --dangerously-bypass-approvals-and-sandbox)
+    if [ "$#" -gt 0 ]; then
+        LAUNCH+=("$@")
+    fi
     ;;
   amp)
     mkdir -p /home/agent/.local/share/amp

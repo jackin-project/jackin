@@ -38,8 +38,8 @@ pub struct RoleManifest {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CodexConfig {
-    /// Optional model override; passed into the generated config.toml
-    /// when present, otherwise Codex's own default is used.
+    /// Optional model override; passed to Codex with `-m` when present,
+    /// otherwise Codex's own default is used.
     #[serde(default)]
     pub model: Option<String>,
 }
@@ -92,6 +92,10 @@ pub struct ClaudeMarketplaceConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ClaudeConfig {
+    /// Optional model override; passed to Claude Code with `--model`
+    /// when present, otherwise Claude Code's own default is used.
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(default)]
     pub marketplaces: Vec<ClaudeMarketplaceConfig>,
     #[serde(default)]
@@ -191,6 +195,7 @@ plugins = []
             r#"dockerfile = "Dockerfile"
 
 [claude]
+model = "sonnet"
 plugins = []
 "#,
         )
@@ -198,6 +203,7 @@ plugins = []
 
         let m = RoleManifest::load(temp.path()).unwrap();
         assert_eq!(m.supported_agents(), vec![crate::agent::Agent::Claude]);
+        assert_eq!(m.claude.as_ref().unwrap().model.as_deref(), Some("sonnet"));
     }
 
     #[test]
