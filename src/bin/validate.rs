@@ -3,9 +3,8 @@ use std::process::ExitCode;
 
 use jackin::repo::validate_role_repo;
 
-// Hand-rolled argv handling instead of `clap`: the binary takes one optional
-// flag and one positional, so a 30-line dispatcher is cheaper than the
-// dependency. If a third option is added, switch to `clap`.
+// Two-arg surface (one flag, one positional); avoids pulling clap into the
+// validate binary. Add clap if argument shape grows.
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let (migrate, repo_arg) = match parse_args(&args[1..]) {
@@ -18,9 +17,20 @@ fn main() -> ExitCode {
     };
 
     let repo_dir = PathBuf::from(repo_arg);
-    if !repo_dir.is_dir() {
-        eprintln!("error: {} is not a directory", repo_dir.display());
-        return ExitCode::FAILURE;
+    match std::fs::metadata(&repo_dir) {
+        Ok(m) if m.is_dir() => {}
+        Ok(_) => {
+            eprintln!("error: {} is not a directory", repo_dir.display());
+            return ExitCode::FAILURE;
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("error: {} does not exist", repo_dir.display());
+            return ExitCode::FAILURE;
+        }
+        Err(e) => {
+            eprintln!("error: cannot inspect {}: {e}", repo_dir.display());
+            return ExitCode::FAILURE;
+        }
     }
 
     if migrate {

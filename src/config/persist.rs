@@ -111,15 +111,16 @@ fn migrate_legacy_workspaces(
     global_config: &AppConfig,
     workspaces: &BTreeMap<String, crate::workspace::WorkspaceConfig>,
 ) -> anyhow::Result<()> {
-    // Recovery invariant: split files are written first, then the legacy
-    // `config.toml` is rewritten *last*. The global rewrite is the
-    // commit-point — failure before it leaves split files on disk plus the
-    // legacy `[workspaces.*]` tables intact, and the next load_or_init
-    // re-enters this function. The exists-check below makes that re-entry
-    // idempotent for split files whose contents already match the legacy
-    // source, so the operator never sees a confusing partial state unless
-    // they hand-edited a split file between attempts.
-    std::fs::create_dir_all(&paths.workspaces_dir)?;
+    // Crash-recovery ordering: the global rewrite is the commit point. If
+    // we crash before it, the legacy `[workspaces.*]` tables remain
+    // authoritative and the next load_or_init re-runs this function. The
+    // exists+equal short-circuit below keeps that re-entry idempotent.
+    std::fs::create_dir_all(&paths.workspaces_dir).with_context(|| {
+        format!(
+            "creating workspaces directory {}",
+            paths.workspaces_dir.display()
+        )
+    })?;
     for (name, workspace) in workspaces {
         validate_workspace_file_stem(name)?;
         let path = workspace_file_path(paths, name);
@@ -145,11 +146,15 @@ fn migrate_legacy_workspaces(
         atomic_write(&path, &contents)?;
     }
 
-    // Lossy rewrite: the serde round-trip drops top-of-file comments from
-    // the legacy `config.toml`. The non-workspace data survives because it
-    // round-trips through `AppConfig`; comments don't. Operators relying on
-    // those comments must recover them from git history.
-    let global_contents = toml::to_string_pretty(global_config)?;
+    // Lossy rewrite: legacy `[workspaces.*]` removal goes through serde, so
+    // any comments and blank lines in `config.toml` are dropped. Steady-state
+    // edits go through `ConfigEditor` and use the comment-preserving path.
+    let global_contents = toml::to_string_pretty(global_config).with_context(|| {
+        format!(
+            "serializing migrated global config for {}",
+            paths.config_file.display()
+        )
+    })?;
     atomic_write(&paths.config_file, &global_contents)?;
     Ok(())
 }
@@ -159,11 +164,10 @@ pub fn atomic_write(path: &Path, contents: &str) -> anyhow::Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating parent directory {}", parent.display()))?;
     }
-    // Suffix shape: `<filename>.tmp.<pid>.<counter>`. PID covers cross-process
-    // collisions; the counter covers concurrent writers in the same process.
-    // The `.tmp` segment is in the middle (not the file's extension) so the
-    // workspace-directory scan in `load_workspace_files`, which filters by
-    // `extension == "toml"`, ignores leftover staged files automatically.
+    // Place the `.tmp` marker mid-filename rather than as the extension so
+    // `load_workspace_files`'s `extension == "toml"` filter ignores leftover
+    // staged files. PID + counter make the suffix unique across processes
+    // and concurrent in-process writers.
     let counter = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let mut staged_name = path
         .file_name()
@@ -521,12 +525,9 @@ workdir = "/workspace/prod"
 
     #[test]
     fn config_needs_split_migration_returns_false_for_versioned_with_workspaces() {
-        // Paradox case: a current-version config that still carries a
-        // `[workspaces.X]` table. Treated as "no split migration needed" so
-        // the version-migrate path runs first; load_split_config then
-        // pulls the workspaces out via `std::mem::take`. Test pins the
-        // current behavior so a future change to bail noisily here is a
-        // visible decision.
+        // Versioned config with a leftover `[workspaces.X]` table: split
+        // migration is skipped here because `load_split_config` will
+        // `std::mem::take` and split-migrate the workspaces.
         let raw = "version = \"v1alpha1\"\n\n[workspaces.prod]\nworkdir = \"/workspace/prod\"\n";
         assert!(!config_needs_split_migration(raw).unwrap());
     }
@@ -581,6 +582,56 @@ workdir = "/workspace/prod"
             })
             .collect();
         assert!(leaks.is_empty(), "leftover staged files: {leaks:?}");
+    }
+
+    #[test]
+    fn load_or_init_dual_migrates_legacy_config_with_legacy_workspaces() {
+        // Pin the dual-migration contract: a legacy `config.toml` (no
+        // `version`) carrying `[workspaces.X]` tables ends up with
+        // `version = "v1alpha1"` on the global file AND on each split
+        // workspace file after one load. The current registries are
+        // no-ops; once a real content-changing config migration lands,
+        // this test guards the ordering that the version migration runs
+        // alongside the split rather than getting silently skipped.
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            r#"# operator comment
+[env]
+GLOBAL = "yes"
+
+[workspaces.prod]
+workdir = "/workspace/prod"
+
+[[workspaces.prod.mounts]]
+src = "/tmp/prod"
+dst = "/workspace/prod"
+"#,
+        )
+        .unwrap();
+
+        let config = AppConfig::load_or_init(&paths).unwrap();
+        assert!(config.workspaces.contains_key("prod"));
+
+        let global_on_disk = std::fs::read_to_string(&paths.config_file).unwrap();
+        let global_parsed: toml::Value = toml::from_str(&global_on_disk).unwrap();
+        assert_eq!(global_parsed["version"].as_str().unwrap(), "v1alpha1");
+        assert!(!global_on_disk.contains("[workspaces."), "{global_on_disk}");
+
+        let prod_on_disk = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();
+        let prod_parsed: toml::Value = toml::from_str(&prod_on_disk).unwrap();
+        assert_eq!(prod_parsed["version"].as_str().unwrap(), "v1alpha1");
+
+        // Re-running is a no-op: file content stays byte-identical.
+        let global_before = std::fs::read(&paths.config_file).unwrap();
+        let prod_before = std::fs::read(paths.workspaces_dir.join("prod.toml")).unwrap();
+        AppConfig::load_or_init(&paths).unwrap();
+        let global_after = std::fs::read(&paths.config_file).unwrap();
+        let prod_after = std::fs::read(paths.workspaces_dir.join("prod.toml")).unwrap();
+        assert_eq!(global_before, global_after);
+        assert_eq!(prod_before, prod_after);
     }
 
     #[test]

@@ -33,9 +33,11 @@ The split-workspace layout described in [Configuration File](/reference/configur
 | Version | File kind | Status | Summary |
 |---|---|---|---|
 | `legacy` | Config, workspace, manifest | Supported for migration | No top-level `version` field |
-| `v1alpha1` | Config | Current | Adds `version = "v1alpha1"`; migrates legacy monolithic workspace tables into split workspace files |
+| `v1alpha1` | Config | Current | Adds `version = "v1alpha1"` |
 | `v1alpha1` | Workspace | Current | Adds `version = "v1alpha1"` to per-workspace files |
 | `v1alpha1` | Manifest | Current | Adds required `version = "v1alpha1"` to `jackin.role.toml` |
+
+Splitting legacy `[workspaces.<name>]` tables out of `config.toml` runs as a separate startup step (see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design)); the version migration above is independent of that split.
 
 ## Version format
 
@@ -61,10 +63,11 @@ config, jackin migrates this automatically before parsing.
 | Change to `v1alpha1` | Detail |
 |---|---|
 | Added | `version = "v1alpha1"` |
-| Moved | `[workspaces.<name>]` tables move into `workspaces/<name>.toml` |
 | Preserved | Global agent auth, GitHub auth, env, role sources, Docker mounts |
 | Removed | None |
 | Renamed | None |
+
+The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs as a separate startup migration alongside the version stamp; see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design).
 
 ### `v1alpha1`
 
@@ -99,10 +102,11 @@ a `[workspaces.<name>]` table embedded in legacy `config.toml`.
 | Change to `v1alpha1` | Detail |
 |---|---|
 | Added | `version = "v1alpha1"` |
-| Moved | Embedded legacy workspace tables become one file per workspace |
 | Preserved | Workdir, mounts, role selection, env, auth overrides, keep-awake, 1Password account |
 | Removed | None |
 | Renamed | None |
+
+Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per-workspace files by a separate startup migration; see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design).
 
 ### `v1alpha1`
 
@@ -167,7 +171,7 @@ does not auto-write role repositories during normal role loading. Run
 | `[[claude.marketplaces]].sparse` | string array | No | `legacy` | Sparse checkout paths |
 | `[codex].model` | string | No | `legacy` | Codex model override |
 | `[amp]` | table | No | `legacy` | Empty marker table for Amp support |
-| `[hooks].setup_once` | string | No | `legacy` | Relative path to a one-time install script gated by a marker on the container writable layer |
+| `[hooks].setup_once` | string | No | `legacy` | Relative path to a one-time install script that runs on first launch only |
 | `[hooks].source` | string | No | `legacy` | Relative path to a script dot-sourced into the entrypoint shell so `export` and `PATH` mutations reach the launched agent |
 | `[hooks].preflight` | string | No | `legacy` | Relative path to a per-start preflight script |
 | `[env.<NAME>]` | table | No | `legacy` | Interactive env prompt declaration |

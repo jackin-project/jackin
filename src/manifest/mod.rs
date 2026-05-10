@@ -175,7 +175,8 @@ impl RoleManifest {
         let doc: toml_edit::DocumentMut = contents
             .parse()
             .with_context(|| format!("parsing {}", manifest_path.display()))?;
-        crate::manifest::migrations::validate_manifest_version(&doc, &display_role_name(repo_dir))?;
+        crate::manifest::migrations::validate_manifest_version(&doc, &display_role_name(repo_dir))
+            .with_context(|| format!("validating version of {}", manifest_path.display()))?;
         let manifest: Self = toml::from_str(&contents)
             .with_context(|| format!("parsing {} as RoleManifest", manifest_path.display()))?;
         let _warnings = crate::manifest::validate::validate_agent_consistency(&manifest)?;
@@ -324,9 +325,9 @@ plugins = []
         .unwrap();
 
         let err = RoleManifest::load(temp.path()).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("manifest is at legacy"), "{msg}");
-        assert!(msg.contains("jackin-validate --migrate"), "{msg}");
+        let chain = format!("{err:#}");
+        assert!(chain.contains("manifest is at legacy"), "{chain}");
+        assert!(chain.contains("jackin-validate --migrate"), "{chain}");
     }
 
     #[test]
@@ -344,7 +345,8 @@ plugins = []
         .unwrap();
 
         let err = RoleManifest::load(temp.path()).unwrap_err();
-        assert!(err.to_string().contains("only understands up to v1alpha1"));
+        let chain = format!("{err:#}");
+        assert!(chain.contains("only understands up to v1alpha1"), "{chain}");
     }
 
     #[test]

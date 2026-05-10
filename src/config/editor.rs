@@ -47,17 +47,11 @@ pub struct ConfigEditor {
 }
 
 impl ConfigEditor {
-    /// Loads the existing config file as a `DocumentMut`. If the file
-    /// does not exist, delegates to `AppConfig::load_or_init` to
-    /// materialize defaults, then reopens the resulting file.
-    ///
-    /// Precondition: `AppConfig::load_or_init` has run for `paths` at
-    /// least once so any legacy `[workspaces.X]` tables already moved
-    /// into split files. Calling `open` against a legacy monolithic
-    /// config rewrites it through the lossy serde path and drops
-    /// operator comments. Production callers always run `load_or_init`
-    /// first; the recursion-when-missing branch below covers the
-    /// fresh-install case.
+    /// Loads the existing config file as a `DocumentMut`. Performs both
+    /// schema-version and split-workspace migration before reading, so the
+    /// on-disk result matches what `AppConfig::load_or_init` would produce.
+    /// The recursion-when-missing branch covers the fresh-install case
+    /// where the file does not yet exist.
     pub fn open(paths: &JackinPaths) -> anyhow::Result<Self> {
         if paths.config_file.exists() {
             crate::config::migrations::migrate_config_file_if_needed(&paths.config_file)?;

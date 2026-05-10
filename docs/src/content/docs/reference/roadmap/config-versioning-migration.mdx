@@ -141,25 +141,27 @@ The migration framework carves out an exception for the three file kinds operato
 
 **Phase 4 — Renovate-style auto-migration GitHub Action**
 
-The `--pr` mode runs from an operator's machine. The remaining gap is the third-party role-repo case: the role author has not noticed the schema bump, has not run `jackin-validate --migrate`, and the manifest fails validation in CI until someone opens a PR by hand. The fix is a Renovate-style automation that watches role repos and opens a migration PR when their `jackin.role.toml` falls behind the current schema.
+`--pr` runs from an operator's machine, so a role repo whose author has not run `jackin-validate --migrate` stays broken in CI until someone opens a PR by hand. A scheduled action closes that gap by watching role repos and opening migration PRs upstream automatically.
 
-The action extends [`validate-agent-action`](https://github.com/jackin-project/validate-agent-action) with a `migrate` mode (rather than introducing a new repo — role authors install one action). Two operating modes mirror Renovate's deployment shapes:
+The action extends [`validate-agent-action`](https://github.com/jackin-project/validate-agent-action) with a `migrate` mode (rather than introducing a new repo — role authors install one action). Two deployment shapes mirror Renovate's:
 
-1. **Self-hosted GitHub App** ("Mend Renovate" equivalent). Install the jackin GitHub App on the org or per-repo. The app holds `pull_requests:write` + `contents:write` on the role repos it watches and runs the migration on a cron from a central runner. Identity for the PR is the app bot, parallel to `renovate[bot]`. Operators do not manage tokens.
+1. **Hosted GitHub App** (Mend Renovate equivalent — runner is hosted by jackin-project, role-repo authors only install the app). The app holds `pull_requests:write` + `contents:write` on the repos it watches and runs the migration on a cron from a central runner. Identity for the PR is the app bot, parallel to `renovate[bot]`. Authors do not manage tokens.
 
-2. **Workflow-in-repo with PAT or `GITHUB_TOKEN`** ("self-hosted Renovate" / `renovate-bot/renovate-action` equivalent). Role authors add a workflow to their own repo that calls the action on a schedule (`on: schedule: - cron: "0 6 * * *"`) and on `workflow_dispatch`. The workflow uses `secrets.GITHUB_TOKEN` (which can open PRs from the same repo) or an operator-supplied PAT for cross-repo cases. Operators manage the token themselves but skip the app registration.
+2. **Self-hosted workflow with PAT or `GITHUB_TOKEN`** (`renovate-bot/renovate-action` equivalent — runner is the role repo's own GitHub Actions). Role authors add a workflow to their own repo that calls the action on a schedule (`on: schedule: - cron: "0 6 * * *"`) and on `workflow_dispatch`. The workflow uses `secrets.GITHUB_TOKEN` (opens PRs from the same repo) or an operator-supplied PAT for cross-repo cases. Authors manage the token themselves but skip the app registration.
 
-Both modes share the same internal flow:
+Per-run flow (both modes):
 
 1. Check out the role repo at the default branch.
-2. Run `jackin-validate <repo>` to detect whether the manifest is already current.
-3. If `--migrate` would change the file, switch to a deterministic branch name (e.g. `jackin/schema-migration/v1alpha1-to-v1alpha2`) and run `jackin-validate --migrate <repo>`.
+2. Run `jackin-validate <repo>` to detect whether the manifest is already current. If yes, jump to the cleanup step below.
+3. Switch to a deterministic branch name (e.g. `jackin/schema-migration/v1alpha1-to-v1alpha2`) and run `jackin-validate --migrate <repo>`.
 4. Commit the migrated manifest with a fixed message shape; push.
 5. Open a PR if none exists for that branch; update the existing PR if one does (Renovate's "branch is the source of truth" model). PR body links to the schema-versions page and names the source jackin tag for traceability.
-6. Close the PR (and delete the branch) once the role manifest is current — guards against zombie PRs after the maintainer hand-merges or hand-migrates.
+
+Cleanup (subsequent runs only): if a previous run opened a migration PR and the manifest is now current (because the maintainer hand-merged or hand-migrated), close the PR and delete the branch so zombies do not accumulate.
 
 Open design questions:
 
+- **Target-repo discovery.** How does the central runner enumerate which repos to scan? Renovate has `renovate.json` + an onboarding PR; jackin's analog is unspecified. Options: subscribe to push events and short-circuit when `jackin.role.toml` is absent, require an explicit allowlist file in each repo, or piggy-back on an org-level config. Pick one before implementation.
 - **App vs PAT default in docs.** Renovate's default-recommended path is the hosted app; jackin picks one as the documented default and calls out the other as fallback.
 - **Source of "current schema."** The action needs to know which `CURRENT_*_VERSION` to migrate to. Options: pin to the latest `jackin-validate` release, follow the same `latest-build` channel as the existing validate action, or pin per-workflow. Decision affects how new schema versions roll out across the role-repo ecosystem.
 - **Branch lifecycle.** When a role author rebases, force-pushes, or hand-edits the migration PR, the action must detect drift and either rebase its own commit or stop (Renovate calls this "rebase strategy" — it has multiple modes; jackin picks one).

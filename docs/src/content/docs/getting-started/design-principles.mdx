@@ -99,7 +99,7 @@ host ↔ container boundary is the operator's call.
 
 ## Configuration is plain files, version-control friendly
 
-Operator configuration lives as plain TOML files you can put under version control or manage with a dotfile manager. Jackin' upgrades the on-disk shape automatically when it changes between releases, so you do not hand-edit TOML to recover. The [Configuration File](/reference/configuration/#one-file-per-workspace-by-design) reference covers the layout; [Schema Versions](/reference/schema-versions/) covers the upgrade story.
+Operator configuration lives as plain TOML files you can put under version control or manage with a dotfile manager. When the format changes between releases jackin' upgrades your files for you, so you do not hand-edit TOML to recover. The [Configuration File](/reference/configuration/#one-file-per-workspace-by-design) reference covers the layout; [Schema Versions](/reference/schema-versions/) covers the upgrade story.
 
 ## In-container "full speed" is by design
 

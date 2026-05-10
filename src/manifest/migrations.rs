@@ -125,32 +125,12 @@ mod tests {
     #[test]
     fn manifest_migrations_chain_reaches_current() {
         // Production registry must form a contiguous chain from `legacy` to
-        // CURRENT_MANIFEST_VERSION. A typo in `from` or `to` would only
-        // surface when an operator actually triggered a walk; this test
-        // catches it on every CI run.
-        let current = crate::config::migrations::parse_version(CURRENT_MANIFEST_VERSION).unwrap();
-        let mut cursor = crate::config::migrations::SchemaVersion::Legacy;
-        let mut steps_taken = 0;
-        while cursor < current {
-            let step = MANIFEST_MIGRATIONS
-                .iter()
-                .find(|s| {
-                    crate::config::migrations::parse_registry_version(s.from)
-                        .map(|v| v == cursor)
-                        .unwrap_or(false)
-                })
-                .unwrap_or_else(|| panic!("no manifest step from {cursor}"));
-            let next = crate::config::migrations::parse_registry_version(step.to).unwrap();
-            assert!(
-                next > cursor,
-                "step {} -> {} not forward",
-                step.from,
-                step.to
-            );
-            cursor = next;
-            steps_taken += 1;
-            assert!(steps_taken <= MANIFEST_MIGRATIONS.len(), "registry cycle");
-        }
-        assert_eq!(cursor, current);
+        // CURRENT_MANIFEST_VERSION. The shared helper catches typos,
+        // missing middle steps, backward steps, cycles, and duplicate
+        // `from` forks on every CI run.
+        crate::config::migrations::assert_registry_chain(
+            MANIFEST_MIGRATIONS,
+            CURRENT_MANIFEST_VERSION,
+        );
     }
 }

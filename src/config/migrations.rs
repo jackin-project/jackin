@@ -106,10 +106,11 @@ pub fn migrate_workspace_file_if_needed(path: &Path) -> anyhow::Result<bool> {
 /// Read `path`, run any pending migrations, write the result back atomically.
 ///
 /// Returns `Some(old_version)` when a migration ran, `None` when the file
-/// was already at `current_raw`. The framework also writes a
-/// `[jackin] {label} migrated {old} -> {current_raw}` line to stderr;
-/// callers that need the old version (e.g. `jackin-validate` for the role
-/// manifest line in `bin/validate.rs`) read it from this return value.
+/// was already at `current_raw`. Also writes
+/// `[jackin] {label} migrated {old} -> {current_raw}` to stderr. Wrappers
+/// (e.g. `manifest::migrations::migrate_manifest_file`) project the
+/// `SchemaVersion` into display strings for callers that need to print
+/// both ends.
 pub fn migrate_file_if_needed(
     path: &Path,
     label: &str,
@@ -134,7 +135,8 @@ pub fn migrate_file_if_needed(
     }
 
     apply_migrations(&mut doc, &old_version, &current, migrations, label)?;
-    crate::config::persist::atomic_write(path, &doc.to_string())?;
+    crate::config::persist::atomic_write(path, &doc.to_string())
+        .with_context(|| format!("writing migrated {label} to {}", path.display()))?;
     eprintln!("[jackin] {label} migrated {old_version} -> {current_raw}");
     Ok(Some(old_version))
 }
@@ -165,7 +167,8 @@ pub fn apply_migrations(
                 step.to
             );
         }
-        (step.migrate)(doc)?;
+        (step.migrate)(doc)
+            .with_context(|| format!("running {label} migration {} -> {}", step.from, step.to))?;
         set_doc_version(doc, step.to);
         cursor = next;
     }
@@ -274,6 +277,52 @@ pub fn set_doc_version(doc: &mut DocumentMut, version: &str) {
 #[allow(clippy::unnecessary_wraps)]
 pub const fn noop_migration(_doc: &mut DocumentMut) -> anyhow::Result<()> {
     Ok(())
+}
+
+/// Walk a `MigrationStep` slice from `Legacy` to `current_raw` and assert
+/// the chain is shape-correct. Catches typos in `from` / `to`, missing
+/// middle steps, backward steps, cycles, and duplicate `from` values
+/// (which would silently fork the walker). Production registries call
+/// this from a `#[test]` so a registry mistake fails CI rather than
+/// surfacing on an operator's machine.
+#[cfg(test)]
+pub(crate) fn assert_registry_chain(migrations: &[MigrationStep], current_raw: &str) {
+    let mut seen_froms = std::collections::BTreeSet::new();
+    for step in migrations {
+        let from = parse_registry_version(step.from)
+            .unwrap_or_else(|_| panic!("step.from {:?} does not parse", step.from));
+        assert!(
+            seen_froms.insert(from),
+            "duplicate `from` {} in registry",
+            step.from
+        );
+    }
+
+    let current = parse_version(current_raw).expect("current version parses");
+    let mut cursor = SchemaVersion::Legacy;
+    let mut steps_taken = 0;
+    while cursor < current {
+        let step = migrations
+            .iter()
+            .find(|s| {
+                parse_registry_version(s.from)
+                    .map(|v| v == cursor)
+                    .unwrap_or(false)
+            })
+            .unwrap_or_else(|| panic!("no step from {cursor} in registry"));
+        let next = parse_registry_version(step.to)
+            .unwrap_or_else(|_| panic!("step.to {:?} does not parse", step.to));
+        assert!(
+            next > cursor,
+            "step {} -> {} is not strictly forward",
+            step.from,
+            step.to
+        );
+        cursor = next;
+        steps_taken += 1;
+        assert!(steps_taken <= migrations.len(), "registry has a cycle");
+    }
+    assert_eq!(cursor, current, "registry does not reach {current_raw}");
 }
 
 #[cfg(test)]
@@ -487,36 +536,26 @@ mod tests {
     }
 
     fn assert_registry_reaches(migrations: &[MigrationStep], current_raw: &str) {
-        let current = parse_version(current_raw).expect("current version parses");
-        let mut cursor = SchemaVersion::Legacy;
-        let mut steps_taken = 0;
-        while cursor < current {
-            let step = migrations
-                .iter()
-                .find(|s| {
-                    parse_registry_version(s.from)
-                        .map(|v| v == cursor)
-                        .unwrap_or(false)
-                })
-                .unwrap_or_else(|| panic!("no step from {cursor} in registry"));
-            let next = parse_registry_version(step.to)
-                .unwrap_or_else(|_| panic!("step.to {:?} does not parse", step.to));
-            assert!(
-                next > cursor,
-                "step {} -> {} is not strictly forward",
-                step.from,
-                step.to
-            );
-            cursor = next;
-            steps_taken += 1;
-            assert!(steps_taken <= migrations.len(), "registry has a cycle");
-        }
-        assert_eq!(cursor, current, "registry does not reach {current_raw}");
+        super::assert_registry_chain(migrations, current_raw);
     }
 
     #[test]
     fn config_migrations_chain_reaches_current() {
         assert_registry_reaches(CONFIG_MIGRATIONS, CURRENT_CONFIG_VERSION);
+    }
+
+    #[test]
+    fn parse_registry_version_handles_legacy_sentinel() {
+        assert_eq!(
+            parse_registry_version("legacy").unwrap(),
+            SchemaVersion::Legacy
+        );
+        // Non-sentinel strings delegate to parse_version.
+        assert!(parse_registry_version("legacyfoo").is_err());
+        assert_eq!(
+            parse_registry_version("v1alpha1").unwrap(),
+            parse_version("v1alpha1").unwrap()
+        );
     }
 
     #[test]
