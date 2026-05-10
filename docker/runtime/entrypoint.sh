@@ -114,7 +114,7 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
         cp /jackin/codex/auth.json /home/agent/.codex/auth.json
         chmod 600 /home/agent/.codex/auth.json
     fi
-    LAUNCH=(codex --dangerously-bypass-approvals-and-sandbox)
+    LAUNCH=(codex --enable goals --dangerously-bypass-approvals-and-sandbox)
     if [ "$#" -gt 0 ]; then
         LAUNCH+=("$@")
     fi
