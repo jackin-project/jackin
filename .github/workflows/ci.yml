@@ -66,7 +66,7 @@ jobs:
           # below; leaving the action's default RUSTFLAGS would also
           # apply it to `cargo build`/`cargo check`/`cargo nextest run`.
           rustflags: ""
-      - uses: taiki-e/install-action@3fa6878dc4ae603f73960271565a082bf196ab96 # v2.77.2
+      - uses: taiki-e/install-action@e3134ec54b36203e18f2d1e80652058bd078dd91 # v2.77.3
         with:
           tool: cargo-nextest
       - run: cargo fmt --check
