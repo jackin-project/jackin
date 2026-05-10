@@ -507,7 +507,10 @@ mod tests {
             .split(";;")
             .next()
             .unwrap();
-        assert!(codex_section.contains("codex --dangerously-bypass-approvals-and-sandbox"));
+        assert!(
+            codex_section
+                .contains("codex --enable goals --dangerously-bypass-approvals-and-sandbox")
+        );
         assert!(codex_section.contains("LAUNCH+=(\"$@\")"));
         assert!(!codex_section.contains("config.toml"));
     }
