@@ -14,7 +14,7 @@ For full details — including what's installed, how it is built, the image laye
 | `zshrc` | Shell configuration — sets up mise shims, starship prompt, and security tool shell hooks |
 | `versions.env` | Pinned versions for security tools (tirith, shellfirm) used as Docker build-args |
 
-The runtime entrypoint that launches the selected agent is at [`docker/runtime/entrypoint.sh`](../runtime/entrypoint.sh) — it configures git identity, authenticates with GitHub, runs agent-specific setup, and starts Claude or Codex.
+The runtime entrypoint source that launches the selected agent is at [`docker/runtime/entrypoint.sh`](../runtime/entrypoint.sh). jackin copies it into derived images at `/jackin/runtime/entrypoint.sh`, where it configures git identity, authenticates with GitHub, runs agent-specific setup, and starts Claude or Codex.
 
 ## Image Layer Architecture
 

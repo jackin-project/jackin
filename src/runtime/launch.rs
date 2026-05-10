@@ -2639,7 +2639,7 @@ mod tests {
         // Second capture: docker logs → entrypoint stderr.
         let mut runner = FakeRunner::with_capture_queue([
             "false 127 false".to_string(),
-            "/home/agent/entrypoint.sh: line 85: exec: codex: not found".to_string(),
+            "/jackin/runtime/entrypoint.sh: line 85: exec: codex: not found".to_string(),
         ]);
         let err = super::diagnose_premature_exit(&mut runner, "jackin-the-architect")
             .expect("stopped container must produce a diagnostic error");
