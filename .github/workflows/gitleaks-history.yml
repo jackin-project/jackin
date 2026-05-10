@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   scan:
-    runs-on: ubuntu-latest
+    runs-on: hetzner-sentry
     env:
       GITLEAKS_VERSION: 8.30.1
     steps:
