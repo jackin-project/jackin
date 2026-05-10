@@ -1172,9 +1172,8 @@ workdir = "/b"
         editor.save().unwrap();
 
         let round_tripped = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert_eq!(
-            round_tripped.contains("[workspaces."),
-            false,
+        assert!(
+            !round_tripped.contains("[workspaces."),
             "global file should contain only global config after split:\n{round_tripped}"
         );
         assert!(paths.workspaces_dir.join("prod.toml").exists());
@@ -2153,7 +2152,7 @@ GH_TOKEN = "ghp_real"
         );
     }
 
-    /// Workspace with sibling content (allowed_roles, mounts) must
+    /// Workspace with sibling content (`allowed_roles`, mounts) must
     /// survive a github clear. Position-based prune bound prevents
     /// the walker from reaching the workspace identifier slot.
     #[test]

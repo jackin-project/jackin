@@ -1507,7 +1507,7 @@ mod auth_set_tests {
             &self,
             _params: crate::operator_env::OpItemCreateParams<'_>,
         ) -> anyhow::Result<crate::operator_env::OpRef> {
-            unimplemented!("rotate-cleanup tests do not exercise item_create")
+            anyhow::bail!("rotate-cleanup tests do not exercise item_create")
         }
         fn item_delete(
             &self,

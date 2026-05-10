@@ -51,9 +51,8 @@ assert_cmd = "2.0"
 predicates = "3.1"
 
 [features]
-# `e2e` gates real-docker smoke tests (tests/e2e_auth_modes.rs).
-# Default `cargo nextest run` skips them; enable with `--features e2e`
-# on a host with a reachable docker daemon.
+# `e2e` gates real-Docker smoke tests. Default `cargo nextest run` skips them;
+# enable with `--features e2e` on a host with a reachable Docker daemon.
 e2e = []
 
 [lints.rust]

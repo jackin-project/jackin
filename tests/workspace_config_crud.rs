@@ -4,20 +4,22 @@ use jackin::workspace::{self, WorkspaceConfig, WorkspaceEdit, parse_mount_spec_r
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
+struct RestoreCwd(std::path::PathBuf);
+
+impl Drop for RestoreCwd {
+    fn drop(&mut self) {
+        let fallback = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
+        let target = if self.0.exists() { &self.0 } else { &fallback };
+        let _ = std::env::set_current_dir(target);
+    }
+}
+
 fn with_cwd<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
     static CWD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     let _guard = CWD_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let fallback = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
     let original = std::env::current_dir().unwrap_or_else(|_| fallback.clone());
     std::env::set_current_dir(dir).unwrap();
-    struct RestoreCwd(std::path::PathBuf);
-    impl Drop for RestoreCwd {
-        fn drop(&mut self) {
-            let fallback = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
-            let target = if self.0.exists() { &self.0 } else { &fallback };
-            let _ = std::env::set_current_dir(target);
-        }
-    }
     let _restore = RestoreCwd(original);
     f()
 }
