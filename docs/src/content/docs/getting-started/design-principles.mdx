@@ -97,6 +97,12 @@ The role manifest controls what runs *inside* the container
 `Dockerfile`). Everything that crosses the
 host ↔ container boundary is the operator's call.
 
+## Configuration is plain files, version-control friendly
+
+Operator configuration lives as plain TOML on disk, split into one global file plus one file per saved workspace at `~/.config/jackin/config.toml` and `~/.config/jackin/workspaces/<name>.toml`. The split is deliberate: the layout works directly with dotfile managers (`chezmoi`, `yadm`, `GNU stow`, or a plain git repository tracking `~/.config/jackin/`). Operators can version-control their global config, selectively share workspaces, and restore a full setup on a new machine by checking out a dotfile repo.
+
+Each file carries its own `version` stamp. When jackin' bumps a schema, operator-owned files migrate in place on startup; role-owned `jackin.role.toml` files migrate explicitly via `jackin-validate --migrate <role-repo-path>`. The migration framework is what lets jackin' break schemas freely as the project evolves without making operators hand-edit TOML to recover. See [Schema Versions](/reference/schema-versions/) for the full version history.
+
 ## In-container "full speed" is by design
 
 `Claude Code`'s `--dangerously-skip-permissions`, `Codex`'s
