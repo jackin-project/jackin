@@ -121,7 +121,7 @@ distinction is enforced in `docs/astro.config.ts`, not in URLs.
 | `docker/construct/Dockerfile` | Shared base image all roles extend |
 | `docker/construct/README.md` | `construct` image documentation |
 | `docker/construct/zshrc` | Shell config injected into containers |
-| `docker/runtime/entrypoint.sh` | Container entrypoint at runtime |
+| `docker/runtime/entrypoint.sh` | Source for the runtime entrypoint copied into derived images at `/jackin/runtime/entrypoint.sh` |
 
 For what each piece does at runtime, see
 [The Construct Image](https://jackin.tailrocks.com/developing/construct-image/)
