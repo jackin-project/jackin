@@ -505,6 +505,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
                 let mount_count = plan.final_mounts.len();
                 let ws = WorkspaceConfig {
+                    version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                     workdir: expanded_workdir,
                     mounts: plan.final_mounts,
                     allowed_roles,
@@ -1445,6 +1446,7 @@ mod auth_set_tests {
     #[test]
     fn workspace_show_includes_isolation_column() {
         let ws = crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/workspace/jackin".into(),
             mounts: vec![
                 crate::workspace::MountConfig {

@@ -126,6 +126,7 @@ export default defineConfig({
           items: [
             { label: 'Architecture', slug: 'reference/architecture' },
             { label: 'Configuration File', slug: 'reference/configuration' },
+            { label: 'Schema Versions', slug: 'reference/schema-versions' },
             { label: 'Codebase Map', slug: 'reference/codebase-map' },
             { label: 'Claude Token Orchestrator', slug: 'reference/claude-token-orchestrator' },
             {
@@ -323,7 +324,6 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Config versioning and migration', slug: 'reference/roadmap/config-versioning-migration' },
-                    { label: 'Split config.toml into per-workspace files', slug: 'reference/roadmap/split-workspace-config-files' },
                   ],
                 },
                 {
@@ -339,6 +339,7 @@ export default defineConfig({
                     { label: 'Orphaned DinD cleanup', slug: 'reference/roadmap/orphaned-dind-cleanup' },
                     { label: 'Per-mount isolation', slug: 'reference/roadmap/per-mount-isolation' },
                     { label: 'Sensitive mount warnings', slug: 'reference/roadmap/sensitive-mount-warnings' },
+                    { label: 'Split config.toml into per-workspace files', slug: 'reference/roadmap/split-workspace-config-files' },
                     { label: 'Worktree cleanup assessment', slug: 'reference/roadmap/worktree-cleanup-assessment' },
                   ],
                 },

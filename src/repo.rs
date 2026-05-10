@@ -226,7 +226,8 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "docker/role.Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "docker/role.Dockerfile"
 
 [claude]
 plugins = []
@@ -244,7 +245,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "../Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "../Dockerfile"
 
 [claude]
 plugins = []
@@ -266,7 +268,8 @@ plugins = []
         std::os::unix::fs::symlink(outside.path(), temp.path().join("escape")).unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "escape/Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "escape/Dockerfile"
 
 [claude]
 plugins = []
@@ -290,7 +293,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "docker/role.Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "docker/role.Dockerfile"
 
 [claude]
 plugins = []
@@ -327,7 +331,8 @@ echo hello
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -369,7 +374,8 @@ preflight = "hooks/preflight.sh"
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -400,7 +406,8 @@ preflight = "hooks/preflight.sh"
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -426,7 +433,8 @@ preflight = "../escape.sh"
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -452,7 +460,8 @@ preflight = "hooks/missing.sh"
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -498,7 +507,8 @@ preflight = "/etc/evil.sh"
         std::fs::write(
             temp.path().join("jackin.role.toml"),
             format!(
-                r#"dockerfile = "Dockerfile"
+                r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -531,7 +541,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []

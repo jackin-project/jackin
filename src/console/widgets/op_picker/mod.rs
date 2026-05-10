@@ -1027,14 +1027,14 @@ mod tests {
         let mut s = picker_ready();
         s.items = vec![
             item_with_subtitle("Google", "alexey@zhokhov.com"),
-            item_with_subtitle("Google", "azhokhov@scentbird.com"),
+            item_with_subtitle("Google", "azhokhov@example.com"),
         ];
         s.item_list_state.select(Some(0));
         s.filter_buf = "AzhokhoV".to_string();
 
         let visible = s.filtered_items();
         assert_eq!(visible.len(), 1);
-        assert_eq!(visible[0].subtitle, "azhokhov@scentbird.com");
+        assert_eq!(visible[0].subtitle, "azhokhov@example.com");
     }
 
     #[test]

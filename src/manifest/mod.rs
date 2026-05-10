@@ -1,13 +1,17 @@
 pub use crate::env_model::{JACKIN_DIND_HOSTNAME_ENV_NAME, JACKIN_ENV_NAME, JACKIN_ENV_VALUE};
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::Path;
 
+pub mod migrations;
 pub mod validate;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoleManifest {
+    #[serde(default = "migrations::current_manifest_version", rename = "version")]
+    pub version: String,
     pub dockerfile: String,
     /// Pre-built Docker image published to a registry. When set, `jackin
     /// console` pulls this image and layers only the agent install on top,
@@ -155,22 +159,26 @@ impl ManifestWarning {
 }
 
 impl RoleManifest {
-    /// Parse `jackin.role.toml` and enforce the `agents`/[<agent>] table
-    /// consistency rules.
+    /// Parse `jackin.role.toml` and pin the load-time invariants other code
+    /// relies on: `version` matches `CURRENT_MANIFEST_VERSION` (operator
+    /// gets a `--migrate` hint on mismatch) and the `agents` / `[<agent>]`
+    /// tables are consistent (so `instance::prepare` can dereference
+    /// `manifest.codex` / `manifest.claude` without re-checking).
     ///
-    /// `validate_agent_consistency` runs here (not just inside the
-    /// fuller `validate()`) so any caller that loads a manifest gets
-    /// a structurally + semantically valid value: consumers like
-    /// `instance/mod.rs::prepare` can dereference `manifest.codex` /
-    /// `manifest.claude` without re-checking. Env-var validation,
-    /// interpolation cycle detection, and the rest of `validate()`
-    /// still need to be called explicitly because they produce
-    /// warnings the load path can't surface — but the invariants
-    /// other code unconditionally relies on are pinned at load time.
+    /// Env-var validation, interpolation cycle detection, and the rest of
+    /// `validate()` still need explicit calls — they emit warnings the load
+    /// path cannot surface.
     pub fn load(repo_dir: &Path) -> anyhow::Result<Self> {
         let manifest_path = repo_dir.join("jackin.role.toml");
-        let contents = std::fs::read_to_string(&manifest_path)?;
-        let manifest: Self = toml::from_str(&contents)?;
+        let contents = std::fs::read_to_string(&manifest_path)
+            .with_context(|| format!("reading {}", manifest_path.display()))?;
+        let doc: toml_edit::DocumentMut = contents
+            .parse()
+            .with_context(|| format!("parsing {}", manifest_path.display()))?;
+        crate::manifest::migrations::validate_manifest_version(&doc, &display_role_name(repo_dir))
+            .with_context(|| format!("validating version of {}", manifest_path.display()))?;
+        let manifest: Self = toml::from_str(&contents)
+            .with_context(|| format!("parsing {} as RoleManifest", manifest_path.display()))?;
         let _warnings = crate::manifest::validate::validate_agent_consistency(&manifest)?;
         Ok(manifest)
     }
@@ -190,6 +198,19 @@ impl RoleManifest {
     }
 }
 
+fn display_role_name(repo_dir: &Path) -> String {
+    let leaf = repo_dir.file_name().and_then(|name| name.to_str());
+    let parent = repo_dir
+        .parent()
+        .and_then(|path| path.file_name())
+        .and_then(|name| name.to_str());
+    match (parent, leaf) {
+        (Some(parent), Some("default" | "branches")) => parent.to_string(),
+        (_, Some(name)) => name.to_string(),
+        _ => repo_dir.display().to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,7 +221,8 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp"]
 
 [claude]
@@ -231,7 +253,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 model = "sonnet"
@@ -250,7 +273,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["codex"]
 
 [codex]
@@ -269,7 +293,8 @@ model = "gpt-5"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["claude", "foo"]
 
 [claude]
@@ -279,7 +304,49 @@ plugins = []
         .unwrap();
 
         let err = RoleManifest::load(temp.path()).unwrap_err();
-        assert!(err.to_string().contains("foo") || err.to_string().contains("unknown"));
+        let chain = format!("{err:#}");
+        assert!(
+            chain.contains("foo") || chain.contains("unknown"),
+            "{chain}"
+        );
+    }
+
+    #[test]
+    fn rejects_legacy_manifest_without_migrate() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let err = RoleManifest::load(temp.path()).unwrap_err();
+        let chain = format!("{err:#}");
+        assert!(chain.contains("manifest is at legacy"), "{chain}");
+        assert!(chain.contains("jackin-validate --migrate"), "{chain}");
+    }
+
+    #[test]
+    fn rejects_newer_manifest_version() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"version = "v2alpha1"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let err = RoleManifest::load(temp.path()).unwrap_err();
+        let chain = format!("{err:#}");
+        assert!(chain.contains("only understands up to v1alpha1"), "{chain}");
     }
 
     #[test]
@@ -287,7 +354,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = ["code-review@claude-plugins-official"]
@@ -308,7 +376,8 @@ plugins = ["code-review@claude-plugins-official"]
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = ["superpowers@superpowers-marketplace"]
@@ -341,7 +410,8 @@ sparse = ["plugins", ".claude-plugin"]
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -370,7 +440,8 @@ source = "jackin-project/jackin-marketplace"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 
@@ -391,7 +462,8 @@ source = "obra/superpowers-marketplace"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [identity]
 name = "Agent Smith"
@@ -412,7 +484,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [identity]
 name = "Agent Smith"
@@ -433,7 +506,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -451,7 +525,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 published_image = "docker.io/myorg/my-role:latest"
 
 [claude]
@@ -473,7 +548,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -491,7 +567,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 unknown_field = true
 
 [claude]
@@ -502,7 +579,7 @@ plugins = []
 
         let error = RoleManifest::load(temp.path()).unwrap_err();
 
-        assert!(error.to_string().contains("unknown field"));
+        assert!(format!("{error:#}").contains("unknown field"));
     }
 
     #[test]
@@ -510,7 +587,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -521,7 +599,7 @@ typo = "oops"
 
         let error = RoleManifest::load(temp.path()).unwrap_err();
 
-        assert!(error.to_string().contains("unknown field"));
+        assert!(format!("{error:#}").contains("unknown field"));
     }
 
     #[test]
@@ -529,7 +607,8 @@ typo = "oops"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [identity]
 name = "Smith"
@@ -543,7 +622,7 @@ plugins = []
 
         let error = RoleManifest::load(temp.path()).unwrap_err();
 
-        assert!(error.to_string().contains("unknown field"));
+        assert!(format!("{error:#}").contains("unknown field"));
     }
 
     #[test]
@@ -585,7 +664,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -611,7 +691,8 @@ preflight = "hooks/preflight.sh"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -629,7 +710,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -642,7 +724,7 @@ post_launch = "bad"
 
         let error = RoleManifest::load(temp.path()).unwrap_err();
 
-        assert!(error.to_string().contains("unknown field"));
+        assert!(format!("{error:#}").contains("unknown field"));
     }
 
     #[test]
@@ -650,7 +732,8 @@ post_launch = "bad"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -674,7 +757,8 @@ default = "docker"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -700,7 +784,8 @@ options = ["project1", "project2"]
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -729,7 +814,8 @@ prompt = "Branch:"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -753,7 +839,8 @@ prompt = "API key (optional):"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -771,7 +858,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -785,6 +873,6 @@ typo = true
 
         let error = RoleManifest::load(temp.path()).unwrap_err();
 
-        assert!(error.to_string().contains("unknown field"));
+        assert!(format!("{error:#}").contains("unknown field"));
     }
 }

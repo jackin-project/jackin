@@ -621,7 +621,8 @@ mod tests {
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -662,7 +663,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -692,7 +694,8 @@ plugins = []
                 .unwrap();
                 std::fs::write(
                     repo_dir_clone.join("jackin.role.toml"),
-                    r#"dockerfile = "Dockerfile"
+                    r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -733,7 +736,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -777,7 +781,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -816,7 +821,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -838,7 +844,8 @@ plugins = []
                 .unwrap();
                 std::fs::write(
                     repo_dir_clone.join("jackin.role.toml"),
-                    r#"dockerfile = "Dockerfile"
+                    r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -878,7 +885,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -974,7 +982,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []

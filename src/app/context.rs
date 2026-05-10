@@ -478,6 +478,7 @@ mod tests {
         config.workspaces.insert(
             "my-ws".to_string(),
             workspace::WorkspaceConfig {
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                 workdir: "/workspace".to_string(),
                 ..Default::default()
             },
@@ -527,6 +528,7 @@ mod tests {
         config.workspaces.insert(
             "my-app".to_string(),
             workspace::WorkspaceConfig {
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                 workdir: "/workspace".to_string(),
                 mounts: vec![workspace::MountConfig {
                     src: project_dir.display().to_string(),
@@ -576,6 +578,7 @@ mod tests {
         config.workspaces.insert(
             "my-app".to_string(),
             workspace::WorkspaceConfig {
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                 workdir: workspace_root.display().to_string(),
                 mounts: vec![workspace::MountConfig {
                     src: repo_dir.canonicalize().unwrap().display().to_string(),
@@ -624,6 +627,7 @@ mod tests {
         config.workspaces.insert(
             "my-app".to_string(),
             workspace::WorkspaceConfig {
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                 workdir: "/workspace".to_string(),
                 mounts: vec![workspace::MountConfig {
                     src: project_dir.display().to_string(),
@@ -680,6 +684,7 @@ mod tests {
         config.workspaces.insert(
             "my-app".to_string(),
             workspace::WorkspaceConfig {
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                 workdir: "/workspace".to_string(),
                 mounts: vec![workspace::MountConfig {
                     src: project_dir.display().to_string(),
@@ -816,6 +821,7 @@ mod tests {
         config.workspaces.insert(
             "my-app".to_string(),
             workspace::WorkspaceConfig {
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                 workdir: "/workspace".to_string(),
                 mounts: vec![workspace::MountConfig {
                     src: temp_path.display().to_string(),
@@ -892,6 +898,7 @@ mod tests {
         config.workspaces.insert(
             "jackin-roles".to_string(),
             workspace::WorkspaceConfig {
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                 workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
                 mounts: vec![workspace::MountConfig {
                     src: agent_repo.canonicalize().unwrap().display().to_string(),
@@ -923,6 +930,7 @@ mod tests {
         config.workspaces.insert(
             "jackin-roles".to_string(),
             workspace::WorkspaceConfig {
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                 workdir: broad_workdir.canonicalize().unwrap().display().to_string(),
                 mounts: vec![workspace::MountConfig {
                     src: agent_repo.canonicalize().unwrap().display().to_string(),
@@ -956,7 +964,8 @@ mod tests {
         let selector = crate::selector::RoleSelector::parse("the-architect").unwrap();
         write_role_manifest(
             &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
 [claude]
@@ -981,7 +990,8 @@ plugins = []
         let selector = crate::selector::RoleSelector::parse("the-architect").unwrap();
         write_role_manifest(
             &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp"]
 
 [claude]
@@ -1012,7 +1022,8 @@ plugins = []
         let selector = crate::selector::RoleSelector::parse("the-architect").unwrap();
         write_role_manifest(
             &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
 [claude]
@@ -1037,7 +1048,8 @@ plugins = []
         let selector = crate::selector::RoleSelector::parse("solo").unwrap();
         write_role_manifest(
             &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha1"
+dockerfile = "Dockerfile"
 agents = ["codex"]
 
 [codex]
