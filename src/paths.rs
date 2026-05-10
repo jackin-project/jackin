@@ -6,6 +6,7 @@ pub struct JackinPaths {
     pub home_dir: PathBuf,
     pub config_dir: PathBuf,
     pub config_file: PathBuf,
+    pub workspaces_dir: PathBuf,
     pub roles_dir: PathBuf,
     pub data_dir: PathBuf,
     pub cache_dir: PathBuf,
@@ -20,6 +21,7 @@ impl JackinPaths {
 
         Ok(Self {
             config_file: config_dir.join("config.toml"),
+            workspaces_dir: config_dir.join("workspaces"),
             roles_dir: home_dir.join(".jackin/roles"),
             data_dir: home_dir.join(".jackin/data"),
             cache_dir: home_dir.join(".jackin/cache"),
@@ -33,6 +35,7 @@ impl JackinPaths {
         let config_dir = root.join("config");
         Self {
             config_file: config_dir.join("config.toml"),
+            workspaces_dir: config_dir.join("workspaces"),
             roles_dir: home_dir.join(".jackin/roles"),
             data_dir: home_dir.join(".jackin/data"),
             cache_dir: home_dir.join(".jackin/cache"),

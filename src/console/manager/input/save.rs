@@ -1101,10 +1101,10 @@ mod tests {
         apply_auth_forward_diff(&mut editor, "proj", &original, &pending);
         editor.save().unwrap();
 
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains("[workspaces.proj.amp]"), "{out}");
+        let out = std::fs::read_to_string(paths.workspaces_dir.join("proj.toml")).unwrap();
+        assert!(out.contains("[amp]"), "{out}");
         assert!(out.contains(r#"auth_forward = "api_key""#), "{out}");
-        assert!(out.contains("[workspaces.proj.roles.smith.amp]"), "{out}");
+        assert!(out.contains("[roles.smith.amp]"), "{out}");
         assert!(out.contains(r#"auth_forward = "ignore""#), "{out}");
     }
 

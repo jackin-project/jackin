@@ -35,6 +35,15 @@ fn read_config(env: &Env) -> String {
     fs::read_to_string(config_path(env)).unwrap()
 }
 
+fn read_workspace_config(env: &Env, name: &str) -> String {
+    fs::read_to_string(
+        env.home
+            .join(".config/jackin/workspaces")
+            .join(format!("{name}.toml")),
+    )
+    .unwrap()
+}
+
 /// `[roles.<name>]` needs the required `git` field for serde to
 /// accept the table.
 fn seed_agent(env: &Env, name: &str) {
@@ -214,11 +223,8 @@ fn workspace_env_set_workspace_scope() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Set DB_URL."));
-    let contents = read_config(&env);
-    assert!(
-        contents.contains("[workspaces.prod.env]"),
-        "missing [workspaces.prod.env]:\n{contents}"
-    );
+    let contents = read_workspace_config(&env, "prod");
+    assert!(contents.contains("[env]"), "missing [env]:\n{contents}");
     assert!(
         contents.contains("DB_URL = \"postgres://localhost:5432/prod\""),
         "missing DB_URL entry:\n{contents}"
@@ -243,10 +249,10 @@ fn workspace_env_set_workspace_agent_scope() {
         ])
         .assert()
         .success();
-    let contents = read_config(&env);
+    let contents = read_workspace_config(&env, "prod");
     assert!(
-        contents.contains("[workspaces.prod.roles.agent-smith.env]"),
-        "missing [workspaces.prod.roles.agent-smith.env]:\n{contents}"
+        contents.contains("[roles.agent-smith.env]"),
+        "missing [roles.agent-smith.env]:\n{contents}"
     );
     assert!(
         contents.contains("OPENAI_KEY = \"sk-literal-key\""),
