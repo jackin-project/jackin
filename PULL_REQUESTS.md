@@ -179,9 +179,7 @@ Three cross-cutting rules apply to every PR review (manual, agent-driven, or aut
 
 ### Versioned-schema migration check
 
-Any PR that touches the serde representation of a versioned schema file (`config.toml`, `~/.config/jackin/workspaces/<name>.toml`, `jackin.role.toml`) must include three artifacts: a bump of the relevant `CURRENT_*_VERSION` in `src/config/migrations.rs` or `src/manifest/migrations.rs`, a new migration step in the corresponding registry, and an update to `docs/src/content/docs/reference/schema-versions.mdx` so the timeline reflects the new shape. The full rule lives in `AGENTS.md` under "Project status: pre-release."
-
-When reviewing, check the diff for changes to `AppConfig`, `WorkspaceConfig`, `RoleManifest`, `HooksConfig`, or any nested struct serialized into one of those files. If the change is non-additive (renamed field, removed field, type change, restructured table) and the three artifacts above are missing, block merge until they appear or the change is reshaped to be additive (new optional field with a serde default).
+When the diff touches `AppConfig`, `WorkspaceConfig`, `RoleManifest`, `HooksConfig`, or any nested struct serialized into `config.toml`, `~/.config/jackin/workspaces/<name>.toml`, or `jackin.role.toml`, verify the PR ships with the version bump + migration step + `schema-versions.mdx` update. The full rule and remediation list live in `AGENTS.md` under "Project status: pre-release."
 
 ### Accepted-exceptions catalog
 

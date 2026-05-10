@@ -25,14 +25,13 @@ what you're after.
 
 ### One file per workspace, by design
 
-Saved workspaces live one-per-file under `~/.config/jackin/workspaces/` rather than as `[workspaces.<name>]` tables inside a single `config.toml`. The split is deliberate so the layout works with **dotfile managers** ([chezmoi](https://www.chezmoi.io/), [yadm](https://yadm.io/), [GNU stow](https://www.gnu.org/software/stow/), or a plain git repository tracking `~/.config/jackin/`). Operators commonly want to:
+Saved workspaces live one-per-file under `~/.config/jackin/workspaces/` rather than as `[workspaces.<name>]` tables inside a single `config.toml`. The layout works directly with **dotfile managers** ([chezmoi](https://www.chezmoi.io/), [yadm](https://yadm.io/), [GNU stow](https://www.gnu.org/software/stow/), or a plain git repository tracking `~/.config/jackin/`). Operators commonly want to:
 
-- **Version-control the global `config.toml`** (auth defaults, agent settings) while keeping `workspaces/<name>.toml` files private or per-machine.
+- **Version-control selectively** — track `config.toml` globally, include only team-relevant workspace files, leave the rest out via `.gitignore`, or keep workspaces private per-machine.
 - **Restore the full setup on a new machine** by checking out the dotfile repo and running `chezmoi apply` (or equivalent), with no manual TOML reconstruction.
-- **Selectively include workspaces** — share team-relevant ones by tracking a subset of files, leave the rest out via `.gitignore`.
 - **Diff a single workspace** in PR review without seeing churn in unrelated workspaces, which is impossible when every change touches a shared `[workspaces.*]` block.
 
-The schema-versioning framework supports this directly: each file carries its own `version = "v1alpha1"` stamp, so a dotfile-managed setup that is partially old (some workspaces stamped, some not) migrates per-file on first load. See [Schema Versions](/reference/schema-versions/) for the full version history and the legacy-to-`v1alpha1` migration matrix.
+Each file carries its own `version = "v1alpha1"` stamp, so a dotfile-managed setup that is partially old (some workspaces stamped, some not) migrates per-file on first load. See [Schema Versions](/reference/schema-versions/) for the full version history and the legacy-to-`v1alpha1` migration matrix.
 
 ## config.toml schema
 
