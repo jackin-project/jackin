@@ -24,10 +24,7 @@ pub fn render_derived_dockerfile(
     use std::fmt::Write as _;
 
     let mut hook_section = String::new();
-    let mut entries = hooks
-        .into_iter()
-        .flat_map(HooksConfig::entries)
-        .peekable();
+    let mut entries = hooks.into_iter().flat_map(HooksConfig::entries).peekable();
     if entries.peek().is_some() {
         // chown only /jackin/state — agent writes the marker here.
         // /jackin/runtime/hooks gets per-file ownership from
@@ -331,9 +328,11 @@ mod tests {
             "COPY --chown=agent:agent hooks/setup-once.sh /jackin/runtime/hooks/setup-once.sh"
         ));
         assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
-        assert!(dockerfile.contains(
-            "COPY --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh"
-        ));
+        assert!(
+            dockerfile.contains(
+                "COPY --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh"
+            )
+        );
         assert!(dockerfile.contains(
             "COPY --chown=agent:agent hooks/preflight.sh /jackin/runtime/hooks/preflight.sh"
         ));
@@ -650,16 +649,17 @@ mod tests {
         assert!(block.contains(". /jackin/runtime/hooks/source.sh || rc=$?"));
         assert!(block.contains("trap - ERR"));
         let xtrace_suspend_pos = block.find("case $- in *x*)").unwrap();
-        let source_pos = block
-            .find(". /jackin/runtime/hooks/source.sh")
-            .unwrap();
+        let source_pos = block.find(". /jackin/runtime/hooks/source.sh").unwrap();
         assert!(
             xtrace_suspend_pos < source_pos,
             "xtrace suspend must precede the dot-source"
         );
         let trap_pos = block.find("trap - ERR").unwrap();
         let cd_pos = block.find("cd \"$source_pwd\"").unwrap();
-        assert!(trap_pos < cd_pos, "trap - ERR must precede the cd back to source_pwd");
+        assert!(
+            trap_pos < cd_pos,
+            "trap - ERR must precede the cd back to source_pwd"
+        );
     }
 
     #[test]
@@ -678,12 +678,19 @@ mod tests {
         );
 
         assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
-        assert!(dockerfile.contains(
-            "COPY --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh"
-        ));
+        assert!(
+            dockerfile.contains(
+                "COPY --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh"
+            )
+        );
         assert!(!dockerfile.contains("setup-once.sh"));
         assert!(!dockerfile.contains("preflight.sh"));
-        assert_eq!(dockerfile.matches("COPY --chown=agent:agent hooks/").count(), 1);
+        assert_eq!(
+            dockerfile
+                .matches("COPY --chown=agent:agent hooks/")
+                .count(),
+            1
+        );
     }
 
     #[test]
