@@ -73,10 +73,49 @@ pub struct EnvVarDecl {
     pub depends_on: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HooksConfig {
-    pub pre_launch: Option<String>,
+    #[serde(default)]
+    pub setup_once: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub preflight: Option<String>,
+}
+
+/// Centralizes the (label, in-image filename, repo-relative path) triple
+/// so repo validation, Dockerfile rendering, and `.dockerignore`
+/// allowlisting cannot disagree about a hook's identity.
+#[derive(Debug, Clone, Copy)]
+pub struct HookEntry<'a> {
+    pub(crate) label: &'static str,
+    pub(crate) filename: &'static str,
+    pub(crate) path: &'a str,
+}
+
+impl HooksConfig {
+    pub fn entries(&self) -> impl Iterator<Item = HookEntry<'_>> {
+        // Order is the entrypoint.sh runtime contract; pinned by
+        // `hook_entries_yield_runtime_contract_order`.
+        [
+            (
+                "setup_once hook",
+                "setup-once.sh",
+                self.setup_once.as_deref(),
+            ),
+            ("source hook", "source.sh", self.source.as_deref()),
+            ("preflight hook", "preflight.sh", self.preflight.as_deref()),
+        ]
+        .into_iter()
+        .filter_map(|(label, filename, path)| {
+            path.map(|path| HookEntry {
+                label,
+                filename,
+                path,
+            })
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -585,6 +624,40 @@ plugins = []
     }
 
     #[test]
+    fn hook_entries_yield_runtime_contract_order() {
+        let hooks = HooksConfig {
+            setup_once: Some("a.sh".to_string()),
+            source: Some("b.sh".to_string()),
+            preflight: Some("c.sh".to_string()),
+        };
+        let triples: Vec<_> = hooks
+            .entries()
+            .map(|e| (e.label, e.filename, e.path))
+            .collect();
+        assert_eq!(
+            triples,
+            [
+                ("setup_once hook", "setup-once.sh", "a.sh"),
+                ("source hook", "source.sh", "b.sh"),
+                ("preflight hook", "preflight.sh", "c.sh"),
+            ]
+        );
+    }
+
+    #[test]
+    fn hook_entries_skip_absent_and_preserve_order() {
+        // Mixed presence: only source + preflight. Order must follow
+        // the canonical sequence, not the order fields are populated.
+        let hooks = HooksConfig {
+            setup_once: None,
+            source: Some("b.sh".to_string()),
+            preflight: Some("c.sh".to_string()),
+        };
+        let labels: Vec<_> = hooks.entries().map(|e| e.label).collect();
+        assert_eq!(labels, ["source hook", "preflight hook"]);
+    }
+
+    #[test]
     fn loads_manifest_with_hooks() {
         let temp = tempdir().unwrap();
         std::fs::write(
@@ -596,17 +669,19 @@ dockerfile = "Dockerfile"
 plugins = []
 
 [hooks]
-pre_launch = "hooks/pre-launch.sh"
+setup_once = "hooks/setup-once.sh"
+source = "hooks/source.sh"
+preflight = "hooks/preflight.sh"
 "#,
         )
         .unwrap();
 
         let manifest = RoleManifest::load(temp.path()).unwrap();
 
-        assert_eq!(
-            manifest.hooks.as_ref().unwrap().pre_launch.as_deref(),
-            Some("hooks/pre-launch.sh")
-        );
+        let hooks = manifest.hooks.as_ref().unwrap();
+        assert_eq!(hooks.setup_once.as_deref(), Some("hooks/setup-once.sh"));
+        assert_eq!(hooks.source.as_deref(), Some("hooks/source.sh"));
+        assert_eq!(hooks.preflight.as_deref(), Some("hooks/preflight.sh"));
     }
 
     #[test]
@@ -640,7 +715,6 @@ dockerfile = "Dockerfile"
 plugins = []
 
 [hooks]
-pre_launch = "hooks/pre-launch.sh"
 post_launch = "bad"
 "#,
         )

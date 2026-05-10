@@ -147,7 +147,7 @@ plugins = []
 }
 
 #[test]
-fn validate_fails_for_invalid_pre_launch_hook() {
+fn validate_fails_for_invalid_preflight_hook() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
@@ -156,15 +156,7 @@ fn validate_fails_for_invalid_pre_launch_hook() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha1"
-dockerfile = "Dockerfile"
-
-[hooks]
-pre_launch = "hooks/pre-launch.sh"
-
-[claude]
-plugins = []
-"#,
+        "version = \"v1alpha1\"\ndockerfile = \"Dockerfile\"\n\n[hooks]\npreflight = \"hooks/preflight.sh\"\n\n[claude]\nplugins = []\n",
     )
     .unwrap();
 
@@ -173,7 +165,7 @@ plugins = []
         .arg(temp.path())
         .assert()
         .failure()
-        .stderr(predicate::str::contains("hooks/pre-launch.sh"));
+        .stderr(predicate::str::contains("hooks/preflight.sh"));
 }
 
 #[test]

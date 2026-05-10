@@ -247,8 +247,8 @@ non-interactive shells fail rather than defaulting to yes.
 The recommended flow when reviewing someone else's role-repo PR:
 
 1. Fetch the PR branch into a checkout of the role repo and read the
-   diff yourself, especially `Dockerfile`, any pre-launch hook, and
-   the `jackin.role.toml` manifest.
+   diff yourself, especially `Dockerfile`, any runtime hook scripts,
+   and the `jackin.role.toml` manifest.
 2. Run the load command above with `--role-branch <PR-branch-name>`
    and `--rebuild`.
 3. When the trust prompt appears, confirm only after the diff review
