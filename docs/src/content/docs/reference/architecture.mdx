@@ -54,7 +54,7 @@ That means an role defines the tools and conventions, while jackin' injects the 
 1. **Resolve role** — map the selector to a repo, clone or update it, and reject dirty cached checkouts
 2. **Validate the repo contract** — require `jackin.role.toml` and a valid Dockerfile path, validate manifest strictly
 3. **Resolve environment variables** — prompt the user for interactive env vars declared in the manifest
-4. **Generate a derived build context** — copy the repo, inject agent assets (entrypoint + pre-launch hook), and render a derived Dockerfile
+4. **Generate a derived build context** — copy the repo, inject agent assets (entrypoint + runtime hooks), and render a derived Dockerfile
 5. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible
 6. **Create a per-agent Docker network**
 7. **Start a privileged `docker:dind` sidecar** with TLS enabled and a shared certificate volume

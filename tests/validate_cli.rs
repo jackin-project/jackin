@@ -121,7 +121,7 @@ fn validate_passes_when_manifest_uses_dockerfile_in_subdirectory() {
 }
 
 #[test]
-fn validate_fails_for_invalid_pre_launch_hook() {
+fn validate_fails_for_invalid_preflight_hook() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
@@ -130,7 +130,7 @@ fn validate_fails_for_invalid_pre_launch_hook() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        "dockerfile = \"Dockerfile\"\n\n[hooks]\npre_launch = \"hooks/pre-launch.sh\"\n\n[claude]\nplugins = []\n",
+        "dockerfile = \"Dockerfile\"\n\n[hooks]\npreflight = \"hooks/preflight.sh\"\n\n[claude]\nplugins = []\n",
     )
     .unwrap();
 
@@ -139,7 +139,7 @@ fn validate_fails_for_invalid_pre_launch_hook() {
         .arg(temp.path())
         .assert()
         .failure()
-        .stderr(predicate::str::contains("hooks/pre-launch.sh"));
+        .stderr(predicate::str::contains("hooks/preflight.sh"));
 }
 
 #[test]
