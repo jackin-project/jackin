@@ -788,11 +788,33 @@ fn launch_role_runtime(
         crate::env_model::JACKIN_ENV_NAME,
         crate::env_model::JACKIN_ENV_VALUE
     ));
+    let mut has_proxy_env = false;
+    let mut has_upper_no_proxy = false;
+    let mut has_lower_no_proxy = false;
     for (key, value) in &resolved_env.vars {
         if crate::env_model::is_reserved(key) {
             continue;
         }
-        env_strings.push(format!("{key}={value}"));
+        has_proxy_env |= is_proxy_env_name(key);
+        match key.as_str() {
+            "NO_PROXY" => {
+                has_upper_no_proxy = true;
+                env_strings.push(format!("{key}={}", append_no_proxy_host(value, dind)));
+            }
+            "no_proxy" => {
+                has_lower_no_proxy = true;
+                env_strings.push(format!("{key}={}", append_no_proxy_host(value, dind)));
+            }
+            _ => env_strings.push(format!("{key}={value}")),
+        }
+    }
+    if has_proxy_env {
+        if !has_upper_no_proxy {
+            env_strings.push(format!("NO_PROXY={dind}"));
+        }
+        if !has_lower_no_proxy {
+            env_strings.push(format!("no_proxy={dind}"));
+        }
     }
 
     // GitHub auth env wiring. Token mode and Sync-with-host-token both
@@ -2187,6 +2209,29 @@ fn push_env_if_present(env_strings: &mut Vec<String>, key: &str, value: Option<&
         && !v.is_empty()
     {
         env_strings.push(format!("{key}={v}"));
+    }
+}
+
+fn is_proxy_env_name(key: &str) -> bool {
+    matches!(
+        key,
+        "HTTP_PROXY" | "HTTPS_PROXY" | "ALL_PROXY" | "http_proxy" | "https_proxy" | "all_proxy"
+    )
+}
+
+fn append_no_proxy_host(value: &str, host: &str) -> String {
+    if value
+        .split(',')
+        .map(str::trim)
+        .any(|entry| entry.eq_ignore_ascii_case(host))
+    {
+        return value.to_string();
+    }
+
+    if value.trim().is_empty() {
+        host.to_string()
+    } else {
+        format!("{value},{host}")
     }
 }
 
@@ -4194,6 +4239,81 @@ plugins = []
         assert!(
             run_cmd.contains("jackin-agent-smith-dind-certs:/certs/client:ro"),
             "role must mount cert volume read-only"
+        );
+    }
+
+    #[test]
+    fn load_agent_adds_dind_to_no_proxy_when_proxy_is_configured() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        config.env.insert(
+            "HTTPS_PROXY".to_string(),
+            crate::operator_env::EnvValue::Plain("http://proxy.internal:8305".to_string()),
+        );
+        config.env.insert(
+            "NO_PROXY".to_string(),
+            crate::operator_env::EnvValue::Plain("localhost,127.0.0.1".to_string()),
+        );
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            "jackin-agent-smith".to_string(),
+        ]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it"))
+            .unwrap();
+        assert!(run_cmd.contains("HTTPS_PROXY=http://proxy.internal:8305"));
+        assert!(run_cmd.contains("NO_PROXY=localhost,127.0.0.1,jackin-agent-smith-dind"));
+        assert!(run_cmd.contains("no_proxy=jackin-agent-smith-dind"));
+    }
+
+    #[test]
+    fn append_no_proxy_host_is_idempotent() {
+        assert_eq!(
+            append_no_proxy_host(
+                "localhost,jackin-agent-smith-dind",
+                "jackin-agent-smith-dind"
+            ),
+            "localhost,jackin-agent-smith-dind"
+        );
+        assert_eq!(
+            append_no_proxy_host("", "jackin-agent-smith-dind"),
+            "jackin-agent-smith-dind"
         );
     }
 

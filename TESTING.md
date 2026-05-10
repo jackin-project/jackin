@@ -26,6 +26,12 @@ Run tests for a specific module:
 cargo nextest run -E 'test(/module::tests/)'
 ```
 
+Run Docker-backed smoke tests:
+
+```sh
+cargo nextest run --features e2e -E 'binary(dind_e2e)'
+```
+
 Do **not** use `cargo test` — always use `cargo nextest run`.
 
 ## Merge-readiness Verification
