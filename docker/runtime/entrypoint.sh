@@ -122,10 +122,31 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     ;;
 esac
 
-# ── pre-launch hook (runtime-neutral) ──────────────────────────────
-if [ -x /home/agent/.jackin-runtime/pre-launch.sh ]; then
-    echo "Running pre-launch hook..."
-    /home/agent/.jackin-runtime/pre-launch.sh
+# ── role runtime hooks ─────────────────────────────────────────────
+if [ -x /jackin/runtime/hooks/setup-once.sh ]; then
+    setup_once_marker="/jackin/state/hooks/setup-once.done"
+    if [ ! -e "$setup_once_marker" ]; then
+        echo "Running setup-once hook..."
+        mkdir -p "$(dirname "$setup_once_marker")"
+        /jackin/runtime/hooks/setup-once.sh
+        touch "$setup_once_marker"
+    fi
+    unset setup_once_marker
+fi
+
+if [ -x /jackin/runtime/hooks/source.sh ]; then
+    echo "Sourcing runtime hook..."
+    source_pwd="$PWD"
+    # shellcheck source=/dev/null
+    . /jackin/runtime/hooks/source.sh
+    cd "$source_pwd"
+    unset source_pwd
+    trap - ERR
+fi
+
+if [ -x /jackin/runtime/hooks/preflight.sh ]; then
+    echo "Running preflight hook..."
+    /jackin/runtime/hooks/preflight.sh
 fi
 
 # In debug mode, pause so the operator can review logs before the agent clears the screen

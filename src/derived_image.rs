@@ -11,22 +11,50 @@ pub struct DerivedBuildContext {
     pub dockerfile_path: PathBuf,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RuntimeHookPaths<'a> {
+    pub setup_once: Option<&'a str>,
+    pub source: Option<&'a str>,
+    pub preflight: Option<&'a str>,
+}
+
 pub fn render_derived_dockerfile(
     base_dockerfile: &str,
-    pre_launch_hook: Option<&str>,
+    hooks: RuntimeHookPaths<'_>,
     supported: &[crate::agent::Agent],
     claude_config: Option<&crate::manifest::ClaudeConfig>,
 ) -> String {
-    let hook_section = pre_launch_hook.map_or_else(String::new, |hook_path| {
-        format!(
+    use std::fmt::Write as _;
+
+    let mut hook_section = String::new();
+    if hooks.setup_once.is_some() || hooks.source.is_some() || hooks.preflight.is_some() {
+        hook_section.push_str(
             "\
 USER root
-COPY {hook_path} /home/agent/.jackin-runtime/pre-launch.sh
-RUN chmod +x /home/agent/.jackin-runtime/pre-launch.sh
+RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks \\
+    && chown -R agent:agent /jackin
+USER agent
+",
+        );
+    }
+    for (src, dst) in [
+        (hooks.setup_once, "setup-once.sh"),
+        (hooks.source, "source.sh"),
+        (hooks.preflight, "preflight.sh"),
+    ] {
+        if let Some(hook_path) = src {
+            write!(
+                hook_section,
+                "\
+USER root
+COPY {hook_path} /jackin/runtime/hooks/{dst}
+RUN chmod +x /jackin/runtime/hooks/{dst}
 USER agent
 "
-        )
-    });
+            )
+            .expect("writing to String is infallible");
+        }
+    }
 
     // Concatenate per-agent install blocks in a stable order (Claude
     // first when present, Codex second, Amp third). Each block declares
@@ -146,11 +174,15 @@ pub fn create_derived_build_context(
     std::fs::create_dir_all(&runtime_dir)?;
     std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH)?;
 
-    let pre_launch_hook = validated
+    let hooks = validated
         .manifest
         .hooks
         .as_ref()
-        .and_then(|h| h.pre_launch.as_deref());
+        .map_or_else(RuntimeHookPaths::default, |h| RuntimeHookPaths {
+            setup_once: h.setup_once.as_deref(),
+            source: h.source.as_deref(),
+            preflight: h.preflight.as_deref(),
+        });
 
     let base_dockerfile = base_image_override.map_or_else(
         || validated.dockerfile.dockerfile_contents.clone(),
@@ -163,12 +195,12 @@ pub fn create_derived_build_context(
         &dockerfile_path,
         render_derived_dockerfile(
             &base_dockerfile,
-            pre_launch_hook,
+            hooks,
             &supported,
             validated.manifest.claude.as_ref(),
         ),
     )?;
-    ensure_runtime_assets_are_included(&context_dir, pre_launch_hook)?;
+    ensure_runtime_assets_are_included(&context_dir, hooks)?;
 
     Ok(DerivedBuildContext {
         temp_dir,
@@ -179,7 +211,7 @@ pub fn create_derived_build_context(
 
 fn ensure_runtime_assets_are_included(
     context_dir: &Path,
-    pre_launch_hook: Option<&str>,
+    hooks: RuntimeHookPaths<'_>,
 ) -> anyhow::Result<()> {
     let dockerignore_path = context_dir.join(".dockerignore");
     let mut dockerignore = if dockerignore_path.exists() {
@@ -193,7 +225,10 @@ fn ensure_runtime_assets_are_included(
         "!.jackin-runtime/entrypoint.sh".to_string(),
         "!.jackin-runtime/DerivedDockerfile".to_string(),
     ];
-    if let Some(hook_path) = pre_launch_hook {
+    for hook_path in [hooks.setup_once, hooks.source, hooks.preflight]
+        .into_iter()
+        .flatten()
+    {
         rules.push(format!("!{hook_path}"));
     }
 
@@ -245,7 +280,7 @@ mod tests {
     fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
-            None,
+            RuntimeHookPaths::default(),
             &[Agent::Claude],
             None,
         );
@@ -262,7 +297,7 @@ mod tests {
     fn renders_derived_dockerfile_installs_claude_as_agent_user() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
-            None,
+            RuntimeHookPaths::default(),
             &[Agent::Claude],
             None,
         );
@@ -280,7 +315,7 @@ mod tests {
     fn renders_derived_dockerfile_rewrites_agent_uid_and_gid() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
-            None,
+            RuntimeHookPaths::default(),
             &[Agent::Claude],
             None,
         );
@@ -293,38 +328,45 @@ mod tests {
     }
 
     #[test]
-    fn renders_derived_dockerfile_with_pre_launch_hook() {
+    fn renders_derived_dockerfile_with_runtime_hooks() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
-            Some("hooks/pre-launch.sh"),
+            RuntimeHookPaths {
+                setup_once: Some("hooks/setup-once.sh"),
+                source: Some("hooks/source.sh"),
+                preflight: Some("hooks/preflight.sh"),
+            },
             &[Agent::Claude],
             None,
         );
 
         assert!(
-            dockerfile
-                .contains("COPY hooks/pre-launch.sh /home/agent/.jackin-runtime/pre-launch.sh")
+            dockerfile.contains("COPY hooks/setup-once.sh /jackin/runtime/hooks/setup-once.sh")
         );
-        assert!(dockerfile.contains("RUN chmod +x /home/agent/.jackin-runtime/pre-launch.sh"));
+        assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
+        assert!(dockerfile.contains("COPY hooks/source.sh /jackin/runtime/hooks/source.sh"));
+        assert!(dockerfile.contains("COPY hooks/preflight.sh /jackin/runtime/hooks/preflight.sh"));
     }
 
     #[test]
-    fn renders_derived_dockerfile_without_pre_launch_hook() {
+    fn renders_derived_dockerfile_without_runtime_hooks() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
-            None,
+            RuntimeHookPaths::default(),
             &[Agent::Claude],
             None,
         );
 
-        assert!(!dockerfile.contains("pre-launch.sh"));
+        assert!(!dockerfile.contains("setup-once.sh"));
+        assert!(!dockerfile.contains("source.sh"));
+        assert!(!dockerfile.contains("preflight.sh"));
     }
 
     #[test]
     fn renders_dockerfile_with_codex_install_when_supported() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
-            None,
+            RuntimeHookPaths::default(),
             &[Agent::Amp, Agent::Claude, Agent::Codex],
             None,
         );
@@ -344,7 +386,7 @@ mod tests {
     fn renders_amp_install_as_agent_user() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
-            None,
+            RuntimeHookPaths::default(),
             &[Agent::Amp],
             None,
         );
@@ -361,7 +403,7 @@ mod tests {
     fn renders_codex_install_as_root_without_extracting_directly_to_bin() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
-            None,
+            RuntimeHookPaths::default(),
             &[Agent::Codex],
             None,
         );
@@ -381,7 +423,7 @@ mod tests {
     fn renders_codex_only_dockerfile_final_user_is_agent() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
-            None,
+            RuntimeHookPaths::default(),
             &[Agent::Codex],
             None,
         );
@@ -397,7 +439,7 @@ mod tests {
     fn renders_codex_only_dockerfile_without_claude_install() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
-            None,
+            RuntimeHookPaths::default(),
             &[Agent::Codex],
             None,
         );
@@ -410,7 +452,7 @@ mod tests {
     fn renders_dockerfile_targets_agent_user_not_claude() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
-            None,
+            RuntimeHookPaths::default(),
             &[Agent::Claude],
             None,
         );
@@ -424,7 +466,7 @@ mod tests {
     fn renders_dockerfile_does_not_set_jackin_agent_env() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
-            None,
+            RuntimeHookPaths::default(),
             &[Agent::Claude, Agent::Codex],
             None,
         );
@@ -505,7 +547,7 @@ mod tests {
         };
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
-            None,
+            RuntimeHookPaths::default(),
             &[Agent::Claude],
             Some(&config),
         );
@@ -548,8 +590,22 @@ mod tests {
     }
 
     #[test]
-    fn entrypoint_pre_launch_hook_path_uses_agent_home() {
-        assert!(ENTRYPOINT_SH.contains("/home/agent/.jackin-runtime/pre-launch.sh"));
+    fn entrypoint_runtime_hook_paths_use_agent_home() {
+        assert!(ENTRYPOINT_SH.contains("/jackin/runtime/hooks/setup-once.sh"));
+        assert!(ENTRYPOINT_SH.contains("/jackin/runtime/hooks/source.sh"));
+        assert!(ENTRYPOINT_SH.contains("/jackin/runtime/hooks/preflight.sh"));
+    }
+
+    #[test]
+    fn entrypoint_sources_source_hook_so_exports_persist() {
+        assert!(ENTRYPOINT_SH.contains(". /jackin/runtime/hooks/source.sh"));
+        assert!(!ENTRYPOINT_SH.contains("\n    /jackin/runtime/hooks/source.sh\n"));
+    }
+
+    #[test]
+    fn entrypoint_runs_setup_once_with_writable_marker() {
+        assert!(ENTRYPOINT_SH.contains("/jackin/state/hooks/setup-once.done"));
+        assert!(ENTRYPOINT_SH.contains("touch \"$setup_once_marker\""));
     }
 
     #[test]

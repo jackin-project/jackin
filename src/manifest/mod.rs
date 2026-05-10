@@ -72,7 +72,28 @@ pub struct EnvVarDecl {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HooksConfig {
-    pub pre_launch: Option<String>,
+    #[serde(default)]
+    pub setup_once: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub preflight: Option<String>,
+}
+
+impl HooksConfig {
+    pub fn paths(&self) -> Vec<(&'static str, &str)> {
+        let mut paths = Vec::new();
+        if let Some(path) = self.setup_once.as_deref() {
+            paths.push(("setup_once hook", path));
+        }
+        if let Some(path) = self.source.as_deref() {
+            paths.push(("source hook", path));
+        }
+        if let Some(path) = self.preflight.as_deref() {
+            paths.push(("preflight hook", path));
+        }
+        paths
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -518,17 +539,19 @@ plugins = []
 plugins = []
 
 [hooks]
-pre_launch = "hooks/pre-launch.sh"
+setup_once = "hooks/setup-once.sh"
+source = "hooks/source.sh"
+preflight = "hooks/preflight.sh"
 "#,
         )
         .unwrap();
 
         let manifest = RoleManifest::load(temp.path()).unwrap();
 
-        assert_eq!(
-            manifest.hooks.as_ref().unwrap().pre_launch.as_deref(),
-            Some("hooks/pre-launch.sh")
-        );
+        let hooks = manifest.hooks.as_ref().unwrap();
+        assert_eq!(hooks.setup_once.as_deref(), Some("hooks/setup-once.sh"));
+        assert_eq!(hooks.source.as_deref(), Some("hooks/source.sh"));
+        assert_eq!(hooks.preflight.as_deref(), Some("hooks/preflight.sh"));
     }
 
     #[test]
@@ -560,7 +583,6 @@ plugins = []
 plugins = []
 
 [hooks]
-pre_launch = "hooks/pre-launch.sh"
 post_launch = "bad"
 "#,
         )
