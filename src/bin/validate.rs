@@ -3,8 +3,8 @@ use std::process::ExitCode;
 
 use jackin::repo::validate_role_repo;
 
-// Two-arg surface (one flag, one positional); avoids pulling clap into the
-// validate binary. Add clap if argument shape grows.
+// Hand-rolled argv: pulling clap for one flag + one positional is not worth
+// the build cost. Switch to clap if a third option lands.
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let (migrate, repo_arg) = match parse_args(&args[1..]) {

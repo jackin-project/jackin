@@ -265,7 +265,8 @@ fn validate_migrate_reports_missing_manifest() {
         .args(["--migrate", temp.path().to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("jackin.role.toml"));
+        .stderr(predicate::str::contains("jackin.role.toml"))
+        .stderr(predicate::str::contains("reading"));
 }
 
 #[test]
@@ -278,7 +279,8 @@ fn validate_migrate_reports_malformed_manifest() {
         .args(["--migrate", temp.path().to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("jackin.role.toml"));
+        .stderr(predicate::str::contains("jackin.role.toml"))
+        .stderr(predicate::str::contains("parsing"));
 }
 
 #[test]

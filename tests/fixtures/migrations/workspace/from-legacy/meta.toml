@@ -1,4 +1,4 @@
 from_version = "legacy"
 target_version = "v1alpha1"
 target_version_shipped = "2026-05-10"
-summary = "Legacy per-workspace file has no top-level `version` field. Migration adds `version = \"v1alpha1\"`; comments, mount arrays, and env tables are preserved (toml_edit inserts the new key after existing top-level keys, before any table headers)."
+summary = "Adds version = \"v1alpha1\". Comments, existing keys, mounts, and env tables are preserved."

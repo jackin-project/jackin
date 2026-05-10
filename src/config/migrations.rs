@@ -323,6 +323,15 @@ pub(crate) fn assert_registry_chain(migrations: &[MigrationStep], current_raw: &
         assert!(steps_taken <= migrations.len(), "registry has a cycle");
     }
     assert_eq!(cursor, current, "registry does not reach {current_raw}");
+    // Catches orphaned entries past `current` — e.g. a step left behind
+    // after `CURRENT_*_VERSION` was rolled back, which would silently extend
+    // the chain when current is bumped again.
+    assert_eq!(
+        steps_taken,
+        migrations.len(),
+        "registry has {} unreachable step(s) past {current_raw}",
+        migrations.len() - steps_taken
+    );
 }
 
 #[cfg(test)]
@@ -530,8 +539,7 @@ mod tests {
         // Within a channel, sequence orders.
         assert!(Channel::Alpha(nz(1)) < Channel::Alpha(nz(2)));
         // Cross-channel beats sequence: a high alpha is still less than any
-        // beta. A reorder that swapped Alpha/Beta in the declaration would
-        // pass the previous assertions but break this one.
+        // beta.
         assert!(Channel::Alpha(nz(99)) < Channel::Beta(nz(1)));
     }
 

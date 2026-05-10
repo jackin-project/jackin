@@ -146,9 +146,9 @@ fn migrate_legacy_workspaces(
         atomic_write(&path, &contents)?;
     }
 
-    // Lossy rewrite: legacy `[workspaces.*]` removal goes through serde, so
-    // any comments and blank lines in `config.toml` are dropped. Steady-state
-    // edits go through `ConfigEditor` and use the comment-preserving path.
+    // Lossy: serde round-trip drops comments and blank lines from
+    // `config.toml`. Acceptable here because this path runs once at legacy
+    // migration; steady-state edits go through `ConfigEditor`.
     let global_contents = toml::to_string_pretty(global_config).with_context(|| {
         format!(
             "serializing migrated global config for {}",

@@ -1,5 +1,4 @@
-# Representative legacy per-workspace file (pre-versioning).
-# Schema version: legacy (no top-level `version` field).
+# Sample per-workspace file carried through the legacy -> v1alpha1 migration test.
 
 workdir = "/workspace/prod"
 
