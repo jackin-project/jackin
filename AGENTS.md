@@ -15,9 +15,11 @@ This rule retires when the project gains additional human reviewers.
 
 ## Project status: pre-release (agent-only)
 
-Jackin has no released version — it is a proof-of-concept. **Breaking changes are expected and acceptable.** When schemas change (on-disk state layout, CLI flags, role/workspace/agent shapes outside `config.toml` and `jackin.role.toml`), do not write migration code, compatibility shims, fallback parsers for old field names, "tolerant ignore + warn" handlers, or deprecation warnings. Make the new shape the only shape; let stale data fail with the standard parser error.
+Jackin has no released version — it is a proof-of-concept. **Breaking changes are expected and acceptable.** When schemas change (on-disk state layout, CLI flags, role/agent shapes outside the three versioned files listed below), do not write migration code, compatibility shims, fallback parsers for old field names, "tolerant ignore + warn" handlers, or deprecation warnings. Make the new shape the only shape; let stale data fail with the standard parser error.
 
-`config.toml` and `jackin.role.toml` are exceptions: both are versioned schemas. Breaking changes to either file must bump the schema version and add a migration step.
+`config.toml`, per-workspace files at `~/.config/jackin/workspaces/<name>.toml`, and `jackin.role.toml` are exceptions: all three are versioned schemas (`CURRENT_CONFIG_VERSION`, `CURRENT_WORKSPACE_VERSION`, `CURRENT_MANIFEST_VERSION` in `src/config/migrations.rs` and `src/manifest/migrations.rs`). Breaking changes to any of them must bump the corresponding `CURRENT_*_VERSION`, add a migration step in the relevant registry, and update `docs/src/content/docs/reference/schema-versions.mdx` so the timeline reflects the change. Operator config files migrate automatically on startup; per-workspace files migrate on first load; role manifests migrate via `jackin-validate --migrate <role-repo-path>`.
+
+This is a **proactive PR-review checklist item.** Any PR that touches `AppConfig`, `WorkspaceConfig`, `RoleManifest`, `HooksConfig`, or any other type whose serde representation lives in one of those three files must be reviewed for the version bump + migration step + schema-versions doc update before merge. A PR that changes the schema without those three artifacts is incomplete; reviewers should block merge until they appear or the change is reshaped to be additive (new optional field with a serde default).
 
 Do not memorialize old shapes in code comments ("formerly named X", "old location was Y") or in documentation files outside the changelog. The git history is the record of what changed; the code should describe only the current shape.
 
