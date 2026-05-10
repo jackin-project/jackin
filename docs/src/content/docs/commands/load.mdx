@@ -82,7 +82,7 @@ jackin load the-architect --role-branch feat/my-pr
 7. Generates and builds a derived Docker image, including declared Claude plugins (cached if unchanged; branch builds ignore `published_image` and always build from source)
 8. Creates a per-agent Docker network and DinD sidecar
 9. Launches the agent container with all resolved mounts and environment variables
-10. Runs the pre-launch hook if declared
+10. Runs runtime hooks if declared (`setup_once`, `source`, then `preflight`)
 11. Starts the selected agent CLI
 
 <Aside type="note">

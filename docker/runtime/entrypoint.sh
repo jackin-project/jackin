@@ -14,6 +14,24 @@ run_maybe_quiet() {
     fi
 }
 
+# Run a child-process hook with a `[entrypoint]` log prefix and an
+# explicit failure-attributed exit. `$3` (optional) is appended after
+# `; ` to the failure line — used by setup-once to surface its retry
+# semantics.
+run_hook() {
+    local label="$1" path="$2" tail="${3:-}"
+    echo "[entrypoint] running $label hook..."
+    # `$?` inside `if ! cmd; then ...` is the negated test's status (0),
+    # not the hook's. Capture before the test so the failure log + exit
+    # surface the real exit code.
+    local rc=0
+    "$path" || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "[entrypoint] $label hook failed (exit $rc)${tail:+; $tail}" >&2
+        exit "$rc"
+    fi
+}
+
 # ── runtime-neutral setup ──────────────────────────────────────────
 # Configure git identity from host environment
 if [ -n "${GIT_AUTHOR_NAME:-}" ]; then
@@ -122,10 +140,53 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     ;;
 esac
 
-# ── pre-launch hook (runtime-neutral) ──────────────────────────────
-if [ -x /home/agent/.jackin-runtime/pre-launch.sh ]; then
-    echo "Running pre-launch hook..."
-    /home/agent/.jackin-runtime/pre-launch.sh
+# ── role runtime hooks ─────────────────────────────────────────────
+if [ -x /jackin/runtime/hooks/setup-once.sh ]; then
+    setup_once_marker="/jackin/state/hooks/setup-once.done"
+    if [ ! -e "$setup_once_marker" ]; then
+        if ! mkdir -p "$(dirname "$setup_once_marker")"; then
+            echo "[entrypoint] failed to create marker directory $(dirname "$setup_once_marker")" >&2
+            exit 1
+        fi
+        run_hook setup-once /jackin/runtime/hooks/setup-once.sh \
+            "marker not written, will retry next launch"
+        # Wrap touch so the post-success failure surfaces as an attributed
+        # log; otherwise `set -e` aborts silently and the next launch
+        # silently re-runs setup-once with no operator-visible reason.
+        if ! touch "$setup_once_marker"; then
+            echo "[entrypoint] setup-once succeeded but marker write failed; will retry next launch" >&2
+            exit 1
+        fi
+    fi
+fi
+
+if [ -x /jackin/runtime/hooks/source.sh ]; then
+    echo "[entrypoint] sourcing runtime hook..."
+    # Hooks must use `return`, not `exit` (sourced `exit` kills the
+    # entrypoint). Save PWD and clear any ERR trap the hook installs
+    # so neither leaks into the exec'd agent.
+    source_pwd="$PWD"
+    # JACKIN_DEBUG xtrace would dump expanded `export SECRET=...` lines
+    # from the sourced shell into operator logs; suspend around source.
+    case $- in *x*) source_xtrace=1; set +x ;; esac
+    # Capture rc before the test — `$?` after `if ! .` is 0.
+    rc=0
+    # shellcheck source=/dev/null
+    . /jackin/runtime/hooks/source.sh || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "[entrypoint] source hook returned non-zero (exit $rc); aborting before agent launch" >&2
+        exit "$rc"
+    fi
+    [ "${source_xtrace:-0}" = "1" ] && set -x
+    trap - ERR
+    if ! cd "$source_pwd"; then
+        echo "[entrypoint] saved PWD ($source_pwd) vanished after source hook; falling back to /" >&2
+        cd /
+    fi
+fi
+
+if [ -x /jackin/runtime/hooks/preflight.sh ]; then
+    run_hook preflight /jackin/runtime/hooks/preflight.sh
 fi
 
 # In debug mode, pause so the operator can review logs before the agent clears the screen
