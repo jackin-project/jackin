@@ -1,14 +1,37 @@
+//! End-to-end smoke that drives `jackin load` against a real Docker daemon
+//! with proxy env declared in role config, then asserts the launched agent
+//! container's environment carries the `DinD` hostname in both `NO_PROXY`
+//! and `no_proxy`. Regression guard for the proxy-routed `DinD`-handshake
+//! bug fixed in `src/runtime/launch.rs`.
+
 #![cfg(feature = "e2e")]
 
 use std::path::Path;
 use std::process::Command;
+
+use jackin::derived_image::shell_quote;
 use tempfile::tempdir;
+
+const ROLE_KEY: &str = "jackin-e2e/agent-smith";
+const CONTAINER_NAME: &str = "jackin-jackin-e2e__agent-smith";
+const DIND_HOSTNAME: &str = "jackin-jackin-e2e__agent-smith-dind";
+
+/// RAII cleanup so the test's Docker resources are removed even if an
+/// assertion or `script(1)` invocation panics. Without this, a flaky run
+/// leaks a container/network/volume and the next run fails on name
+/// collision — turning a transient failure into a sticky red CI.
+struct DockerCleanup;
+
+impl Drop for DockerCleanup {
+    fn drop(&mut self) {
+        cleanup_role();
+    }
+}
 
 #[test]
 fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
-    if !docker_available() || !script_available() {
-        return;
-    }
+    require_e2e_prereqs();
+    let _cleanup = DockerCleanup;
 
     let temp = tempdir().unwrap();
     let home = temp.path().join("home");
@@ -30,16 +53,8 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     });
 
     let target = format!("{}:/workspace", workspace_dir.display());
-    let args = [
-        "load",
-        "jackin-e2e/agent-smith",
-        &target,
-        "--agent",
-        "claude",
-        "--no-intro",
-    ];
+    let args = ["load", ROLE_KEY, &target, "--agent", "claude", "--no-intro"];
     let output = run_in_pty(&jackin, &args, &home, &workspace_dir);
-    cleanup_role();
 
     assert!(
         output.status.success(),
@@ -49,18 +64,45 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     );
 
     let env_report = std::fs::read_to_string(workspace_dir.join("jackin-e2e-env.txt")).unwrap();
-    assert!(env_report.contains("DOCKER_HOST=tcp://jackin-jackin-e2e__agent-smith-dind:2376"));
+    assert!(env_report.contains(&format!("DOCKER_HOST=tcp://{DIND_HOSTNAME}:2376")));
     assert!(env_report.contains("DOCKER_TLS_VERIFY=1"));
     assert!(env_report.contains("DOCKER_CERT_PATH=/certs/client"));
-    assert!(env_report.contains("JACKIN_DIND_HOSTNAME=jackin-jackin-e2e__agent-smith-dind"));
+    assert!(env_report.contains(&format!("JACKIN_DIND_HOSTNAME={DIND_HOSTNAME}")));
+    // Both casings carry the merged list — operator's localhost,127.0.0.1
+    // must reach tools that read either uppercase NO_PROXY (Go runtime) or
+    // lowercase no_proxy (curl, Python requests, wget).
+    let merged = format!("NO_PROXY=localhost,127.0.0.1,{DIND_HOSTNAME}");
+    let merged_lower = format!("no_proxy=localhost,127.0.0.1,{DIND_HOSTNAME}");
     assert!(
-        env_report.contains("NO_PROXY=localhost,127.0.0.1,jackin-jackin-e2e__agent-smith-dind")
+        env_report.contains(&merged),
+        "missing {merged}\n{env_report}"
     );
-    assert!(env_report.contains("no_proxy=jackin-jackin-e2e__agent-smith-dind"));
+    assert!(
+        env_report.contains(&merged_lower),
+        "missing {merged_lower}\n{env_report}"
+    );
 
     let docker_ps =
         std::fs::read_to_string(workspace_dir.join("jackin-e2e-docker-ps.txt")).unwrap();
     assert!(docker_ps.contains("CONTAINER ID"));
+}
+
+/// Hard-fail with an actionable message when the e2e prerequisites are
+/// missing. The `e2e` feature is opt-in (CI runs `cargo nextest run
+/// --all-features` on a Docker-equipped runner); silently skipping would
+/// turn a missing prereq into a green check.
+fn require_e2e_prereqs() {
+    assert!(
+        docker_available(),
+        "e2e tests require a running Docker daemon (`docker info` failed). \
+         Disable the `e2e` feature or start Docker."
+    );
+    assert!(
+        script_available(),
+        "e2e tests require `script(1)` on PATH for PTY emulation. \
+         Install bsdmainutils (Debian/Ubuntu) or util-linux (most distros), \
+         or disable the `e2e` feature."
+    );
 }
 
 fn docker_available() -> bool {
@@ -70,16 +112,25 @@ fn docker_available() -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
+/// Probe `script(1)` via the canonical PATH lookup. The previous
+/// `script --help` / `script -q /dev/null` fallback chain was unsound:
+/// the fallback only fired on spawn failure, and on the only platforms
+/// that lack `--help` it would invoke `script` with side effects (start a
+/// real PTY recording session against `/dev/null`).
 fn script_available() -> bool {
-    Command::new("script")
-        .arg("--help")
+    Command::new("which")
+        .arg("script")
         .output()
-        .or_else(|_| Command::new("script").arg("-q").arg("/dev/null").output())
-        .is_ok()
+        .is_ok_and(|out| out.status.success())
 }
 
 fn run_in_pty(jackin: &str, args: &[&str], home: &Path, cwd: &Path) -> std::process::Output {
     let mut command = Command::new("script");
+    // BSD `script` (macOS) takes the command as positional args after the
+    // typescript file. util-linux `script` (most Linux distros) takes it
+    // via `-c <shell-string>`. BusyBox `script` is closer to BSD; if
+    // encountered on Linux it will fall through to the util-linux branch
+    // and fail loudly rather than silently misbehave.
     if cfg!(target_os = "macos") {
         command.arg("-q").arg("/dev/null").arg(jackin).args(args);
     } else {
@@ -119,6 +170,10 @@ plugins = []
 
     run("git", &["init"], Some(path));
     run("git", &["add", "."], Some(path));
+    // `commit.gpgsign=false` defends against developers with global
+    // gpgsign enabled but no signing key configured for this repo —
+    // otherwise the seed commit fails and the test bails before exercising
+    // anything jackin-related.
     run(
         "git",
         &[
@@ -126,6 +181,8 @@ plugins = []
             "user.name=Jackin E2E",
             "-c",
             "user.email=e2e@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
             "commit",
             "-m",
             "Seed agent smith e2e role",
@@ -138,11 +195,11 @@ fn write_config(path: &Path, role_source: &Path) {
     std::fs::write(
         path,
         format!(
-            r#"[roles."jackin-e2e/agent-smith"]
+            r#"[roles."{ROLE_KEY}"]
 git = "{}"
 trusted = true
 
-[roles."jackin-e2e/agent-smith".env]
+[roles."{ROLE_KEY}".env]
 HTTPS_PROXY = "http://127.0.0.1:9"
 https_proxy = "http://127.0.0.1:9"
 NO_PROXY = "localhost,127.0.0.1"
@@ -162,8 +219,16 @@ USER agent
 "
 }
 
+// `$VAR` expansions inside the heredoc trigger
+// `clippy::literal_string_with_formatting_args` because the body looks like
+// a Rust format string; the script is `cat`'d verbatim into the container,
+// so the lint is a false positive.
 #[allow(clippy::literal_string_with_formatting_args)]
 const fn fake_curl() -> &'static str {
+    // `sleep 5` keeps the agent container alive long enough for jackin's
+    // post-launch reads (env report, docker ps snapshot) to land in the
+    // workspace before the entrypoint exits and the container is torn
+    // down. Tuned empirically; bump if the test races on slow CI.
     r#"#!/bin/sh
 cat <<'INSTALL'
 #!/bin/sh
@@ -193,20 +258,21 @@ INSTALL
 }
 
 fn cleanup_role() {
-    let container = "jackin-jackin-e2e__agent-smith";
     let _ = Command::new("docker")
-        .args(["rm", "-f", container])
+        .args(["rm", "-f", CONTAINER_NAME])
         .output();
     let _ = Command::new("docker")
-        .args(["rm", "-f", &format!("{container}-dind")])
+        .args(["rm", "-f", &format!("{CONTAINER_NAME}-dind")])
         .output();
     let _ = Command::new("docker")
-        .args(["network", "rm", &format!("{container}-net")])
+        .args(["network", "rm", &format!("{CONTAINER_NAME}-net")])
         .output();
     let _ = Command::new("docker")
-        .args(["volume", "rm", &format!("{container}-dind-certs")])
+        .args(["volume", "rm", &format!("{CONTAINER_NAME}-dind-certs")])
         .output();
-    let _ = Command::new("docker").args(["rmi", container]).output();
+    let _ = Command::new("docker")
+        .args(["rmi", CONTAINER_NAME])
+        .output();
 }
 
 fn run(program: &str, args: &[&str], cwd: Option<&Path>) {
@@ -225,21 +291,4 @@ fn run(program: &str, args: &[&str], cwd: Option<&Path>) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
-}
-
-fn shell_quote(value: &str) -> String {
-    if value.is_empty() {
-        return "''".to_string();
-    }
-    let mut quoted = String::with_capacity(value.len() + 2);
-    quoted.push('\'');
-    for ch in value.chars() {
-        if ch == '\'' {
-            quoted.push_str("'\"'\"'");
-        } else {
-            quoted.push(ch);
-        }
-    }
-    quoted.push('\'');
-    quoted
 }
