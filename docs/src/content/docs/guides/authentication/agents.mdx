@@ -87,9 +87,14 @@ jackin config auth set sync
 jackin config auth set ignore
 jackin config auth set oauth_token
 jackin config auth set api_key
+jackin config auth set api_key --agent codex
+jackin config auth set sync --agent amp
 ```
 
-`jackin config auth show` prints the current global mode.
+Without `--agent`, `config auth set` targets `Claude Code`.
+`jackin config auth show` prints the current global modes for Claude
+Code, Codex, and Amp. GitHub CLI auth is managed separately through the
+console today.
 
 ### Per workspace and per (workspace × role × agent)
 
