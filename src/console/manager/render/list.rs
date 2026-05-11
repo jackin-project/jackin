@@ -226,12 +226,23 @@ pub(super) fn render_mount_lines(
 fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, config: &AppConfig) {
     let ws_config = config.workspaces.get(&ws.name);
     let mounts = ws_config.map_or(&[][..], |w| w.mounts.as_slice());
+    let global_display = ws_config.map(|w| config.workspace_applicable_mount_rows(w));
+    let global_mounts: Vec<crate::workspace::MountConfig> = match &global_display {
+        Some(crate::config::WorkspaceGlobalMountRows::Applicable { rows, .. }) => {
+            rows.iter().map(|row| row.mount.clone()).collect()
+        }
+        _ => Vec::new(),
+    };
     let agent_count = agents_block_agent_count(ws_config, config);
     let show_envs = ws_config.is_some_and(workspace_has_any_env);
 
     let mut constraints = vec![
         Constraint::Length(3),
         Constraint::Length(mount_block_height(mounts)),
+        Constraint::Length(global_mount_block_height(
+            global_display.as_ref(),
+            &global_mounts,
+        )),
     ];
     if show_envs {
         constraints.push(Constraint::Length(env_block_height(ws_config)));
@@ -248,6 +259,8 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
     idx += 1;
     render_mounts_subpanel(frame, rows[idx], mounts);
     idx += 1;
+    render_global_mounts_subpanel(frame, rows[idx], global_display.as_ref(), &global_mounts);
+    idx += 1;
     if show_envs {
         render_environments_subpanel(frame, rows[idx], ws_config);
         idx += 1;
@@ -262,6 +275,18 @@ fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
 fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
     let data_rows = if mounts.is_empty() { 1 } else { mounts.len() };
     (data_rows + 2 + 1).min(12) as u16
+}
+
+fn global_mount_block_height(
+    display: Option<&crate::config::WorkspaceGlobalMountRows>,
+    mounts: &[crate::workspace::MountConfig],
+) -> u16 {
+    match display {
+        Some(crate::config::WorkspaceGlobalMountRows::Applicable { .. }) => {
+            mount_block_height(mounts)
+        }
+        Some(crate::config::WorkspaceGlobalMountRows::Ambiguous { .. }) | None => 4,
+    }
 }
 
 /// Caller is expected to have gated on `workspace_has_any_env` —
@@ -491,6 +516,67 @@ fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::worksp
         let path_w = mount_path_width(&rows);
         lines.push(render_mount_header(path_w));
         lines.extend(render_mount_lines(&rows, path_w));
+    }
+
+    let p = Paragraph::new(lines)
+        .block(block)
+        .style(Style::default().fg(PHOSPHOR_GREEN));
+    frame.render_widget(p, area);
+}
+
+fn render_global_mounts_subpanel(
+    frame: &mut Frame,
+    area: Rect,
+    display: Option<&crate::config::WorkspaceGlobalMountRows>,
+    mounts: &[crate::workspace::MountConfig],
+) {
+    let title = match display {
+        Some(crate::config::WorkspaceGlobalMountRows::Applicable { role, .. }) => {
+            format!(" Global mounts · {role} ")
+        }
+        _ => " Global mounts ".to_string(),
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            title,
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+
+    let mut lines: Vec<Line> = Vec::new();
+    match display {
+        Some(crate::config::WorkspaceGlobalMountRows::Applicable { .. }) => {
+            if mounts.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "  (none)",
+                    Style::default().fg(PHOSPHOR_DIM),
+                )));
+            } else {
+                let rows = format_mount_rows(mounts);
+                let path_w = mount_path_width(&rows);
+                lines.push(render_mount_header(path_w));
+                lines.extend(render_mount_lines(&rows, path_w));
+            }
+        }
+        Some(crate::config::WorkspaceGlobalMountRows::Ambiguous { candidates }) => {
+            let suffix = if candidates.is_empty() {
+                "selected role affects global mount visibility".to_string()
+            } else {
+                format!(
+                    "selected role affects global mount visibility: {}",
+                    candidates.join(", ")
+                )
+            };
+            lines.push(Line::from(Span::styled(
+                format!("  {suffix}"),
+                Style::default().fg(PHOSPHOR_DIM),
+            )));
+        }
+        None => lines.push(Line::from(Span::styled(
+            "  (workspace missing)",
+            Style::default().fg(PHOSPHOR_DIM),
+        ))),
     }
 
     let p = Paragraph::new(lines)

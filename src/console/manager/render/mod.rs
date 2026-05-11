@@ -12,6 +12,7 @@ use super::state::{ManagerListRow, ManagerStage, ManagerState};
 use crate::config::AppConfig;
 
 pub mod editor;
+mod global_mounts;
 pub(super) mod list;
 pub(super) mod modal;
 
@@ -94,6 +95,8 @@ pub fn render(
     // Phase 1: render the base stage (Editor full-screen OR List chrome).
     if let ManagerStage::Editor(editor) = &state.stage {
         editor::render_editor(frame, editor, config, state.op_available);
+    } else if let ManagerStage::GlobalMounts(global) = &mut state.stage {
+        global_mounts::render_global_mounts(frame, global);
     } else {
         // List / CreatePrelude / ConfirmDelete share the list-like chrome.
         let area = frame.area();
@@ -143,6 +146,9 @@ pub fn render(
                     FooterItem::Sep,
                     FooterItem::Key("D"),
                     FooterItem::Text("delete"),
+                    FooterItem::Sep,
+                    FooterItem::Key("G"),
+                    FooterItem::Text("global config"),
                 ];
                 if show_open_hint {
                     items.push(FooterItem::Sep);
@@ -172,6 +178,7 @@ pub fn render(
                 FooterItem::Text("cancel"),
             ],
             ManagerStage::Editor(_) => unreachable!("Editor has its own render path"),
+            ManagerStage::GlobalMounts(_) => unreachable!("Global mounts has its own render path"),
         };
         render_footer(frame, chunks[2], &footer_items);
     }
@@ -211,6 +218,11 @@ pub fn render(
             }
             ManagerStage::List => {
                 // Handled above via the `is_list_stage` early branch.
+            }
+            ManagerStage::GlobalMounts(global) => {
+                if let Some(modal) = &mut global.modal {
+                    global_mounts::render_global_mount_modal(frame, modal);
+                }
             }
         }
     }

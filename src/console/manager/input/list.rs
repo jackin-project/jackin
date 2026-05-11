@@ -7,8 +7,8 @@ use super::super::super::widgets::{
     ModalOutcome, confirm::ConfirmState, file_browser::FileBrowserState,
 };
 use super::super::state::{
-    EditorState, FileBrowserTarget, ManagerListRow, ManagerStage, ManagerState, Modal, Toast,
-    ToastKind,
+    EditorState, FileBrowserTarget, GlobalMountsState, ManagerListRow, ManagerStage, ManagerState,
+    Modal, Toast, ToastKind,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
@@ -114,6 +114,10 @@ pub(super) fn handle_list_key(
         }
         KeyCode::Char('o' | 'O') => {
             handle_list_open_in_github(state, config);
+            Ok(InputOutcome::Continue)
+        }
+        KeyCode::Char('g' | 'G') => {
+            state.stage = ManagerStage::GlobalMounts(GlobalMountsState::from_config(config));
             Ok(InputOutcome::Continue)
         }
         _ => Ok(InputOutcome::Continue),

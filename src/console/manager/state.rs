@@ -99,8 +99,53 @@ pub const fn clamp_split(pct: u16) -> u16 {
 pub enum ManagerStage<'a> {
     List,
     Editor(EditorState<'a>),
+    GlobalMounts(GlobalMountsState<'a>),
     CreatePrelude(CreatePreludeState<'a>),
     ConfirmDelete { name: String, state: ConfirmState },
+}
+
+#[derive(Debug)]
+pub struct GlobalMountsState<'a> {
+    pub selected: usize,
+    pub pending: Vec<crate::config::GlobalMountRow>,
+    pub original: Vec<crate::config::GlobalMountRow>,
+    pub modal: Option<GlobalMountModal<'a>>,
+    pub add_draft: Option<GlobalMountDraft>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Default)]
+pub struct GlobalMountDraft {
+    pub name: String,
+    pub src: String,
+    pub dst: String,
+    pub scope: Option<String>,
+}
+
+#[derive(Debug)]
+pub enum GlobalMountModal<'a> {
+    Text {
+        target: GlobalMountTextTarget,
+        state: Box<TextInputState<'a>>,
+    },
+    ConfirmRemove {
+        state: ConfirmState,
+    },
+    ConfirmSave {
+        state: ConfirmState,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlobalMountTextTarget {
+    AddName,
+    AddSource,
+    AddDestination,
+    AddScope,
+    Source,
+    Destination,
+    Scope,
+    Rename,
 }
 
 #[derive(Debug, Clone)]
@@ -227,6 +272,42 @@ impl EditorSaveFlow {
         } else {
             None
         }
+    }
+}
+
+impl GlobalMountsState<'_> {
+    pub fn from_config(config: &AppConfig) -> Self {
+        let rows = config.list_mount_rows();
+        Self {
+            selected: 0,
+            pending: rows.clone(),
+            original: rows,
+            modal: None,
+            add_draft: None,
+            error: None,
+        }
+    }
+
+    #[must_use]
+    pub fn is_dirty(&self) -> bool {
+        self.pending != self.original
+    }
+
+    pub fn save_to_config(
+        &mut self,
+        paths: &crate::paths::JackinPaths,
+    ) -> anyhow::Result<AppConfig> {
+        AppConfig::validate_global_mount_rows(&self.pending)?;
+        let mut editor = crate::config::ConfigEditor::open(paths)?;
+        for row in &self.original {
+            editor.remove_mount(&row.name, row.scope.as_deref());
+        }
+        for row in &self.pending {
+            editor.add_mount(&row.name, row.mount.clone(), row.scope.as_deref());
+        }
+        let config = editor.save()?;
+        self.original = self.pending.clone();
+        Ok(config)
     }
 }
 
@@ -1368,6 +1449,59 @@ mod tests {
         state.selected = ManagerListRow::NewWorkspace.to_screen_index(1);
         assert!(state.selected_workspace_summary().is_none());
         assert!(state.is_new_workspace_selected());
+    }
+
+    #[test]
+    fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+        let source_a = temp.path().join("cache-a");
+        let source_b = temp.path().join("cache-b");
+        std::fs::create_dir_all(&source_a).unwrap();
+        std::fs::create_dir_all(&source_b).unwrap();
+
+        let mut state = GlobalMountsState::from_config(&AppConfig::default());
+        state.pending.push(crate::config::GlobalMountRow {
+            scope: None,
+            name: "gradle".into(),
+            mount: MountConfig {
+                src: source_a.display().to_string(),
+                dst: "/home/agent/.gradle/caches".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+        });
+        state.save_to_config(&paths).unwrap();
+
+        state.pending[0].name = "cargo".into();
+        state.pending[0].mount.src = source_b.display().to_string();
+        state.pending[0].mount.dst = "/home/agent/.cargo/registry".into();
+        state.pending[0].mount.readonly = true;
+        state.pending[0].scope = Some("chainargos/*".into());
+        state.pending.push(crate::config::GlobalMountRow {
+            scope: None,
+            name: "remove-me".into(),
+            mount: MountConfig {
+                src: source_a.display().to_string(),
+                dst: "/remove-me".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+        });
+        state.pending.retain(|row| row.name != "remove-me");
+        let saved = state.save_to_config(&paths).unwrap();
+
+        let rows = saved.list_mount_rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "cargo");
+        assert_eq!(rows[0].scope.as_deref(), Some("chainargos/*"));
+        assert!(rows[0].mount.readonly);
+        assert_eq!(rows[0].mount.dst, "/home/agent/.cargo/registry");
+        let raw = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(raw.contains("[docker.mounts.\"chainargos/*\"]"), "{raw}");
+        assert!(!raw.contains("remove-me"), "{raw}");
     }
 
     // ── cycle_isolation_for_selected_mount ─────────────────────────────

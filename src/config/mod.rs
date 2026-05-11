@@ -17,8 +17,10 @@ pub use migrations::{
     CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, migrate_config_file_if_needed,
     migrate_workspace_file_if_needed,
 };
-pub use mounts::DockerMounts;
 pub(crate) use mounts::MountEntry;
+pub use mounts::{
+    DockerMounts, GlobalMountRow, WorkspaceGlobalMountRows, WorkspaceMountRoleContext,
+};
 pub use roles::{build_github_env_layers, resolve_github_mode, resolve_mode};
 pub use workspaces::{DriftDetection, detect_workspace_edit_drift};
 

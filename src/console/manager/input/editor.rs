@@ -385,7 +385,20 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         // 0=Name, 1=Working dir, 2=Keep awake
         // 0=Name, 1=Working dir, 2=Keep awake, 3=Git pull
         EditorTab::General => 3,
-        EditorTab::Mounts => editor.pending.mounts.len(),
+        EditorTab::Mounts => {
+            let global_rows = match editor.mode {
+                super::super::state::EditorMode::Edit { .. } => {
+                    match config.workspace_applicable_mount_rows(&editor.pending) {
+                        crate::config::WorkspaceGlobalMountRows::Applicable { rows, .. } => {
+                            rows.len()
+                        }
+                        crate::config::WorkspaceGlobalMountRows::Ambiguous { .. } => 0,
+                    }
+                }
+                super::super::state::EditorMode::Create => 0,
+            };
+            editor.pending.mounts.len() + global_rows
+        }
         // One extra sentinel row: + Add role.
         EditorTab::Roles => config.roles.len(),
         // Secrets tab is handled inline in the Down key arm; never reached here.
@@ -2927,6 +2940,44 @@ plugins = []
             panic!("editor stage expected");
         };
         assert!(e.pending.mounts[0].readonly);
+    }
+
+    #[test]
+    fn global_mount_row_readonly_toggle_is_read_only_in_workspace_editor() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("cache");
+        std::fs::create_dir_all(&src).unwrap();
+        let mut config = AppConfig::default();
+        config
+            .roles
+            .insert("agent-smith".into(), crate::config::RoleSource::default());
+        config.add_mount(
+            "cache",
+            MountConfig {
+                src: src.display().to_string(),
+                dst: "/cache".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            None,
+        );
+        let mut ws = ws_with_one_mount(false);
+        ws.allowed_roles = vec!["agent-smith".into()];
+        let mut state = editor_on_mounts_tab(ws, 2);
+
+        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
+        press(&mut state, &mut config, KeyCode::Char('D')).unwrap();
+        press(&mut state, &mut config, KeyCode::Char('I')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(e.pending.mounts.len(), 1);
+        assert!(!e.pending.mounts[0].readonly);
+        assert_eq!(
+            e.pending.mounts[0].isolation,
+            crate::isolation::MountIsolation::Shared
+        );
     }
 
     #[test]

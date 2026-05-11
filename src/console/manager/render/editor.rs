@@ -11,6 +11,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
+use std::cmp::Ordering;
 
 use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
 use super::list::{
@@ -70,7 +71,7 @@ pub fn render_editor(
 
     match state.active_tab {
         EditorTab::General => render_general_tab(frame, chunks[2], state),
-        EditorTab::Mounts => render_mounts_tab(frame, chunks[2], state),
+        EditorTab::Mounts => render_mounts_tab(frame, chunks[2], state, config),
         EditorTab::Roles => render_roles_tab(frame, chunks[2], state, config),
         EditorTab::Secrets => render_secrets_tab(frame, chunks[2], state, config),
         EditorTab::Auth => render_auth_tab(frame, chunks[2], state, config),
@@ -153,48 +154,40 @@ fn contextual_row_items(
         }
         EditorTab::Mounts => {
             let mount_count = state.pending.mounts.len();
-            if cursor < mount_count {
-                let mut items = vec![
-                    FooterItem::Key("D"),
-                    FooterItem::Text("remove"),
-                    FooterItem::Sep,
-                    FooterItem::Key("A"),
-                    FooterItem::Text("add"),
-                ];
-                // Surface `O open in GitHub` when the cursor is on a mount
-                // whose source resolves to a GitHub-hosted git repo with a
-                // web URL. Editor-only — the list view's mounts pane is
-                // a preview, not a focus target.
-                if let Some(m) = state.pending.mounts.get(cursor)
-                    && matches!(
-                        super::super::mount_info::inspect(&m.src),
-                        super::super::mount_info::MountKind::Git {
-                            origin: Some(super::super::mount_info::GitOrigin::Github { .. }),
-                            ..
-                        }
-                    )
-                {
+            match cursor.cmp(&mount_count) {
+                Ordering::Less => {
+                    let mut items = vec![
+                        FooterItem::Key("D"),
+                        FooterItem::Text("remove"),
+                        FooterItem::Sep,
+                        FooterItem::Key("A"),
+                        FooterItem::Text("add"),
+                    ];
+                    if let Some(m) = state.pending.mounts.get(cursor)
+                        && matches!(
+                            super::super::mount_info::inspect(&m.src),
+                            super::super::mount_info::MountKind::Git {
+                                origin: Some(super::super::mount_info::GitOrigin::Github { .. }),
+                                ..
+                            }
+                        )
+                    {
+                        items.push(FooterItem::Sep);
+                        items.push(FooterItem::Key("O"));
+                        items.push(FooterItem::Text("open in GitHub"));
+                    }
                     items.push(FooterItem::Sep);
-                    items.push(FooterItem::Key("O"));
-                    items.push(FooterItem::Text("open in GitHub"));
+                    items.push(FooterItem::Key("R"));
+                    items.push(FooterItem::Text("toggle ro/rw"));
+                    items.push(FooterItem::Sep);
+                    items.push(FooterItem::Key("I"));
+                    items.push(FooterItem::Text("cycle isolation"));
+                    items
                 }
-                // `R` toggles the readonly flag on the highlighted mount row
-                // (rw ↔ ro). Sentinel row omits this hint — there's nothing
-                // to toggle yet.
-                items.push(FooterItem::Sep);
-                items.push(FooterItem::Key("R"));
-                items.push(FooterItem::Text("toggle ro/rw"));
-                // `I` cycles the per-mount isolation strategy on the
-                // highlighted row (shared ↔ worktree).
-                // Same gating as R: hidden on the `+ Add mount` sentinel.
-                items.push(FooterItem::Sep);
-                items.push(FooterItem::Key("I"));
-                items.push(FooterItem::Text("cycle isolation"));
-                items
-            } else {
-                // Sentinel "+ Add mount" row — both Enter and A invoke the
-                // same add-mount flow, so render as a single combined key.
-                vec![FooterItem::Key("Enter/A"), FooterItem::Text("add")]
+                Ordering::Equal => vec![FooterItem::Key("Enter/A"), FooterItem::Text("add")],
+                Ordering::Greater => vec![FooterItem::Dyn(
+                    "global mount - edit from config mounts".to_string(),
+                )],
             }
         }
         EditorTab::Roles => {
@@ -454,7 +447,7 @@ fn render_editor_row(row: usize, cursor: usize, label: &str, value: &str) -> Lin
     Line::from(spans)
 }
 
-fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
+fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK));
@@ -511,7 +504,63 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         action_row_style(sentinel_selected),
     )));
 
+    if let Some(workspace) = workspace_for_global_mount_context(state) {
+        match config.workspace_applicable_mount_rows(workspace) {
+            crate::config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    format!("Global mounts ({role})"),
+                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+                )));
+                let offset = state.pending.mounts.len() + 1;
+                for (i, row) in rows.iter().enumerate() {
+                    let selected = cursor == offset + i;
+                    let prefix = if selected { "▸ " } else { "  " };
+                    let src = crate::tui::shorten_home(&row.mount.src);
+                    let dst = crate::tui::shorten_home(&row.mount.dst);
+                    let path = if row.mount.src == row.mount.dst {
+                        src
+                    } else {
+                        format!("{src} \u{2192} {dst}")
+                    };
+                    let mode = if row.mount.readonly { "ro" } else { "rw" };
+                    let scope = row.scope.as_deref().unwrap_or("global");
+                    let style = if selected {
+                        Style::default()
+                            .fg(PHOSPHOR_DIM)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(PHOSPHOR_DIM)
+                    };
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("{prefix}{path}  "), style),
+                        Span::styled(format!("{mode}  {scope}"), style),
+                    ]));
+                }
+            }
+            crate::config::WorkspaceGlobalMountRows::Ambiguous { candidates } => {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "Global mounts: selected role affects visibility ({})",
+                        candidates.join(", ")
+                    ),
+                    Style::default().fg(PHOSPHOR_DIM),
+                )));
+            }
+        }
+    }
+
     frame.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+const fn workspace_for_global_mount_context<'a>(
+    state: &'a EditorState<'_>,
+) -> Option<&'a crate::workspace::WorkspaceConfig> {
+    match state.mode {
+        EditorMode::Edit { .. } => Some(&state.pending),
+        EditorMode::Create => None,
+    }
 }
 
 fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {

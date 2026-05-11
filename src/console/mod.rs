@@ -117,7 +117,7 @@ const fn is_on_main_screen(state: &ConsoleState) -> bool {
 /// Modals that consume letters (`TextInput`, pickers with filter-as-
 /// you-type) must shadow the Q-intercept so `Q` types the letter.
 const fn consumes_letter_input(state: &ConsoleState) -> bool {
-    use crate::console::manager::state::{ManagerStage, Modal};
+    use crate::console::manager::state::{GlobalMountModal, ManagerStage, Modal};
     let ConsoleStage::Manager(ms) = &state.stage;
 
     if let Some(modal) = &ms.list_modal
@@ -142,6 +142,12 @@ const fn consumes_letter_input(state: &ConsoleState) -> bool {
     if let ManagerStage::CreatePrelude(p) = &ms.stage
         && let Some(modal) = &p.modal
         && matches!(modal, Modal::TextInput { .. })
+    {
+        return true;
+    }
+    if let ManagerStage::GlobalMounts(global) = &ms.stage
+        && let Some(modal) = &global.modal
+        && matches!(modal, GlobalMountModal::Text { .. })
     {
         return true;
     }
@@ -196,6 +202,18 @@ fn console_location_debug(console_state: &ConsoleState) -> String {
         }
         crate::console::manager::state::ManagerStage::ConfirmDelete { .. } => {
             "confirm-delete".to_string()
+        }
+        crate::console::manager::state::ManagerStage::GlobalMounts(global) => {
+            let modal = global.modal.as_ref().map_or("none", |modal| match modal {
+                crate::console::manager::state::GlobalMountModal::Text { .. } => "text-input",
+                crate::console::manager::state::GlobalMountModal::ConfirmRemove { .. } => {
+                    "confirm-remove"
+                }
+                crate::console::manager::state::GlobalMountModal::ConfirmSave { .. } => {
+                    "confirm-save"
+                }
+            });
+            format!("global-mounts selected={} modal={modal}", global.selected)
         }
     };
     format!("{location}{list_modal}")

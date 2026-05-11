@@ -4,6 +4,7 @@
 
 pub(super) mod auth;
 pub(super) mod editor;
+pub(super) mod global_mounts;
 pub(super) mod list;
 pub(super) mod mouse;
 pub(super) mod prelude;
@@ -131,6 +132,12 @@ pub fn handle_key(
         }
         return Ok(InputOutcome::Continue);
     }
+    if let ManagerStage::GlobalMounts(global) = &mut state.stage
+        && global.modal.is_some()
+    {
+        global_mounts::handle_global_mounts_modal(global, config, paths, key);
+        return Ok(InputOutcome::Continue);
+    }
     if matches!(state.stage, ManagerStage::CreatePrelude(_)) {
         let has_modal = if let ManagerStage::CreatePrelude(p) = &state.stage {
             p.modal.is_some()
@@ -203,12 +210,14 @@ pub fn handle_key(
     enum StageDis {
         List,
         Editor,
+        GlobalMounts,
         CreatePrelude,
         ConfirmDelete,
     }
     let dis = match &state.stage {
         ManagerStage::List => StageDis::List,
         ManagerStage::Editor(_) => StageDis::Editor,
+        ManagerStage::GlobalMounts(_) => StageDis::GlobalMounts,
         ManagerStage::CreatePrelude(_) => StageDis::CreatePrelude,
         ManagerStage::ConfirmDelete { .. } => StageDis::ConfirmDelete,
     };
@@ -216,6 +225,10 @@ pub fn handle_key(
     match dis {
         StageDis::List => list::handle_list_key(state, config, paths, cwd, key),
         StageDis::Editor => editor::handle_editor_key(state, config, paths, cwd, key),
+        StageDis::GlobalMounts => {
+            global_mounts::handle_global_mounts_key(state, key);
+            Ok(InputOutcome::Continue)
+        }
         StageDis::CreatePrelude => Ok(prelude::handle_prelude_key(state, config, paths, cwd, key)),
         StageDis::ConfirmDelete => handle_confirm_delete_key(state, config, paths, cwd, key),
     }
