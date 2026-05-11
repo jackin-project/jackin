@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MainMenuView: View {
     @ObservedObject var model: StatusBarModel
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -51,6 +52,12 @@ struct MainMenuView: View {
             }
 
             Divider()
+
+            Button {
+                openWindow(id: "main")
+            } label: {
+                Label("Open Jackin Desktop", systemImage: "macwindow")
+            }
 
             Button {
                 Task {
