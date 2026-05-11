@@ -76,6 +76,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 
 - **[Docker API migration](/reference/roadmap/bollard-migration/)** — incremental migration from CLI string-matching to the Bollard typed API client for more robust error handling (status: deferred — incremental migration is the pragmatic path)
 - **[Construct user creation optimization](/reference/roadmap/construct-user-creation/)** — move user creation to the derived layer to eliminate UID/GID remapping (status: deferred — needs design work)
+- **[Unique container identity and restore](/reference/roadmap/unique-container-identity-restore/)** — replace clone-derived Docker names with DNS-safe unique instance names, add per-instance restore metadata, and make deleted-Docker recovery explicit before fresh launches (status: open — design proposal)
 
 ### Operator surface and fleet operations
 

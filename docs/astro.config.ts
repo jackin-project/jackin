@@ -318,6 +318,7 @@ export default defineConfig({
                   items: [
                     { label: 'Bollard migration', slug: 'reference/roadmap/bollard-migration' },
                     { label: 'Construct user creation', slug: 'reference/roadmap/construct-user-creation' },
+                    { label: 'Unique container identity and restore', slug: 'reference/roadmap/unique-container-identity-restore' },
                   ],
                 },
                 {
