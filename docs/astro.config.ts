@@ -335,6 +335,7 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Config versioning and migration', slug: 'reference/roadmap/config-versioning-migration' },
+                    { label: 'Settings TUI', slug: 'reference/roadmap/settings-tui' },
                   ],
                 },
                 {
