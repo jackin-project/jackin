@@ -2048,7 +2048,7 @@ fn resolve_restore_candidate(
                     "Unfinished jackin state exists for role `{role_key}` in workspace `{workspace_label}`."
                 ),
                 &[
-                    &format!("Restore {}", only.container_base),
+                    &format!("Restore {}", restore_candidate_label(paths, only)),
                     "Start fresh instead",
                 ],
             )?;
@@ -2065,7 +2065,7 @@ fn resolve_restore_candidate(
         _ => {
             let mut options: Vec<String> = candidates
                 .iter()
-                .map(|manifest| format!("Restore {}", manifest.container_base))
+                .map(|manifest| format!("Restore {}", restore_candidate_label(paths, manifest)))
                 .collect();
             options.push("Start fresh instead".to_string());
             let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
@@ -2082,6 +2082,68 @@ fn resolve_restore_candidate(
                 Ok(None)
             }
         }
+    }
+}
+
+fn restore_candidate_label(paths: &JackinPaths, manifest: &InstanceManifest) -> String {
+    let state_dir = paths.data_dir.join(&manifest.container_base);
+    let isolation = restore_candidate_isolation_summary(&state_dir);
+    let attach = manifest
+        .last_attach_outcome
+        .as_deref()
+        .map_or_else(String::new, |outcome| format!(" attach:{outcome}"));
+    format!(
+        "{} status:{} agent:{} role:{} updated:{} {}{}",
+        manifest.instance_id,
+        instance_status_label(manifest.status),
+        manifest.agent_runtime,
+        manifest.role_key,
+        manifest.updated_at,
+        isolation,
+        attach
+    )
+}
+
+fn restore_candidate_isolation_summary(state_dir: &std::path::Path) -> String {
+    use crate::isolation::state::CleanupStatus;
+
+    let Ok(records) = crate::isolation::state::read_records(state_dir) else {
+        return "mounts:unknown".to_string();
+    };
+    if records.is_empty() {
+        return "mounts:none".to_string();
+    }
+    let dirty = records
+        .iter()
+        .filter(|record| record.cleanup_status == CleanupStatus::PreservedDirty)
+        .count();
+    let unpushed = records
+        .iter()
+        .filter(|record| record.cleanup_status == CleanupStatus::PreservedUnpushed)
+        .count();
+    if dirty > 0 || unpushed > 0 {
+        return format!(
+            "mounts:{} dirty:{} unpushed:{}",
+            records.len(),
+            dirty,
+            unpushed
+        );
+    }
+    format!("mounts:{}", records.len())
+}
+
+const fn instance_status_label(status: InstanceStatus) -> &'static str {
+    match status {
+        InstanceStatus::Active => "active",
+        InstanceStatus::Running => "running",
+        InstanceStatus::CleanExited => "clean_exited",
+        InstanceStatus::Crashed => "crashed",
+        InstanceStatus::PreservedDirty => "preserved_dirty",
+        InstanceStatus::PreservedUnpushed => "preserved_unpushed",
+        InstanceStatus::RestoreAvailable => "restore_available",
+        InstanceStatus::Superseded => "superseded",
+        InstanceStatus::Purged => "purged",
+        InstanceStatus::FailedSetup => "failed_setup",
     }
 }
 
@@ -6203,6 +6265,60 @@ plugins = []
         assert_eq!(manifest.status, InstanceStatus::Superseded);
         let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
         assert_eq!(index.instances[0].status, InstanceStatus::Superseded);
+    }
+
+    #[test]
+    fn restore_candidate_label_includes_manifest_and_mount_state() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let mut manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Codex,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest.mark_status(InstanceStatus::PreservedDirty);
+        manifest.last_attach_outcome = Some("exit:137".into());
+        crate::isolation::state::write_records(
+            &paths.data_dir.join(container_name),
+            &[crate::isolation::state::IsolationRecord {
+                workspace: "workspace".into(),
+                mount_dst: "/workspace".into(),
+                original_src: "/host/workspace".into(),
+                isolation: crate::isolation::MountIsolation::Worktree,
+                worktree_path: "/tmp/worktree".into(),
+                scratch_branch: "jackin/test".into(),
+                base_commit: "abc123".into(),
+                selector_key: "agent-smith".into(),
+                container_name: container_name.into(),
+                cleanup_status: crate::isolation::state::CleanupStatus::PreservedDirty,
+            }],
+        )
+        .unwrap();
+
+        let label = restore_candidate_label(&paths, &manifest);
+
+        assert!(label.contains("k7p9m2xq"), "{label}");
+        assert!(label.contains("status:preserved_dirty"), "{label}");
+        assert!(label.contains("agent:codex"), "{label}");
+        assert!(label.contains("role:agent-smith"), "{label}");
+        assert!(label.contains("mounts:1 dirty:1 unpushed:0"), "{label}");
+        assert!(label.contains("attach:exit:137"), "{label}");
+        assert!(!label.contains(container_name), "{label}");
     }
 
     #[test]
