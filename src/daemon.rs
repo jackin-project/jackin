@@ -30,22 +30,13 @@ const SYSTEMD_UNIT: &str = "jackin-daemon.service";
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Request {
     #[serde(rename = "daemon/hello")]
-    Hello {
-        protocol: u32,
-    },
+    Hello { protocol: u32 },
     #[serde(rename = "workspace/list")]
-    WorkspaceList {
-        protocol: u32,
-    },
+    WorkspaceList { protocol: u32 },
     #[serde(rename = "session/list")]
-    SessionList {
-        protocol: u32,
-    },
+    SessionList { protocol: u32 },
     #[serde(rename = "github/my_open_prs")]
-    GithubMyOpenPrs {
-        protocol: u32,
-        limit: Option<usize>,
-    },
+    GithubMyOpenPrs { protocol: u32, limit: Option<usize> },
     #[serde(rename = "github/project_inbox")]
     GithubProjectInbox {
         protocol: u32,
@@ -77,15 +68,13 @@ enum Request {
         protocol: u32,
         refresh: Option<bool>,
     },
-    Status {
-        protocol: u32,
-    },
-    Shutdown {
-        protocol: u32,
-    },
-    WarmCache {
-        protocol: u32,
-    },
+    #[serde(rename = "daemon/status", alias = "status")]
+    Status { protocol: u32 },
+    #[serde(rename = "daemon/shutdown", alias = "shutdown")]
+    Shutdown { protocol: u32 },
+    #[serde(rename = "daemon/warm_cache", alias = "warm_cache")]
+    WarmCache { protocol: u32 },
+    #[serde(rename = "notification/send", alias = "notify")]
     Notify {
         protocol: u32,
         title: String,
@@ -112,6 +101,7 @@ enum Response {
     DesktopAction(DesktopActionResponse),
     #[serde(rename = "account/status")]
     AccountStatus(AccountStatusResponse),
+    #[serde(rename = "daemon/status")]
     Status(StatusResponse),
     Error {
         message: String,
