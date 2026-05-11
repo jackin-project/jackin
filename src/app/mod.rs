@@ -207,7 +207,7 @@ pub fn run(cli: Cli) -> Result<()> {
             } else if new {
                 HardlineAction::NewSession
             } else if explicit_selector {
-                HardlineAction::Reconnect
+                prompt_explicit_hardline_action_if_multiple_sessions(&container, &mut runner)?
             } else {
                 prompt_hardline_action(&container)?
             };
@@ -1458,6 +1458,37 @@ enum HardlineAction {
 }
 
 fn prompt_hardline_action(container: &str) -> Result<HardlineAction> {
+    prompt_hardline_action_with_prompt(&format!(
+        "Instance `{container}` is available. Choose hardline action:"
+    ))
+}
+
+fn prompt_explicit_hardline_action_if_multiple_sessions(
+    container: &str,
+    runner: &mut impl crate::docker::CommandRunner,
+) -> Result<HardlineAction> {
+    use std::io::IsTerminal;
+
+    if !std::io::stdin().is_terminal() {
+        return Ok(HardlineAction::Reconnect);
+    }
+    let state = runtime::inspect_container_state(runner, container);
+    let sessions = runtime::inspect_agent_sessions(runner, container, &state);
+    if !has_multiple_agent_sessions(&sessions) {
+        return Ok(HardlineAction::Reconnect);
+    }
+    prompt_hardline_action_with_prompt(&format!(
+        "Instance `{}` has multiple detected agent sessions ({}). Docker can reconnect the original container TTY or start another foreground session. Choose hardline action:",
+        container,
+        runtime::describe_agent_session_count(&sessions)
+    ))
+}
+
+const fn has_multiple_agent_sessions(sessions: &runtime::AgentSessionInventory) -> bool {
+    matches!(sessions, runtime::AgentSessionInventory::Sessions(items) if items.len() > 1)
+}
+
+fn prompt_hardline_action_with_prompt(prompt: &str) -> Result<HardlineAction> {
     use std::io::IsTerminal;
 
     if !std::io::stdin().is_terminal() {
@@ -1466,10 +1497,7 @@ fn prompt_hardline_action(container: &str) -> Result<HardlineAction> {
 
     let options = hardline_action_options();
     let labels: Vec<&str> = options.iter().map(|(label, _)| *label).collect();
-    let choice = tui::prompt_choice(
-        &format!("Instance `{container}` is available. Choose hardline action:"),
-        &labels,
-    )?;
+    let choice = tui::prompt_choice(prompt, &labels)?;
     Ok(options[choice].1)
 }
 
@@ -2052,6 +2080,31 @@ mod auth_set_tests {
         assert_eq!(options[3].1, HardlineAction::Cancel);
         assert!(options[1].0.contains("agent session"));
         assert!(options[2].0.contains("Inspect"));
+    }
+
+    #[test]
+    fn explicit_hardline_prompts_only_for_multiple_agent_sessions() {
+        assert!(!has_multiple_agent_sessions(
+            &runtime::AgentSessionInventory::NotRunning
+        ));
+        assert!(!has_multiple_agent_sessions(
+            &runtime::AgentSessionInventory::Sessions(vec![runtime::AgentSession {
+                pid: "1".to_string(),
+                command: "claude".to_string(),
+            }])
+        ));
+        assert!(has_multiple_agent_sessions(
+            &runtime::AgentSessionInventory::Sessions(vec![
+                runtime::AgentSession {
+                    pid: "1".to_string(),
+                    command: "claude".to_string(),
+                },
+                runtime::AgentSession {
+                    pid: "2".to_string(),
+                    command: "codex".to_string(),
+                },
+            ])
+        ));
     }
 
     #[test]

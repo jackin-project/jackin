@@ -13,7 +13,7 @@ Reconnect your terminal to an agent container. Use this when you've closed your 
 
 A `hardline` is the direct line back into an agent session that's already running — the operator's way to step back inside without loading a fresh instance.
 
-When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspace or ad-hoc directory from the local instance index, prompts for an instance when more than one matches, then prompts for the action: reconnect/recover, start another foreground agent session, inspect, or cancel. If you pass a role selector, `jackin hardline` targets that class's primary container. If you have multiple instances, use the instance ID or full container name to pick a specific one.
+When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspace or ad-hoc directory from the local instance index, prompts for an instance when more than one matches, then prompts for the action: reconnect/recover, start another foreground agent session, inspect, or cancel. If you pass a role selector, `jackin hardline` targets that class's primary container. If you pass an exact instance or container selector and jackin detects multiple running agent processes in that container, it prompts for the safe action instead of blindly attaching. If you have multiple instances, use the instance ID or full container name to pick a specific one.
 
 ## Arguments
 
@@ -53,7 +53,7 @@ For ad-hoc instances, `jackin hardline <instance-id>` normally expects the origi
 
 `--new` requires a running indexed instance. It starts a second agent process inside that container with the same mounts, Docker-in-Docker sidecar, working directory, and in-container state. This is useful when you want a separate foreground session without creating a fresh jackin instance. If the selected container is stopped or missing, run plain `jackin hardline` first so jackin can restart or rebuild it.
 
-When `jackin hardline` resolves an instance from the current directory without an explicit selector or option, the same actions are available through an interactive picker. Candidate labels include the detected live agent-session count when Docker can inspect a running role container. Non-interactive runs default to reconnect/recover.
+When `jackin hardline` resolves an instance from the current directory without an explicit selector or option, the same actions are available through an interactive picker. Candidate labels include the detected live agent-session count when Docker can inspect a running role container. Exact selectors also show the action picker when multiple running agent processes are detected. Non-interactive runs default to reconnect/recover.
 
 ## Terminal close vs. exit
 
