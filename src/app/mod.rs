@@ -1364,6 +1364,8 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
         mode: String,
         #[tabled(rename = "Isolation")]
         isolation: String,
+        #[tabled(rename = "Type")]
+        kind: String,
     }
     #[derive(Tabled)]
     struct GlobalMountRowWithScope {
@@ -1433,6 +1435,7 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
                     "read-write".to_string()
                 },
                 isolation: m.isolation.as_str().to_string(),
+                kind: crate::console::manager::mount_info::inspect(&m.src).label(),
             })
             .collect();
         let mut mount_table = Table::new(mount_rows);
@@ -1531,18 +1534,23 @@ mod auth_set_tests {
 
     #[test]
     fn workspace_show_includes_isolation_column() {
+        let temp = tempfile::tempdir().unwrap();
+        let worktree_src = temp.path().join("x");
+        let cache_src = temp.path().join("cache");
+        std::fs::create_dir_all(&worktree_src).unwrap();
+        std::fs::create_dir_all(&cache_src).unwrap();
         let ws = crate::workspace::WorkspaceConfig {
             version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/workspace/jackin".into(),
             mounts: vec![
                 crate::workspace::MountConfig {
-                    src: "/tmp/x".into(),
+                    src: worktree_src.display().to_string(),
                     dst: "/workspace/jackin".into(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Worktree,
                 },
                 crate::workspace::MountConfig {
-                    src: "/tmp/cache".into(),
+                    src: cache_src.display().to_string(),
                     dst: "/workspace/cache".into(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
@@ -1564,6 +1572,8 @@ mod auth_set_tests {
         };
         let out = render_workspace_show(&AppConfig::default(), "jackin", &ws);
         assert!(out.contains("Isolation"));
+        assert!(out.contains("Type"));
+        assert!(out.contains("folder"));
         assert!(out.contains("worktree"));
         assert!(out.contains("shared"));
     }
