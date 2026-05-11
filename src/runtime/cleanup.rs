@@ -1,4 +1,5 @@
 use crate::docker::CommandRunner;
+use crate::instance::InstanceIndex;
 use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 use owo_colors::OwoColorize;
@@ -6,7 +7,11 @@ use owo_colors::OwoColorize;
 use super::discovery::{capture_managed_container_rows, list_managed_role_names, list_role_names};
 use super::naming::{FILTER_KIND_DIND, FILTER_MANAGED, dind_certs_volume};
 
-pub fn purge_class_data(paths: &JackinPaths, selector: &RoleSelector) -> anyhow::Result<()> {
+pub fn purge_class_data(
+    paths: &JackinPaths,
+    selector: &RoleSelector,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
     if !paths.data_dir.exists() {
         return Ok(());
     }
@@ -15,11 +20,28 @@ pub fn purge_class_data(paths: &JackinPaths, selector: &RoleSelector) -> anyhow:
         let entry = entry?;
         let file_name = entry.file_name().to_string_lossy().to_string();
         if crate::instance::class_family_matches(selector, &file_name) {
-            crate::instance::InstanceIndex::mark_purged(&paths.data_dir, &file_name)?;
-            std::fs::remove_dir_all(entry.path())?;
+            purge_container_state(paths, &file_name, runner)?;
         }
     }
 
+    Ok(())
+}
+
+pub fn purge_container_state(
+    paths: &JackinPaths,
+    container_name: &str,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    ensure_role_resources_absent_for_purge(runner, container_name)?;
+    crate::isolation::cleanup::purge_isolated_for_container(
+        &paths.data_dir.join(container_name),
+        runner,
+    )?;
+    InstanceIndex::mark_purged(&paths.data_dir, container_name)?;
+    let state_dir = paths.data_dir.join(container_name);
+    if state_dir.exists() {
+        std::fs::remove_dir_all(state_dir)?;
+    }
     Ok(())
 }
 
@@ -234,6 +256,39 @@ pub fn ensure_role_not_running(
     Ok(())
 }
 
+fn ensure_role_resources_absent_for_purge(
+    runner: &mut impl CommandRunner,
+    container_name: &str,
+) -> anyhow::Result<()> {
+    ensure_container_absent_for_purge(runner, container_name, "role container")?;
+    ensure_container_absent_for_purge(runner, &format!("{container_name}-dind"), "DinD sidecar")
+}
+
+fn ensure_container_absent_for_purge(
+    runner: &mut impl CommandRunner,
+    container_name: &str,
+    resource_label: &str,
+) -> anyhow::Result<()> {
+    match super::attach::inspect_container_state(runner, container_name) {
+        super::attach::ContainerState::NotFound => Ok(()),
+        super::attach::ContainerState::Running => {
+            anyhow::bail!(
+                "cannot purge local state because {resource_label} `{container_name}` still exists and is running; run `jackin eject {container_name} --purge` to remove Docker resources and local state together"
+            )
+        }
+        super::attach::ContainerState::Stopped { .. } => {
+            anyhow::bail!(
+                "cannot purge local state because {resource_label} `{container_name}` still exists but is stopped; run `jackin eject {container_name} --purge` to remove Docker resources and local state together"
+            )
+        }
+        super::attach::ContainerState::InspectUnavailable(reason) => {
+            anyhow::bail!(
+                "cannot purge local state for `{container_name}` because Docker resource state could not be inspected: {reason}"
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod purge_guard_tests {
     use super::*;
@@ -349,7 +404,8 @@ mod tests {
         std::fs::create_dir_all(paths.data_dir.join("jackin-chainargos-the-architect")).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
 
-        purge_class_data(&paths, &selector).unwrap();
+        let mut runner = FakeRunner::default();
+        purge_class_data(&paths, &selector, &mut runner).unwrap();
 
         assert!(!paths.data_dir.join("jackin-agent-smith").exists());
         assert!(!paths.data_dir.join("jackin-agent-smith-clone-1").exists());
@@ -368,6 +424,43 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn purge_container_state_refuses_when_role_container_exists() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container = "jackin-agent-smith";
+        std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
+        let mut runner = FakeRunner::with_capture_queue(["false 0 false".to_string()]);
+
+        let err = purge_container_state(&paths, container, &mut runner).unwrap_err();
+
+        assert!(
+            err.to_string().contains("still exists but is stopped"),
+            "got: {err}"
+        );
+        assert!(err.to_string().contains("jackin eject"), "got: {err}");
+        assert!(paths.data_dir.join(container).exists());
+    }
+
+    #[test]
+    fn purge_container_state_refuses_when_dind_sidecar_exists() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container = "jackin-agent-smith";
+        std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
+        let mut runner =
+            FakeRunner::with_capture_queue([String::new(), "true 0 false".to_string()]);
+
+        let err = purge_container_state(&paths, container, &mut runner).unwrap_err();
+
+        assert!(err.to_string().contains("DinD sidecar"), "got: {err}");
+        assert!(
+            err.to_string().contains("still exists and is running"),
+            "got: {err}"
+        );
+        assert!(paths.data_dir.join(container).exists());
     }
 
     #[test]

@@ -1,8 +1,6 @@
 pub mod context;
 
 use anyhow::{Context, Result};
-use std::io::ErrorKind;
-use std::path::Path;
 
 use crate::cli::cleanup::{EjectArgs, PurgeArgs};
 use crate::cli::role::{ConsoleArgs, HardlineArgs, LoadArgs};
@@ -239,17 +237,8 @@ pub fn run(cli: Cli) -> Result<()> {
                         runtime::eject_role(container, &mut runner)
                             .with_context(|| format!("ejecting {container}"))?;
                         if purge {
-                            crate::isolation::cleanup::purge_isolated_for_container(
-                                &paths.data_dir.join(container),
-                                &mut runner,
-                            )
-                            .with_context(|| format!("purging isolated state for {container}"))?;
-                            instance::InstanceIndex::mark_purged(&paths.data_dir, container)
-                                .with_context(|| {
-                                    format!("marking instance index entry purged for {container}")
-                                })?;
-                            remove_data_dir_if_exists(&paths.data_dir.join(container))
-                                .with_context(|| format!("removing data dir for {container}"))?;
+                            runtime::purge_container_state(&paths, container, &mut runner)
+                                .with_context(|| format!("purging local state for {container}"))?;
                             println!("Ejected and purged {container}.");
                         } else {
                             println!("Ejected {container}.");
@@ -1105,45 +1094,24 @@ pub fn run(cli: Cli) -> Result<()> {
                 if all {
                     anyhow::bail!("--all applies only to role selectors, not instance IDs");
                 }
-                let short_name = container.trim_start_matches("jackin-");
-                runtime::ensure_role_not_running(&mut runner, short_name)?;
-                crate::isolation::cleanup::purge_isolated_for_container(
-                    &paths.data_dir.join(&container),
-                    &mut runner,
-                )?;
-                instance::InstanceIndex::mark_purged(&paths.data_dir, &container)?;
-                remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
+                runtime::purge_container_state(&paths, &container, &mut runner)?;
                 println!("Purged state for {container}.");
                 return Ok(());
             }
 
             match Selector::parse(&selector)? {
                 Selector::Container(container) => {
-                    let short_name = container.trim_start_matches("jackin-");
-                    runtime::ensure_role_not_running(&mut runner, short_name)?;
-                    crate::isolation::cleanup::purge_isolated_for_container(
-                        &paths.data_dir.join(&container),
-                        &mut runner,
-                    )?;
-                    instance::InstanceIndex::mark_purged(&paths.data_dir, &container)?;
-                    remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
+                    runtime::purge_container_state(&paths, &container, &mut runner)?;
                     println!("Purged state for {container}.");
                     Ok(())
                 }
                 Selector::Role(class) => {
                     if all {
-                        runtime::purge_class_data(&paths, &class)?;
+                        runtime::purge_class_data(&paths, &class, &mut runner)?;
                         println!("Purged all state for {}.", class.key());
                     } else {
                         let container = instance::primary_container_name(&class);
-                        let short_name = container.trim_start_matches("jackin-");
-                        runtime::ensure_role_not_running(&mut runner, short_name)?;
-                        crate::isolation::cleanup::purge_isolated_for_container(
-                            &paths.data_dir.join(&container),
-                            &mut runner,
-                        )?;
-                        instance::InstanceIndex::mark_purged(&paths.data_dir, &container)?;
-                        remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
+                        runtime::purge_container_state(&paths, &container, &mut runner)?;
                         println!("Purged state for {container}.");
                     }
                     Ok(())
@@ -1417,14 +1385,6 @@ fn print_env_table(vars: &[(String, String)]) {
     let mut table = Table::new(rows);
     table.with(Style::modern_rounded());
     println!("{table}");
-}
-
-fn remove_data_dir_if_exists(path: &Path) -> Result<()> {
-    match std::fs::remove_dir_all(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error.into()),
-    }
 }
 
 fn resolve_instance_reference(paths: &JackinPaths, input: &str) -> Result<Option<String>> {

@@ -52,3 +52,5 @@ When you eject an agent:
 
 When you add `--purge`:
 - All of the above, plus the agent's persisted state (conversation history, forwarded credentials, `gh` state, plugins) is deleted
+
+Use `--purge` when Docker resources still exist and you want to delete local recovery state in the same operation. Plain `jackin purge` is local-state-only and refuses while the matching role container or DinD sidecar still exists.
