@@ -572,7 +572,9 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
     let mut global_title = " Global mounts ".to_string();
     match config.workspace_applicable_mount_rows(workspace) {
         crate::config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
-            global_title = format!(" Global mounts · {role} ");
+            if rows.iter().any(|row| row.scope.is_some()) {
+                global_title = format!(" Role global mounts · {role} ");
+            }
             let offset = state.pending.mounts.len() + 1;
             append_global_mount_lines(&mut global_lines, &rows, cursor, offset);
         }

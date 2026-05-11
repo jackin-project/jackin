@@ -330,12 +330,6 @@ fn render_details_pane(
             },
         )
     });
-    let global_mounts: Vec<crate::workspace::MountConfig> = match &global_display {
-        Some(crate::config::WorkspaceGlobalMountRows::Applicable { rows, .. }) => {
-            rows.iter().map(|row| row.mount.clone()).collect()
-        }
-        _ => Vec::new(),
-    };
     let agent_count = if state.inline_role_picker.is_some() {
         0
     } else {
@@ -346,10 +340,7 @@ fn render_details_pane(
     let mut constraints = vec![
         Constraint::Length(3),
         Constraint::Length(mount_block_height(mounts)),
-        Constraint::Length(global_mount_block_height(
-            global_display.as_ref(),
-            &global_mounts,
-        )),
+        Constraint::Length(global_mount_block_height(global_display.as_ref())),
     ];
     if show_envs {
         constraints.push(Constraint::Length(env_block_height(ws_config)));
@@ -372,7 +363,6 @@ fn render_details_pane(
         frame,
         rows[idx],
         global_display.as_ref(),
-        &global_mounts,
         state.list_global_mounts_scroll_x,
     );
     idx += 1;
@@ -410,16 +400,35 @@ fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
     (data_rows + 2 + 1).min(12) as u16
 }
 
-fn global_mount_block_height(
-    display: Option<&crate::config::WorkspaceGlobalMountRows>,
-    mounts: &[crate::workspace::MountConfig],
-) -> u16 {
+fn global_mount_block_height(display: Option<&crate::config::WorkspaceGlobalMountRows>) -> u16 {
     match display {
-        Some(crate::config::WorkspaceGlobalMountRows::Applicable { .. }) => {
-            mount_block_height(mounts)
+        Some(crate::config::WorkspaceGlobalMountRows::Applicable { rows, .. }) => {
+            let (global, scoped) = split_global_mount_rows(rows);
+            let mut h = 0;
+            if !global.is_empty() || scoped.is_empty() {
+                h += global_mount_rows_height(global.len());
+            }
+            if !scoped.is_empty() {
+                h += global_mount_rows_height(scoped.len());
+            }
+            h
         }
         Some(crate::config::WorkspaceGlobalMountRows::Ambiguous { .. }) | None => 4,
     }
+}
+
+fn global_mount_rows_height(count: usize) -> u16 {
+    let rows = if count == 0 { 1 } else { count * 2 };
+    (rows + 3).min(12) as u16
+}
+
+fn split_global_mount_rows(
+    rows: &[crate::config::GlobalMountRow],
+) -> (
+    Vec<&crate::config::GlobalMountRow>,
+    Vec<&crate::config::GlobalMountRow>,
+) {
+    rows.iter().partition(|row| row.scope.is_none())
 }
 
 /// Caller is expected to have gated on `workspace_has_any_env` —
@@ -669,38 +678,41 @@ fn render_global_mounts_subpanel(
     frame: &mut Frame,
     area: Rect,
     display: Option<&crate::config::WorkspaceGlobalMountRows>,
-    mounts: &[crate::workspace::MountConfig],
     scroll_x: u16,
 ) {
-    let title = match display {
-        Some(crate::config::WorkspaceGlobalMountRows::Applicable { role, .. }) => {
-            format!(" Global mounts · {role} ")
+    if let Some(crate::config::WorkspaceGlobalMountRows::Applicable { role, rows }) = display {
+        let (global, scoped) = split_global_mount_rows(rows);
+        let mut sections = Vec::new();
+        if !global.is_empty() || scoped.is_empty() {
+            sections.push((" Global mounts ".to_string(), global));
         }
-        _ => " Global mounts ".to_string(),
-    };
+        if !scoped.is_empty() {
+            sections.push((format!(" Role global mounts · {role} "), scoped));
+        }
+        let constraints: Vec<Constraint> = sections
+            .iter()
+            .map(|(_, rows)| Constraint::Length(global_mount_rows_height(rows.len())))
+            .collect();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(constraints)
+            .split(area);
+        for ((title, rows), chunk) in sections.into_iter().zip(chunks.iter()) {
+            render_global_mount_rows_section(frame, *chunk, &title, &rows, scroll_x);
+        }
+        return;
+    }
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
-            title,
+            " Global mounts ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
 
     let mut lines: Vec<Line> = Vec::new();
     match display {
-        Some(crate::config::WorkspaceGlobalMountRows::Applicable { .. }) => {
-            if mounts.is_empty() {
-                lines.push(Line::from(Span::styled(
-                    "  (none)",
-                    Style::default().fg(PHOSPHOR_DIM),
-                )));
-            } else {
-                let rows = format_mount_rows(mounts);
-                let path_w = mount_path_width(&rows);
-                lines.push(render_global_mount_header(path_w));
-                lines.extend(render_global_mount_lines(&rows, path_w));
-            }
-        }
         Some(crate::config::WorkspaceGlobalMountRows::Ambiguous { candidates }) => {
             let suffix = if candidates.is_empty() {
                 "selected role affects global mount visibility".to_string()
@@ -719,8 +731,46 @@ fn render_global_mounts_subpanel(
             "  (workspace missing)",
             Style::default().fg(PHOSPHOR_DIM),
         ))),
+        Some(crate::config::WorkspaceGlobalMountRows::Applicable { .. }) => unreachable!(),
     }
 
+    let content_width = super::max_line_width(&lines);
+    let p = Paragraph::new(lines)
+        .block(block)
+        .scroll((0, scroll_x))
+        .style(Style::default().fg(PHOSPHOR_GREEN));
+    frame.render_widget(p, area);
+    super::render_horizontal_scrollbar(frame, area, content_width, scroll_x);
+}
+
+fn render_global_mount_rows_section(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    rows: &[&crate::config::GlobalMountRow],
+    scroll_x: u16,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            title.to_string(),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let mut lines = Vec::new();
+    if rows.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (none)",
+            Style::default().fg(PHOSPHOR_DIM),
+        )));
+    } else {
+        let mounts: Vec<crate::workspace::MountConfig> =
+            rows.iter().map(|row| row.mount.clone()).collect();
+        let display_rows = format_mount_rows(&mounts);
+        let path_w = mount_path_width(&display_rows);
+        lines.push(render_global_mount_header(path_w));
+        lines.extend(render_global_mount_lines(&display_rows, path_w));
+    }
     let content_width = super::max_line_width(&lines);
     let p = Paragraph::new(lines)
         .block(block)
