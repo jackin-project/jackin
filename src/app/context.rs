@@ -300,9 +300,10 @@ pub(crate) fn resolve_running_container_from_context(
         ),
         [only] => Ok(only.clone()),
         _ => {
-            let option_refs: Vec<&str> = candidates.iter().map(String::as_str).collect();
+            let options = hardline_candidate_prompt_options(paths, &candidates, runner);
+            let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
             let choice = tui::prompt_choice(
-                &format!("Workspace {name:?} has multiple running roles. Select one:"),
+                &format!("Workspace {name:?} has multiple matching instances. Select one:"),
                 &option_refs,
             )?;
             Ok(candidates.swap_remove(choice))
@@ -323,13 +324,105 @@ fn resolve_ad_hoc_container_from_context(
         [] => anyhow::bail!("no matching ad-hoc instances found"),
         [only] => Ok(only.clone()),
         _ => {
-            let option_refs: Vec<&str> = candidates.iter().map(String::as_str).collect();
+            let options = hardline_candidate_prompt_options(paths, &candidates, runner);
+            let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
             let choice = tui::prompt_choice(
                 "Current directory has multiple ad-hoc instances. Select one:",
                 &option_refs,
             )?;
             Ok(candidates.swap_remove(choice))
         }
+    }
+}
+
+fn hardline_candidate_prompt_options(
+    paths: &JackinPaths,
+    candidates: &[String],
+    runner: &mut impl docker::CommandRunner,
+) -> Vec<String> {
+    candidates
+        .iter()
+        .map(|container| hardline_candidate_prompt_label(paths, container, runner))
+        .collect()
+}
+
+fn hardline_candidate_prompt_label(
+    paths: &JackinPaths,
+    container: &str,
+    runner: &mut impl docker::CommandRunner,
+) -> String {
+    let docker_state = match runtime::inspect_container_state(runner, container) {
+        runtime::ContainerState::Running => "docker:running".to_string(),
+        runtime::ContainerState::Stopped {
+            exit_code,
+            oom_killed: false,
+        } => format!("docker:stopped exit:{exit_code}"),
+        runtime::ContainerState::Stopped {
+            oom_killed: true, ..
+        } => "docker:stopped oom_killed".to_string(),
+        runtime::ContainerState::NotFound => "docker:missing".to_string(),
+        runtime::ContainerState::InspectUnavailable(_) => "docker:unavailable".to_string(),
+    };
+
+    let state_dir = paths.data_dir.join(container);
+    let Ok(manifest) = instance::InstanceManifest::read(&state_dir) else {
+        return format!("{container} - {docker_state}");
+    };
+    let isolation = hardline_candidate_isolation_summary(&state_dir);
+    format!(
+        "{} - {} - {} - agent:{} - status:{} - {} - {}",
+        manifest.container_base,
+        manifest.workspace_label,
+        manifest.role_key,
+        manifest.agent_runtime,
+        instance_status_label(manifest.status),
+        docker_state,
+        isolation
+    )
+}
+
+fn hardline_candidate_isolation_summary(state_dir: &Path) -> String {
+    let Ok(records) = crate::isolation::state::read_records(state_dir) else {
+        return "mounts:unknown".to_string();
+    };
+    if records.is_empty() {
+        return "mounts:none".to_string();
+    }
+    let dirty = records
+        .iter()
+        .filter(|record| {
+            record.cleanup_status == crate::isolation::state::CleanupStatus::PreservedDirty
+        })
+        .count();
+    let unpushed = records
+        .iter()
+        .filter(|record| {
+            record.cleanup_status == crate::isolation::state::CleanupStatus::PreservedUnpushed
+        })
+        .count();
+    if dirty > 0 || unpushed > 0 {
+        return format!(
+            "mounts:{} dirty:{} unpushed:{}",
+            records.len(),
+            dirty,
+            unpushed
+        );
+    }
+    format!("mounts:{}", records.len())
+}
+
+const fn instance_status_label(status: instance::InstanceStatus) -> &'static str {
+    match status {
+        instance::InstanceStatus::Active => "active",
+        instance::InstanceStatus::Running => "running",
+        instance::InstanceStatus::CleanExited => "clean_exited",
+        instance::InstanceStatus::Crashed => "crashed",
+        instance::InstanceStatus::PreservedDirty => "preserved_dirty",
+        instance::InstanceStatus::PreservedUnpushed => "preserved_unpushed",
+        instance::InstanceStatus::RestoreAvailable => "restore_available",
+        instance::InstanceStatus::Superseded => "superseded",
+        instance::InstanceStatus::Purged => "purged",
+        instance::InstanceStatus::FailedSetup => "failed_setup",
     }
 }
 
@@ -985,6 +1078,47 @@ mod tests {
                 .unwrap();
 
         assert_eq!(container, "jackin-agentsmith-k7p9m2xq");
+    }
+
+    #[test]
+    fn hardline_candidate_prompt_label_includes_manifest_and_docker_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let container = "jackin-myapp-agentsmith-k7p9m2xq";
+        let mut manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
+            container_base: container,
+            workspace_name: Some("my-app"),
+            workspace_label: "my-app",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: instance::DockerResources {
+                role_container: container.to_string(),
+                dind_container: format!("{container}-dind"),
+                network: format!("{container}-net"),
+                certs_volume: format!("{container}-dind-certs"),
+            },
+        });
+        manifest.mark_status(instance::InstanceStatus::RestoreAvailable);
+        manifest.write(&paths.data_dir.join(container)).unwrap();
+        let mut runner = runtime::FakeRunner::default();
+        runner
+            .capture_queue
+            .push_back("false 137 false".to_string());
+
+        let label = hardline_candidate_prompt_label(&paths, container, &mut runner);
+
+        assert!(label.contains(container), "{label}");
+        assert!(label.contains("my-app"), "{label}");
+        assert!(label.contains("agent-smith"), "{label}");
+        assert!(label.contains("agent:claude"), "{label}");
+        assert!(label.contains("status:restore_available"), "{label}");
+        assert!(label.contains("docker:stopped exit:137"), "{label}");
     }
 
     #[test]
