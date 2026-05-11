@@ -271,10 +271,7 @@ fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
         Some(MountScrollFocus::Workspace) => apply(&mut state.list_mounts_scroll_x),
         Some(MountScrollFocus::Global) => apply(&mut state.list_global_mounts_scroll_x),
         Some(MountScrollFocus::RoleGlobal) => apply(&mut state.list_role_global_mounts_scroll_x),
-        None => {
-            state.list_scroll_focus = Some(MountScrollFocus::Workspace);
-            apply(&mut state.list_mounts_scroll_x);
-        }
+        None => {}
     }
 }
 

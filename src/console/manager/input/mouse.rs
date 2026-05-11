@@ -6,7 +6,8 @@ use ratatui::layout::Rect;
 
 use super::super::super::widgets::file_browser::FileBrowserState;
 use super::super::state::{
-    DragState, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus, clamp_split,
+    DragState, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
+    clamp_split,
 };
 
 /// Minimum terminal width (in columns) at which the list/details seam is
@@ -232,6 +233,10 @@ fn update_scroll_focus(
             };
         }
         ManagerStage::Editor(editor) => {
+            if editor.active_tab != EditorTab::Mounts {
+                editor.workspace_mounts_scroll_focused = false;
+                return;
+            }
             let area = editor_scroll_area(editor, term_size);
             editor.workspace_mounts_scroll_focused =
                 point_in(mouse, area.area) && is_scrollable(area.area, area.content_width);
@@ -293,7 +298,7 @@ fn scroll_active_panel(
         }
     };
     match &mut state.stage {
-        ManagerStage::List if state.list_scroll_focus.is_none() => {
+        ManagerStage::List => {
             update_scroll_focus(state, mouse, term_size, config);
             match state.list_scroll_focus {
                 Some(MountScrollFocus::Global) => apply(&mut state.list_global_mounts_scroll_x),
@@ -304,23 +309,18 @@ fn scroll_active_panel(
                 None => {}
             }
         }
-        ManagerStage::List => match state.list_scroll_focus {
-            Some(MountScrollFocus::Global) => apply(&mut state.list_global_mounts_scroll_x),
-            Some(MountScrollFocus::RoleGlobal) => {
-                apply(&mut state.list_role_global_mounts_scroll_x);
+        ManagerStage::Editor(editor) => {
+            if editor.active_tab != EditorTab::Mounts {
+                editor.workspace_mounts_scroll_focused = false;
+                return;
             }
-            Some(MountScrollFocus::Workspace) => apply(&mut state.list_mounts_scroll_x),
-            None => {}
-        },
-        ManagerStage::Editor(editor) if !editor.workspace_mounts_scroll_focused => {
             let area = editor_scroll_area(editor, term_size);
             if point_in(mouse, area.area) && is_scrollable(area.area, area.content_width) {
                 editor.workspace_mounts_scroll_focused = true;
                 apply(&mut editor.workspace_mounts_scroll_x);
+            } else {
+                editor.workspace_mounts_scroll_focused = false;
             }
-        }
-        ManagerStage::Editor(editor) => {
-            apply(&mut editor.workspace_mounts_scroll_x);
         }
         ManagerStage::GlobalMounts(global) => apply(&mut global.scroll_x),
         ManagerStage::CreatePrelude(_) | ManagerStage::ConfirmDelete { .. } => {}
@@ -616,10 +616,10 @@ mod mouse_drag_tests {
     //! These build `MouseEvent` values directly and bypass the ratatui
     //! event loop — enough to pin the seam hit-test + drag math without a
     //! real terminal.
-    use super::handle_mouse;
+    use super::{handle_mouse, handle_mouse_with_config};
     use crate::console::manager::state::{
         DEFAULT_SPLIT_PCT, EditorState, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage, ManagerState,
-        Modal,
+        Modal, MountScrollFocus,
     };
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -979,6 +979,15 @@ mod mouse_drag_tests {
         }
     }
 
+    const fn mouse_kind_at(kind: MouseEventKind, col: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column: col,
+            row,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
     /// Build a list state with `n` saved workspaces (row 0 + n + spacer + sentinel).
     fn list_state_with_saved(n: usize) -> ManagerState<'static> {
         let mut config = crate::config::AppConfig::default();
@@ -994,6 +1003,45 @@ mod mouse_drag_tests {
         }
         let tmp = tempfile::tempdir().unwrap();
         ManagerState::from_config(&config, tmp.path())
+    }
+
+    fn config_with_scrollable_workspace_and_global_mounts() -> crate::config::AppConfig {
+        let mut config = crate::config::AppConfig::default();
+        config.workspaces.insert(
+            "demo".into(),
+            WorkspaceConfig {
+                workdir: "/workspace/demo".into(),
+                mounts: vec![MountConfig {
+                    src: "/host/source/with/a/very/long/path/that/forces/workspace/mount/scrolling"
+                        .into(),
+                    dst: "/container/destination/with/a/very/long/path/that/forces/workspace/mount/scrolling"
+                        .into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                }],
+                ..Default::default()
+            },
+        );
+        config.add_mount(
+            "global-long",
+            MountConfig {
+                src: "/host/source/with/a/very/long/path/that/forces/global/mount/scrolling"
+                    .into(),
+                dst: "/container/destination/with/a/very/long/path/that/forces/global/mount/scrolling"
+                    .into(),
+                readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            None,
+        );
+        config
+    }
+
+    fn selected_demo_state(config: &crate::config::AppConfig) -> ManagerState<'static> {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(config, tmp.path());
+        state.selected = 1;
+        state
     }
 
     #[test]
@@ -1088,5 +1136,95 @@ mod mouse_drag_tests {
             state.selected, 0,
             "seam-click must not change selection even when y lands on a list row"
         );
+    }
+
+    #[test]
+    fn click_scrollable_mount_block_focuses_it() {
+        let config = config_with_scrollable_workspace_and_global_mounts();
+        let mut state = selected_demo_state(&config);
+
+        // Right pane starts at x=30 for a 100-col terminal. Workspace mounts
+        // block starts at y=6 after General's 3 rows.
+        handle_mouse_with_config(&mut state, mouse_at(31, 7), term(100), Some(&config));
+
+        assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Workspace));
+    }
+
+    #[test]
+    fn click_non_scrollable_area_clears_mount_focus() {
+        let config = config_with_scrollable_workspace_and_global_mounts();
+        let mut state = selected_demo_state(&config);
+        state.list_scroll_focus = Some(MountScrollFocus::Workspace);
+
+        // y=4 is inside the General block, which is not a horizontal-scroll
+        // target.
+        handle_mouse_with_config(&mut state, mouse_at(31, 4), term(100), Some(&config));
+
+        assert_eq!(state.list_scroll_focus, None);
+    }
+
+    #[test]
+    fn horizontal_mouse_wheel_scrolls_block_under_pointer() {
+        let config = config_with_scrollable_workspace_and_global_mounts();
+        let mut state = selected_demo_state(&config);
+        state.list_scroll_focus = Some(MountScrollFocus::Workspace);
+
+        // Global mounts block starts immediately after General (3 rows) and
+        // the one-mount Workspace mounts block (5 rows): y=11.
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollRight, 31, 12),
+            term(100),
+            Some(&config),
+        );
+
+        assert_eq!(state.list_mounts_scroll_x, 0);
+        assert_eq!(state.list_global_mounts_scroll_x, 8);
+        assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Global));
+    }
+
+    #[test]
+    fn editor_mounts_tab_horizontal_wheel_requires_mounts_tab() {
+        let mut state = list_state();
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![MountConfig {
+                src: "/host/source/with/a/very/long/path/that/forces/editor/mount/scrolling"
+                    .into(),
+                dst: "/container/destination/with/a/very/long/path/that/forces/editor/mount/scrolling"
+                    .into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }],
+            ..Default::default()
+        };
+        let mut editor = EditorState::new_edit("x".into(), ws);
+        editor.active_tab = crate::console::manager::state::EditorTab::Mounts;
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollRight, 10, 6),
+            term(100),
+            None,
+        );
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(editor.workspace_mounts_scroll_focused);
+        assert_eq!(editor.workspace_mounts_scroll_x, 8);
+
+        editor.active_tab = crate::console::manager::state::EditorTab::General;
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollRight, 10, 6),
+            term(100),
+            None,
+        );
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(!editor.workspace_mounts_scroll_focused);
+        assert_eq!(editor.workspace_mounts_scroll_x, 8);
     }
 }
