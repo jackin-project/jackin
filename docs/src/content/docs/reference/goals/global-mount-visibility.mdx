@@ -2,7 +2,7 @@
 title: "Global Mount Visibility goal prompt"
 ---
 
-This page is an execution prompt, not the product proposal. Copy the prompt
+This page is an execution prompt, not the product plan. Copy the prompt
 below when starting the implementation goal.
 
 Source of truth:
@@ -39,12 +39,13 @@ Context:
   - src/console/manager/state.rs
 
 Product goal:
-Build global mount visibility and editing so operators can understand and
-manage effective Gradle, Cargo, and other global cache mounts without confusing
-global operator config with per-workspace config. Workspace views should answer
-"what will this container see?" while clearly showing which rows come from the
-workspace file and which rows come from global config. Global mounts must be
-editable from a dedicated global-config TUI surface, not from workspace screens.
+Deliver the full Global Mount Visibility roadmap item. Operators must be able to
+understand and manage effective Gradle, Cargo, and other global cache mounts
+without confusing global operator config with per-workspace config. Workspace
+views must answer "what will this container see?" while clearly showing which
+rows come from the workspace file and which rows come from global config.
+Global mounts must be editable from a dedicated global-config TUI surface, not
+from workspace screens.
 
 Required behavior:
 - `jackin workspace show <name>` displays saved workspace mounts and applicable
@@ -72,7 +73,9 @@ Required behavior:
 Constraints:
 - Work autonomously and silently until the goal is complete or a real blocker
   prevents completion.
-- Implement the full roadmap item in one pull request.
+- Implement the full roadmap item in one pull request. Do not stop after a
+  design-only, docs-only, CLI-only, or TUI-only slice.
+- Treat every Required behavior item as an acceptance criterion for the goal.
 - Keep workspace-owned configuration and global operator configuration separate
   in code, UI labels, TUI state, and persistence.
 - Reuse existing config editor and mount-resolution primitives where practical.

@@ -3,7 +3,7 @@ title: "Global Mount Visibility"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open — design proposal
+**Status**: Open — implementation-ready goal
 
 ## Problem
 
@@ -23,7 +23,7 @@ Show effective mounts in workspace inspection and workspace-edit surfaces while 
 
 ### CLI
 
-`jackin workspace show <name>` should display workspace mounts and applicable global mounts in separate groups:
+`jackin workspace show <name>` must display workspace mounts and applicable global mounts in separate groups:
 
 ```text
 Workspace mounts:
@@ -34,31 +34,31 @@ Global mounts:
   ~/.cache/jackin/global/cargo/registry -> /home/agent/.cargo/registry  rw
 ```
 
-The global group should include role-scoped global mounts only when the workspace has enough role context to decide applicability:
+The global group must include role-scoped global mounts only when the workspace has enough role context to decide applicability:
 
 - If the workspace has one allowed/default/last role, show mounts for that role and label the scope.
-- If multiple roles could launch the workspace, either show a role-filtered subsection per role or print a short note that global mounts depend on the selected role.
+- If multiple roles can launch the workspace, show a role-filtered subsection per role or print a short note that global mounts depend on the selected role.
 
 ### Console
 
-The workspace panel and the workspace editor's **Mounts** tab should separate mount origins visually. A single mixed table is too easy to misread because global mounts are not edited from the workspace editor.
+The workspace panel and the workspace editor's **Mounts** tab must separate mount origins visually. A single mixed table is too easy to misread because global mounts are not edited from the workspace editor.
 
-Recommended shape:
+Required shape:
 
 - Keep the existing **Mounts** panel for saved workspace mounts.
 - Add a **Global mounts** panel below it, or add a section break inside the panel with a clear label.
 - Include the global mount scope when it is not unscoped, for example `global` or `chainargos/*`.
-- Treat global mounts as not editable from the workspace editor. Editing them belongs to `jackin config mount` today and to a future global-config TUI page later.
+- Treat global mounts as not editable from the workspace editor. Editing them belongs to `jackin config mount` today and to the dedicated global-config TUI page delivered by this goal.
 
 ### Workspace editor
 
-In `edit workspace -> Mounts`, global rows should be visible for orientation but excluded from workspace-edit actions:
+In `edit workspace -> Mounts`, global rows must be visible for orientation but excluded from workspace-edit actions:
 
 - `D remove` applies only to saved workspace mounts.
 - `R toggle ro/rw` applies only to saved workspace mounts.
 - `I cycle isolation` applies only to saved workspace mounts.
 - `+ Add mount` continues to add a workspace mount, not a global mount.
-- Selecting a global mount should either show disabled action hints or a short status message such as `global mount — edit from config mounts`.
+- Selecting a global mount must show disabled action hints or a short status message such as `global mount — edit from config mounts`.
 
 The visual grouping matters here even more than in the read-only workspace panel because the footer lists mutating actions. The operator must be able to tell which rows those actions can affect before pressing a key.
 
@@ -78,7 +78,7 @@ For jackin's terminal UI, this means adapting the intent rather than copying vis
 - Use current-system mental models: **Settings** / **Global config**, sidebars, tabs, segmented choices, disabled states, and clear detail panels.
 - Do not optimize for old macOS conventions or backwards-looking UI compatibility. The target is the latest Apple platform behavior and expectations.
 
-Recommended placement:
+Required placement:
 
 - Add a top-level console area outside the workspace editor, for example a left-nav item named **Global config** or **Settings**.
 - Inside that area, add a **Global mounts** tab.
@@ -86,7 +86,7 @@ Recommended placement:
 
 ### Global mounts list
 
-The global mounts page should show every configured global mount with:
+The global mounts page must show every configured global mount with:
 
 - Name
 - Source
@@ -95,7 +95,7 @@ The global mounts page should show every configured global mount with:
 - Scope (`global`, `chainargos/*`, `scentbird/*`, etc.)
 - Type (`folder`, `file`, `missing source`, sensitive path warning when applicable)
 
-Suggested table shape:
+Required table shape:
 
 ```text
 Global mounts
@@ -108,7 +108,7 @@ team-secrets       ~/.company/secrets                      /secrets             
 
 ### Editing operations
 
-The global mounts page should support the same conceptual operations as `jackin config mount`:
+The global mounts page must support the same conceptual operations as `jackin config mount`:
 
 - Add global mount
 - Edit source
@@ -118,28 +118,28 @@ The global mounts page should support the same conceptual operations as `jackin 
 - Rename mount
 - Remove mount
 
-The editor should validate the same rules as the CLI:
+The editor must validate the same rules as the CLI:
 
 - Source must exist before saving.
 - Destination must be absolute.
-- Duplicate destinations within the same effective scope should be rejected before launch.
-- Sensitive source paths should use the same warning-and-confirm flow as other mount entry points.
+- Duplicate destinations within the same effective scope must be rejected before launch.
+- Sensitive source paths must use the same warning-and-confirm flow as other mount entry points.
 
 ### Scope editing
 
 Scope needs a deliberate UI because it is the main difference between a workspace mount and a global mount.
 
-Recommended control:
+Required control:
 
 - A segmented choice for `All roles` vs `Scoped`.
 - When `Scoped` is selected, show a text input for the glob pattern.
 - Preserve the current CLI semantics: examples include `chainargos/*` and `chainargos/agent-brown`.
 
-The global mounts list should keep scope visible in the main table so an operator can immediately see why a mount applies to one workspace but not another.
+The global mounts list must keep scope visible in the main table so an operator can immediately see why a mount applies to one workspace but not another.
 
 ### Relationship to workspace views
 
-Workspace screens should consume global mount data, but not own it:
+Workspace screens consume global mount data, but do not own it:
 
 - Workspace overview: show applicable global mounts in a separate read-only section.
 - Workspace editor: show applicable global mounts in a separate read-only section or panel; workspace edit actions do not affect them.
@@ -154,10 +154,10 @@ This feature intentionally writes host-side jackin operator configuration only w
 ## Implementation Notes
 
 - The runtime already resolves global + workspace + load-time mounts for launch. Reuse that resolver for display, but keep display rows tagged with their source: `global`, `workspace`, or `load-time` when relevant.
-- Conflict behavior should stay unchanged: duplicate destinations still fail rather than letting one mount silently win.
-- The console should not offer edit actions for global mounts inside the workspace editor unless it explicitly switches to a global-config editing flow.
-- The global mounts TUI should call through the same config editor primitives used by `jackin config mount add/list/remove` rather than introducing a second persistence path.
-- Because global mounts live in `~/.config/jackin/config.toml`, saving from the global mounts page is a global config write, not a workspace file write. The save confirmation and dirty-state prompt should say that explicitly.
+- Conflict behavior stays unchanged: duplicate destinations still fail rather than letting one mount silently win.
+- The console must not offer edit actions for global mounts inside the workspace editor unless it explicitly switches to a global-config editing flow.
+- The global mounts TUI must call through the same config editor primitives used by `jackin config mount add/list/remove` rather than introducing a second persistence path.
+- Because global mounts live in `~/.config/jackin/config.toml`, saving from the global mounts page is a global config write, not a workspace file write. The save confirmation and dirty-state prompt must say that explicitly.
 
 ## Related Files
 
