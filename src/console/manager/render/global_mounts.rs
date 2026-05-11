@@ -80,13 +80,16 @@ pub(super) fn render_global_mounts(frame: &mut Frame, state: &GlobalMountsState<
         )));
     }
     let content_width = super::max_line_width(&lines);
+    let scroll_x = super::effective_scroll_x(
+        content_width,
+        chunks[1].width.saturating_sub(2) as usize,
+        state.scroll_x,
+    );
     frame.render_widget(
-        Paragraph::new(lines)
-            .block(block)
-            .scroll((0, state.scroll_x)),
+        Paragraph::new(lines).block(block).scroll((0, scroll_x)),
         chunks[1],
     );
-    super::render_horizontal_scrollbar(frame, chunks[1], content_width, state.scroll_x);
+    super::render_horizontal_scrollbar(frame, chunks[1], content_width, scroll_x);
 
     let mut items = vec![
         FooterItem::Key("A"),

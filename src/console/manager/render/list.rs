@@ -10,7 +10,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use super::super::state::{ManagerListRow, ManagerState, WorkspaceSummary};
+use super::super::state::{ManagerListRow, ManagerState, MountScrollFocus, WorkspaceSummary};
 use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::config::AppConfig;
 
@@ -357,13 +357,21 @@ fn render_details_pane(
     let mut idx = 0;
     render_general_subpanel(frame, rows[idx], ws);
     idx += 1;
-    render_mounts_subpanel(frame, rows[idx], mounts, state.list_mounts_scroll_x);
+    render_mounts_subpanel(
+        frame,
+        rows[idx],
+        mounts,
+        state.list_mounts_scroll_x,
+        state.list_scroll_focus == Some(MountScrollFocus::Workspace),
+    );
     idx += 1;
     render_global_mounts_subpanel(
         frame,
         rows[idx],
         global_display.as_ref(),
         state.list_global_mounts_scroll_x,
+        state.list_role_global_mounts_scroll_x,
+        state.list_scroll_focus,
     );
     idx += 1;
     if show_envs {
@@ -519,7 +527,7 @@ fn render_current_dir_details_pane(
         rows[0],
     );
 
-    render_mounts_subpanel(frame, rows[1], &mounts, 0);
+    render_mounts_subpanel(frame, rows[1], &mounts, 0, false);
 
     // Roles block — reuse the no-`ws_config` branch of the shared renderer,
     // which lists every globally-configured role (without per-role
@@ -637,10 +645,16 @@ fn render_mounts_subpanel(
     area: Rect,
     mounts: &[crate::workspace::MountConfig],
     scroll_x: u16,
+    focused: bool,
 ) {
+    let border = if focused {
+        PHOSPHOR_GREEN
+    } else {
+        PHOSPHOR_DARK
+    };
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(border))
         .title(Span::styled(
             " Mounts ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
@@ -666,6 +680,11 @@ fn render_mounts_subpanel(
     }
 
     let content_width = super::max_line_width(&lines);
+    let scroll_x = super::effective_scroll_x(
+        content_width,
+        area.width.saturating_sub(2) as usize,
+        scroll_x,
+    );
     let p = Paragraph::new(lines)
         .block(block)
         .scroll((0, scroll_x))
@@ -678,7 +697,9 @@ fn render_global_mounts_subpanel(
     frame: &mut Frame,
     area: Rect,
     display: Option<&crate::config::WorkspaceGlobalMountRows>,
-    scroll_x: u16,
+    global_scroll_x: u16,
+    role_scroll_x: u16,
+    focused: Option<MountScrollFocus>,
 ) {
     if let Some(crate::config::WorkspaceGlobalMountRows::Applicable { role, rows }) = display {
         let (global, scoped) = split_global_mount_rows(rows);
@@ -698,14 +719,39 @@ fn render_global_mounts_subpanel(
             .constraints(constraints)
             .split(area);
         for ((title, rows), chunk) in sections.into_iter().zip(chunks.iter()) {
-            render_global_mount_rows_section(frame, *chunk, &title, &rows, scroll_x);
+            let is_role = title.starts_with(" Role global mounts ");
+            let scroll_x = if is_role {
+                role_scroll_x
+            } else {
+                global_scroll_x
+            };
+            let section_focused = focused
+                == Some(if is_role {
+                    MountScrollFocus::RoleGlobal
+                } else {
+                    MountScrollFocus::Global
+                });
+            render_global_mount_rows_section(
+                frame,
+                *chunk,
+                &title,
+                &rows,
+                scroll_x,
+                section_focused,
+            );
         }
         return;
     }
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(
+            Style::default().fg(if focused == Some(MountScrollFocus::Global) {
+                PHOSPHOR_GREEN
+            } else {
+                PHOSPHOR_DARK
+            }),
+        )
         .title(Span::styled(
             " Global mounts ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
@@ -735,6 +781,11 @@ fn render_global_mounts_subpanel(
     }
 
     let content_width = super::max_line_width(&lines);
+    let scroll_x = super::effective_scroll_x(
+        content_width,
+        area.width.saturating_sub(2) as usize,
+        global_scroll_x,
+    );
     let p = Paragraph::new(lines)
         .block(block)
         .scroll((0, scroll_x))
@@ -749,10 +800,15 @@ fn render_global_mount_rows_section(
     title: &str,
     rows: &[&crate::config::GlobalMountRow],
     scroll_x: u16,
+    focused: bool,
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(if focused {
+            PHOSPHOR_GREEN
+        } else {
+            PHOSPHOR_DARK
+        }))
         .title(Span::styled(
             title.to_string(),
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
@@ -772,6 +828,11 @@ fn render_global_mount_rows_section(
         lines.extend(render_global_mount_lines(&display_rows, path_w));
     }
     let content_width = super::max_line_width(&lines);
+    let scroll_x = super::effective_scroll_x(
+        content_width,
+        area.width.saturating_sub(2) as usize,
+        scroll_x,
+    );
     let p = Paragraph::new(lines)
         .block(block)
         .scroll((0, scroll_x))
@@ -1331,7 +1392,7 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(40, 4);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_mounts_subpanel(f, Rect::new(0, 0, 40, 4), &[], 0);
+            render_mounts_subpanel(f, Rect::new(0, 0, 40, 4), &[], 0, false);
         })
         .unwrap();
         let mounts_col = first_content_indent(&term).expect("mounts has content");

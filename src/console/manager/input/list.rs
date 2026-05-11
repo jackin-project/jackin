@@ -8,7 +8,7 @@ use super::super::super::widgets::{
 };
 use super::super::state::{
     EditorState, FileBrowserTarget, GlobalMountsState, ManagerListRow, ManagerStage, ManagerState,
-    Modal, Toast, ToastKind,
+    Modal, MountScrollFocus, Toast, ToastKind,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
@@ -26,20 +26,22 @@ pub(super) fn handle_list_key(
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => Ok(InputOutcome::ExitJackin),
         KeyCode::Left | KeyCode::Char('h' | 'H') => {
-            state.list_mounts_scroll_x = state.list_mounts_scroll_x.saturating_sub(8);
+            scroll_focused_mount_block(state, -8);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Right | KeyCode::Char('l' | 'L') => {
-            state.list_mounts_scroll_x = state.list_mounts_scroll_x.saturating_add(8);
+            scroll_focused_mount_block(state, 8);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             state.inline_role_picker = None;
+            state.list_scroll_focus = None;
             state.selected = state.selected.saturating_sub(1);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
             state.inline_role_picker = None;
+            state.list_scroll_focus = None;
             state.selected = (state.selected + 1).min(state.row_count() - 1);
             Ok(InputOutcome::Continue)
         }
@@ -236,11 +238,11 @@ pub(super) fn handle_inline_role_picker(
     };
     match key.code {
         KeyCode::Left | KeyCode::Char('h' | 'H') => {
-            state.list_global_mounts_scroll_x = state.list_global_mounts_scroll_x.saturating_sub(8);
+            scroll_focused_mount_block(state, -8);
             InputOutcome::Continue
         }
         KeyCode::Right | KeyCode::Char('l' | 'L') => {
-            state.list_global_mounts_scroll_x = state.list_global_mounts_scroll_x.saturating_add(8);
+            scroll_focused_mount_block(state, 8);
             InputOutcome::Continue
         }
         _ => match picker.handle_key(key) {
@@ -254,6 +256,22 @@ pub(super) fn handle_inline_role_picker(
             }
             ModalOutcome::Continue => InputOutcome::Continue,
         },
+    }
+}
+
+fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
+    let apply = |value: &mut u16| {
+        if delta.is_negative() {
+            *value = value.saturating_sub(delta.unsigned_abs());
+        } else {
+            *value = value.saturating_add(delta as u16);
+        }
+    };
+    match state.list_scroll_focus {
+        Some(MountScrollFocus::Workspace) => apply(&mut state.list_mounts_scroll_x),
+        Some(MountScrollFocus::Global) => apply(&mut state.list_global_mounts_scroll_x),
+        Some(MountScrollFocus::RoleGlobal) => apply(&mut state.list_role_global_mounts_scroll_x),
+        None => {}
     }
 }
 

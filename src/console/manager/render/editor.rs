@@ -15,8 +15,8 @@ use std::cmp::Ordering;
 
 use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
 use super::list::{
-    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows,
-    mount_display_paths, mount_path_width, render_global_mount_header, render_mount_header,
+    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
+    render_mount_header,
 };
 use super::{
     FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_footer, render_header,
@@ -182,24 +182,15 @@ fn contextual_row_items(
                     items.push(FooterItem::Sep);
                     items.push(FooterItem::Key("I"));
                     items.push(FooterItem::Text("cycle isolation"));
-                    items.push(FooterItem::Sep);
-                    items.push(FooterItem::Key("H/L"));
-                    items.push(FooterItem::Text("scroll"));
+                    if state.workspace_mounts_scroll_focused {
+                        items.push(FooterItem::Sep);
+                        items.push(FooterItem::Key("H/L"));
+                        items.push(FooterItem::Text("scroll focused block"));
+                    }
                     items
                 }
-                Ordering::Equal => vec![
-                    FooterItem::Key("Enter/A"),
-                    FooterItem::Text("add"),
-                    FooterItem::Sep,
-                    FooterItem::Key("H/L"),
-                    FooterItem::Text("scroll"),
-                ],
-                Ordering::Greater => vec![
-                    FooterItem::Dyn("global mount - edit from config mounts".to_string()),
-                    FooterItem::Sep,
-                    FooterItem::Key("H/L"),
-                    FooterItem::Text("scroll"),
-                ],
+                Ordering::Equal => vec![FooterItem::Key("Enter/A"), FooterItem::Text("add")],
+                Ordering::Greater => Vec::new(),
             }
         }
         EditorTab::Roles => {
@@ -459,8 +450,7 @@ fn render_editor_row(row: usize, cursor: usize, label: &str, value: &str) -> Lin
     Line::from(spans)
 }
 
-#[allow(clippy::too_many_lines)]
-fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
+fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, _config: &AppConfig) {
     let FieldFocus::Row(cursor) = state.active_field;
 
     // Build aligned table rows for all mounts.
@@ -525,144 +515,31 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
 
     let workspace_block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(
+            Style::default().fg(if state.workspace_mounts_scroll_focused {
+                PHOSPHOR_GREEN
+            } else {
+                PHOSPHOR_DARK
+            }),
+        )
         .title(Span::styled(
             " Workspace mounts ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
 
-    let Some(workspace) = workspace_for_global_mount_context(state) else {
-        let content_width = super::max_line_width(&lines);
-        frame.render_widget(
-            Paragraph::new(lines)
-                .block(workspace_block)
-                .scroll((0, state.workspace_mounts_scroll_x)),
-            area,
-        );
-        super::render_horizontal_scrollbar(
-            frame,
-            area,
-            content_width,
-            state.workspace_mounts_scroll_x,
-        );
-        return;
-    };
-
-    let workspace_height = (lines.len() as u16 + 2).min(area.height.saturating_sub(4).max(4));
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(workspace_height), Constraint::Min(4)])
-        .split(area);
-
     let workspace_content_width = super::max_line_width(&lines);
+    let scroll_x = super::effective_scroll_x(
+        workspace_content_width,
+        area.width.saturating_sub(2) as usize,
+        state.workspace_mounts_scroll_x,
+    );
     frame.render_widget(
         Paragraph::new(lines)
             .block(workspace_block)
-            .scroll((0, state.workspace_mounts_scroll_x)),
-        chunks[0],
+            .scroll((0, scroll_x)),
+        area,
     );
-    super::render_horizontal_scrollbar(
-        frame,
-        chunks[0],
-        workspace_content_width,
-        state.workspace_mounts_scroll_x,
-    );
-
-    let mut global_lines = Vec::new();
-    let mut global_title = " Global mounts ".to_string();
-    match config.workspace_applicable_mount_rows(workspace) {
-        crate::config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
-            if rows.iter().any(|row| row.scope.is_some()) {
-                global_title = format!(" Role global mounts · {role} ");
-            }
-            let offset = state.pending.mounts.len() + 1;
-            append_global_mount_lines(&mut global_lines, &rows, cursor, offset);
-        }
-        crate::config::WorkspaceGlobalMountRows::Ambiguous { candidates } => {
-            global_lines.push(Line::from(Span::styled(
-                format!(
-                    "  selected role affects visibility ({})",
-                    candidates.join(", ")
-                ),
-                Style::default().fg(PHOSPHOR_DIM),
-            )));
-        }
-    }
-
-    let global_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            global_title,
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
-    let global_content_width = super::max_line_width(&global_lines);
-    frame.render_widget(
-        Paragraph::new(global_lines)
-            .block(global_block)
-            .scroll((0, state.global_mounts_scroll_x)),
-        chunks[1],
-    );
-    super::render_horizontal_scrollbar(
-        frame,
-        chunks[1],
-        global_content_width,
-        state.global_mounts_scroll_x,
-    );
-}
-
-fn append_global_mount_lines(
-    lines: &mut Vec<Line<'_>>,
-    rows: &[crate::config::GlobalMountRow],
-    cursor: usize,
-    offset: usize,
-) {
-    let global_rows: Vec<MountDisplayRow> = rows
-        .iter()
-        .map(|row| {
-            let (destination, host_source) = mount_display_paths(&row.mount);
-            let mode = if row.mount.readonly { "ro" } else { "rw" };
-            MountDisplayRow {
-                destination,
-                host_source,
-                mode,
-                isolation: "shared",
-                kind: String::new(),
-            }
-        })
-        .collect();
-    let path_w = mount_path_width(&global_rows);
-    lines.push(render_global_mount_header(path_w));
-    for (i, row) in global_rows.iter().enumerate() {
-        let selected = cursor == offset + i;
-        let prefix = if selected { "▸ " } else { "  " };
-        let style = if selected {
-            Style::default()
-                .fg(PHOSPHOR_DIM)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(PHOSPHOR_DIM)
-        };
-        lines.push(Line::from(vec![
-            Span::styled(format!("{prefix}{:<path_w$}  ", row.destination), style),
-            Span::styled(row.mode, Style::default().fg(PHOSPHOR_DIM)),
-        ]));
-        if let Some(host_source) = &row.host_source {
-            lines.push(Line::from(Span::styled(
-                format!("  {host_source:<path_w$}"),
-                Style::default().fg(PHOSPHOR_DIM),
-            )));
-        }
-    }
-}
-
-const fn workspace_for_global_mount_context<'a>(
-    state: &'a EditorState<'_>,
-) -> Option<&'a crate::workspace::WorkspaceConfig> {
-    match state.mode {
-        EditorMode::Edit { .. } => Some(&state.pending),
-        EditorMode::Create => None,
-    }
+    super::render_horizontal_scrollbar(frame, area, workspace_content_width, scroll_x);
 }
 
 fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {

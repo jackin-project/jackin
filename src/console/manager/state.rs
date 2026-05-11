@@ -64,6 +64,8 @@ pub struct ManagerState<'a> {
     pub inline_role_picker: Option<RolePickerState>,
     pub list_mounts_scroll_x: u16,
     pub list_global_mounts_scroll_x: u16,
+    pub list_role_global_mounts_scroll_x: u16,
+    pub list_scroll_focus: Option<MountScrollFocus>,
     pub list_split_pct: u16,
     pub drag_state: Option<DragState>,
     /// Process-lifetime cache of `op` structural metadata, threaded
@@ -74,6 +76,13 @@ pub struct ManagerState<'a> {
     /// startup) so the Secrets-tab editor can disable the
     /// source-picker's 1Password choice without re-probing.
     pub op_available: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MountScrollFocus {
+    Workspace,
+    Global,
+    RoleGlobal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -226,7 +235,7 @@ pub struct EditorState<'a> {
     /// `input::auth` for the recovery path on stash desync.
     pub pending_auth_form_return: Option<AuthFormReturnPath>,
     pub workspace_mounts_scroll_x: u16,
-    pub global_mounts_scroll_x: u16,
+    pub workspace_mounts_scroll_focused: bool,
 }
 
 /// Captured auth-form context to re-mount the form after a side
@@ -656,6 +665,8 @@ impl ManagerState<'_> {
             inline_role_picker: None,
             list_mounts_scroll_x: 0,
             list_global_mounts_scroll_x: 0,
+            list_role_global_mounts_scroll_x: 0,
+            list_scroll_focus: None,
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
             op_cache,
@@ -787,7 +798,7 @@ impl EditorState<'_> {
             pending_picker_value: None,
             pending_auth_form_return: None,
             workspace_mounts_scroll_x: 0,
-            global_mounts_scroll_x: 0,
+            workspace_mounts_scroll_focused: false,
         }
     }
 
@@ -812,7 +823,7 @@ impl EditorState<'_> {
             pending_picker_value: None,
             pending_auth_form_return: None,
             workspace_mounts_scroll_x: 0,
-            global_mounts_scroll_x: 0,
+            workspace_mounts_scroll_focused: false,
         }
     }
 

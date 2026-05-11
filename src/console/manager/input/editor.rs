@@ -91,21 +91,15 @@ pub(super) fn handle_editor_key(
     };
 
     match key.code {
-        KeyCode::Char('h' | 'H') if editor.active_tab == EditorTab::Mounts => {
-            if cursor_is_global_mount(editor, config) {
-                editor.global_mounts_scroll_x = editor.global_mounts_scroll_x.saturating_sub(8);
-            } else {
-                editor.workspace_mounts_scroll_x =
-                    editor.workspace_mounts_scroll_x.saturating_sub(8);
-            }
+        KeyCode::Char('h' | 'H')
+            if editor.active_tab == EditorTab::Mounts && editor.workspace_mounts_scroll_focused =>
+        {
+            editor.workspace_mounts_scroll_x = editor.workspace_mounts_scroll_x.saturating_sub(8);
         }
-        KeyCode::Char('l' | 'L') if editor.active_tab == EditorTab::Mounts => {
-            if cursor_is_global_mount(editor, config) {
-                editor.global_mounts_scroll_x = editor.global_mounts_scroll_x.saturating_add(8);
-            } else {
-                editor.workspace_mounts_scroll_x =
-                    editor.workspace_mounts_scroll_x.saturating_add(8);
-            }
+        KeyCode::Char('l' | 'L')
+            if editor.active_tab == EditorTab::Mounts && editor.workspace_mounts_scroll_focused =>
+        {
+            editor.workspace_mounts_scroll_x = editor.workspace_mounts_scroll_x.saturating_add(8);
         }
         KeyCode::Tab | KeyCode::Right => {
             // Secrets tab `AgentHeader` absorbs `→` in both states
@@ -401,20 +395,7 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
         // 0=Name, 1=Working dir, 2=Keep awake
         // 0=Name, 1=Working dir, 2=Keep awake, 3=Git pull
         EditorTab::General => 3,
-        EditorTab::Mounts => {
-            let global_rows = match editor.mode {
-                super::super::state::EditorMode::Edit { .. } => {
-                    match config.workspace_applicable_mount_rows(&editor.pending) {
-                        crate::config::WorkspaceGlobalMountRows::Applicable { rows, .. } => {
-                            rows.len()
-                        }
-                        crate::config::WorkspaceGlobalMountRows::Ambiguous { .. } => 0,
-                    }
-                }
-                super::super::state::EditorMode::Create => 0,
-            };
-            editor.pending.mounts.len() + global_rows
-        }
+        EditorTab::Mounts => editor.pending.mounts.len(),
         // One extra sentinel row: + Add role.
         EditorTab::Roles => config.roles.len(),
         // Secrets tab is handled inline in the Down key arm; never reached here.
@@ -423,23 +404,6 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
             super::super::render::editor::auth_row_count(editor, config).saturating_sub(1)
         }
     }
-}
-
-fn cursor_is_global_mount(editor: &EditorState<'_>, config: &AppConfig) -> bool {
-    if editor.active_tab != EditorTab::Mounts {
-        return false;
-    }
-    let super::super::state::FieldFocus::Row(cursor) = editor.active_field;
-    let global_count = match editor.mode {
-        super::super::state::EditorMode::Edit { .. } => {
-            match config.workspace_applicable_mount_rows(&editor.pending) {
-                crate::config::WorkspaceGlobalMountRows::Applicable { rows, .. } => rows.len(),
-                crate::config::WorkspaceGlobalMountRows::Ambiguous { .. } => 0,
-            }
-        }
-        super::super::state::EditorMode::Create => 0,
-    };
-    global_count > 0 && cursor > editor.pending.mounts.len()
 }
 
 /// Walks forward past spacer rows. Defensive fallback to `candidate`
@@ -2976,7 +2940,7 @@ plugins = []
     }
 
     #[test]
-    fn global_mount_row_readonly_toggle_is_read_only_in_workspace_editor() {
+    fn rows_beyond_workspace_mounts_are_noop_in_workspace_editor() {
         let tmp = tempfile::tempdir().unwrap();
         let src = tmp.path().join("cache");
         std::fs::create_dir_all(&src).unwrap();
@@ -2996,6 +2960,8 @@ plugins = []
         );
         let mut ws = ws_with_one_mount(false);
         ws.allowed_roles = vec!["agent-smith".into()];
+        // Global mounts are intentionally not rendered/editable here; row 2
+        // simulates stale input beyond the workspace mount + add sentinel.
         let mut state = editor_on_mounts_tab(ws, 2);
 
         press(&mut state, &mut config, KeyCode::Char('R')).unwrap();

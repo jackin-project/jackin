@@ -106,18 +106,17 @@ pub(super) fn render_horizontal_scrollbar(
     if viewport == 0 || content_width <= viewport {
         return;
     }
-    let max_position = content_width.saturating_sub(viewport);
-    let position = usize::from(scroll_x).min(max_position);
+    let position = usize::from(effective_scroll_x(content_width, viewport, scroll_x));
     let mut state = ScrollbarState::new(content_width)
         .position(position)
         .viewport_content_length(viewport);
     let scrollbar = Scrollbar::new(ScrollbarOrientation::HorizontalBottom)
         .begin_symbol(None)
         .end_symbol(None)
-        .track_symbol(Some("─"))
-        .thumb_symbol("█")
+        .track_symbol(Some("·"))
+        .thumb_symbol("━")
         .track_style(Style::default().fg(PHOSPHOR_DARK))
-        .thumb_style(Style::default().fg(WHITE));
+        .thumb_style(Style::default().fg(PHOSPHOR_DIM));
     let area = Rect {
         x: block_area.x + 1,
         y: block_area.y + block_area.height.saturating_sub(1),
@@ -125,6 +124,18 @@ pub(super) fn render_horizontal_scrollbar(
         height: 1,
     };
     frame.render_stateful_widget(scrollbar, area, &mut state);
+}
+
+pub(super) fn effective_scroll_x(content_width: usize, viewport: usize, scroll_x: u16) -> u16 {
+    if viewport == 0 || content_width <= viewport {
+        0
+    } else {
+        scroll_x.min(
+            content_width
+                .saturating_sub(viewport)
+                .min(usize::from(u16::MAX)) as u16,
+        )
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -160,7 +171,7 @@ pub fn render(
         let footer_items: Vec<FooterItem> = match &state.stage {
             ManagerStage::List => {
                 if state.inline_role_picker.is_some() {
-                    vec![
+                    let mut items = vec![
                         FooterItem::Key("\u{2191}\u{2193}"),
                         FooterItem::Sep,
                         FooterItem::Key("Enter"),
@@ -168,13 +179,16 @@ pub fn render(
                         FooterItem::GroupSep,
                         FooterItem::Key("Esc"),
                         FooterItem::Text("return to workspaces"),
-                        FooterItem::GroupSep,
-                        FooterItem::Key("←/→"),
-                        FooterItem::Text("scroll"),
-                        FooterItem::GroupSep,
-                        FooterItem::Key("Q"),
-                        FooterItem::Text("quit"),
-                    ]
+                    ];
+                    if state.list_scroll_focus.is_some() {
+                        items.push(FooterItem::GroupSep);
+                        items.push(FooterItem::Key("←/→"));
+                        items.push(FooterItem::Text("scroll focused block"));
+                    }
+                    items.push(FooterItem::GroupSep);
+                    items.push(FooterItem::Key("Q"));
+                    items.push(FooterItem::Text("quit"));
+                    items
                 } else {
                     // Surface "o open in GitHub" on rows whose workspace has at
                     // least one GitHub-hosted mount with a resolvable web URL.
@@ -214,9 +228,11 @@ pub fn render(
                         items.push(FooterItem::Key("O"));
                         items.push(FooterItem::Text("open in GitHub"));
                     }
-                    items.push(FooterItem::GroupSep);
-                    items.push(FooterItem::Key("←/→"));
-                    items.push(FooterItem::Text("scroll"));
+                    if state.list_scroll_focus.is_some() {
+                        items.push(FooterItem::GroupSep);
+                        items.push(FooterItem::Key("←/→"));
+                        items.push(FooterItem::Text("scroll focused block"));
+                    }
                     items.push(FooterItem::GroupSep);
                     // Exit
                     items.push(FooterItem::Key("Q"));
