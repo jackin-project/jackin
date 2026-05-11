@@ -24,6 +24,7 @@ pub fn render_derived_dockerfile(
     use std::fmt::Write as _;
 
     let mut hook_section = String::new();
+    let source_hook_declared = hooks.is_some_and(|h| h.source.is_some());
     let mut entries = hooks.into_iter().flat_map(HooksConfig::entries).peekable();
     if entries.peek().is_some() {
         // chown only /jackin/state — agent writes the marker here.
@@ -48,6 +49,35 @@ RUN chmod +x /jackin/runtime/hooks/{dst}
                 dst = entry.filename,
             )
             .expect("writing to String is infallible");
+        }
+        if source_hook_declared {
+            // `docker exec zsh` inherits the image ENV but none of PID 1's
+            // runtime exports, so operator shells miss the source-hook
+            // exports the entrypoint applied to the agent. The marker is
+            // namespaced and exported only after a successful source so a
+            // failed hook does not leave a sticky guard that hides
+            // re-source attempts from nested subshells (mirrors the rc
+            // capture + `trap - ERR` clear the entrypoint does at
+            // docker/runtime/entrypoint.sh:172-181). The outer
+            // `grep -q ... ||` keeps the file single-shimmed across
+            // derived-from-derived builds via `base_image_override`.
+            #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
+            const ZSHENV_SOURCE_SHIM: &str = "\
+RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
+    || printf '%s\\n' \\
+    'if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\" ] && [ -f /jackin/runtime/hooks/source.sh ]; then' \\
+    '  __jackin_rc=0' \\
+    '  source /jackin/runtime/hooks/source.sh || __jackin_rc=$?' \\
+    '  trap - ERR' \\
+    '  if [ \"$__jackin_rc\" -ne 0 ]; then' \\
+    '    print -u2 \"[zshenv] jackin source hook returned non-zero (exit $__jackin_rc); environment may be incomplete\"' \\
+    '  else' \\
+    '    export __JACKIN_ZSHENV_SOURCE_LOADED=1' \\
+    '  fi' \\
+    '  unset __jackin_rc' \\
+    'fi' >> /home/agent/.zshenv
+";
+            hook_section.push_str(ZSHENV_SOURCE_SHIM);
         }
     }
 
@@ -339,6 +369,31 @@ mod tests {
         assert!(dockerfile.contains(
             "COPY --chown=agent:agent hooks/preflight.sh /jackin/runtime/hooks/preflight.sh"
         ));
+        // Structural shape: the four load-bearing fragments must appear
+        // in order — guard test, rc capture, source call, success-only
+        // export, file append. A regression that drops the guard, the rc
+        // check, or the `fi` terminator breaks this ordering.
+        let copy_pos = dockerfile
+            .find("COPY --chown=agent:agent hooks/source.sh")
+            .unwrap();
+        let guard_pos = dockerfile
+            .find("if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\"")
+            .unwrap();
+        let source_pos = dockerfile
+            .find("source /jackin/runtime/hooks/source.sh || __jackin_rc=$?")
+            .unwrap();
+        let export_pos = dockerfile
+            .find("export __JACKIN_ZSHENV_SOURCE_LOADED=1")
+            .unwrap();
+        let append_pos = dockerfile.find(">> /home/agent/.zshenv").unwrap();
+        assert!(copy_pos < guard_pos);
+        assert!(guard_pos < source_pos);
+        assert!(source_pos < export_pos);
+        assert!(export_pos < append_pos);
+        assert!(dockerfile.contains("trap - ERR"));
+        // Single emission — derived-from-derived rebuilds must not stack
+        // duplicate shim blocks in /home/agent/.zshenv.
+        assert_eq!(dockerfile.matches(">> /home/agent/.zshenv").count(), 1);
     }
 
     #[test]
@@ -355,6 +410,7 @@ mod tests {
         assert!(!dockerfile.contains("preflight.sh"));
         assert!(!dockerfile.contains("/jackin/runtime/hooks"));
         assert!(!dockerfile.contains("/jackin/state/hooks"));
+        assert!(!dockerfile.contains("/home/agent/.zshenv"));
     }
 
     #[test]
@@ -688,6 +744,8 @@ mod tests {
                 "COPY --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh"
             )
         );
+        assert!(dockerfile.contains(">> /home/agent/.zshenv"));
+        assert!(dockerfile.contains("source /jackin/runtime/hooks/source.sh"));
         assert!(!dockerfile.contains("setup-once.sh"));
         assert!(!dockerfile.contains("preflight.sh"));
         assert_eq!(
@@ -696,6 +754,25 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn source_hook_zshenv_shim_is_not_rendered_for_non_source_hooks() {
+        let dockerfile = render_derived_dockerfile(
+            "FROM projectjackin/construct:trixie\n",
+            Some(&HooksConfig {
+                setup_once: Some("hooks/setup-once.sh".to_string()),
+                source: None,
+                preflight: Some("hooks/preflight.sh".to_string()),
+            }),
+            &[Agent::Claude],
+            None,
+        );
+
+        assert!(dockerfile.contains("/jackin/runtime/hooks/setup-once.sh"));
+        assert!(dockerfile.contains("/jackin/runtime/hooks/preflight.sh"));
+        assert!(!dockerfile.contains(">> /home/agent/.zshenv"));
+        assert!(!dockerfile.contains("__JACKIN_ZSHENV_SOURCE_LOADED"));
     }
 
     #[test]
