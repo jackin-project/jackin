@@ -255,7 +255,7 @@ fn key_debug_name(state: &ConsoleState, key: crossterm::event::KeyEvent) -> Stri
     }
 }
 
-const fn should_debug_log_mouse(mouse: &crossterm::event::MouseEvent) -> bool {
+const fn should_debug_log_mouse(mouse: crossterm::event::MouseEvent) -> bool {
     !matches!(
         mouse.kind,
         crossterm::event::MouseEventKind::ScrollDown
@@ -280,7 +280,7 @@ fn drain_pending_terminal_events_until_quiet(limit: usize, quiet_for: std::time:
             if elapsed >= max {
                 break;
             }
-            quiet_for.min(max - elapsed)
+            quiet_for.min(max.saturating_sub(elapsed))
         };
         match crossterm::event::poll(poll_for) {
             Ok(true) => {
@@ -566,7 +566,7 @@ pub fn run_console(
                 }
                 Event::Mouse(mouse) => {
                     last_mouse_event_at = Some(std::time::Instant::now());
-                    if should_debug_log_mouse(&mouse) {
+                    if should_debug_log_mouse(mouse) {
                         crate::debug_log!(
                             "tui",
                             "mouse={mouse:?} location={}",
