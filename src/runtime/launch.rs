@@ -1998,6 +1998,7 @@ fn resolve_restore_candidate(
             if choice == 0 {
                 Ok(Some(only.container_base.clone()))
             } else {
+                supersede_restore_candidates(paths, candidates)?;
                 Ok(None)
             }
         }
@@ -2020,10 +2021,22 @@ fn resolve_restore_candidate(
             if choice < candidates.len() {
                 Ok(Some(candidates[choice].container_base.clone()))
             } else {
+                supersede_restore_candidates(paths, candidates)?;
                 Ok(None)
             }
         }
     }
+}
+
+fn supersede_restore_candidates(
+    paths: &JackinPaths,
+    candidates: Vec<InstanceManifest>,
+) -> anyhow::Result<()> {
+    for mut manifest in candidates {
+        let state_dir = paths.data_dir.join(&manifest.container_base);
+        write_instance_status(paths, &state_dir, &mut manifest, InstanceStatus::Superseded)?;
+    }
+    Ok(())
 }
 
 fn matching_instance_manifests(
@@ -6005,6 +6018,43 @@ plugins = []
 
         assert!(error.to_string().contains("restore is available"));
         assert!(error.to_string().contains(container_name));
+    }
+
+    #[test]
+    fn supersede_restore_candidates_updates_manifest_and_index() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest
+            .write(&paths.data_dir.join(container_name))
+            .unwrap();
+        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+
+        supersede_restore_candidates(&paths, vec![manifest]).unwrap();
+
+        let manifest = InstanceManifest::read(&paths.data_dir.join(container_name)).unwrap();
+        assert_eq!(manifest.status, InstanceStatus::Superseded);
+        let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
+        assert_eq!(index.instances[0].status, InstanceStatus::Superseded);
     }
 
     #[test]
