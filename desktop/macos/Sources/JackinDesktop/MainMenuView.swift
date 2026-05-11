@@ -24,6 +24,15 @@ struct MainMenuView: View {
 
             Divider()
 
+            if !model.readyForReviewPullRequests.isEmpty {
+                Section("Ready for Review") {
+                    ForEach(model.readyForReviewPullRequests.prefix(3)) { pullRequest in
+                        pullRequestRow(pullRequest)
+                    }
+                }
+                Divider()
+            }
+
             if !model.workspaces.isEmpty {
                 Section("Workspaces") {
                     ForEach(model.workspaces) { workspace in

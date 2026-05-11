@@ -573,7 +573,14 @@ Delivery rules:
 
 - Implement `jackin-attention` MCP server and richer daemon attention events.
 - Promote "waiting" and "ready for review" states in the menu bar.
+  Started with menu-bar promotion for non-draft operator-authored PRs and a
+  daemon `event/subscribe` poll-contract response that names attention and
+  ready-for-review click routes.
 - Notification click opens the exact Ghostty session or PR.
+  Started with explicit route metadata: attention events target
+  `container_name` through `desktop/open`, and ready-for-review PR events target
+  `url` through `desktop/open`. Native Notification Center activation still
+  needs the later app delegate/event-stream implementation.
 
 ### Phase 4 — Live auth sync and host bridge UI
 
