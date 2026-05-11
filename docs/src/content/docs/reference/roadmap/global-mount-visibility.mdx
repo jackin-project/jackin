@@ -151,10 +151,6 @@ This mirrors the CLI split: `jackin workspace ...` manages workspace config, whi
 
 This feature intentionally writes host-side jackin operator configuration only when the operator explicitly saves changes from the dedicated global mounts TUI. The save target is `~/.config/jackin/config.toml`, the same file managed by `jackin config mount`; workspace screens remain read-only for global mounts and must not mutate global config as a side effect of inspecting or editing a workspace.
 
-## Goal prompt
-
-Use [Global Mount Visibility goal prompt](/reference/goals/global-mount-visibility/) when starting the implementation goal. The goal page is an execution prompt; this roadmap remains the product and design source of truth.
-
 ## Implementation Notes
 
 - The runtime already resolves global + workspace + load-time mounts for launch. Reuse that resolver for display, but keep display rows tagged with their source: `global`, `workspace`, or `load-time` when relevant.
