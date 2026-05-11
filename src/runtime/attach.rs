@@ -18,6 +18,19 @@ pub enum ContainerState {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentSession {
+    pub pid: String,
+    pub command: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentSessionInventory {
+    NotRunning,
+    Unavailable(String),
+    Sessions(Vec<AgentSession>),
+}
+
 /// Query a container's state with a single `docker inspect` call.
 ///
 /// Uses Go-template formatting to extract three fields in one round trip:
@@ -69,6 +82,52 @@ pub fn inspect_container_state(runner: &mut impl CommandRunner, name: &str) -> C
         exit_code,
         oom_killed,
     }
+}
+
+pub fn inspect_agent_sessions(
+    runner: &mut impl CommandRunner,
+    container_name: &str,
+    state: &ContainerState,
+) -> AgentSessionInventory {
+    if !matches!(state, ContainerState::Running) {
+        return AgentSessionInventory::NotRunning;
+    }
+
+    match runner.capture("docker", &["top", container_name, "-eo", "pid,args"], None) {
+        Ok(output) => AgentSessionInventory::Sessions(parse_agent_sessions(&output)),
+        Err(error) => AgentSessionInventory::Unavailable(error.to_string()),
+    }
+}
+
+fn parse_agent_sessions(output: &str) -> Vec<AgentSession> {
+    output
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let mut fields = line.splitn(2, char::is_whitespace);
+            let pid = fields.next()?.trim();
+            let command = fields.next()?.trim();
+            if pid.is_empty() || command.is_empty() || !is_agent_session_command(command) {
+                return None;
+            }
+            Some(AgentSession {
+                pid: pid.to_string(),
+                command: command.to_string(),
+            })
+        })
+        .collect()
+}
+
+fn is_agent_session_command(command: &str) -> bool {
+    if command.contains("/jackin/runtime/entrypoint.sh") {
+        return true;
+    }
+    crate::agent::Agent::ALL.iter().any(|agent| {
+        command
+            .split_whitespace()
+            .next()
+            .is_some_and(|program| program.ends_with(agent.slug()))
+    })
 }
 
 fn docker_inspect_reports_missing_container(error: &str) -> bool {
@@ -284,7 +343,9 @@ pub fn inspect_hardline_instance(
         |manifest| manifest.docker.certs_volume.clone(),
     );
 
-    let role_state = describe_container_state(inspect_container_state(runner, container_name));
+    let role_container_state = inspect_container_state(runner, container_name);
+    let sessions = inspect_agent_sessions(runner, container_name, &role_container_state);
+    let role_state = describe_container_state(role_container_state);
     let dind_state = describe_container_state(inspect_container_state(runner, &dind_name));
     let network_state = describe_network_state(inspect_docker_network(runner, &network_name));
     let mounts = describe_mount_state(&state_dir);
@@ -319,12 +380,36 @@ pub fn inspect_hardline_instance(
 
     lines.extend([
         format!("Role container: {container_name} ({role_state})"),
+        format!("Agent sessions: {}", describe_agent_sessions(&sessions)),
         format!("DinD container: {dind_name} ({dind_state})"),
         format!("Docker network: {network_name} ({network_state})"),
         format!("DinD cert volume: {certs_volume}"),
         format!("Mounts: {mounts}"),
     ]);
     Ok(lines.join("\n"))
+}
+
+pub fn describe_agent_session_count(sessions: &AgentSessionInventory) -> String {
+    match sessions {
+        AgentSessionInventory::NotRunning => "sessions:not_running".to_string(),
+        AgentSessionInventory::Unavailable(_) => "sessions:unavailable".to_string(),
+        AgentSessionInventory::Sessions(sessions) => format!("sessions:{}", sessions.len()),
+    }
+}
+
+fn describe_agent_sessions(sessions: &AgentSessionInventory) -> String {
+    match sessions {
+        AgentSessionInventory::NotRunning => "not running".to_string(),
+        AgentSessionInventory::Unavailable(reason) => format!("unavailable: {reason}"),
+        AgentSessionInventory::Sessions(sessions) if sessions.is_empty() => {
+            "none detected".to_string()
+        }
+        AgentSessionInventory::Sessions(sessions) => sessions
+            .iter()
+            .map(|session| format!("{} {}", session.pid, session.command))
+            .collect::<Vec<_>>()
+            .join("; "),
+    }
 }
 
 fn describe_container_state(state: ContainerState) -> String {
@@ -781,6 +866,7 @@ mod tests {
             .unwrap();
         let mut runner = FakeRunner::with_capture_queue([
             "true 0 false".to_string(),
+            "PID COMMAND\n101 /jackin/runtime/entrypoint.sh\n202 codex exec".to_string(),
             "false 137 false".to_string(),
             "[]".to_string(),
         ]);
@@ -793,6 +879,10 @@ mod tests {
         assert!(report.contains("Agent: codex"), "{report}");
         assert!(report.contains("Status: preserved_dirty"), "{report}");
         assert!(report.contains("Last attach outcome: exit:137"), "{report}");
+        assert!(
+            report.contains("Agent sessions: 101 /jackin/runtime/entrypoint.sh; 202 codex exec"),
+            "{report}"
+        );
         assert!(report.contains("Role container: jackin-workspace-agentsmith-k7p9m2xq (running)"));
         assert!(report.contains(
             "DinD container: jackin-workspace-agentsmith-k7p9m2xq-dind (stopped exit:137)"
@@ -806,6 +896,41 @@ mod tests {
                 .iter()
                 .any(|c| c.contains("docker start") || c.contains("docker attach"))
         );
+    }
+
+    #[test]
+    fn inspect_agent_sessions_counts_entrypoint_and_agent_processes() {
+        let mut runner = FakeRunner::with_capture_queue([
+            "PID COMMAND\n1 /jackin/runtime/entrypoint.sh\n42 codex exec\n77 sleep infinity"
+                .to_string(),
+        ]);
+
+        let sessions =
+            inspect_agent_sessions(&mut runner, "jackin-agent-smith", &ContainerState::Running);
+
+        let AgentSessionInventory::Sessions(sessions) = sessions else {
+            panic!("expected sessions");
+        };
+        assert_eq!(sessions.len(), 2);
+        assert_eq!(sessions[0].pid, "1");
+        assert_eq!(sessions[1].command, "codex exec");
+    }
+
+    #[test]
+    fn inspect_agent_sessions_skips_docker_top_when_container_is_not_running() {
+        let mut runner = FakeRunner::default();
+
+        let sessions = inspect_agent_sessions(
+            &mut runner,
+            "jackin-agent-smith",
+            &ContainerState::Stopped {
+                exit_code: 137,
+                oom_killed: false,
+            },
+        );
+
+        assert_eq!(sessions, AgentSessionInventory::NotRunning);
+        assert!(runner.recorded.is_empty());
     }
 
     #[test]

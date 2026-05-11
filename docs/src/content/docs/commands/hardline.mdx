@@ -19,13 +19,13 @@ When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspa
 
 | Argument | Required | Description |
 |---|---|---|
-| `SELECTOR` | No | Role selector (e.g., `agent-smith`), instance ID, or full container name (e.g., `jackin-agent-smith-clone-1`) |
+| `SELECTOR` | No | Role selector (e.g., `agent-smith`), instance ID, or full container name (e.g., `jackin-agent-smith-k7p9m2xq`) |
 
 ## Options
 
 | Option | Description |
 |---|---|
-| `--inspect` | Resolve the same target but print the instance manifest, role/DinD Docker state, Docker network state, cert volume name, and mount-state summary without attaching or restarting anything. |
+| `--inspect` | Resolve the same target but print the instance manifest, live agent-session inventory, role/DinD Docker state, Docker network state, cert volume name, and mount-state summary without attaching or restarting anything. |
 | `--new` | Start another foreground agent process inside the selected running instance instead of attaching to the original container process. |
 | `--agent <agent>` | Agent runtime for `--new` (`claude`, `codex`, or `amp`). Defaults to the runtime recorded in the instance manifest. |
 
@@ -49,11 +49,11 @@ If the role container itself was deleted, jackin can rebuild the runtime around 
 
 For ad-hoc instances, `jackin hardline <instance-id>` normally expects the original project directory. If that directory moved, run the exact hardline command from the new project directory; in an interactive terminal jackin asks whether to mount the current directory at the original in-container workdir before rebuilding the missing runtime.
 
-`--inspect` is read-only. It works from the current workspace or ad-hoc directory, or with an explicit selector/instance ID/container name, and reports local manifest details even when Docker is unavailable.
+`--inspect` is read-only. It works from the current workspace or ad-hoc directory, or with an explicit selector/instance ID/container name, and reports local manifest details even when Docker is unavailable. When the role container is running, it also reports detected agent processes from `docker top`.
 
 `--new` requires a running indexed instance. It starts a second agent process inside that container with the same mounts, Docker-in-Docker sidecar, working directory, and in-container state. This is useful when you want a separate foreground session without creating a fresh jackin instance. If the selected container is stopped or missing, run plain `jackin hardline` first so jackin can restart or rebuild it.
 
-When `jackin hardline` resolves an instance from the current directory without an explicit selector or option, the same actions are available through an interactive picker. Non-interactive runs default to reconnect/recover.
+When `jackin hardline` resolves an instance from the current directory without an explicit selector or option, the same actions are available through an interactive picker. Candidate labels include the detected live agent-session count when Docker can inspect a running role container. Non-interactive runs default to reconnect/recover.
 
 ## Terminal close vs. exit
 
@@ -83,7 +83,7 @@ jackin hardline --new
 jackin hardline --new --agent codex k7p9m2xq
 
 # Reconnect to a specific container by name
-jackin hardline jackin-agent-smith-clone-1
+jackin hardline jackin-agent-smith-k7p9m2xq
 
 # Reconnect to a namespaced agent
 jackin hardline chainargos/backend-engineer

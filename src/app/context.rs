@@ -351,7 +351,9 @@ fn hardline_candidate_prompt_label(
     container: &str,
     runner: &mut impl docker::CommandRunner,
 ) -> String {
-    let docker_state = match runtime::inspect_container_state(runner, container) {
+    let container_state = runtime::inspect_container_state(runner, container);
+    let sessions = runtime::inspect_agent_sessions(runner, container, &container_state);
+    let docker_state = match container_state {
         runtime::ContainerState::Running => "docker:running".to_string(),
         runtime::ContainerState::Stopped {
             exit_code,
@@ -363,20 +365,22 @@ fn hardline_candidate_prompt_label(
         runtime::ContainerState::NotFound => "docker:missing".to_string(),
         runtime::ContainerState::InspectUnavailable(_) => "docker:unavailable".to_string(),
     };
+    let session_summary = runtime::describe_agent_session_count(&sessions);
 
     let state_dir = paths.data_dir.join(container);
     let Ok(manifest) = instance::InstanceManifest::read(&state_dir) else {
-        return format!("{container} - {docker_state}");
+        return format!("{container} - {docker_state} - {session_summary}");
     };
     let isolation = hardline_candidate_isolation_summary(&state_dir);
     format!(
-        "{} - {} - {} - agent:{} - status:{} - {} - {}",
+        "{} - {} - {} - agent:{} - status:{} - {} - {} - {}",
         manifest.container_base,
         manifest.workspace_label,
         manifest.role_key,
         manifest.agent_runtime,
         instance_status_label(manifest.status),
         docker_state,
+        session_summary,
         isolation
     )
 }
@@ -1119,6 +1123,44 @@ mod tests {
         assert!(label.contains("agent:claude"), "{label}");
         assert!(label.contains("status:restore_available"), "{label}");
         assert!(label.contains("docker:stopped exit:137"), "{label}");
+        assert!(label.contains("sessions:not_running"), "{label}");
+    }
+
+    #[test]
+    fn hardline_candidate_prompt_label_counts_running_agent_sessions() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let container = "jackin-myapp-agentsmith-k7p9m2xq";
+        let manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
+            container_base: container,
+            workspace_name: Some("my-app"),
+            workspace_label: "my-app",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Codex,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: instance::DockerResources {
+                role_container: container.to_string(),
+                dind_container: format!("{container}-dind"),
+                network: format!("{container}-net"),
+                certs_volume: format!("{container}-dind-certs"),
+            },
+        });
+        manifest.write(&paths.data_dir.join(container)).unwrap();
+        let mut runner = runtime::FakeRunner::default();
+        runner.capture_queue.push_back("true 0 false".to_string());
+        runner
+            .capture_queue
+            .push_back("PID COMMAND\n1 /jackin/runtime/entrypoint.sh\n42 codex exec".to_string());
+
+        let label = hardline_candidate_prompt_label(&paths, container, &mut runner);
+
+        assert!(label.contains("docker:running"), "{label}");
+        assert!(label.contains("sessions:2"), "{label}");
     }
 
     #[test]
