@@ -308,6 +308,26 @@ pub(super) fn render_global_mount_lines(
     lines
 }
 
+pub(in crate::console::manager) fn workspace_mounts_content_width(
+    mounts: &[crate::workspace::MountConfig],
+) -> usize {
+    let rows = format_mount_rows(mounts);
+    let path_w = mount_path_width(&rows);
+    let mut lines = vec![render_mount_header(path_w)];
+    lines.extend(render_mount_lines(&rows, path_w));
+    super::max_line_width(&lines)
+}
+
+pub(in crate::console::manager) fn global_mounts_content_width(
+    mounts: &[crate::workspace::MountConfig],
+) -> usize {
+    let rows = format_mount_rows(mounts);
+    let path_w = mount_path_width(&rows);
+    let mut lines = vec![render_global_mount_header(path_w)];
+    lines.extend(render_global_mount_lines(&rows, path_w));
+    super::max_line_width(&lines)
+}
+
 fn render_details_pane(
     frame: &mut Frame,
     area: Rect,

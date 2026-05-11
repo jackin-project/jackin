@@ -1,7 +1,7 @@
 //! Mouse event handling for the workspace manager: list/details seam drag,
 //! click-to-select in the list pane, and `FileBrowser` URL-click fallthrough.
 
-use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
 use super::super::super::widgets::file_browser::FileBrowserState;
@@ -27,7 +27,7 @@ const LIST_HEADER_HEIGHT: u16 = 3;
 /// Height of the footer chunk in the list-view chrome. Mirrors
 /// `Constraint::Length(2)` in `render::render`.
 const LIST_FOOTER_HEIGHT: u16 = 2;
-const MOUSE_HORIZONTAL_SCROLL_STEP: u16 = 4;
+const MOUSE_HORIZONTAL_SCROLL_STEP: u16 = 8;
 
 /// Dispatch a mouse event into the workspace manager's list view. Drives
 /// the mouse-draggable seam between the list pane and the details pane.
@@ -69,7 +69,7 @@ pub fn handle_mouse_with_config(
         {
             return;
         }
-        MouseEventKind::ScrollLeft => {
+        MouseEventKind::ScrollLeft | MouseEventKind::ScrollUp => {
             scroll_active_panel(
                 state,
                 mouse,
@@ -79,27 +79,7 @@ pub fn handle_mouse_with_config(
             );
             return;
         }
-        MouseEventKind::ScrollRight => {
-            scroll_active_panel(
-                state,
-                mouse,
-                term_size,
-                config,
-                MOUSE_HORIZONTAL_SCROLL_STEP as i16,
-            );
-            return;
-        }
-        MouseEventKind::ScrollUp if mouse.modifiers.contains(KeyModifiers::SHIFT) => {
-            scroll_active_panel(
-                state,
-                mouse,
-                term_size,
-                config,
-                -(MOUSE_HORIZONTAL_SCROLL_STEP as i16),
-            );
-            return;
-        }
-        MouseEventKind::ScrollDown if mouse.modifiers.contains(KeyModifiers::SHIFT) => {
+        MouseEventKind::ScrollRight | MouseEventKind::ScrollDown => {
             scroll_active_panel(
                 state,
                 mouse,
@@ -393,10 +373,11 @@ fn scroll_active_panel(
 
 fn apply_horizontal_scroll(value: &mut u16, delta: i16, area: Rect, content_width: usize) {
     let max = max_scroll_offset(area, content_width);
+    let current = (*value).min(max);
     let next = if delta.is_negative() {
-        value.saturating_sub(delta.unsigned_abs())
+        current.saturating_sub(delta.unsigned_abs())
     } else {
-        value.saturating_add(delta as u16)
+        current.saturating_add(delta as u16)
     };
     *value = next.min(max);
 }
@@ -475,7 +456,9 @@ fn list_scroll_areas(
                 width: right_w,
                 height: mounts_h,
             },
-            content_width: mount_rows_content_width(workspace.mounts.as_slice()),
+            content_width: super::super::render::list::workspace_mounts_content_width(
+                workspace.mounts.as_slice(),
+            ),
         },
         global: ScrollArea {
             area: Rect {
@@ -484,7 +467,9 @@ fn list_scroll_areas(
                 width: right_w,
                 height: global_h,
             },
-            content_width: global_mount_configs_content_width(global_mounts.as_slice()),
+            content_width: super::super::render::list::global_mounts_content_width(
+                global_mounts.as_slice(),
+            ),
         },
         role_global: (role_global_h > 0).then(|| ScrollArea {
             area: Rect {
@@ -493,7 +478,9 @@ fn list_scroll_areas(
                 width: right_w,
                 height: role_global_h,
             },
-            content_width: global_mount_configs_content_width(role_global_mounts.as_slice()),
+            content_width: super::super::render::list::global_mounts_content_width(
+                role_global_mounts.as_slice(),
+            ),
         }),
     })
 }
@@ -514,7 +501,9 @@ fn editor_scroll_area(
             width: term_size.width,
             height: (rows as u16 + 2).min(body_h.max(4)),
         },
-        content_width: mount_rows_content_width(editor.pending.mounts.as_slice()),
+        content_width: super::super::render::list::workspace_mounts_content_width(
+            editor.pending.mounts.as_slice(),
+        ),
     }
 }
 
@@ -530,53 +519,8 @@ fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
     (data_rows + 3).min(12) as u16
 }
 
-fn mount_rows_content_width(mounts: &[crate::workspace::MountConfig]) -> usize {
-    let header = "  Destination  Mode  Isolation  Type".len();
-    mounts
-        .iter()
-        .map(|mount| {
-            let dst = crate::tui::shorten_home(&mount.dst);
-            let src = crate::tui::shorten_home(&mount.src);
-            let path_width = if mount.src == mount.dst {
-                dst.chars().count()
-            } else {
-                dst.chars()
-                    .count()
-                    .max(src.chars().count() + "host: ".len())
-            };
-            let kind_width = super::super::mount_info::inspect(&mount.src)
-                .label()
-                .chars()
-                .count();
-            2 + path_width
-                + "  ".len()
-                + "rw".len()
-                + "  ".len()
-                + "worktree".len()
-                + "  ".len()
-                + kind_width
-        })
-        .max()
-        .unwrap_or(header)
-        .max(header)
-}
-
 fn global_mount_configs_content_width(mounts: &[crate::workspace::MountConfig]) -> usize {
-    let header = "  Destination  Mode".len();
-    mounts
-        .iter()
-        .map(|mount| {
-            let dst = crate::tui::shorten_home(&mount.dst);
-            let src = crate::tui::shorten_home(&mount.src);
-            let path_width = dst
-                .chars()
-                .count()
-                .max(src.chars().count() + "host: ".len());
-            2 + path_width + "  ".len() + "rw".len()
-        })
-        .max()
-        .unwrap_or(header)
-        .max(header)
+    super::super::render::list::global_mounts_content_width(mounts)
 }
 
 fn global_mount_rows_content_width(rows: &[crate::config::GlobalMountRow]) -> usize {
@@ -1143,6 +1087,24 @@ mod mouse_drag_tests {
         state
     }
 
+    fn config_with_long_git_type_mount(source: &std::path::Path) -> crate::config::AppConfig {
+        let mut config = crate::config::AppConfig::default();
+        config.workspaces.insert(
+            "demo".into(),
+            WorkspaceConfig {
+                workdir: "/workspace/demo".into(),
+                mounts: vec![MountConfig {
+                    src: source.display().to_string(),
+                    dst: source.display().to_string(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                }],
+                ..Default::default()
+            },
+        );
+        config
+    }
+
     #[test]
     fn click_on_first_row_sets_selected_to_zero() {
         // y=4 = first list item (index 0, "Current directory").
@@ -1314,7 +1276,7 @@ mod mouse_drag_tests {
     }
 
     #[test]
-    fn plain_vertical_mouse_wheel_does_not_change_horizontal_scroll() {
+    fn plain_vertical_mouse_wheel_scrolls_horizontally_over_mount_block() {
         let config = config_with_scrollable_workspace_and_global_mounts();
         let mut state = selected_demo_state(&config);
 
@@ -1325,8 +1287,20 @@ mod mouse_drag_tests {
             Some(&config),
         );
 
+        assert_eq!(
+            state.list_global_mounts_scroll_x,
+            MOUSE_HORIZONTAL_SCROLL_STEP
+        );
+        assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Global));
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollUp, 31, 12),
+            term(100),
+            Some(&config),
+        );
+
         assert_eq!(state.list_global_mounts_scroll_x, 0);
-        assert_eq!(state.list_scroll_focus, None);
     }
 
     #[test]
@@ -1372,6 +1346,84 @@ mod mouse_drag_tests {
             state.list_global_mounts_scroll_x,
             expected_max.saturating_sub(MOUSE_HORIZONTAL_SCROLL_STEP),
             "left-scroll after overscrolling right must move immediately, not burn hidden offset"
+        );
+    }
+
+    #[test]
+    fn horizontal_mouse_wheel_reaches_rendered_workspace_width() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::write(
+            repo.join(".git").join("HEAD"),
+            "ref: refs/heads/feat/backend-rust-gdpr-purge-normalization\n",
+        )
+        .unwrap();
+        let config = config_with_long_git_type_mount(&repo);
+        let mut state = selected_demo_state(&config);
+
+        for _ in 0..100 {
+            handle_mouse_with_config(
+                &mut state,
+                mouse_kind_at(MouseEventKind::ScrollDown, 31, 7),
+                term(100),
+                Some(&config),
+            );
+        }
+
+        let workspace = config.workspaces.get("demo").unwrap();
+        let expected_max = super::max_scroll_offset(
+            Rect {
+                x: 30,
+                y: 6,
+                width: 70,
+                height: 4,
+            },
+            super::super::super::render::list::workspace_mounts_content_width(
+                workspace.mounts.as_slice(),
+            ),
+        );
+
+        assert_eq!(
+            state.list_mounts_scroll_x, expected_max,
+            "mouse/touch scroll must clamp at the same rendered width keyboard scrolling reaches"
+        );
+    }
+
+    #[test]
+    fn horizontal_mouse_wheel_clamps_before_applying_left_delta() {
+        let config = config_with_scrollable_workspace_and_global_mounts();
+        let mut state = selected_demo_state(&config);
+        state.list_global_mounts_scroll_x = u16::MAX;
+
+        let global_mounts: Vec<MountConfig> = config
+            .list_mount_rows()
+            .into_iter()
+            .filter(|row| row.scope.is_none())
+            .map(|row| row.mount)
+            .collect();
+        let global_area = Rect {
+            x: 30,
+            y: 11,
+            width: 70,
+            height: 5,
+        };
+        let expected_max = super::max_scroll_offset(
+            global_area,
+            super::global_mount_configs_content_width(global_mounts.as_slice()),
+        );
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollLeft, 31, 12),
+            term(100),
+            Some(&config),
+        );
+
+        assert_eq!(
+            state.list_global_mounts_scroll_x,
+            expected_max.saturating_sub(MOUSE_HORIZONTAL_SCROLL_STEP),
+            "left-scroll must first clamp stale resize/overscroll state, then move left"
         );
     }
 
