@@ -22,6 +22,11 @@ The pattern: each new feature that wants to **react to events instead of waiting
 
 This roadmap item proposes introducing **the jackin daemon** as a first-class concept the rest of the project can compose on. It is deliberately written before any one of the dependent features picks an implementation path, so the daemon's lifecycle, install method, security posture, and CLI surface are designed *once* and reused.
 
+The daemon draft PR remains the right place to adjust the base contract while
+Desktop is being designed. The [Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/)
+roadmap depends on this daemon, so daemon API gaps discovered there should be
+fixed here instead of papered over in the macOS app.
+
 ## What the daemon owns
 
 The daemon is the long-running, per-operator-user, per-host process that holds anything jackin needs to:
@@ -94,6 +99,13 @@ The console / TUI gets a one-line daemon-status indicator in its footer, mirrori
 
 - **Keep-awake `caffeinate`.** Today's per-command reconciler (see <RepoFile path="src/runtime/caffeinate.rs" />) becomes a daemon-owned watcher: the daemon subscribes to "any role from a keep-awake workspace running" via Docker events and holds the caffeinate lock. CLI commands no longer reconcile.
 - **Live auth sync.** First feature designed to require the daemon — see the [live-auth-sync roadmap item](/reference/roadmap/live-auth-sync/) for the per-axis adapter plan. The daemon hosts the shared store flocks and the host-side watchers.
+- **Desktop Agent Hub.** The native macOS app depends on daemon state rather
+  than scraping Jackin config or Docker directly. The daemon is the primary
+  data plane for Desktop status bar and window state; CLI calls are fallback or
+  one-shot paths only when daemon communication is unavailable or would hurt the
+  operator experience. The daemon should expose versioned capabilities for
+  workspace/session discovery, GitHub PR lookup, Ghostty/browser open actions,
+  account status, and event subscription as those slices land.
 - **Future reactive watchers.** Container exit notifications, sensitive-mount confirmations across sessions, etc. — each adds an adapter under the daemon's plug-in surface, not its own ad-hoc workaround.
 
 ## Why this is one item, not many
@@ -108,15 +120,17 @@ Rough order of operations — not committed; to be confirmed during the design p
 
 1. **Phase 0 — design.** Answer every "Open design questions" subsection. Pick lifecycle, install, control protocol, security posture. Land an updated version of this roadmap item with answers.
 2. **Phase 1 — empty daemon.** Ship `jackin daemon serve` / `start` / `stop` / `status` / `logs` with no watchers. Just the lifecycle, install, control socket, log redaction. No feature uses it yet.
-3. **Phase 2 — caffeinate migration.** Move keep-awake reconciler from per-command into the daemon. Smallest migration target with clearest existing behaviour to compare against.
-4. **Phase 3 — live auth sync.** Add the per-axis watcher adapters. First reactive feature.
-5. **Phase 4+ — container event watcher and beyond.** Each new reactive feature is an adapter against the daemon's stable plug-in surface.
+3. **Phase 2 — Desktop-ready daemon API.** Add the small versioned endpoints that Desktop needs first: `daemon/hello`, workspace/session discovery, GitHub PR lookup, account status, event subscription, and Ghostty/browser open actions.
+4. **Phase 3 — caffeinate migration.** Move keep-awake reconciler from per-command into the daemon. Smallest migration target with clearest existing behaviour to compare against.
+5. **Phase 4 — live auth sync.** Add the per-axis watcher adapters. First reactive feature.
+6. **Phase 5+ — container event watcher and beyond.** Each new reactive feature is an adapter against the daemon's stable plug-in surface.
 
 ## Related work
 
 - [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/) — the first reactive feature this daemon hosts.
 - [Agent attention prompts](/reference/roadmap/agent-attention-prompts/) — host-side OS notifications when an agent waits on operator input. Plugs into this daemon.
 - [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/) — operator-mediated channel for agents to request secrets or invoke host commands. Plugs into this daemon and uses the same approval surface (TouchID / polkit / password) the daemon hosts.
+- [Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) — native macOS status bar and desktop companion that consumes daemon state for workspaces, sessions, GitHub PRs, account status, notifications, and approved host actions.
 - <RepoFile path="src/runtime/caffeinate.rs" /> — today's per-command keep-awake reconciler; first migration target in Phase 2.
 - [Reliable Claude authentication strategy](/reference/roadmap/claude-auth-strategy/) — concurrent-session token-drift concerns the live-auth-sync feature ultimately answers, so the daemon hosts the answer.
 - [Credential source pattern](/reference/roadmap/credential-source-pattern/) — future unified credential resolver; the daemon's per-axis adapter trait should be expressible inside that pattern.

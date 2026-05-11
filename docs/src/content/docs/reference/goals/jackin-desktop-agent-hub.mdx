@@ -1,0 +1,146 @@
+---
+title: "Jackin Desktop Agent Hub goal prompt"
+---
+
+This page is an execution prompt, not the product proposal. Copy the prompt
+below when starting the implementation program.
+
+Source of truth:
+
+- [Jackin Desktop Agent Hub roadmap](/reference/roadmap/jackin-desktop-agent-hub/)
+- [Roadmap overview](/reference/roadmap/)
+- [jackin daemon](/reference/roadmap/jackin-daemon/)
+- [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/)
+- [Agent attention prompts](/reference/roadmap/agent-attention-prompts/)
+- [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/)
+- [GitHub link tracking](/reference/roadmap/github-link-tracking/)
+- [Agent runtime status](/reference/roadmap/agent-runtime-status/)
+- [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/)
+- [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)
+
+## Goal prompt
+
+```text
+/goal Research and design the Jackin Desktop Agent Hub, then implement the first safe slice.
+
+Context:
+- Work in the jackin repo on the daemon PR branch. PR 283 is an editable draft:
+  if the Desktop goal reveals daemon API changes that should land there, update
+  that PR directly before stacking later Desktop PRs.
+- Read the roadmap source of truth first. If implementation details conflict
+  with these docs, update the relevant roadmap doc in the same PR or an earlier
+  stacked PR before coding around the conflict:
+  - docs/src/content/docs/reference/roadmap.mdx
+  - docs/src/content/docs/reference/roadmap/jackin-desktop-agent-hub.mdx
+  - docs/src/content/docs/reference/roadmap/jackin-daemon.mdx
+  - docs/src/content/docs/reference/roadmap/live-auth-sync.mdx
+  - docs/src/content/docs/reference/roadmap/agent-attention-prompts.mdx
+  - docs/src/content/docs/reference/roadmap/host-bridge.mdx
+  - docs/src/content/docs/reference/roadmap/github-link-tracking.mdx
+  - docs/src/content/docs/reference/roadmap/agent-runtime-status.mdx
+  - docs/src/content/docs/reference/roadmap/token-cost-telemetry.mdx
+  - docs/src/content/docs/reference/roadmap/agent-orchestrator-research.mdx
+- Read the daemon implementation in src/daemon.rs and launch integration in
+  src/runtime/launch.rs.
+- Read the existing workspace manager model/render/input paths under src/console/manager for vocabulary and workspace semantics only. Do not port the full TUI editor into the macOS v1.
+- Research steipete/CodexBar and steipete/RepoBar as prototypes, but do not copy
+  their broad implementation. Borrow only the useful native macOS patterns:
+  menu bar controller, refresh loop, provider/account cards, repository/PR menu
+  organization, local git status caching.
+
+Product goal:
+Build Jackin toward a native macOS desktop companion that keeps the agent TUI as
+the primary agent UI. Desktop must be an operator control surface: active Jackin
+workspaces, simple Ghostty launches, recently active GitHub projects, workspace
+repositories, running isolated agents, PR jump links, newest-first open PRs
+authored by the operator, org/project-filtered PR inbox views, account/quota
+status for Claude/Codex/Amp, and daemon-driven attention/ready-for-review
+events.
+
+Constraints:
+- Native macOS only for the app: SwiftUI/AppKit, MenuBarExtra or NSStatusItem,
+  standard macOS controls, Liquid Glass where system components provide it.
+- Jackin CLI/TUI remains usable without the app.
+- The app requires a compatible jackin CLI/daemon and talks through a versioned
+  daemon protocol.
+- Do not build a replacement UI for Claude Code, Codex, or Amp.
+- Do not implement generic provider support beyond Claude, Codex, Amp.
+- Do not make Desktop parse Jackin TOML directly. Prefer daemon endpoints for
+  data and status. Use CLI/library calls only for fallback, install/bootstrap,
+  or one-shot actions where daemon communication would hurt the user
+  experience.
+- Do not port the full `jackin console` workspace editor in v1. The macOS app
+  lists and launches existing workspaces only.
+- Use Ghostty only for v1 launch/hardline actions. Other terminal adapters are
+  deferred.
+- Work autonomously and silently. Do not ask the operator for approval between
+  implementation steps unless CI, conflicts, credentials, or a roadmap
+  contradiction blocks progress.
+- Before opening or updating any PR, read and follow AGENTS.md,
+  PULL_REQUESTS.md, and COMMITS.md. Match the repository's established PR body,
+  commit format, DCO signoff, and agent co-author trailer rules.
+- Do not create one huge pull request. Implement the goal as small sequential
+  PRs. Each PR must be reviewable, tested, and mergeable before the next PR
+  becomes the main review target.
+- Open every planned PR without waiting for operator approval, but never merge
+  any PR. The operator will review and merge gradually.
+- Stack each next PR by branching from the previous PR branch. If an earlier PR
+  changes during review, update that PR and then rebase or adjust every
+  downstream PR so the chain remains ordered.
+- Make the chain explicit in each PR body: previous PR, current slice, next
+  planned PR, and the correct review order.
+
+Sequential PR plan:
+1. Daemon capability handshake and protocol scaffolding.
+2. Session/workspace discovery with labels and tests.
+3. GitHub PR lookup endpoints: `github/my_open_prs`, `github/project_inbox`,
+   and `github/repository_prs`.
+4. Ghostty launch/open action contract for `workspace/launch` and
+   `desktop/open`.
+5. Account status endpoints for Claude, Codex, and Amp with cache/refresh
+   semantics.
+6. Native macOS app skeleton with menu bar daemon health.
+7. Menu bar active workspaces and running-agent counts.
+8. Menu bar PR/project inbox and open actions.
+9. Simple desktop window shell.
+10. Desktop Pull Requests and Projects views with org/project filters.
+11. Desktop Workspaces launch-only view and Running Agents view.
+12. Attention/ready-for-review promotion and notification click routing.
+
+First implementation slice:
+1. Strengthen PR 283 daemon protocol with a hello/capabilities response.
+2. Add the smallest endpoint scaffolding needed to prove versioned requests and
+   responses without implementing the whole Desktop backend in one PR.
+3. Add focused tests for protocol compatibility and failure cases.
+4. Open a small PR with the standard Jackin PR body and keep the next planned PR
+   listed in the description.
+
+Later daemon slices:
+- Add read-only daemon endpoints:
+   - workspace/list
+   - session/list
+   - workspace/launch
+   - desktop/open for Ghostty and browser actions
+   - github/my_open_prs
+   - github/project_inbox
+   - github/repository_prs
+   - event/subscribe or a clearly scoped placeholder if streaming is too large
+- Add missing Docker labels at role launch so session/list can identify
+   workspace, role, agent, branch, and primary repo.
+- Add a cache-first PR lookup path that can list open PRs authored by the
+   operator, sorted by created date descending, scoped initially to recently
+   active Jackin projects and workspaces.
+- Add a simple workspace launch action that opens Ghostty and runs the selected
+   saved workspace.
+- Add tests for protocol compatibility, session discovery, PR sorting, and
+   project filtering.
+- Update docs with the daemon API contract and Desktop MVP plan as the contract
+  becomes concrete.
+
+Deliverables:
+- A chain of small sequential PRs, each with passing focused tests and a clear
+  next-PR pointer.
+- A daemon API contract that becomes concrete over several reviewable slices.
+- A concise implementation report on every PR with remaining risks, especially
+  Amp account status and macOS app packaging/version negotiation.
+```

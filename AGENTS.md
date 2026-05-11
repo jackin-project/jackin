@@ -101,6 +101,7 @@ Roadmap pages are for planned, researched, designed, deferred, or remaining work
 All rules for opening, iterating on, refreshing, reviewing, and merging pull requests live in [`PULL_REQUESTS.md`](PULL_REQUESTS.md). **Read that file before opening any PR.** It covers:
 
 - Per-PR merge authorization (agents never merge without explicit "merge it" confirmation).
+- Required base branch (agent-created PRs target `main` unless the operator explicitly names a different target branch in the same request).
 - Force-push authorization (agents never rewrite an existing remote branch without explicit operator approval).
 - Required PR body shape (Summary / hard-rule callout / What's deferred / Verify locally / Migration notes).
 - "Verify locally" templates, including the `export TIRITH=0` line that lets multi-line pastes survive the `tirith` paste scanner.

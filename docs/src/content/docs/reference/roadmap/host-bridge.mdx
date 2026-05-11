@@ -18,6 +18,11 @@ Both look like the same shape from the operator's seat: *"the agent needs a sing
 
 This roadmap item proposes a **host bridge** — a small request/approval channel between agents inside containers and the operator on the host, hosted by the [jackin daemon](/reference/roadmap/jackin-daemon/). Agents request a secret value or a host command; the operator gets a host-side prompt (touch confirmation, biometric, password); on approval the daemon does the work; the agent receives back exactly what it asked for and nothing more.
 
+The daemon owns the policy, audit log, and execution path. The Jackin Desktop
+Agent Hub is the preferred native macOS surface for viewing pending requests and
+audit state once it exists; agents still talk to the daemon, not directly to the
+app.
+
 ## Two flows
 
 The bridge serves two distinct flows that share a transport, an approval surface, and an audit log.
@@ -84,7 +89,10 @@ The host-side prompt is the load-bearing part of this design. It must be:
 - **Stateful per request.** Each request gets its own prompt with the request ID baked in. Approving prompt A does not approve a different request B that arrives a millisecond later.
 - **Auditable.** Every prompt + response (approved / denied / timed out) lands in the daemon's audit log with timestamp, workspace, role, agent, request payload (with secrets redacted), and the operator's response. Reviewable via `jackin audit` (subcommand to be designed).
 - **Time-bounded.** Prompts expire after a configurable window (default 30s). Expiry counts as deny. The agent receives a structured "operator did not approve in time" error.
-- **Visually distinct.** The prompt is a system-modal notification, not a TUI overlay — agent presence in jackin' console must not block another agent's approval prompt from reaching the operator.
+- **Visually distinct.** The prompt is a system-modal notification or native
+  Desktop approval surface, not a TUI overlay — agent presence in jackin'
+  console must not block another agent's approval prompt from reaching the
+  operator.
 
 Per-platform implementation:
 
@@ -228,6 +236,7 @@ The mechanism is also the right escape valve for the *"help, I forgot to set up 
 - [jackin daemon](/reference/roadmap/jackin-daemon/) — host-side process this feature plugs into. Phase 1 daemon must ship before this adapter can.
 - [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/) — sibling feature plugging into the same daemon; sets the precedent for per-axis adapters.
 - [Agent attention prompts](/reference/roadmap/agent-attention-prompts/) — sibling MCP-server feature using the same auto-registration pattern; both flow through the daemon.
+- [Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) — native macOS surface that should eventually show host-bridge approvals and audit entries while keeping daemon policy/execution as the source of truth.
 - [Container credential exposure — beyond env injection](/reference/roadmap/container-credential-exposure/) — captures the broader trade-off between today's `docker run -e` env injection and the daemon-mediated `secret.request` flow this item proposes; together they replace env-resident tokens with on-demand handles.
 - [Credential proxy](/reference/roadmap/) — earlier-roadmap idea about proxy-based credential injection without storing tokens inside containers; this item is the operator-mediated counterpart for secrets the operator wants to vet per use.
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — current MCP-registration pattern for `tirith` / `shellfirm`. The bridge MCP server registers through the same code path.
