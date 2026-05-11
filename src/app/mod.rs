@@ -184,7 +184,13 @@ pub fn run(cli: Cli) -> Result<()> {
                 resolve_running_container_from_context(&paths, &config, &cwd, &mut runner)?
             };
             runtime::reconcile_keep_awake(&paths, &mut runner);
-            let result = runtime::hardline_agent(&paths, &container, &mut runner);
+            let result = if let Some(manifest) =
+                restore_candidate_for_hardline(&paths, &container, &mut runner)?
+            {
+                restore_hardline_instance(&paths, &mut config, &manifest, &mut runner)
+            } else {
+                runtime::hardline_agent(&paths, &container, &mut runner)
+            };
             runtime::reconcile_keep_awake(&paths, &mut runner);
             result
         }
@@ -1442,6 +1448,91 @@ fn resolve_instance_reference(paths: &JackinPaths, input: &str) -> Result<Option
     }
 }
 
+fn restore_candidate_for_hardline(
+    paths: &JackinPaths,
+    container: &str,
+    runner: &mut impl crate::docker::CommandRunner,
+) -> Result<Option<instance::InstanceManifest>> {
+    let state_dir = paths.data_dir.join(container);
+    let Ok(mut manifest) = instance::InstanceManifest::read(&state_dir) else {
+        return Ok(None);
+    };
+    if !manifest.is_restore_candidate() {
+        return Ok(None);
+    }
+
+    match runtime::inspect_container_state(runner, container) {
+        runtime::ContainerState::NotFound => {
+            manifest.mark_status(instance::InstanceStatus::RestoreAvailable);
+            manifest.write(&state_dir)?;
+            instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest)?;
+            Ok(Some(manifest))
+        }
+        runtime::ContainerState::InspectUnavailable(reason) => {
+            anyhow::bail!(
+                "cannot inspect container `{container}` because Docker is unavailable or returned an unexpected response: {reason}"
+            );
+        }
+        runtime::ContainerState::Running | runtime::ContainerState::Stopped { .. } => Ok(None),
+    }
+}
+
+fn restore_hardline_instance(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    manifest: &instance::InstanceManifest,
+    runner: &mut impl crate::docker::CommandRunner,
+) -> Result<()> {
+    let class = RoleSelector::parse(&manifest.role_key)?;
+    let cwd = std::env::current_dir()?;
+    let workspace = if let Some(workspace_name) = manifest.workspace_name.as_ref() {
+        workspace::resolve_load_workspace(
+            config,
+            &class,
+            &cwd,
+            LoadWorkspaceInput::Saved(workspace_name.clone()),
+            &[],
+        )?
+    } else {
+        let cwd_fingerprint =
+            instance::manifest::host_path_fingerprint(&cwd.canonicalize()?.display().to_string());
+        anyhow::ensure!(
+            cwd_fingerprint == manifest.host_workdir_fingerprint,
+            "cannot restore ad-hoc instance `{}` from {}; rerun `jackin hardline {}` from its original project directory or use `jackin eject {} --purge` to discard it",
+            manifest.container_base,
+            cwd.display(),
+            manifest.container_base,
+            manifest.container_base
+        );
+        workspace::resolve_load_workspace(
+            config,
+            &class,
+            &cwd,
+            LoadWorkspaceInput::CurrentDir,
+            &[],
+        )?
+    };
+
+    let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
+    if !sensitive.is_empty() && !crate::workspace::confirm_sensitive_mounts(&sensitive)? {
+        anyhow::bail!("aborted — sensitive mount paths were not confirmed");
+    }
+
+    let opts = runtime::LoadOptions {
+        agent: Some(manifest.agent_runtime.parse().map_err(|_| {
+            anyhow::anyhow!(
+                "instance `{}` has unknown agent runtime {:?}",
+                manifest.container_base,
+                manifest.agent_runtime
+            )
+        })?),
+        role_branch: manifest.role_source_ref.clone(),
+        restore_container_base: Some(manifest.container_base.clone()),
+        ..runtime::LoadOptions::default()
+    };
+    runtime::load_role(paths, config, &class, &workspace, runner, &opts)
+}
+
 /// Render the `config auth show` output as a string. Empty workspace + role
 /// names fall through to layer 1 (global), so this prints the global default
 /// for each agent. Printing every built-in agent avoids privileging any one
@@ -1686,6 +1777,87 @@ mod auth_set_tests {
             resolved.as_deref(),
             Some("jackin-workspace-agentsmith-k7p9m2xq")
         );
+    }
+
+    #[test]
+    fn hardline_restore_candidate_marks_missing_manifest_available() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container = "jackin-workspace-agentsmith-k7p9m2xq";
+        let mut manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
+            container_base: container,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: instance::DockerResources {
+                role_container: container.to_string(),
+                dind_container: format!("{container}-dind"),
+                network: format!("{container}-net"),
+                certs_volume: format!("{container}-dind-certs"),
+            },
+        });
+        manifest.mark_status(instance::InstanceStatus::Crashed);
+        let state_dir = paths.data_dir.join(container);
+        manifest.write(&state_dir).unwrap();
+        instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let mut runner = runtime::FakeRunner::default();
+
+        let candidate = restore_candidate_for_hardline(&paths, container, &mut runner)
+            .unwrap()
+            .expect("missing crashed manifest should restore");
+
+        assert_eq!(candidate.container_base, container);
+        let manifest = instance::InstanceManifest::read(&state_dir).unwrap();
+        assert_eq!(manifest.status, instance::InstanceStatus::RestoreAvailable);
+        let index = instance::InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
+        assert_eq!(
+            index.instances[0].status,
+            instance::InstanceStatus::RestoreAvailable
+        );
+    }
+
+    #[test]
+    fn hardline_restore_candidate_errors_when_docker_unavailable() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container = "jackin-workspace-agentsmith-k7p9m2xq";
+        let mut manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
+            container_base: container,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: instance::DockerResources {
+                role_container: container.to_string(),
+                dind_container: format!("{container}-dind"),
+                network: format!("{container}-net"),
+                certs_volume: format!("{container}-dind-certs"),
+            },
+        });
+        manifest.mark_status(instance::InstanceStatus::Crashed);
+        manifest.write(&paths.data_dir.join(container)).unwrap();
+        let mut runner = runtime::FakeRunner::default();
+        runner.fail_with.push((
+            "docker inspect".to_string(),
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+        ));
+
+        let error = restore_candidate_for_hardline(&paths, container, &mut runner).unwrap_err();
+
+        assert!(error.to_string().contains("Docker is unavailable"));
     }
 
     #[test]

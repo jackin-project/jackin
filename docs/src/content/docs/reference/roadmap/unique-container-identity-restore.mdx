@@ -3,7 +3,7 @@ title: "Unique Container Identity and Restore"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — DNS-safe unique names, per-instance manifests, the rebuildable instance index, first-pass missing-container detection, Docker-unavailable diagnostics, explicit deleted-container writable-layer loss reporting, instance-ID targeting for hardline/eject/purge, bare `hardline` lookup for indexed workspace/ad-hoc instances, Java Testcontainers DinD smoke coverage, and legacy isolation-state manifest backfill have shipped; hardline recovery UI and stronger restore guarantees remain open (Infrastructure)
+**Status**: Partially implemented — DNS-safe unique names, per-instance manifests, the rebuildable instance index, first-pass missing-container detection, Docker-unavailable diagnostics, explicit deleted-container writable-layer loss reporting, instance-ID targeting for hardline/eject/purge, bare `hardline` lookup for indexed workspace/ad-hoc instances, exact `hardline` rebuild for missing recoverable instances, Java Testcontainers DinD smoke coverage, and legacy isolation-state manifest backfill have shipped; recovery pickers, console recovery UI, and stronger restore guarantees remain open (Infrastructure)
 
 ## Problem
 
@@ -217,7 +217,7 @@ Status: partially implemented. New launches write `.jackin/instance.json` with l
 
 ### Phase 3 — Hardline and UI recovery
 
-Status: partially implemented for CLI targeting. Bare `jackin hardline` can resolve indexed workspace/ad-hoc instances from the current directory, and explicit `hardline`, `eject`, and `purge` selectors can target an indexed instance ID. Interactive recovery pickers, agent-session selection, and console panels remain open.
+Status: partially implemented for CLI targeting and exact missing-instance rebuilds. Bare `jackin hardline` can resolve indexed workspace/ad-hoc instances from the current directory, exact `hardline` targets rebuild recoverable missing instances through the launch restore path, and explicit `hardline`, `eject`, and `purge` selectors can target an indexed instance ID. Interactive recovery pickers, agent-session selection, and console panels remain open.
 
 - Expand `jackin hardline` so it resolves the current workspace/directory, prompts across matching instances, prompts across agent sessions, and can start a new agent session inside the selected running container.
 - Add a console restore picker and active-instance panel that separates human labels from Docker names.

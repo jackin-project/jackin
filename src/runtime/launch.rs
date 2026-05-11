@@ -59,6 +59,9 @@ pub struct LoadOptions {
     /// any `published_image`), and tag it with a branch-specific name so the
     /// stable image is not overwritten.
     pub role_branch: Option<String>,
+
+    /// Exact missing instance to restore instead of scanning for candidates.
+    pub restore_container_base: Option<String>,
 }
 
 impl LoadOptions {
@@ -73,6 +76,7 @@ impl LoadOptions {
             host_env: None,
             agent: None,
             role_branch: None,
+            restore_container_base: None,
         }
     }
 
@@ -88,6 +92,7 @@ impl LoadOptions {
             host_env: None,
             agent: None,
             role_branch: None,
+            restore_container_base: None,
         }
     }
 }
@@ -103,6 +108,7 @@ impl Default for LoadOptions {
             host_env: None,
             agent: None,
             role_branch: None,
+            restore_container_base: None,
         }
     }
 }
@@ -1496,15 +1502,19 @@ fn load_role_with(
 
     let load_result = (|| -> anyhow::Result<String> {
         let role_key = selector.key();
-        let restore_container = resolve_restore_candidate(
-            paths,
-            workspace_name.as_deref(),
-            workspace.label.as_str(),
-            &workspace.workdir,
-            &role_key,
-            agent,
-            runner,
-        )?;
+        let restore_container = if let Some(container) = opts.restore_container_base.as_ref() {
+            Some(container.clone())
+        } else {
+            resolve_restore_candidate(
+                paths,
+                workspace_name.as_deref(),
+                workspace.label.as_str(),
+                &workspace.workdir,
+                &role_key,
+                agent,
+                runner,
+            )?
+        };
 
         // Step 2: Build Docker image
         let rebuild = opts.rebuild;
