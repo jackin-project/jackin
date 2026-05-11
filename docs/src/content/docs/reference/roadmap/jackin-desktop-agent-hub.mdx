@@ -287,9 +287,10 @@ Recommended layout:
 - Accounts: Claude/Codex/Amp account cards with source, plan/quota, reset time, and repair/login actions.
 
 The first window slice now adds this `NavigationSplitView` shell and wires the
-sidebar destinations to the same daemon-backed menu model. Detailed filters,
-launch buttons, account cards, and attention actions remain in the focused
-follow-up PRs so the initial native window stays reviewable.
+sidebar destinations to the same daemon-backed menu model. The Pull Requests
+and Projects panes now include first-pass organization, project, and draft/open
+filters over daemon-provided PR state. Launch buttons, account cards, and
+attention actions remain in focused follow-up PRs.
 
 Launching a workspace from the app should always use Ghostty in v1. The app can open a new Ghostty tab or new Ghostty window and run the appropriate `jackin load` / `jackin hardline` flow with `--debug` only for operator-requested smoke validation, not normal app launches. Other terminal adapters are out of scope until the Ghostty path proves the product shape.
 
@@ -551,7 +552,11 @@ Delivery rules:
   panes.
 - PR 2: Add the inbox-style Pull Requests view with organization/project
   filters.
+  Started with shared filters for organization, project/repository, and
+  draft/open state over the daemon-backed PR list.
 - PR 3: Add the Projects view for recently active Jackin repositories.
+  Started with repository grouping from the daemon-backed PR list and an
+  organization filter.
 - PR 4: Add the Workspaces view for saved workspace visibility and launch-only
   actions.
 - PR 5: Add the Running Agents view with per-workspace agent counts and Ghostty
