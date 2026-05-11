@@ -6,8 +6,8 @@ use ratatui::layout::Rect;
 
 use super::super::super::widgets::file_browser::FileBrowserState;
 use super::super::state::{
-    DragState, EditorTab, ManagerListRow, ManagerStage, ManagerState, Modal, MountScrollFocus,
-    clamp_split,
+    DragState, EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, Modal,
+    MountScrollFocus, clamp_split,
 };
 
 /// Minimum terminal width (in columns) at which the list/details seam is
@@ -27,6 +27,8 @@ const LIST_HEADER_HEIGHT: u16 = 3;
 /// Height of the footer chunk in the list-view chrome. Mirrors
 /// `Constraint::Length(2)` in `render::render`.
 const LIST_FOOTER_HEIGHT: u16 = 2;
+const EDITOR_HEADER_HEIGHT: u16 = 3;
+const EDITOR_TAB_STRIP_HEIGHT: u16 = 2;
 const MOUSE_HORIZONTAL_SCROLL_STEP: u16 = 1;
 
 /// Dispatch a mouse event into the workspace manager's list view. Drives
@@ -56,6 +58,12 @@ pub fn handle_mouse_with_config(
     config: Option<&crate::config::AppConfig>,
 ) {
     if term_size.width < MIN_DRAGGABLE_WIDTH {
+        return;
+    }
+
+    if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+        && try_select_editor_tab(state, mouse)
+    {
         return;
     }
 
@@ -145,6 +153,57 @@ pub fn handle_mouse_with_config(
         }
         _ => {}
     }
+}
+
+fn try_select_editor_tab(state: &mut ManagerState<'_>, mouse: MouseEvent) -> bool {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return false;
+    };
+    if editor.modal.is_some() {
+        return false;
+    }
+
+    let Some(tab) = editor_tab_at(mouse) else {
+        return false;
+    };
+
+    let was_secrets = editor.active_tab == EditorTab::Secrets;
+    editor.active_tab = tab;
+    editor.active_field = FieldFocus::Row(0);
+    editor.workspace_mounts_scroll_focused = false;
+    if editor.active_tab != EditorTab::Auth {
+        editor.auth_selected_kind = None;
+    }
+    if was_secrets && editor.active_tab != EditorTab::Secrets {
+        editor.unmasked_rows.clear();
+        editor.secrets_expanded.clear();
+    }
+    true
+}
+
+fn editor_tab_at(mouse: MouseEvent) -> Option<EditorTab> {
+    if mouse.row < EDITOR_HEADER_HEIGHT
+        || mouse.row >= EDITOR_HEADER_HEIGHT.saturating_add(EDITOR_TAB_STRIP_HEIGHT)
+    {
+        return None;
+    }
+
+    let labels = [
+        (EditorTab::General, "General"),
+        (EditorTab::Mounts, "Mounts"),
+        (EditorTab::Roles, "Roles"),
+        (EditorTab::Secrets, "Environments"),
+        (EditorTab::Auth, "Auth"),
+    ];
+    let mut x = 0u16;
+    for (tab, label) in labels {
+        let width = label.len() as u16 + 2;
+        if mouse.column >= x && mouse.column < x.saturating_add(width) {
+            return Some(tab);
+        }
+        x = x.saturating_add(width + 1);
+    }
+    None
 }
 
 fn try_drag_horizontal_scrollbar(
@@ -701,8 +760,8 @@ mod mouse_drag_tests {
     //! real terminal.
     use super::{MOUSE_HORIZONTAL_SCROLL_STEP, handle_mouse, handle_mouse_with_config};
     use crate::console::manager::state::{
-        DEFAULT_SPLIT_PCT, EditorState, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage, ManagerState,
-        Modal, MountScrollFocus,
+        DEFAULT_SPLIT_PCT, EditorState, EditorTab, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage,
+        ManagerState, Modal, MountScrollFocus, SecretsScopeTag,
     };
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -949,6 +1008,57 @@ mod mouse_drag_tests {
             row,
             modifiers: KeyModifiers::NONE,
         }
+    }
+
+    #[test]
+    fn mouse_down_on_editor_tab_selects_tab() {
+        let mut state = list_state();
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        state.stage = ManagerStage::Editor(EditorState::new_edit("x".into(), ws));
+
+        // Rendered tab spans start at x=0:
+        // " General " (0..9), space, " Mounts " (10..18), space,
+        // " Roles " (19..26), space, " Environments " (27..41).
+        handle_mouse(&mut state, mouse_down_at(33, 3), term(100));
+
+        let ManagerStage::Editor(editor) = state.stage else {
+            panic!("expected editor stage");
+        };
+        assert_eq!(editor.active_tab, EditorTab::Secrets);
+        assert!(matches!(
+            editor.active_field,
+            crate::console::manager::state::FieldFocus::Row(0)
+        ));
+    }
+
+    #[test]
+    fn mouse_down_on_editor_tab_clears_secrets_view_when_leaving() {
+        let mut state = list_state();
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let mut editor = EditorState::new_edit("x".into(), ws);
+        editor.active_tab = EditorTab::Secrets;
+        editor
+            .unmasked_rows
+            .insert((SecretsScopeTag::Workspace, "TOKEN".to_string()));
+        editor.secrets_expanded.insert("agent-smith".to_string());
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_mouse(&mut state, mouse_down_at(3, 3), term(100));
+
+        let ManagerStage::Editor(editor) = state.stage else {
+            panic!("expected editor stage");
+        };
+        assert_eq!(editor.active_tab, EditorTab::General);
+        assert!(editor.unmasked_rows.is_empty());
+        assert!(editor.secrets_expanded.is_empty());
     }
 
     #[test]
