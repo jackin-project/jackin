@@ -1,5 +1,6 @@
 use crate::agent::Agent;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::Path;
 
 pub const INSTANCE_MANIFEST_VERSION: u32 = 1;
@@ -41,6 +42,7 @@ pub struct InstanceManifest {
     pub workspace_name: Option<String>,
     pub workspace_label: String,
     pub workdir: String,
+    pub host_workdir_fingerprint: String,
     pub role_key: String,
     pub role_display_name: String,
     pub agent_runtime: String,
@@ -75,6 +77,7 @@ pub struct NewInstanceManifest<'a> {
     pub workspace_name: Option<&'a str>,
     pub workspace_label: &'a str,
     pub workdir: &'a str,
+    pub host_workdir_fingerprint: &'a str,
     pub role_key: &'a str,
     pub role_display_name: &'a str,
     pub agent_runtime: Agent,
@@ -110,6 +113,7 @@ impl InstanceManifest {
             workspace_name: input.workspace_name.map(ToOwned::to_owned),
             workspace_label: input.workspace_label.to_string(),
             workdir: input.workdir.to_string(),
+            host_workdir_fingerprint: input.host_workdir_fingerprint.to_string(),
             role_key: input.role_key.to_string(),
             role_display_name: input.role_display_name.to_string(),
             agent_runtime: input.agent_runtime.slug().to_string(),
@@ -154,6 +158,24 @@ impl InstanceManifest {
         std::fs::write(path, bytes)?;
         Ok(())
     }
+}
+
+pub fn host_path_fingerprint(path: &str) -> String {
+    let canonical = std::fs::canonicalize(path)
+        .ok()
+        .map_or_else(|| path.to_string(), |path| path.display().to_string());
+    let digest = Sha256::digest(canonical.as_bytes());
+    let hex: String = digest
+        .iter()
+        .flat_map(|byte| {
+            const HEX: &[u8; 16] = b"0123456789abcdef";
+            [
+                HEX[(byte >> 4) as usize] as char,
+                HEX[(byte & 0x0f) as usize] as char,
+            ]
+        })
+        .collect();
+    format!("sha256:{hex}")
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -335,6 +357,7 @@ fn legacy_manifest_from_isolation(state_dir: &Path) -> anyhow::Result<Option<Ins
         workspace_name: (!first.workspace.starts_with('/')).then(|| first.workspace.clone()),
         workspace_label: first.workspace.clone(),
         workdir: first.mount_dst.clone(),
+        host_workdir_fingerprint: host_path_fingerprint(&first.original_src),
         role_key: first.selector_key.clone(),
         role_display_name: first.selector_key.clone(),
         agent_runtime: Agent::Claude.slug().to_string(),
@@ -378,6 +401,7 @@ mod tests {
             workspace_name: Some("workspace"),
             workspace_label: "workspace",
             workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
             role_key: "org/agent",
             role_display_name: "Agent",
             agent_runtime: Agent::Claude,
@@ -410,6 +434,7 @@ mod tests {
             workspace_name: Some("workspace"),
             workspace_label: "workspace",
             workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
             role_key: "org/agent",
             role_display_name: "Agent",
             agent_runtime: Agent::Claude,
@@ -453,6 +478,7 @@ mod tests {
             workspace_name: Some("workspace"),
             workspace_label: "workspace",
             workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
             role_key: "org/agent",
             role_display_name: "Agent",
             agent_runtime: Agent::Claude,
@@ -510,5 +536,6 @@ mod tests {
         assert_eq!(manifest.role_key, "chainargos/agent-brown");
         assert_eq!(manifest.status, InstanceStatus::PreservedDirty);
         assert_eq!(manifest.image_tag, "jackin-chainargos__agent-brown");
+        assert!(manifest.host_workdir_fingerprint.starts_with("sha256:"));
     }
 }

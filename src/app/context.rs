@@ -838,6 +838,7 @@ mod tests {
             workspace_name: Some("my-app"),
             workspace_label: "my-app",
             workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
             role_key: "agent-smith",
             role_display_name: "Agent Smith",
             agent_runtime: crate::agent::Agent::Claude,

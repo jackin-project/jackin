@@ -1541,11 +1541,13 @@ fn load_role_with(
         let network = format!("{container_name}-net");
         let dind = format!("{container_name}-dind");
         let certs_volume = dind_certs_volume(&container_name);
+        let host_workdir_fingerprint = manifest_host_workdir_fingerprint(workspace);
         let new_manifest = InstanceManifest::new(NewInstanceManifest {
             container_base: &container_name,
             workspace_name: workspace_name.as_deref(),
             workspace_label: workspace.label.as_str(),
             workdir: &workspace.workdir,
+            host_workdir_fingerprint: &host_workdir_fingerprint,
             role_key: &role_key,
             role_display_name: &agent_display_name,
             agent_runtime: agent,
@@ -2073,6 +2075,26 @@ fn preserved_instance_status(state_dir: &std::path::Path) -> anyhow::Result<Inst
         return Ok(InstanceStatus::PreservedUnpushed);
     }
     Ok(InstanceStatus::RestoreAvailable)
+}
+
+fn manifest_host_workdir_fingerprint(workspace: &crate::workspace::ResolvedWorkspace) -> String {
+    workspace
+        .mounts
+        .iter()
+        .filter(|mount| path_covers_workdir(&mount.dst, &workspace.workdir))
+        .max_by_key(|mount| mount.dst.len())
+        .map_or_else(
+            || crate::instance::manifest::host_path_fingerprint(&workspace.workdir),
+            |mount| crate::instance::manifest::host_path_fingerprint(&mount.src),
+        )
+}
+
+fn path_covers_workdir(mount_dst: &str, workdir: &str) -> bool {
+    let mount_dst = mount_dst.trim_end_matches('/');
+    workdir == mount_dst
+        || workdir
+            .strip_prefix(mount_dst)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 /// Claim a unique DNS-safe container name by acquiring an exclusive lock file.
@@ -5298,6 +5320,7 @@ plugins = []
         assert!(body.contains(&format!(r#""container_base": "{container_name}""#)));
         assert!(body.contains(r#""role_key": "agent-smith""#));
         assert!(body.contains(r#""agent_runtime": "claude""#));
+        assert!(body.contains(r#""host_workdir_fingerprint": "sha256:"#));
         assert!(body.contains(r#""status": "restore_available""#));
         let index_body = std::fs::read_to_string(paths.data_dir.join("instances.json")).unwrap();
         assert!(index_body.contains(&format!(r#""container_base": "{container_name}""#)));
@@ -5950,6 +5973,7 @@ plugins = []
             workspace_name: Some("workspace"),
             workspace_label: "workspace",
             workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
             role_key: "agent-smith",
             role_display_name: "Agent Smith",
             agent_runtime: crate::agent::Agent::Claude,
