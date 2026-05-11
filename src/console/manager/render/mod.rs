@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 
 use super::state::{ManagerListRow, ManagerStage, ManagerState};
@@ -83,6 +83,48 @@ pub(super) fn render_footer(frame: &mut Frame, area: Rect, items: &[FooterItem])
     let line = Line::from(footer_spans(items));
     let p = Paragraph::new(line).alignment(Alignment::Center);
     frame.render_widget(p, area);
+}
+
+pub(super) fn line_width(line: &Line<'_>) -> usize {
+    line.spans
+        .iter()
+        .map(|span| span.content.chars().count())
+        .sum()
+}
+
+pub(super) fn max_line_width(lines: &[Line<'_>]) -> usize {
+    lines.iter().map(line_width).max().unwrap_or(0)
+}
+
+pub(super) fn render_horizontal_scrollbar(
+    frame: &mut Frame,
+    block_area: Rect,
+    content_width: usize,
+    scroll_x: u16,
+) {
+    let viewport = block_area.width.saturating_sub(2) as usize;
+    if viewport == 0 || content_width <= viewport {
+        return;
+    }
+    let max_position = content_width.saturating_sub(viewport);
+    let position = usize::from(scroll_x).min(max_position);
+    let mut state = ScrollbarState::new(content_width)
+        .position(position)
+        .viewport_content_length(viewport);
+    let scrollbar = Scrollbar::new(ScrollbarOrientation::HorizontalBottom)
+        .begin_symbol(None)
+        .end_symbol(None)
+        .track_symbol(Some("─"))
+        .thumb_symbol("█")
+        .track_style(Style::default().fg(PHOSPHOR_DARK))
+        .thumb_style(Style::default().fg(WHITE));
+    let area = Rect {
+        x: block_area.x + 1,
+        y: block_area.y + block_area.height.saturating_sub(1),
+        width: block_area.width.saturating_sub(2),
+        height: 1,
+    };
+    frame.render_stateful_widget(scrollbar, area, &mut state);
 }
 
 #[allow(clippy::too_many_lines)]

@@ -532,11 +532,18 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
         ));
 
     let Some(workspace) = workspace_for_global_mount_context(state) else {
+        let content_width = super::max_line_width(&lines);
         frame.render_widget(
             Paragraph::new(lines)
                 .block(workspace_block)
-                .scroll((0, state.scroll_x)),
+                .scroll((0, state.workspace_mounts_scroll_x)),
             area,
+        );
+        super::render_horizontal_scrollbar(
+            frame,
+            area,
+            content_width,
+            state.workspace_mounts_scroll_x,
         );
         return;
     };
@@ -547,11 +554,18 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
         .constraints([Constraint::Length(workspace_height), Constraint::Min(4)])
         .split(area);
 
+    let workspace_content_width = super::max_line_width(&lines);
     frame.render_widget(
         Paragraph::new(lines)
             .block(workspace_block)
-            .scroll((0, state.scroll_x)),
+            .scroll((0, state.workspace_mounts_scroll_x)),
         chunks[0],
+    );
+    super::render_horizontal_scrollbar(
+        frame,
+        chunks[0],
+        workspace_content_width,
+        state.workspace_mounts_scroll_x,
     );
 
     let mut global_lines = Vec::new();
@@ -580,11 +594,18 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
             global_title,
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
+    let global_content_width = super::max_line_width(&global_lines);
     frame.render_widget(
         Paragraph::new(global_lines)
             .block(global_block)
-            .scroll((0, state.scroll_x)),
+            .scroll((0, state.global_mounts_scroll_x)),
         chunks[1],
+    );
+    super::render_horizontal_scrollbar(
+        frame,
+        chunks[1],
+        global_content_width,
+        state.global_mounts_scroll_x,
     );
 }
 

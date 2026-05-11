@@ -92,10 +92,20 @@ pub(super) fn handle_editor_key(
 
     match key.code {
         KeyCode::Char('h' | 'H') if editor.active_tab == EditorTab::Mounts => {
-            editor.scroll_x = editor.scroll_x.saturating_sub(8);
+            if cursor_is_global_mount(editor, config) {
+                editor.global_mounts_scroll_x = editor.global_mounts_scroll_x.saturating_sub(8);
+            } else {
+                editor.workspace_mounts_scroll_x =
+                    editor.workspace_mounts_scroll_x.saturating_sub(8);
+            }
         }
         KeyCode::Char('l' | 'L') if editor.active_tab == EditorTab::Mounts => {
-            editor.scroll_x = editor.scroll_x.saturating_add(8);
+            if cursor_is_global_mount(editor, config) {
+                editor.global_mounts_scroll_x = editor.global_mounts_scroll_x.saturating_add(8);
+            } else {
+                editor.workspace_mounts_scroll_x =
+                    editor.workspace_mounts_scroll_x.saturating_add(8);
+            }
         }
         KeyCode::Tab | KeyCode::Right => {
             // Secrets tab `AgentHeader` absorbs `→` in both states
@@ -413,6 +423,23 @@ fn max_row_for_tab(editor: &EditorState<'_>, config: &AppConfig) -> usize {
             super::super::render::editor::auth_row_count(editor, config).saturating_sub(1)
         }
     }
+}
+
+fn cursor_is_global_mount(editor: &EditorState<'_>, config: &AppConfig) -> bool {
+    if editor.active_tab != EditorTab::Mounts {
+        return false;
+    }
+    let super::super::state::FieldFocus::Row(cursor) = editor.active_field;
+    let global_count = match editor.mode {
+        super::super::state::EditorMode::Edit { .. } => {
+            match config.workspace_applicable_mount_rows(&editor.pending) {
+                crate::config::WorkspaceGlobalMountRows::Applicable { rows, .. } => rows.len(),
+                crate::config::WorkspaceGlobalMountRows::Ambiguous { .. } => 0,
+            }
+        }
+        super::super::state::EditorMode::Create => 0,
+    };
+    global_count > 0 && cursor > editor.pending.mounts.len()
 }
 
 /// Walks forward past spacer rows. Defensive fallback to `candidate`

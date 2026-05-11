@@ -402,7 +402,12 @@ pub fn run_console(
                         console_location_debug(&state)
                     );
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
-                        manager::input::handle_mouse(ms, mouse, term_size);
+                        manager::input::handle_mouse_with_config(
+                            ms,
+                            mouse,
+                            term_size,
+                            Some(&config),
+                        );
                     }
                 }
                 _ => {}

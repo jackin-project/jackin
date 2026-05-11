@@ -299,14 +299,14 @@ fn render_details_pane(
     let mut idx = 0;
     render_general_subpanel(frame, rows[idx], ws);
     idx += 1;
-    render_mounts_subpanel(frame, rows[idx], mounts, state.list_scroll_x);
+    render_mounts_subpanel(frame, rows[idx], mounts, state.list_mounts_scroll_x);
     idx += 1;
     render_global_mounts_subpanel(
         frame,
         rows[idx],
         global_display.as_ref(),
         &global_mounts,
-        state.list_scroll_x,
+        state.list_global_mounts_scroll_x,
     );
     idx += 1;
     if show_envs {
@@ -591,11 +591,13 @@ fn render_mounts_subpanel(
         lines.extend(render_mount_lines(&rows, path_w));
     }
 
+    let content_width = super::max_line_width(&lines);
     let p = Paragraph::new(lines)
         .block(block)
         .scroll((0, scroll_x))
         .style(Style::default().fg(PHOSPHOR_GREEN));
     frame.render_widget(p, area);
+    super::render_horizontal_scrollbar(frame, area, content_width, scroll_x);
 }
 
 fn render_global_mounts_subpanel(
@@ -654,11 +656,13 @@ fn render_global_mounts_subpanel(
         ))),
     }
 
+    let content_width = super::max_line_width(&lines);
     let p = Paragraph::new(lines)
         .block(block)
         .scroll((0, scroll_x))
         .style(Style::default().fg(PHOSPHOR_GREEN));
     frame.render_widget(p, area);
+    super::render_horizontal_scrollbar(frame, area, content_width, scroll_x);
 }
 
 fn render_role_picker_subpanel(

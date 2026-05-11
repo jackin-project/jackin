@@ -44,17 +44,31 @@ const LIST_FOOTER_HEIGHT: u16 = 2;
 /// passing the current `terminal.size()?` as `term_size` so the handler
 /// can compute the seam column as `term_size.width * list_split_pct / 100`.
 pub fn handle_mouse(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: Rect) {
+    handle_mouse_with_config(state, mouse, term_size, None);
+}
+
+pub fn handle_mouse_with_config(
+    state: &mut ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+    config: Option<&crate::config::AppConfig>,
+) {
     if term_size.width < MIN_DRAGGABLE_WIDTH {
         return;
     }
 
     match mouse.kind {
+        MouseEventKind::Down(MouseButton::Left) | MouseEventKind::Drag(MouseButton::Left)
+            if try_drag_horizontal_scrollbar(state, mouse, term_size, config) =>
+        {
+            return;
+        }
         MouseEventKind::ScrollLeft => {
-            scroll_active_panel(state, -8);
+            scroll_active_panel(state, mouse, term_size, config, -8);
             return;
         }
         MouseEventKind::ScrollRight => {
-            scroll_active_panel(state, 8);
+            scroll_active_panel(state, mouse, term_size, config, 8);
             return;
         }
         _ => {}
@@ -111,7 +125,97 @@ pub fn handle_mouse(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
     }
 }
 
-fn scroll_active_panel(state: &mut ManagerState<'_>, delta: i16) {
+fn try_drag_horizontal_scrollbar(
+    state: &mut ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+    config: Option<&crate::config::AppConfig>,
+) -> bool {
+    match &mut state.stage {
+        ManagerStage::List => {
+            let Some((mounts, global)) = list_scroll_areas(state, term_size, config) else {
+                return false;
+            };
+            if drag_scrollbar(
+                &mut state.list_mounts_scroll_x,
+                mouse,
+                mounts.area,
+                mounts.content_width,
+            ) {
+                return true;
+            }
+            drag_scrollbar(
+                &mut state.list_global_mounts_scroll_x,
+                mouse,
+                global.area,
+                global.content_width,
+            )
+        }
+        ManagerStage::Editor(editor) => {
+            let (workspace, global) = editor_scroll_areas(editor, term_size);
+            if drag_scrollbar(
+                &mut editor.workspace_mounts_scroll_x,
+                mouse,
+                workspace.area,
+                workspace.content_width,
+            ) {
+                return true;
+            }
+            drag_scrollbar(
+                &mut editor.global_mounts_scroll_x,
+                mouse,
+                global.area,
+                global.content_width,
+            )
+        }
+        ManagerStage::GlobalMounts(global) => drag_scrollbar(
+            &mut global.scroll_x,
+            mouse,
+            Rect {
+                x: 0,
+                y: LIST_HEADER_HEIGHT,
+                width: term_size.width,
+                height: term_size
+                    .height
+                    .saturating_sub(LIST_HEADER_HEIGHT + LIST_FOOTER_HEIGHT),
+            },
+            global_mount_rows_content_width(&global.pending),
+        ),
+        ManagerStage::CreatePrelude(_) | ManagerStage::ConfirmDelete { .. } => false,
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ScrollArea {
+    area: Rect,
+    content_width: usize,
+}
+
+fn drag_scrollbar(value: &mut u16, mouse: MouseEvent, area: Rect, content_width: usize) -> bool {
+    let viewport = area.width.saturating_sub(2) as usize;
+    if viewport == 0 || content_width <= viewport {
+        return false;
+    }
+    let scrollbar_y = area.y + area.height.saturating_sub(1);
+    let start_x = area.x + 1;
+    let end_x = area.x + area.width.saturating_sub(2);
+    if mouse.row != scrollbar_y || mouse.column < start_x || mouse.column > end_x {
+        return false;
+    }
+    let max_position = content_width.saturating_sub(viewport);
+    let track = usize::from(end_x.saturating_sub(start_x)).max(1);
+    let rel = usize::from(mouse.column.saturating_sub(start_x));
+    *value = ((max_position * rel) / track).min(usize::from(u16::MAX)) as u16;
+    true
+}
+
+fn scroll_active_panel(
+    state: &mut ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+    config: Option<&crate::config::AppConfig>,
+    delta: i16,
+) {
     let apply = |value: &mut u16| {
         if delta.is_negative() {
             *value = value.saturating_sub(delta.unsigned_abs());
@@ -120,11 +224,171 @@ fn scroll_active_panel(state: &mut ManagerState<'_>, delta: i16) {
         }
     };
     match &mut state.stage {
-        ManagerStage::List => apply(&mut state.list_scroll_x),
-        ManagerStage::Editor(editor) => apply(&mut editor.scroll_x),
+        ManagerStage::List => match list_scroll_target(state, mouse, term_size, config) {
+            ScrollTarget::GlobalMounts => apply(&mut state.list_global_mounts_scroll_x),
+            ScrollTarget::Mounts => apply(&mut state.list_mounts_scroll_x),
+        },
+        ManagerStage::Editor(editor) => match editor_scroll_target(editor, mouse, term_size) {
+            ScrollTarget::GlobalMounts => apply(&mut editor.global_mounts_scroll_x),
+            ScrollTarget::Mounts => apply(&mut editor.workspace_mounts_scroll_x),
+        },
         ManagerStage::GlobalMounts(global) => apply(&mut global.scroll_x),
         ManagerStage::CreatePrelude(_) | ManagerStage::ConfirmDelete { .. } => {}
     }
+}
+
+#[derive(Clone, Copy)]
+enum ScrollTarget {
+    Mounts,
+    GlobalMounts,
+}
+
+fn list_scroll_target(
+    state: &ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+    config: Option<&crate::config::AppConfig>,
+) -> ScrollTarget {
+    let Some((_, global)) = list_scroll_areas(state, term_size, config) else {
+        return ScrollTarget::Mounts;
+    };
+    if mouse.column > seam_column(state.list_split_pct, term_size.width)
+        && mouse.row >= global.area.y
+    {
+        ScrollTarget::GlobalMounts
+    } else {
+        ScrollTarget::Mounts
+    }
+}
+
+fn editor_scroll_target(
+    editor: &super::super::state::EditorState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> ScrollTarget {
+    if editor.active_tab != super::super::state::EditorTab::Mounts {
+        return ScrollTarget::Mounts;
+    }
+    let (_, global) = editor_scroll_areas(editor, term_size);
+    if mouse.row >= global.area.y {
+        ScrollTarget::GlobalMounts
+    } else {
+        ScrollTarget::Mounts
+    }
+}
+
+fn list_scroll_areas(
+    state: &ManagerState<'_>,
+    term_size: Rect,
+    config: Option<&crate::config::AppConfig>,
+) -> Option<(ScrollArea, ScrollArea)> {
+    let config = config?;
+    let summary = state.selected_workspace_summary()?;
+    let workspace = config.workspaces.get(&summary.name)?;
+    let seam_x = seam_column(state.list_split_pct, term_size.width);
+    let right_x = seam_x;
+    let right_w = term_size.width.saturating_sub(seam_x);
+    let body_y = LIST_HEADER_HEIGHT;
+    let mounts_h = mount_block_height(workspace.mounts.as_slice());
+    let global_rows = match config.workspace_applicable_mount_rows(workspace) {
+        crate::config::WorkspaceGlobalMountRows::Applicable { rows, .. } => rows,
+        crate::config::WorkspaceGlobalMountRows::Ambiguous { .. } => Vec::new(),
+    };
+    let global_mounts: Vec<crate::workspace::MountConfig> =
+        global_rows.iter().map(|row| row.mount.clone()).collect();
+    let global_h = mount_block_height(global_mounts.as_slice());
+    Some((
+        ScrollArea {
+            area: Rect {
+                x: right_x,
+                y: body_y + 3,
+                width: right_w,
+                height: mounts_h,
+            },
+            content_width: mount_rows_content_width(workspace.mounts.as_slice()),
+        },
+        ScrollArea {
+            area: Rect {
+                x: right_x,
+                y: body_y + 3 + mounts_h,
+                width: right_w,
+                height: global_h,
+            },
+            content_width: mount_rows_content_width(global_mounts.as_slice()),
+        },
+    ))
+}
+
+fn editor_scroll_areas(
+    editor: &super::super::state::EditorState<'_>,
+    term_size: Rect,
+) -> (ScrollArea, ScrollArea) {
+    let body_y = 5;
+    let body_h = term_size.height.saturating_sub(7);
+    let workspace_rows = editor.pending.mounts.iter().fold(1usize, |acc, mount| {
+        acc + if mount.src == mount.dst { 1 } else { 2 }
+    }) + 2;
+    let workspace_h = (workspace_rows as u16 + 2).min(body_h.saturating_sub(4).max(4));
+    (
+        ScrollArea {
+            area: Rect {
+                x: 0,
+                y: body_y,
+                width: term_size.width,
+                height: workspace_h,
+            },
+            content_width: mount_rows_content_width(editor.pending.mounts.as_slice()),
+        },
+        ScrollArea {
+            area: Rect {
+                x: 0,
+                y: body_y + workspace_h,
+                width: term_size.width,
+                height: body_h.saturating_sub(workspace_h),
+            },
+            content_width: 160,
+        },
+    )
+}
+
+fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
+    let data_rows: usize = if mounts.is_empty() {
+        1
+    } else {
+        mounts
+            .iter()
+            .map(|mount| if mount.src == mount.dst { 1 } else { 2 })
+            .sum()
+    };
+    (data_rows + 3).min(12) as u16
+}
+
+fn mount_rows_content_width(mounts: &[crate::workspace::MountConfig]) -> usize {
+    let header = "  Destination  Mode  Isolation  Type".len();
+    mounts
+        .iter()
+        .map(|mount| {
+            let dst = crate::tui::shorten_home(&mount.dst);
+            let src = crate::tui::shorten_home(&mount.src);
+            let path_width = if mount.src == mount.dst {
+                dst.chars().count()
+            } else {
+                dst.chars()
+                    .count()
+                    .max(src.chars().count() + "host: ".len())
+            };
+            path_width + "  rw    worktree   ".len() + 24
+        })
+        .max()
+        .unwrap_or(header)
+        .max(header)
+}
+
+fn global_mount_rows_content_width(rows: &[crate::config::GlobalMountRow]) -> usize {
+    rows.iter()
+        .map(|row| mount_rows_content_width(std::slice::from_ref(&row.mount)))
+        .max()
+        .unwrap_or("  Name                 Destination                    Mode Scope Type".len())
 }
 
 /// If the `Editor` or `CreatePrelude` stage has an open `FileBrowser`

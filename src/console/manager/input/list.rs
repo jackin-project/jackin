@@ -26,11 +26,11 @@ pub(super) fn handle_list_key(
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => Ok(InputOutcome::ExitJackin),
         KeyCode::Left | KeyCode::Char('h' | 'H') => {
-            state.list_scroll_x = state.list_scroll_x.saturating_sub(8);
+            state.list_mounts_scroll_x = state.list_mounts_scroll_x.saturating_sub(8);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Right | KeyCode::Char('l' | 'L') => {
-            state.list_scroll_x = state.list_scroll_x.saturating_add(8);
+            state.list_mounts_scroll_x = state.list_mounts_scroll_x.saturating_add(8);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
@@ -236,11 +236,11 @@ pub(super) fn handle_inline_role_picker(
     };
     match key.code {
         KeyCode::Left | KeyCode::Char('h' | 'H') => {
-            state.list_scroll_x = state.list_scroll_x.saturating_sub(8);
+            state.list_global_mounts_scroll_x = state.list_global_mounts_scroll_x.saturating_sub(8);
             InputOutcome::Continue
         }
         KeyCode::Right | KeyCode::Char('l' | 'L') => {
-            state.list_scroll_x = state.list_scroll_x.saturating_add(8);
+            state.list_global_mounts_scroll_x = state.list_global_mounts_scroll_x.saturating_add(8);
             InputOutcome::Continue
         }
         _ => match picker.handle_key(key) {

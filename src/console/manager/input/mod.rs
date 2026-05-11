@@ -19,7 +19,7 @@ use super::state::{
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 
-pub use mouse::handle_mouse;
+pub use mouse::{handle_mouse, handle_mouse_with_config};
 
 #[derive(Debug)]
 pub enum InputOutcome {

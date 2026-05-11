@@ -62,7 +62,8 @@ pub struct ManagerState<'a> {
     /// Editor / `CreatePrelude` stages own their own modal slots.
     pub list_modal: Option<Modal<'a>>,
     pub inline_role_picker: Option<RolePickerState>,
-    pub list_scroll_x: u16,
+    pub list_mounts_scroll_x: u16,
+    pub list_global_mounts_scroll_x: u16,
     pub list_split_pct: u16,
     pub drag_state: Option<DragState>,
     /// Process-lifetime cache of `op` structural metadata, threaded
@@ -224,7 +225,8 @@ pub struct EditorState<'a> {
     /// touch this slot — see `AUTH00x` debug tags in
     /// `input::auth` for the recovery path on stash desync.
     pub pending_auth_form_return: Option<AuthFormReturnPath>,
-    pub scroll_x: u16,
+    pub workspace_mounts_scroll_x: u16,
+    pub global_mounts_scroll_x: u16,
 }
 
 /// Captured auth-form context to re-mount the form after a side
@@ -652,7 +654,8 @@ impl ManagerState<'_> {
             toast: None,
             list_modal: None,
             inline_role_picker: None,
-            list_scroll_x: 0,
+            list_mounts_scroll_x: 0,
+            list_global_mounts_scroll_x: 0,
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
             op_cache,
@@ -783,7 +786,8 @@ impl EditorState<'_> {
             pending_picker_target: None,
             pending_picker_value: None,
             pending_auth_form_return: None,
-            scroll_x: 0,
+            workspace_mounts_scroll_x: 0,
+            global_mounts_scroll_x: 0,
         }
     }
 
@@ -807,7 +811,8 @@ impl EditorState<'_> {
             pending_picker_target: None,
             pending_picker_value: None,
             pending_auth_form_return: None,
-            scroll_x: 0,
+            workspace_mounts_scroll_x: 0,
+            global_mounts_scroll_x: 0,
         }
     }
 

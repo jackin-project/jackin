@@ -81,12 +81,14 @@ pub(super) fn render_global_mounts(frame: &mut Frame, state: &GlobalMountsState<
             Style::default().fg(ratatui::style::Color::Rgb(255, 94, 122)),
         )));
     }
+    let content_width = super::max_line_width(&lines);
     frame.render_widget(
         Paragraph::new(lines)
             .block(block)
             .scroll((0, state.scroll_x)),
         chunks[1],
     );
+    super::render_horizontal_scrollbar(frame, chunks[1], content_width, state.scroll_x);
 
     let mut items = vec![
         FooterItem::Key("A"),
