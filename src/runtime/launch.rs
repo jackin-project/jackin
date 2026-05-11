@@ -1089,7 +1089,9 @@ fn diagnose_premature_exit(
         // (`No such container`) is just as actionable as anything we
         // could synthesize, and a transient inspect hiccup must not
         // hijack an otherwise-healthy launch.
-        ContainerState::Running | ContainerState::NotFound => None,
+        ContainerState::Running
+        | ContainerState::NotFound
+        | ContainerState::InspectUnavailable(_) => None,
         ContainerState::Stopped {
             exit_code,
             oom_killed,
@@ -1897,6 +1899,12 @@ fn load_role_with(
                 )?;
                 cleanup.disarm();
             }
+            ContainerState::InspectUnavailable(reason) => {
+                cleanup.disarm();
+                anyhow::bail!(
+                    "cannot inspect container `{container_name}` after the session because Docker is unavailable or returned an unexpected response: {reason}"
+                );
+            }
             ContainerState::NotFound
                 if matches!(
                     decision,
@@ -1970,6 +1978,12 @@ fn resolve_restore_candidate(
                     "matching jackin instance `{}` already has a Docker container; use `jackin hardline {}` or `jackin eject {}` before starting a fresh load",
                     manifest.container_base,
                     manifest.container_base,
+                    manifest.container_base
+                );
+            }
+            ContainerState::InspectUnavailable(reason) => {
+                anyhow::bail!(
+                    "cannot inspect matching jackin instance `{}` because Docker is unavailable or returned an unexpected response: {reason}",
                     manifest.container_base
                 );
             }
@@ -2134,6 +2148,11 @@ fn claim_container_name(
             }
             ContainerState::Running | ContainerState::Stopped { .. } => false,
             ContainerState::NotFound => true,
+            ContainerState::InspectUnavailable(reason) => {
+                anyhow::bail!(
+                    "cannot claim container name `{name}` because Docker is unavailable or returned an unexpected response: {reason}"
+                );
+            }
         };
 
         if slot_free {
@@ -2156,6 +2175,11 @@ fn claim_known_container_name(
         ContainerState::Running | ContainerState::Stopped { .. } => {
             anyhow::bail!(
                 "cannot restore `{container_name}` because its Docker container already exists; use `jackin hardline {container_name}`"
+            );
+        }
+        ContainerState::InspectUnavailable(reason) => {
+            anyhow::bail!(
+                "cannot restore `{container_name}` because Docker is unavailable or returned an unexpected response: {reason}"
             );
         }
     }
@@ -5891,6 +5915,23 @@ plugins = []
                 .iter()
                 .any(|call| call.contains("docker rm"))
         );
+    }
+
+    #[test]
+    fn claim_container_name_docker_unavailable_errors() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::default();
+        runner.fail_with.push((
+            "docker inspect".to_string(),
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+        ));
+
+        let err = claim_container_name(&paths, None, &selector, &mut runner).unwrap_err();
+
+        assert!(err.to_string().contains("cannot claim container name"));
+        assert!(err.to_string().contains("Docker is unavailable"));
     }
 
     /// Running collision → skip that random name and claim another one.

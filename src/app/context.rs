@@ -354,7 +354,9 @@ fn ad_hoc_hardline_candidates(
         }
         if matches!(
             runtime::inspect_container_state(runner, &manifest.container_base),
-            runtime::ContainerState::Running | runtime::ContainerState::Stopped { .. }
+            runtime::ContainerState::Running
+                | runtime::ContainerState::Stopped { .. }
+                | runtime::ContainerState::InspectUnavailable(_)
         ) || manifest.is_restore_candidate()
         {
             candidates.push(manifest.container_base);
@@ -412,7 +414,9 @@ fn indexed_hardline_candidates(
         .filter(|manifest| {
             matches!(
                 runtime::inspect_container_state(runner, &manifest.container_base),
-                runtime::ContainerState::Running | runtime::ContainerState::Stopped { .. }
+                runtime::ContainerState::Running
+                    | runtime::ContainerState::Stopped { .. }
+                    | runtime::ContainerState::InspectUnavailable(_)
             ) || manifest.is_restore_candidate()
         })
         .map(|manifest| manifest.container_base)

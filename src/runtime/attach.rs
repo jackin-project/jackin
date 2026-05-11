@@ -3,12 +3,12 @@ use crate::instance::{InstanceIndex, InstanceManifest, InstanceStatus};
 use crate::paths::JackinPaths;
 use crate::tui;
 
-use super::identity::try_capture;
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum ContainerState {
-    /// `docker inspect` failed — container does not exist (or daemon is down).
+    /// `docker inspect` confirmed the named container does not exist.
     NotFound,
+    /// `docker inspect` could not determine container state.
+    InspectUnavailable(String),
     Running,
     Stopped {
         exit_code: i32,
@@ -19,11 +19,9 @@ pub enum ContainerState {
 /// Query a container's state with a single `docker inspect` call.
 ///
 /// Uses Go-template formatting to extract three fields in one round trip:
-/// `Running`, `ExitCode`, and `OOMKilled`.  Returns `NotFound` when inspect
-/// fails for any reason (missing container, daemon unreachable, parse error).
+/// `Running`, `ExitCode`, and `OOMKilled`.
 pub fn inspect_container_state(runner: &mut impl CommandRunner, name: &str) -> ContainerState {
-    let Some(output) = try_capture(
-        runner,
+    let output = match runner.capture(
         "docker",
         &[
             "inspect",
@@ -31,9 +29,18 @@ pub fn inspect_container_state(runner: &mut impl CommandRunner, name: &str) -> C
             "{{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}}",
             name,
         ],
-    ) else {
-        return ContainerState::NotFound;
+        None,
+    ) {
+        Ok(output) => output,
+        Err(error) => {
+            let error = error.to_string();
+            if docker_inspect_reports_missing_container(&error) {
+                return ContainerState::NotFound;
+            }
+            return ContainerState::InspectUnavailable(error);
+        }
     };
+
     let mut parts = output.split_whitespace();
     let Some(running) = parts.next() else {
         return ContainerState::NotFound;
@@ -41,12 +48,36 @@ pub fn inspect_container_state(runner: &mut impl CommandRunner, name: &str) -> C
     if running == "true" {
         return ContainerState::Running;
     }
-    let exit_code: i32 = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-    let oom_killed = parts.next() == Some("true");
+    if running != "false" {
+        return ContainerState::InspectUnavailable(format!(
+            "unexpected docker inspect output for '{name}': {output:?}"
+        ));
+    }
+    let Some(exit_code) = parts.next().and_then(|s| s.parse().ok()) else {
+        return ContainerState::InspectUnavailable(format!(
+            "unexpected docker inspect output for '{name}': {output:?}"
+        ));
+    };
+    let Some(oom_killed) = parts.next().map(|part| part == "true") else {
+        return ContainerState::InspectUnavailable(format!(
+            "unexpected docker inspect output for '{name}': {output:?}"
+        ));
+    };
     ContainerState::Stopped {
         exit_code,
         oom_killed,
     }
+}
+
+fn docker_inspect_reports_missing_container(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    error.contains("no such object") || error.contains("no such container")
+}
+
+fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
+    format!(
+        "cannot inspect container '{container_name}' because Docker is unavailable or returned an unexpected response: {reason}"
+    )
 }
 
 /// Re-attach to a running role, or restart a crashed one in place.
@@ -102,6 +133,9 @@ pub fn hardline_agent(
                 "container '{container_name}' not found; use `jackin load` to start a new session"
             )
         }
+        ContainerState::InspectUnavailable(reason) => {
+            anyhow::bail!("{}", inspect_unavailable_message(container_name, &reason))
+        }
         ContainerState::Stopped {
             exit_code: 0,
             oom_killed: false,
@@ -123,6 +157,9 @@ pub fn hardline_agent(
                      The role container still exists, so jackin will not recreate it in place; any changes written \
                      only to that container's writable layer must be inspected from the existing container."
                 ),
+                ContainerState::InspectUnavailable(reason) => {
+                    anyhow::bail!("{}", inspect_unavailable_message(&dind, &reason))
+                }
                 ContainerState::Stopped { .. } => anyhow::bail!(
                     "DinD sidecar '{dind}' is stopped; use `jackin load` to rebuild jackin-managed network state. \
                      The role container still exists, so jackin will not recreate it in place; any changes written \
@@ -272,6 +309,50 @@ mod tests {
     }
 
     #[test]
+    fn inspect_container_state_distinguishes_missing_container_from_docker_failure() {
+        let mut missing = FakeRunner::default();
+        missing.fail_with.push((
+            "docker inspect".to_string(),
+            "Error: No such object: jackin-agent-smith".to_string(),
+        ));
+        assert_eq!(
+            inspect_container_state(&mut missing, "jackin-agent-smith"),
+            ContainerState::NotFound
+        );
+
+        let mut unavailable = FakeRunner::default();
+        unavailable.fail_with.push((
+            "docker inspect".to_string(),
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+        ));
+        assert!(matches!(
+            inspect_container_state(&mut unavailable, "jackin-agent-smith"),
+            ContainerState::InspectUnavailable(reason)
+                if reason.contains("Cannot connect to the Docker daemon")
+        ));
+    }
+
+    #[test]
+    fn hardline_errors_when_docker_inspect_is_unavailable() {
+        let (_tmp, paths) = test_paths();
+        let mut runner = FakeRunner::default();
+        runner.fail_with.push((
+            "docker inspect".to_string(),
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+        ));
+
+        let err = hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap_err();
+
+        assert!(err.to_string().contains("Docker is unavailable"));
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker start") || c.contains("docker attach"))
+        );
+    }
+
+    #[test]
     fn hardline_marks_missing_manifest_restore_available() {
         let (_tmp, paths) = test_paths();
         let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
@@ -368,6 +449,26 @@ mod tests {
         let err = hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap_err();
 
         assert!(err.to_string().contains("DinD sidecar"));
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker start") || c.contains("docker attach"))
+        );
+    }
+
+    #[test]
+    fn hardline_refuses_when_dind_inspect_is_unavailable() {
+        let (_tmp, paths) = test_paths();
+        let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
+        runner.fail_with.push((
+            "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-agent-smith-dind".to_string(),
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+        ));
+
+        let err = hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap_err();
+
+        assert!(err.to_string().contains("Docker is unavailable"));
         assert!(
             !runner
                 .recorded
