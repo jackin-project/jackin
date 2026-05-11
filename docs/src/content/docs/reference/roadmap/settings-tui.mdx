@@ -1,0 +1,229 @@
+---
+title: "Settings TUI"
+---
+import RepoFile from '../../../../components/RepoFile.astro'
+
+**Status**: Open — design proposal (Configuration ergonomics)
+
+## Problem
+
+`~/.config/jackin/config.toml` is becoming the operator-level control plane for things that apply across workspaces: global mounts, authentication defaults, role source trust, runtime defaults, and future environment defaults. Today those features are split across CLI commands and manual TOML editing. That works for automation, but it is not the right primary experience for an operator already inside the console.
+
+The console should grow a dedicated **Settings** area that feels like the workspace editor: a first-class TUI entered from the workspace list, with tabs for each configuration axis. The first delivered surface is **Mounts**, because global mount visibility and editing were the active implementation goal. The other tabs should be designed deliberately and shipped one at a time, not folded into a single PR.
+
+## Scope discipline (load-bearing)
+
+This roadmap item is strictly a **visualization and control surface for configuration that already exists**. It does not add new config fields, new CLI capabilities, or new jackin behaviors. Every Settings tab surfaces what `~/.config/jackin/config.toml` already supports and what the equivalent `jackin config <subcommand>` already manipulates.
+
+Concretely:
+
+- If a setting cannot be expressed in `config.toml` today, it does not get a Settings tab control.
+- If a tab would have nothing to show because the underlying config has no operator-facing fields, the tab is omitted, not invented.
+- The Settings TUI and the `jackin config` CLI converge on the same config editor APIs and the same validation rules. Neither grows a separate parser, persistence path, or schema.
+
+This rule makes the work scopeable and prevents the Settings TUI from drifting into "redesign jackin's config model" territory.
+
+## Phases
+
+### Phase 1 — Global Mounts surface (delivered by Global Mount Visibility goal)
+
+Phase 1 lands as part of the [Global Mount Visibility](/reference/roadmap/global-mount-visibility/) goal, not this item. It establishes the operator entry point and the persistence boundary that later phases extend:
+
+- Workspace list footer exposes `G global config`.
+- Pressing `G` opens a single-stage `ManagerStage::GlobalMounts(GlobalMountsState)`. The chrome header reads `global config · mounts`.
+- The surface lists every configured global mount with name, source, destination, mode, scope, and source type.
+- Operators can add, rename, edit source, edit destination, edit scope, toggle read-only mode, remove, and explicitly save.
+- Add flow (current shipping order): name → source → destination → scope.
+- Persistence goes through `ConfigEditor::open(paths)` + `editor.save()`, the same path `jackin config mount` uses. Validation via `AppConfig::validate_global_mount_rows`.
+- Workspace views read global mount config for display; only this surface and the `jackin config mount` CLI write it.
+
+This roadmap item starts after Phase 1.
+
+### Phase 2 — Eager rename to Settings + tab-shell refactor
+
+Phase 2 is its **own PR**, landed right after Phase 1, even before any second tab exists. The motivation is consistency: the Phase 1 chrome already says `global config · mounts` and the doc describes a tab shell. Carrying a single-stage shape labeled like a tab shell is misleading; the rename plus the empty shell removes the ambiguity. Subsequent per-tab PRs then fill the shell rather than restructure it.
+
+The same Phase 2 PR does:
+
+1. **Rename**:
+   - <RepoFile path="src/console/manager/state.rs" />: `ManagerStage::GlobalMounts(GlobalMountsState)` → `ManagerStage::Settings(SettingsState)` where `SettingsState` owns `active_tab: SettingsTab`, `mounts: GlobalMountsState`, and the per-tab dirty/save plumbing.
+   - Add `enum SettingsTab { Mounts }`. New variants land with their own per-tab PRs.
+   - Workspace list footer: `G global config` → `S settings`.
+   - Stage chrome header: `global config · mounts` → `settings · mounts`.
+   - Save confirmation copy: `Save global mounts to ~/.config/jackin/config.toml?` → `Save settings to ~/.config/jackin/config.toml?` (or equivalent that names the file once).
+   - Snapshot tests refreshed in the same PR; do not stage the rename across PRs.
+2. **Tab strip rendering** reused from the workspace editor in <RepoFile path="src/console/manager/render/editor.rs" /> rather than introducing a second tab-strip implementation. Hit-testing and `Left` / `Right` / `Tab` / `BackTab` keys mirror the workspace editor.
+3. **Per-tab dirty state** lives on `SettingsState` so the parent stage can render an unambiguous save/discard prompt on `Esc`.
+4. **Mounts tab — scope-first Add flow cleanup** (see "Mounts tab" below). Phase 1 ships name → source → destination → scope; Phase 2 re-orders to scope → name → source → destination → review.
+5. **Workspace editor Mounts tab — isolation-first Add flow cleanup** (see "Workspace mounts parity" below). Workspace mounts already support `shared` / `worktree` / `clone` isolation as a post-add `I` hotkey; Phase 2 moves that choice to the front of the Add flow so workspace mounts get the same "differentiator first" UX as global mounts.
+
+Phase 2 ships even though `SettingsTab` only contains `Mounts`. That is intentional: the empty-shell refactor is the contract that future per-tab PRs slot into.
+
+### Phase 3+ — Additional tabs (one per design pass)
+
+Each per-tab section below is a separate work item. They land one at a time, in any order the operator picks, and each gets its own design pass before implementation. None are gated on each other except where noted.
+
+## Target shape (post Phase 2)
+
+The workspace list remains the entry point:
+
+```text
+↑↓ · Enter launch   E edit   N new   D delete   S settings   Q quit
+```
+
+Pressing `S` opens the Settings editor with workspace-editor-style chrome:
+
+```text
+▓▓▓▓ jackin'     · settings
+
+ Mounts   Environments   Auth   Trust
+
+┌──────────────────────────────────────────────────────────────┐
+│  ... active tab content ...                                  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+The TUI behaves like the workspace editor:
+
+- `Left` / `Right` and `Tab` / `BackTab` switch tabs.
+- Tabs are clickable with the mouse, matching workspace editor tab behavior.
+- Each tab owns its own cursor, validation, modals, and save confirmation.
+- Changes are pending until explicit save.
+- `Esc` backs out, with save/discard confirmation when dirty.
+- Footer hints stay contextual to the active row and active tab.
+
+After Phase 2 the only tab present is `Mounts`. The tab strip still renders so the structural contract is visible to the operator and to subsequent PR authors.
+
+## Mounts tab
+
+The Mounts tab is the baseline shipped in Phase 1. The Phase 2 cleanup is the only behavior change planned for it, and it does not introduce new fields — the scope choice already exists as the post-`E` edit on a global mount row.
+
+### Phase 2 cleanup — scope-first Add flow
+
+Re-order the Add flow to ask scope first, matching the mental model used for workspace environment scoping (decide where the setting applies, then edit the setting):
+
+1. Choose **all roles** or **specific role**.
+2. If specific, pick or type the role selector.
+3. Enter mount name.
+4. Enter source.
+5. Enter destination.
+6. Review/save.
+
+The Phase 1 ordering (name → source → destination → scope) keeps shipping until this cleanup lands.
+
+### Continuing parity (no behavior change)
+
+The Mounts tab keeps everything Phase 1 already validates:
+
+- Add a global mount.
+- Edit source and destination.
+- Rename the mount.
+- Toggle read-only mode.
+- Remove a mount.
+- Change scope between all roles and a specific role selector.
+- Validate duplicate effective destinations across overlapping scopes.
+- Validate missing/invalid host sources.
+- Warn for sensitive host paths before save.
+- Keep global mounts isolation-free; isolation remains a workspace-mount concept.
+
+## Workspace mounts parity (Phase 2 cleanup)
+
+The workspace editor's Mounts tab today asks source, then destination, then defaults the mount to `shared` isolation and `rw` mode; the operator changes isolation later via the `I` hotkey on the row. That works, but it hides workspace mounts' load-bearing differentiator (isolation mode) until after the row exists.
+
+For consistency with the global mounts scope-first Add flow, re-order the workspace mounts Add flow to ask the differentiator first:
+
+1. Choose **isolation mode** — `shared` / `worktree` / `clone`.
+2. Choose source (file browser).
+3. Choose destination (same as source / edit).
+4. (Optional) edit destination.
+5. Review/save.
+
+Read-only stays a post-add `R` hotkey on the row, because it is a per-mount property rather than a category that splits mounts into different buckets.
+
+This change is **purely UX re-ordering**. It does not add new fields, new isolation modes, or new mount capabilities — `shared` / `worktree` / `clone` already exist as the supported choices and the `I` hotkey already cycles them. Implementation lives in the workspace editor input handler in <RepoFile path="src/console/manager/input/editor.rs" />.
+
+The change ships in the same Phase 2 PR as the global mounts scope-first Add flow so both Mounts surfaces converge on the same "pick the differentiator first" UX.
+
+## Future tabs (Phase 3+)
+
+Each tab below lands as its own PR after its own design pass. Every tab obeys the visualization-only scope discipline at the top of this page: surface what the underlying config already supports, and omit the tab if there is nothing to surface.
+
+### Environments
+
+Surface what `config.toml`'s environment-related sections already express:
+
+- Global env vars applied to all launches.
+- Role-scoped global env vars.
+- Conflict behavior when workspace and global env vars share a key (display only — the resolution rule already exists in the runtime).
+- 1Password-backed env values, using the same picker patterns as workspace envs.
+
+Coordinate the visualization with [`${env.VAR}` interpolation](/reference/roadmap/env-var-interpolation/) and [1Password integration](/reference/roadmap/onepassword-integration/) so the Settings tab shows interpolation and secret semantics consistently with how the runtime resolves them. Do not introduce new env precedence rules in this tab.
+
+### Auth
+
+Surface what jackin's auth forwarding config already supports:
+
+- Global auth forwarding defaults for Claude, Codex, Amp, and GitHub.
+- Per-role overrides for those auth defaults.
+- Credential source selection: sync, literal env var, 1Password reference, or ignore, depending on the runtime.
+- Status badges indicating whether the selected credential source is currently available on the host.
+
+Do not implement this by copying the workspace Auth tab blindly. The global Auth tab edits defaults; workspace Auth edits overrides. The UI must make that layering obvious.
+
+This tab is gated on the auth-strategy work resolved or partially resolved by [Reliable Claude authentication strategy](/reference/roadmap/claude-auth-strategy/), [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/), [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/), and [Workspace Claude token setup](/reference/roadmap/workspace-claude-token-setup/). Shipping the Auth tab before those clarify the defaults-vs-overrides layering would bake the wrong shape into the UI.
+
+### Trust
+
+Surface what `~/.config/jackin/config.toml` and the role trust state already record:
+
+- Trusted and untrusted role sources.
+- Source URL, branch, and trust state per source.
+- Trust, untrust, or refresh a role source — using the same operations the CLI exposes today.
+- Validation failures from role manifest checks.
+
+Coordinates with [Agent source trust](/reference/roadmap/agent-source-trust/) and any future role update / version pinning work.
+
+## Tabs intentionally not planned
+
+There is no **General** tab. If the operator-facing config surfaces a setting that does not fit Mounts / Environments / Auth / Trust, it gets evaluated on its own merits at that time; it does not get pre-allocated a catch-all tab now. This avoids inviting "what should we put here?" design debates that the visualization-only scope discipline already answers (we put what the config already supports, and nothing else).
+
+## CLI parity
+
+The Settings TUI does not replace the CLI, and it does not replace direct TOML editing. CLI remains the automation surface, direct TOML editing remains the escape hatch, TUI becomes the interactive operator surface.
+
+The TUI eventually covers the same user-facing operations as:
+
+- `jackin config mount add` / `list` / `remove`
+- `jackin config auth …`
+- `jackin config trust …`
+
+For every Settings tab, command handlers and TUI save paths converge on the same config editor and validation APIs.
+
+## Non-goals
+
+- Do not add new config fields, schemas, or `jackin config` subcommands as part of Settings TUI work — this is a visualization layer over what already exists.
+- Do not make workspace editor tabs write global config.
+- Do not add global mount isolation.
+- Do not hide the CLI commands; they remain required for scripting.
+- Do not hide direct TOML editing; it remains the operator escape hatch when the TUI cannot express what they need.
+- Do not introduce a daemon dependency for this editor. It is an interactive config editing surface, not live synchronization.
+
+## Implementation notes
+
+- Phase 2 renames `ManagerStage::GlobalMounts` → `ManagerStage::Settings`, footer `G global config` → `S settings`, header `global config · mounts` → `settings · mounts`. Plumb the rename through dispatcher, footer hints, mouse focus tracking, save-confirmation copy, and snapshot tests in the same PR.
+- The `S` mnemonic for the workspace list is free today (existing keys are `E` / `N` / `D` / `G` / `Q`). Confirm at PR time that `S` does not collide with another binding the workspace list grew between now and Phase 2.
+- Per-tab dirty state lives on `SettingsState` so the parent stage can render an unambiguous save/discard prompt; do not put the dirty bit only on individual tab states.
+- Reuse <RepoFile path="src/console/manager/render/editor.rs" /> tab-strip rendering and click hit-testing rather than rewriting them.
+- Keep save operations explicit and atomic through <RepoFile path="src/config/editor.rs" />.
+- Preserve the host-side config boundary: workspace surfaces may read global config for display, but only the Settings editor writes it.
+
+## Related Files
+
+- <RepoFile path="src/console/manager/state.rs" /> — manager stages and global mount state to rename in Phase 2
+- <RepoFile path="src/console/manager/input/global_mounts.rs" /> — current global mount input handling
+- <RepoFile path="src/console/manager/render/global_mounts.rs" /> — current global mount rendering
+- <RepoFile path="src/console/manager/render/editor.rs" /> — workspace editor tab-strip rendering to reuse
+- <RepoFile path="src/console/manager/input/editor.rs" /> — workspace editor mount add flow to re-order
+- <RepoFile path="src/config/editor.rs" /> — shared config mutation path
+- <RepoFile path="src/config/mounts.rs" /> — global mount model and validation
+- <RepoFile path="src/cli/config.rs" /> — CLI command surface to keep in parity

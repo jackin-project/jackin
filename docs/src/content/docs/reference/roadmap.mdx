@@ -89,6 +89,10 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 - **[Cargo workspace split](/reference/roadmap/cargo-workspace-split/)** — deferred multi-crate Cargo workspace plan for when LOC, compile time, or external-consumer triggers make crate boundaries worth the overhead (status: deferred to Phase 3 — trigger not yet met, but architecture is ready)
 - **[Open review findings catalog](/reference/roadmap/open-review-findings/)** — living backlog of review findings with accepted-exception annotations. Code review and automated scanning consult this catalog (see <RepoFile path="AGENTS.md" /> → "Code review & automated scanning").
 
+### Configuration ergonomics
+
+- **[Settings TUI](/reference/roadmap/settings-tui/)** — visualize and control existing operator config inside the console as a tabbed Settings surface. Global mounts ship first as a single stage delivered by the global mount visibility goal; an eager tab-shell refactor renames the stage to `Settings`, then per-tab work for Environments, Auth, and Trust follows. Strictly visualization of existing config — no new fields, no behavior changes (status: open — design proposal)
+
 ### Documentation infrastructure
 
 - **[Markdown linting for docs](/reference/roadmap/docs-markdown-linting/)** — uniform Markdown lint pipeline for the docs site (status: proposed — design captured, no implementation committed)
