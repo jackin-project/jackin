@@ -6,7 +6,7 @@
 
 #![cfg(feature = "e2e")]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use jackin::derived_image::shell_quote;
@@ -28,88 +28,6 @@ impl Drop for DockerCleanup {
     }
 }
 
-struct WorkspaceMount {
-    local_dir: PathBuf,
-    mount_src: String,
-    daemon_backed: bool,
-}
-
-impl WorkspaceMount {
-    fn new(local_dir: PathBuf) -> Self {
-        let daemon_backed = docker_uses_remote_daemon_paths();
-        let mount_src = if daemon_backed {
-            // With DinD, bind-mount sources are resolved on the daemon
-            // container's filesystem, not this test process's filesystem.
-            let src = format!(
-                "/tmp/jackin-e2e-workspace-{}-{}",
-                std::process::id(),
-                local_dir
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("workspace")
-            );
-            std::fs::create_dir_all(&src).unwrap();
-            prepare_daemon_workspace(&src);
-            src
-        } else {
-            local_dir.display().to_string()
-        };
-
-        Self {
-            local_dir,
-            mount_src,
-            daemon_backed,
-        }
-    }
-
-    fn target(&self) -> String {
-        format!("{}:/workspace", self.mount_src)
-    }
-
-    fn read_file(&self, name: &str) -> String {
-        if !self.daemon_backed {
-            return std::fs::read_to_string(self.local_dir.join(name)).unwrap();
-        }
-
-        let mount = format!("{}:/workspace:ro", self.mount_src);
-        let path = format!("/workspace/{name}");
-        let output = Command::new("docker")
-            .args(["run", "--rm", "-v", &mount, "alpine:3.20", "cat", &path])
-            .output()
-            .expect("docker must read daemon-backed workspace file");
-        assert!(
-            output.status.success(),
-            "failed to read daemon-backed workspace file {name}\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        String::from_utf8(output.stdout).unwrap()
-    }
-}
-
-impl Drop for WorkspaceMount {
-    fn drop(&mut self) {
-        if !self.daemon_backed {
-            return;
-        }
-
-        let mount = format!("{}:/workspace", self.mount_src);
-        let _ = Command::new("docker")
-            .args([
-                "run",
-                "--rm",
-                "-v",
-                &mount,
-                "alpine:3.20",
-                "sh",
-                "-lc",
-                "rm -rf /workspace/* /workspace/.[!.]* /workspace/..?* 2>/dev/null || true",
-            ])
-            .status();
-        let _ = std::fs::remove_dir_all(&self.mount_src);
-    }
-}
-
 #[test]
 fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     require_e2e_prereqs();
@@ -122,7 +40,6 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     let workspace_dir = temp.path().join("workspace");
     std::fs::create_dir_all(&config_dir).unwrap();
     std::fs::create_dir_all(&workspace_dir).unwrap();
-    let workspace_mount = WorkspaceMount::new(workspace_dir);
 
     seed_agent_smith_role_repo(&role_source);
     write_config(&config_dir.join("config.toml"), &role_source);
@@ -135,9 +52,9 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
             .to_string()
     });
 
-    let target = workspace_mount.target();
+    let target = format!("{}:/workspace", workspace_dir.display());
     let args = ["load", ROLE_KEY, &target, "--agent", "claude", "--no-intro"];
-    let output = run_in_pty(&jackin, &args, &home, &workspace_mount.local_dir);
+    let output = run_in_pty(&jackin, &args, &home, &workspace_dir);
 
     assert!(
         output.status.success(),
@@ -146,28 +63,43 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
         String::from_utf8_lossy(&output.stderr),
     );
 
-    let env_report = workspace_mount.read_file("jackin-e2e-env.txt");
-    assert!(env_report.contains(&format!("DOCKER_HOST=tcp://{DIND_HOSTNAME}:2376")));
-    assert!(env_report.contains("DOCKER_TLS_VERIFY=1"));
-    assert!(env_report.contains("DOCKER_CERT_PATH=/certs/client"));
-    assert!(env_report.contains(&format!("JACKIN_DIND_HOSTNAME={DIND_HOSTNAME}")));
+    // Agent prints its env + `docker ps` snapshot between sentinel markers on
+    // its stdout, which the PTY captures into `output.stdout`. Reading from
+    // stdout instead of a `/workspace` bind-mount file keeps the test agnostic
+    // to whether the Docker daemon shares the test process's filesystem (DinD
+    // and remote daemons resolve bind-mount sources on the daemon side, where
+    // the test cannot read them).
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let Some((_, after_begin)) = stdout.split_once(REPORT_BEGIN) else {
+        panic!("agent did not emit {REPORT_BEGIN} marker\nstdout:\n{stdout}\nstderr:\n{stderr}");
+    };
+    let Some((report, _)) = after_begin.split_once(REPORT_END) else {
+        panic!("agent did not emit {REPORT_END} marker\nstdout:\n{stdout}\nstderr:\n{stderr}");
+    };
+
+    assert!(report.contains(&format!("DOCKER_HOST=tcp://{DIND_HOSTNAME}:2376")));
+    assert!(report.contains("DOCKER_TLS_VERIFY=1"));
+    assert!(report.contains("DOCKER_CERT_PATH=/certs/client"));
+    assert!(report.contains(&format!("JACKIN_DIND_HOSTNAME={DIND_HOSTNAME}")));
     // Both casings carry the merged list — operator's localhost,127.0.0.1
     // must reach tools that read either uppercase NO_PROXY (Go runtime) or
     // lowercase no_proxy (curl, Python requests, wget).
     let merged = format!("NO_PROXY=localhost,127.0.0.1,{DIND_HOSTNAME}");
     let merged_lower = format!("no_proxy=localhost,127.0.0.1,{DIND_HOSTNAME}");
+    assert!(report.contains(&merged), "missing {merged}\n{report}");
     assert!(
-        env_report.contains(&merged),
-        "missing {merged}\n{env_report}"
+        report.contains(&merged_lower),
+        "missing {merged_lower}\n{report}"
     );
     assert!(
-        env_report.contains(&merged_lower),
-        "missing {merged_lower}\n{env_report}"
+        report.contains("CONTAINER ID"),
+        "agent's `docker ps` did not list any containers\n{report}"
     );
-
-    let docker_ps = workspace_mount.read_file("jackin-e2e-docker-ps.txt");
-    assert!(docker_ps.contains("CONTAINER ID"));
 }
+
+const REPORT_BEGIN: &str = "===JACKIN_E2E_REPORT_BEGIN===";
+const REPORT_END: &str = "===JACKIN_E2E_REPORT_END===";
 
 /// Hard-fail with an actionable message when the e2e prerequisites are
 /// missing. The `e2e` feature is opt-in (CI runs `cargo nextest run
@@ -204,49 +136,6 @@ fn script_available() -> bool {
         .arg("script")
         .output()
         .is_ok_and(|out| out.status.success())
-}
-
-fn docker_uses_remote_daemon_paths() -> bool {
-    std::env::var("DOCKER_HOST").is_ok_and(|host| {
-        let host = host.trim();
-        host.starts_with("tcp://") || host.starts_with("ssh://")
-    })
-}
-
-fn prepare_daemon_workspace(src: &str) {
-    let uid = capture_trimmed("id", &["-u"]).unwrap_or_else(|| "1000".to_string());
-    let gid = capture_trimmed("id", &["-g"]).unwrap_or_else(|| "1000".to_string());
-    let mount = format!("{src}:/workspace");
-    let ownership = format!("chown -R {uid}:{gid} /workspace && chmod 700 /workspace");
-    let output = Command::new("docker")
-        .args([
-            "run",
-            "--rm",
-            "-v",
-            &mount,
-            "alpine:3.20",
-            "sh",
-            "-lc",
-            &ownership,
-        ])
-        .output()
-        .expect("docker must prepare daemon-backed workspace");
-    assert!(
-        output.status.success(),
-        "failed to prepare daemon-backed workspace {src}\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-fn capture_trimmed(program: &str, args: &[&str]) -> Option<String> {
-    Command::new(program)
-        .args(args)
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        .filter(|value| !value.is_empty())
 }
 
 fn run_in_pty(jackin: &str, args: &[&str], home: &Path, cwd: &Path) -> std::process::Output {
@@ -345,17 +234,16 @@ USER agent
 "
 }
 
-// `$VAR` expansions inside the heredoc trigger
-// `clippy::literal_string_with_formatting_args` because the body looks like
-// a Rust format string; the script is `cat`'d verbatim into the container,
-// so the lint is a false positive.
-#[allow(clippy::literal_string_with_formatting_args)]
-const fn fake_curl() -> &'static str {
-    // `sleep 5` keeps the agent container alive long enough for jackin's
-    // post-launch reads (env report, docker ps snapshot) to land in the
-    // workspace before the entrypoint exits and the container is torn
-    // down. Tuned empirically; bump if the test races on slow CI.
-    r#"#!/bin/sh
+/// The agent emits its env + `docker ps` snapshot between sentinel markers on
+/// stdout. The test parses that block from the PTY-captured stdout, so the
+/// report channel works identically whether the daemon shares the test
+/// process's filesystem or runs in `DinD`. `REPORT_BEGIN`/`REPORT_END` are
+/// interpolated via `format!` so the Rust consts remain the single source of
+/// truth — `${{…}}` in the body escapes the format string back to `${…}` for
+/// the embedded shell.
+fn fake_curl() -> String {
+    format!(
+        r#"#!/bin/sh
 cat <<'INSTALL'
 #!/bin/sh
 set -eu
@@ -363,24 +251,24 @@ mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/claude" <<'CLAUDE'
 #!/bin/sh
 set -eu
-if [ "${1:-}" = "--version" ]; then
+if [ "${{1:-}}" = "--version" ]; then
   echo "claude 0.0.0-e2e"
   exit 0
 fi
-docker ps > /workspace/jackin-e2e-docker-ps.txt
-{
-  echo "DOCKER_HOST=$DOCKER_HOST"
-  echo "DOCKER_TLS_VERIFY=$DOCKER_TLS_VERIFY"
-  echo "DOCKER_CERT_PATH=$DOCKER_CERT_PATH"
-  echo "JACKIN_DIND_HOSTNAME=$JACKIN_DIND_HOSTNAME"
-  echo "NO_PROXY=${NO_PROXY:-}"
-  echo "no_proxy=${no_proxy:-}"
-} > /workspace/jackin-e2e-env.txt
-sleep 5
+echo "{REPORT_BEGIN}"
+echo "DOCKER_HOST=$DOCKER_HOST"
+echo "DOCKER_TLS_VERIFY=$DOCKER_TLS_VERIFY"
+echo "DOCKER_CERT_PATH=$DOCKER_CERT_PATH"
+echo "JACKIN_DIND_HOSTNAME=$JACKIN_DIND_HOSTNAME"
+echo "NO_PROXY=${{NO_PROXY:-}}"
+echo "no_proxy=${{no_proxy:-}}"
+docker ps
+echo "{REPORT_END}"
 CLAUDE
 chmod +x "$HOME/.local/bin/claude"
 INSTALL
 "#
+    )
 }
 
 fn cleanup_role() {
