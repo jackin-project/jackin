@@ -550,7 +550,7 @@ fn agents_block_height(agent_count: usize) -> u16 {
 }
 
 fn instance_block_height(instance_count: usize) -> u16 {
-    (instance_count + 3).min(8) as u16
+    (instance_count + 4).min(8) as u16
 }
 
 /// Cursor on the synthetic "Current directory" row — mirrors
@@ -738,6 +738,10 @@ fn render_instances_subpanel(frame: &mut Frame, area: Rect, rows: &[InstanceDisp
             Span::raw(row.role.clone()),
         ])
     }));
+    lines.push(Line::from(Span::styled(
+        "  r recover  s session  i inspect  p purge",
+        Style::default().fg(PHOSPHOR_DIM),
+    )));
 
     frame.render_widget(
         Paragraph::new(lines)

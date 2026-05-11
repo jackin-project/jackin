@@ -140,15 +140,26 @@ pub fn run(cli: Cli) -> Result<()> {
             runner.debug = debug;
             tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
-            let Some((class, workspace, selected_agent)) =
-                console::run_console(config, &paths, &cwd)?
-            else {
+            let Some(outcome) = console::run_console(config, &paths, &cwd)? else {
                 return Ok(());
             };
 
             // config was consumed by run_console (the manager may have written to
             // disk). Reload so the post-console path sees the latest state.
             let mut config = AppConfig::load_or_init(&paths)?;
+            let (class, workspace, selected_agent) = match outcome {
+                console::ConsoleOutcome::Launch(class, workspace, selected_agent) => {
+                    (class, workspace, selected_agent)
+                }
+                outcome @ console::ConsoleOutcome::InstanceAction { .. } => {
+                    return handle_console_instance_action(
+                        &paths,
+                        &mut config,
+                        outcome,
+                        &mut runner,
+                    );
+                }
+            };
 
             let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
             if !sensitive.is_empty() && !crate::workspace::confirm_sensitive_mounts(&sensitive)? {
@@ -1460,6 +1471,68 @@ fn prompt_hardline_action(container: &str) -> Result<HardlineAction> {
         &labels,
     )?;
     Ok(options[choice].1)
+}
+
+fn handle_console_instance_action(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    outcome: console::ConsoleOutcome,
+    runner: &mut ShellRunner,
+) -> Result<()> {
+    let console::ConsoleOutcome::InstanceAction { container, action } = outcome else {
+        unreachable!("console launch outcomes are handled before instance actions")
+    };
+    match action {
+        console::ConsoleInstanceAction::Reconnect => {
+            runtime::reconcile_keep_awake(paths, runner);
+            let result = if let Some(manifest) =
+                restore_candidate_for_hardline(paths, &container, runner)?
+            {
+                restore_hardline_instance(paths, config, &manifest, runner)
+            } else {
+                runtime::hardline_agent(paths, &container, runner)
+            };
+            runtime::reconcile_keep_awake(paths, runner);
+            result
+        }
+        console::ConsoleInstanceAction::NewSession => {
+            let manifest = instance::InstanceManifest::read(&paths.data_dir.join(&container))
+                .with_context(|| {
+                    format!(
+                        "cannot start a new agent session in `{container}` because its instance manifest is missing"
+                    )
+                })?;
+            let selected_agent = manifest.agent_runtime.parse().map_err(|_| {
+                anyhow::anyhow!(
+                    "instance `{}` has unknown agent runtime {:?}",
+                    manifest.container_base,
+                    manifest.agent_runtime
+                )
+            })?;
+            runtime::reconcile_keep_awake(paths, runner);
+            let result = runtime::spawn_agent_session(
+                paths,
+                &container,
+                Some(&manifest),
+                selected_agent,
+                runner,
+            );
+            runtime::reconcile_keep_awake(paths, runner);
+            result
+        }
+        console::ConsoleInstanceAction::Inspect => {
+            println!(
+                "{}",
+                runtime::inspect_hardline_instance(paths, &container, runner)?
+            );
+            Ok(())
+        }
+        console::ConsoleInstanceAction::Purge => {
+            runtime::purge_container_state(paths, &container, runner)?;
+            println!("Purged state for {container}.");
+            Ok(())
+        }
+    }
 }
 
 const fn hardline_action_options() -> [(&'static str, HardlineAction); 4] {
