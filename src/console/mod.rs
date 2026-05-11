@@ -88,6 +88,10 @@ impl ConsoleState {
 /// 20 Hz: spinner stays fluid and op results surface within ~50ms
 /// without hot-spinning. <16ms wastes cycles, >100ms stutters.
 const TICK_MS: u64 = 50;
+const MAX_EVENTS_PER_TICK: usize = 256;
+const MAX_TEARDOWN_DRAIN_EVENTS: usize = 16_384;
+const TEARDOWN_DRAIN_QUIET_MS: u64 = 30;
+const TEARDOWN_DRAIN_MAX_MS: u64 = 250;
 
 fn quit_confirm_area(
     frame: ratatui::layout::Rect,
@@ -245,6 +249,72 @@ fn key_debug_name(state: &ConsoleState, key: crossterm::event::KeyEvent) -> Stri
     }
 }
 
+const fn should_debug_log_mouse(mouse: &crossterm::event::MouseEvent) -> bool {
+    !matches!(
+        mouse.kind,
+        crossterm::event::MouseEventKind::ScrollDown
+            | crossterm::event::MouseEventKind::ScrollUp
+            | crossterm::event::MouseEventKind::ScrollLeft
+            | crossterm::event::MouseEventKind::ScrollRight
+    )
+}
+
+fn drain_pending_terminal_events(limit: usize) {
+    drain_pending_terminal_events_until_quiet(limit, std::time::Duration::ZERO);
+}
+
+fn drain_pending_terminal_events_until_quiet(limit: usize, quiet_for: std::time::Duration) {
+    let started = std::time::Instant::now();
+    for _ in 0..limit {
+        let poll_for = if quiet_for.is_zero() {
+            std::time::Duration::ZERO
+        } else {
+            let elapsed = started.elapsed();
+            let max = std::time::Duration::from_millis(TEARDOWN_DRAIN_MAX_MS);
+            if elapsed >= max {
+                break;
+            }
+            quiet_for.min(max - elapsed)
+        };
+        match crossterm::event::poll(poll_for) {
+            Ok(true) => {
+                let _ = crossterm::event::read();
+            }
+            Ok(false) | Err(_) => break,
+        }
+    }
+}
+
+#[cfg(unix)]
+fn flush_terminal_input_queue() {
+    if let Ok(tty) = std::fs::File::options()
+        .read(true)
+        .write(true)
+        .open("/dev/tty")
+    {
+        let _ = nix::sys::termios::tcflush(&tty, nix::sys::termios::FlushArg::TCIFLUSH);
+    }
+}
+
+#[cfg(not(unix))]
+fn flush_terminal_input_queue() {}
+
+fn enable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
+    // Crossterm's EnableMouseCapture includes ?1003h "any-event"
+    // tracking. That reports plain pointer motion and can flood the pty
+    // under touchpad inertia. Jackin needs press/release, drag, scroll,
+    // and SGR coordinates, so enable only those modes.
+    out.write_all(b"\x1b[?1000h\x1b[?1002h\x1b[?1015h\x1b[?1006h")?;
+    out.flush()
+}
+
+fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Result<()> {
+    // Disable the exact modes we enable, plus ?1003l defensively in case
+    // an older build or another library enabled any-event tracking.
+    out.write_all(b"\x1b[?1006l\x1b[?1015l\x1b[?1003l\x1b[?1002l\x1b[?1000l")?;
+    out.flush()
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn run_console(
     mut config: AppConfig,
@@ -254,9 +324,7 @@ pub fn run_console(
     use std::time::Duration;
 
     use crossterm::ExecutableCommand;
-    use crossterm::event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
-    };
+    use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
     use crossterm::terminal::{EnterAlternateScreen, enable_raw_mode};
 
     // EnableMouseCapture disables native text selection; operators
@@ -264,9 +332,15 @@ pub fn run_console(
     struct TerminalGuard;
     impl Drop for TerminalGuard {
         fn drop(&mut self) {
-            let _ = crossterm::terminal::disable_raw_mode();
             let mut stdout = std::io::stdout();
-            let _ = stdout.execute(DisableMouseCapture);
+            drain_pending_terminal_events_until_quiet(
+                MAX_TEARDOWN_DRAIN_EVENTS,
+                std::time::Duration::from_millis(TEARDOWN_DRAIN_QUIET_MS),
+            );
+            let _ = disable_console_mouse_capture(&mut stdout);
+            drain_pending_terminal_events(MAX_TEARDOWN_DRAIN_EVENTS);
+            flush_terminal_input_queue();
+            let _ = crossterm::terminal::disable_raw_mode();
             let _ = stdout.execute(crossterm::terminal::LeaveAlternateScreen);
             let _ = stdout.execute(crossterm::cursor::Show);
             crate::tui::end_debug_buffering();
@@ -279,11 +353,11 @@ pub fn run_console(
     let guard = TerminalGuard;
     crate::tui::begin_debug_buffering();
     stdout.execute(EnterAlternateScreen)?;
-    stdout.execute(EnableMouseCapture)?;
+    enable_console_mouse_capture(&mut stdout)?;
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
     let mut terminal = ratatui::Terminal::new(backend)?;
 
-    let result = loop {
+    let result = 'main: loop {
         // Auto-expire manager toasts after 3 seconds.
         if let ConsoleStage::Manager(ms) = &mut state.stage
             && let Some(toast) = &ms.toast
@@ -312,7 +386,15 @@ pub fn run_console(
 
         // Non-blocking poll: a TICK_MS timeout falls through to advance
         // the spinner and drain worker channels even when idle.
-        if event::poll(Duration::from_millis(TICK_MS))? {
+        let mut events_processed = 0;
+        while events_processed < MAX_EVENTS_PER_TICK
+            && event::poll(if events_processed == 0 {
+                Duration::from_millis(TICK_MS)
+            } else {
+                Duration::ZERO
+            })?
+        {
+            events_processed += 1;
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
                     crate::debug_log!(
@@ -324,7 +406,7 @@ pub fn run_console(
                     if let Some(confirm) = state.quit_confirm.as_mut() {
                         use crate::console::widgets::ModalOutcome;
                         match confirm.handle_key(key) {
-                            ModalOutcome::Commit(true) => break Ok(None),
+                            ModalOutcome::Commit(true) => break 'main Ok(None),
                             ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
                                 state.quit_confirm = None;
                             }
@@ -354,7 +436,7 @@ pub fn run_console(
                     match outcome {
                         manager::InputOutcome::Continue => {}
                         manager::InputOutcome::ExitJackin => {
-                            break Ok(None);
+                            break 'main Ok(None);
                         }
                         manager::InputOutcome::LaunchNamed(name) => {
                             match state.dispatch_launch_for_workspace(
@@ -362,9 +444,9 @@ pub fn run_console(
                                 cwd,
                                 LoadWorkspaceInput::Saved(name),
                             ) {
-                                Ok(Some(outcome)) => break Ok(Some(outcome)),
+                                Ok(Some(outcome)) => break 'main Ok(Some(outcome)),
                                 Ok(None) => {}
-                                Err(e) => break Err(e),
+                                Err(e) => break 'main Err(e),
                             }
                         }
                         manager::InputOutcome::LaunchCurrentDir => {
@@ -373,9 +455,9 @@ pub fn run_console(
                                 cwd,
                                 LoadWorkspaceInput::CurrentDir,
                             ) {
-                                Ok(Some(outcome)) => break Ok(Some(outcome)),
+                                Ok(Some(outcome)) => break 'main Ok(Some(outcome)),
                                 Ok(None) => {}
-                                Err(e) => break Err(e),
+                                Err(e) => break 'main Err(e),
                             }
                         }
                         manager::InputOutcome::LaunchWithAgent(role) => {
@@ -388,19 +470,21 @@ pub fn run_console(
                                 match preview::resolve_selected_workspace(
                                     &config, cwd, &choice, &role,
                                 ) {
-                                    Ok(workspace) => break Ok(Some((role, workspace))),
-                                    Err(e) => break Err(e),
+                                    Ok(workspace) => break 'main Ok(Some((role, workspace))),
+                                    Err(e) => break 'main Err(e),
                                 }
                             }
                         }
                     }
                 }
                 Event::Mouse(mouse) => {
-                    crate::debug_log!(
-                        "tui",
-                        "mouse={mouse:?} location={}",
-                        console_location_debug(&state)
-                    );
+                    if should_debug_log_mouse(&mouse) {
+                        crate::debug_log!(
+                            "tui",
+                            "mouse={mouse:?} location={}",
+                            console_location_debug(&state)
+                        );
+                    }
                     if let ConsoleStage::Manager(ms) = &mut state.stage {
                         manager::input::handle_mouse_with_config(
                             ms,

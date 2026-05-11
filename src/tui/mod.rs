@@ -6,6 +6,7 @@ use std::sync::{
 static DEBUG_MODE: AtomicBool = AtomicBool::new(false);
 static DEBUG_BUFFER_ACTIVE: AtomicBool = AtomicBool::new(false);
 static DEBUG_BUFFER: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+const DEBUG_BUFFER_LIMIT: usize = 2048;
 
 pub fn set_debug_mode(enabled: bool) {
     DEBUG_MODE.store(enabled, Ordering::Relaxed);
@@ -52,6 +53,10 @@ pub fn emit_debug_line(category: &str, message: &str) {
         let mut guard = debug_buffer()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if guard.len() >= DEBUG_BUFFER_LIMIT {
+            let keep_from = guard.len() / 2;
+            guard.drain(..keep_from);
+        }
         guard.push(line);
     } else {
         eprintln!("{line}");

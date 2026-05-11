@@ -12,6 +12,11 @@ use super::{
 use crate::console::manager::render::list::mount_display_paths;
 use crate::console::manager::state::{GlobalMountModal, GlobalMountsState};
 
+pub(super) fn global_mounts_content_width(rows: &[crate::config::GlobalMountRow]) -> usize {
+    let lines = global_mount_lines(rows, None);
+    super::max_line_width(&lines)
+}
+
 #[allow(clippy::too_many_lines)]
 pub(super) fn render_global_mounts(frame: &mut Frame, state: &GlobalMountsState<'_>) {
     let area = frame.area();
@@ -32,46 +37,7 @@ pub(super) fn render_global_mounts(frame: &mut Frame, state: &GlobalMountsState<
             " Global mounts ",
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
-    let mut lines = vec![Line::from(Span::styled(
-        "  Name                 Destination                    Mode Scope",
-        Style::default().fg(WHITE),
-    ))];
-    if state.pending.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "  (none)",
-            Style::default().fg(PHOSPHOR_DIM),
-        )));
-    }
-    for (i, row) in state.pending.iter().enumerate() {
-        let selected = i == state.selected;
-        let prefix = if selected { "▸ " } else { "  " };
-        let style = if selected {
-            Style::default()
-                .fg(PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(PHOSPHOR_GREEN)
-        };
-        let mode = if row.mount.readonly { "ro" } else { "rw" };
-        let scope = row.scope.as_deref().unwrap_or("global");
-        let (destination, host_source) = mount_display_paths(&row.mount);
-        lines.push(Line::from(Span::styled(
-            format!(
-                "{prefix}{:<20} {:<30} {:<4} {:<16}",
-                truncate(&row.name, 20),
-                truncate(&destination, 30),
-                mode,
-                truncate(scope, 16)
-            ),
-            style,
-        )));
-        if let Some(host_source) = host_source {
-            lines.push(Line::from(Span::styled(
-                format!("  {:<20} {}", "", truncate(&host_source, 64)),
-                Style::default().fg(PHOSPHOR_DIM),
-            )));
-        }
-    }
+    let mut lines = global_mount_lines(&state.pending, Some(state.selected));
     if let Some(err) = &state.error {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
@@ -128,6 +94,53 @@ pub(super) fn render_global_mounts(frame: &mut Frame, state: &GlobalMountsState<
         FooterItem::Text("back"),
     ]);
     render_footer(frame, chunks[2], &items);
+}
+
+fn global_mount_lines(
+    rows: &[crate::config::GlobalMountRow],
+    selected: Option<usize>,
+) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from(Span::styled(
+        "  Name                 Destination                    Mode Scope",
+        Style::default().fg(WHITE),
+    ))];
+    if rows.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (none)",
+            Style::default().fg(PHOSPHOR_DIM),
+        )));
+    }
+    for (i, row) in rows.iter().enumerate() {
+        let is_selected = selected == Some(i);
+        let prefix = if is_selected { "▸ " } else { "  " };
+        let style = if is_selected {
+            Style::default()
+                .fg(PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(PHOSPHOR_GREEN)
+        };
+        let mode = if row.mount.readonly { "ro" } else { "rw" };
+        let scope = row.scope.as_deref().unwrap_or("global");
+        let (destination, host_source) = mount_display_paths(&row.mount);
+        lines.push(Line::from(Span::styled(
+            format!(
+                "{prefix}{:<20} {:<30} {:<4} {:<16}",
+                truncate(&row.name, 20),
+                truncate(&destination, 30),
+                mode,
+                truncate(scope, 16)
+            ),
+            style,
+        )));
+        if let Some(host_source) = host_source {
+            lines.push(Line::from(Span::styled(
+                format!("  {:<20} {}", "", truncate(&host_source, 64)),
+                Style::default().fg(PHOSPHOR_DIM),
+            )));
+        }
+    }
+    lines
 }
 
 pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &mut GlobalMountModal<'_>) {

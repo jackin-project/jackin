@@ -27,7 +27,7 @@ const LIST_HEADER_HEIGHT: u16 = 3;
 /// Height of the footer chunk in the list-view chrome. Mirrors
 /// `Constraint::Length(2)` in `render::render`.
 const LIST_FOOTER_HEIGHT: u16 = 2;
-const MOUSE_HORIZONTAL_SCROLL_STEP: u16 = 4;
+const MOUSE_HORIZONTAL_SCROLL_STEP: u16 = 1;
 
 /// Dispatch a mouse event into the workspace manager's list view. Drives
 /// the mouse-draggable seam between the list pane and the details pane.

@@ -138,6 +138,12 @@ pub(super) fn effective_scroll_x(content_width: usize, viewport: usize, scroll_x
     }
 }
 
+pub(super) fn clamp_scroll_x(content_width: usize, viewport: usize, scroll_x: &mut u16) -> u16 {
+    let effective = effective_scroll_x(content_width, viewport, *scroll_x);
+    *scroll_x = effective;
+    effective
+}
+
 fn scrollbar_position(content_width: usize, viewport: usize, scroll_x: u16) -> usize {
     let scroll_x = usize::from(effective_scroll_x(content_width, viewport, scroll_x));
     let max_scroll = content_width.saturating_sub(viewport);
@@ -155,9 +161,11 @@ pub fn render(
     cwd: &std::path::Path,
 ) {
     // Phase 1: render the base stage (Editor full-screen OR List chrome).
-    if let ManagerStage::Editor(editor) = &state.stage {
+    if let ManagerStage::Editor(editor) = &mut state.stage {
+        clamp_editor_scroll_for_frame(frame.area(), editor);
         editor::render_editor(frame, editor, config, state.op_available);
     } else if let ManagerStage::GlobalMounts(global) = &mut state.stage {
+        clamp_global_mounts_scroll_for_frame(frame.area(), global);
         global_mounts::render_global_mounts(frame, global);
     } else {
         // List / CreatePrelude / ConfirmDelete share the list-like chrome.
@@ -174,6 +182,7 @@ pub fn render(
         render_header(frame, chunks[0], "workspaces");
 
         if matches!(&state.stage, ManagerStage::List) {
+            clamp_list_scroll_for_area(chunks[1], state, config, cwd);
             list::render_list_body(frame, chunks[1], state, config, cwd);
         }
 
@@ -316,6 +325,137 @@ pub fn render(
     }
 }
 
+fn clamp_editor_scroll_for_frame(area: Rect, editor: &mut super::state::EditorState<'_>) {
+    if editor.active_tab != super::state::EditorTab::Mounts {
+        return;
+    }
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(2),
+            Constraint::Min(8),
+            Constraint::Length(2),
+        ])
+        .split(area);
+    clamp_scroll_x(
+        list::workspace_mounts_content_width(&editor.pending.mounts),
+        chunks[2].width.saturating_sub(2) as usize,
+        &mut editor.workspace_mounts_scroll_x,
+    );
+}
+
+fn clamp_global_mounts_scroll_for_frame(
+    area: Rect,
+    global: &mut super::state::GlobalMountsState<'_>,
+) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(10),
+            Constraint::Length(2),
+        ])
+        .split(area);
+    clamp_scroll_x(
+        global_mounts::global_mounts_content_width(&global.pending),
+        chunks[1].width.saturating_sub(2) as usize,
+        &mut global.scroll_x,
+    );
+}
+
+fn clamp_list_scroll_for_area(
+    area: Rect,
+    state: &mut ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+) {
+    let left_pct = state.list_split_pct;
+    let right_pct = 100u16.saturating_sub(left_pct);
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(left_pct),
+            Constraint::Percentage(right_pct),
+        ])
+        .split(area);
+    let viewport = columns[1].width.saturating_sub(2) as usize;
+
+    match state.selected_row() {
+        ManagerListRow::CurrentDirectory => {
+            let cwd = cwd.display().to_string();
+            let mounts = [crate::workspace::MountConfig {
+                src: cwd.clone(),
+                dst: cwd,
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }];
+            clamp_scroll_x(
+                list::workspace_mounts_content_width(&mounts),
+                viewport,
+                &mut state.list_mounts_scroll_x,
+            );
+            state.list_global_mounts_scroll_x = 0;
+            state.list_role_global_mounts_scroll_x = 0;
+        }
+        ManagerListRow::SavedWorkspace(i) => {
+            let Some(summary) = state.workspaces.get(i) else {
+                return;
+            };
+            let Some(workspace) = config.workspaces.get(&summary.name) else {
+                return;
+            };
+            clamp_scroll_x(
+                list::workspace_mounts_content_width(&workspace.mounts),
+                viewport,
+                &mut state.list_mounts_scroll_x,
+            );
+
+            let picker_role = state.inline_role_picker.as_ref().and_then(|picker| {
+                picker
+                    .list_state
+                    .selected
+                    .and_then(|idx| picker.filtered.get(idx).cloned())
+            });
+            let global_rows = picker_role.as_ref().map_or_else(
+                || {
+                    config
+                        .list_mount_rows()
+                        .into_iter()
+                        .filter(|row| row.scope.is_none())
+                        .collect()
+                },
+                |role| config.resolve_mount_rows(role),
+            );
+            let global_mounts: Vec<_> = global_rows
+                .iter()
+                .filter(|row| row.scope.is_none())
+                .map(|row| row.mount.clone())
+                .collect();
+            let role_global_mounts: Vec<_> = global_rows
+                .iter()
+                .filter(|row| row.scope.is_some())
+                .map(|row| row.mount.clone())
+                .collect();
+            clamp_scroll_x(
+                list::global_mounts_content_width(&global_mounts),
+                viewport,
+                &mut state.list_global_mounts_scroll_x,
+            );
+            clamp_scroll_x(
+                list::global_mounts_content_width(&role_global_mounts),
+                viewport,
+                &mut state.list_role_global_mounts_scroll_x,
+            );
+        }
+        ManagerListRow::NewWorkspace => {
+            state.list_mounts_scroll_x = 0;
+            state.list_global_mounts_scroll_x = 0;
+            state.list_role_global_mounts_scroll_x = 0;
+        }
+    }
+}
+
 pub(super) fn render_header(frame: &mut Frame, area: Rect, title: &str) {
     let line = Line::from(vec![
         Span::styled("▓▓▓▓ ", Style::default().fg(PHOSPHOR_GREEN)),
@@ -344,7 +484,7 @@ pub(super) fn centered_rect_fixed(outer: Rect, pct_w: u16, rows: u16) -> Rect {
 
 #[cfg(test)]
 mod horizontal_scrollbar_tests {
-    use super::scrollbar_position;
+    use super::{clamp_scroll_x, scrollbar_position};
 
     #[test]
     fn text_scroll_end_maps_to_scrollbar_end() {
@@ -356,6 +496,19 @@ mod horizontal_scrollbar_tests {
     #[test]
     fn scrollbar_position_clamps_overscroll_to_end() {
         assert_eq!(scrollbar_position(100, 60, 400), 99);
+    }
+
+    #[test]
+    fn stored_scroll_offset_clamps_to_visible_end() {
+        let mut scroll_x = 400;
+
+        let effective = clamp_scroll_x(100, 60, &mut scroll_x);
+
+        assert_eq!(effective, 40);
+        assert_eq!(scroll_x, 40);
+
+        scroll_x = scroll_x.saturating_sub(8);
+        assert_eq!(scroll_x, 32);
     }
 }
 

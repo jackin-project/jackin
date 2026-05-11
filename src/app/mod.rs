@@ -295,12 +295,21 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
                 cli::MountCommand::List => {
-                    let mounts = config.list_mounts();
+                    let mounts = config.list_mount_rows();
                     if mounts.is_empty() {
                         println!("No mounts configured.");
                     } else {
                         use tabled::settings::Style;
                         use tabled::{Table, Tabled};
+                        #[derive(Tabled)]
+                        struct GlobalRow {
+                            #[tabled(rename = "Name")]
+                            name: String,
+                            #[tabled(rename = "Mount")]
+                            mount: String,
+                            #[tabled(rename = "Mode")]
+                            mode: String,
+                        }
                         #[derive(Tabled)]
                         struct Row {
                             #[tabled(rename = "Scope")]
@@ -312,22 +321,41 @@ pub fn run(cli: Cli) -> Result<()> {
                             #[tabled(rename = "Mode")]
                             mode: String,
                         }
-                        let rows: Vec<Row> = mounts
-                            .iter()
-                            .map(|(scope, name, m)| Row {
-                                scope: scope.clone(),
-                                name: name.clone(),
-                                mount: mount_display(&m.src, &m.dst),
-                                mode: if m.readonly {
-                                    "read-only".to_string()
-                                } else {
-                                    "read-write".to_string()
-                                },
-                            })
-                            .collect();
-                        let mut table = Table::new(rows);
-                        table.with(Style::modern_rounded());
-                        println!("{table}");
+                        let (global, scoped): (Vec<_>, Vec<_>) =
+                            mounts.iter().partition(|row| row.scope.is_none());
+                        let has_global = !global.is_empty();
+                        if !global.is_empty() {
+                            let rows: Vec<GlobalRow> = global
+                                .into_iter()
+                                .map(|row| GlobalRow {
+                                    name: row.name.clone(),
+                                    mount: mount_display(&row.mount.src, &row.mount.dst),
+                                    mode: mount_mode(row.mount.readonly),
+                                })
+                                .collect();
+                            let mut table = Table::new(rows);
+                            table.with(Style::modern_rounded());
+                            println!("Global mounts:");
+                            println!("{table}");
+                        }
+                        if !scoped.is_empty() {
+                            if has_global {
+                                println!();
+                            }
+                            let rows: Vec<Row> = scoped
+                                .into_iter()
+                                .map(|row| Row {
+                                    scope: row.scope.clone().unwrap_or_default(),
+                                    name: row.name.clone(),
+                                    mount: mount_display(&row.mount.src, &row.mount.dst),
+                                    mode: mount_mode(row.mount.readonly),
+                                })
+                                .collect();
+                            let mut table = Table::new(rows);
+                            table.with(Style::modern_rounded());
+                            println!("Scoped global mounts:");
+                            println!("{table}");
+                        }
                     }
                     Ok(())
                 }
