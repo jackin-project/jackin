@@ -63,18 +63,19 @@ RUN mise exec "node@${NODE_VERSION}" -- npm install -g ctx7
 
 # Caveman bypasses the root `install.sh` because its per-agent
 # detection probes find no agent CLI at image-build time (jackin
-# injects them at launch). Each component installer is invoked
-# directly. `--with-mcp-shrink` is skipped here because it needs the
-# runtime claude CLI; we register caveman-shrink in
-# `hooks/pre-launch.sh`. `--with-init` is skipped because it writes
-# per-repo IDE rule files into $PWD (=`/` at build time).
+# injects them at launch). The pinned release archive is unpacked
+# before running the hook installer so the installer copies files from
+# the tag instead of downloading from upstream `main`.
 #
 # `bash -e` forces fail-fast inside the upstream installer regardless
 # of its own error-handling. `test -f` lines guard against the
 # silent-empty-install failure mode.
 RUN . ~/.profile && \
     mkdir -p "${HOME}/.claude" "${HOME}/.codex" && \
-    curl -fsSL "https://raw.githubusercontent.com/JuliusBrussee/caveman/v${CAVEMAN_VERSION}/hooks/install.sh" | bash -e && \
+    curl -fsSL "https://github.com/JuliusBrussee/caveman/archive/refs/tags/v${CAVEMAN_VERSION}.tar.gz" \
+      | tar -xz -C /tmp && \
+    bash -e "/tmp/caveman-${CAVEMAN_VERSION}/hooks/install.sh" && \
+    rm -rf "/tmp/caveman-${CAVEMAN_VERSION}" && \
     test -f "${HOME}/.claude/hooks/caveman-statusline.sh" && \
     test -f "${HOME}/.claude/hooks/caveman-activate.js" && \
     test -f "${HOME}/.claude/hooks/caveman-mode-tracker.js" && \
