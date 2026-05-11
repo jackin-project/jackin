@@ -92,6 +92,7 @@ const MAX_EVENTS_PER_TICK: usize = 256;
 const MAX_TEARDOWN_DRAIN_EVENTS: usize = 16_384;
 const TEARDOWN_DRAIN_QUIET_MS: u64 = 30;
 const TEARDOWN_DRAIN_MAX_MS: u64 = 250;
+const MOUSE_ESCAPE_GRACE_MS: u64 = 150;
 
 fn quit_confirm_area(
     frame: ratatui::layout::Rect,
@@ -356,6 +357,7 @@ pub fn run_console(
     enable_console_mouse_capture(&mut stdout)?;
     let backend = ratatui::backend::CrosstermBackend::new(stdout);
     let mut terminal = ratatui::Terminal::new(backend)?;
+    let mut last_mouse_event_at: Option<std::time::Instant> = None;
 
     let result = 'main: loop {
         // Auto-expire manager toasts after 3 seconds.
@@ -397,6 +399,14 @@ pub fn run_console(
             events_processed += 1;
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    if matches!(key.code, KeyCode::Esc)
+                        && key.modifiers.is_empty()
+                        && last_mouse_event_at.is_some_and(|at| {
+                            at.elapsed() <= Duration::from_millis(MOUSE_ESCAPE_GRACE_MS)
+                        })
+                    {
+                        continue;
+                    }
                     crate::debug_log!(
                         "tui",
                         "key={} location={}",
@@ -478,6 +488,7 @@ pub fn run_console(
                     }
                 }
                 Event::Mouse(mouse) => {
+                    last_mouse_event_at = Some(std::time::Instant::now());
                     if should_debug_log_mouse(&mouse) {
                         crate::debug_log!(
                             "tui",
