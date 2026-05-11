@@ -508,35 +508,8 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
         match config.workspace_applicable_mount_rows(workspace) {
             crate::config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
                 lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(
-                    format!("Global mounts ({role})"),
-                    Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-                )));
                 let offset = state.pending.mounts.len() + 1;
-                for (i, row) in rows.iter().enumerate() {
-                    let selected = cursor == offset + i;
-                    let prefix = if selected { "▸ " } else { "  " };
-                    let src = crate::tui::shorten_home(&row.mount.src);
-                    let dst = crate::tui::shorten_home(&row.mount.dst);
-                    let path = if row.mount.src == row.mount.dst {
-                        src
-                    } else {
-                        format!("{src} \u{2192} {dst}")
-                    };
-                    let mode = if row.mount.readonly { "ro" } else { "rw" };
-                    let scope = row.scope.as_deref().unwrap_or("global");
-                    let style = if selected {
-                        Style::default()
-                            .fg(PHOSPHOR_DIM)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(PHOSPHOR_DIM)
-                    };
-                    lines.push(Line::from(vec![
-                        Span::styled(format!("{prefix}{path}  "), style),
-                        Span::styled(format!("{mode}  {scope}"), style),
-                    ]));
-                }
+                append_global_mount_lines(&mut lines, &role, &rows, cursor, offset);
             }
             crate::config::WorkspaceGlobalMountRows::Ambiguous { candidates } => {
                 lines.push(Line::from(""));
@@ -552,6 +525,68 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
     }
 
     frame.render_widget(Paragraph::new(lines).block(block), area);
+}
+
+fn append_global_mount_lines(
+    lines: &mut Vec<Line<'_>>,
+    role: &str,
+    rows: &[crate::config::GlobalMountRow],
+    cursor: usize,
+    offset: usize,
+) {
+    lines.push(Line::from(Span::styled(
+        format!("  Global mounts ({role})"),
+        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+    )));
+    let global_rows: Vec<(String, &'static str, &'static str, String)> = rows
+        .iter()
+        .map(|row| {
+            let src = crate::tui::shorten_home(&row.mount.src);
+            let dst = crate::tui::shorten_home(&row.mount.dst);
+            let path = if row.mount.src == row.mount.dst {
+                src
+            } else {
+                format!("{src} \u{2192} {dst}")
+            };
+            let mode = if row.mount.readonly { "ro" } else { "rw" };
+            let kind = super::super::mount_info::inspect(&row.mount.src).label();
+            let kind = row
+                .scope
+                .as_ref()
+                .map_or_else(|| kind.clone(), |scope| format!("{kind} · {scope}"));
+            (path, mode, "shared", kind)
+        })
+        .collect();
+    let path_w = mount_path_width(&global_rows);
+    lines.push(render_mount_header(path_w));
+    for (i, (path, mode, iso, kind)) in global_rows.iter().enumerate() {
+        let selected = cursor == offset + i;
+        let prefix = if selected { "▸ " } else { "  " };
+        let base_style = if selected {
+            Style::default()
+                .fg(PHOSPHOR_DIM)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(PHOSPHOR_DIM)
+        };
+        let dim_style = Style::default()
+            .fg(PHOSPHOR_DIM)
+            .add_modifier(Modifier::ITALIC);
+        lines.push(Line::from(vec![
+            Span::styled(format!("{prefix}{path:<path_w$}  "), base_style),
+            Span::styled(
+                format!("{mode:<MOUNT_MODE_COL_WIDTH$}"),
+                Style::default().fg(PHOSPHOR_DIM),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                format!("{iso:<MOUNT_ISOLATION_COL_WIDTH$}"),
+                Style::default().fg(PHOSPHOR_DIM),
+            ),
+            Span::raw("  "),
+            Span::styled(kind.clone(), dim_style),
+        ]));
+    }
 }
 
 const fn workspace_for_global_mount_context<'a>(

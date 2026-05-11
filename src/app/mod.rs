@@ -1371,9 +1371,20 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
         isolation: String,
     }
     #[derive(Tabled)]
-    struct GlobalMountRow {
+    struct GlobalMountRowWithScope {
         #[tabled(rename = "Scope")]
         scope: String,
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "Source")]
+        src: String,
+        #[tabled(rename = "Destination")]
+        dst: String,
+        #[tabled(rename = "Mode")]
+        mode: String,
+    }
+    #[derive(Tabled)]
+    struct GlobalMountRow {
         #[tabled(rename = "Name")]
         name: String,
         #[tabled(rename = "Source")]
@@ -1444,21 +1455,22 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
     match config.workspace_applicable_mount_rows(workspace) {
         crate::config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
             if !rows.is_empty() {
-                let global_rows: Vec<GlobalMountRow> = rows
-                    .iter()
-                    .map(|row| GlobalMountRow {
+                let mut global_table = if rows.iter().any(|row| row.scope.is_some()) {
+                    Table::new(rows.iter().map(|row| GlobalMountRowWithScope {
                         scope: row.scope.as_deref().unwrap_or("global").to_string(),
                         name: row.name.clone(),
                         src: tui::shorten_home(&row.mount.src),
                         dst: row.mount.dst.clone(),
-                        mode: if row.mount.readonly {
-                            "read-only".to_string()
-                        } else {
-                            "read-write".to_string()
-                        },
-                    })
-                    .collect();
-                let mut global_table = Table::new(global_rows);
+                        mode: mount_mode(row.mount.readonly),
+                    }))
+                } else {
+                    Table::new(rows.iter().map(|row| GlobalMountRow {
+                        name: row.name.clone(),
+                        src: tui::shorten_home(&row.mount.src),
+                        dst: row.mount.dst.clone(),
+                        mode: mount_mode(row.mount.readonly),
+                    }))
+                };
                 global_table.with(Style::modern_rounded());
                 let _ = writeln!(out);
                 let _ = writeln!(out, "Global mounts ({role}):");
@@ -1482,6 +1494,14 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
     }
 
     out
+}
+
+fn mount_mode(readonly: bool) -> String {
+    if readonly {
+        "read-only".to_string()
+    } else {
+        "read-write".to_string()
+    }
 }
 
 #[cfg(test)]
@@ -1590,6 +1610,7 @@ mod auth_set_tests {
         assert!(out.contains("Workspace mounts:"), "{out}");
         assert!(out.contains("Global mounts (agent-smith):"), "{out}");
         assert!(out.contains("gradle-cache"), "{out}");
+        assert!(!out.contains("│ Scope"), "{out}");
     }
 
     #[test]
@@ -1626,6 +1647,40 @@ mod auth_set_tests {
 
         assert!(out.contains("selected role"), "{out}");
         assert!(!out.contains("team-secrets"), "{out}");
+    }
+
+    #[test]
+    fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
+        let temp = tempfile::tempdir().unwrap();
+        let global_src = temp.path().join("secrets");
+        std::fs::create_dir_all(&global_src).unwrap();
+        let mut config = AppConfig::default();
+        config.roles.insert(
+            "chainargos/agent-brown".into(),
+            crate::config::RoleSource::default(),
+        );
+        config.add_mount(
+            "team-secrets",
+            crate::workspace::MountConfig {
+                src: global_src.display().to_string(),
+                dst: "/secrets".into(),
+                readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            Some("chainargos/*"),
+        );
+        let ws = crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            workdir: "/workspace/jackin".into(),
+            mounts: vec![],
+            allowed_roles: vec!["chainargos/agent-brown".into()],
+            ..Default::default()
+        };
+
+        let out = render_workspace_show(&config, "jackin", &ws);
+
+        assert!(out.contains("│ Scope"), "{out}");
+        assert!(out.contains("chainargos/*"), "{out}");
     }
 
     /// Test fake for [`crate::operator_env::OpWriteRunner`] used by
