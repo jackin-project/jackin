@@ -55,50 +55,84 @@ pub(super) fn render_list_body(
         }
     }
 
-    // Left: [Current directory] + saved workspaces + blank spacer +
-    // [+ New workspace]. The spacer is visual-only; state keeps logical row
-    // indices without it.
-    // The cwd path itself is shown on the right-pane `workdir` line; keep the
-    // list row label short to avoid duplicate visual load.
-    let has_saved_workspaces = saved_count > 0;
-    let mut items: Vec<ListItem> =
-        Vec::with_capacity(saved_count + 2 + usize::from(has_saved_workspaces));
-    items.push(ListItem::new(Line::from(Span::styled(
-        "Current directory",
-        Style::default().fg(WHITE),
-    ))));
-    items.extend(
-        state
-            .workspaces
-            .iter()
-            .map(|w| ListItem::new(Line::from(w.name.as_str()))),
-    );
-    if has_saved_workspaces {
-        items.push(ListItem::new(Line::from("")));
+    if let Some(picker) = state.inline_role_picker.as_ref()
+        && let Some(summary) = state.selected_workspace_summary()
+    {
+        render_role_picker_sidebar(frame, list_area, &summary.name, picker);
+    } else {
+        // Left: [Current directory] + saved workspaces + blank spacer +
+        // [+ New workspace]. The spacer is visual-only; state keeps logical row
+        // indices without it.
+        // The cwd path itself is shown on the right-pane `workdir` line; keep the
+        // list row label short to avoid duplicate visual load.
+        let has_saved_workspaces = saved_count > 0;
+        let mut items: Vec<ListItem> =
+            Vec::with_capacity(saved_count + 2 + usize::from(has_saved_workspaces));
+        items.push(ListItem::new(Line::from(Span::styled(
+            "Current directory",
+            Style::default().fg(WHITE),
+        ))));
+        items.extend(
+            state
+                .workspaces
+                .iter()
+                .map(|w| ListItem::new(Line::from(w.name.as_str()))),
+        );
+        if has_saved_workspaces {
+            items.push(ListItem::new(Line::from("")));
+        }
+        items.push(ListItem::new(Line::from(Span::styled(
+            "+ New workspace",
+            Style::default().fg(WHITE),
+        ))));
+
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(PHOSPHOR_DARK)),
+            )
+            .style(Style::default().fg(PHOSPHOR_GREEN))
+            .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
+            .highlight_symbol("▸ ");
+
+        let mut ls = ListState::default();
+        ls.select(Some(state.visual_selected()));
+        frame.render_stateful_widget(list, list_area, &mut ls);
     }
-    items.push(ListItem::new(Line::from(Span::styled(
-        "+ New workspace",
-        Style::default().fg(WHITE),
-    ))));
-
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(PHOSPHOR_DARK)),
-        )
-        .style(Style::default().fg(PHOSPHOR_GREEN))
-        .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
-        .highlight_symbol("▸ ");
-
-    let mut ls = ListState::default();
-    ls.select(Some(state.visual_selected()));
-    frame.render_stateful_widget(list, list_area, &mut ls);
 
     // Toast overlay — rendered last so it appears on top.
     if let Some(toast) = &state.toast {
         render_toast(frame, area, toast);
     }
+}
+
+fn render_role_picker_sidebar(
+    frame: &mut Frame,
+    area: Rect,
+    workspace_name: &str,
+    picker: &crate::console::widgets::role_picker::RolePickerState,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            format!(" {workspace_name} "),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let items: Vec<ListItem> = picker
+        .filtered
+        .iter()
+        .map(|role| ListItem::new(Line::from(role.key())))
+        .collect();
+    let list = List::new(items)
+        .block(block)
+        .style(Style::default().fg(PHOSPHOR_GREEN))
+        .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
+        .highlight_symbol("▸ ");
+    let mut list_state = ListState::default();
+    list_state.select(picker.list_state.selected);
+    frame.render_stateful_widget(list, area, &mut list_state);
 }
 
 fn render_toast(frame: &mut Frame, area: Rect, toast: &super::super::state::Toast) {
@@ -247,6 +281,33 @@ pub(super) fn render_mount_lines(rows: &[MountDisplayRow], path_w: usize) -> Vec
     lines
 }
 
+pub(super) fn render_global_mount_header(path_w: usize) -> Line<'static> {
+    Line::from(Span::styled(
+        format!("  {path:<path_w$}  Mode", path = "Destination"),
+        Style::default().fg(WHITE),
+    ))
+}
+
+pub(super) fn render_global_mount_lines(
+    rows: &[MountDisplayRow],
+    path_w: usize,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    for row in rows {
+        lines.push(Line::from(vec![
+            Span::raw(format!("  {:<path_w$}  ", row.destination)),
+            Span::styled(row.mode, Style::default().fg(PHOSPHOR_DIM)),
+        ]));
+        if let Some(host_source) = &row.host_source {
+            lines.push(Line::from(Span::styled(
+                format!("  {host_source:<path_w$}"),
+                Style::default().fg(PHOSPHOR_DIM),
+            )));
+        }
+    }
+    lines
+}
+
 fn render_details_pane(
     frame: &mut Frame,
     area: Rect,
@@ -275,7 +336,11 @@ fn render_details_pane(
         }
         _ => Vec::new(),
     };
-    let agent_count = agents_block_agent_count(ws_config, config);
+    let agent_count = if state.inline_role_picker.is_some() {
+        0
+    } else {
+        agents_block_agent_count(ws_config, config)
+    };
     let show_envs = ws_config.is_some_and(workspace_has_any_env);
 
     let mut constraints = vec![
@@ -289,7 +354,9 @@ fn render_details_pane(
     if show_envs {
         constraints.push(Constraint::Length(env_block_height(ws_config)));
     }
-    constraints.push(Constraint::Length(agents_block_height(agent_count)));
+    if state.inline_role_picker.is_none() {
+        constraints.push(Constraint::Length(agents_block_height(agent_count)));
+    }
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -313,9 +380,7 @@ fn render_details_pane(
         render_environments_subpanel(frame, rows[idx], ws_config);
         idx += 1;
     }
-    if let Some(picker) = state.inline_role_picker.as_ref() {
-        render_role_picker_subpanel(frame, rows[idx], picker);
-    } else {
+    if state.inline_role_picker.is_none() {
         render_agents_subpanel(frame, rows[idx], ws_config, config);
     }
 }
@@ -632,8 +697,8 @@ fn render_global_mounts_subpanel(
             } else {
                 let rows = format_mount_rows(mounts);
                 let path_w = mount_path_width(&rows);
-                lines.push(render_mount_header(path_w));
-                lines.extend(render_mount_lines(&rows, path_w));
+                lines.push(render_global_mount_header(path_w));
+                lines.extend(render_global_mount_lines(&rows, path_w));
             }
         }
         Some(crate::config::WorkspaceGlobalMountRows::Ambiguous { candidates }) => {
@@ -663,48 +728,6 @@ fn render_global_mounts_subpanel(
         .style(Style::default().fg(PHOSPHOR_GREEN));
     frame.render_widget(p, area);
     super::render_horizontal_scrollbar(frame, area, content_width, scroll_x);
-}
-
-fn render_role_picker_subpanel(
-    frame: &mut Frame,
-    area: Rect,
-    picker: &crate::console::widgets::role_picker::RolePickerState,
-) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            " Select role ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
-    let mut lines = Vec::new();
-    if !picker.filter.is_empty() {
-        lines.push(Line::from(Span::styled(
-            format!("  Filter: {}", picker.filter),
-            Style::default().fg(PHOSPHOR_DIM),
-        )));
-    }
-    for (i, role) in picker.filtered.iter().enumerate() {
-        let selected = Some(i) == picker.list_state.selected;
-        let prefix = if selected { "▸ " } else { "  " };
-        let style = if selected {
-            Style::default()
-                .fg(PHOSPHOR_GREEN)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(WHITE)
-        };
-        lines.push(Line::from(Span::styled(
-            format!("{prefix}{}", role.key()),
-            style,
-        )));
-    }
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "  Enter launch · Esc cancel",
-        Style::default().fg(PHOSPHOR_DIM),
-    )));
-    frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
 /// One row in the flat Environments preview list.

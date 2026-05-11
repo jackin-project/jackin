@@ -159,52 +159,70 @@ pub fn render(
 
         let footer_items: Vec<FooterItem> = match &state.stage {
             ManagerStage::List => {
-                // Surface "o open in GitHub" on rows whose workspace has at
-                // least one GitHub-hosted mount with a resolvable web URL.
-                // See `ManagerListRow` docs for row layout — current-dir and
-                // the "+ New workspace" sentinel skip the hint entirely.
-                let show_open_hint =
-                    matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_))
-                        && state
-                            .selected_workspace_summary()
-                            .and_then(|s| config.workspaces.get(&s.name))
-                            .is_some_and(|ws| {
-                                !super::github_mounts::resolve_for_workspace(ws).is_empty()
-                            });
+                if state.inline_role_picker.is_some() {
+                    vec![
+                        FooterItem::Key("\u{2191}\u{2193}"),
+                        FooterItem::Sep,
+                        FooterItem::Key("Enter"),
+                        FooterItem::Text("launch"),
+                        FooterItem::GroupSep,
+                        FooterItem::Key("Esc"),
+                        FooterItem::Text("return to workspaces"),
+                        FooterItem::GroupSep,
+                        FooterItem::Key("←/→"),
+                        FooterItem::Text("scroll"),
+                        FooterItem::GroupSep,
+                        FooterItem::Key("Q"),
+                        FooterItem::Text("quit"),
+                    ]
+                } else {
+                    // Surface "o open in GitHub" on rows whose workspace has at
+                    // least one GitHub-hosted mount with a resolvable web URL.
+                    // See `ManagerListRow` docs for row layout — current-dir and
+                    // the "+ New workspace" sentinel skip the hint entirely.
+                    let show_open_hint =
+                        matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_))
+                            && state
+                                .selected_workspace_summary()
+                                .and_then(|s| config.workspaces.get(&s.name))
+                                .is_some_and(|ws| {
+                                    !super::github_mounts::resolve_for_workspace(ws).is_empty()
+                                });
 
-                let mut items = vec![
-                    // Navigation group
-                    FooterItem::Key("\u{2191}\u{2193}"),
-                    FooterItem::Sep,
-                    FooterItem::Key("Enter"),
-                    FooterItem::Text("launch"),
-                    FooterItem::GroupSep,
-                    // Per-row actions
-                    FooterItem::Key("E"),
-                    FooterItem::Text("edit"),
-                    FooterItem::Sep,
-                    FooterItem::Key("N"),
-                    FooterItem::Text("new"),
-                    FooterItem::Sep,
-                    FooterItem::Key("D"),
-                    FooterItem::Text("delete"),
-                    FooterItem::Sep,
-                    FooterItem::Key("G"),
-                    FooterItem::Text("global config"),
-                ];
-                if show_open_hint {
-                    items.push(FooterItem::Sep);
-                    items.push(FooterItem::Key("O"));
-                    items.push(FooterItem::Text("open in GitHub"));
+                    let mut items = vec![
+                        // Navigation group
+                        FooterItem::Key("\u{2191}\u{2193}"),
+                        FooterItem::Sep,
+                        FooterItem::Key("Enter"),
+                        FooterItem::Text("launch"),
+                        FooterItem::GroupSep,
+                        // Per-row actions
+                        FooterItem::Key("E"),
+                        FooterItem::Text("edit"),
+                        FooterItem::Sep,
+                        FooterItem::Key("N"),
+                        FooterItem::Text("new"),
+                        FooterItem::Sep,
+                        FooterItem::Key("D"),
+                        FooterItem::Text("delete"),
+                        FooterItem::Sep,
+                        FooterItem::Key("G"),
+                        FooterItem::Text("global config"),
+                    ];
+                    if show_open_hint {
+                        items.push(FooterItem::Sep);
+                        items.push(FooterItem::Key("O"));
+                        items.push(FooterItem::Text("open in GitHub"));
+                    }
+                    items.push(FooterItem::GroupSep);
+                    items.push(FooterItem::Key("←/→"));
+                    items.push(FooterItem::Text("scroll"));
+                    items.push(FooterItem::GroupSep);
+                    // Exit
+                    items.push(FooterItem::Key("Q"));
+                    items.push(FooterItem::Text("quit"));
+                    items
                 }
-                items.push(FooterItem::GroupSep);
-                items.push(FooterItem::Key("←/→"));
-                items.push(FooterItem::Text("scroll"));
-                items.push(FooterItem::GroupSep);
-                // Exit
-                items.push(FooterItem::Key("Q"));
-                items.push(FooterItem::Text("quit"));
-                items
             }
             ManagerStage::CreatePrelude(_) => vec![
                 FooterItem::Dyn("Create workspace — follow the prompts".to_string()),

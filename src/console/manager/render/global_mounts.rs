@@ -33,7 +33,7 @@ pub(super) fn render_global_mounts(frame: &mut Frame, state: &GlobalMountsState<
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
     let mut lines = vec![Line::from(Span::styled(
-        "  Name                 Destination                    Mode Scope Type",
+        "  Name                 Destination                    Mode Scope",
         Style::default().fg(WHITE),
     ))];
     if state.pending.is_empty() {
@@ -54,16 +54,14 @@ pub(super) fn render_global_mounts(frame: &mut Frame, state: &GlobalMountsState<
         };
         let mode = if row.mount.readonly { "ro" } else { "rw" };
         let scope = row.scope.as_deref().unwrap_or("global");
-        let kind = crate::console::manager::mount_info::inspect(&row.mount.src).label();
         let (destination, host_source) = mount_display_paths(&row.mount);
         lines.push(Line::from(Span::styled(
             format!(
-                "{prefix}{:<20} {:<30} {:<4} {:<16} {}",
+                "{prefix}{:<20} {:<30} {:<4} {:<16}",
                 truncate(&row.name, 20),
                 truncate(&destination, 30),
                 mode,
-                truncate(scope, 16),
-                kind
+                truncate(scope, 16)
             ),
             style,
         )));

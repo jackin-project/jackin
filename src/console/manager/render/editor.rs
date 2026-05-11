@@ -16,7 +16,7 @@ use std::cmp::Ordering;
 use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
 use super::list::{
     MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows,
-    mount_display_paths, mount_path_width, render_mount_header,
+    mount_display_paths, mount_path_width, render_global_mount_header, render_mount_header,
 };
 use super::{
     FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_footer, render_header,
@@ -620,51 +620,30 @@ fn append_global_mount_lines(
         .map(|row| {
             let (destination, host_source) = mount_display_paths(&row.mount);
             let mode = if row.mount.readonly { "ro" } else { "rw" };
-            let kind = super::super::mount_info::inspect(&row.mount.src).label();
-            let kind = row
-                .scope
-                .as_ref()
-                .map_or_else(|| kind.clone(), |scope| format!("{kind} · {scope}"));
             MountDisplayRow {
                 destination,
                 host_source,
                 mode,
                 isolation: "shared",
-                kind,
+                kind: String::new(),
             }
         })
         .collect();
     let path_w = mount_path_width(&global_rows);
-    lines.push(render_mount_header(path_w));
+    lines.push(render_global_mount_header(path_w));
     for (i, row) in global_rows.iter().enumerate() {
         let selected = cursor == offset + i;
         let prefix = if selected { "▸ " } else { "  " };
-        let base_style = if selected {
+        let style = if selected {
             Style::default()
                 .fg(PHOSPHOR_DIM)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(PHOSPHOR_DIM)
         };
-        let dim_style = Style::default()
-            .fg(PHOSPHOR_DIM)
-            .add_modifier(Modifier::ITALIC);
         lines.push(Line::from(vec![
-            Span::styled(
-                format!("{prefix}{:<path_w$}  ", row.destination),
-                base_style,
-            ),
-            Span::styled(
-                format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
-                Style::default().fg(PHOSPHOR_DIM),
-            ),
-            Span::raw("  "),
-            Span::styled(
-                format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
-                Style::default().fg(PHOSPHOR_DIM),
-            ),
-            Span::raw("  "),
-            Span::styled(row.kind.clone(), dim_style),
+            Span::styled(format!("{prefix}{:<path_w$}  ", row.destination), style),
+            Span::styled(row.mode, Style::default().fg(PHOSPHOR_DIM)),
         ]));
         if let Some(host_source) = &row.host_source {
             lines.push(Line::from(Span::styled(
