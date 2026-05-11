@@ -177,6 +177,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 !(inspect && new),
                 "`jackin hardline --inspect --new` is invalid; inspect is read-only"
             );
+            let explicit_selector = selector.is_some();
             let container = if let Some(sel) = selector {
                 if let Some(container) = resolve_instance_reference(&paths, &sel)? {
                     container
@@ -190,14 +191,26 @@ pub fn run(cli: Cli) -> Result<()> {
                 let cwd = std::env::current_dir()?;
                 resolve_running_container_from_context(&paths, &config, &cwd, &mut runner)?
             };
-            if inspect {
+            let action = if inspect {
+                HardlineAction::Inspect
+            } else if new {
+                HardlineAction::NewSession
+            } else if explicit_selector {
+                HardlineAction::Reconnect
+            } else {
+                prompt_hardline_action(&container)?
+            };
+            if action == HardlineAction::Inspect {
                 println!(
                     "{}",
                     runtime::inspect_hardline_instance(&paths, &container, &mut runner)?
                 );
                 return Ok(());
             }
-            if new {
+            if action == HardlineAction::Cancel {
+                return Ok(());
+            }
+            if action == HardlineAction::NewSession {
                 let manifest = instance::InstanceManifest::read(&paths.data_dir.join(&container))
                     .with_context(|| {
                         format!(
@@ -1425,6 +1438,45 @@ fn print_env_table(vars: &[(String, String)]) {
     println!("{table}");
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HardlineAction {
+    Reconnect,
+    NewSession,
+    Inspect,
+    Cancel,
+}
+
+fn prompt_hardline_action(container: &str) -> Result<HardlineAction> {
+    use std::io::IsTerminal;
+
+    if !std::io::stdin().is_terminal() {
+        return Ok(HardlineAction::Reconnect);
+    }
+
+    let options = hardline_action_options();
+    let labels: Vec<&str> = options.iter().map(|(label, _)| *label).collect();
+    let choice = tui::prompt_choice(
+        &format!("Instance `{container}` is available. Choose hardline action:"),
+        &labels,
+    )?;
+    Ok(options[choice].1)
+}
+
+const fn hardline_action_options() -> [(&'static str, HardlineAction); 4] {
+    [
+        (
+            "Reconnect or recover this instance",
+            HardlineAction::Reconnect,
+        ),
+        (
+            "Start another foreground agent session",
+            HardlineAction::NewSession,
+        ),
+        ("Inspect state without attaching", HardlineAction::Inspect),
+        ("Cancel", HardlineAction::Cancel),
+    ]
+}
+
 fn resolve_instance_reference(paths: &JackinPaths, input: &str) -> Result<Option<String>> {
     let index = instance::InstanceIndex::read_or_rebuild(&paths.data_dir)?;
     let mut matches = Vec::new();
@@ -1817,6 +1869,18 @@ mod auth_set_tests {
         let resolved = resolve_instance_reference(&paths, "k7p9m2xq").unwrap();
 
         assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn hardline_action_options_expose_recovery_controls() {
+        let options = hardline_action_options();
+
+        assert_eq!(options[0].1, HardlineAction::Reconnect);
+        assert_eq!(options[1].1, HardlineAction::NewSession);
+        assert_eq!(options[2].1, HardlineAction::Inspect);
+        assert_eq!(options[3].1, HardlineAction::Cancel);
+        assert!(options[1].0.contains("agent session"));
+        assert!(options[2].0.contains("Inspect"));
     }
 
     #[test]

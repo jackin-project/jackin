@@ -13,7 +13,7 @@ Reconnect your terminal to an agent container. Use this when you've closed your 
 
 A `hardline` is the direct line back into an agent session that's already running — the operator's way to step back inside without loading a fresh instance.
 
-When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspace or ad-hoc directory from the local instance index and reconnects to a matching indexed instance. If you pass a role selector, `jackin hardline` targets that class's primary container. If you have multiple instances, use the instance ID or full container name to pick a specific one.
+When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspace or ad-hoc directory from the local instance index, prompts for an instance when more than one matches, then prompts for the action: reconnect/recover, start another foreground agent session, inspect, or cancel. If you pass a role selector, `jackin hardline` targets that class's primary container. If you have multiple instances, use the instance ID or full container name to pick a specific one.
 
 ## Arguments
 
@@ -50,6 +50,8 @@ If the role container itself was deleted, jackin can rebuild the runtime around 
 `--inspect` is read-only. It works from the current workspace or ad-hoc directory, or with an explicit selector/instance ID/container name, and reports local manifest details even when Docker is unavailable.
 
 `--new` requires a running indexed instance. It starts a second agent process inside that container with the same mounts, Docker-in-Docker sidecar, working directory, and in-container state. This is useful when you want a separate foreground session without creating a fresh jackin instance. If the selected container is stopped or missing, run plain `jackin hardline` first so jackin can restart or rebuild it.
+
+When `jackin hardline` resolves an instance from the current directory without an explicit selector or option, the same actions are available through an interactive picker. Non-interactive runs default to reconnect/recover.
 
 ## Terminal close vs. exit
 
