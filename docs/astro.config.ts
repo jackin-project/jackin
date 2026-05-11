@@ -99,7 +99,6 @@ export default defineConfig({
             { label: 'eject', slug: 'commands/eject' },
             { label: 'exile', slug: 'commands/exile' },
             { label: 'purge', slug: 'commands/purge' },
-            { label: 'archive', slug: 'commands/archive' },
             { label: 'workspace', slug: 'commands/workspace' },
             { label: 'config', slug: 'commands/config' },
           ],

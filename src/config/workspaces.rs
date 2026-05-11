@@ -602,7 +602,6 @@ mod tests {
                 workspaces_dir: data.join("workspaces"),
                 roles_dir: data.into(),
                 data_dir: data.into(),
-                archive_dir: data.join("archive"),
                 cache_dir: data.into(),
             }
         }

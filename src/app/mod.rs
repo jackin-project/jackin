@@ -2,7 +2,7 @@ pub mod context;
 
 use anyhow::{Context, Result};
 
-use crate::cli::cleanup::{ArchiveArgs, EjectArgs, PurgeArgs};
+use crate::cli::cleanup::{EjectArgs, PurgeArgs};
 use crate::cli::role::{ConsoleArgs, HardlineArgs, LoadArgs};
 use crate::cli::{self, Cli, Command, WorkspaceCommand};
 use crate::config::{self, AppConfig};
@@ -1179,68 +1179,6 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
             }
-        }
-        Command::Archive(ArchiveArgs {
-            selector,
-            list,
-            remove,
-            output,
-        }) => {
-            anyhow::ensure!(
-                !(list && (remove || output.is_some() || selector.is_some())),
-                "`jackin archive --list` cannot be combined with a selector, --remove, or --output"
-            );
-            if list {
-                let archives = runtime::list_archives(&paths)?;
-                if archives.is_empty() {
-                    println!("No archives.");
-                } else {
-                    for archive in archives {
-                        println!(
-                            "{}\t{} bytes\t{}",
-                            archive.container_name,
-                            archive.size_bytes,
-                            archive.path.display()
-                        );
-                    }
-                }
-                return Ok(());
-            }
-
-            let selector = selector.ok_or_else(|| {
-                anyhow::anyhow!(
-                    "`jackin archive` requires an instance selector unless --list is used"
-                )
-            })?;
-            if remove {
-                anyhow::ensure!(
-                    output.is_none(),
-                    "`jackin archive --remove` cannot be combined with --output"
-                );
-                let archive = runtime::remove_archive(&paths, &selector)?;
-                println!("Removed archive {}.", archive.display());
-                return Ok(());
-            }
-
-            let container = if let Some(container) = resolve_instance_reference(&paths, &selector)?
-            {
-                container
-            } else {
-                match Selector::parse(&selector)? {
-                    Selector::Container(container) => container,
-                    Selector::Role(_) => anyhow::bail!(
-                        "`jackin archive` requires an instance ID or full container name, not a role selector"
-                    ),
-                }
-            };
-            let archive = runtime::archive_container_state(
-                &paths,
-                &container,
-                output.as_deref(),
-                &mut runner,
-            )?;
-            println!("Archived state for {container} at {}.", archive.display());
-            Ok(())
         }
         Command::Help { .. } => {
             // Handled upstream in dispatch before reaching this function.

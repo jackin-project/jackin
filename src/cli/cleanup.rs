@@ -1,5 +1,4 @@
 use clap::Args;
-use std::path::PathBuf;
 
 use super::{BANNER, HELP_STYLES};
 
@@ -45,33 +44,6 @@ pub struct PurgeArgs {
     /// Delete state for every instance, not just the default
     #[arg(long)]
     pub all: bool,
-}
-
-/// Export persisted state for an ejected instance
-#[derive(Debug, Args, PartialEq, Eq)]
-#[command(
-    before_help = BANNER,
-    styles = HELP_STYLES,
-    after_long_help = "\
-Examples:
-  jackin archive --list
-  jackin archive k7p9m2xq
-  jackin archive jackin-agent-smith-k7p9m2xq
-  jackin archive k7p9m2xq --remove
-  jackin archive k7p9m2xq --output ~/Desktop/k7p9m2xq.tar"
-)]
-pub struct ArchiveArgs {
-    /// Instance ID or full container name to export
-    pub selector: Option<String>,
-    /// List local archives
-    #[arg(long)]
-    pub list: bool,
-    /// Delete the selected local archive
-    #[arg(long)]
-    pub remove: bool,
-    /// Destination tar path. Defaults to ~/.jackin/archive/<container>.tar
-    #[arg(long)]
-    pub output: Option<PathBuf>,
 }
 
 #[cfg(test)]
@@ -120,17 +92,5 @@ mod tests {
         let help = help_text(&["jackin", "purge", "--help"]);
         assert!(help.contains("Delete persisted state"));
         assert!(help.contains("jackin purge agent-smith --all"));
-    }
-
-    // ── Archive help ───────────────────────────────────────────────────
-
-    #[test]
-    fn archive_help_shows_examples() {
-        let help = help_text(&["jackin", "archive", "--help"]);
-        assert!(help.contains("Export persisted state"));
-        assert!(help.contains("jackin archive --list"));
-        assert!(help.contains("jackin archive k7p9m2xq"));
-        assert!(help.contains("jackin archive k7p9m2xq --remove"));
-        assert!(help.contains("--output"));
     }
 }

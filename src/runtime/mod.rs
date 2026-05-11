@@ -1,4 +1,3 @@
-mod archive;
 mod attach;
 mod caffeinate;
 mod cleanup;
@@ -15,7 +14,6 @@ pub mod test_support;
 #[cfg(test)]
 pub use self::test_support::FakeRunner;
 
-pub use self::archive::{archive_container_state, list_archives, remove_archive};
 pub use self::attach::{
     ContainerState, describe_agent_session_count, hardline_agent, inspect_agent_sessions,
     inspect_container_state, inspect_hardline_instance, spawn_agent_session,

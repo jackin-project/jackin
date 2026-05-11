@@ -1,7 +1,7 @@
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Parser, Subcommand};
 
-use cleanup::{ArchiveArgs, EjectArgs, PurgeArgs};
+use cleanup::{EjectArgs, PurgeArgs};
 use role::{ConsoleArgs, HardlineArgs, LoadArgs};
 
 pub(super) const HELP_STYLES: Styles = Styles::styled()
@@ -85,7 +85,6 @@ pub enum Command {
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Exile,
     Purge(PurgeArgs),
-    Archive(ArchiveArgs),
     Console(ConsoleArgs),
     /// Manage saved workspaces
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
@@ -168,7 +167,6 @@ mod tests {
             "eject",
             "exile",
             "purge",
-            "archive",
             "console",
             "workspace",
             "config",
