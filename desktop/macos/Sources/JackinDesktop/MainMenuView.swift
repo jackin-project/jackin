@@ -32,6 +32,26 @@ struct MainMenuView: View {
                 Divider()
             }
 
+            Section("Pull Requests") {
+                if model.pullRequests.isEmpty {
+                    Text(model.pullRequestError ?? "No open pull requests")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.pullRequests) { pullRequest in
+                        pullRequestRow(pullRequest)
+                    }
+                }
+            }
+
+            if let openError = model.openError {
+                Text(openError)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Divider()
+
             Button {
                 Task {
                     await model.refresh()
@@ -61,6 +81,27 @@ struct MainMenuView: View {
             Spacer()
             Text(running == 1 ? "1 agent" : "\(running) agents")
                 .foregroundStyle(running > 0 ? .primary : .secondary)
+        }
+    }
+
+    private func pullRequestRow(_ pullRequest: GitHubPullRequest) -> some View {
+        Button {
+            Task {
+                await model.openPullRequest(pullRequest)
+            }
+        } label: {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("#\(pullRequest.number) \(pullRequest.title)")
+                        .lineLimit(1)
+                    Text(pullRequest.repository)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "arrow.up.forward.square")
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

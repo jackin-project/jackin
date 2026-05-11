@@ -11,28 +11,78 @@ struct DaemonClient {
     }
 
     func hello() async throws -> DaemonHello {
-        try await request(type: "daemon/hello", as: DaemonHello.self)
+        try await request(EmptyDaemonRequest(type: "daemon/hello", protocolVersion: protocolVersion), as: DaemonHello.self)
     }
 
     func workspaces() async throws -> WorkspaceList {
-        try await request(type: "workspace/list", as: WorkspaceList.self)
+        try await request(EmptyDaemonRequest(type: "workspace/list", protocolVersion: protocolVersion), as: WorkspaceList.self)
     }
 
     func sessions() async throws -> SessionList {
-        try await request(type: "session/list", as: SessionList.self)
+        try await request(EmptyDaemonRequest(type: "session/list", protocolVersion: protocolVersion), as: SessionList.self)
     }
 
-    private func request<T: Decodable>(
-        type: String,
-        as responseType: T.Type
-    ) async throws -> T {
+    func myOpenPullRequests(limit: Int = 10) async throws -> GitHubPullRequestList {
+        try await request(
+            GitHubPullRequestRequest(type: "github/my_open_prs", protocolVersion: protocolVersion, limit: limit),
+            as: GitHubPullRequestList.self
+        )
+    }
+
+    func openBrowser(_ url: String) async throws -> DesktopActionResponse {
+        try await request(
+            DesktopOpenRequest(type: "desktop/open", protocolVersion: protocolVersion, kind: "browser", target: url),
+            as: DesktopActionResponse.self
+        )
+    }
+
+    private func request<Request: Encodable & Sendable, Response: Decodable>(
+        _ request: Request,
+        as responseType: Response.Type
+    ) async throws -> Response {
         let socketPath = socketPath
-        let protocolVersion = protocolVersion
         try await Task.detached {
-            let line = #"{"type":"\#(type)","protocol":\#(protocolVersion)}"# + "\n"
+            let data = try JSONEncoder.daemon.encode(request)
+            let line = String(decoding: data, as: UTF8.self) + "\n"
             let response = try sendJSONLine(line, to: socketPath)
             return try JSONDecoder.daemon.decode(responseType, from: Data(response.utf8))
         }.value
+    }
+}
+
+private struct EmptyDaemonRequest: Encodable, Sendable {
+    let type: String
+    let protocolVersion: Int
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case protocolVersion = "protocol"
+    }
+}
+
+private struct GitHubPullRequestRequest: Encodable, Sendable {
+    let type: String
+    let protocolVersion: Int
+    let limit: Int
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case protocolVersion = "protocol"
+        case limit
+    }
+}
+
+private struct DesktopOpenRequest: Encodable, Sendable {
+    let type: String
+    let protocolVersion: Int
+    let kind: String
+    let target: String
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case protocolVersion = "protocol"
+        case kind
+        case target
     }
 }
 
@@ -116,6 +166,45 @@ struct DesktopSession: Decodable, Identifiable, Equatable {
     }
 }
 
+struct GitHubPullRequestList: Decodable, Equatable {
+    let type: String
+    let pullRequests: [GitHubPullRequest]
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case pullRequests = "pull_requests"
+    }
+}
+
+struct GitHubPullRequest: Decodable, Identifiable, Equatable {
+    var id: String { url }
+
+    let number: Int
+    let title: String
+    let url: String
+    let author: String
+    let repository: String
+    let createdAt: String
+    let updatedAt: String
+    let isDraft: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case number
+        case title
+        case url
+        case author
+        case repository
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case isDraft = "is_draft"
+    }
+}
+
+struct DesktopActionResponse: Decodable, Equatable {
+    let action: String
+    let command: [String]
+}
+
 enum DaemonClientError: LocalizedError {
     case socketPathTooLong(String)
     case connectFailed(String)
@@ -136,6 +225,12 @@ enum DaemonClientError: LocalizedError {
 private extension JSONDecoder {
     static var daemon: JSONDecoder {
         JSONDecoder()
+    }
+}
+
+private extension JSONEncoder {
+    static var daemon: JSONEncoder {
+        JSONEncoder()
     }
 }
 

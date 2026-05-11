@@ -50,9 +50,10 @@ prompts when an agent is blocked or finished.
 - `desktop/macos/` contains the first native macOS SwiftUI/AppKit package:
   a `MenuBarExtra` status item, daemon-health view, refresh action, and
   Unix-socket daemon client. The status item now reads `daemon/hello`,
-  `workspace/list`, and `session/list` so the menu can show daemon health,
-  saved workspaces, and running-agent counts. This is intentionally a menu bar
-  skeleton, not the full Desktop window or PR menu.
+  `workspace/list`, `session/list`, and `github/my_open_prs` so the menu can
+  show daemon health, saved workspaces, running-agent counts, and newest-first
+  operator-authored PRs with daemon-owned browser open actions. This is still a
+  compact menu surface, not the full Desktop window.
 - <RepoFile path="src/runtime/launch.rs" /> already bind-mounts the daemon
   socket into role containers as `/jackin/daemon.sock` and injects
   `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock` when available.
@@ -531,6 +532,9 @@ Delivery rules:
   Started with daemon-backed saved workspace rows and per-workspace running
   agent counts in the menu.
 - PR 3: Add My open PRs newest-first and active projects.
+  Started with a daemon-backed My open PRs menu section and direct browser open
+  actions through `desktop/open`; project grouping remains for the next PR
+  slice.
 - PR 4: Add open actions for hardline / Ghostty, repository, and PR.
 - PR 5: Add Claude/Codex/Amp account cards using daemon-provided status.
 
