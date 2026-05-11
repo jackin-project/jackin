@@ -172,6 +172,7 @@ export default defineConfig({
                       collapsed: true,
                       items: [
                         { label: 'Agent runtime status', slug: 'reference/roadmap/agent-runtime-status' },
+                        { label: 'Console agent session control', slug: 'reference/roadmap/console-agent-session-control' },
                         { label: 'Console resource panel', slug: 'reference/roadmap/console-resource-panel' },
                         { label: 'Agent tag protocol', slug: 'reference/roadmap/agent-tag-protocol' },
                         { label: 'GitHub link tracking', slug: 'reference/roadmap/github-link-tracking' },

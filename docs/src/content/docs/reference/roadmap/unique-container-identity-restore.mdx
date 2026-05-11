@@ -19,14 +19,22 @@ The target behavior is that every role launch gets a unique, DNS-safe instance i
 
 ## Naming Goal
 
-Use these operator-visible Docker base names:
+Use these Docker base names:
 
 ```text
 jackin-<workspace-name>-<agent-role>-<unique-id>
 jackin-<agent-role>-<unique-id>
 ```
 
-The first form is for configured workspaces. The second form is for ad-hoc launches from a random directory where there is no configured workspace name. These names are technical identifiers, not the main operator UX. The console and future UI should show a richer instance list with workspace, role, agent runtime, status, task/branch context, and restore state.
+The first form is for configured workspaces. The second form is for ad-hoc launches from a random directory where there is no configured workspace name. The workspace and role components are compact alphanumeric tokens, not slug phrases: `chainargos-project` becomes `chainargosproject`, `agent-brown` becomes `agentbrown`, and `chainargos/agent-brown` contributes the visible role component `agentbrown` while the full role key remains in metadata.
+
+Example:
+
+```text
+jackin-chainargosproject-agentbrown-k7p9m2xq
+```
+
+These names are technical identifiers, not the long-term operator API. The console and future CLI should show a richer instance list with workspace, role, agent runtime, status, task/branch context, restore state, and safe actions. Operators should not need to run `docker exec -ti jackin-chainargos__agent-brown zsh` or pass raw Docker container names to routine jackin commands. That operator surface is tracked separately in [Console agent session control](/reference/roadmap/console-agent-session-control/).
 
 ## DNS Limits
 
@@ -36,7 +44,7 @@ Container names that jackin uses as hostnames must obey hostname label rules, no
 - Hostname labels use letters, digits, and hyphen, with labels beginning with a letter and ending with a letter or digit under the preferred hostname syntax. See [RFC 1035 section 2.3.1](https://www.rfc-editor.org/rfc/rfc1035#section-2.3.1) and [RFC 1123 section 2.1](https://www.rfc-editor.org/rfc/rfc1123#section-2.1), which permits a leading digit.
 - Underscores are not valid hostname label characters. Some Docker and libc paths resolve them, but Java URI parsing and many libraries reject them.
 
-Recommended invariant: every Docker network DNS name jackin emits must match lowercase RFC-1123 label syntax: `[a-z0-9]([-a-z0-9]*[a-z0-9])?`, with length `1..=63`.
+Recommended invariant: every Docker network DNS name jackin emits must match lowercase RFC-1123 label syntax: `[a-z0-9]([-a-z0-9]*[a-z0-9])?`, with length `1..=63`. Human-derived components should be stricter than the full label: `[a-z0-9]+` only. Hyphens are reserved for jackin's structural separators, which keeps `docker ps` visually scannable.
 
 Because jackin derives a DIND container name by appending `-dind`, the role-container base name must fit within 58 characters if the DIND container itself is used as a DNS label. If we also keep `-net` and `-dind-certs` derived from the same base, the DNS-critical limit is still the DIND label, but the same bounded-base discipline keeps all Docker resource names readable.
 
@@ -44,13 +52,15 @@ Because jackin derives a DIND container name by appending `-dind`, the role-cont
 
 Add a single instance-name builder that takes `{workspace_name?, workdir, role_key, agent_runtime}` and returns a DNS-safe base name plus structured metadata.
 
-1. Slug each human component to lowercase ASCII DNS labels: replace non `[a-z0-9-]` with `-`, collapse repeated hyphens, trim leading/trailing hyphens, and use a fallback such as `workspace` or `role` if the result is empty.
-2. Normalize role keys by using only the role name in the visible component when a namespace is present, then preserve the full role key in labels and metadata. Example: `chainargos/agent-brown` can display as `agent-brown`, while metadata still records `chainargos/agent-brown`.
+1. Compact each human component to lowercase ASCII alphanumerics: drop everything outside `[a-z0-9]`, including spaces, slashes, underscores, dots, and hyphens. Use a fallback such as `workspace` or `role` if the result is empty.
+2. Normalize role keys by using only the role name in the visible component when a namespace is present, then preserve the full role key in labels and metadata. Example: `chainargos/agent-brown` displays as `agentbrown`, while metadata still records `chainargos/agent-brown`.
 3. Generate a unique ID that is DNS-safe, short, and collision-resistant enough for local launches. Recommended: a Crockford-base32 or hex random ID of 8 to 12 chars. ULID is attractive for sorting, but the full 26-char value is expensive inside a 58-char DNS budget; use a shorter random suffix unless chronological sorting becomes load-bearing.
 4. Compose `jackin-{workspace_slug}-{role_slug}-{id}` for configured workspaces, or `jackin-{role_slug}-{id}` for ad-hoc directories.
 5. Enforce the DIND DNS budget before returning. With a 58-char base limit, reserve `7 + 1 + id_len` characters for `jackin-`, separator, and ID, then divide the remaining budget between workspace and role. Prefer preserving the right side of role slugs less aggressively than workspace slugs because the role is the more useful visual discriminator in `docker ps`.
-6. If truncation happens, add a small hash fragment to the truncated component when needed to avoid two long names becoming visually identical. Example shape: `jackin-very-long-workspace-a1b2-agent-brown-k7p9m2xq`.
+6. If truncation happens, add a small alphanumeric hash fragment to the truncated component when needed to avoid two long names becoming visually identical. Example shape: `jackin-verylongworkspacea1b2-agentbrown-k7p9m2xq`.
 7. Validate the final base name with a test helper. Validation failure is a programmer error in the builder, not something later launch code should paper over.
+
+Component collisions are acceptable. For example, `chainargos/agent-brown` and `chain-argos-a/gentb-rown` may both compact to visible components that look similar or identical. The unique ID makes the Docker identity distinct, and the instance manifest/console preserve the exact workspace and role identity for every operator action.
 
 Derived resource names:
 
@@ -75,7 +85,7 @@ Minimum fields:
 {
   "version": 1,
   "instance_id": "k7p9m2xq",
-  "container_base": "jackin-my-workspace-agent-brown-k7p9m2xq",
+  "container_base": "jackin-myworkspace-agentbrown-k7p9m2xq",
   "created_at": "2026-05-11T00:00:00Z",
   "updated_at": "2026-05-11T00:00:00Z",
   "workspace_name": "my-workspace",
@@ -91,10 +101,10 @@ Minimum fields:
   "status": "active",
   "last_attach_outcome": null,
   "docker": {
-    "role_container": "jackin-my-workspace-agent-brown-k7p9m2xq",
-    "dind_container": "jackin-my-workspace-agent-brown-k7p9m2xq-dind",
-    "network": "jackin-my-workspace-agent-brown-k7p9m2xq-net",
-    "certs_volume": "jackin-my-workspace-agent-brown-k7p9m2xq-dind-certs"
+    "role_container": "jackin-myworkspace-agentbrown-k7p9m2xq",
+    "dind_container": "jackin-myworkspace-agentbrown-k7p9m2xq-dind",
+    "network": "jackin-myworkspace-agentbrown-k7p9m2xq-net",
+    "certs_volume": "jackin-myworkspace-agentbrown-k7p9m2xq-dind-certs"
   }
 }
 ```
@@ -169,6 +179,7 @@ This avoids mutating live operator work while stopping new launches from creatin
 - **Ad-hoc directories with the same basename**: do not use only the basename for restore lookup. Store the canonical path and a fingerprint; use the short name only in the Docker base.
 - **Workspace rename**: restore should find by stored workspace ID/path when possible, not only by current workspace name. If workspaces do not yet have stable IDs, this design should add one or use canonical path fingerprint as a temporary key.
 - **Role namespace collisions**: `org-a/agent` and `org-b/agent` may share visible `agent` slug. The unique ID prevents Docker collisions; metadata and labels must preserve full role key.
+- **Compacted-name collisions**: `chainargos-project`, `chainargosproject`, and `chainargos.project` all compact to the same visible workspace component. This is expected. The visible name is for quick scanning only; the unique ID and instance manifest are authoritative.
 - **Concurrent launches**: the unique ID avoids most name-lock contention, but still create a per-base lock before writing state and before `docker run` to guard impossible random collisions.
 - **Docker daemon reset**: all containers, networks, and volumes may disappear while `~/.jackin/data` remains. Restore must treat Docker as reconstructible plumbing and local state as the source of truth.
 - **Manual Docker prune**: cert volumes may disappear while role containers remain stopped. Recreate DIND/certs/network when safe; otherwise explain why a full container-layer restore is impossible.
@@ -217,11 +228,13 @@ This avoids mutating live operator work while stopping new launches from creatin
 - DIND names used in `DOCKER_HOST` and `DOCKER_TLS_SAN` are RFC-1123-safe and at most 63 characters.
 - Configured workspaces use `jackin-<workspace-name>-<agent-role>-<unique-id>` within the DNS budget.
 - Ad-hoc directory launches use `jackin-<agent-role>-<unique-id>` within the DNS budget.
+- Workspace and role name components are compact lowercase alphanumeric strings with special characters removed, e.g. `chainargos-project` → `chainargosproject` and `agent-brown` → `agentbrown`.
 - No new launch emits `clone-N` naming.
 - Concurrent launches of the same workspace and role create separate unique instances without racing on deterministic slots.
 - `docker ps` remains readable, but console/restore UI becomes the source of truth for "which instance is which".
 - Deleting all Docker containers while leaving `~/.jackin/data` intact produces a restore prompt on the next matching launch.
 - Restore can reattach/recreate from preserved worktree/clone state without losing local changes.
+- Routine operator actions do not require copying raw Docker container names; shell entry, hardline, and future parallel-agent attach flows are exposed through jackin-owned CLI/TUI surfaces.
 - The system clearly reports unrecoverable container-writable-layer changes when Docker containers were deleted.
 - Java/Testcontainers smoke tests can parse `DOCKER_HOST`, connect through TLS, and start a simple child container from inside a jackin role.
 
