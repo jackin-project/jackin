@@ -39,6 +39,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 - [Worktree cleanup on container removal](/reference/roadmap/worktree-cleanup-assessment/) — orphaned host-side worktrees no longer accumulate
 - [Per-mount isolation for parallel agents](/reference/roadmap/per-mount-isolation/) — `shared | worktree | clone` modes implemented in V1
 - [Split `config.toml` into per-workspace files](/reference/roadmap/split-workspace-config-files/) — `~/.config/jackin/workspaces/<name>.toml` layout shipped; per-file `version` stamps and migration land via the config-versioning item below
+- [Global mount visibility and editing](/reference/roadmap/global-mount-visibility/) — workspace views show applicable global mounts separately, and the console has a dedicated global mounts editor for `~/.config/jackin/config.toml`
 
 ## Partially implemented
 
@@ -87,10 +88,6 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 - **[Codebase readability program](/reference/roadmap/codebase-readability/)** — multi-phase internal-quality work covering documentation/setup, behavioral specs, module-contract refactors, and test coverage. The full leaf list lives in the program doc and in the sidebar under **Reference → Roadmap → Codebase health**.
 - **[Cargo workspace split](/reference/roadmap/cargo-workspace-split/)** — deferred multi-crate Cargo workspace plan for when LOC, compile time, or external-consumer triggers make crate boundaries worth the overhead (status: deferred to Phase 3 — trigger not yet met, but architecture is ready)
 - **[Open review findings catalog](/reference/roadmap/open-review-findings/)** — living backlog of review findings with accepted-exception annotations. Code review and automated scanning consult this catalog (see <RepoFile path="AGENTS.md" /> → "Code review & automated scanning").
-
-### Configuration ergonomics
-
-- **[Global mount visibility and editing](/reference/roadmap/global-mount-visibility/)** — show applicable global mounts in workspace surfaces, keep them visually separate from saved workspace mounts, and add a dedicated global-config TUI page for viewing and editing `jackin config mount` entries (status: open — implementation-ready goal)
 
 ### Documentation infrastructure
 

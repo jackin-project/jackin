@@ -33,6 +33,7 @@ pub struct ConsoleState {
     /// its `WorkspaceChoice` from current config — manager edits flow
     /// through immediately.
     pub pending_launch: Option<LoadWorkspaceInput>,
+    pub pending_launch_role: Option<RoleSelector>,
     /// Process-lifetime `op` metadata cache. `Rc<RefCell<_>>` because
     /// the TUI event loop is single-threaded.
     pub op_cache: Rc<RefCell<OpCache>>,
@@ -61,6 +62,7 @@ impl ConsoleState {
                 ),
             ),
             pending_launch: None,
+            pending_launch_role: None,
             op_cache,
             op_available,
             quit_confirm: None,

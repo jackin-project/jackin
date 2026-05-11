@@ -56,11 +56,21 @@ impl ManagerListRow {
 pub struct ManagerState<'a> {
     pub stage: ManagerStage<'a>,
     pub workspaces: Vec<WorkspaceSummary>,
+    pub current_dir: String,
     pub selected: usize,
     pub toast: Option<Toast>,
     /// Modal slot at the list level (e.g. `Modal::GithubPicker`); the
     /// Editor / `CreatePrelude` stages own their own modal slots.
     pub list_modal: Option<Modal<'a>>,
+    pub inline_role_picker: Option<RolePickerState>,
+    pub inline_agent_picker: Option<(
+        crate::selector::RoleSelector,
+        crate::console::widgets::agent_choice::AgentChoiceState,
+    )>,
+    pub list_mounts_scroll_x: u16,
+    pub list_global_mounts_scroll_x: u16,
+    pub list_role_global_mounts_scroll_x: u16,
+    pub list_scroll_focus: Option<MountScrollFocus>,
     pub list_split_pct: u16,
     pub drag_state: Option<DragState>,
     /// Process-lifetime cache of `op` structural metadata, threaded
@@ -71,6 +81,13 @@ pub struct ManagerState<'a> {
     /// startup) so the Secrets-tab editor can disable the
     /// source-picker's 1Password choice without re-probing.
     pub op_available: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MountScrollFocus {
+    Workspace,
+    Global,
+    RoleGlobal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,8 +116,63 @@ pub const fn clamp_split(pct: u16) -> u16 {
 pub enum ManagerStage<'a> {
     List,
     Editor(EditorState<'a>),
+    GlobalMounts(GlobalMountsState<'a>),
     CreatePrelude(CreatePreludeState<'a>),
     ConfirmDelete { name: String, state: ConfirmState },
+}
+
+#[derive(Debug)]
+pub struct GlobalMountsState<'a> {
+    pub selected: usize,
+    pub pending: Vec<crate::config::GlobalMountRow>,
+    pub original: Vec<crate::config::GlobalMountRow>,
+    pub modal: Option<GlobalMountModal<'a>>,
+    pub add_draft: Option<GlobalMountDraft>,
+    pub error: Option<String>,
+    pub success: Option<String>,
+    pub scroll_x: u16,
+    /// Dispatcher pops back to the workspace list when set.
+    pub exit_requested: bool,
+}
+
+#[derive(Debug, Default)]
+pub struct GlobalMountDraft {
+    pub name: String,
+    pub src: String,
+    pub dst: String,
+    pub scope: Option<String>,
+}
+
+#[derive(Debug)]
+pub enum GlobalMountModal<'a> {
+    Text {
+        target: GlobalMountTextTarget,
+        state: Box<TextInputState<'a>>,
+    },
+    Confirm {
+        action: GlobalMountConfirm,
+        state: ConfirmState,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalMountConfirm {
+    Remove,
+    Save,
+    Sensitive,
+    Discard,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlobalMountTextTarget {
+    AddName,
+    AddSource,
+    AddDestination,
+    AddScope,
+    Source,
+    Destination,
+    Scope,
+    Rename,
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +245,8 @@ pub struct EditorState<'a> {
     /// touch this slot — see `AUTH00x` debug tags in
     /// `input::auth` for the recovery path on stash desync.
     pub pending_auth_form_return: Option<AuthFormReturnPath>,
+    pub workspace_mounts_scroll_x: u16,
+    pub workspace_mounts_scroll_focused: bool,
 }
 
 /// Captured auth-form context to re-mount the form after a side
@@ -227,6 +301,53 @@ impl EditorSaveFlow {
         } else {
             None
         }
+    }
+}
+
+impl GlobalMountsState<'_> {
+    pub fn from_config(config: &AppConfig) -> Self {
+        let rows = config.list_mount_rows();
+        Self {
+            selected: 0,
+            pending: rows.clone(),
+            original: rows,
+            modal: None,
+            add_draft: None,
+            error: None,
+            success: None,
+            scroll_x: 0,
+            exit_requested: false,
+        }
+    }
+
+    #[must_use]
+    pub fn is_dirty(&self) -> bool {
+        self.pending != self.original
+    }
+
+    pub fn discard(&mut self) {
+        self.pending = self.original.clone();
+        self.selected = self.selected.min(self.pending.len().saturating_sub(1));
+        self.add_draft = None;
+        self.error = None;
+        self.success = None;
+    }
+
+    pub fn save_to_config(
+        &mut self,
+        paths: &crate::paths::JackinPaths,
+    ) -> anyhow::Result<AppConfig> {
+        AppConfig::validate_global_mount_rows(&self.pending)?;
+        let mut editor = crate::config::ConfigEditor::open(paths)?;
+        for row in &self.original {
+            editor.remove_mount(&row.name, row.scope.as_deref());
+        }
+        for row in &self.pending {
+            editor.add_mount(&row.name, row.mount.clone(), row.scope.as_deref());
+        }
+        let config = editor.save()?;
+        self.original = self.pending.clone();
+        Ok(config)
     }
 }
 
@@ -520,6 +641,24 @@ impl WorkspaceSummary {
 }
 
 impl ManagerState<'_> {
+    pub(in crate::console::manager) const fn list_scroll_x_mut(
+        &mut self,
+        focus: MountScrollFocus,
+    ) -> &mut u16 {
+        match focus {
+            MountScrollFocus::Workspace => &mut self.list_mounts_scroll_x,
+            MountScrollFocus::Global => &mut self.list_global_mounts_scroll_x,
+            MountScrollFocus::RoleGlobal => &mut self.list_role_global_mounts_scroll_x,
+        }
+    }
+
+    pub(in crate::console::manager) const fn reset_list_scroll(&mut self) {
+        self.list_mounts_scroll_x = 0;
+        self.list_global_mounts_scroll_x = 0;
+        self.list_role_global_mounts_scroll_x = 0;
+        self.list_scroll_focus = None;
+    }
+
     /// Allocates a fresh empty cache and assumes `op` unavailable —
     /// production reset paths use the `_with_cache_and_op` variant to
     /// preserve the `ConsoleState`-owned cache.
@@ -559,9 +698,16 @@ impl ManagerState<'_> {
         Self {
             stage: ManagerStage::List,
             workspaces,
+            current_dir: cwd.display().to_string(),
             selected,
             toast: None,
             list_modal: None,
+            inline_role_picker: None,
+            inline_agent_picker: None,
+            list_mounts_scroll_x: 0,
+            list_global_mounts_scroll_x: 0,
+            list_role_global_mounts_scroll_x: 0,
+            list_scroll_focus: None,
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
             op_cache,
@@ -692,6 +838,8 @@ impl EditorState<'_> {
             pending_picker_target: None,
             pending_picker_value: None,
             pending_auth_form_return: None,
+            workspace_mounts_scroll_x: 0,
+            workspace_mounts_scroll_focused: false,
         }
     }
 
@@ -715,6 +863,8 @@ impl EditorState<'_> {
             pending_picker_target: None,
             pending_picker_value: None,
             pending_auth_form_return: None,
+            workspace_mounts_scroll_x: 0,
+            workspace_mounts_scroll_focused: false,
         }
     }
 
@@ -1368,6 +1518,59 @@ mod tests {
         state.selected = ManagerListRow::NewWorkspace.to_screen_index(1);
         assert!(state.selected_workspace_summary().is_none());
         assert!(state.is_new_workspace_selected());
+    }
+
+    #[test]
+    fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+        let source_a = temp.path().join("cache-a");
+        let source_b = temp.path().join("cache-b");
+        std::fs::create_dir_all(&source_a).unwrap();
+        std::fs::create_dir_all(&source_b).unwrap();
+
+        let mut state = GlobalMountsState::from_config(&AppConfig::default());
+        state.pending.push(crate::config::GlobalMountRow {
+            scope: None,
+            name: "gradle".into(),
+            mount: MountConfig {
+                src: source_a.display().to_string(),
+                dst: "/home/agent/.gradle/caches".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+        });
+        state.save_to_config(&paths).unwrap();
+
+        state.pending[0].name = "cargo".into();
+        state.pending[0].mount.src = source_b.display().to_string();
+        state.pending[0].mount.dst = "/home/agent/.cargo/registry".into();
+        state.pending[0].mount.readonly = true;
+        state.pending[0].scope = Some("chainargos/*".into());
+        state.pending.push(crate::config::GlobalMountRow {
+            scope: None,
+            name: "remove-me".into(),
+            mount: MountConfig {
+                src: source_a.display().to_string(),
+                dst: "/remove-me".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+        });
+        state.pending.retain(|row| row.name != "remove-me");
+        let saved = state.save_to_config(&paths).unwrap();
+
+        let rows = saved.list_mount_rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "cargo");
+        assert_eq!(rows[0].scope.as_deref(), Some("chainargos/*"));
+        assert!(rows[0].mount.readonly);
+        assert_eq!(rows[0].mount.dst, "/home/agent/.cargo/registry");
+        let raw = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(raw.contains("[docker.mounts.\"chainargos/*\"]"), "{raw}");
+        assert!(!raw.contains("remove-me"), "{raw}");
     }
 
     // ── cycle_isolation_for_selected_mount ─────────────────────────────

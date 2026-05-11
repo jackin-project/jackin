@@ -685,11 +685,16 @@ fn build_confirm_save_lines(
 }
 
 fn mount_summary(m: &crate::workspace::MountConfig) -> String {
-    let src = crate::tui::shorten_home(&m.src);
+    let dst = crate::tui::shorten_home(&m.dst);
     let kind = super::super::mount_info::inspect(&m.src);
     let rw = if m.readonly { "ro" } else { "rw" };
     let isolation = m.isolation.as_str();
-    format!("{src}  ({rw}, {isolation}, {})", kind.label())
+    let host = if m.src == m.dst {
+        String::new()
+    } else {
+        format!("  host: {}", crate::tui::shorten_home(&m.src))
+    };
+    format!("{dst}{host}  ({rw}, {isolation}, {})", kind.label())
 }
 
 fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> String {

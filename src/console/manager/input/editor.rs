@@ -91,6 +91,14 @@ pub(super) fn handle_editor_key(
     };
 
     match key.code {
+        KeyCode::Char('h' | 'H') if editor.active_tab == EditorTab::Mounts => {
+            editor.workspace_mounts_scroll_focused = true;
+            editor.workspace_mounts_scroll_x = editor.workspace_mounts_scroll_x.saturating_sub(8);
+        }
+        KeyCode::Char('l' | 'L') if editor.active_tab == EditorTab::Mounts => {
+            editor.workspace_mounts_scroll_focused = true;
+            editor.workspace_mounts_scroll_x = editor.workspace_mounts_scroll_x.saturating_add(8);
+        }
         KeyCode::Tab | KeyCode::Right => {
             // Secrets tab `AgentHeader` absorbs `→` in both states
             // (expand or no-op) — falling through to tab-cycle on an
@@ -2927,6 +2935,46 @@ plugins = []
             panic!("editor stage expected");
         };
         assert!(e.pending.mounts[0].readonly);
+    }
+
+    #[test]
+    fn rows_beyond_workspace_mounts_are_noop_in_workspace_editor() {
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("cache");
+        std::fs::create_dir_all(&src).unwrap();
+        let mut config = AppConfig::default();
+        config
+            .roles
+            .insert("agent-smith".into(), crate::config::RoleSource::default());
+        config.add_mount(
+            "cache",
+            MountConfig {
+                src: src.display().to_string(),
+                dst: "/cache".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            None,
+        );
+        let mut ws = ws_with_one_mount(false);
+        ws.allowed_roles = vec!["agent-smith".into()];
+        // Global mounts are intentionally not rendered/editable here; row 2
+        // simulates stale input beyond the workspace mount + add sentinel.
+        let mut state = editor_on_mounts_tab(ws, 2);
+
+        press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
+        press(&mut state, &mut config, KeyCode::Char('D')).unwrap();
+        press(&mut state, &mut config, KeyCode::Char('I')).unwrap();
+
+        let ManagerStage::Editor(e) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(e.pending.mounts.len(), 1);
+        assert!(!e.pending.mounts[0].readonly);
+        assert_eq!(
+            e.pending.mounts[0].isolation,
+            crate::isolation::MountIsolation::Shared
+        );
     }
 
     #[test]
