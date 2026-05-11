@@ -119,10 +119,14 @@ pub fn hardline_agent(
             match inspect_container_state(runner, &dind) {
                 ContainerState::Running => {}
                 ContainerState::NotFound => anyhow::bail!(
-                    "DinD sidecar '{dind}' not found; use `jackin load` to rebuild the network"
+                    "DinD sidecar '{dind}' not found; use `jackin load` to rebuild jackin-managed network state. \
+                     The role container still exists, so jackin will not recreate it in place; any changes written \
+                     only to that container's writable layer must be inspected from the existing container."
                 ),
                 ContainerState::Stopped { .. } => anyhow::bail!(
-                    "DinD sidecar '{dind}' is stopped; use `jackin load` to rebuild the network"
+                    "DinD sidecar '{dind}' is stopped; use `jackin load` to rebuild jackin-managed network state. \
+                     The role container still exists, so jackin will not recreate it in place; any changes written \
+                     only to that container's writable layer must be inspected from the existing container."
                 ),
             }
             let reason = if oom_killed {
@@ -176,7 +180,9 @@ fn missing_restore_message(
     manifest.write(&state_dir)?;
     InstanceIndex::update_manifest(&paths.data_dir, &manifest)?;
     Ok(Some(format!(
-        "container '{container_name}' is missing, but jackin state remains recoverable at {}; run `jackin load` from the matching workspace to rebuild it, or `jackin eject {container_name} --purge` to discard it",
+        "container '{container_name}' is missing, but jackin-managed local state remains recoverable at {}. \
+         Run `jackin load` from the matching workspace to rebuild it, or `jackin eject {container_name} --purge` \
+         to discard it. Any changes written only to the deleted container's writable layer are gone.",
         state_dir.display()
     )))
 }

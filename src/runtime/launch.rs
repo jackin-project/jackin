@@ -1980,7 +1980,7 @@ fn resolve_restore_candidate(
     match candidates.as_slice() {
         [] => Ok(None),
         [only] if !std::io::stdin().is_terminal() => anyhow::bail!(
-            "restore is available for `{}` but stdin is not interactive; run `jackin hardline {}` to recover it or `jackin eject {} --purge` to discard it before starting a fresh load",
+            "restore is available for `{}` but stdin is not interactive; run `jackin hardline {}` to inspect it or `jackin load` interactively from the matching workspace to rebuild jackin-managed local state. Run `jackin eject {} --purge` to discard it before starting a fresh load. Any changes written only to a deleted container's writable layer are gone.",
             only.container_base,
             only.container_base,
             only.container_base

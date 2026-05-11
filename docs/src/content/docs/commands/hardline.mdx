@@ -30,11 +30,14 @@ When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspa
 | Running | Attach directly to the live session. |
 | Stopped, exit code `0` (clean `/exit`) | Error. The previous session ended normally — use `jackin load` to start a new one. |
 | Stopped, non-zero exit or OOM-killed | Restart the existing container in place and attach. Requires the DinD sidecar (`<container>-dind`) to still be present **and running**. |
-| Not found | Error. Nothing to reconnect to — use `jackin load`. |
+| Not found with indexed state | Mark the instance `restore_available` and point at `jackin load` from the matching workspace to rebuild jackin-managed local state. |
+| Not found without indexed state | Error. Nothing to reconnect to — use `jackin load`. |
 
 Restart is intentionally scoped to crashes (non-zero exit, OOM kill, hard kill). Clean exits are treated as "session over" — the next run of the agent should be a fresh `jackin load` so you see the full launch output and any updated configuration.
 
 If the DinD sidecar has been removed or is itself stopped, `jackin hardline` refuses to restart: the Docker network plumbing needs to be rebuilt, which is what `jackin load` does.
+
+If the role container itself was deleted, jackin can only recover jackin-managed local state such as preserved worktrees/clones and state directories. Changes written only to the deleted container's writable layer are gone unless they were also persisted through a mounted path.
 
 ## Terminal close vs. exit
 
