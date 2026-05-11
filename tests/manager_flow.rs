@@ -1397,12 +1397,12 @@ fn agent_picker_opens_when_multiple_agents_available() -> Result<()> {
         "multi-role dispatch must stay in the run-loop (Ok(None)); got {outcome:?}"
     );
     let ConsoleStage::Manager(ms) = &state.stage;
-    match &ms.list_modal {
-        Some(Modal::RolePicker { state: picker }) => {
+    match &ms.inline_role_picker {
+        Some(picker) => {
             assert_eq!(picker.roles.len(), 2);
             assert_eq!(picker.filtered.len(), 2);
         }
-        other => panic!("expected Modal::RolePicker on list_modal; got {other:?}"),
+        other => panic!("expected inline RolePicker; got {other:?}"),
     }
     Ok(())
 }
@@ -1427,7 +1427,7 @@ fn agent_picker_skipped_when_default_agent_set() -> Result<()> {
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
-    let (role, _ws) = outcome.expect("default_role must short-circuit to a direct launch");
+    let (role, _ws, _agent) = outcome.expect("default_role must short-circuit to a direct launch");
     assert_eq!(role.key(), "chainargos/agent-smith");
     let ConsoleStage::Manager(ms) = &state.stage;
     assert!(
@@ -1453,7 +1453,8 @@ fn agent_picker_skipped_when_single_eligible_agent() -> Result<()> {
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
-    let (role, _ws) = outcome.expect("single eligible role must short-circuit to a direct launch");
+    let (role, _ws, _agent) =
+        outcome.expect("single eligible role must short-circuit to a direct launch");
     assert_eq!(role.key(), "chainargos/agent-smith");
     let ConsoleStage::Manager(ms) = &state.stage;
     assert!(ms.list_modal.is_none());
@@ -1484,7 +1485,7 @@ fn agent_picker_enter_commits_launch() -> Result<()> {
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    assert!(matches!(ms.list_modal, Some(Modal::RolePicker { .. })));
+    assert!(ms.inline_role_picker.is_some());
 
     // Enter on the picker — selection defaults to index 0
     // (BTreeMap ordering of role keys).
@@ -1500,8 +1501,8 @@ fn agent_picker_enter_commits_launch() -> Result<()> {
         other => panic!("expected LaunchWithAgent outcome; got {other:?}"),
     }
     assert!(
-        ms.list_modal.is_none(),
-        "picker commit must close the modal"
+        ms.inline_role_picker.is_none(),
+        "picker commit must close the inline picker"
     );
     Ok(())
 }
@@ -1529,7 +1530,7 @@ fn agent_picker_esc_closes_modal() -> Result<()> {
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    assert!(matches!(ms.list_modal, Some(Modal::RolePicker { .. })));
+    assert!(ms.inline_role_picker.is_some());
 
     let outcome = handle_key(ms, &mut config, &paths, cwd, key(KeyCode::Esc))?;
     assert!(
@@ -1537,9 +1538,9 @@ fn agent_picker_esc_closes_modal() -> Result<()> {
         "Esc on the picker must produce Continue; got {outcome:?}"
     );
     assert!(
-        ms.list_modal.is_none(),
-        "Esc must close the picker modal; got {:?}",
-        ms.list_modal
+        ms.inline_role_picker.is_none(),
+        "Esc must close the inline picker; got {:?}",
+        ms.inline_role_picker
     );
     Ok(())
 }
@@ -2478,7 +2479,7 @@ fn launch_after_create_workspace_uses_fresh_data() -> Result<()> {
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("freshly-created".into()),
     )?;
-    let (role, _ws) = outcome.expect(
+    let (role, _ws, _agent) = outcome.expect(
         "freshly-created workspace must resolve through the dispatcher; under the bug, \
          ConsoleState.workspaces was a startup snapshot and didn't include the new name",
     );
@@ -2520,7 +2521,7 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("renamed-ws".into()),
     )?;
-    let (role, _ws) = outcome.expect("renamed workspace must resolve under the new name");
+    let (role, _ws, _agent) = outcome.expect("renamed workspace must resolve under the new name");
     assert_eq!(role.key(), "chainargos/agent-smith");
 
     // OLD name must not resolve — under the snapshot bug it did.
@@ -2590,7 +2591,7 @@ fn launch_after_default_agent_change_uses_new_default() -> Result<()> {
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
-    let (role, _ws) = after.expect(
+    let (role, _ws, _agent) = after.expect(
         "after default_role is set, dispatch must short-circuit to a direct launch outcome; \
          under the bug, the snapshot's default_role: None forced the picker open",
     );
@@ -2664,7 +2665,7 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("survivor-ws".into()),
     )?;
-    let (role, _ws) = alive.expect("survivor-ws must still resolve");
+    let (role, _ws, _agent) = alive.expect("survivor-ws must still resolve");
     assert_eq!(role.key(), "chainargos/agent-smith");
     Ok(())
 }

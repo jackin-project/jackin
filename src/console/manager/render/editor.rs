@@ -11,6 +11,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
+use std::cmp::Ordering;
 
 use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
 use super::list::{
@@ -153,48 +154,41 @@ fn contextual_row_items(
         }
         EditorTab::Mounts => {
             let mount_count = state.pending.mounts.len();
-            if cursor < mount_count {
-                let mut items = vec![
-                    FooterItem::Key("D"),
-                    FooterItem::Text("remove"),
-                    FooterItem::Sep,
-                    FooterItem::Key("A"),
-                    FooterItem::Text("add"),
-                ];
-                // Surface `O open in GitHub` when the cursor is on a mount
-                // whose source resolves to a GitHub-hosted git repo with a
-                // web URL. Editor-only — the list view's mounts pane is
-                // a preview, not a focus target.
-                if let Some(m) = state.pending.mounts.get(cursor)
-                    && matches!(
-                        super::super::mount_info::inspect(&m.src),
-                        super::super::mount_info::MountKind::Git {
-                            origin: Some(super::super::mount_info::GitOrigin::Github { .. }),
-                            ..
-                        }
-                    )
-                {
+            match cursor.cmp(&mount_count) {
+                Ordering::Less => {
+                    let mut items = vec![
+                        FooterItem::Key("D"),
+                        FooterItem::Text("remove"),
+                        FooterItem::Sep,
+                        FooterItem::Key("A"),
+                        FooterItem::Text("add"),
+                    ];
+                    if let Some(m) = state.pending.mounts.get(cursor)
+                        && matches!(
+                            super::super::mount_info::inspect(&m.src),
+                            super::super::mount_info::MountKind::Git {
+                                origin: Some(super::super::mount_info::GitOrigin::Github { .. }),
+                                ..
+                            }
+                        )
+                    {
+                        items.push(FooterItem::Sep);
+                        items.push(FooterItem::Key("O"));
+                        items.push(FooterItem::Text("open in GitHub"));
+                    }
                     items.push(FooterItem::Sep);
-                    items.push(FooterItem::Key("O"));
-                    items.push(FooterItem::Text("open in GitHub"));
+                    items.push(FooterItem::Key("R"));
+                    items.push(FooterItem::Text("toggle ro/rw"));
+                    items.push(FooterItem::Sep);
+                    items.push(FooterItem::Key("I"));
+                    items.push(FooterItem::Text("cycle isolation"));
+                    items.push(FooterItem::Sep);
+                    items.push(FooterItem::Key("H/L"));
+                    items.push(FooterItem::Text("scroll"));
+                    items
                 }
-                // `R` toggles the readonly flag on the highlighted mount row
-                // (rw ↔ ro). Sentinel row omits this hint — there's nothing
-                // to toggle yet.
-                items.push(FooterItem::Sep);
-                items.push(FooterItem::Key("R"));
-                items.push(FooterItem::Text("toggle ro/rw"));
-                // `I` cycles the per-mount isolation strategy on the
-                // highlighted row (shared ↔ worktree).
-                // Same gating as R: hidden on the `+ Add mount` sentinel.
-                items.push(FooterItem::Sep);
-                items.push(FooterItem::Key("I"));
-                items.push(FooterItem::Text("cycle isolation"));
-                items
-            } else {
-                // Sentinel "+ Add mount" row — both Enter and A invoke the
-                // same add-mount flow, so render as a single combined key.
-                vec![FooterItem::Key("Enter/A"), FooterItem::Text("add")]
+                Ordering::Equal => vec![FooterItem::Key("Enter/A"), FooterItem::Text("add")],
+                Ordering::Greater => Vec::new(),
             }
         }
         EditorTab::Roles => {
@@ -345,16 +339,19 @@ pub(in crate::console::manager) fn auth_row_count(
     auth_flat_rows(state, config).len()
 }
 
+/// Order/labels shared with mouse hit-testing; renderer and click code
+/// must measure the same strip.
+pub(in crate::console::manager) const EDITOR_TAB_LABELS: &[(EditorTab, &str)] = &[
+    (EditorTab::General, "General"),
+    (EditorTab::Mounts, "Mounts"),
+    (EditorTab::Roles, "Roles"),
+    (EditorTab::Secrets, "Environments"),
+    (EditorTab::Auth, "Auth"),
+];
+
 fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
-    let labels = [
-        (EditorTab::General, "General"),
-        (EditorTab::Mounts, "Mounts"),
-        (EditorTab::Roles, "Roles"),
-        (EditorTab::Secrets, "Environments"),
-        (EditorTab::Auth, "Auth"),
-    ];
     let mut spans = Vec::new();
-    for (tab, label) in labels {
+    for &(tab, label) in EDITOR_TAB_LABELS {
         let style = if tab == active {
             Style::default()
                 .bg(PHOSPHOR_GREEN)
@@ -455,9 +452,6 @@ fn render_editor_row(row: usize, cursor: usize, label: &str, value: &str) -> Lin
 }
 
 fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK));
     let FieldFocus::Row(cursor) = state.active_field;
 
     // Build aligned table rows for all mounts.
@@ -468,7 +462,7 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     // with data rows regardless of path width.
     let mut lines: Vec<Line> = vec![render_mount_header(path_w)];
 
-    lines.extend(rows.iter().enumerate().map(|(i, (path, mode, iso, kind))| {
+    for (i, row) in rows.iter().enumerate() {
         let selected = i == cursor;
         let prefix = if selected { "▸ " } else { "  " };
         let base_style = if selected {
@@ -481,23 +475,32 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         let dim_style = Style::default()
             .fg(PHOSPHOR_DIM)
             .add_modifier(Modifier::ITALIC);
-        Line::from(vec![
-            Span::styled(format!("{prefix}{path:<path_w$}  "), base_style),
+        lines.push(Line::from(vec![
             Span::styled(
-                format!("{mode:<MOUNT_MODE_COL_WIDTH$}"),
+                format!("{prefix}{:<path_w$}  ", row.destination),
+                base_style,
+            ),
+            Span::styled(
+                format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
                 Style::default().fg(PHOSPHOR_DIM),
             ),
             // Two-space gap before the iso column — matches the header.
             Span::raw("  "),
             Span::styled(
-                format!("{iso:<MOUNT_ISOLATION_COL_WIDTH$}"),
+                format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
                 Style::default().fg(PHOSPHOR_DIM),
             ),
             // Two-space gap before the type column — matches the header.
             Span::raw("  "),
-            Span::styled(kind.clone(), dim_style),
-        ])
-    }));
+            Span::styled(row.kind.clone(), dim_style),
+        ]));
+        if let Some(host_source) = &row.host_source {
+            lines.push(Line::from(Span::styled(
+                format!("  {host_source:<path_w$}"),
+                Style::default().fg(PHOSPHOR_DIM),
+            )));
+        }
+    }
 
     // Sentinel row: + Add mount — selectable, styled distinctly from mounts.
     let sentinel_idx = state.pending.mounts.len();
@@ -511,7 +514,33 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         action_row_style(sentinel_selected),
     )));
 
-    frame.render_widget(Paragraph::new(lines).block(block), area);
+    let workspace_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default().fg(if state.workspace_mounts_scroll_focused {
+                PHOSPHOR_GREEN
+            } else {
+                PHOSPHOR_DARK
+            }),
+        )
+        .title(Span::styled(
+            " Workspace mounts ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+
+    let workspace_content_width = super::max_line_width(&lines);
+    let scroll_x = super::effective_scroll_x(
+        workspace_content_width,
+        area.width.saturating_sub(2) as usize,
+        state.workspace_mounts_scroll_x,
+    );
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(workspace_block)
+            .scroll((0, scroll_x)),
+        area,
+    );
+    super::render_horizontal_scrollbar(frame, area, workspace_content_width, scroll_x);
 }
 
 fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {

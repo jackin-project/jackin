@@ -142,7 +142,9 @@ pub fn run(cli: Cli) -> Result<()> {
             runner.debug = debug;
             tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
-            let Some((class, workspace)) = console::run_console(config, &paths, &cwd)? else {
+            let Some((class, workspace, selected_agent)) =
+                console::run_console(config, &paths, &cwd)?
+            else {
                 return Ok(());
             };
 
@@ -156,7 +158,10 @@ pub fn run(cli: Cli) -> Result<()> {
             }
 
             let mut opts = runtime::LoadOptions::for_launch(debug);
-            opts.agent = prompt_agent_choice_if_needed(&paths, &class, workspace.default_agent)?;
+            opts.agent = match selected_agent {
+                Some(agent) => Some(agent),
+                None => prompt_agent_choice_if_needed(&paths, &class, workspace.default_agent)?,
+            };
             runtime::reconcile_keep_awake(&paths, &mut runner);
             let result =
                 runtime::load_role(&paths, &mut config, &class, &workspace, &mut runner, &opts);
@@ -262,10 +267,41 @@ pub fn run(cli: Cli) -> Result<()> {
                         readonly,
                         isolation: crate::isolation::MountIsolation::Shared,
                     };
+                    crate::workspace::validate_mounts(std::slice::from_ref(&mount))?;
+                    let sensitive =
+                        crate::workspace::find_sensitive_mounts(std::slice::from_ref(&mount));
+                    if !sensitive.is_empty()
+                        && !crate::workspace::confirm_sensitive_mounts(&sensitive)?
+                    {
+                        anyhow::bail!("aborted — sensitive mount paths were not confirmed");
+                    }
+                    let (matched, mut candidate_rows): (
+                        Vec<crate::config::GlobalMountRow>,
+                        Vec<crate::config::GlobalMountRow>,
+                    ) = config
+                        .list_mount_rows()
+                        .into_iter()
+                        .partition(|row| row.name == name && row.scope == scope);
+                    let existing = matched.into_iter().next();
+                    candidate_rows.push(crate::config::GlobalMountRow {
+                        scope: scope.clone(),
+                        name: name.clone(),
+                        mount: mount.clone(),
+                    });
+                    AppConfig::validate_global_mount_rows(&candidate_rows)?;
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     editor.add_mount(&name, mount, scope.as_deref());
                     editor.save()?;
-                    println!("Added mount {name:?} ({scope_label}): {src} -> {dst}{ro}");
+                    if let Some(prev) = existing {
+                        println!(
+                            "Replaced mount {name:?} ({scope_label}):\n  was: {} -> {}\n  now: {} -> {}{ro}",
+                            prev.mount.src, prev.mount.dst, src, dst
+                        );
+                    } else {
+                        println!(
+                            "Added mount {name:?} ({scope_label}):\n  {dst}\n  host: {src}{ro}"
+                        );
+                    }
                     Ok(())
                 }
                 cli::MountCommand::Remove { name, scope } => {
@@ -280,42 +316,67 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
                 cli::MountCommand::List => {
-                    let mounts = config.list_mounts();
+                    let mounts = config.list_mount_rows();
                     if mounts.is_empty() {
                         println!("No mounts configured.");
                     } else {
                         use tabled::settings::Style;
                         use tabled::{Table, Tabled};
                         #[derive(Tabled)]
+                        struct GlobalRow {
+                            #[tabled(rename = "Name")]
+                            name: String,
+                            #[tabled(rename = "Mount")]
+                            mount: String,
+                            #[tabled(rename = "Mode")]
+                            mode: String,
+                        }
+                        #[derive(Tabled)]
                         struct Row {
                             #[tabled(rename = "Scope")]
                             scope: String,
                             #[tabled(rename = "Name")]
                             name: String,
-                            #[tabled(rename = "Source")]
-                            src: String,
-                            #[tabled(rename = "Destination")]
-                            dst: String,
+                            #[tabled(rename = "Mount")]
+                            mount: String,
                             #[tabled(rename = "Mode")]
                             mode: String,
                         }
-                        let rows: Vec<Row> = mounts
-                            .iter()
-                            .map(|(scope, name, m)| Row {
-                                scope: scope.clone(),
-                                name: name.clone(),
-                                src: tui::shorten_home(&m.src),
-                                dst: m.dst.clone(),
-                                mode: if m.readonly {
-                                    "read-only".to_string()
-                                } else {
-                                    "read-write".to_string()
-                                },
-                            })
-                            .collect();
-                        let mut table = Table::new(rows);
-                        table.with(Style::modern_rounded());
-                        println!("{table}");
+                        let (global, scoped): (Vec<_>, Vec<_>) =
+                            mounts.iter().partition(|row| row.scope.is_none());
+                        let has_global = !global.is_empty();
+                        if !global.is_empty() {
+                            let rows: Vec<GlobalRow> = global
+                                .into_iter()
+                                .map(|row| GlobalRow {
+                                    name: row.name.clone(),
+                                    mount: mount_display(&row.mount.src, &row.mount.dst),
+                                    mode: mount_mode(row.mount.readonly),
+                                })
+                                .collect();
+                            let mut table = Table::new(rows);
+                            table.with(Style::modern_rounded());
+                            println!("Global mounts:");
+                            println!("{table}");
+                        }
+                        if !scoped.is_empty() {
+                            if has_global {
+                                println!();
+                            }
+                            let rows: Vec<Row> = scoped
+                                .into_iter()
+                                .map(|row| Row {
+                                    scope: row.scope.clone().unwrap_or_default(),
+                                    name: row.name.clone(),
+                                    mount: mount_display(&row.mount.src, &row.mount.dst),
+                                    mode: mount_mode(row.mount.readonly),
+                                })
+                                .collect();
+                            let mut table = Table::new(rows);
+                            table.with(Style::modern_rounded());
+                            println!("Scoped global mounts:");
+                            println!("{table}");
+                        }
                     }
                     Ok(())
                 }
@@ -585,7 +646,7 @@ pub fn run(cli: Cli) -> Result<()> {
             }
             WorkspaceCommand::Show { name } => {
                 let workspace = config.require_workspace(&name)?;
-                print!("{}", render_workspace_show(&name, workspace));
+                print!("{}", render_workspace_show(&config, &name, workspace));
                 Ok(())
             }
             WorkspaceCommand::Edit {
@@ -1338,21 +1399,42 @@ fn render_auth_show(config: &AppConfig) -> String {
 /// trailing mounts table with one row per mount. The mounts table renders the
 /// canonical lowercase isolation name (`shared`/`worktree`/`clone`) so the output
 /// matches TOML/CLI input verbatim.
-fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
+#[allow(clippy::too_many_lines)]
+fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceConfig) -> String {
     use std::fmt::Write as _;
     use tabled::settings::Style;
     use tabled::{Table, Tabled};
 
     #[derive(Tabled)]
     struct MountRow {
-        #[tabled(rename = "Source")]
-        src: String,
-        #[tabled(rename = "Destination")]
-        dst: String,
+        #[tabled(rename = "Mount")]
+        mount: String,
         #[tabled(rename = "Mode")]
         mode: String,
         #[tabled(rename = "Isolation")]
         isolation: String,
+        #[tabled(rename = "Type")]
+        kind: String,
+    }
+    #[derive(Tabled)]
+    struct GlobalMountRowWithScope {
+        #[tabled(rename = "Scope")]
+        scope: String,
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "Mount")]
+        mount: String,
+        #[tabled(rename = "Mode")]
+        mode: String,
+    }
+    #[derive(Tabled)]
+    struct GlobalMountRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "Mount")]
+        mount: String,
+        #[tabled(rename = "Mode")]
+        mode: String,
     }
 
     let allowed = if workspace.allowed_roles.is_empty() {
@@ -1395,24 +1477,88 @@ fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
             .mounts
             .iter()
             .map(|m| MountRow {
-                src: tui::shorten_home(&m.src),
-                dst: tui::shorten_home(&m.dst),
-                mode: if m.readonly {
-                    "read-only".to_string()
-                } else {
-                    "read-write".to_string()
-                },
+                mount: mount_display(&m.src, &m.dst),
+                mode: mount_mode(m.readonly),
                 isolation: m.isolation.as_str().to_string(),
+                kind: crate::console::manager::mount_info::inspect(&m.src).label(),
             })
             .collect();
         let mut mount_table = Table::new(mount_rows);
         mount_table.with(Style::modern_rounded());
         let _ = writeln!(out);
-        let _ = writeln!(out, "Mounts:");
+        let _ = writeln!(out, "Workspace mounts:");
         let _ = writeln!(out, "{mount_table}");
     }
 
+    let render_unscoped_table = |out: &mut String, rows: &[&crate::config::GlobalMountRow]| {
+        if rows.is_empty() {
+            return;
+        }
+        let mut table = Table::new(rows.iter().map(|row| GlobalMountRow {
+            name: row.name.clone(),
+            mount: mount_display(&row.mount.src, &row.mount.dst),
+            mode: mount_mode(row.mount.readonly),
+        }));
+        table.with(Style::modern_rounded());
+        let _ = writeln!(out);
+        let _ = writeln!(out, "Global mounts:");
+        let _ = writeln!(out, "{table}");
+    };
+
+    match config.workspace_applicable_mount_rows(workspace) {
+        crate::config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
+            if rows.is_empty() {
+                return out;
+            }
+            let has_scoped_rows = rows.iter().any(|row| row.scope.is_some());
+            if !has_scoped_rows {
+                render_unscoped_table(&mut out, &rows.iter().collect::<Vec<_>>());
+                return out;
+            }
+            let mut table = Table::new(rows.iter().map(|row| GlobalMountRowWithScope {
+                scope: row.scope.as_deref().unwrap_or("global").to_string(),
+                name: row.name.clone(),
+                mount: mount_display(&row.mount.src, &row.mount.dst),
+                mode: mount_mode(row.mount.readonly),
+            }));
+            table.with(Style::modern_rounded());
+            let _ = writeln!(out);
+            let _ = writeln!(out, "Global mounts ({role}):");
+            let _ = writeln!(out, "{table}");
+        }
+        crate::config::WorkspaceGlobalMountRows::Ambiguous { candidates } => {
+            // Unscoped global mounts apply regardless of role — render
+            // them even when the role is ambiguous. Only the scoped
+            // subset depends on role selection.
+            let all_rows = config.list_mount_rows();
+            let unscoped: Vec<&crate::config::GlobalMountRow> =
+                all_rows.iter().filter(|row| row.scope.is_none()).collect();
+            render_unscoped_table(&mut out, &unscoped);
+            if all_rows.iter().any(|row| row.scope.is_some()) {
+                let _ = writeln!(out);
+                let _ = writeln!(
+                    out,
+                    "Role-scoped global mounts depend on selected role ({})",
+                    candidates.join(", ")
+                );
+            }
+        }
+    }
+
     out
+}
+
+fn mount_mode(readonly: bool) -> String {
+    if readonly { "read-only" } else { "read-write" }.to_string()
+}
+
+fn mount_display(src: &str, dst: &str) -> String {
+    let short_dst = tui::shorten_home(dst);
+    if src == dst {
+        short_dst
+    } else {
+        format!("{}\nhost: {}", short_dst, tui::shorten_home(src))
+    }
 }
 
 #[cfg(test)]
@@ -1445,18 +1591,23 @@ mod auth_set_tests {
 
     #[test]
     fn workspace_show_includes_isolation_column() {
+        let temp = tempfile::tempdir().unwrap();
+        let worktree_src = temp.path().join("x");
+        let cache_src = temp.path().join("cache");
+        std::fs::create_dir_all(&worktree_src).unwrap();
+        std::fs::create_dir_all(&cache_src).unwrap();
         let ws = crate::workspace::WorkspaceConfig {
             version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/workspace/jackin".into(),
             mounts: vec![
                 crate::workspace::MountConfig {
-                    src: "/tmp/x".into(),
+                    src: worktree_src.display().to_string(),
                     dst: "/workspace/jackin".into(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Worktree,
                 },
                 crate::workspace::MountConfig {
-                    src: "/tmp/cache".into(),
+                    src: cache_src.display().to_string(),
                     dst: "/workspace/cache".into(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
@@ -1476,10 +1627,129 @@ mod auth_set_tests {
             github: None,
             git_pull_on_entry: false,
         };
-        let out = render_workspace_show("jackin", &ws);
+        let out = render_workspace_show(&AppConfig::default(), "jackin", &ws);
         assert!(out.contains("Isolation"));
+        assert!(out.contains("Type"));
+        assert!(out.contains("folder"));
         assert!(out.contains("worktree"));
         assert!(out.contains("shared"));
+    }
+
+    #[test]
+    fn workspace_show_splits_workspace_and_global_mount_groups() {
+        let temp = tempfile::tempdir().unwrap();
+        let global_src = temp.path().join("gradle");
+        std::fs::create_dir_all(&global_src).unwrap();
+        let work_src = temp.path().join("work");
+        std::fs::create_dir_all(&work_src).unwrap();
+        let mut config = AppConfig::default();
+        config
+            .roles
+            .insert("agent-smith".into(), crate::config::RoleSource::default());
+        config.add_mount(
+            "gradle-cache",
+            crate::workspace::MountConfig {
+                src: global_src.display().to_string(),
+                dst: "/home/agent/.gradle/caches".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            None,
+        );
+        let ws = crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            workdir: "/workspace/jackin".into(),
+            mounts: vec![crate::workspace::MountConfig {
+                src: work_src.display().to_string(),
+                dst: "/workspace/jackin".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }],
+            allowed_roles: vec!["agent-smith".into()],
+            ..Default::default()
+        };
+
+        let out = render_workspace_show(&config, "jackin", &ws);
+
+        assert!(out.contains("Workspace mounts:"), "{out}");
+        assert!(out.contains("Global mounts:"), "{out}");
+        assert!(!out.contains("Global mounts (agent-smith):"), "{out}");
+        assert!(out.contains("gradle-cache"), "{out}");
+        assert!(!out.contains("│ Scope"), "{out}");
+    }
+
+    #[test]
+    fn workspace_show_explains_ambiguous_role_scoped_global_mounts() {
+        let temp = tempfile::tempdir().unwrap();
+        let global_src = temp.path().join("secrets");
+        std::fs::create_dir_all(&global_src).unwrap();
+        let mut config = AppConfig::default();
+        config
+            .roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
+        config
+            .roles
+            .insert("beta".into(), crate::config::RoleSource::default());
+        config.add_mount(
+            "team-secrets",
+            crate::workspace::MountConfig {
+                src: global_src.display().to_string(),
+                dst: "/secrets".into(),
+                readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            Some("alpha"),
+        );
+        let ws = crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            workdir: "/workspace/jackin".into(),
+            mounts: vec![],
+            allowed_roles: vec!["alpha".into(), "beta".into()],
+            ..Default::default()
+        };
+
+        let out = render_workspace_show(&config, "jackin", &ws);
+
+        assert!(out.contains("selected role"), "{out}");
+        assert!(!out.contains("team-secrets"), "{out}");
+    }
+
+    #[test]
+    fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
+        let temp = tempfile::tempdir().unwrap();
+        let global_src = temp.path().join("secrets");
+        std::fs::create_dir_all(&global_src).unwrap();
+        let mut config = AppConfig::default();
+        config.roles.insert(
+            "chainargos/agent-brown".into(),
+            crate::config::RoleSource::default(),
+        );
+        config.add_mount(
+            "team-secrets",
+            crate::workspace::MountConfig {
+                src: global_src.display().to_string(),
+                dst: "/secrets".into(),
+                readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            Some("chainargos/*"),
+        );
+        let ws = crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            workdir: "/workspace/jackin".into(),
+            mounts: vec![],
+            allowed_roles: vec!["chainargos/agent-brown".into()],
+            ..Default::default()
+        };
+
+        let out = render_workspace_show(&config, "jackin", &ws);
+
+        assert!(
+            out.contains("Global mounts (chainargos/agent-brown):"),
+            "{out}"
+        );
+        assert!(out.contains("│ Scope"), "{out}");
+        assert!(out.contains("chainargos/*"), "{out}");
     }
 
     /// Test fake for [`crate::operator_env::OpWriteRunner`] used by

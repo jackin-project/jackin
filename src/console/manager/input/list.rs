@@ -7,13 +7,14 @@ use super::super::super::widgets::{
     ModalOutcome, confirm::ConfirmState, file_browser::FileBrowserState,
 };
 use super::super::state::{
-    EditorState, FileBrowserTarget, ManagerListRow, ManagerStage, ManagerState, Modal, Toast,
-    ToastKind,
+    EditorState, FileBrowserTarget, GlobalMountsState, ManagerListRow, ManagerStage, ManagerState,
+    Modal, Toast, ToastKind,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn handle_list_key(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
@@ -24,12 +25,32 @@ pub(super) fn handle_list_key(
     // See ManagerListRow docs for row layout.
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => Ok(InputOutcome::ExitJackin),
+        KeyCode::Left | KeyCode::Char('h' | 'H') => {
+            scroll_focused_mount_block(state, -8);
+            Ok(InputOutcome::Continue)
+        }
+        KeyCode::Right | KeyCode::Char('l' | 'L') => {
+            scroll_focused_mount_block(state, 8);
+            Ok(InputOutcome::Continue)
+        }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
-            state.selected = state.selected.saturating_sub(1);
+            state.inline_role_picker = None;
+            state.inline_agent_picker = None;
+            let selected = state.selected.saturating_sub(1);
+            if selected != state.selected {
+                state.reset_list_scroll();
+                state.selected = selected;
+            }
             Ok(InputOutcome::Continue)
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
-            state.selected = (state.selected + 1).min(state.row_count() - 1);
+            state.inline_role_picker = None;
+            state.inline_agent_picker = None;
+            let selected = (state.selected + 1).min(state.row_count() - 1);
+            if selected != state.selected {
+                state.reset_list_scroll();
+                state.selected = selected;
+            }
             Ok(InputOutcome::Continue)
         }
         KeyCode::Enter => match state.selected_row() {
@@ -114,6 +135,10 @@ pub(super) fn handle_list_key(
         }
         KeyCode::Char('o' | 'O') => {
             handle_list_open_in_github(state, config);
+            Ok(InputOutcome::Continue)
+        }
+        KeyCode::Char('g' | 'G') => {
+            state.stage = ManagerStage::GlobalMounts(GlobalMountsState::from_config(config));
             Ok(InputOutcome::Continue)
         }
         _ => Ok(InputOutcome::Continue),
@@ -212,11 +237,85 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
     }
 }
 
+pub(super) fn handle_inline_role_picker(
+    state: &mut ManagerState<'_>,
+    key: KeyEvent,
+) -> InputOutcome {
+    let Some(picker) = state.inline_role_picker.as_mut() else {
+        return InputOutcome::Continue;
+    };
+    match key.code {
+        KeyCode::Left | KeyCode::Char('h' | 'H') => {
+            scroll_focused_mount_block(state, -8);
+            InputOutcome::Continue
+        }
+        KeyCode::Right | KeyCode::Char('l' | 'L') => {
+            scroll_focused_mount_block(state, 8);
+            InputOutcome::Continue
+        }
+        _ => match picker.handle_key(key) {
+            ModalOutcome::Commit(role) => {
+                state.inline_role_picker = None;
+                InputOutcome::LaunchWithAgent(role)
+            }
+            ModalOutcome::Cancel => {
+                state.inline_role_picker = None;
+                InputOutcome::Continue
+            }
+            ModalOutcome::Continue => InputOutcome::Continue,
+        },
+    }
+}
+
+pub(super) fn handle_inline_agent_picker(
+    state: &mut ManagerState<'_>,
+    key: KeyEvent,
+) -> InputOutcome {
+    let Some((_, picker)) = state.inline_agent_picker.as_mut() else {
+        return InputOutcome::Continue;
+    };
+    match key.code {
+        KeyCode::Left | KeyCode::Char('h' | 'H') => {
+            scroll_focused_mount_block(state, -8);
+            InputOutcome::Continue
+        }
+        KeyCode::Right | KeyCode::Char('l' | 'L') => {
+            scroll_focused_mount_block(state, 8);
+            InputOutcome::Continue
+        }
+        _ => match picker.handle_key(key) {
+            ModalOutcome::Commit(agent) => {
+                state.inline_agent_picker = None;
+                InputOutcome::LaunchWithRuntimeAgent(agent)
+            }
+            ModalOutcome::Cancel => {
+                state.inline_agent_picker = None;
+                InputOutcome::Continue
+            }
+            ModalOutcome::Continue => InputOutcome::Continue,
+        },
+    }
+}
+
+const fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
+    let Some(focus) = state.list_scroll_focus else {
+        return;
+    };
+    let value = state.list_scroll_x_mut(focus);
+    if delta.is_negative() {
+        *value = value.saturating_sub(delta.unsigned_abs());
+    } else {
+        *value = value.saturating_add(delta as u16);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! List-stage tests: row-0 (current dir) gating, Enter routing,
     //! `o`-key resolver to GitHub URLs, and the `GithubPicker` modal.
-    use super::super::super::state::{ManagerStage, ManagerState, Modal, ToastKind};
+    use super::super::super::state::{
+        ManagerStage, ManagerState, Modal, MountScrollFocus, ToastKind,
+    };
     use super::super::test_support::{key, mount};
     use super::InputOutcome;
     use crate::config::AppConfig;
@@ -370,6 +469,38 @@ mod tests {
             InputOutcome::LaunchNamed(name) => assert_eq!(name, "alpha"),
             other => panic!("row 1 Enter must produce LaunchNamed(\"alpha\"); got {other:?}"),
         }
+    }
+
+    #[test]
+    fn moving_selection_resets_mount_scroll_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let cwd = tmp.path();
+
+        let mut config = AppConfig::default();
+        config.workspaces.insert(
+            "alpha".into(),
+            WorkspaceConfig {
+                workdir: "/alpha".into(),
+                mounts: vec![],
+                ..Default::default()
+            },
+        );
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.selected = 0;
+        state.list_mounts_scroll_x = 24;
+        state.list_global_mounts_scroll_x = 16;
+        state.list_role_global_mounts_scroll_x = 8;
+        state.list_scroll_focus = Some(MountScrollFocus::Workspace);
+
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down)).unwrap();
+
+        assert_eq!(state.selected, 1);
+        assert_eq!(state.list_mounts_scroll_x, 0);
+        assert_eq!(state.list_global_mounts_scroll_x, 0);
+        assert_eq!(state.list_role_global_mounts_scroll_x, 0);
+        assert_eq!(state.list_scroll_focus, None);
     }
 
     // ── List-view `o` key → GitHub resolver + picker ──────────────────
