@@ -63,29 +63,43 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
         String::from_utf8_lossy(&output.stderr),
     );
 
-    let env_report = std::fs::read_to_string(workspace_dir.join("jackin-e2e-env.txt")).unwrap();
-    assert!(env_report.contains(&format!("DOCKER_HOST=tcp://{DIND_HOSTNAME}:2376")));
-    assert!(env_report.contains("DOCKER_TLS_VERIFY=1"));
-    assert!(env_report.contains("DOCKER_CERT_PATH=/certs/client"));
-    assert!(env_report.contains(&format!("JACKIN_DIND_HOSTNAME={DIND_HOSTNAME}")));
+    // Agent prints its env + `docker ps` snapshot between sentinel markers on
+    // its stdout, which the PTY captures into `output.stdout`. Reading from
+    // stdout instead of a `/workspace` bind-mount file keeps the test agnostic
+    // to whether the Docker daemon shares the test process's filesystem (DinD
+    // and remote daemons resolve bind-mount sources on the daemon side, where
+    // the test cannot read them).
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let Some((_, after_begin)) = stdout.split_once(REPORT_BEGIN) else {
+        panic!("agent did not emit {REPORT_BEGIN} marker\nstdout:\n{stdout}\nstderr:\n{stderr}");
+    };
+    let Some((report, _)) = after_begin.split_once(REPORT_END) else {
+        panic!("agent did not emit {REPORT_END} marker\nstdout:\n{stdout}\nstderr:\n{stderr}");
+    };
+
+    assert!(report.contains(&format!("DOCKER_HOST=tcp://{DIND_HOSTNAME}:2376")));
+    assert!(report.contains("DOCKER_TLS_VERIFY=1"));
+    assert!(report.contains("DOCKER_CERT_PATH=/certs/client"));
+    assert!(report.contains(&format!("JACKIN_DIND_HOSTNAME={DIND_HOSTNAME}")));
     // Both casings carry the merged list — operator's localhost,127.0.0.1
     // must reach tools that read either uppercase NO_PROXY (Go runtime) or
     // lowercase no_proxy (curl, Python requests, wget).
     let merged = format!("NO_PROXY=localhost,127.0.0.1,{DIND_HOSTNAME}");
     let merged_lower = format!("no_proxy=localhost,127.0.0.1,{DIND_HOSTNAME}");
+    assert!(report.contains(&merged), "missing {merged}\n{report}");
     assert!(
-        env_report.contains(&merged),
-        "missing {merged}\n{env_report}"
+        report.contains(&merged_lower),
+        "missing {merged_lower}\n{report}"
     );
     assert!(
-        env_report.contains(&merged_lower),
-        "missing {merged_lower}\n{env_report}"
+        report.contains("CONTAINER ID"),
+        "agent's `docker ps` did not list any containers\n{report}"
     );
-
-    let docker_ps =
-        std::fs::read_to_string(workspace_dir.join("jackin-e2e-docker-ps.txt")).unwrap();
-    assert!(docker_ps.contains("CONTAINER ID"));
 }
+
+const REPORT_BEGIN: &str = "===JACKIN_E2E_REPORT_BEGIN===";
+const REPORT_END: &str = "===JACKIN_E2E_REPORT_END===";
 
 /// Hard-fail with an actionable message when the e2e prerequisites are
 /// missing. The `e2e` feature is opt-in (CI runs `cargo nextest run
@@ -220,17 +234,16 @@ USER agent
 "
 }
 
-// `$VAR` expansions inside the heredoc trigger
-// `clippy::literal_string_with_formatting_args` because the body looks like
-// a Rust format string; the script is `cat`'d verbatim into the container,
-// so the lint is a false positive.
-#[allow(clippy::literal_string_with_formatting_args)]
-const fn fake_curl() -> &'static str {
-    // `sleep 5` keeps the agent container alive long enough for jackin's
-    // post-launch reads (env report, docker ps snapshot) to land in the
-    // workspace before the entrypoint exits and the container is torn
-    // down. Tuned empirically; bump if the test races on slow CI.
-    r#"#!/bin/sh
+/// The agent emits its env + `docker ps` snapshot between sentinel markers on
+/// stdout. The test parses that block from the PTY-captured stdout, so the
+/// report channel works identically whether the daemon shares the test
+/// process's filesystem or runs in `DinD`. `REPORT_BEGIN`/`REPORT_END` are
+/// interpolated via `format!` so the Rust consts remain the single source of
+/// truth — `${{…}}` in the body escapes the format string back to `${…}` for
+/// the embedded shell.
+fn fake_curl() -> String {
+    format!(
+        r#"#!/bin/sh
 cat <<'INSTALL'
 #!/bin/sh
 set -eu
@@ -238,24 +251,24 @@ mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/claude" <<'CLAUDE'
 #!/bin/sh
 set -eu
-if [ "${1:-}" = "--version" ]; then
+if [ "${{1:-}}" = "--version" ]; then
   echo "claude 0.0.0-e2e"
   exit 0
 fi
-docker ps > /workspace/jackin-e2e-docker-ps.txt
-{
-  echo "DOCKER_HOST=$DOCKER_HOST"
-  echo "DOCKER_TLS_VERIFY=$DOCKER_TLS_VERIFY"
-  echo "DOCKER_CERT_PATH=$DOCKER_CERT_PATH"
-  echo "JACKIN_DIND_HOSTNAME=$JACKIN_DIND_HOSTNAME"
-  echo "NO_PROXY=${NO_PROXY:-}"
-  echo "no_proxy=${no_proxy:-}"
-} > /workspace/jackin-e2e-env.txt
-sleep 5
+echo "{REPORT_BEGIN}"
+echo "DOCKER_HOST=$DOCKER_HOST"
+echo "DOCKER_TLS_VERIFY=$DOCKER_TLS_VERIFY"
+echo "DOCKER_CERT_PATH=$DOCKER_CERT_PATH"
+echo "JACKIN_DIND_HOSTNAME=$JACKIN_DIND_HOSTNAME"
+echo "NO_PROXY=${{NO_PROXY:-}}"
+echo "no_proxy=${{no_proxy:-}}"
+docker ps
+echo "{REPORT_END}"
 CLAUDE
 chmod +x "$HOME/.local/bin/claude"
 INSTALL
 "#
+    )
 }
 
 fn cleanup_role() {
