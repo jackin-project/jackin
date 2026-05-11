@@ -44,7 +44,9 @@ prompts when an agent is blocked or finished.
   using the operator's `gh` authentication and newest-first open PR results.
   Ghostty/browser actions start with `workspace/launch` and `desktop/open` so
   Desktop can launch saved workspaces, reconnect to running sessions, and open
-  PR links without owning terminal or browser command construction.
+  PR links without owning terminal or browser command construction. Account
+  cards start with `account/status`, which reports cached Claude, Codex, and Amp
+  credential-source presence without exposing token values.
 - <RepoFile path="src/runtime/launch.rs" /> already bind-mounts the daemon
   socket into role containers as `/jackin/daemon.sock` and injects
   `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock` when available.
