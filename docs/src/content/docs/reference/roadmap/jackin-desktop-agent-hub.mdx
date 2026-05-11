@@ -47,6 +47,10 @@ prompts when an agent is blocked or finished.
   PR links without owning terminal or browser command construction. Account
   cards start with `account/status`, which reports cached Claude, Codex, and Amp
   credential-source presence without exposing token values.
+- `desktop/macos/` contains the first native macOS SwiftUI/AppKit package:
+  a `MenuBarExtra` status item, daemon-health view, refresh action, and
+  Unix-socket `daemon/hello` client. This is intentionally a health skeleton,
+  not the full Desktop window or workspace/PR menu.
 - <RepoFile path="src/runtime/launch.rs" /> already bind-mounts the daemon
   socket into role containers as `/jackin/daemon.sock` and injects
   `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock` when available.
@@ -520,7 +524,7 @@ Delivery rules:
 ### Phase 1 — Menu bar MVP
 
 - PR 1: Native `Jackin.app` skeleton with menu bar extra and daemon connection
-  health only.
+  health only. Started with the SwiftUI/AppKit package and daemon-health menu.
 - PR 2: Add active workspaces and running-agent counts.
 - PR 3: Add My open PRs newest-first and active projects.
 - PR 4: Add open actions for hardline / Ghostty, repository, and PR.
