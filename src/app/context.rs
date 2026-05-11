@@ -248,11 +248,13 @@ pub(crate) fn resolve_running_container_from_context(
     runner: &mut impl docker::CommandRunner,
 ) -> Result<String> {
     let Some((name, ws)) = find_saved_workspace_for_cwd(config, cwd) else {
-        anyhow::bail!(
-            "no saved workspace matches the current directory.\n\
-             Run jackin hardline <role> to target explicitly, or\n\
-             run jackin load <role> to start a new session."
-        );
+        return resolve_ad_hoc_container_from_context(paths, cwd, runner).or_else(|err| {
+            anyhow::bail!(
+                "no saved workspace matches the current directory, and no ad-hoc instance matches it: {err}\n\
+                 Run jackin hardline <role> to target explicitly, or\n\
+                 run jackin load <role> to start a new session."
+            )
+        });
     };
 
     let allowed_classes: Vec<RoleSelector> = if ws.allowed_roles.is_empty() {
@@ -306,6 +308,81 @@ pub(crate) fn resolve_running_container_from_context(
             Ok(candidates.swap_remove(choice))
         }
     }
+}
+
+fn resolve_ad_hoc_container_from_context(
+    paths: &JackinPaths,
+    cwd: &Path,
+    runner: &mut impl docker::CommandRunner,
+) -> Result<String> {
+    let mut candidates = ad_hoc_hardline_candidates(paths, cwd, runner)?;
+    candidates.sort();
+    candidates.dedup();
+
+    match candidates.as_slice() {
+        [] => anyhow::bail!("no matching ad-hoc instances found"),
+        [only] => Ok(only.clone()),
+        _ => {
+            let option_refs: Vec<&str> = candidates.iter().map(String::as_str).collect();
+            let choice = tui::prompt_choice(
+                "Current directory has multiple ad-hoc instances. Select one:",
+                &option_refs,
+            )?;
+            Ok(candidates.swap_remove(choice))
+        }
+    }
+}
+
+fn ad_hoc_hardline_candidates(
+    paths: &JackinPaths,
+    cwd: &Path,
+    runner: &mut impl docker::CommandRunner,
+) -> Result<Vec<String>> {
+    let index = instance::InstanceIndex::read_or_rebuild(&paths.data_dir)?;
+    let cwd_fingerprint =
+        instance::manifest::host_path_fingerprint(&cwd.canonicalize()?.display().to_string());
+    let canonical_cwd = cwd.canonicalize()?;
+    let mut candidates = Vec::new();
+
+    for entry in index.instances {
+        let state_dir = paths.data_dir.join(&entry.container_base);
+        let Ok(manifest) = instance::InstanceManifest::read(&state_dir) else {
+            continue;
+        };
+        if !ad_hoc_manifest_matches_cwd(&manifest, &canonical_cwd, &cwd_fingerprint) {
+            continue;
+        }
+        if matches!(
+            runtime::inspect_container_state(runner, &manifest.container_base),
+            runtime::ContainerState::Running | runtime::ContainerState::Stopped { .. }
+        ) || manifest.is_restore_candidate()
+        {
+            candidates.push(manifest.container_base);
+        }
+    }
+
+    Ok(candidates)
+}
+
+fn ad_hoc_manifest_matches_cwd(
+    manifest: &instance::InstanceManifest,
+    canonical_cwd: &Path,
+    cwd_fingerprint: &str,
+) -> bool {
+    if manifest.workspace_name.is_some() {
+        return false;
+    }
+    if manifest.host_workdir_fingerprint == cwd_fingerprint {
+        return true;
+    }
+    manifest
+        .workspace_label
+        .parse::<std::path::PathBuf>()
+        .is_ok_and(|path| path.is_absolute() && canonical_cwd.starts_with(path))
+        || manifest
+            .workdir
+            .parse::<std::path::PathBuf>()
+            .is_ok_and(|path| path.is_absolute() && canonical_cwd.starts_with(path))
 }
 
 fn indexed_hardline_candidates(
@@ -863,6 +940,47 @@ mod tests {
                 .unwrap();
 
         assert_eq!(container, "jackin-myapp-agentsmith-k7p9m2xq");
+    }
+
+    #[test]
+    fn resolve_running_container_from_context_uses_ad_hoc_indexed_instance() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let canonical_project = project_dir.canonicalize().unwrap();
+        let project = canonical_project.display().to_string();
+
+        let config = AppConfig::default();
+        let manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
+            container_base: "jackin-agentsmith-k7p9m2xq",
+            workspace_name: None,
+            workspace_label: &project,
+            workdir: &project,
+            host_workdir_fingerprint: &instance::manifest::host_path_fingerprint(&project),
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: instance::DockerResources {
+                role_container: "jackin-agentsmith-k7p9m2xq".to_string(),
+                dind_container: "jackin-agentsmith-k7p9m2xq-dind".to_string(),
+                network: "jackin-agentsmith-k7p9m2xq-net".to_string(),
+                certs_volume: "jackin-agentsmith-k7p9m2xq-dind-certs".to_string(),
+            },
+        });
+        let state_dir = paths.data_dir.join(&manifest.container_base);
+        manifest.write(&state_dir).unwrap();
+        instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let mut runner = runtime::FakeRunner::default();
+
+        let container =
+            resolve_running_container_from_context(&paths, &config, &project_dir, &mut runner)
+                .unwrap();
+
+        assert_eq!(container, "jackin-agentsmith-k7p9m2xq");
     }
 
     #[test]
