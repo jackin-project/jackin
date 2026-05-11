@@ -134,6 +134,9 @@ pub enum GlobalMountModal<'a> {
     ConfirmSave {
         state: ConfirmState,
     },
+    ConfirmSensitive {
+        state: ConfirmState,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

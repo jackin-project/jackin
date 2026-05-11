@@ -212,6 +212,9 @@ fn console_location_debug(console_state: &ConsoleState) -> String {
                 crate::console::manager::state::GlobalMountModal::ConfirmSave { .. } => {
                     "confirm-save"
                 }
+                crate::console::manager::state::GlobalMountModal::ConfirmSensitive { .. } => {
+                    "confirm-sensitive"
+                }
             });
             format!("global-mounts selected={} modal={modal}", global.selected)
         }

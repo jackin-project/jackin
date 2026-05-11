@@ -31,9 +31,15 @@ pub(super) fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEve
             global.modal = Some(text_modal(GlobalMountTextTarget::AddName, "Mount name", ""));
         }
         KeyCode::Char('s' | 'S') => {
-            global.modal = Some(GlobalMountModal::ConfirmSave {
-                state: ConfirmState::new("Save global mounts to ~/.config/jackin/config.toml?"),
-            });
+            if has_sensitive_mount(&global.pending) {
+                global.modal = Some(GlobalMountModal::ConfirmSensitive {
+                    state: ConfirmState::new("Sensitive global mount path detected. Save anyway?"),
+                });
+            } else {
+                global.modal = Some(GlobalMountModal::ConfirmSave {
+                    state: ConfirmState::new("Save global mounts to ~/.config/jackin/config.toml?"),
+                });
+            }
         }
         KeyCode::Char('d' | 'D') if !global.pending.is_empty() => {
             global.modal = Some(GlobalMountModal::ConfirmRemove {
@@ -127,6 +133,15 @@ pub(super) fn handle_global_mounts_modal(
             ModalOutcome::Commit(false) | ModalOutcome::Cancel => {}
             ModalOutcome::Continue => global.modal = Some(modal),
         },
+        GlobalMountModal::ConfirmSensitive { state } => match state.handle_key(key) {
+            ModalOutcome::Commit(true) => {
+                global.modal = Some(GlobalMountModal::ConfirmSave {
+                    state: ConfirmState::new("Save global mounts to ~/.config/jackin/config.toml?"),
+                });
+            }
+            ModalOutcome::Commit(false) | ModalOutcome::Cancel => {}
+            ModalOutcome::Continue => global.modal = Some(modal),
+        },
     }
 }
 
@@ -216,5 +231,31 @@ fn scope_value(value: &str) -> Option<String> {
         None
     } else {
         Some(value.to_string())
+    }
+}
+
+fn has_sensitive_mount(rows: &[crate::config::GlobalMountRow]) -> bool {
+    let mounts: Vec<MountConfig> = rows.iter().map(|row| row.mount.clone()).collect();
+    !crate::workspace::find_sensitive_mounts(&mounts).is_empty()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn global_mount_save_detects_sensitive_sources() {
+        let rows = vec![crate::config::GlobalMountRow {
+            scope: None,
+            name: "ssh".into(),
+            mount: MountConfig {
+                src: "/home/user/.ssh".into(),
+                dst: "/ssh".into(),
+                readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+        }];
+
+        assert!(has_sensitive_mount(&rows));
     }
 }

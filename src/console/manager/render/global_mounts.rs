@@ -117,7 +117,9 @@ pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &mut GlobalMou
         GlobalMountModal::Text { state, .. } => {
             crate::console::widgets::text_input::render(frame, area, state);
         }
-        GlobalMountModal::ConfirmRemove { state } | GlobalMountModal::ConfirmSave { state } => {
+        GlobalMountModal::ConfirmRemove { state }
+        | GlobalMountModal::ConfirmSave { state }
+        | GlobalMountModal::ConfirmSensitive { state } => {
             crate::console::widgets::confirm::render(frame, area, state);
         }
     }
