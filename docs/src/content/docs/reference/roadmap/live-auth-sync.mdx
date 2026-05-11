@@ -107,7 +107,10 @@ Per auth axis, when the live mode is active:
    source for each axis. The daemon must surface its state too —
    a status line or `jackin auth status` subcommand (proposed —
    does not exist today) showing which containers are subscribed,
-   when each axis last reconciled, any pending conflicts.
+   when each axis last reconciled, any pending conflicts. The
+   Jackin Desktop Agent Hub consumes the same daemon state for
+   Claude/Codex/Amp account cards instead of scraping provider
+   files directly from the macOS app.
 6. **Revocable and contained.** Same opt-in / opt-out semantics
    the existing modes have. Operators must be able to switch a
    workspace or role to non-live `forward` / `ignore` and have
@@ -191,7 +194,7 @@ Per auth axis, when the live mode is active:
 
 This is one of the first features that genuinely needs a long-running host-side jackin process. The shape of that process — lifecycle, install method, control socket, security posture, log redaction — is **not** decided here. It belongs to the umbrella [jackin daemon](/reference/roadmap/jackin-daemon/) roadmap item, which exists so each reactive feature plugs into one common daemon rather than each inventing its own.
 
-This live-sync item depends on `jackin daemon` Phase 1 (empty daemon — lifecycle and control socket) shipping first. Live sync then adds a per-axis adapter against the daemon's plug-in surface: one adapter for `gh`, one for `Claude`, one for `Codex`, future ones for `Amp` and any new auth axis. The adapter trait shape is described under the daemon roadmap item.
+This live-sync item depends on `jackin daemon` Phase 1 (empty daemon — lifecycle and control socket) shipping first. Live sync then adds a per-axis adapter against the daemon's plug-in surface: one adapter for `gh`, one for `Claude`, one for `Codex`, future ones for `Amp` and any new auth axis. The adapter trait shape is described under the daemon roadmap item. Desktop should treat these adapters as its account-status source whenever they exist; direct CLI/file checks are fallback diagnostics only.
 
 ## Host-side effects
 
@@ -254,3 +257,6 @@ series should land docs updates in lockstep with the daemon.
   — future unified credential resolver. The daemon's per-axis
   adapter trait should be expressible inside the credential
   source pattern.
+- [Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/)
+  — native account/status surface that reads live auth and quota
+  state from the daemon first.

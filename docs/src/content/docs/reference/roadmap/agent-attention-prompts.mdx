@@ -33,7 +33,7 @@ The end state, from the operator's seat:
 
 1. **A passive notification, on the host, when an agent stops to wait.** macOS Notification Center / Linux desktop notification / Windows toast. Title names the workspace, role, and (optionally) the question the agent is asking. No visible jackin window required — the operator can be anywhere on the host.
 2. **Optional escalation.** When the operator has set a per-workspace policy *"if I don't respond in N seconds, start playing a sound"*, jackin' escalates from a silent toast to an audible cue. Configurable per workspace and per role; off by default.
-3. **Click-to-focus.** Clicking the notification opens or focuses the terminal tab the agent is running in (Ghostty, kitty, iTerm2, WezTerm, gnome-terminal, …). Operators don't have to remember which window the agent is in.
+3. **Click-to-focus.** Clicking the notification opens or focuses the terminal tab the agent is running in. The Desktop Agent Hub v1 should wire this for Ghostty first; kitty, iTerm2, WezTerm, gnome-terminal, and other adapters are later additions once the Ghostty contract is solid. Operators don't have to remember which window the agent is in.
 4. **Per-workspace mute.** Operators in deep-focus mode can mute notifications for a workspace temporarily without losing the launch-time policy.
 5. **Per-axis toggle.** Notify on *idle waiting*, on *agent finished work*, on *sensitive-mount confirmation requested*, etc. — operators choose which classes of attention prompts they care about.
 
@@ -60,15 +60,7 @@ The pieces:
 - **`jackin-attention` MCP server.** Static binary baked into the construct image. Registered automatically in each agent's MCP config at container launch — extending the registration pattern <RepoFile path="docker/runtime/entrypoint.sh" /> uses today for the Claude runtime's `tirith` / `shellfirm` to every supported runtime. When the agent calls `attention.waiting`, the MCP server pushes the event over the daemon socket mounted at `/jackin/daemon.sock` — see [jackin daemon](/reference/roadmap/jackin-daemon/) for the channel design. Until the MCP server lands, `jackin-notify` exposes the same host-notification path for hooks and scripts.
 - **The jackin daemon dispatches the host-side notification.** Per the [jackin daemon](/reference/roadmap/jackin-daemon/) plug-in surface, this feature is one adapter that listens for attention events from any running container and translates them to native macOS Notification Center toasts via `osascript display notification`. Linux and Windows adapters are out of scope for this first pass.
   - Windows — out of scope for the first phase; revisit when jackin' supports Windows hosts.
-- **Click-to-focus adapter.** The notification carries an action that, when activated, runs a host-side command to focus the right terminal tab. Each terminal emulator gets a small adapter:
-  - Ghostty — `ghostty +cli focus-tab <id>` or AppleScript / D-Bus.
-  - kitty — `kitten @ focus-tab --match …`.
-  - iTerm2 — AppleScript.
-  - WezTerm — `wezterm cli activate-tab`.
-  - gnome-terminal / Konsole — D-Bus.
-  - tmux — `tmux switch-client -t …`.
-
-  jackin' detects the surrounding terminal at container launch (env var introspection — `TERM_PROGRAM`, `KITTY_PID`, etc.) and stores the tab handle so the click action knows where to land.
+- **Click-to-focus adapter.** The notification carries an action that, when activated, runs a host-side command to focus the right terminal tab. The first Desktop slice should implement Ghostty only, matching the [Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) v1 launch contract. Other terminal emulators get a notification without click focus until their adapters are deliberately added.
 
 ## Per-workspace / per-role policy
 
@@ -111,8 +103,8 @@ The lifecycle, install, and security posture this needs are the same ones the [j
 
 ### Click-to-focus across terminals
 
-- **Detection.** Which terminal hosts the operator's session is detected at launch from env vars. What if the operator switches terminals after launch (closes Ghostty, reopens in iTerm)? The click action would fail. Does jackin' degrade gracefully (notification with no click action)?
-- **Adapter scope.** Do we ship adapters for every popular terminal in v1, or one (the operator's current `TERM_PROGRAM`) and add the rest later? The latter is smaller; the former is more useful.
+- **Detection.** The v1 contract is Ghostty-first. What if the operator switches terminals after launch, closes Ghostty, or starts a session outside the Desktop launcher? The click action should degrade gracefully to a notification with no click action.
+- **Adapter scope.** Ghostty is the first supported adapter. Other terminals are explicitly deferred until the Desktop Agent Hub proves the product shape.
 
 ### Notification de-duplication
 
@@ -130,7 +122,7 @@ A minimal cut to validate the shape:
 1. `jackin-attention` MCP server, baked into construct, auto-registered for every agent runtime jackin' supports (Claude Code first, Codex / Amp as part of the same phase to close the runtime-coverage gap left by today's Claude-only `tirith` / `shellfirm` registration).
 2. The two-tool surface `attention.waiting` / `attention.resolved`.
 3. Daemon adapter listening on the per-container control channel, dispatching macOS Notification Center notifications. The base adapter has landed through `jackin daemon notify` and `jackin-notify`; high urgency requests the native `Glass` notification sound.
-4. Click action wired for the operator's current terminal (detected at launch from `TERM_PROGRAM`); other terminals get the notification with no click action and a one-line "open this terminal manually" hint.
+4. Click action wired for Ghostty first; other terminals get the notification with no click action and a one-line "open this terminal manually" hint.
 5. `Notifications` tab in `jackin console` workspace editor — enable / mute / sound-escalation duration. No per-role overrides in v1.
 6. Linux `notify-send` adapter later, after the macOS flow is validated.
 
@@ -146,5 +138,6 @@ The bet of jackin' is that running many agents safely and conveniently changes h
 
 - [jackin daemon](/reference/roadmap/jackin-daemon/) — host-side process this feature plugs into. Phase 1 daemon must ship before this adapter can.
 - [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/) — sibling feature plugging into the same daemon; sets the precedent for per-axis adapters.
+- [Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) — native macOS surface that should display attention/ready-for-review state and owns the first Ghostty click-to-focus UX.
 - [Agent Orchestrator Research Program → Live agent observability](/reference/roadmap/agent-orchestrator-research/) — adjacent work on surfacing what the agent is *doing* in real time. Attention prompts close the loop the other direction (when the agent stops doing things and waits).
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — current MCP-registration pattern for `tirith` / `shellfirm`. The `jackin-attention` MCP server registers through the same code path.
