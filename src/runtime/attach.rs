@@ -188,6 +188,7 @@ pub fn hardline_agent(
     // a `ReturnToAgent` decision here — `hardline` is itself a re-attach, and
     // the operator can simply re-invoke `jackin hardline` to come back.
     let outcome = crate::runtime::launch::inspect_attach_outcome(runner, container_name)?;
+    super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
     let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
     let mut prompt = crate::isolation::finalize::StdinPrompt;
     let _ = crate::isolation::finalize::finalize_foreground_session(

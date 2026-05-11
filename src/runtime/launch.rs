@@ -1820,6 +1820,7 @@ fn load_role_with(
         let interactive_finalize = std::io::stdin().is_terminal();
         let mut prompt = crate::isolation::finalize::StdinPrompt;
         let outcome = inspect_attach_outcome(runner, &container_name)?;
+        write_instance_attach_outcome(paths, &container_state, &mut instance_manifest, outcome)?;
         let decision = crate::isolation::finalize::finalize_foreground_session(
             &container_name,
             &paths.data_dir.join(&container_name),
@@ -1858,6 +1859,12 @@ fn load_role_with(
                 &RunOptions::default(),
             )?;
             let outcome2 = inspect_attach_outcome(runner, &container_name)?;
+            write_instance_attach_outcome(
+                paths,
+                &container_state,
+                &mut instance_manifest,
+                outcome2,
+            )?;
             let _ = crate::isolation::finalize::finalize_foreground_session(
                 &container_name,
                 &paths.data_dir.join(&container_name),
@@ -2093,6 +2100,40 @@ fn write_instance_status(
     manifest.write(state_dir)?;
     InstanceIndex::update_manifest(&paths.data_dir, manifest)?;
     Ok(())
+}
+
+fn write_instance_attach_outcome(
+    paths: &JackinPaths,
+    state_dir: &std::path::Path,
+    manifest: &mut InstanceManifest,
+    outcome: crate::isolation::finalize::AttachOutcome,
+) -> anyhow::Result<()> {
+    manifest.mark_status(manifest.status);
+    manifest.last_attach_outcome = Some(format_attach_outcome(outcome));
+    manifest.write(state_dir)?;
+    InstanceIndex::update_manifest(&paths.data_dir, manifest)?;
+    Ok(())
+}
+
+pub(super) fn record_instance_attach_outcome(
+    paths: &JackinPaths,
+    container_name: &str,
+    outcome: crate::isolation::finalize::AttachOutcome,
+) -> anyhow::Result<()> {
+    let state_dir = paths.data_dir.join(container_name);
+    let Ok(mut manifest) = InstanceManifest::read(&state_dir) else {
+        return Ok(());
+    };
+    write_instance_attach_outcome(paths, &state_dir, &mut manifest, outcome)
+}
+
+fn format_attach_outcome(outcome: crate::isolation::finalize::AttachOutcome) -> String {
+    if outcome.oom_killed {
+        return "oom_killed".to_string();
+    }
+    outcome
+        .exit_code
+        .map_or_else(|| "running".to_string(), |code| format!("exit:{code}"))
 }
 
 fn preserved_instance_status(state_dir: &std::path::Path) -> anyhow::Result<InstanceStatus> {
@@ -6106,6 +6147,60 @@ plugins = []
         assert_eq!(manifest.status, InstanceStatus::Superseded);
         let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
         assert_eq!(index.instances[0].status, InstanceStatus::Superseded);
+    }
+
+    #[test]
+    fn record_instance_attach_outcome_updates_manifest() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest
+            .write(&paths.data_dir.join(container_name))
+            .unwrap();
+
+        record_instance_attach_outcome(
+            &paths,
+            container_name,
+            crate::isolation::finalize::AttachOutcome::stopped(137),
+        )
+        .unwrap();
+
+        let manifest = InstanceManifest::read(&paths.data_dir.join(container_name)).unwrap();
+        assert_eq!(manifest.last_attach_outcome.as_deref(), Some("exit:137"));
+    }
+
+    #[test]
+    fn format_attach_outcome_names_running_exit_and_oom() {
+        use crate::isolation::finalize::AttachOutcome;
+
+        assert_eq!(
+            format_attach_outcome(AttachOutcome::still_running()),
+            "running"
+        );
+        assert_eq!(format_attach_outcome(AttachOutcome::stopped(0)), "exit:0");
+        assert_eq!(
+            format_attach_outcome(AttachOutcome::oom_killed()),
+            "oom_killed"
+        );
     }
 
     #[test]
