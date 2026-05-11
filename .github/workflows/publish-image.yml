@@ -17,22 +17,54 @@ on:
 
 jobs:
   publish:
+    runs-on: hetzner-sentry
     permissions:
       contents: read
       id-token: write
-    uses: docker/github-builder/.github/workflows/build.yml@5840c33ab36c6ca11100edbe78f02b178309ff4e
-    with:
-      output: image
-      sign: true
-      sbom: true
-      push: true
-      platforms: linux/amd64,linux/arm64
-      meta-images: docker.io/chainargos/jackin-agent-brown
-      meta-tags: |
-        type=raw,value=latest
-        type=sha,prefix=
-    secrets:
-      registry-auths: |
-        - registry: https://index.docker.io/v1/
+      packages: write
+
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
+        with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Install QEMU binfmt handlers
+        run: docker run --privileged --rm tonistiigi/binfmt --install arm64
+
+      - name: Initialize Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+
+      - name: Build and push image
+        id: build
+        env:
+          IMAGE: docker.io/chainargos/jackin-agent-brown
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA::7}"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --tag "${IMAGE}:latest" \
+            --tag "${IMAGE}:${short_sha}" \
+            --sbom=true \
+            --provenance=true \
+            --push \
+            .
+          {
+            echo "image=${IMAGE}"
+            echo "short_sha=${short_sha}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+
+      - name: Sign image
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          SHORT_SHA: ${{ steps.build.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes "${IMAGE}:latest" "${IMAGE}:${SHORT_SHA}"
