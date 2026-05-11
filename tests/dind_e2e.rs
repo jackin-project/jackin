@@ -103,6 +103,10 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
         report.contains("CONTAINER ID"),
         "agent's `docker ps` did not list any containers\n{report}"
     );
+    assert!(
+        report.contains("TESTCONTAINERS_SMOKE=ok"),
+        "agent's Java Testcontainers smoke did not pass\n{report}"
+    );
 }
 
 const REPORT_BEGIN: &str = "===JACKIN_E2E_REPORT_BEGIN===";
@@ -251,6 +255,12 @@ NO_PROXY = "localhost,127.0.0.1"
 const fn role_dockerfile() -> &'static str {
     r"FROM projectjackin/construct:trixie
 USER root
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends default-jdk-headless maven && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/* \
+           /var/cache/apt/* \
+           /tmp/*
 COPY fake-curl /usr/local/bin/curl
 RUN chmod +x /usr/local/bin/curl
 USER agent
@@ -287,6 +297,63 @@ echo "TESTCONTAINERS_HOST_OVERRIDE=$TESTCONTAINERS_HOST_OVERRIDE"
 echo "NO_PROXY=${{NO_PROXY:-}}"
 echo "no_proxy=${{no_proxy:-}}"
 docker ps
+tmpdir="$(mktemp -d)"
+cat > "$tmpdir/pom.xml" <<'POM'
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>dev.jackin</groupId>
+  <artifactId>dind-testcontainers-smoke</artifactId>
+  <version>1.0.0</version>
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+      <version>2.0.5</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>${{exec-maven-plugin.version}}</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+POM
+mkdir -p "$tmpdir/src/main/java"
+cat > "$tmpdir/src/main/java/JackinTestcontainersSmoke.java" <<'JAVA'
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.utility.DockerImageName;
+
+public final class JackinTestcontainersSmoke {{
+    public static void main(String[] args) {{
+        GenericContainer<?> container = new GenericContainer<>(DockerImageName.parse("alpine:3.20"))
+                .withCommand("sh", "-c", "echo jackin-testcontainers-child-ok && sleep 1");
+        container.start();
+        String logs = container.getLogs();
+        if (!logs.contains("jackin-testcontainers-child-ok")) {{
+            throw new IllegalStateException("child container logs missing marker: " + logs);
+        }}
+        System.out.println("TESTCONTAINERS_SMOKE=ok");
+        System.exit(0);
+    }}
+}}
+JAVA
+(
+  unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
+  cd "$tmpdir"
+  mvn -q -DskipTests compile exec:java -Dexec.mainClass=JackinTestcontainersSmoke
+)
+rm -rf "$tmpdir"
 echo "{REPORT_END}"
 CLAUDE
 chmod +x "$HOME/.local/bin/claude"
