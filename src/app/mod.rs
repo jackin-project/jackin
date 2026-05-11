@@ -275,15 +275,14 @@ pub fn run(cli: Cli) -> Result<()> {
                     {
                         anyhow::bail!("aborted — sensitive mount paths were not confirmed");
                     }
-                    let existing = config
+                    let (matched, mut candidate_rows): (
+                        Vec<crate::config::GlobalMountRow>,
+                        Vec<crate::config::GlobalMountRow>,
+                    ) = config
                         .list_mount_rows()
                         .into_iter()
-                        .find(|row| row.name == name && row.scope == scope);
-                    let mut candidate_rows: Vec<crate::config::GlobalMountRow> = config
-                        .list_mount_rows()
-                        .into_iter()
-                        .filter(|row| !(row.name == name && row.scope == scope))
-                        .collect();
+                        .partition(|row| row.name == name && row.scope == scope);
+                    let existing = matched.into_iter().next();
                     candidate_rows.push(crate::config::GlobalMountRow {
                         scope: scope.clone(),
                         name: name.clone(),

@@ -339,9 +339,8 @@ pub(in crate::console::manager) fn auth_row_count(
     auth_flat_rows(state, config).len()
 }
 
-/// Order and labels of editor tabs. Shared with mouse hit-testing
-/// (`input::mouse::editor_tab_at`) so the strip the renderer draws is
-/// the same one the click code measures against.
+/// Order/labels shared with mouse hit-testing; renderer and click code
+/// must measure the same strip.
 pub(in crate::console::manager) const EDITOR_TAB_LABELS: &[(EditorTab, &str)] = &[
     (EditorTab::General, "General"),
     (EditorTab::Mounts, "Mounts"),

@@ -17,7 +17,6 @@ pub(super) fn global_mounts_content_width(rows: &[crate::config::GlobalMountRow]
     super::max_line_width(&lines)
 }
 
-#[allow(clippy::too_many_lines)]
 pub(super) fn render_global_mounts(frame: &mut Frame, state: &GlobalMountsState<'_>) {
     let area = frame.area();
     let chunks = Layout::default()

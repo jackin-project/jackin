@@ -38,7 +38,7 @@ pub(super) fn handle_list_key(
             state.inline_agent_picker = None;
             let selected = state.selected.saturating_sub(1);
             if selected != state.selected {
-                reset_list_mount_scroll(state);
+                state.reset_list_scroll();
                 state.selected = selected;
             }
             Ok(InputOutcome::Continue)
@@ -48,7 +48,7 @@ pub(super) fn handle_list_key(
             state.inline_agent_picker = None;
             let selected = (state.selected + 1).min(state.row_count() - 1);
             if selected != state.selected {
-                reset_list_mount_scroll(state);
+                state.reset_list_scroll();
                 state.selected = selected;
             }
             Ok(InputOutcome::Continue)
@@ -307,10 +307,6 @@ const fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
     } else {
         *value = value.saturating_add(delta as u16);
     }
-}
-
-pub(super) const fn reset_list_mount_scroll(state: &mut ManagerState<'_>) {
-    state.reset_list_scroll();
 }
 
 #[cfg(test)]

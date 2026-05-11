@@ -146,7 +146,7 @@ pub fn handle_mouse_with_config(
                 state.inline_role_picker = None;
                 let selected = row.to_screen_index(state.workspaces.len());
                 if selected != state.selected {
-                    super::list::reset_list_mount_scroll(state);
+                    state.reset_list_scroll();
                     state.selected = selected;
                     state.inline_agent_picker = None;
                 }

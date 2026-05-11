@@ -131,9 +131,7 @@ pub struct GlobalMountsState<'a> {
     pub error: Option<String>,
     pub success: Option<String>,
     pub scroll_x: u16,
-    /// Set by Discard or Save commit to signal the dispatcher to pop
-    /// back to the workspace list. Acted on (and reset) by
-    /// `after_global_mounts_event` in the input dispatcher.
+    /// Dispatcher pops back to the workspace list when set.
     pub exit_requested: bool,
 }
 
@@ -643,10 +641,10 @@ impl WorkspaceSummary {
 }
 
 impl ManagerState<'_> {
-    /// Mutable scroll-offset slot for the named focus. Centralizes the
-    /// "which list-stage scroll field to mutate" switch so handlers
-    /// don't reimplement the match.
-    pub const fn list_scroll_x_mut(&mut self, focus: MountScrollFocus) -> &mut u16 {
+    pub(in crate::console::manager) const fn list_scroll_x_mut(
+        &mut self,
+        focus: MountScrollFocus,
+    ) -> &mut u16 {
         match focus {
             MountScrollFocus::Workspace => &mut self.list_mounts_scroll_x,
             MountScrollFocus::Global => &mut self.list_global_mounts_scroll_x,
@@ -654,7 +652,7 @@ impl ManagerState<'_> {
         }
     }
 
-    pub const fn reset_list_scroll(&mut self) {
+    pub(in crate::console::manager) const fn reset_list_scroll(&mut self) {
         self.list_mounts_scroll_x = 0;
         self.list_global_mounts_scroll_x = 0;
         self.list_role_global_mounts_scroll_x = 0;

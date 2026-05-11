@@ -385,9 +385,6 @@ fn render_details_pane(
     } else {
         Vec::new()
     };
-    let role_label = picker_role
-        .as_ref()
-        .map_or_else(String::new, crate::selector::RoleSelector::key);
     let has_global = !global_rows.is_empty();
     let inline_picker_active =
         state.inline_role_picker.is_some() || state.inline_agent_picker.is_some();
@@ -429,6 +426,9 @@ fn render_details_pane(
     );
     idx += 1;
     if has_global {
+        let role_label = picker_role
+            .as_ref()
+            .map_or_else(String::new, crate::selector::RoleSelector::key);
         render_global_mounts_subpanel(
             frame,
             rows[idx],

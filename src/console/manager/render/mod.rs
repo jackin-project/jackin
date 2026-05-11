@@ -444,8 +444,7 @@ fn clamp_list_scroll_for_area(
     }
 }
 
-/// Resolve global mount rows for the workspace's effective role, falling
-/// back to unscoped-only when the role is undecided.
+/// `None` role → unscoped rows only; `Some(role)` → merged scoped + unscoped.
 pub(super) fn global_rows_for(
     config: &AppConfig,
     picker_role: Option<&crate::selector::RoleSelector>,
