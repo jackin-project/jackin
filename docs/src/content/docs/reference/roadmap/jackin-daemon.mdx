@@ -109,9 +109,12 @@ Initial protocol capabilities:
 | `daemon/warm_cache` | Ask the daemon to warm construct, DinD, and cached role images. |
 | `workspace/list` | Return saved workspace summaries for launch-only Desktop surfaces: name, workdir, mount counts, default/last role, default agent, and keep-awake state. |
 | `session/list` | Return running role containers with Docker-label metadata for workspace, role, agent, branch, primary repo, display name, and container status. |
+| `github/my_open_prs` | Return open pull requests authored by the operator, sorted newest first. |
+| `github/project_inbox` | Return the operator's open pull requests filtered by owner and/or repository. |
+| `github/repository_prs` | Return open pull requests for one repository, sorted newest first. |
 | `notification/send` | Dispatch a host macOS Notification Center notification. |
 
-Most Desktop-specific methods are deliberately absent until their slices land. The next phase adds action endpoints such as `workspace/launch` and `desktop/open`, GitHub PR inbox methods, account status methods, and event subscription.
+Most Desktop-specific methods are deliberately absent until their slices land. The next phase adds action endpoints such as `workspace/launch` and `desktop/open`, account status methods, and event subscription.
 
 ### Security posture
 
@@ -146,7 +149,7 @@ Rough order of operations — not committed; to be confirmed during the design p
 1. **Phase 0 — design.** Complete.
 2. **Phase 1 — daemon base.** Complete: lifecycle, install, singleton, socket protocol, logs, version skew restart.
 3. **Phase 2 — first adapters.** Started: keep-awake reconciliation, cache warmup, and host notification dispatch are daemon-owned.
-4. **Phase 3 — Desktop-ready daemon API.** Started: `daemon/hello` now provides a versioned capability handshake, and read-only workspace/session discovery is available through `workspace/list` and `session/list`. Next, add GitHub PR lookup, account status, event subscription, and Ghostty/browser open actions.
+4. **Phase 3 — Desktop-ready daemon API.** Started: `daemon/hello` now provides a versioned capability handshake; read-only workspace/session discovery is available through `workspace/list` and `session/list`; initial GitHub PR lookup is available through `github/my_open_prs`, `github/project_inbox`, and `github/repository_prs`. Next, add account status, event subscription, and Ghostty/browser open actions.
 5. **Phase 4 — live auth sync.** Not started. Add per-axis host watchers and shared-store flocks on top of this daemon.
 6. **Phase 5+ — container event watcher and beyond.** Add Docker event subscriptions, attention prompt MCP integration, click-to-focus, and richer host actions.
 

@@ -41,6 +41,24 @@ enum Request {
     SessionList {
         protocol: u32,
     },
+    #[serde(rename = "github/my_open_prs")]
+    GithubMyOpenPrs {
+        protocol: u32,
+        limit: Option<usize>,
+    },
+    #[serde(rename = "github/project_inbox")]
+    GithubProjectInbox {
+        protocol: u32,
+        owner: Option<String>,
+        repository: Option<String>,
+        limit: Option<usize>,
+    },
+    #[serde(rename = "github/repository_prs")]
+    GithubRepositoryPrs {
+        protocol: u32,
+        repository: String,
+        limit: Option<usize>,
+    },
     Status {
         protocol: u32,
     },
@@ -70,6 +88,8 @@ enum Response {
     WorkspaceList(WorkspaceListResponse),
     #[serde(rename = "session/list")]
     SessionList(SessionListResponse),
+    #[serde(rename = "github/prs")]
+    GithubPullRequests(GithubPullRequestListResponse),
     Status(StatusResponse),
     Error {
         message: String,
@@ -124,6 +144,24 @@ pub struct DaemonSession {
     pub agent: Option<String>,
     pub branch: Option<String>,
     pub primary_repo: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GithubPullRequestListResponse {
+    pub pull_requests: Vec<GithubPullRequest>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct GithubPullRequest {
+    pub repository: String,
+    pub number: u64,
+    pub title: String,
+    pub url: String,
+    pub author: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub state: String,
+    pub is_draft: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -330,6 +368,30 @@ fn handle_request(request: Request, state: &DaemonState) -> Response {
                 },
             }
         }
+        Request::GithubMyOpenPrs { limit, .. } => {
+            let mut runner = ShellRunner::default();
+            github_response(github_my_open_prs(&mut runner, limit))
+        }
+        Request::GithubProjectInbox {
+            owner,
+            repository,
+            limit,
+            ..
+        } => {
+            let mut runner = ShellRunner::default();
+            github_response(github_project_inbox(
+                &mut runner,
+                owner.as_deref(),
+                repository.as_deref(),
+                limit,
+            ))
+        }
+        Request::GithubRepositoryPrs {
+            repository, limit, ..
+        } => {
+            let mut runner = ShellRunner::default();
+            github_response(github_repository_prs(&mut runner, &repository, limit))
+        }
         Request::Status { .. } => Response::Status(status(state)),
         Request::Shutdown { .. } => {
             state.shutdown.store(true, Ordering::Relaxed);
@@ -364,6 +426,9 @@ fn validate_protocol(request: &Request) -> std::result::Result<(), String> {
         Request::Hello { protocol }
         | Request::WorkspaceList { protocol }
         | Request::SessionList { protocol }
+        | Request::GithubMyOpenPrs { protocol, .. }
+        | Request::GithubProjectInbox { protocol, .. }
+        | Request::GithubRepositoryPrs { protocol, .. }
         | Request::Status { protocol }
         | Request::Shutdown { protocol }
         | Request::WarmCache { protocol }
@@ -396,6 +461,9 @@ fn daemon_capabilities() -> Vec<DaemonCapability> {
         "daemon/warm_cache",
         "workspace/list",
         "session/list",
+        "github/my_open_prs",
+        "github/project_inbox",
+        "github/repository_prs",
         "notification/send",
     ]
     .into_iter()
@@ -492,6 +560,154 @@ fn non_empty_label(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(String::from)
+}
+
+const GITHUB_PR_JSON_FIELDS: &str =
+    "number,title,url,author,repository,createdAt,updatedAt,state,isDraft";
+
+fn github_response(result: Result<Vec<GithubPullRequest>>) -> Response {
+    match result {
+        Ok(pull_requests) => {
+            Response::GithubPullRequests(GithubPullRequestListResponse { pull_requests })
+        }
+        Err(err) => Response::Error {
+            message: format!("{err:#}"),
+        },
+    }
+}
+
+fn github_my_open_prs(
+    runner: &mut impl CommandRunner,
+    limit: Option<usize>,
+) -> Result<Vec<GithubPullRequest>> {
+    run_gh_search_prs(runner, &["--author", "@me"], limit)
+}
+
+fn github_project_inbox(
+    runner: &mut impl CommandRunner,
+    owner: Option<&str>,
+    repository: Option<&str>,
+    limit: Option<usize>,
+) -> Result<Vec<GithubPullRequest>> {
+    let pulls = github_my_open_prs(runner, limit)?;
+    Ok(filter_github_prs(pulls, owner, repository))
+}
+
+fn github_repository_prs(
+    runner: &mut impl CommandRunner,
+    repository: &str,
+    limit: Option<usize>,
+) -> Result<Vec<GithubPullRequest>> {
+    run_gh_search_prs(runner, &["--repo", repository], limit)
+}
+
+fn run_gh_search_prs(
+    runner: &mut impl CommandRunner,
+    extra_args: &[&str],
+    limit: Option<usize>,
+) -> Result<Vec<GithubPullRequest>> {
+    let limit = github_limit(limit).to_string();
+    let mut args = vec![
+        "search",
+        "prs",
+        "--state",
+        "open",
+        "--sort",
+        "created",
+        "--order",
+        "desc",
+        "--json",
+        GITHUB_PR_JSON_FIELDS,
+        "--limit",
+        &limit,
+    ];
+    args.extend_from_slice(extra_args);
+    let output = runner
+        .capture("gh", &args, None)
+        .context("querying GitHub pull requests with gh")?;
+    parse_github_prs(&output)
+}
+
+fn github_limit(limit: Option<usize>) -> usize {
+    limit.unwrap_or(50).clamp(1, 100)
+}
+
+fn parse_github_prs(output: &str) -> Result<Vec<GithubPullRequest>> {
+    let raw: Vec<RawGithubPullRequest> =
+        serde_json::from_str(output).context("decoding gh pull request JSON")?;
+    let mut pulls = raw
+        .into_iter()
+        .map(GithubPullRequest::from)
+        .collect::<Vec<_>>();
+    sort_github_prs_newest_first(&mut pulls);
+    Ok(pulls)
+}
+
+fn sort_github_prs_newest_first(pulls: &mut [GithubPullRequest]) {
+    pulls.sort_by(|a, b| {
+        b.created_at
+            .cmp(&a.created_at)
+            .then_with(|| a.repository.cmp(&b.repository))
+            .then_with(|| a.number.cmp(&b.number))
+    });
+}
+
+fn filter_github_prs(
+    pulls: Vec<GithubPullRequest>,
+    owner: Option<&str>,
+    repository: Option<&str>,
+) -> Vec<GithubPullRequest> {
+    pulls
+        .into_iter()
+        .filter(|pull| {
+            owner.is_none_or(|owner| {
+                pull.repository
+                    .split_once('/')
+                    .is_some_and(|(repo_owner, _)| repo_owner == owner)
+            }) && repository.is_none_or(|repository| pull.repository == repository)
+        })
+        .collect()
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawGithubPullRequest {
+    repository: RawGithubRepository,
+    number: u64,
+    title: String,
+    url: String,
+    author: RawGithubUser,
+    created_at: String,
+    updated_at: String,
+    state: String,
+    is_draft: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawGithubRepository {
+    name_with_owner: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawGithubUser {
+    login: String,
+}
+
+impl From<RawGithubPullRequest> for GithubPullRequest {
+    fn from(raw: RawGithubPullRequest) -> Self {
+        Self {
+            repository: raw.repository.name_with_owner,
+            number: raw.number,
+            title: raw.title,
+            url: raw.url,
+            author: raw.author.login,
+            created_at: raw.created_at,
+            updated_at: raw.updated_at,
+            state: raw.state,
+            is_draft: raw.is_draft,
+        }
+    }
 }
 
 fn status(state: &DaemonState) -> StatusResponse {
@@ -988,6 +1204,9 @@ fn print_response(response: Response) {
         Response::SessionList(response) => {
             println!("{} sessions", response.sessions.len());
         }
+        Response::GithubPullRequests(response) => {
+            println!("{} pull requests", response.pull_requests.len());
+        }
         Response::Status(status) => println!("daemon running: pid {}", status.pid),
         Response::Error { message } => eprintln!("error: {message}"),
     }
@@ -1096,6 +1315,9 @@ published_image = "ghcr.io/example/role:latest"
         assert!(methods.contains(&"daemon/status"));
         assert!(methods.contains(&"workspace/list"));
         assert!(methods.contains(&"session/list"));
+        assert!(methods.contains(&"github/my_open_prs"));
+        assert!(methods.contains(&"github/project_inbox"));
+        assert!(methods.contains(&"github/repository_prs"));
         assert!(methods.contains(&"notification/send"));
     }
 
@@ -1216,6 +1438,93 @@ published_image = "ghcr.io/example/role:latest"
                 primary_repo: None,
             }]
         );
+    }
+
+    #[test]
+    fn parse_github_prs_sorts_newest_first() {
+        let pulls = parse_github_prs(
+            r##"[
+              {
+                "repository": {"nameWithOwner": "jackin-project/jackin"},
+                "number": 10,
+                "title": "older",
+                "url": "https://github.com/jackin-project/jackin/pull/10",
+                "author": {"login": "operator"},
+                "createdAt": "2026-05-01T00:00:00Z",
+                "updatedAt": "2026-05-01T01:00:00Z",
+                "state": "open",
+                "isDraft": false
+              },
+              {
+                "repository": {"nameWithOwner": "jackin-project/jackin"},
+                "number": 11,
+                "title": "newer",
+                "url": "https://github.com/jackin-project/jackin/pull/11",
+                "author": {"login": "operator"},
+                "createdAt": "2026-05-03T00:00:00Z",
+                "updatedAt": "2026-05-03T01:00:00Z",
+                "state": "open",
+                "isDraft": true
+              }
+            ]"##,
+        )
+        .unwrap();
+
+        assert_eq!(
+            pulls.iter().map(|pull| pull.number).collect::<Vec<_>>(),
+            vec![11, 10]
+        );
+        assert!(pulls[0].is_draft);
+    }
+
+    #[test]
+    fn filter_github_prs_filters_owner_and_repository() {
+        let pulls = vec![
+            github_pull("jackin-project/jackin", 3, "2026-05-03T00:00:00Z"),
+            github_pull("jackin-project/docs", 2, "2026-05-02T00:00:00Z"),
+            github_pull("other/repo", 1, "2026-05-01T00:00:00Z"),
+        ];
+
+        let by_owner = filter_github_prs(pulls.clone(), Some("jackin-project"), None);
+        let by_repo =
+            filter_github_prs(pulls, Some("jackin-project"), Some("jackin-project/jackin"));
+
+        assert_eq!(
+            by_owner
+                .iter()
+                .map(|pull| pull.repository.as_str())
+                .collect::<Vec<_>>(),
+            vec!["jackin-project/jackin", "jackin-project/docs"]
+        );
+        assert_eq!(
+            by_repo,
+            vec![github_pull(
+                "jackin-project/jackin",
+                3,
+                "2026-05-03T00:00:00Z"
+            )]
+        );
+    }
+
+    #[test]
+    fn github_limit_clamps_to_gh_bounds() {
+        assert_eq!(github_limit(None), 50);
+        assert_eq!(github_limit(Some(0)), 1);
+        assert_eq!(github_limit(Some(500)), 100);
+    }
+
+    fn github_pull(repository: &str, number: u64, created_at: &str) -> GithubPullRequest {
+        GithubPullRequest {
+            repository: repository.to_string(),
+            number,
+            title: format!("PR {number}"),
+            url: format!("https://github.com/{repository}/pull/{number}"),
+            author: "operator".to_string(),
+            created_at: created_at.to_string(),
+            updated_at: created_at.to_string(),
+            state: "open".to_string(),
+            is_draft: false,
+        }
     }
 
     #[test]
