@@ -38,7 +38,7 @@ When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspa
 | Running | Attach directly to the live session. |
 | Stopped, exit code `0` (clean `/exit`) | Error. The previous session ended normally — use `jackin load` to start a new one. |
 | Stopped, non-zero exit or OOM-killed | Restart the existing container in place and attach. If the DinD sidecar (`<container>-dind`) is stopped, restart it first; if it is missing, recreate the derived jackin network/DinD sidecar and wait for TLS readiness. |
-| Not found with indexed state | Rebuild the jackin-managed runtime for that instance when the saved workspace or original ad-hoc directory can be resolved. |
+| Not found with indexed state | Rebuild the jackin-managed runtime for that instance when the saved workspace, original ad-hoc directory, or a confirmed moved ad-hoc directory can be resolved. |
 | Not found without indexed state | Error. Nothing to reconnect to — use `jackin load`. |
 
 Restart is intentionally scoped to crashes (non-zero exit, OOM kill, hard kill). Clean exits are treated as "session over" — the next run of the agent should be a fresh `jackin load` so you see the full launch output and any updated configuration.
@@ -46,6 +46,8 @@ Restart is intentionally scoped to crashes (non-zero exit, OOM kill, hard kill).
 If the DinD sidecar has been removed, `jackin hardline` recreates the derived jackin network and DinD sidecar around the existing role container before restarting it.
 
 If the role container itself was deleted, jackin can rebuild the runtime around jackin-managed local state such as preserved worktrees/clones. Changes written only to the deleted container's writable layer are gone unless they were also persisted through a mounted path.
+
+For ad-hoc instances, `jackin hardline <instance-id>` normally expects the original project directory. If that directory moved, run the exact hardline command from the new project directory; in an interactive terminal jackin asks whether to mount the current directory at the original in-container workdir before rebuilding the missing runtime.
 
 `--inspect` is read-only. It works from the current workspace or ad-hoc directory, or with an explicit selector/instance ID/container name, and reports local manifest details even when Docker is unavailable.
 

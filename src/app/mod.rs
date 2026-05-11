@@ -1627,23 +1627,8 @@ fn restore_hardline_instance(
             &[],
         )?
     } else {
-        let cwd_fingerprint =
-            instance::manifest::host_path_fingerprint(&cwd.canonicalize()?.display().to_string());
-        anyhow::ensure!(
-            cwd_fingerprint == manifest.host_workdir_fingerprint,
-            "cannot restore ad-hoc instance `{}` from {}; rerun `jackin hardline {}` from its original project directory or use `jackin eject {} --purge` to discard it",
-            manifest.container_base,
-            cwd.display(),
-            manifest.container_base,
-            manifest.container_base
-        );
-        workspace::resolve_load_workspace(
-            config,
-            &class,
-            &cwd,
-            LoadWorkspaceInput::CurrentDir,
-            &[],
-        )?
+        let input = resolve_ad_hoc_restore_input(manifest, &cwd)?;
+        workspace::resolve_load_workspace(config, &class, &cwd, input, &[])?
     };
 
     let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
@@ -1665,6 +1650,71 @@ fn restore_hardline_instance(
         ..runtime::LoadOptions::default()
     };
     runtime::load_role(paths, config, &class, &workspace, runner, &opts)
+}
+
+fn resolve_ad_hoc_restore_input(
+    manifest: &instance::InstanceManifest,
+    cwd: &std::path::Path,
+) -> Result<LoadWorkspaceInput> {
+    let cwd = cwd.canonicalize()?;
+    if ad_hoc_restore_input_for_current_dir(manifest, &cwd, false).is_some() {
+        return Ok(LoadWorkspaceInput::CurrentDir);
+    }
+    if prompt_use_current_dir_for_moved_ad_hoc(manifest, &cwd)? {
+        return ad_hoc_restore_input_for_current_dir(manifest, &cwd, true).with_context(|| {
+            format!(
+                "cannot restore ad-hoc instance `{}` from {}",
+                manifest.container_base,
+                cwd.display()
+            )
+        });
+    }
+    anyhow::bail!(
+        "cannot restore ad-hoc instance `{}` from {}; rerun `jackin hardline {}` from its original project directory, rerun from the moved project directory and confirm it, or use `jackin eject {} --purge` to discard it",
+        manifest.container_base,
+        cwd.display(),
+        manifest.container_base,
+        manifest.container_base
+    )
+}
+
+fn ad_hoc_restore_input_for_current_dir(
+    manifest: &instance::InstanceManifest,
+    cwd: &std::path::Path,
+    allow_moved: bool,
+) -> Option<LoadWorkspaceInput> {
+    let cwd_str = cwd.display().to_string();
+    let cwd_fingerprint = instance::manifest::host_path_fingerprint(&cwd_str);
+    if cwd_fingerprint == manifest.host_workdir_fingerprint {
+        return Some(LoadWorkspaceInput::CurrentDir);
+    }
+    if allow_moved {
+        return Some(LoadWorkspaceInput::Path {
+            src: cwd_str,
+            dst: manifest.workdir.clone(),
+        });
+    }
+    None
+}
+
+fn prompt_use_current_dir_for_moved_ad_hoc(
+    manifest: &instance::InstanceManifest,
+    cwd: &std::path::Path,
+) -> Result<bool> {
+    use std::io::IsTerminal;
+
+    if !std::io::stdin().is_terminal() {
+        return Ok(false);
+    }
+    Ok(dialoguer::Confirm::new()
+        .with_prompt(format!(
+            "Ad-hoc instance `{}` was created for `{}`, but the current directory is `{}`. Use the current directory as the moved project path and mount it at the original in-container workdir?",
+            manifest.container_base,
+            manifest.workdir,
+            cwd.display()
+        ))
+        .default(false)
+        .interact()?)
 }
 
 /// Render the `config auth show` output as a string. Empty workspace + role
@@ -1954,6 +2004,65 @@ mod auth_set_tests {
         assert_eq!(options[3].1, HardlineAction::Cancel);
         assert!(options[1].0.contains("agent session"));
         assert!(options[2].0.contains("Inspect"));
+    }
+
+    #[test]
+    fn ad_hoc_restore_input_accepts_original_project_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("project");
+        std::fs::create_dir(&project).unwrap();
+        let project = project.canonicalize().unwrap();
+        let manifest = ad_hoc_manifest_for_workdir(&project);
+
+        let input = ad_hoc_restore_input_for_current_dir(&manifest, &project, false);
+
+        assert!(matches!(input, Some(LoadWorkspaceInput::CurrentDir)));
+    }
+
+    #[test]
+    fn ad_hoc_restore_input_can_use_confirmed_moved_project_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = temp.path().join("original");
+        let moved = temp.path().join("moved");
+        std::fs::create_dir(&original).unwrap();
+        std::fs::create_dir(&moved).unwrap();
+        let original = original.canonicalize().unwrap();
+        let moved = moved.canonicalize().unwrap();
+        let manifest = ad_hoc_manifest_for_workdir(&original);
+
+        assert!(ad_hoc_restore_input_for_current_dir(&manifest, &moved, false).is_none());
+        let input = ad_hoc_restore_input_for_current_dir(&manifest, &moved, true);
+
+        match input {
+            Some(LoadWorkspaceInput::Path { src, dst }) => {
+                assert_eq!(src, moved.display().to_string());
+                assert_eq!(dst, original.display().to_string());
+            }
+            other => panic!("expected moved project path input; got {other:?}"),
+        }
+    }
+
+    fn ad_hoc_manifest_for_workdir(workdir: &std::path::Path) -> instance::InstanceManifest {
+        let workdir = workdir.display().to_string();
+        instance::InstanceManifest::new(instance::NewInstanceManifest {
+            container_base: "jackin-agentsmith-k7p9m2xq",
+            workspace_name: None,
+            workspace_label: &workdir,
+            workdir: &workdir,
+            host_workdir_fingerprint: &instance::manifest::host_path_fingerprint(&workdir),
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: instance::DockerResources {
+                role_container: "jackin-agentsmith-k7p9m2xq".to_string(),
+                dind_container: "jackin-agentsmith-k7p9m2xq-dind".to_string(),
+                network: "jackin-agentsmith-k7p9m2xq-net".to_string(),
+                certs_volume: "jackin-agentsmith-k7p9m2xq-dind-certs".to_string(),
+            },
+        })
     }
 
     #[test]
