@@ -162,7 +162,6 @@ export default defineConfig({
                       items: [
                         { label: 'Workspace description', slug: 'reference/roadmap/workspace-description' },
                         { label: 'Operator handler system', slug: 'reference/roadmap/operator-handler-system' },
-                        { label: 'Workspace archive', slug: 'reference/roadmap/workspace-archive' },
                         { label: 'Declarative resource limits', slug: 'reference/roadmap/declarative-resource-limits' },
                         { label: 'Ephemeral mount modes', slug: 'reference/roadmap/ephemeral-mount-modes' },
                       ],

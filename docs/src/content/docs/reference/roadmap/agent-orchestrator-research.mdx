@@ -58,7 +58,7 @@ Every borrowed idea has to survive these filters:
 
 | Tool | Strongest idea to borrow | Main reason not to copy it directly |
 |---|---|---|
-| [`graemerocher/multicode`](https://github.com/graemerocher/multicode) | Parallel workspace table, GitHub status links, workspace archive, `multicode-remote`, skill-driven tags, Codex provider support, editor launcher, autonomous queue config, Apple-container experiments | Linux-first `bwrap`/`systemd-run` core; isolation is convenience, not a strong boundary; some Apple-container workflows still mount the host Docker socket |
+| [`graemerocher/multicode`](https://github.com/graemerocher/multicode) | Parallel workspace table, GitHub status links, `multicode-remote`, skill-driven tags, Codex provider support, editor launcher, autonomous queue config, Apple-container experiments | Linux-first `bwrap`/`systemd-run` core; isolation is convenience, not a strong boundary; some Apple-container workflows still mount the host Docker socket |
 | [`dredozubov/hazmat`](https://github.com/dredozubov/hazmat) | Session contract, tier decision flow, native macOS containment, strict integration rules, rollback/proof discipline | macOS-only; one hardcoded `agent` user; no smooth multi-agent fleet surface |
 | [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/security/) | MicroVM plus private Docker daemon, host-side network proxy, credential injection outside the VM, branch worktrees under `.sbx/` | Product is tied to Docker Desktop; not an extensible jackin role ecosystem; credentials/network proxy are not available primitives in plain Docker |
 | Claude/devcontainer patterns | Default-deny firewall and reproducible container setup | Devcontainers are workspace setup, not a multi-agent orchestrator or full operator platform |
@@ -212,7 +212,6 @@ present in jackin' today; **planned** means a roadmap item already exists;
 | Agent to operator tag protocol | Yes — `<multicode:repo>` / `<multicode:issue>` / `<multicode:pr>` | *Gap — see [Agent tag protocol](/reference/roadmap/agent-tag-protocol/)* |
 | Live GitHub link state polling | Yes — octocrab + per-workspace SQLite cache | *Gap — see [GitHub link tracking](/reference/roadmap/github-link-tracking/)* |
 | Persistent storage backend | Per-workspace SQLite + per-workspace JSON | *Gap — see [Persistent storage layer](/reference/roadmap/persistent-storage-layer/)* |
-| Workspace archive / unarchive | Yes — tar.zstd / tar.xz / zip with auto-detect | *Gap — see [Workspace archive](/reference/roadmap/workspace-archive/)* |
 | Per-workspace operator description | Yes — inline-editable note in TUI | *Gap — see [Workspace description](/reference/roadmap/workspace-description/)* |
 | External tool/IDE/diff launcher | Yes — `[handler]` block, `[[tool]]` array | *Gap — see [Operator handler system](/reference/roadmap/operator-handler-system/)* |
 | Custom operator-defined tools | Yes — `[[tool]]` array, hotkey + exec/prompt type | *Gap — see [Custom operator tools](/reference/roadmap/custom-operator-tools/)* |
@@ -233,7 +232,7 @@ present in jackin' today; **planned** means a roadmap item already exists;
 1. **Live observability of the agent.** multicode derives status and resource
    columns from runtime state and displays them as the main operator surface.
 2. **Per-workspace persistent SQLite.** A small store underpins GitHub status,
-   archive metadata, custom links, and telemetry.
+   custom links, and telemetry.
 3. **The tag protocol.** `<multicode:issue>`, `<multicode:pr>`, and
    `<multicode:repo>` turn agent output into structured operator state without
    making the agent runtime itself part of the orchestrator.
@@ -288,7 +287,6 @@ same session contract and persistent storage decisions.
 |---|---|---|
 | [Workspace description](/reference/roadmap/workspace-description/) | Inline-editable note in TUI overview | — |
 | [Operator handler system](/reference/roadmap/operator-handler-system/) | `[handler]` block (review/web) | — |
-| [Workspace archive](/reference/roadmap/workspace-archive/) | TUI archive + auto-detect on startup | — |
 | [Declarative resource limits](/reference/roadmap/declarative-resource-limits/) | `[isolation]` `memory-high`/`memory-max`/`cpu` | — |
 | [Ephemeral mount modes](/reference/roadmap/ephemeral-mount-modes/) | `[isolation] isolated = [...]` and `tmpfs = [...]` | — |
 
@@ -367,7 +365,7 @@ launched, what can be reached, and how to recover.
 
 This is a guide, not a constraint. The tracks are intentionally separable.
 
-1. **Fleet quick wins**: workspace description, archive, handler system,
+1. **Fleet quick wins**: workspace description, handler system,
    resource limits, ephemeral mounts, and the lightweight parts of service
    visibility can land as independent PRs.
 2. **Session contract first for containment work**: do not build network,
@@ -476,7 +474,7 @@ Research snapshot: May 9, 2026.
 
 - [`graemerocher/multicode`](https://github.com/graemerocher/multicode) —
   active reference implementation for this research. It covers workspace
-  isolation, GitHub tag/status integration, authentication, archive,
+  isolation, GitHub tag/status integration, authentication,
   `multicode-remote`, Codex provider support, editor-tool selection,
   autonomous queue / PR actions, and Apple-container experiments.
 

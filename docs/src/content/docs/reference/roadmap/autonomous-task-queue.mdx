@@ -22,8 +22,7 @@ becomes something an organization deploys instead of building their own.
 - It's the workflow distinction between "AI coding agent runner" (today)
   and "AI coding agent platform" (target).
 - Many of the program's smaller leaves only pay off once the queue exists
-  ([archive](/reference/roadmap/workspace-archive/) auto-archive integration,
-  [resource limits](/reference/roadmap/declarative-resource-limits/)
+  ([resource limits](/reference/roadmap/declarative-resource-limits/)
   budget enforcement, [idle runtime
   cleanup](/reference/roadmap/idle-runtime-cleanup/)).
 - It's the answer to "I have 50 GitHub issues; can jackin' chip through
@@ -85,7 +84,7 @@ max_parallel = 3                   # at most 3 agents at once
 poll_interval_seconds = 600        # re-poll source every 10 min
 poll_on_startup = true             # dispatch immediately on console open
 budget_usd_per_day = 50.00         # optional; skip dispatch when exceeded
-auto_archive_completed = true      # archive instance after task completes
+purge_completed_after_days = 14    # optional retention window for completed instances
 manual_gates = ["publish_pr", "mark_ready", "request_review", "merge"]
 ```
 
@@ -161,7 +160,8 @@ The queue considers a task **complete** when:
 Completion writes `tasks.state = 'completed'`, records the outcome
 (PR URL if any, exit code, runtime cost from
 [token & cost telemetry](/reference/roadmap/token-cost-telemetry/)),
-and (if `auto_archive_completed = true`) archives the per-task data dir.
+and keeps the per-task instance data dir available until the operator purges it
+or the configured completed-instance retention window expires.
 
 Failures (exit non-zero, OOM, missing success signal) write
 `state = 'failed'` and preserve the data dir for inspection. They're
@@ -232,7 +232,7 @@ jackin queue approve <workspace> <id> <gate> # approve publish/review/merge gate
 - Completion detection via status bus + tag protocol.
 - PR lifecycle tracking with optional manual gates.
 - Budget gating against daily cost.
-- Auto-archive on success when configured.
+- Optional purge-after retention for completed clean instances.
 - `jackin queue` CLI subcommands above.
 - Console "Queue" panel.
 
@@ -300,7 +300,5 @@ jackin queue approve <workspace> <id> <gate> # approve publish/review/merge gate
   budget gating
 - [Per-mount isolation](/reference/roadmap/per-mount-isolation/) —
   per-task isolation reuses worktree mode
-- [Workspace archive](/reference/roadmap/workspace-archive/) —
-  auto-archive on completion
 - [Idle runtime cleanup](/reference/roadmap/idle-runtime-cleanup/) —
   paired Phase 4 item
