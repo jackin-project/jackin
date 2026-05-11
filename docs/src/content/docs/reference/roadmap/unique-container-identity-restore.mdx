@@ -3,7 +3,7 @@ title: "Unique Container Identity and Restore"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — DNS-safe unique names, per-instance manifests with last attach outcomes, the rebuildable instance index, first-pass missing-container detection, Docker-unavailable diagnostics, explicit deleted-container writable-layer loss reporting, metadata-rich load/hardline recovery prompts, cross-role load blocking/guidance for unfinished workspace instances, instance-ID targeting for hardline/eject/purge, purged lifecycle tombstones, plain-purge refusal while matching Docker resources still exist, exact `hardline` rebuild for missing recoverable instances using the recorded role source/ref and per-instance durable agent home, stopped/missing-DinD hardline recovery for existing crashed role containers, interactive moved-directory recovery for exact ad-hoc hardline restores, read-only `hardline --inspect` state reports with live agent-session inventory, `hardline --new` foreground agent spawning inside running instances, a directory-aware hardline action picker with live session counts, console active-instance recovery controls backed by local state, Java Testcontainers DinD smoke coverage, and legacy isolation-state manifest backfill have shipped; exact per-session reattach prompts and stronger restart/rebuild guarantees remain open (Infrastructure)
+**Status**: Partially implemented — DNS-safe unique names, per-instance manifests with last attach outcomes, the rebuildable instance index, first-pass missing-container detection, Docker-unavailable diagnostics, explicit deleted-container writable-layer loss reporting, metadata-rich load/hardline recovery prompts, cross-role load blocking/guidance for unfinished workspace instances, instance-ID targeting for hardline/eject/purge, purged lifecycle tombstones, plain-purge refusal while matching Docker resources still exist, exact `hardline` rebuild for missing recoverable instances using the recorded role source/ref and per-instance durable agent home, stopped/missing-DinD hardline recovery for existing crashed role containers, interactive moved-directory recovery for exact ad-hoc hardline restores, read-only `hardline --inspect` state reports with live agent-session inventory, `hardline --new` foreground agent spawning inside running instances, a directory-aware hardline action picker with live session counts, console active-instance recovery controls backed by local state, Java Testcontainers DinD smoke coverage, and legacy isolation-state manifest backfill have shipped; exact per-session reattach prompts, richer moved-path picker/browser recovery, and future persistent lifecycle storage remain open. Container writable-layer recovery is explicitly out of scope (Infrastructure)
 
 ## Problem
 
@@ -222,7 +222,7 @@ Status: partially implemented for CLI targeting and exact missing-instance rebui
 - Expand `jackin hardline` from live session inventory to exact per-session reattach prompts where the runtime can safely reconnect.
 - Keep expanding cleanup and purge ergonomics around instance IDs and local-state/Docker-resource boundaries.
 
-### Phase 4 — Stronger recovery guarantees
+### Phase 4 — Persistent lifecycle storage
 
 - Integrate with [Persistent storage layer](/reference/roadmap/persistent-storage-layer/) once available for lifecycle history and status transitions.
 - Keep restore scoped to host-backed jackin-managed state and make every missing-container diagnostic explicit about the deleted writable-layer boundary.
