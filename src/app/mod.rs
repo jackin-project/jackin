@@ -1660,17 +1660,17 @@ fn resolve_ad_hoc_restore_input(
     if ad_hoc_restore_input_for_current_dir(manifest, &cwd, false).is_some() {
         return Ok(LoadWorkspaceInput::CurrentDir);
     }
-    if prompt_use_current_dir_for_moved_ad_hoc(manifest, &cwd)? {
-        return ad_hoc_restore_input_for_current_dir(manifest, &cwd, true).with_context(|| {
+    if let Some(path) = prompt_moved_ad_hoc_project_path(manifest, &cwd)? {
+        return ad_hoc_restore_input_for_moved_path(manifest, &path).with_context(|| {
             format!(
                 "cannot restore ad-hoc instance `{}` from {}",
                 manifest.container_base,
-                cwd.display()
+                path.display()
             )
         });
     }
     anyhow::bail!(
-        "cannot restore ad-hoc instance `{}` from {}; rerun `jackin hardline {}` from its original project directory, rerun from the moved project directory and confirm it, or use `jackin eject {} --purge` to discard it",
+        "cannot restore ad-hoc instance `{}` from {}; rerun `jackin hardline {}` from its original project directory, select the moved project path interactively, or use `jackin eject {} --purge` to discard it",
         manifest.container_base,
         cwd.display(),
         manifest.container_base,
@@ -1697,24 +1697,72 @@ fn ad_hoc_restore_input_for_current_dir(
     None
 }
 
-fn prompt_use_current_dir_for_moved_ad_hoc(
+fn ad_hoc_restore_input_for_moved_path(
+    manifest: &instance::InstanceManifest,
+    path: &std::path::Path,
+) -> Option<LoadWorkspaceInput> {
+    let path = path.canonicalize().ok()?;
+    ad_hoc_restore_input_for_current_dir(manifest, &path, true)
+}
+
+fn prompt_moved_ad_hoc_project_path(
     manifest: &instance::InstanceManifest,
     cwd: &std::path::Path,
-) -> Result<bool> {
+) -> Result<Option<std::path::PathBuf>> {
     use std::io::IsTerminal;
 
     if !std::io::stdin().is_terminal() {
-        return Ok(false);
+        return Ok(None);
     }
-    Ok(dialoguer::Confirm::new()
+    let choices = [
+        format!("Use current directory ({})", cwd.display()),
+        "Enter another moved project path".to_string(),
+        "Cancel restore".to_string(),
+    ];
+    let selected = dialoguer::Select::new()
         .with_prompt(format!(
-            "Ad-hoc instance `{}` was created for `{}`, but the current directory is `{}`. Use the current directory as the moved project path and mount it at the original in-container workdir?",
+            "Ad-hoc instance `{}` was created for `{}`, but the current directory is `{}`. Which host path should be mounted at the original in-container workdir?",
             manifest.container_base,
             manifest.workdir,
             cwd.display()
         ))
-        .default(false)
-        .interact()?)
+        .items(&choices)
+        .default(0)
+        .interact()?;
+
+    match selected {
+        0 => Ok(Some(cwd.to_path_buf())),
+        1 => prompt_ad_hoc_moved_path_entry(),
+        _ => Ok(None),
+    }
+}
+
+fn prompt_ad_hoc_moved_path_entry() -> Result<Option<std::path::PathBuf>> {
+    loop {
+        let raw: String = dialoguer::Input::new()
+            .with_prompt("Moved project path")
+            .interact_text()?;
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+        let path = std::path::PathBuf::from(resolve_path(trimmed));
+        match path.canonicalize() {
+            Ok(canonical) if canonical.is_dir() => return Ok(Some(canonical)),
+            Ok(canonical) => {
+                eprintln!(
+                    "path `{}` exists but is not a directory; enter a project directory or leave blank to cancel",
+                    canonical.display()
+                );
+            }
+            Err(err) => {
+                eprintln!(
+                    "cannot use `{}`: {err}; enter an existing project directory or leave blank to cancel",
+                    path.display()
+                );
+            }
+        }
+    }
 }
 
 /// Render the `config auth show` output as a string. Empty workspace + role
@@ -2040,6 +2088,41 @@ mod auth_set_tests {
             }
             other => panic!("expected moved project path input; got {other:?}"),
         }
+    }
+
+    #[test]
+    fn ad_hoc_restore_input_can_use_entered_moved_project_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = temp.path().join("original");
+        let moved = temp.path().join("moved");
+        std::fs::create_dir(&original).unwrap();
+        std::fs::create_dir(&moved).unwrap();
+        let original = original.canonicalize().unwrap();
+        let moved = moved.canonicalize().unwrap();
+        let manifest = ad_hoc_manifest_for_workdir(&original);
+
+        let input = ad_hoc_restore_input_for_moved_path(&manifest, &moved);
+
+        match input {
+            Some(LoadWorkspaceInput::Path { src, dst }) => {
+                assert_eq!(src, moved.display().to_string());
+                assert_eq!(dst, original.display().to_string());
+            }
+            other => panic!("expected moved project path input; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ad_hoc_restore_input_rejects_missing_entered_moved_project_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = temp.path().join("original");
+        std::fs::create_dir(&original).unwrap();
+        let original = original.canonicalize().unwrap();
+        let manifest = ad_hoc_manifest_for_workdir(&original);
+
+        let input = ad_hoc_restore_input_for_moved_path(&manifest, &temp.path().join("missing"));
+
+        assert!(input.is_none());
     }
 
     fn ad_hoc_manifest_for_workdir(workdir: &std::path::Path) -> instance::InstanceManifest {
