@@ -6,7 +6,7 @@
 
 #![cfg(feature = "e2e")]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use jackin::derived_image::shell_quote;
@@ -28,6 +28,88 @@ impl Drop for DockerCleanup {
     }
 }
 
+struct WorkspaceMount {
+    local_dir: PathBuf,
+    mount_src: String,
+    daemon_backed: bool,
+}
+
+impl WorkspaceMount {
+    fn new(local_dir: PathBuf) -> Self {
+        let daemon_backed = docker_uses_remote_daemon_paths();
+        let mount_src = if daemon_backed {
+            // With DinD, bind-mount sources are resolved on the daemon
+            // container's filesystem, not this test process's filesystem.
+            let src = format!(
+                "/tmp/jackin-e2e-workspace-{}-{}",
+                std::process::id(),
+                local_dir
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("workspace")
+            );
+            std::fs::create_dir_all(&src).unwrap();
+            prepare_daemon_workspace(&src);
+            src
+        } else {
+            local_dir.display().to_string()
+        };
+
+        Self {
+            local_dir,
+            mount_src,
+            daemon_backed,
+        }
+    }
+
+    fn target(&self) -> String {
+        format!("{}:/workspace", self.mount_src)
+    }
+
+    fn read_file(&self, name: &str) -> String {
+        if !self.daemon_backed {
+            return std::fs::read_to_string(self.local_dir.join(name)).unwrap();
+        }
+
+        let mount = format!("{}:/workspace:ro", self.mount_src);
+        let path = format!("/workspace/{name}");
+        let output = Command::new("docker")
+            .args(["run", "--rm", "-v", &mount, "alpine:3.20", "cat", &path])
+            .output()
+            .expect("docker must read daemon-backed workspace file");
+        assert!(
+            output.status.success(),
+            "failed to read daemon-backed workspace file {name}\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap()
+    }
+}
+
+impl Drop for WorkspaceMount {
+    fn drop(&mut self) {
+        if !self.daemon_backed {
+            return;
+        }
+
+        let mount = format!("{}:/workspace", self.mount_src);
+        let _ = Command::new("docker")
+            .args([
+                "run",
+                "--rm",
+                "-v",
+                &mount,
+                "alpine:3.20",
+                "sh",
+                "-lc",
+                "rm -rf /workspace/* /workspace/.[!.]* /workspace/..?* 2>/dev/null || true",
+            ])
+            .status();
+        let _ = std::fs::remove_dir_all(&self.mount_src);
+    }
+}
+
 #[test]
 fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     require_e2e_prereqs();
@@ -40,6 +122,7 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     let workspace_dir = temp.path().join("workspace");
     std::fs::create_dir_all(&config_dir).unwrap();
     std::fs::create_dir_all(&workspace_dir).unwrap();
+    let workspace_mount = WorkspaceMount::new(workspace_dir);
 
     seed_agent_smith_role_repo(&role_source);
     write_config(&config_dir.join("config.toml"), &role_source);
@@ -52,9 +135,9 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
             .to_string()
     });
 
-    let target = format!("{}:/workspace", workspace_dir.display());
+    let target = workspace_mount.target();
     let args = ["load", ROLE_KEY, &target, "--agent", "claude", "--no-intro"];
-    let output = run_in_pty(&jackin, &args, &home, &workspace_dir);
+    let output = run_in_pty(&jackin, &args, &home, &workspace_mount.local_dir);
 
     assert!(
         output.status.success(),
@@ -63,7 +146,7 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
         String::from_utf8_lossy(&output.stderr),
     );
 
-    let env_report = std::fs::read_to_string(workspace_dir.join("jackin-e2e-env.txt")).unwrap();
+    let env_report = workspace_mount.read_file("jackin-e2e-env.txt");
     assert!(env_report.contains(&format!("DOCKER_HOST=tcp://{DIND_HOSTNAME}:2376")));
     assert!(env_report.contains("DOCKER_TLS_VERIFY=1"));
     assert!(env_report.contains("DOCKER_CERT_PATH=/certs/client"));
@@ -82,8 +165,7 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
         "missing {merged_lower}\n{env_report}"
     );
 
-    let docker_ps =
-        std::fs::read_to_string(workspace_dir.join("jackin-e2e-docker-ps.txt")).unwrap();
+    let docker_ps = workspace_mount.read_file("jackin-e2e-docker-ps.txt");
     assert!(docker_ps.contains("CONTAINER ID"));
 }
 
@@ -122,6 +204,49 @@ fn script_available() -> bool {
         .arg("script")
         .output()
         .is_ok_and(|out| out.status.success())
+}
+
+fn docker_uses_remote_daemon_paths() -> bool {
+    std::env::var("DOCKER_HOST").is_ok_and(|host| {
+        let host = host.trim();
+        host.starts_with("tcp://") || host.starts_with("ssh://")
+    })
+}
+
+fn prepare_daemon_workspace(src: &str) {
+    let uid = capture_trimmed("id", &["-u"]).unwrap_or_else(|| "1000".to_string());
+    let gid = capture_trimmed("id", &["-g"]).unwrap_or_else(|| "1000".to_string());
+    let mount = format!("{src}:/workspace");
+    let ownership = format!("chown -R {uid}:{gid} /workspace && chmod 700 /workspace");
+    let output = Command::new("docker")
+        .args([
+            "run",
+            "--rm",
+            "-v",
+            &mount,
+            "alpine:3.20",
+            "sh",
+            "-lc",
+            &ownership,
+        ])
+        .output()
+        .expect("docker must prepare daemon-backed workspace");
+    assert!(
+        output.status.success(),
+        "failed to prepare daemon-backed workspace {src}\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn capture_trimmed(program: &str, args: &[&str]) -> Option<String> {
+    Command::new(program)
+        .args(args)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn run_in_pty(jackin: &str, args: &[&str], home: &Path, cwd: &Path) -> std::process::Output {
