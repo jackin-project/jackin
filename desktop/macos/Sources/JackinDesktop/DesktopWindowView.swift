@@ -3,6 +3,9 @@ import SwiftUI
 struct DesktopWindowView: View {
     @ObservedObject var model: StatusBarModel
     @State private var selection: DesktopWindowSection? = .pullRequests
+    @State private var organizationFilter = ""
+    @State private var projectFilter = "All"
+    @State private var draftFilter: PullRequestDraftFilter = .all
 
     var body: some View {
         NavigationSplitView {
@@ -44,32 +47,25 @@ struct DesktopWindowView: View {
     }
 
     private var pullRequestsView: some View {
-        List {
-            if model.pullRequests.isEmpty {
-                ContentUnavailableView(
-                    model.pullRequestError ?? "No Open Pull Requests",
-                    systemImage: "arrow.triangle.pull"
-                )
-            } else {
-                ForEach(model.pullRequests) { pullRequest in
-                    Button {
-                        Task {
-                            await model.openPullRequest(pullRequest)
-                        }
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(pullRequest.title)
-                                    .font(.headline)
-                                Text("\(pullRequest.repository) #\(pullRequest.number)")
-                                    .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            pullRequestFilters
+            List {
+                if filteredPullRequests.isEmpty {
+                    ContentUnavailableView(
+                        emptyPullRequestsTitle,
+                        systemImage: "arrow.triangle.pull"
+                    )
+                } else {
+                    ForEach(filteredPullRequests) { pullRequest in
+                        Button {
+                            Task {
+                                await model.openPullRequest(pullRequest)
                             }
-                            Spacer()
-                            Image(systemName: "arrow.up.forward.square")
-                                .foregroundStyle(.secondary)
+                        } label: {
+                            pullRequestRow(pullRequest)
                         }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
@@ -77,15 +73,86 @@ struct DesktopWindowView: View {
     }
 
     private var projectsView: some View {
-        List(projectNames, id: \.self) { project in
-            HStack {
-                Text(project)
-                Spacer()
-                Text("\(pullRequestCount(for: project)) PRs")
-                    .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            projectFilters
+            List(filteredProjectNames, id: \.self) { project in
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(project)
+                            .font(.headline)
+                        Text(projectOrganization(project))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text("\(pullRequestCount(for: project)) PRs")
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .navigationTitle("Projects")
+    }
+
+    private var pullRequestFilters: some View {
+        HStack(spacing: 12) {
+            TextField("Organization", text: $organizationFilter)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 180)
+
+            Picker("Project", selection: $projectFilter) {
+                Text("All Projects").tag("All")
+                ForEach(projectNamesForCurrentOrganization, id: \.self) { project in
+                    Text(project).tag(project)
+                }
+            }
+            .frame(maxWidth: 260)
+
+            Picker("State", selection: $draftFilter) {
+                ForEach(PullRequestDraftFilter.allCases) { filter in
+                    Text(filter.title).tag(filter)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 260)
+
+            Spacer()
+            Text("\(filteredPullRequests.count) shown")
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+    }
+
+    private var projectFilters: some View {
+        HStack(spacing: 12) {
+            TextField("Organization", text: $organizationFilter)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 180)
+
+            Spacer()
+            Text("\(filteredProjectNames.count) projects")
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+    }
+
+    private func pullRequestRow(_ pullRequest: GitHubPullRequest) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text(pullRequest.title)
+                        .font(.headline)
+                    if pullRequest.isDraft {
+                        Text("Draft")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text("\(pullRequest.repository) #\(pullRequest.number)")
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "arrow.up.forward.square")
+                .foregroundStyle(.secondary)
+        }
     }
 
     private var workspacesView: some View {
@@ -135,8 +202,70 @@ struct DesktopWindowView: View {
         Array(Set(model.pullRequests.map(\.repository))).sorted()
     }
 
+    private var projectNamesForCurrentOrganization: [String] {
+        if organizationFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            projectNames
+        } else {
+            projectNames.filter { projectOrganization($0).localizedCaseInsensitiveContains(organizationFilter) }
+        }
+    }
+
+    private var filteredProjectNames: [String] {
+        projectNamesForCurrentOrganization
+    }
+
+    private var filteredPullRequests: [GitHubPullRequest] {
+        model.pullRequests.filter { pullRequest in
+            if !organizationFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               !projectOrganization(pullRequest.repository).localizedCaseInsensitiveContains(organizationFilter) {
+                return false
+            }
+            if projectFilter != "All", pullRequest.repository != projectFilter {
+                return false
+            }
+            switch draftFilter {
+            case .all:
+                return true
+            case .open:
+                return !pullRequest.isDraft
+            case .draft:
+                return pullRequest.isDraft
+            }
+        }
+    }
+
     private func pullRequestCount(for project: String) -> Int {
         model.pullRequests.filter { $0.repository == project }.count
+    }
+
+    private func projectOrganization(_ repository: String) -> String {
+        repository.split(separator: "/", maxSplits: 1).first.map(String.init) ?? repository
+    }
+
+    private var emptyPullRequestsTitle: String {
+        if let pullRequestError = model.pullRequestError {
+            return pullRequestError
+        }
+        return model.pullRequests.isEmpty ? "No Open Pull Requests" : "No Matching Pull Requests"
+    }
+}
+
+enum PullRequestDraftFilter: String, CaseIterable, Identifiable {
+    case all
+    case open
+    case draft
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .all:
+            "All"
+        case .open:
+            "Open"
+        case .draft:
+            "Draft"
+        }
     }
 }
 
