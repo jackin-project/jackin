@@ -129,7 +129,12 @@ pub struct GlobalMountsState<'a> {
     pub modal: Option<GlobalMountModal<'a>>,
     pub add_draft: Option<GlobalMountDraft>,
     pub error: Option<String>,
+    pub success: Option<String>,
     pub scroll_x: u16,
+    /// Set by Discard or Save commit to signal the dispatcher to pop
+    /// back to the workspace list. Acted on (and reset) by
+    /// `after_global_mounts_event` in the input dispatcher.
+    pub exit_requested: bool,
 }
 
 #[derive(Debug, Default)]
@@ -146,15 +151,18 @@ pub enum GlobalMountModal<'a> {
         target: GlobalMountTextTarget,
         state: Box<TextInputState<'a>>,
     },
-    ConfirmRemove {
+    Confirm {
+        action: GlobalMountConfirm,
         state: ConfirmState,
     },
-    ConfirmSave {
-        state: ConfirmState,
-    },
-    ConfirmSensitive {
-        state: ConfirmState,
-    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalMountConfirm {
+    Remove,
+    Save,
+    Sensitive,
+    Discard,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -308,13 +316,23 @@ impl GlobalMountsState<'_> {
             modal: None,
             add_draft: None,
             error: None,
+            success: None,
             scroll_x: 0,
+            exit_requested: false,
         }
     }
 
     #[must_use]
     pub fn is_dirty(&self) -> bool {
         self.pending != self.original
+    }
+
+    pub fn discard(&mut self) {
+        self.pending = self.original.clone();
+        self.selected = self.selected.min(self.pending.len().saturating_sub(1));
+        self.add_draft = None;
+        self.error = None;
+        self.success = None;
     }
 
     pub fn save_to_config(

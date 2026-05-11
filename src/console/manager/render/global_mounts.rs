@@ -42,7 +42,7 @@ pub(super) fn render_global_mounts(frame: &mut Frame, state: &GlobalMountsState<
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             format!("  {err}"),
-            Style::default().fg(ratatui::style::Color::Rgb(255, 94, 122)),
+            Style::default().fg(crate::console::widgets::auth_panel::DANGER_RED),
         )));
     }
     let content_width = super::max_line_width(&lines);
@@ -149,9 +149,7 @@ pub(super) fn render_global_mount_modal(frame: &mut Frame, modal: &mut GlobalMou
         GlobalMountModal::Text { state, .. } => {
             crate::console::widgets::text_input::render(frame, area, state);
         }
-        GlobalMountModal::ConfirmRemove { state }
-        | GlobalMountModal::ConfirmSave { state }
-        | GlobalMountModal::ConfirmSensitive { state } => {
+        GlobalMountModal::Confirm { state, .. } => {
             crate::console::widgets::confirm::render(frame, area, state);
         }
     }

@@ -144,6 +144,7 @@ pub fn handle_key(
         && global.modal.is_some()
     {
         global_mounts::handle_global_mounts_modal(global, config, paths, key);
+        global_mounts::after_global_mounts_event(state);
         return Ok(InputOutcome::Continue);
     }
     if matches!(state.stage, ManagerStage::CreatePrelude(_)) {
@@ -235,6 +236,7 @@ pub fn handle_key(
         StageDis::Editor => editor::handle_editor_key(state, config, paths, cwd, key),
         StageDis::GlobalMounts => {
             global_mounts::handle_global_mounts_key(state, key);
+            global_mounts::after_global_mounts_event(state);
             Ok(InputOutcome::Continue)
         }
         StageDis::CreatePrelude => Ok(prelude::handle_prelude_key(state, config, paths, cwd, key)),

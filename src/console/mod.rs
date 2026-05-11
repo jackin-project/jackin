@@ -216,14 +216,19 @@ fn console_location_debug(console_state: &ConsoleState) -> String {
         crate::console::manager::state::ManagerStage::GlobalMounts(global) => {
             let modal = global.modal.as_ref().map_or("none", |modal| match modal {
                 crate::console::manager::state::GlobalMountModal::Text { .. } => "text-input",
-                crate::console::manager::state::GlobalMountModal::ConfirmRemove { .. } => {
-                    "confirm-remove"
-                }
-                crate::console::manager::state::GlobalMountModal::ConfirmSave { .. } => {
-                    "confirm-save"
-                }
-                crate::console::manager::state::GlobalMountModal::ConfirmSensitive { .. } => {
-                    "confirm-sensitive"
+                crate::console::manager::state::GlobalMountModal::Confirm { action, .. } => {
+                    match action {
+                        crate::console::manager::state::GlobalMountConfirm::Remove => {
+                            "confirm-remove"
+                        }
+                        crate::console::manager::state::GlobalMountConfirm::Save => "confirm-save",
+                        crate::console::manager::state::GlobalMountConfirm::Sensitive => {
+                            "confirm-sensitive"
+                        }
+                        crate::console::manager::state::GlobalMountConfirm::Discard => {
+                            "confirm-discard"
+                        }
+                    }
                 }
             });
             format!("global-mounts selected={} modal={modal}", global.selected)
