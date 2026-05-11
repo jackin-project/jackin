@@ -1448,7 +1448,8 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
     match config.workspace_applicable_mount_rows(workspace) {
         crate::config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
             if !rows.is_empty() {
-                let mut global_table = if rows.iter().any(|row| row.scope.is_some()) {
+                let has_scoped_rows = rows.iter().any(|row| row.scope.is_some());
+                let mut global_table = if has_scoped_rows {
                     Table::new(rows.iter().map(|row| GlobalMountRowWithScope {
                         scope: row.scope.as_deref().unwrap_or("global").to_string(),
                         name: row.name.clone(),
@@ -1464,7 +1465,11 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
                 };
                 global_table.with(Style::modern_rounded());
                 let _ = writeln!(out);
-                let _ = writeln!(out, "Global mounts ({role}):");
+                if has_scoped_rows {
+                    let _ = writeln!(out, "Global mounts ({role}):");
+                } else {
+                    let _ = writeln!(out, "Global mounts:");
+                }
                 let _ = writeln!(out, "{global_table}");
             }
         }
@@ -1615,7 +1620,8 @@ mod auth_set_tests {
         let out = render_workspace_show(&config, "jackin", &ws);
 
         assert!(out.contains("Workspace mounts:"), "{out}");
-        assert!(out.contains("Global mounts (agent-smith):"), "{out}");
+        assert!(out.contains("Global mounts:"), "{out}");
+        assert!(!out.contains("Global mounts (agent-smith):"), "{out}");
         assert!(out.contains("gradle-cache"), "{out}");
         assert!(!out.contains("│ Scope"), "{out}");
     }
@@ -1686,6 +1692,10 @@ mod auth_set_tests {
 
         let out = render_workspace_show(&config, "jackin", &ws);
 
+        assert!(
+            out.contains("Global mounts (chainargos/agent-brown):"),
+            "{out}"
+        );
         assert!(out.contains("│ Scope"), "{out}");
         assert!(out.contains("chainargos/*"), "{out}");
     }
