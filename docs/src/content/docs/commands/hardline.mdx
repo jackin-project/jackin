@@ -45,7 +45,7 @@ Restart is intentionally scoped to crashes (non-zero exit, OOM kill, hard kill).
 
 If the DinD sidecar has been removed, `jackin hardline` recreates the derived jackin network and DinD sidecar around the existing role container before restarting it.
 
-If the role container itself was deleted, jackin can rebuild the runtime around jackin-managed local state such as preserved worktrees/clones. Changes written only to the deleted container's writable layer are gone unless they were also persisted through a mounted path.
+If the role container itself was deleted, jackin can rebuild the runtime around jackin-managed local state such as the per-instance agent home and preserved worktrees/clones. Changes written only to the deleted container's writable layer are gone. Jackin intentionally does not restore packages installed ad hoc inside the container, global files edited outside mounted paths, DinD images, or other container-layer mutations.
 
 For ad-hoc instances, `jackin hardline <instance-id>` normally expects the original project directory. If that directory moved, run the exact hardline command from the new project directory; in an interactive terminal jackin asks whether to mount the current directory at the original in-container workdir before rebuilding the missing runtime.
 

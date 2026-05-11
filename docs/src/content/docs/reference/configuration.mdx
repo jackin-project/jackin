@@ -273,9 +273,13 @@ Each running role stores state at `~/.jackin/data/<container-name>/`:
 | `claude/credentials.json` | Claude Code OAuth credentials (mounted at `/jackin/claude/credentials.json`; only forwarded under `auth_forward = "sync"`) |
 | `codex/auth.json` | Synced copy of host `~/.codex/auth.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/jackin/codex/auth.json`; absent when host has no auth.json) |
 | `amp/secrets.json` | Synced copy of host `~/.local/share/amp/secrets.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/jackin/amp/secrets.json`; absent when host has no secrets.json). `secrets.json` is the XDG_DATA file the Amp CLI writes the `apiKey@https://ampcode.com/` token into; the XDG_CONFIG path `~/.config/amp/settings.json` is preferences only and is intentionally not forwarded |
+| `home/.claude/` and `home/.claude.json` | Durable Claude Code home state, including conversation history, runtime-local plugins, account metadata, and settings written during the session |
+| `home/.codex/` | Durable Codex home state, including conversation history, runtime-local config, and login state created inside the session |
+| `home/.local/share/amp/` | Durable Amp data state created inside the session |
+| `state/` | jackin runtime state mounted at `/jackin/state`, including the `setup_once` marker |
 | `.config/gh/` | GitHub CLI authentication and settings (agent-neutral) |
 
-All host→container handoff lives under a single tree (`/jackin/`) the operator can audit at a glance. The agent's home directory (`~/.claude/`, `~/.codex/`, `~/.local/share/amp/`) is image-baked and not bind-mounted; the runtime entrypoint copies the relevant auth files from `/jackin/` into the agent's home before launch. This isolates configuration that ships in the image (`settings.json`, hooks, memory) from auth/state forwarded by the host, and keeps in-container writes (token rotation, conversation history) inside the writable layer rather than leaking back to the host.
+Host→container auth handoff lives under a single tree (`/jackin/`) the operator can audit at a glance. The agent home directories are bind-mounted from jackin-managed per-instance state, not from the operator's host home. The runtime entrypoint seeds image-baked defaults into that durable home on first launch, then copies the current auth handoff files from `/jackin/` into the durable home before starting the agent. This keeps conversation history and runtime-local plugins recoverable when Docker containers disappear while still letting the current auth mode override stale forwarded credentials.
 
 `claude/account.json` is rebuilt as `{}` (empty object) by every non-sync auth mode so it is always present on disk; the bind mount is the gate for whether the file flows into the container, not the file's existence. `claude/credentials.json` is wiped on every non-sync mode and never bind-mounted under `ignore`/`api_key`/`oauth_token`.
 

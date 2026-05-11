@@ -174,11 +174,15 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 ├── data/                          # Persisted state per instance
 │   └── jackin-agent-smith/
 │       ├── claude/                # Claude-only state (when launched under Claude)
-│       │   ├── state/             # Claude Code session history, context
-│       │   │   └── .credentials.json  # OAuth tokens (forwarded or container-local)
-│       │   └── account.json       # Claude Code account metadata and preferences
+│       │   ├── credentials.json   # Forwarded OAuth credentials under auth_forward=sync
+│       │   └── account.json       # Forwarded Claude Code account metadata under sync/token modes
 │       ├── codex/                 # Codex-only state (when launched under Codex)
 │       │   └── auth.json          # ChatGPT OAuth tokens (synced from host ~/.codex/auth.json under auth_forward=sync)
+│       ├── home/                  # Durable agent home state mounted into the container
+│       │   ├── .claude/           # Claude Code conversation history, runtime-local plugins, settings
+│       │   ├── .claude.json       # Claude Code account metadata inside the durable home
+│       │   └── .codex/            # Codex conversation history, runtime-local config, login state
+│       ├── state/                 # jackin runtime markers mounted at /jackin/state
 │       ├── .config/gh/            # GitHub CLI authentication (agent-neutral)
 │       └── .jackin/               # jackin runtime metadata (agent-neutral)
 │           └── isolation.json     # Per-mount isolation records (when applicable)
@@ -186,7 +190,7 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 
 This is what persists across sessions:
 
-- Claude history, settings, and authentication
+- Claude/Codex/Amp history, runtime-local settings, plugins, and authentication state stored under the per-instance durable home
 - jackin' plugin metadata
 - `gh` state acquired inside the agent container
 
@@ -196,7 +200,9 @@ This is what does **not** persist:
 - ad-hoc root filesystem changes outside mounted paths
 - DinD images, containers, and cache
 
-That means jackin' is biased toward **reproducible roles** rather than **mutable long-lived sandboxes**.
+That means jackin' restores only host-backed state: workspace mounts, isolated worktrees/clones, and the per-instance agent home under `~/.jackin/data/<container>/home/`. Anything installed or edited only in the container writable layer is intentionally disposable and will not be restored after Docker deletes the container.
+
+Jackin' is biased toward **reproducible roles** rather than **mutable long-lived sandboxes**.
 
 If a tool should always exist, put it in the role repo Dockerfile instead of installing it ad hoc during a session.
 

@@ -599,7 +599,7 @@ fn missing_restore_message(
     Ok(Some(format!(
         "container '{container_name}' is missing, but jackin-managed local state remains recoverable at {}. \
          Run `jackin load` from the matching workspace to rebuild it, or `jackin eject {container_name} --purge` \
-         to discard it. Any changes written only to the deleted container's writable layer are gone.",
+         to discard it. Anything written only to the deleted container's writable layer is gone and will not be restored, including ad-hoc package installs, global files outside mounted paths, and DinD images.",
         state_dir.display()
     )))
 }

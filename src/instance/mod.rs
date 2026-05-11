@@ -212,9 +212,9 @@ pub enum AgentRuntimeState {
         /// Host path mounted at `/jackin/codex/auth.json` when the
         /// file was synced from the host's `~/.codex/auth.json` on a
         /// previous launch. `None` when the host had no auth.json at
-        /// the most recent launch — the bind mount is skipped and any
-        /// in-container `codex login` writes to the container's
-        /// writable layer (lost on `docker rm`).
+        /// the most recent launch — the auth handoff mount is skipped.
+        /// Any in-container `codex login` writes into the durable
+        /// per-instance Codex home mounted under `~/.jackin/data/`.
         auth_json: Option<PathBuf>,
     },
     Amp {
@@ -366,8 +366,12 @@ impl RoleState {
     ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
         let root = paths.data_dir.join(container_name);
         let gh_config_dir = root.join(".config/gh");
+        let home_dir = root.join("home");
+        let jackin_state_dir = root.join("state");
 
         std::fs::create_dir_all(&gh_config_dir)?;
+        std::fs::create_dir_all(&home_dir)?;
+        std::fs::create_dir_all(&jackin_state_dir)?;
 
         let hosts_yml = gh_config_dir.join("hosts.yml");
         let gh_provision_outcome = Self::provision_github_auth(&hosts_yml, github, host_home)?;
@@ -375,7 +379,13 @@ impl RoleState {
         let (agent_runtime, outcome) = match agent {
             crate::agent::Agent::Claude => {
                 let claude_dir = root.join("claude");
+                let claude_home_dir = home_dir.join(".claude");
                 std::fs::create_dir_all(&claude_dir)?;
+                std::fs::create_dir_all(&claude_home_dir)?;
+                let claude_account_home = home_dir.join(".claude.json");
+                if !claude_account_home.exists() {
+                    std::fs::write(&claude_account_home, "{}")?;
+                }
 
                 let account_json = claude_dir.join("account.json");
                 let credentials_json = claude_dir.join("credentials.json");
@@ -398,7 +408,9 @@ impl RoleState {
             }
             crate::agent::Agent::Codex => {
                 let codex_dir = root.join("codex");
+                let codex_home_dir = home_dir.join(".codex");
                 std::fs::create_dir_all(&codex_dir)?;
+                std::fs::create_dir_all(&codex_home_dir)?;
                 let auth_json_path = codex_dir.join("auth.json");
                 let (outcome, auth_json) =
                     Self::provision_codex_auth(&auth_json_path, auth_forward, host_home)?;
@@ -412,7 +424,9 @@ impl RoleState {
             }
             crate::agent::Agent::Amp => {
                 let amp_dir = root.join("amp");
+                let amp_home_dir = home_dir.join(".local/share/amp");
                 std::fs::create_dir_all(&amp_dir)?;
+                std::fs::create_dir_all(&amp_home_dir)?;
                 let secrets_json_path = amp_dir.join("secrets.json");
                 let (outcome, secrets_json) =
                     Self::provision_amp_auth(&secrets_json_path, auth_forward, host_home)?;
@@ -502,6 +516,12 @@ plugins = []
             state.claude_credentials_json().unwrap(),
             container_root.join("claude").join("credentials.json"),
         );
+        assert!(container_root.join("home/.claude").is_dir());
+        assert_eq!(
+            std::fs::read_to_string(container_root.join("home/.claude.json")).unwrap(),
+            "{}"
+        );
+        assert!(container_root.join("state").is_dir());
     }
 
     #[test]
@@ -548,6 +568,13 @@ model = "gpt-5"
                 .join("codex")
                 .join("config.toml")
                 .exists()
+        );
+        assert!(
+            paths
+                .data_dir
+                .join("jackin-agent-smith")
+                .join("home/.codex")
+                .is_dir()
         );
         // Codex state carries no Claude auth paths — the typed enum
         // makes the absence structural rather than a runtime nil.

@@ -406,9 +406,8 @@ impl RoleState {
     ///     `CLAUDE_CODE_OAUTH_TOKEN` env var instead.
     ///   * **`ApiKey`/`Ignore`** → wipe both role-state files and
     ///     `forward_auth = false`. `ApiKey` authenticates via
-    ///     `ANTHROPIC_API_KEY`; `Ignore` forces a fresh in-container
-    ///     login that lives only in the writable layer (lost on
-    ///     `docker rm`, by design).
+    ///     `ANTHROPIC_API_KEY`; `Ignore` forces a fresh login inside
+    ///     the durable per-instance agent home.
     ///
     /// On macOS the host credentials live in the system Keychain
     /// ("Claude Code-credentials"), not in a file. On Linux they are

@@ -223,6 +223,10 @@ const STANDARD_TERMS: &[&str] = &[
 fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
     use crate::instance::AgentRuntimeState;
 
+    let mut mounts = vec![format!(
+        "{}:/jackin/state",
+        state.root.join("state").display()
+    )];
     match &state.agent_runtime {
         AgentRuntimeState::Claude {
             account_json,
@@ -230,7 +234,14 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
             forward_auth,
             ..
         } => {
-            let mut mounts = Vec::new();
+            mounts.push(format!(
+                "{}:/home/agent/.claude",
+                state.root.join("home/.claude").display()
+            ));
+            mounts.push(format!(
+                "{}:/home/agent/.claude.json",
+                state.root.join("home/.claude.json").display()
+            ));
             // `forward_auth = true` for Sync (host-derived credentials)
             // and OAuthToken (the onboarding skeleton). ApiKey and
             // Ignore set it to false so a `{}` placeholder left behind
@@ -255,14 +266,20 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
             mounts
         }
         AgentRuntimeState::Codex { auth_json, .. } => {
-            let mut mounts = Vec::new();
+            mounts.push(format!(
+                "{}:/home/agent/.codex",
+                state.root.join("home/.codex").display()
+            ));
             if let Some(auth_json) = auth_json {
                 mounts.push(format!("{}:/jackin/codex/auth.json", auth_json.display()));
             }
             mounts
         }
         AgentRuntimeState::Amp { secrets_json } => {
-            let mut mounts = Vec::new();
+            mounts.push(format!(
+                "{}:/home/agent/.local/share/amp",
+                state.root.join("home/.local/share/amp").display()
+            ));
             // Bound RW at the docker level so future plumbing (symlink
             // / bind re-mount) for live bidirectional sync — see
             // `roadmap/live-auth-sync.mdx` — can rely on a writable
@@ -2049,7 +2066,7 @@ fn resolve_restore_candidate(
         [] if related.is_empty() => Ok(None),
         [] => prompt_related_restore_candidate(workspace_label, &related),
         [only] if !std::io::stdin().is_terminal() => anyhow::bail!(
-            "restore is available for `{}` but stdin is not interactive; run `jackin hardline {}` to inspect it or `jackin load` interactively from the matching workspace to rebuild jackin-managed local state. Run `jackin eject {} --purge` to discard it before starting a fresh load. Any changes written only to a deleted container's writable layer are gone.",
+            "restore is available for `{}` but stdin is not interactive; run `jackin hardline {}` to inspect it or `jackin load` interactively from the matching workspace to rebuild jackin-managed local state. Run `jackin eject {} --purge` to discard it before starting a fresh load. Anything written only to the deleted container's writable layer is gone and will not be restored, including ad-hoc package installs, global files outside mounted paths, and DinD images.",
             only.container_base,
             only.container_base,
             only.container_base
@@ -3278,10 +3295,10 @@ mod tests {
     }
 
     #[test]
-    fn agent_mounts_for_claude_ignore_mode_has_no_agent_mounts() {
-        // Ignore mode is env-driven (no env var, just no auth) — auth
-        // files must NOT flow into the container, and Claude plugins are
-        // installed at image-build time rather than mounted at runtime.
+    fn agent_mounts_for_claude_ignore_mode_mounts_state_but_no_auth_handoff() {
+        // Ignore mode must still mount durable Claude home state so
+        // conversations/plugins survive a Docker delete, but auth handoff
+        // files under /jackin/claude/ must not flow into the container.
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -3317,16 +3334,23 @@ plugins = []
         .unwrap();
 
         let mounts = agent_mounts(&state);
-        assert_eq!(
-            mounts.len(),
-            0,
-            "ignore mode should not mount Claude runtime state: {mounts:?}"
-        );
-        // No legacy `/home/agent/.claude*` mounts should leak through —
-        // the agent home is image-baked, not bind-mounted.
         assert!(
-            !mounts.iter().any(|m| m.contains("/home/agent/.claude")),
-            "legacy ~/.claude mount must not survive: {mounts:?}"
+            mounts.iter().any(|m| m.contains(":/jackin/state")),
+            "jackin state mount missing: {mounts:?}"
+        );
+        assert!(
+            mounts.iter().any(|m| m.contains(":/home/agent/.claude")),
+            "durable Claude home mount missing: {mounts:?}"
+        );
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains(":/home/agent/.claude.json")),
+            "durable Claude account file mount missing: {mounts:?}"
+        );
+        assert!(
+            !mounts.iter().any(|m| m.contains("/jackin/claude/")),
+            "ignore mode must not mount Claude auth handoff files: {mounts:?}"
         );
     }
 
@@ -3456,7 +3480,7 @@ plugins = []
     }
 
     #[test]
-    fn agent_mounts_for_codex_without_auth_has_no_mounts() {
+    fn agent_mounts_for_codex_without_auth_mounts_state_but_no_auth_handoff() {
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -3493,8 +3517,16 @@ agents = ["codex"]
 
         let mounts = agent_mounts(&state);
         assert!(
-            mounts.is_empty(),
-            "no generated codex config mount: {mounts:?}"
+            mounts.iter().any(|m| m.contains(":/jackin/state")),
+            "jackin state mount missing: {mounts:?}"
+        );
+        assert!(
+            mounts.iter().any(|m| m.contains(":/home/agent/.codex")),
+            "durable Codex home mount missing: {mounts:?}"
+        );
+        assert!(
+            !mounts.iter().any(|m| m.contains("/jackin/codex/auth.json")),
+            "no auth.json handoff when auth is ignored: {mounts:?}"
         );
     }
 
@@ -3544,9 +3576,16 @@ agents = ["codex"]
         .unwrap();
 
         let mounts = agent_mounts(&state);
-        assert_eq!(mounts.len(), 1);
-        assert!(mounts[0].contains("/jackin/codex/auth.json"));
-        assert!(!mounts[0].ends_with(":ro"));
+        assert!(
+            mounts.iter().any(|m| m.contains(":/home/agent/.codex")),
+            "durable Codex home mount missing: {mounts:?}"
+        );
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains("/jackin/codex/auth.json") && !m.ends_with(":ro")),
+            "auth.json handoff missing: {mounts:?}"
+        );
     }
 
     #[test]
@@ -3586,10 +3625,13 @@ agents = ["codex"]
         .unwrap();
 
         let mounts = agent_mounts(&state);
-        assert_eq!(
-            mounts.len(),
-            0,
-            "no auth.json bind when host has no ~/.codex/auth.json: {mounts:?}"
+        assert!(
+            mounts.iter().any(|m| m.contains(":/home/agent/.codex")),
+            "durable Codex home mount missing: {mounts:?}"
+        );
+        assert!(
+            !mounts.iter().any(|m| m.contains("/jackin/codex/auth.json")),
+            "no auth.json handoff when host has no ~/.codex/auth.json: {mounts:?}"
         );
     }
 
@@ -3638,13 +3680,22 @@ agents = ["amp"]
         .unwrap();
 
         let mounts = agent_mounts(&state);
-        assert_eq!(mounts.len(), 1);
-        assert!(mounts[0].contains("/jackin/amp/secrets.json"));
-        assert!(!mounts[0].ends_with(":ro"));
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains(":/home/agent/.local/share/amp")),
+            "durable Amp data mount missing: {mounts:?}"
+        );
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains("/jackin/amp/secrets.json") && !m.ends_with(":ro")),
+            "secrets.json handoff missing: {mounts:?}"
+        );
     }
 
     #[test]
-    fn agent_mounts_for_amp_ignore_has_no_agent_mounts() {
+    fn agent_mounts_for_amp_ignore_mounts_state_but_no_auth_handoff() {
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -3681,8 +3732,20 @@ agents = ["amp"]
 
         let mounts = agent_mounts(&state);
         assert!(
-            mounts.is_empty(),
-            "ignore mode should not mount Amp settings: {mounts:?}"
+            mounts.iter().any(|m| m.contains(":/jackin/state")),
+            "jackin state mount missing: {mounts:?}"
+        );
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains(":/home/agent/.local/share/amp")),
+            "durable Amp data mount missing: {mounts:?}"
+        );
+        assert!(
+            !mounts
+                .iter()
+                .any(|m| m.contains("/jackin/amp/secrets.json")),
+            "ignore mode must not mount Amp auth handoff files: {mounts:?}"
         );
     }
 
