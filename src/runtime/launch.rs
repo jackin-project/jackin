@@ -4028,7 +4028,7 @@ plugins = []
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = RoleSelector::new(Some("chainargos"), "the-architect");
         let mut runner =
-            FakeRunner::for_load_agent(["exited|0|false".to_string(), "false 0 false".to_string()]);
+            FakeRunner::for_load_agent(["false 0 false".to_string(), "false 0 false".to_string()]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
@@ -4170,7 +4170,7 @@ plugins = []
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(Some("chainargos"), "agent-brown");
         let mut runner =
-            FakeRunner::for_load_agent(["exited|0|false".to_string(), "false 0 false".to_string()]);
+            FakeRunner::for_load_agent(["false 0 false".to_string(), "false 0 false".to_string()]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
@@ -4250,7 +4250,7 @@ trusted = true
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
             String::new(),
-            "exited|0|false".to_string(),
+            "false 0 false".to_string(),
             "false 0 false".to_string(),
         ]);
 
@@ -5483,7 +5483,7 @@ plugins = []
             String::new(),
             String::new(),
             "true 0 false".to_string(),
-            "exited|0|false".to_string(),
+            "false 0 false".to_string(),
             "false 0 false".to_string(),
         ]);
 
