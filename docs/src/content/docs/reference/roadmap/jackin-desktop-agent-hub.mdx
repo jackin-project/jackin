@@ -5,7 +5,7 @@ import { Aside } from '@astrojs/starlight/components'
 import RepoFile from '../../../../components/RepoFile.astro'
 
 
-**Status**: Open — design proposal (Reactive daemon program / operator surface)
+**Status**: Open — implementation program (daemon, native macOS status bar, desktop app, notifications)
 
 ## Problem
 
@@ -21,6 +21,11 @@ agent UI remains the agent's own TUI. Jackin Desktop should be the Mac-native
 control surface around those agents: start workspaces, see active containers,
 jump to pull requests, monitor token/account state, and receive attention
 prompts when an agent is blocked or finished.
+
+This roadmap targets the complete Desktop Agent Hub experience: daemon-backed
+state, native macOS status bar, native desktop window, Ghostty workspace
+launch/focus, GitHub PR inbox, account/token status, and notification/attention
+routing. The phased plan below is the review strategy, not a reduced scope.
 
 ## Existing local foundation
 
@@ -456,10 +461,19 @@ not as one large feature branch. The agent running the goal should keep building
 without asking for step-by-step approval, but every externally reviewed unit
 must be a small pull request.
 
+The phases are delivery slices for review, not optional scope reductions. The
+long-running goal should continue through daemon APIs, menu bar, desktop window,
+notifications, and attention routing unless blocked by a documented design issue
+or repository constraint that must be resolved first.
+
 Delivery rules:
 
 - Create sequential pull requests, not one large PR. Each PR should be
   reviewable on its own and should leave the repo in a useful state.
+- The implementation track is complete only when all major stages have been
+  delivered as separate reviewable PRs: daemon contract, daemon data endpoints,
+  native status bar, PR/project inbox, account status, Ghostty actions, desktop
+  window, notifications, and attention routing.
 - Implement all PRs without waiting for operator approval, but do not merge any
   of them. The operator owns merge decisions and will explicitly ask for fixes
   when a reviewed PR needs changes.
