@@ -151,6 +151,62 @@ This mirrors the CLI split: `jackin workspace ...` manages workspace config, whi
 
 This feature intentionally writes host-side jackin operator configuration only when the operator explicitly saves changes from the dedicated global mounts TUI. The save target is `~/.config/jackin/config.toml`, the same file managed by `jackin config mount`; workspace screens remain read-only for global mounts and must not mutate global config as a side effect of inspecting or editing a workspace.
 
+## Codex Goal Handoff
+
+This roadmap item is intended to be executable as one autonomous Codex Goal. The goal runner should implement the full behavior in one feature branch, verify it locally, open one draft pull request, and stop for operator review.
+
+Suggested `/goal` command to paste into Codex from the repository root:
+
+```text
+/goal implement the Global Mount Visibility roadmap item from docs/src/content/docs/reference/roadmap/global-mount-visibility.mdx completely in one pull request. Work silently until the goal is achieved or a real blocker prevents completion. When finished, open one draft pull request and stop for operator review.
+```
+
+Goal objective:
+
+- Implement workspace-facing visibility for effective global mounts in `jackin workspace show <name>`.
+- Implement console workspace overview visibility for applicable global mounts, visually separated from workspace mounts.
+- Implement workspace editor mount-tab visibility for applicable global mounts as read-only rows or a separate read-only panel; workspace mount edit actions must not mutate global mounts.
+- Implement a dedicated global-config TUI surface for viewing and editing global mounts, with add/edit/remove/rename/scope/readonly operations backed by the same config persistence path as `jackin config mount`.
+- Preserve existing launch behavior and conflict semantics. Display logic should reflect what launch will apply, but duplicate effective destinations must still fail rather than silently shadowing one mount with another.
+
+Implementation expectations:
+
+- Read <RepoFile path="AGENTS.md" />, <RepoFile path="PULL_REQUESTS.md" />, <RepoFile path="COMMITS.md" />, <RepoFile path="BRANCHING.md" />, and the files listed in "Related Files" before editing.
+- Create a feature branch named `feature/global-mount-visibility` or another `feature/<short-description>` branch if that name is already taken.
+- Keep workspace-owned configuration and global operator configuration separate in code, UI labels, and persistence.
+- Reuse existing config editor and mount-resolution primitives where practical; do not create a second persistence path for `~/.config/jackin/config.toml`.
+- Keep host-side writes explicit. Workspace show/overview/editor screens may inspect global config, but only the dedicated global mounts TUI may save global mount changes.
+- Include focused tests for CLI rendering, role-scoped global mount display behavior, workspace editor read-only behavior for global rows, global mount editor persistence, validation failures, and duplicate-destination handling.
+- Update docs when behavior changes, including this roadmap item if the implementation finishes or materially changes the plan.
+
+Verification required before opening the PR:
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo check --all-targets
+cargo nextest run --all-features
+```
+
+Manual smoke required before opening the PR:
+
+```sh
+cargo run --bin jackin -- --debug workspace show chainargos
+cargo run --bin jackin -- console --debug
+```
+
+The manual smoke should verify that workspace views show workspace mounts and global mounts in separate sections, that global mounts are visible but not editable from the workspace editor, and that the dedicated global mounts TUI can add, edit, scope, rename, and remove a test global mount only after an explicit save.
+
+Pull request requirements:
+
+- Follow <RepoFile path="PULL_REQUESTS.md" /> exactly. Open a draft PR and stop; do not merge.
+- Use a Conventional Commit PR title, because the PR title becomes the squash subject.
+- Include copy-pasteable checkout instructions and the exact verification commands in the PR body.
+- Include user-smoke steps for the CLI and TUI behavior changed by this goal.
+- Mention host-side effects explicitly: the implementation reads `~/.config/jackin/config.toml` for display and writes it only from the dedicated global mounts TUI after explicit save.
+- Every commit must be signed off with `git commit -s` and must include exactly one Codex trailer: `Co-authored-by: Codex <codex@openai.com>`.
+- Do not force-push, rewrite commits, mark the PR ready, or merge unless the operator explicitly asks.
+
 ## Implementation Notes
 
 - The runtime already resolves global + workspace + load-time mounts for launch. Reuse that resolver for display, but keep display rows tagged with their source: `global`, `workspace`, or `load-time` when relevant.
