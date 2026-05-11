@@ -310,6 +310,11 @@ Recommended layout:
 
 Compact visibility rule: every Desktop view that can start, focus, or stop an agent should show the active account quota beside that agent. The full Accounts and Usage screens are for inspection; the Running Agents, Workspaces, and menu-bar surfaces are for immediate "can I safely keep working?" decisions.
 
+The first window slice now adds this `NavigationSplitView` shell and wires the
+sidebar destinations to the same daemon-backed menu model. Detailed filters,
+launch buttons, account cards, and attention actions remain in the focused
+follow-up PRs so the initial native window stays reviewable.
+
 Launching a workspace from the app should always use Ghostty in v1. The app can open a new Ghostty tab or new Ghostty window and run the appropriate `jackin load` / `jackin hardline` flow with `--debug` only for operator-requested smoke validation, not normal app launches. Other terminal adapters are out of scope until the Ghostty path proves the product shape.
 
 The desktop app must remain optional. Installing `jackin` CLI should not require
@@ -586,6 +591,9 @@ Delivery rules:
 ### Phase 2 — Simple desktop window
 
 - PR 1: Add the simple native window shell with `NavigationSplitView`.
+  Started with a shared-model `WindowGroup`, sidebar destinations, and basic
+  Pull Requests, Projects, Workspaces, Running Agents, Accounts, and Settings
+  panes.
 - PR 2: Add the inbox-style Pull Requests view with organization/project
   filters.
 - PR 3: Add the Projects view for recently active jackin' repositories.
