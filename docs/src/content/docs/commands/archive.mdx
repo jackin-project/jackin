@@ -6,23 +6,26 @@ description: "Export persisted state for an ejected instance"
 ## Synopsis
 
 ```bash
-jackin archive <SELECTOR> [--output <PATH>]
+jackin archive [--list]
+jackin archive <SELECTOR> [--output <PATH> | --remove]
 ```
 
 Export a jackin-managed instance state directory to a tar archive. `SELECTOR` must be an instance ID or full container name.
 
-Archive is intentionally read-only for host projects. It packages `~/.jackin/data/<container>/` and writes either to `~/.jackin/archive/<container>.tar` or to the explicit `--output` path.
+Archive is intentionally read-only for host projects. It packages `~/.jackin/data/<container>/` and writes either to `~/.jackin/archive/<container>.tar` or to the explicit `--output` path. Listing and removal operate only on local tar archives under `~/.jackin/archive/`.
 
 ## Arguments
 
 | Argument | Required | Description |
 |---|---|---|
-| `SELECTOR` | Yes | Instance ID or full container name |
+| `SELECTOR` | No | Instance ID or full container name. Required unless `--list` is used. |
 
 ## Options
 
 | Option | Description |
 |---|---|
+| `--list` | List local archives under `~/.jackin/archive/`. |
+| `--remove` | Delete the selected local archive. Accepts an instance ID or full archive/container name. |
 | `--output <PATH>` | Destination tar path. Defaults to `~/.jackin/archive/<container>.tar`. |
 
 ## Behavior
@@ -33,9 +36,14 @@ The archive contains the instance state directory, including `.jackin/instance.j
 
 If the destination archive already exists, jackin refuses instead of overwriting it.
 
+`--list` prints archive name, size, and path. `--remove` deletes a tar archive; it refuses ambiguous short instance IDs and never deletes live state directories.
+
 ## Examples
 
 ```bash
+# List local archives
+jackin archive --list
+
 # Archive by instance ID
 jackin archive k7p9m2xq
 
@@ -44,4 +52,7 @@ jackin archive jackin-agent-smith-k7p9m2xq
 
 # Write to an explicit tar path
 jackin archive k7p9m2xq --output ~/Desktop/k7p9m2xq.tar
+
+# Delete a local archive
+jackin archive k7p9m2xq --remove
 ```

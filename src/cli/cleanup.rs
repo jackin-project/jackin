@@ -54,13 +54,21 @@ pub struct PurgeArgs {
     styles = HELP_STYLES,
     after_long_help = "\
 Examples:
+  jackin archive --list
   jackin archive k7p9m2xq
   jackin archive jackin-agent-smith-k7p9m2xq
+  jackin archive k7p9m2xq --remove
   jackin archive k7p9m2xq --output ~/Desktop/k7p9m2xq.tar"
 )]
 pub struct ArchiveArgs {
     /// Instance ID or full container name to export
-    pub selector: String,
+    pub selector: Option<String>,
+    /// List local archives
+    #[arg(long)]
+    pub list: bool,
+    /// Delete the selected local archive
+    #[arg(long)]
+    pub remove: bool,
     /// Destination tar path. Defaults to ~/.jackin/archive/<container>.tar
     #[arg(long)]
     pub output: Option<PathBuf>,
@@ -120,7 +128,9 @@ mod tests {
     fn archive_help_shows_examples() {
         let help = help_text(&["jackin", "archive", "--help"]);
         assert!(help.contains("Export persisted state"));
+        assert!(help.contains("jackin archive --list"));
         assert!(help.contains("jackin archive k7p9m2xq"));
+        assert!(help.contains("jackin archive k7p9m2xq --remove"));
         assert!(help.contains("--output"));
     }
 }

@@ -5,6 +5,13 @@ use crate::paths::JackinPaths;
 
 use super::attach::{ContainerState, inspect_container_state};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArchiveEntry {
+    pub container_name: String,
+    pub path: PathBuf,
+    pub size_bytes: u64,
+}
+
 pub fn archive_container_state(
     paths: &JackinPaths,
     container_name: &str,
@@ -37,6 +44,65 @@ pub fn archive_container_state(
     builder.append_dir_all(container_name, &state_dir)?;
     builder.finish()?;
     Ok(archive_path)
+}
+
+pub fn list_archives(paths: &JackinPaths) -> anyhow::Result<Vec<ArchiveEntry>> {
+    let mut entries = Vec::new();
+    if !paths.archive_dir.exists() {
+        return Ok(entries);
+    }
+
+    for entry in std::fs::read_dir(&paths.archive_dir)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_file() {
+            continue;
+        }
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("tar") {
+            continue;
+        }
+        let Some(container_name) = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        entries.push(ArchiveEntry {
+            container_name,
+            size_bytes: entry.metadata()?.len(),
+            path,
+        });
+    }
+    entries.sort_by(|a, b| a.container_name.cmp(&b.container_name));
+    Ok(entries)
+}
+
+pub fn remove_archive(paths: &JackinPaths, selector: &str) -> anyhow::Result<PathBuf> {
+    let path = resolve_archive_path(paths, selector)?;
+    std::fs::remove_file(&path)?;
+    Ok(path)
+}
+
+fn resolve_archive_path(paths: &JackinPaths, selector: &str) -> anyhow::Result<PathBuf> {
+    let entries = list_archives(paths)?;
+    let matches: Vec<&ArchiveEntry> = entries
+        .iter()
+        .filter(|entry| {
+            entry.container_name == selector
+                || entry
+                    .container_name
+                    .rsplit_once('-')
+                    .is_some_and(|(_, id)| id == selector)
+        })
+        .collect();
+    match matches.as_slice() {
+        [] => anyhow::bail!("archive not found for `{selector}`"),
+        [entry] => Ok(entry.path.clone()),
+        _ => {
+            anyhow::bail!("archive selector `{selector}` is ambiguous; use the full container name")
+        }
+    }
 }
 
 fn ensure_archive_resources_absent(
@@ -150,5 +216,51 @@ mod tests {
                 .join(format!("{container_name}.tar"))
                 .exists()
         );
+    }
+
+    #[test]
+    fn list_archives_returns_tar_files_sorted() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        std::fs::create_dir_all(&paths.archive_dir).unwrap();
+        std::fs::write(paths.archive_dir.join("jackin-b-bbbbbbbb.tar"), "b").unwrap();
+        std::fs::write(paths.archive_dir.join("jackin-a-aaaaaaaa.tar"), "aa").unwrap();
+        std::fs::write(paths.archive_dir.join("ignore.txt"), "ignored").unwrap();
+
+        let entries = list_archives(&paths).unwrap();
+
+        let names: Vec<&str> = entries
+            .iter()
+            .map(|entry| entry.container_name.as_str())
+            .collect();
+        assert_eq!(names, ["jackin-a-aaaaaaaa", "jackin-b-bbbbbbbb"]);
+        assert_eq!(entries[0].size_bytes, 2);
+    }
+
+    #[test]
+    fn remove_archive_resolves_instance_id() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        std::fs::create_dir_all(&paths.archive_dir).unwrap();
+        let archive = paths.archive_dir.join("jackin-a-aaaaaaaa.tar");
+        std::fs::write(&archive, "archive").unwrap();
+
+        let removed = remove_archive(&paths, "aaaaaaaa").unwrap();
+
+        assert_eq!(removed, archive);
+        assert!(!removed.exists());
+    }
+
+    #[test]
+    fn remove_archive_rejects_ambiguous_instance_id() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        std::fs::create_dir_all(&paths.archive_dir).unwrap();
+        std::fs::write(paths.archive_dir.join("jackin-a-aaaaaaaa.tar"), "a").unwrap();
+        std::fs::write(paths.archive_dir.join("jackin-b-aaaaaaaa.tar"), "b").unwrap();
+
+        let err = remove_archive(&paths, "aaaaaaaa").unwrap_err();
+
+        assert!(err.to_string().contains("ambiguous"), "{err}");
     }
 }

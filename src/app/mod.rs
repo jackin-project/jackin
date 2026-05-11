@@ -1180,7 +1180,48 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
             }
         }
-        Command::Archive(ArchiveArgs { selector, output }) => {
+        Command::Archive(ArchiveArgs {
+            selector,
+            list,
+            remove,
+            output,
+        }) => {
+            anyhow::ensure!(
+                !(list && (remove || output.is_some() || selector.is_some())),
+                "`jackin archive --list` cannot be combined with a selector, --remove, or --output"
+            );
+            if list {
+                let archives = runtime::list_archives(&paths)?;
+                if archives.is_empty() {
+                    println!("No archives.");
+                } else {
+                    for archive in archives {
+                        println!(
+                            "{}\t{} bytes\t{}",
+                            archive.container_name,
+                            archive.size_bytes,
+                            archive.path.display()
+                        );
+                    }
+                }
+                return Ok(());
+            }
+
+            let selector = selector.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "`jackin archive` requires an instance selector unless --list is used"
+                )
+            })?;
+            if remove {
+                anyhow::ensure!(
+                    output.is_none(),
+                    "`jackin archive --remove` cannot be combined with --output"
+                );
+                let archive = runtime::remove_archive(&paths, &selector)?;
+                println!("Removed archive {}.", archive.display());
+                return Ok(());
+            }
+
             let container = if let Some(container) = resolve_instance_reference(&paths, &selector)?
             {
                 container
