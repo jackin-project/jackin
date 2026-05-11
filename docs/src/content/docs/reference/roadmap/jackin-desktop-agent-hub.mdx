@@ -36,7 +36,10 @@ prompts when an agent is blocked or finished.
   systemd install, keep-awake reconciliation, cache warmup, and macOS
   notification dispatch. The Desktop-ready protocol work has started with a
   `daemon/hello` handshake that reports the jackin version, supported protocol
-  range, and currently available daemon capabilities.
+  range, and currently available daemon capabilities. Read-only
+  `workspace/list` and `session/list` discovery now expose saved workspace
+  summaries and running role-container labels without requiring the Desktop app
+  to parse Jackin TOML or Docker state directly.
 - <RepoFile path="src/runtime/launch.rs" /> already bind-mounts the daemon
   socket into role containers as `/jackin/daemon.sock` and injects
   `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock` when available.

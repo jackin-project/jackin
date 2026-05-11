@@ -33,6 +33,14 @@ enum Request {
     Hello {
         protocol: u32,
     },
+    #[serde(rename = "workspace/list")]
+    WorkspaceList {
+        protocol: u32,
+    },
+    #[serde(rename = "session/list")]
+    SessionList {
+        protocol: u32,
+    },
     Status {
         protocol: u32,
     },
@@ -58,6 +66,10 @@ enum Response {
     },
     #[serde(rename = "daemon/hello")]
     Hello(HelloResponse),
+    #[serde(rename = "workspace/list")]
+    WorkspaceList(WorkspaceListResponse),
+    #[serde(rename = "session/list")]
+    SessionList(SessionListResponse),
     Status(StatusResponse),
     Error {
         message: String,
@@ -77,6 +89,41 @@ pub struct HelloResponse {
 pub struct DaemonCapability {
     pub method: String,
     pub since_protocol: u32,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct WorkspaceListResponse {
+    pub workspaces: Vec<DaemonWorkspace>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct DaemonWorkspace {
+    pub name: String,
+    pub workdir: String,
+    pub mount_count: usize,
+    pub readonly_mount_count: usize,
+    pub allowed_role_count: usize,
+    pub default_role: Option<String>,
+    pub last_role: Option<String>,
+    pub default_agent: Option<String>,
+    pub keep_awake: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SessionListResponse {
+    pub sessions: Vec<DaemonSession>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct DaemonSession {
+    pub container_name: String,
+    pub status: String,
+    pub display_name: String,
+    pub workspace: Option<String>,
+    pub role: Option<String>,
+    pub agent: Option<String>,
+    pub branch: Option<String>,
+    pub primary_repo: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -266,6 +313,23 @@ fn handle_request(request: Request, state: &DaemonState) -> Response {
 
     match request {
         Request::Hello { .. } => Response::Hello(hello()),
+        Request::WorkspaceList { .. } => match load_daemon_config(&state.paths) {
+            Ok(config) => Response::WorkspaceList(WorkspaceListResponse {
+                workspaces: workspace_summaries(&config),
+            }),
+            Err(err) => Response::Error {
+                message: format!("{err:#}"),
+            },
+        },
+        Request::SessionList { .. } => {
+            let mut runner = ShellRunner::default();
+            match session_summaries(&mut runner) {
+                Ok(sessions) => Response::SessionList(SessionListResponse { sessions }),
+                Err(err) => Response::Error {
+                    message: format!("{err:#}"),
+                },
+            }
+        }
         Request::Status { .. } => Response::Status(status(state)),
         Request::Shutdown { .. } => {
             state.shutdown.store(true, Ordering::Relaxed);
@@ -298,6 +362,8 @@ fn handle_request(request: Request, state: &DaemonState) -> Response {
 fn validate_protocol(request: &Request) -> std::result::Result<(), String> {
     let protocol = match request {
         Request::Hello { protocol }
+        | Request::WorkspaceList { protocol }
+        | Request::SessionList { protocol }
         | Request::Status { protocol }
         | Request::Shutdown { protocol }
         | Request::WarmCache { protocol }
@@ -328,6 +394,8 @@ fn daemon_capabilities() -> Vec<DaemonCapability> {
         "daemon/status",
         "daemon/shutdown",
         "daemon/warm_cache",
+        "workspace/list",
+        "session/list",
         "notification/send",
     ]
     .into_iter()
@@ -336,6 +404,94 @@ fn daemon_capabilities() -> Vec<DaemonCapability> {
         since_protocol: PROTOCOL_VERSION,
     })
     .collect()
+}
+
+fn load_daemon_config(paths: &JackinPaths) -> Result<crate::config::AppConfig> {
+    match std::fs::read_to_string(&paths.config_file) {
+        Ok(contents) => toml::from_str(&contents).context("decoding jackin config"),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            Ok(crate::config::AppConfig::default())
+        }
+        Err(err) => Err(err).with_context(|| format!("reading {}", paths.config_file.display())),
+    }
+}
+
+fn workspace_summaries(config: &crate::config::AppConfig) -> Vec<DaemonWorkspace> {
+    config
+        .list_workspaces()
+        .into_iter()
+        .map(|(name, workspace)| DaemonWorkspace {
+            name: name.to_string(),
+            workdir: workspace.workdir.clone(),
+            mount_count: workspace.mounts.len(),
+            readonly_mount_count: workspace
+                .mounts
+                .iter()
+                .filter(|mount| mount.readonly)
+                .count(),
+            allowed_role_count: workspace.allowed_roles.len(),
+            default_role: workspace.default_role.clone(),
+            last_role: workspace.last_role.clone(),
+            default_agent: workspace
+                .default_agent
+                .map(|agent| agent.slug().to_string()),
+            keep_awake: workspace.keep_awake.enabled,
+        })
+        .collect()
+}
+
+fn session_summaries(runner: &mut impl CommandRunner) -> Result<Vec<DaemonSession>> {
+    let output = runner.capture(
+        "docker",
+        &[
+            "ps",
+            "--filter",
+            "label=jackin.kind=role",
+            "--format",
+            "{{.Names}}\t{{.Status}}\t{{.Label \"jackin.display_name\"}}\t{{.Label \"jackin.workspace\"}}\t{{.Label \"jackin.role_key\"}}\t{{.Label \"jackin.agent\"}}\t{{.Label \"jackin.branch\"}}\t{{.Label \"jackin.primary_repo\"}}",
+        ],
+        None,
+    )?;
+    Ok(parse_session_rows(&output))
+}
+
+fn parse_session_rows(output: &str) -> Vec<DaemonSession> {
+    output
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(parse_session_row)
+        .collect()
+}
+
+fn parse_session_row(line: &str) -> Option<DaemonSession> {
+    let mut parts = line.splitn(8, '\t');
+    let container_name = parts.next()?.trim();
+    if container_name.is_empty() {
+        return None;
+    }
+    let status = parts.next().unwrap_or("").trim();
+    let display_name = parts.next().unwrap_or("").trim();
+    Some(DaemonSession {
+        container_name: container_name.to_string(),
+        status: status.to_string(),
+        display_name: if display_name.is_empty() {
+            container_name.to_string()
+        } else {
+            display_name.to_string()
+        },
+        workspace: non_empty_label(parts.next()),
+        role: non_empty_label(parts.next()),
+        agent: non_empty_label(parts.next()),
+        branch: non_empty_label(parts.next()),
+        primary_repo: non_empty_label(parts.next()),
+    })
+}
+
+fn non_empty_label(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(String::from)
 }
 
 fn status(state: &DaemonState) -> StatusResponse {
@@ -826,6 +982,12 @@ fn print_response(response: Response) {
             hello.version,
             hello.capabilities.len()
         ),
+        Response::WorkspaceList(response) => {
+            println!("{} workspaces", response.workspaces.len());
+        }
+        Response::SessionList(response) => {
+            println!("{} sessions", response.sessions.len());
+        }
         Response::Status(status) => println!("daemon running: pid {}", status.pid),
         Response::Error { message } => eprintln!("error: {message}"),
     }
@@ -932,6 +1094,8 @@ published_image = "ghcr.io/example/role:latest"
         assert_eq!(response.max_protocol, PROTOCOL_VERSION);
         assert!(methods.contains(&"daemon/hello"));
         assert!(methods.contains(&"daemon/status"));
+        assert!(methods.contains(&"workspace/list"));
+        assert!(methods.contains(&"session/list"));
         assert!(methods.contains(&"notification/send"));
     }
 
@@ -963,6 +1127,94 @@ published_image = "ghcr.io/example/role:latest"
 
         assert!(
             matches!(response, Response::Error { message } if message.contains("protocol mismatch"))
+        );
+    }
+
+    #[test]
+    fn workspace_summaries_expose_saved_workspace_metadata() {
+        let mut config = crate::config::AppConfig::default();
+        config.workspaces.insert(
+            "project".to_string(),
+            crate::workspace::WorkspaceConfig {
+                workdir: "/workspace/project".to_string(),
+                mounts: vec![
+                    crate::workspace::MountConfig {
+                        src: "/host/project".to_string(),
+                        dst: "/workspace/project".to_string(),
+                        readonly: false,
+                        isolation: crate::isolation::MountIsolation::Shared,
+                    },
+                    crate::workspace::MountConfig {
+                        src: "/host/docs".to_string(),
+                        dst: "/workspace/docs".to_string(),
+                        readonly: true,
+                        isolation: crate::isolation::MountIsolation::Shared,
+                    },
+                ],
+                allowed_roles: vec!["agent-smith".to_string()],
+                default_role: Some("agent-smith".to_string()),
+                default_agent: Some(crate::agent::Agent::Codex),
+                last_role: Some("agent-smith".to_string()),
+                keep_awake: crate::workspace::KeepAwakeConfig { enabled: true },
+                ..crate::workspace::WorkspaceConfig::default()
+            },
+        );
+
+        let workspaces = workspace_summaries(&config);
+
+        assert_eq!(
+            workspaces,
+            vec![DaemonWorkspace {
+                name: "project".to_string(),
+                workdir: "/workspace/project".to_string(),
+                mount_count: 2,
+                readonly_mount_count: 1,
+                allowed_role_count: 1,
+                default_role: Some("agent-smith".to_string()),
+                last_role: Some("agent-smith".to_string()),
+                default_agent: Some("codex".to_string()),
+                keep_awake: true,
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_session_rows_uses_launch_labels() {
+        let output = "jackin-agent-smith\tUp 2 minutes\tAgent Smith\tproject\tagent-smith\tclaude\tmain\t/workspace/project\n";
+
+        let sessions = parse_session_rows(output);
+
+        assert_eq!(
+            sessions,
+            vec![DaemonSession {
+                container_name: "jackin-agent-smith".to_string(),
+                status: "Up 2 minutes".to_string(),
+                display_name: "Agent Smith".to_string(),
+                workspace: Some("project".to_string()),
+                role: Some("agent-smith".to_string()),
+                agent: Some("claude".to_string()),
+                branch: Some("main".to_string()),
+                primary_repo: Some("/workspace/project".to_string()),
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_session_rows_falls_back_for_unlabeled_sessions() {
+        let sessions = parse_session_rows("jackin-old\tUp 10 seconds\t\t\t\t\t\t\n");
+
+        assert_eq!(
+            sessions,
+            vec![DaemonSession {
+                container_name: "jackin-old".to_string(),
+                status: "Up 10 seconds".to_string(),
+                display_name: "jackin-old".to_string(),
+                workspace: None,
+                role: None,
+                agent: None,
+                branch: None,
+                primary_repo: None,
+            }]
         );
     }
 

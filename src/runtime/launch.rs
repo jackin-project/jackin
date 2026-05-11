@@ -556,6 +556,7 @@ struct LaunchContext<'a> {
     dind: &'a str,
     selector: &'a RoleSelector,
     agent_display_name: &'a str,
+    workspace_label: &'a str,
     workspace: &'a crate::isolation::materialize::MaterializedWorkspace,
     state: &'a RoleState,
     git: &'a GitIdentity,
@@ -569,6 +570,7 @@ struct LaunchContext<'a> {
     /// targets work end to end.
     github_env: &'a std::collections::BTreeMap<String, String>,
     cache_dir: &'a std::path::Path,
+    role_branch: Option<&'a str>,
     /// Required so `launch_role_runtime` can fire the `keep_awake`
     /// reconciler between `docker run -d` and the foreground `docker
     /// attach`. Without that mid-flight call, caffeinate would never
@@ -593,6 +595,7 @@ fn launch_role_runtime(
         dind,
         selector,
         agent_display_name,
+        workspace_label,
         workspace,
         state,
         git,
@@ -601,6 +604,7 @@ fn launch_role_runtime(
         resolved_env,
         github_env,
         cache_dir,
+        role_branch,
         paths,
     } = ctx;
 
@@ -613,6 +617,11 @@ fn launch_role_runtime(
 
     // Create Docker network
     let role_label = format!("jackin.role={container_name}");
+    let workspace_label = format!("jackin.workspace={workspace_label}");
+    let role_key_label = format!("jackin.role_key={}", selector.key());
+    let agent_label = format!("jackin.agent={}", agent.slug());
+    let branch_label = format!("jackin.branch={}", role_branch.unwrap_or(""));
+    let primary_repo_label = format!("jackin.primary_repo={}", workspace.workdir);
     runner.run(
         "docker",
         &[
@@ -749,6 +758,16 @@ fn launch_role_runtime(
         &class_label,
         "--label",
         &display_label,
+        "--label",
+        &workspace_label,
+        "--label",
+        &role_key_label,
+        "--label",
+        &agent_label,
+        "--label",
+        &branch_label,
+        "--label",
+        &primary_repo_label,
         "--workdir",
         &workspace.workdir,
     ];
@@ -1580,6 +1599,7 @@ fn load_role_with(
             dind: &dind,
             selector,
             agent_display_name: &agent_display_name,
+            workspace_label,
             workspace: &materialized,
             state: &state,
             git: &git,
@@ -1588,6 +1608,7 @@ fn load_role_with(
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,
             cache_dir: &paths.cache_dir,
+            role_branch: opts.role_branch.as_deref(),
             paths,
         };
         let certs_volume = dind_certs_volume(&container_name);
@@ -4248,6 +4269,13 @@ plugins = []
             .find(|call| call.contains("docker run -d -it"))
             .unwrap();
         assert!(run_cmd.contains("jackin.display_name=Agent Smith"));
+        assert!(
+            run_cmd.contains(&format!("jackin.workspace={}", workspace.label)),
+            "role container must label the source workspace for daemon session/list: {run_cmd}"
+        );
+        assert!(run_cmd.contains("jackin.role_key=agent-smith"));
+        assert!(run_cmd.contains("jackin.agent=claude"));
+        assert!(run_cmd.contains("jackin.primary_repo=/workspace"));
     }
 
     #[test]
