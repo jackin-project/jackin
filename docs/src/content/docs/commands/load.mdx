@@ -80,7 +80,7 @@ jackin load the-architect --role-branch feat/my-pr
 5. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
 6. Prompts for interactive environment variables declared in the manifest
 7. Generates and builds a derived Docker image, including declared Claude plugins (cached if unchanged; branch builds ignore `published_image` and always build from source)
-8. Checks the local instance index for unfinished work in the same workspace or directory before creating a fresh runtime; matching-role restore candidates can be rebuilt from the prompt, related running/stopped role containers can be recovered in place, and missing related instances are surfaced with `jackin hardline <instance>` rebuild guidance.
+8. Checks the local instance index for unfinished work in the same workspace or directory before creating a fresh runtime; matching-role restore candidates can be rebuilt from the prompt, and related role instances can be recovered or rebuilt in place from the saved manifest source/ref.
 9. Creates a per-agent Docker network and DinD sidecar
 10. Launches the agent container with all resolved mounts and environment variables
 11. Runs runtime hooks if declared (`setup_once`, `source`, then `preflight`)

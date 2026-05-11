@@ -1544,6 +1544,12 @@ fn load_role_with(
                     hardline_agent(paths, &container, runner)?;
                     return Ok(container);
                 }
+                RestoreResolution::RebuildRelatedRole(manifest) => {
+                    let selector = RoleSelector::parse(&manifest.role_key)?;
+                    let opts = related_restore_load_options(opts, &manifest)?;
+                    load_role(paths, config, &selector, workspace, runner, &opts)?;
+                    return Ok(manifest.container_base);
+                }
             }
         };
 
@@ -2023,6 +2029,7 @@ enum RestoreResolution {
     StartFresh,
     RestoreCurrentRole(String),
     RecoverRelatedRole(String),
+    RebuildRelatedRole(Box<InstanceManifest>),
 }
 
 #[allow(clippy::too_many_lines)]
@@ -2236,13 +2243,9 @@ fn recover_related_restore_candidate(
         ContainerState::Running | ContainerState::Stopped { .. } => Ok(
             RestoreResolution::RecoverRelatedRole(candidate.manifest.container_base.clone()),
         ),
-        ContainerState::NotFound => {
-            anyhow::bail!(
-                "run `jackin hardline {}` to rebuild role `{}` from jackin-managed local state before starting a fresh load",
-                candidate.manifest.container_base,
-                candidate.manifest.role_key
-            );
-        }
+        ContainerState::NotFound => Ok(RestoreResolution::RebuildRelatedRole(Box::new(
+            candidate.manifest.clone(),
+        ))),
         ContainerState::InspectUnavailable(ref reason) => {
             anyhow::bail!(
                 "cannot inspect related jackin instance `{}` because Docker is unavailable or returned an unexpected response: {reason}",
@@ -2250,6 +2253,30 @@ fn recover_related_restore_candidate(
             );
         }
     }
+}
+
+fn related_restore_load_options(
+    current: &LoadOptions,
+    manifest: &InstanceManifest,
+) -> anyhow::Result<LoadOptions> {
+    Ok(LoadOptions {
+        no_intro: current.no_intro,
+        debug: current.debug,
+        rebuild: current.rebuild,
+        force: current.force,
+        op_runner: None,
+        host_env: current.host_env.clone(),
+        agent: Some(manifest.agent_runtime.parse().map_err(|_| {
+            anyhow::anyhow!(
+                "instance `{}` has unknown agent runtime {:?}",
+                manifest.container_base,
+                manifest.agent_runtime
+            )
+        })?),
+        role_branch: manifest.role_source_ref.clone(),
+        restore_container_base: Some(manifest.container_base.clone()),
+        restore_role_source_git: Some(manifest.role_source_git.clone()),
+    })
 }
 
 fn related_restore_candidate_action_label(candidate: &RelatedRestoreCandidate) -> String {
@@ -2260,7 +2287,13 @@ fn related_restore_candidate_action_label(candidate: &RelatedRestoreCandidate) -
                 related_restore_candidate_label_for_prompt(candidate)
             )
         }
-        ContainerState::NotFound | ContainerState::InspectUnavailable(_) => {
+        ContainerState::NotFound => {
+            format!(
+                "Rebuild now {}",
+                related_restore_candidate_label_for_prompt(candidate)
+            )
+        }
+        ContainerState::InspectUnavailable(_) => {
             format!(
                 "Recover with hardline {}",
                 related_restore_candidate_label_for_prompt(candidate)
@@ -6630,7 +6663,7 @@ plugins = []
     }
 
     #[test]
-    fn missing_related_restore_candidate_still_requires_hardline_rebuild() {
+    fn missing_related_restore_candidate_rebuilds_in_place() {
         let candidate = RelatedRestoreCandidate {
             manifest: InstanceManifest::new(NewInstanceManifest {
                 container_base: "jackin-workspace-thearchitect-k7p9m2xq",
@@ -6654,11 +6687,60 @@ plugins = []
             docker_state: ContainerState::NotFound,
         };
 
-        let error = recover_related_restore_candidate(&candidate).unwrap_err();
+        let resolution = recover_related_restore_candidate(&candidate).unwrap();
 
-        assert!(error.to_string().contains("jackin hardline"), "{error}");
+        assert!(matches!(
+            resolution,
+            RestoreResolution::RebuildRelatedRole(ref manifest)
+                if manifest.container_base == "jackin-workspace-thearchitect-k7p9m2xq"
+        ));
+        assert!(related_restore_candidate_action_label(&candidate).starts_with("Rebuild now"));
+    }
+
+    #[test]
+    fn related_restore_load_options_use_manifest_source_ref_and_agent() {
+        let mut manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: "jackin-workspace-thearchitect-k7p9m2xq",
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "the-architect",
+            role_display_name: "The Architect",
+            agent_runtime: crate::agent::Agent::Codex,
+            role_source_git: "https://example.invalid/the-architect.git",
+            role_source_ref: Some("restore-ref"),
+            image_tag: "jackin-the-architect",
+            docker: DockerResources {
+                role_container: "jackin-workspace-thearchitect-k7p9m2xq".to_string(),
+                dind_container: "jackin-workspace-thearchitect-k7p9m2xq-dind".to_string(),
+                network: "jackin-workspace-thearchitect-k7p9m2xq-net".to_string(),
+                certs_volume: "jackin-workspace-thearchitect-k7p9m2xq-dind-certs".to_string(),
+            },
+        });
+        manifest.agent_runtime = "codex".to_string();
+        let current = LoadOptions::for_load(false, true, false);
+
+        let opts = related_restore_load_options(&current, &manifest).unwrap();
+
+        assert!(opts.no_intro);
+        assert!(opts.debug);
+        assert_eq!(opts.agent, Some(crate::agent::Agent::Codex));
+        assert_eq!(opts.role_branch.as_deref(), Some("restore-ref"));
+        assert_eq!(
+            opts.restore_container_base.as_deref(),
+            Some("jackin-workspace-thearchitect-k7p9m2xq")
+        );
+        assert_eq!(
+            opts.restore_role_source_git.as_deref(),
+            Some("https://example.invalid/the-architect.git")
+        );
         assert!(
-            related_restore_candidate_action_label(&candidate).starts_with("Recover with hardline")
+            related_restore_candidate_action_label(&RelatedRestoreCandidate {
+                manifest,
+                docker_state: ContainerState::NotFound,
+            })
+            .starts_with("Rebuild now")
         );
     }
 
