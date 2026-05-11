@@ -169,7 +169,7 @@ pub fn run(cli: Cli) -> Result<()> {
             runtime::reconcile_keep_awake(&paths, &mut runner);
             result
         }
-        Command::Hardline(HardlineArgs { selector }) => {
+        Command::Hardline(HardlineArgs { selector, inspect }) => {
             let container = if let Some(sel) = selector {
                 if let Some(container) = resolve_instance_reference(&paths, &sel)? {
                     container
@@ -183,6 +183,13 @@ pub fn run(cli: Cli) -> Result<()> {
                 let cwd = std::env::current_dir()?;
                 resolve_running_container_from_context(&paths, &config, &cwd, &mut runner)?
             };
+            if inspect {
+                println!(
+                    "{}",
+                    runtime::inspect_hardline_instance(&paths, &container, &mut runner)?
+                );
+                return Ok(());
+            }
             runtime::reconcile_keep_awake(&paths, &mut runner);
             let result = if let Some(manifest) =
                 restore_candidate_for_hardline(&paths, &container, &mut runner)?

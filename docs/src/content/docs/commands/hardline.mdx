@@ -6,7 +6,7 @@ description: "Reattach to a running agent's session, or restart a crashed one"
 ## Synopsis
 
 ```bash
-jackin hardline [SELECTOR]
+jackin hardline [--inspect] [SELECTOR]
 ```
 
 Reconnect your terminal to an agent container. Use this when you've closed your terminal but the agent is still running in the background, or when an agent crashed and you want to resume the same session without rebuilding the whole stack.
@@ -20,6 +20,12 @@ When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspa
 | Argument | Required | Description |
 |---|---|---|
 | `SELECTOR` | No | Role selector (e.g., `agent-smith`), instance ID, or full container name (e.g., `jackin-agent-smith-clone-1`) |
+
+## Options
+
+| Option | Description |
+|---|---|
+| `--inspect` | Resolve the same target but print the instance manifest, role/DinD Docker state, Docker network state, cert volume name, and mount-state summary without attaching or restarting anything. |
 
 ## Behavior
 
@@ -39,6 +45,8 @@ If the DinD sidecar has been removed, `jackin hardline` recreates the derived ja
 
 If the role container itself was deleted, jackin can rebuild the runtime around jackin-managed local state such as preserved worktrees/clones. Changes written only to the deleted container's writable layer are gone unless they were also persisted through a mounted path.
 
+`--inspect` is read-only. It works from the current workspace or ad-hoc directory, or with an explicit selector/instance ID/container name, and reports local manifest details even when Docker is unavailable.
+
 ## Terminal close vs. exit
 
 Closing your terminal tab **does not** shut the container down. The foreground session is just a `docker attach`; when it dies, the container keeps running in the background with its own TTY. `jackin hardline <agent>` reconnects to the same live process.
@@ -53,6 +61,12 @@ jackin hardline agent-smith
 
 # Reconnect from the current workspace or ad-hoc directory
 jackin hardline
+
+# Inspect the detected instance without attaching
+jackin hardline --inspect
+
+# Inspect a specific instance ID
+jackin hardline --inspect k7p9m2xq
 
 # Reconnect to a specific container by name
 jackin hardline jackin-agent-smith-clone-1

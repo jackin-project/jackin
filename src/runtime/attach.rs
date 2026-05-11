@@ -207,6 +207,135 @@ pub fn hardline_agent(
     Ok(())
 }
 
+pub fn inspect_hardline_instance(
+    paths: &JackinPaths,
+    container_name: &str,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<String> {
+    let state_dir = paths.data_dir.join(container_name);
+    let manifest = InstanceManifest::read(&state_dir).ok();
+    let dind_name = manifest.as_ref().map_or_else(
+        || format!("{container_name}-dind"),
+        |manifest| manifest.docker.dind_container.clone(),
+    );
+    let network_name = manifest.as_ref().map_or_else(
+        || format!("{container_name}-net"),
+        |manifest| manifest.docker.network.clone(),
+    );
+    let certs_volume = manifest.as_ref().map_or_else(
+        || dind_certs_volume(container_name),
+        |manifest| manifest.docker.certs_volume.clone(),
+    );
+
+    let role_state = describe_container_state(inspect_container_state(runner, container_name));
+    let dind_state = describe_container_state(inspect_container_state(runner, &dind_name));
+    let network_state = describe_network_state(inspect_docker_network(runner, &network_name));
+    let mounts = describe_mount_state(&state_dir);
+
+    let mut lines = vec![
+        format!("Instance: {container_name}"),
+        format!("State directory: {}", state_dir.display()),
+    ];
+    if let Some(manifest) = manifest {
+        lines.extend([
+            format!("Instance ID: {}", manifest.instance_id),
+            format!("Workspace: {}", manifest.workspace_label),
+            format!("Role: {}", manifest.role_key),
+            format!("Agent: {}", manifest.agent_runtime),
+            format!("Status: {}", describe_instance_status(manifest.status)),
+            format!("Updated: {}", manifest.updated_at),
+        ]);
+        if let Some(outcome) = manifest.last_attach_outcome {
+            lines.push(format!("Last attach outcome: {outcome}"));
+        }
+        if let Some(source_ref) = manifest.role_source_ref {
+            lines.push(format!(
+                "Role source: {} ({source_ref})",
+                manifest.role_source_git
+            ));
+        } else if !manifest.role_source_git.is_empty() {
+            lines.push(format!("Role source: {}", manifest.role_source_git));
+        }
+    } else {
+        lines.push("Manifest: missing".to_string());
+    }
+
+    lines.extend([
+        format!("Role container: {container_name} ({role_state})"),
+        format!("DinD container: {dind_name} ({dind_state})"),
+        format!("Docker network: {network_name} ({network_state})"),
+        format!("DinD cert volume: {certs_volume}"),
+        format!("Mounts: {mounts}"),
+    ]);
+    Ok(lines.join("\n"))
+}
+
+fn describe_container_state(state: ContainerState) -> String {
+    match state {
+        ContainerState::Running => "running".to_string(),
+        ContainerState::Stopped {
+            exit_code,
+            oom_killed: false,
+        } => format!("stopped exit:{exit_code}"),
+        ContainerState::Stopped {
+            oom_killed: true, ..
+        } => "stopped oom_killed".to_string(),
+        ContainerState::NotFound => "missing".to_string(),
+        ContainerState::InspectUnavailable(reason) => format!("unavailable: {reason}"),
+    }
+}
+
+fn describe_network_state(state: DockerNetworkState) -> String {
+    match state {
+        DockerNetworkState::Present => "present".to_string(),
+        DockerNetworkState::NotFound => "missing".to_string(),
+        DockerNetworkState::InspectUnavailable(reason) => format!("unavailable: {reason}"),
+    }
+}
+
+const fn describe_instance_status(status: InstanceStatus) -> &'static str {
+    match status {
+        InstanceStatus::Active => "active",
+        InstanceStatus::Running => "running",
+        InstanceStatus::CleanExited => "clean_exited",
+        InstanceStatus::Crashed => "crashed",
+        InstanceStatus::PreservedDirty => "preserved_dirty",
+        InstanceStatus::PreservedUnpushed => "preserved_unpushed",
+        InstanceStatus::RestoreAvailable => "restore_available",
+        InstanceStatus::Superseded => "superseded",
+        InstanceStatus::Purged => "purged",
+        InstanceStatus::FailedSetup => "failed_setup",
+    }
+}
+
+fn describe_mount_state(state_dir: &std::path::Path) -> String {
+    let Ok(records) = crate::isolation::state::read_records(state_dir) else {
+        return "unknown".to_string();
+    };
+    if records.is_empty() {
+        return "none".to_string();
+    }
+    let dirty = records
+        .iter()
+        .filter(|record| {
+            record.cleanup_status == crate::isolation::state::CleanupStatus::PreservedDirty
+        })
+        .count();
+    let unpushed = records
+        .iter()
+        .filter(|record| {
+            record.cleanup_status == crate::isolation::state::CleanupStatus::PreservedUnpushed
+        })
+        .count();
+    if dirty > 0 || unpushed > 0 {
+        return format!(
+            "{} total, {dirty} dirty, {unpushed} unpushed",
+            records.len()
+        );
+    }
+    format!("{} total", records.len())
+}
+
 fn restore_missing_dind_sidecar(
     container_name: &str,
     dind: &str,
@@ -497,6 +626,117 @@ mod tests {
         assert_eq!(manifest.status, InstanceStatus::RestoreAvailable);
         let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
         assert_eq!(index.instances[0].status, InstanceStatus::RestoreAvailable);
+    }
+
+    #[test]
+    fn inspect_hardline_instance_reports_state_without_attaching() {
+        let (_tmp, paths) = test_paths();
+        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Codex,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: Some("feature/role"),
+            image_tag: "jackin-agent-smith",
+            docker: crate::instance::DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest.mark_status(InstanceStatus::PreservedDirty);
+        manifest.last_attach_outcome = Some("exit:137".to_string());
+        manifest
+            .write(&paths.data_dir.join(container_name))
+            .unwrap();
+        let mut runner = FakeRunner::with_capture_queue([
+            "true 0 false".to_string(),
+            "false 137 false".to_string(),
+            "[]".to_string(),
+        ]);
+
+        let report = inspect_hardline_instance(&paths, container_name, &mut runner).unwrap();
+
+        assert!(report.contains("Instance ID: k7p9m2xq"), "{report}");
+        assert!(report.contains("Workspace: workspace"), "{report}");
+        assert!(report.contains("Role: agent-smith"), "{report}");
+        assert!(report.contains("Agent: codex"), "{report}");
+        assert!(report.contains("Status: preserved_dirty"), "{report}");
+        assert!(report.contains("Last attach outcome: exit:137"), "{report}");
+        assert!(report.contains("Role container: jackin-workspace-agentsmith-k7p9m2xq (running)"));
+        assert!(report.contains(
+            "DinD container: jackin-workspace-agentsmith-k7p9m2xq-dind (stopped exit:137)"
+        ));
+        assert!(
+            report.contains("Docker network: jackin-workspace-agentsmith-k7p9m2xq-net (present)")
+        );
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker start") || c.contains("docker attach"))
+        );
+    }
+
+    #[test]
+    fn inspect_hardline_instance_still_reports_manifest_when_docker_unavailable() {
+        let (_tmp, paths) = test_paths();
+        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: crate::instance::DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest
+            .write(&paths.data_dir.join(container_name))
+            .unwrap();
+        let mut runner = FakeRunner::default();
+        runner.fail_with.push((
+            "docker inspect".to_string(),
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+        ));
+        runner.fail_with.push((
+            "docker network inspect".to_string(),
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+        ));
+
+        let report = inspect_hardline_instance(&paths, container_name, &mut runner).unwrap();
+
+        assert!(report.contains("Workspace: workspace"), "{report}");
+        assert!(
+            report.contains("Role container: jackin-workspace-agentsmith-k7p9m2xq (unavailable:")
+        );
+        assert!(
+            report
+                .contains("Docker network: jackin-workspace-agentsmith-k7p9m2xq-net (unavailable:")
+        );
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker start") || c.contains("docker attach"))
+        );
     }
 
     #[test]
