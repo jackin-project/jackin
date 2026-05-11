@@ -35,6 +35,7 @@ pub(super) fn handle_list_key(
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             state.inline_role_picker = None;
+            state.inline_agent_picker = None;
             let selected = state.selected.saturating_sub(1);
             if selected != state.selected {
                 reset_list_mount_scroll(state);
@@ -44,6 +45,7 @@ pub(super) fn handle_list_key(
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
             state.inline_role_picker = None;
+            state.inline_agent_picker = None;
             let selected = (state.selected + 1).min(state.row_count() - 1);
             if selected != state.selected {
                 reset_list_mount_scroll(state);
@@ -258,6 +260,36 @@ pub(super) fn handle_inline_role_picker(
             }
             ModalOutcome::Cancel => {
                 state.inline_role_picker = None;
+                InputOutcome::Continue
+            }
+            ModalOutcome::Continue => InputOutcome::Continue,
+        },
+    }
+}
+
+pub(super) fn handle_inline_agent_picker(
+    state: &mut ManagerState<'_>,
+    key: KeyEvent,
+) -> InputOutcome {
+    let Some((_, picker)) = state.inline_agent_picker.as_mut() else {
+        return InputOutcome::Continue;
+    };
+    match key.code {
+        KeyCode::Left | KeyCode::Char('h' | 'H') => {
+            scroll_focused_mount_block(state, -8);
+            InputOutcome::Continue
+        }
+        KeyCode::Right | KeyCode::Char('l' | 'L') => {
+            scroll_focused_mount_block(state, 8);
+            InputOutcome::Continue
+        }
+        _ => match picker.handle_key(key) {
+            ModalOutcome::Commit(agent) => {
+                state.inline_agent_picker = None;
+                InputOutcome::LaunchWithRuntimeAgent(agent)
+            }
+            ModalOutcome::Cancel => {
+                state.inline_agent_picker = None;
                 InputOutcome::Continue
             }
             ModalOutcome::Continue => InputOutcome::Continue,

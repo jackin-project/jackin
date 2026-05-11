@@ -31,7 +31,8 @@ impl ConsoleState {
         config: &AppConfig,
         cwd: &std::path::Path,
         input: LoadWorkspaceInput,
-    ) -> anyhow::Result<Option<(RoleSelector, ResolvedWorkspace)>> {
+    ) -> anyhow::Result<Option<(RoleSelector, ResolvedWorkspace, Option<crate::agent::Agent>)>>
+    {
         let Some(choice) = build_workspace_choice(config, cwd, &input)? else {
             // Workspace was deleted between keypress and dispatch.
             return Ok(None);
@@ -44,7 +45,8 @@ impl ConsoleState {
         {
             let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
             self.pending_launch = None;
-            return Ok(Some((role, workspace)));
+            self.pending_launch_role = None;
+            return Ok(Some((role, workspace, None)));
         }
 
         match roles.len() {
@@ -60,18 +62,21 @@ impl ConsoleState {
                     });
                 }
                 self.pending_launch = None;
+                self.pending_launch_role = None;
                 Ok(None)
             }
             1 => {
                 let role = roles.swap_remove(0);
                 let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
                 self.pending_launch = None;
-                Ok(Some((role, workspace)))
+                self.pending_launch_role = None;
+                Ok(Some((role, workspace, None)))
             }
             _ => {
                 // Multiple eligible: pin `pending_launch` so the
                 // `LaunchWithAgent` arm rebuilds the choice on commit.
                 self.pending_launch = Some(input);
+                self.pending_launch_role = None;
                 if let ConsoleStage::Manager(ms) = &mut self.stage {
                     ms.inline_role_picker = Some(
                         crate::console::widgets::role_picker::RolePickerState::with_confirm_label(
@@ -316,12 +321,36 @@ fn disable_console_mouse_capture<W: std::io::Write>(out: &mut W) -> std::io::Res
     out.flush()
 }
 
+fn maybe_open_inline_agent_picker(
+    state: &mut ConsoleState,
+    paths: &JackinPaths,
+    role: RoleSelector,
+    workspace: &ResolvedWorkspace,
+) -> bool {
+    let Some(agents) = crate::app::context::supported_agents_requiring_prompt(
+        paths,
+        &role,
+        workspace.default_agent,
+    ) else {
+        return false;
+    };
+
+    let ConsoleStage::Manager(ms) = &mut state.stage;
+    ms.inline_agent_picker = Some((
+        role.clone(),
+        crate::console::widgets::agent_choice::AgentChoiceState::with_choices(agents),
+    ));
+    ms.inline_role_picker = None;
+    state.pending_launch_role = Some(role);
+    true
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn run_console(
     mut config: AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
-) -> anyhow::Result<Option<(RoleSelector, ResolvedWorkspace)>> {
+) -> anyhow::Result<Option<(RoleSelector, ResolvedWorkspace, Option<crate::agent::Agent>)>> {
     use std::time::Duration;
 
     use crossterm::ExecutableCommand;
@@ -449,23 +478,43 @@ pub fn run_console(
                             break 'main Ok(None);
                         }
                         manager::InputOutcome::LaunchNamed(name) => {
-                            match state.dispatch_launch_for_workspace(
-                                &config,
-                                cwd,
-                                LoadWorkspaceInput::Saved(name),
-                            ) {
-                                Ok(Some(outcome)) => break 'main Ok(Some(outcome)),
+                            let input = LoadWorkspaceInput::Saved(name);
+                            match state.dispatch_launch_for_workspace(&config, cwd, input.clone()) {
+                                Ok(Some((role, workspace, agent))) => {
+                                    if agent.is_none()
+                                        && maybe_open_inline_agent_picker(
+                                            &mut state,
+                                            paths,
+                                            role.clone(),
+                                            &workspace,
+                                        )
+                                    {
+                                        state.pending_launch = Some(input);
+                                    } else {
+                                        break 'main Ok(Some((role, workspace, agent)));
+                                    }
+                                }
                                 Ok(None) => {}
                                 Err(e) => break 'main Err(e),
                             }
                         }
                         manager::InputOutcome::LaunchCurrentDir => {
-                            match state.dispatch_launch_for_workspace(
-                                &config,
-                                cwd,
-                                LoadWorkspaceInput::CurrentDir,
-                            ) {
-                                Ok(Some(outcome)) => break 'main Ok(Some(outcome)),
+                            let input = LoadWorkspaceInput::CurrentDir;
+                            match state.dispatch_launch_for_workspace(&config, cwd, input.clone()) {
+                                Ok(Some((role, workspace, agent))) => {
+                                    if agent.is_none()
+                                        && maybe_open_inline_agent_picker(
+                                            &mut state,
+                                            paths,
+                                            role.clone(),
+                                            &workspace,
+                                        )
+                                    {
+                                        state.pending_launch = Some(input);
+                                    } else {
+                                        break 'main Ok(Some((role, workspace, agent)));
+                                    }
+                                }
                                 Ok(None) => {}
                                 Err(e) => break 'main Err(e),
                             }
@@ -480,7 +529,35 @@ pub fn run_console(
                                 match preview::resolve_selected_workspace(
                                     &config, cwd, &choice, &role,
                                 ) {
-                                    Ok(workspace) => break 'main Ok(Some((role, workspace))),
+                                    Ok(workspace) => {
+                                        if maybe_open_inline_agent_picker(
+                                            &mut state,
+                                            paths,
+                                            role.clone(),
+                                            &workspace,
+                                        ) {
+                                            state.pending_launch = Some(input);
+                                        } else {
+                                            state.pending_launch_role = None;
+                                            break 'main Ok(Some((role, workspace, None)));
+                                        }
+                                    }
+                                    Err(e) => break 'main Err(e),
+                                }
+                            }
+                        }
+                        manager::InputOutcome::LaunchWithRuntimeAgent(agent) => {
+                            if let (Some(input), Some(role)) = (
+                                state.pending_launch.take(),
+                                state.pending_launch_role.take(),
+                            ) && let Some(choice) = build_workspace_choice(&config, cwd, &input)?
+                            {
+                                match preview::resolve_selected_workspace(
+                                    &config, cwd, &choice, &role,
+                                ) {
+                                    Ok(workspace) => {
+                                        break 'main Ok(Some((role, workspace, Some(agent))));
+                                    }
                                     Err(e) => break 'main Err(e),
                                 }
                             }

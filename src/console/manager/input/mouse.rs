@@ -139,6 +139,7 @@ pub fn handle_mouse_with_config(
                 if selected != state.selected {
                     reset_list_mount_scroll(state);
                     state.selected = selected;
+                    state.inline_agent_picker = None;
                 }
             }
         }
@@ -478,12 +479,21 @@ fn list_scroll_areas(
     let summary = state.selected_workspace_summary()?;
     let workspace = config.workspaces.get(&summary.name)?;
     let mounts_h = mount_block_height(workspace.mounts.as_slice());
-    let picker_role = state.inline_role_picker.as_ref().and_then(|picker| {
-        picker
-            .list_state
-            .selected
-            .and_then(|idx| picker.filtered.get(idx).cloned())
-    });
+    let picker_role = state
+        .inline_role_picker
+        .as_ref()
+        .and_then(|picker| {
+            picker
+                .list_state
+                .selected
+                .and_then(|idx| picker.filtered.get(idx).cloned())
+        })
+        .or_else(|| {
+            state
+                .inline_agent_picker
+                .as_ref()
+                .map(|(role, _)| role.clone())
+        });
     let global_rows = picker_role.as_ref().map_or_else(
         || {
             config

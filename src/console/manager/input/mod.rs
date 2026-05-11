@@ -40,6 +40,8 @@ pub enum InputOutcome {
     /// when the picker opened), resolves it against this role, and
     /// breaks with `Ok(Some((role, ws)))`.
     LaunchWithAgent(crate::selector::RoleSelector),
+    /// Operator committed a runtime agent after choosing a role.
+    LaunchWithRuntimeAgent(crate::agent::Agent),
 }
 
 #[allow(clippy::too_many_lines)]
@@ -58,6 +60,9 @@ pub fn handle_key(
     // `Continue`, but `AgentPicker` commit produces `LaunchWithAgent`.
     if state.list_modal.is_some() {
         return Ok(list::handle_list_modal(state, key));
+    }
+    if state.inline_agent_picker.is_some() {
+        return Ok(list::handle_inline_agent_picker(state, key));
     }
     if state.inline_role_picker.is_some() {
         return Ok(list::handle_inline_role_picker(state, key));

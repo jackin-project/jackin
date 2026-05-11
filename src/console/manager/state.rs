@@ -63,6 +63,10 @@ pub struct ManagerState<'a> {
     /// Editor / `CreatePrelude` stages own their own modal slots.
     pub list_modal: Option<Modal<'a>>,
     pub inline_role_picker: Option<RolePickerState>,
+    pub inline_agent_picker: Option<(
+        crate::selector::RoleSelector,
+        crate::console::widgets::agent_choice::AgentChoiceState,
+    )>,
     pub list_mounts_scroll_x: u16,
     pub list_global_mounts_scroll_x: u16,
     pub list_role_global_mounts_scroll_x: u16,
@@ -665,6 +669,7 @@ impl ManagerState<'_> {
             toast: None,
             list_modal: None,
             inline_role_picker: None,
+            inline_agent_picker: None,
             list_mounts_scroll_x: 0,
             list_global_mounts_scroll_x: 0,
             list_role_global_mounts_scroll_x: 0,

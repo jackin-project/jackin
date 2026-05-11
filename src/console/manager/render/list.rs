@@ -55,10 +55,13 @@ pub(super) fn render_list_body(
         }
     }
 
-    if let Some(picker) = state.inline_role_picker.as_ref()
-        && let Some(summary) = state.selected_workspace_summary()
-    {
-        render_role_picker_sidebar(frame, list_area, &summary.name, picker);
+    if let Some((role, picker)) = state.inline_agent_picker.as_ref() {
+        render_agent_picker_sidebar(frame, list_area, &role.key(), picker);
+    } else if let Some(picker) = state.inline_role_picker.as_ref() {
+        let title = state
+            .selected_workspace_summary()
+            .map_or("Current directory", |summary| summary.name.as_str());
+        render_role_picker_sidebar(frame, list_area, title, picker);
     } else {
         // Left: [Current directory] + saved workspaces + blank spacer +
         // [+ New workspace]. The spacer is visual-only; state keeps logical row
@@ -132,6 +135,43 @@ fn render_role_picker_sidebar(
         .highlight_symbol("▸ ");
     let mut list_state = ListState::default();
     list_state.select(picker.list_state.selected);
+    frame.render_stateful_widget(list, area, &mut list_state);
+}
+
+fn render_agent_picker_sidebar(
+    frame: &mut Frame,
+    area: Rect,
+    role_name: &str,
+    picker: &crate::console::widgets::agent_choice::AgentChoiceState,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            format!(" {role_name} "),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let items: Vec<ListItem> = picker
+        .choices
+        .iter()
+        .map(|agent| {
+            ListItem::new(Line::from(
+                crate::console::widgets::agent_choice::agent_picker_label(*agent),
+            ))
+        })
+        .collect();
+    let list = List::new(items)
+        .block(block)
+        .style(Style::default().fg(PHOSPHOR_GREEN))
+        .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
+        .highlight_symbol("▸ ");
+    let mut list_state = ListState::default();
+    list_state.select(
+        picker
+            .choices
+            .iter()
+            .position(|agent| *agent == picker.focused),
+    );
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
@@ -340,7 +380,13 @@ fn render_details_pane(
     let picker_role = state
         .inline_role_picker
         .as_ref()
-        .and_then(selected_picker_role);
+        .and_then(selected_picker_role)
+        .or_else(|| {
+            state
+                .inline_agent_picker
+                .as_ref()
+                .map(|(role, _)| role.clone())
+        });
     let global_display = ws_config.and_then(|_| {
         let rows = picker_role.as_ref().map_or_else(
             || {
@@ -359,7 +405,9 @@ fn render_details_pane(
             rows,
         })
     });
-    let agent_count = if state.inline_role_picker.is_some() {
+    let inline_picker_active =
+        state.inline_role_picker.is_some() || state.inline_agent_picker.is_some();
+    let agent_count = if inline_picker_active {
         0
     } else {
         agents_block_agent_count(ws_config, config)
@@ -378,7 +426,7 @@ fn render_details_pane(
     if show_envs {
         constraints.push(Constraint::Length(env_block_height(ws_config)));
     }
-    if state.inline_role_picker.is_none() {
+    if !inline_picker_active {
         constraints.push(Constraint::Length(agents_block_height(agent_count)));
     }
 
@@ -413,7 +461,7 @@ fn render_details_pane(
         render_environments_subpanel(frame, rows[idx], ws_config);
         idx += 1;
     }
-    if state.inline_role_picker.is_none() {
+    if !inline_picker_active {
         render_agents_subpanel(frame, rows[idx], ws_config, config);
     }
 }

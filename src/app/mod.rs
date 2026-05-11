@@ -142,7 +142,9 @@ pub fn run(cli: Cli) -> Result<()> {
             runner.debug = debug;
             tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
-            let Some((class, workspace)) = console::run_console(config, &paths, &cwd)? else {
+            let Some((class, workspace, selected_agent)) =
+                console::run_console(config, &paths, &cwd)?
+            else {
                 return Ok(());
             };
 
@@ -156,7 +158,10 @@ pub fn run(cli: Cli) -> Result<()> {
             }
 
             let mut opts = runtime::LoadOptions::for_launch(debug);
-            opts.agent = prompt_agent_choice_if_needed(&paths, &class, workspace.default_agent)?;
+            opts.agent = match selected_agent {
+                Some(agent) => Some(agent),
+                None => prompt_agent_choice_if_needed(&paths, &class, workspace.default_agent)?,
+            };
             runtime::reconcile_keep_awake(&paths, &mut runner);
             let result =
                 runtime::load_role(&paths, &mut config, &class, &workspace, &mut runner, &opts);

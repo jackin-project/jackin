@@ -350,7 +350,7 @@ pub(crate) fn prompt_agent_choice_if_needed(
 /// default set, single-agent role, or unreadable manifest). Split from
 /// the prompting wrapper so the gating logic is unit-testable without
 /// stdin / dialoguer scaffolding.
-fn supported_agents_requiring_prompt(
+pub(crate) fn supported_agents_requiring_prompt(
     paths: &JackinPaths,
     selector: &RoleSelector,
     workspace_default: Option<crate::agent::Agent>,

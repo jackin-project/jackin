@@ -188,7 +188,23 @@ pub fn render(
 
         let footer_items: Vec<FooterItem> = match &state.stage {
             ManagerStage::List => {
-                if state.inline_role_picker.is_some() {
+                if state.inline_agent_picker.is_some() {
+                    let mut items = vec![
+                        FooterItem::Key("\u{2191}\u{2193}"),
+                        FooterItem::Sep,
+                        FooterItem::Key("Enter"),
+                        FooterItem::Text("launch"),
+                        FooterItem::GroupSep,
+                        FooterItem::Key("Esc"),
+                        FooterItem::Text("return to workspaces"),
+                    ];
+                    if state.list_scroll_focus.is_some() {
+                        items.push(FooterItem::GroupSep);
+                        items.push(FooterItem::Key("←/→"));
+                        items.push(FooterItem::Text("scroll focused block"));
+                    }
+                    items
+                } else if state.inline_role_picker.is_some() {
                     let mut items = vec![
                         FooterItem::Key("\u{2191}\u{2193}"),
                         FooterItem::Sep,
