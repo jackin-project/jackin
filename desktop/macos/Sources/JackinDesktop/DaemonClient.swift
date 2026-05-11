@@ -55,6 +55,13 @@ struct DaemonClient {
         )
     }
 
+    func eventSubscription() async throws -> EventSubscriptionResponse {
+        try await request(
+            EmptyDaemonRequest(type: "event/subscribe", protocolVersion: protocolVersion),
+            as: EventSubscriptionResponse.self
+        )
+    }
+
     private func request<Request: Encodable & Sendable, Response: Decodable>(
         _ request: Request,
         as responseType: Response.Type
@@ -236,6 +243,32 @@ struct GitHubPullRequest: Decodable, Identifiable, Equatable {
 struct DesktopActionResponse: Decodable, Equatable {
     let action: String
     let command: [String]
+}
+
+struct EventSubscriptionResponse: Decodable, Equatable {
+    let type: String
+    let streaming: Bool
+    let pollMethods: [String]
+    let clickRoutes: [DesktopClickRoute]
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case streaming
+        case pollMethods = "poll_methods"
+        case clickRoutes = "click_routes"
+    }
+}
+
+struct DesktopClickRoute: Decodable, Equatable {
+    let event: String
+    let action: String
+    let targetField: String
+
+    enum CodingKeys: String, CodingKey {
+        case event
+        case action
+        case targetField = "target_field"
+    }
 }
 
 enum DaemonClientError: LocalizedError {

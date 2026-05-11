@@ -212,6 +212,8 @@ struct DesktopWindowView: View {
         Form {
             LabeledContent("Daemon Socket", value: "~/.jackin/run/jackin-daemon.sock")
             LabeledContent("Protocol", value: "2")
+            LabeledContent("Event Streaming", value: model.eventSubscription?.streaming == true ? "Enabled" : "Poll routes")
+            LabeledContent("Click Routes", value: "\(model.eventSubscription?.clickRoutes.count ?? 0)")
         }
         .padding()
         .navigationTitle("Settings")

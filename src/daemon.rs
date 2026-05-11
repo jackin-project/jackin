@@ -68,6 +68,8 @@ enum Request {
         protocol: u32,
         refresh: Option<bool>,
     },
+    #[serde(rename = "event/subscribe")]
+    EventSubscribe { protocol: u32 },
     #[serde(rename = "daemon/status", alias = "status")]
     Status { protocol: u32 },
     #[serde(rename = "daemon/shutdown", alias = "shutdown")]
@@ -101,6 +103,8 @@ enum Response {
     DesktopAction(DesktopActionResponse),
     #[serde(rename = "account/status")]
     AccountStatus(AccountStatusResponse),
+    #[serde(rename = "event/subscription")]
+    EventSubscription(EventSubscriptionResponse),
     #[serde(rename = "daemon/status")]
     Status(StatusResponse),
     Error {
@@ -203,6 +207,20 @@ pub struct AccountProviderStatus {
     pub state: String,
     pub source: Option<String>,
     pub detail: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct EventSubscriptionResponse {
+    pub streaming: bool,
+    pub poll_methods: Vec<String>,
+    pub click_routes: Vec<DesktopClickRoute>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct DesktopClickRoute {
+    pub event: String,
+    pub action: String,
+    pub target_field: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -459,12 +477,10 @@ fn handle_request(request: Request, state: &DaemonState) -> Response {
             },
         },
         Request::AccountStatus { refresh, .. } => {
-            match account_status(state, refresh.unwrap_or(false)) {
-                Ok(response) => Response::AccountStatus(response),
-                Err(err) => Response::Error {
-                    message: format!("{err:#}"),
-                },
-            }
+            account_status_response(state, refresh.unwrap_or(false))
+        }
+        Request::EventSubscribe { .. } => {
+            Response::EventSubscription(event_subscription_contract())
         }
         Request::Status { .. } => Response::Status(status(state)),
         Request::Shutdown { .. } => {
@@ -495,6 +511,15 @@ fn handle_request(request: Request, state: &DaemonState) -> Response {
     }
 }
 
+fn account_status_response(state: &DaemonState, refresh: bool) -> Response {
+    match account_status(state, refresh) {
+        Ok(response) => Response::AccountStatus(response),
+        Err(err) => Response::Error {
+            message: format!("{err:#}"),
+        },
+    }
+}
+
 fn validate_protocol(request: &Request) -> std::result::Result<(), String> {
     let protocol = match request {
         Request::Hello { protocol }
@@ -506,6 +531,7 @@ fn validate_protocol(request: &Request) -> std::result::Result<(), String> {
         | Request::WorkspaceLaunch { protocol, .. }
         | Request::DesktopOpen { protocol, .. }
         | Request::AccountStatus { protocol, .. }
+        | Request::EventSubscribe { protocol }
         | Request::Status { protocol }
         | Request::Shutdown { protocol }
         | Request::WarmCache { protocol }
@@ -544,6 +570,7 @@ fn daemon_capabilities() -> Vec<DaemonCapability> {
         "workspace/launch",
         "desktop/open",
         "account/status",
+        "event/subscribe",
         "notification/send",
     ]
     .into_iter()
@@ -552,6 +579,29 @@ fn daemon_capabilities() -> Vec<DaemonCapability> {
         since_protocol: PROTOCOL_VERSION,
     })
     .collect()
+}
+
+fn event_subscription_contract() -> EventSubscriptionResponse {
+    EventSubscriptionResponse {
+        streaming: false,
+        poll_methods: vec![
+            "session/list".to_string(),
+            "github/my_open_prs".to_string(),
+            "notification/send".to_string(),
+        ],
+        click_routes: vec![
+            DesktopClickRoute {
+                event: "attention/waiting".to_string(),
+                action: "desktop/open".to_string(),
+                target_field: "container_name".to_string(),
+            },
+            DesktopClickRoute {
+                event: "pr/ready_for_review".to_string(),
+                action: "desktop/open".to_string(),
+                target_field: "url".to_string(),
+            },
+        ],
+    }
 }
 
 fn load_daemon_config(paths: &JackinPaths) -> Result<crate::config::AppConfig> {
@@ -1497,6 +1547,17 @@ fn print_response(response: Response) {
         Response::AccountStatus(response) => {
             println!("{} account statuses", response.providers.len());
         }
+        Response::EventSubscription(response) => {
+            let mode = if response.streaming {
+                "streaming"
+            } else {
+                "poll"
+            };
+            println!(
+                "{mode} event subscription: {} routes",
+                response.click_routes.len()
+            );
+        }
         Response::Status(status) => println!("daemon running: pid {}", status.pid),
         Response::Error { message } => eprintln!("error: {message}"),
     }
@@ -1614,7 +1675,47 @@ published_image = "ghcr.io/example/role:latest"
         assert!(methods.contains(&"workspace/launch"));
         assert!(methods.contains(&"desktop/open"));
         assert!(methods.contains(&"account/status"));
+        assert!(methods.contains(&"event/subscribe"));
         assert!(methods.contains(&"notification/send"));
+    }
+
+    #[test]
+    fn event_subscription_contract_exposes_poll_and_click_routes() {
+        let response = event_subscription_contract();
+
+        assert!(!response.streaming);
+        assert!(response.poll_methods.contains(&"session/list".to_string()));
+        assert!(
+            response
+                .poll_methods
+                .contains(&"github/my_open_prs".to_string())
+        );
+        assert!(response.click_routes.contains(&DesktopClickRoute {
+            event: "attention/waiting".to_string(),
+            action: "desktop/open".to_string(),
+            target_field: "container_name".to_string(),
+        }));
+        assert!(response.click_routes.contains(&DesktopClickRoute {
+            event: "pr/ready_for_review".to_string(),
+            action: "desktop/open".to_string(),
+            target_field: "url".to_string(),
+        }));
+    }
+
+    #[test]
+    fn event_subscribe_uses_versioned_wire_name() {
+        let request_json = serde_json::to_value(Request::EventSubscribe {
+            protocol: PROTOCOL_VERSION,
+        })
+        .unwrap();
+        let response_json =
+            serde_json::to_value(Response::EventSubscription(event_subscription_contract()))
+                .unwrap();
+
+        assert_eq!(request_json["type"], "event/subscribe");
+        assert_eq!(request_json["protocol"], PROTOCOL_VERSION);
+        assert_eq!(response_json["type"], "event/subscription");
+        assert_eq!(response_json["streaming"], false);
     }
 
     #[test]

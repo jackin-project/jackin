@@ -8,6 +8,7 @@ final class StatusBarModel: ObservableObject {
     @Published private(set) var pullRequests: [GitHubPullRequest] = []
     @Published private(set) var pullRequestError: String?
     @Published private(set) var openError: String?
+    @Published private(set) var eventSubscription: EventSubscriptionResponse?
     @Published private(set) var isRefreshing = false
 
     private let client: DaemonClient
@@ -35,14 +36,17 @@ final class StatusBarModel: ObservableObject {
             let hello = try await client.hello()
             async let workspaceList = client.workspaces()
             async let sessionList = client.sessions()
+            async let eventRoutes = client.eventSubscription()
             workspaces = try await workspaceList.workspaces
             sessions = try await sessionList.sessions
+            eventSubscription = try await eventRoutes
             daemon = .connected(hello)
         } catch {
             workspaces = []
             sessions = []
             pullRequests = []
             pullRequestError = nil
+            self.eventSubscription = nil
             daemon = .disconnected(error.localizedDescription)
             return
         }
@@ -58,6 +62,10 @@ final class StatusBarModel: ObservableObject {
 
     func runningCount(for workspace: DesktopWorkspace) -> Int {
         sessions.filter { $0.workspace == workspace.name }.count
+    }
+
+    var readyForReviewPullRequests: [GitHubPullRequest] {
+        pullRequests.filter { !$0.isDraft }
     }
 
     func openPullRequest(_ pullRequest: GitHubPullRequest) async {
