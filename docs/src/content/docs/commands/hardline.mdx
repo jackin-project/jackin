@@ -6,7 +6,7 @@ description: "Reattach to a running agent's session, or restart a crashed one"
 ## Synopsis
 
 ```bash
-jackin hardline [--inspect] [SELECTOR]
+jackin hardline [--inspect | --new [--agent <agent>]] [SELECTOR]
 ```
 
 Reconnect your terminal to an agent container. Use this when you've closed your terminal but the agent is still running in the background, or when an agent crashed and you want to resume the same session without rebuilding the whole stack.
@@ -26,6 +26,8 @@ When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspa
 | Option | Description |
 |---|---|
 | `--inspect` | Resolve the same target but print the instance manifest, role/DinD Docker state, Docker network state, cert volume name, and mount-state summary without attaching or restarting anything. |
+| `--new` | Start another foreground agent process inside the selected running instance instead of attaching to the original container process. |
+| `--agent <agent>` | Agent runtime for `--new` (`claude`, `codex`, or `amp`). Defaults to the runtime recorded in the instance manifest. |
 
 ## Behavior
 
@@ -46,6 +48,8 @@ If the DinD sidecar has been removed, `jackin hardline` recreates the derived ja
 If the role container itself was deleted, jackin can rebuild the runtime around jackin-managed local state such as preserved worktrees/clones. Changes written only to the deleted container's writable layer are gone unless they were also persisted through a mounted path.
 
 `--inspect` is read-only. It works from the current workspace or ad-hoc directory, or with an explicit selector/instance ID/container name, and reports local manifest details even when Docker is unavailable.
+
+`--new` requires a running indexed instance. It starts a second agent process inside that container with the same mounts, Docker-in-Docker sidecar, working directory, and in-container state. This is useful when you want a separate foreground session without creating a fresh jackin instance. If the selected container is stopped or missing, run plain `jackin hardline` first so jackin can restart or rebuild it.
 
 ## Terminal close vs. exit
 
@@ -68,6 +72,12 @@ jackin hardline --inspect
 # Inspect a specific instance ID
 jackin hardline --inspect k7p9m2xq
 
+# Start another agent process in the detected running instance
+jackin hardline --new
+
+# Start a Codex process in a specific running instance
+jackin hardline --new --agent codex k7p9m2xq
+
 # Reconnect to a specific container by name
 jackin hardline jackin-agent-smith-clone-1
 
@@ -80,4 +90,5 @@ jackin hardline chainargos/backend-engineer
 - You closed your terminal window but the agent container is still running.
 - An agent crashed (non-zero exit, OOM) and you want to resume in the same container with the same DinD sidecar.
 - You want to check on an agent that's been running autonomously.
+- You want another foreground agent process inside an already-running instance.
 - You accidentally disconnected from a session.

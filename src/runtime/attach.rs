@@ -114,6 +114,63 @@ pub(super) fn attach_running(
     )
 }
 
+pub fn spawn_agent_session(
+    paths: &JackinPaths,
+    container_name: &str,
+    manifest: Option<&InstanceManifest>,
+    agent: crate::agent::Agent,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    match inspect_container_state(runner, container_name) {
+        ContainerState::Running => {}
+        ContainerState::NotFound => {
+            if let Some(message) = missing_restore_message(paths, container_name)? {
+                anyhow::bail!("{message}");
+            }
+            anyhow::bail!(
+                "container '{container_name}' not found; use `jackin load` to start a new session"
+            );
+        }
+        ContainerState::InspectUnavailable(reason) => {
+            anyhow::bail!("{}", inspect_unavailable_message(container_name, &reason));
+        }
+        ContainerState::Stopped { .. } => {
+            anyhow::bail!(
+                "container '{container_name}' is stopped; run `jackin hardline {container_name}` to restart or recover it before using `--new`"
+            );
+        }
+    }
+
+    let workdir = manifest.map_or("/workspace", |manifest| manifest.workdir.as_str());
+    let agent_env = format!(
+        "{}={}",
+        crate::env_model::JACKIN_AGENT_ENV_NAME,
+        agent.slug()
+    );
+    super::caffeinate::reconcile(paths, runner);
+    let result = runner.run(
+        "docker",
+        &[
+            "exec",
+            "-it",
+            "-e",
+            &agent_env,
+            "--workdir",
+            workdir,
+            container_name,
+            "/jackin/runtime/entrypoint.sh",
+        ],
+        None,
+        &RunOptions::default(),
+    );
+    eprintln!();
+    result?;
+
+    let outcome = crate::runtime::launch::inspect_attach_outcome(runner, container_name)?;
+    super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
+    Ok(())
+}
+
 pub fn hardline_agent(
     paths: &JackinPaths,
     container_name: &str,
@@ -527,6 +584,72 @@ mod tests {
                 .iter()
                 .any(|c| c == "docker attach --detach-keys= --sig-proxy=false jackin-agent-smith"),
             "expected docker attach in recorded commands"
+        );
+    }
+
+    #[test]
+    fn hardline_new_session_execs_entrypoint_in_running_container() {
+        let (_tmp, paths) = test_paths();
+        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace/project",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: crate::instance::DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        let mut runner = FakeRunner::with_capture_queue([
+            "true 0 false".to_string(),
+            "true 0 false".to_string(),
+            "true 0 false".to_string(),
+        ]);
+
+        spawn_agent_session(
+            &paths,
+            container_name,
+            Some(&manifest),
+            crate::agent::Agent::Codex,
+            &mut runner,
+        )
+        .unwrap();
+
+        assert!(runner.recorded.iter().any(|call| {
+            call == "docker exec -it -e JACKIN_AGENT=codex --workdir /workspace/project jackin-workspace-agentsmith-k7p9m2xq /jackin/runtime/entrypoint.sh"
+        }));
+    }
+
+    #[test]
+    fn hardline_new_session_requires_running_container() {
+        let (_tmp, paths) = test_paths();
+        let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
+
+        let err = spawn_agent_session(
+            &paths,
+            "jackin-agent-smith",
+            None,
+            crate::agent::Agent::Claude,
+            &mut runner,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("is stopped"));
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|call| call.starts_with("docker exec"))
         );
     }
 

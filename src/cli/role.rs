@@ -93,6 +93,8 @@ fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
 Examples:
   jackin hardline                              # auto-detect workspace + running role for cwd
   jackin hardline --inspect                    # inspect detected instance state without attaching
+  jackin hardline --new                        # start another agent session in the detected instance
+  jackin hardline --new --agent codex          # start a specific runtime in the selected instance
   jackin hardline agent-smith
   jackin hardline --inspect k7p9m2xq
   jackin hardline chainargos/the-architect
@@ -106,6 +108,12 @@ pub struct HardlineArgs {
     /// Print manifest, Docker, `DinD`, and mount state without attaching or restarting.
     #[arg(long)]
     pub inspect: bool,
+    /// Start a new foreground agent process inside the selected running instance.
+    #[arg(long, conflicts_with = "inspect")]
+    pub new: bool,
+    /// Agent runtime for `--new` (claude, codex, or amp). Defaults to the instance manifest.
+    #[arg(long, value_parser = parse_agent, requires = "new")]
+    pub agent: Option<crate::agent::Agent>,
 }
 
 /// Open the operator console to manage workspaces, launch roles, and more
@@ -405,6 +413,8 @@ mod tests {
             Some(Command::Hardline(super::HardlineArgs {
                 selector: None,
                 inspect: false,
+                new: false,
+                agent: None,
             }))
         ));
     }
@@ -417,6 +427,8 @@ mod tests {
             Some(Command::Hardline(super::HardlineArgs {
                 selector: Some(ref s),
                 inspect: false,
+                new: false,
+                agent: None,
             })) if s == "agent-smith"
         ));
     }
@@ -429,7 +441,37 @@ mod tests {
             Some(Command::Hardline(super::HardlineArgs {
                 selector: Some(ref s),
                 inspect: true,
+                new: false,
+                agent: None,
             })) if s == "k7p9m2xq"
         ));
+    }
+
+    #[test]
+    fn parses_hardline_new_agent_flags() {
+        let cli = Cli::try_parse_from(["jackin", "hardline", "--new", "--agent", "codex"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Hardline(super::HardlineArgs {
+                selector: None,
+                inspect: false,
+                new: true,
+                agent: Some(crate::agent::Agent::Codex),
+            }))
+        ));
+    }
+
+    #[test]
+    fn rejects_hardline_agent_without_new() {
+        let res = Cli::try_parse_from(["jackin", "hardline", "--agent", "codex"]);
+
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn rejects_hardline_inspect_with_new() {
+        let res = Cli::try_parse_from(["jackin", "hardline", "--inspect", "--new"]);
+
+        assert!(res.is_err());
     }
 }

@@ -16,6 +16,7 @@ pub use self::test_support::FakeRunner;
 
 pub use self::attach::{
     ContainerState, hardline_agent, inspect_container_state, inspect_hardline_instance,
+    spawn_agent_session,
 };
 pub use self::caffeinate::reconcile as reconcile_keep_awake;
 pub use self::cleanup::{

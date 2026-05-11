@@ -167,7 +167,16 @@ pub fn run(cli: Cli) -> Result<()> {
             runtime::reconcile_keep_awake(&paths, &mut runner);
             result
         }
-        Command::Hardline(HardlineArgs { selector, inspect }) => {
+        Command::Hardline(HardlineArgs {
+            selector,
+            inspect,
+            new,
+            agent,
+        }) => {
+            anyhow::ensure!(
+                !(inspect && new),
+                "`jackin hardline --inspect --new` is invalid; inspect is read-only"
+            );
             let container = if let Some(sel) = selector {
                 if let Some(container) = resolve_instance_reference(&paths, &sel)? {
                     container
@@ -187,6 +196,35 @@ pub fn run(cli: Cli) -> Result<()> {
                     runtime::inspect_hardline_instance(&paths, &container, &mut runner)?
                 );
                 return Ok(());
+            }
+            if new {
+                let manifest = instance::InstanceManifest::read(&paths.data_dir.join(&container))
+                    .with_context(|| {
+                        format!(
+                            "cannot start a new agent session in `{container}` because its instance manifest is missing"
+                        )
+                    })?;
+                let selected_agent = if let Some(agent) = agent {
+                    agent
+                } else {
+                    manifest.agent_runtime.parse().map_err(|_| {
+                        anyhow::anyhow!(
+                            "instance `{}` has unknown agent runtime {:?}",
+                            manifest.container_base,
+                            manifest.agent_runtime
+                        )
+                    })?
+                };
+                runtime::reconcile_keep_awake(&paths, &mut runner);
+                let result = runtime::spawn_agent_session(
+                    &paths,
+                    &container,
+                    Some(&manifest),
+                    selected_agent,
+                    &mut runner,
+                );
+                runtime::reconcile_keep_awake(&paths, &mut runner);
+                return result;
             }
             runtime::reconcile_keep_awake(&paths, &mut runner);
             let result = if let Some(manifest) =
