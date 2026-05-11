@@ -12,7 +12,7 @@ use fs2::FileExt;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 
-use super::attach::{ContainerState, inspect_container_state, wait_for_dind};
+use super::attach::{ContainerState, hardline_agent, inspect_container_state, wait_for_dind};
 use super::cleanup::{gc_orphaned_resources, run_cleanup_command};
 use super::discovery::list_running_agent_display_names;
 use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_host_identity};
@@ -1529,7 +1529,7 @@ fn load_role_with(
         let restore_container = if let Some(container) = opts.restore_container_base.as_ref() {
             Some(container.clone())
         } else {
-            resolve_restore_candidate(
+            match resolve_restore_candidate(
                 paths,
                 workspace_name.as_deref(),
                 workspace.label.as_str(),
@@ -1537,7 +1537,14 @@ fn load_role_with(
                 &role_key,
                 agent,
                 runner,
-            )?
+            )? {
+                RestoreResolution::StartFresh => None,
+                RestoreResolution::RestoreCurrentRole(container) => Some(container),
+                RestoreResolution::RecoverRelatedRole(container) => {
+                    hardline_agent(paths, &container, runner)?;
+                    return Ok(container);
+                }
+            }
         };
 
         // Step 2: Build Docker image
@@ -2011,6 +2018,13 @@ fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: 
     );
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RestoreResolution {
+    StartFresh,
+    RestoreCurrentRole(String),
+    RecoverRelatedRole(String),
+}
+
 #[allow(clippy::too_many_lines)]
 fn resolve_restore_candidate(
     paths: &JackinPaths,
@@ -2020,7 +2034,7 @@ fn resolve_restore_candidate(
     role_key: &str,
     agent: crate::agent::Agent,
     runner: &mut impl CommandRunner,
-) -> anyhow::Result<Option<String>> {
+) -> anyhow::Result<RestoreResolution> {
     let mut candidates = Vec::new();
     for manifest in matching_instance_manifests(
         paths,
@@ -2063,7 +2077,7 @@ fn resolve_restore_candidate(
     )?;
 
     match candidates.as_slice() {
-        [] if related.is_empty() => Ok(None),
+        [] if related.is_empty() => Ok(RestoreResolution::StartFresh),
         [] => prompt_related_restore_candidate(workspace_label, &related),
         [only] if !std::io::stdin().is_terminal() => anyhow::bail!(
             "restore is available for `{}` but stdin is not interactive; run `jackin hardline {}` to inspect it or `jackin load` interactively from the matching workspace to rebuild jackin-managed local state. Run `jackin eject {} --purge` to discard it before starting a fresh load. Anything written only to the deleted container's writable layer is gone and will not be restored, including ad-hoc package installs, global files outside mounted paths, and DinD images.",
@@ -2086,16 +2100,14 @@ fn resolve_restore_candidate(
                 &option_refs,
             )?;
             if choice == 0 {
-                Ok(Some(only.container_base.clone()))
+                Ok(RestoreResolution::RestoreCurrentRole(
+                    only.container_base.clone(),
+                ))
             } else if let Some(candidate) = related.get(choice.saturating_sub(1)) {
-                anyhow::bail!(
-                    "run `jackin hardline {}` to recover role `{}` before starting a fresh load",
-                    candidate.manifest.container_base,
-                    candidate.manifest.role_key
-                )
+                recover_related_restore_candidate(candidate)
             } else {
                 supersede_restore_candidates(paths, candidates)?;
-                Ok(None)
+                Ok(RestoreResolution::StartFresh)
             }
         }
         _ if !std::io::stdin().is_terminal() => anyhow::bail!(
@@ -2121,16 +2133,14 @@ fn resolve_restore_candidate(
                 &option_refs,
             )?;
             if choice < candidates.len() {
-                Ok(Some(candidates[choice].container_base.clone()))
+                Ok(RestoreResolution::RestoreCurrentRole(
+                    candidates[choice].container_base.clone(),
+                ))
             } else if let Some(candidate) = related.get(choice - candidates.len()) {
-                anyhow::bail!(
-                    "run `jackin hardline {}` to recover role `{}` before starting a fresh load",
-                    candidate.manifest.container_base,
-                    candidate.manifest.role_key
-                )
+                recover_related_restore_candidate(candidate)
             } else {
                 supersede_restore_candidates(paths, candidates)?;
-                Ok(None)
+                Ok(RestoreResolution::StartFresh)
             }
         }
     }
@@ -2196,7 +2206,7 @@ fn related_restore_candidates(
 fn prompt_related_restore_candidate(
     workspace_label: &str,
     candidates: &[RelatedRestoreCandidate],
-) -> anyhow::Result<Option<String>> {
+) -> anyhow::Result<RestoreResolution> {
     if !std::io::stdin().is_terminal() {
         anyhow::bail!(
             "unfinished jackin instances exist for workspace `{workspace_label}` under a different role or agent; run `jackin hardline <instance>` to inspect or recover them before starting a fresh load"
@@ -2205,12 +2215,7 @@ fn prompt_related_restore_candidate(
 
     let mut options: Vec<String> = candidates
         .iter()
-        .map(|candidate| {
-            format!(
-                "Recover with hardline {}",
-                related_restore_candidate_label_for_prompt(candidate)
-            )
-        })
+        .map(related_restore_candidate_action_label)
         .collect();
     options.push("Start fresh instead".to_string());
     let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
@@ -2219,13 +2224,49 @@ fn prompt_related_restore_candidate(
         &option_refs,
     )?;
     if let Some(candidate) = candidates.get(choice) {
-        anyhow::bail!(
-            "run `jackin hardline {}` to recover role `{}` before starting a fresh load",
-            candidate.manifest.container_base,
-            candidate.manifest.role_key
-        );
+        return recover_related_restore_candidate(candidate);
     }
-    Ok(None)
+    Ok(RestoreResolution::StartFresh)
+}
+
+fn recover_related_restore_candidate(
+    candidate: &RelatedRestoreCandidate,
+) -> anyhow::Result<RestoreResolution> {
+    match candidate.docker_state {
+        ContainerState::Running | ContainerState::Stopped { .. } => Ok(
+            RestoreResolution::RecoverRelatedRole(candidate.manifest.container_base.clone()),
+        ),
+        ContainerState::NotFound => {
+            anyhow::bail!(
+                "run `jackin hardline {}` to rebuild role `{}` from jackin-managed local state before starting a fresh load",
+                candidate.manifest.container_base,
+                candidate.manifest.role_key
+            );
+        }
+        ContainerState::InspectUnavailable(ref reason) => {
+            anyhow::bail!(
+                "cannot inspect related jackin instance `{}` because Docker is unavailable or returned an unexpected response: {reason}",
+                candidate.manifest.container_base
+            );
+        }
+    }
+}
+
+fn related_restore_candidate_action_label(candidate: &RelatedRestoreCandidate) -> String {
+    match candidate.docker_state {
+        ContainerState::Running | ContainerState::Stopped { .. } => {
+            format!(
+                "Recover now {}",
+                related_restore_candidate_label_for_prompt(candidate)
+            )
+        }
+        ContainerState::NotFound | ContainerState::InspectUnavailable(_) => {
+            format!(
+                "Recover with hardline {}",
+                related_restore_candidate_label_for_prompt(candidate)
+            )
+        }
+    }
 }
 
 fn related_restore_candidate_label(
@@ -6548,8 +6589,77 @@ plugins = []
         )
         .unwrap();
 
-        assert!(candidate.is_none());
+        assert_eq!(candidate, RestoreResolution::StartFresh);
         assert!(runner.recorded.is_empty());
+    }
+
+    #[test]
+    fn related_restore_candidate_with_container_recovers_in_place() {
+        let candidate = RelatedRestoreCandidate {
+            manifest: InstanceManifest::new(NewInstanceManifest {
+                container_base: "jackin-workspace-thearchitect-k7p9m2xq",
+                workspace_name: Some("workspace"),
+                workspace_label: "workspace",
+                workdir: "/workspace",
+                host_workdir_fingerprint: "sha256:test",
+                role_key: "the-architect",
+                role_display_name: "The Architect",
+                agent_runtime: crate::agent::Agent::Claude,
+                role_source_git: "https://example.invalid/the-architect.git",
+                role_source_ref: None,
+                image_tag: "jackin-the-architect",
+                docker: DockerResources {
+                    role_container: "jackin-workspace-thearchitect-k7p9m2xq".to_string(),
+                    dind_container: "jackin-workspace-thearchitect-k7p9m2xq-dind".to_string(),
+                    network: "jackin-workspace-thearchitect-k7p9m2xq-net".to_string(),
+                    certs_volume: "jackin-workspace-thearchitect-k7p9m2xq-dind-certs".to_string(),
+                },
+            }),
+            docker_state: ContainerState::Running,
+        };
+
+        let resolution = recover_related_restore_candidate(&candidate).unwrap();
+
+        assert_eq!(
+            resolution,
+            RestoreResolution::RecoverRelatedRole(
+                "jackin-workspace-thearchitect-k7p9m2xq".to_string()
+            )
+        );
+        assert!(related_restore_candidate_action_label(&candidate).starts_with("Recover now"));
+    }
+
+    #[test]
+    fn missing_related_restore_candidate_still_requires_hardline_rebuild() {
+        let candidate = RelatedRestoreCandidate {
+            manifest: InstanceManifest::new(NewInstanceManifest {
+                container_base: "jackin-workspace-thearchitect-k7p9m2xq",
+                workspace_name: Some("workspace"),
+                workspace_label: "workspace",
+                workdir: "/workspace",
+                host_workdir_fingerprint: "sha256:test",
+                role_key: "the-architect",
+                role_display_name: "The Architect",
+                agent_runtime: crate::agent::Agent::Claude,
+                role_source_git: "https://example.invalid/the-architect.git",
+                role_source_ref: None,
+                image_tag: "jackin-the-architect",
+                docker: DockerResources {
+                    role_container: "jackin-workspace-thearchitect-k7p9m2xq".to_string(),
+                    dind_container: "jackin-workspace-thearchitect-k7p9m2xq-dind".to_string(),
+                    network: "jackin-workspace-thearchitect-k7p9m2xq-net".to_string(),
+                    certs_volume: "jackin-workspace-thearchitect-k7p9m2xq-dind-certs".to_string(),
+                },
+            }),
+            docker_state: ContainerState::NotFound,
+        };
+
+        let error = recover_related_restore_candidate(&candidate).unwrap_err();
+
+        assert!(error.to_string().contains("jackin hardline"), "{error}");
+        assert!(
+            related_restore_candidate_action_label(&candidate).starts_with("Recover with hardline")
+        );
     }
 
     #[test]
