@@ -14,9 +14,9 @@ This is the core of jackin's security model: **agents can only access what you e
 <Aside type="tip">
 Workspace mounts are managed through `jackin workspace …` flags or
 the operator console's workspace editor. **Global mounts** (the
-`jackin config mount` family) are CLI-only today and are not yet
-reachable from the console. Either way, you should not need to
-hand-edit a configuration file to add, remove, or change a mount.
+`jackin config mount` family) can also be managed from the console's
+**Global config → Global mounts** screen. Either way, you should not
+need to hand-edit a configuration file to add, remove, or change a mount.
 </Aside>
 
 ## Mount spec format
@@ -121,6 +121,10 @@ jackin config mount list
 # Remove a global mount
 jackin config mount remove gradle-cache
 ```
+
+In the console, press `G` from the workspace list to open **Global config → Global mounts**. That screen lists every global mount with its name, source, destination, mode, scope, and source type. It supports adding mounts, editing source and destination, toggling read-only mode, changing scope, renaming, and removing mounts. Changes stay pending until you explicitly save the global config; workspace screens never write global mounts.
+
+Workspace views show global mounts separately from workspace mounts. When jackin can determine the selected role for a workspace, role-scoped global mounts are included in the global section. When multiple roles are possible, workspace views explain that the selected role affects global mount visibility.
 
 ## Mount precedence
 

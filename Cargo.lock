@@ -928,6 +928,7 @@ dependencies = [
  "directories",
  "dockerfile-parser-rs",
  "fs2",
+ "nix 0.29.0",
  "open",
  "owo-colors",
  "portable-pty",

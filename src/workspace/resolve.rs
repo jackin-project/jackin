@@ -166,9 +166,13 @@ pub fn resolve_load_workspace(
     validate_mount_paths(&workspace.mounts)?;
 
     let mut mounts = workspace.mounts.clone();
-    let global_mounts = crate::config::AppConfig::expand_and_validate_named_mounts(
-        &config.resolve_mounts(selector),
-    )?;
+    let global_rows = config.resolve_mount_rows(selector);
+    crate::config::AppConfig::validate_effective_mount_destinations(&workspace, &global_rows)?;
+    let global_mounts: Vec<(String, MountConfig)> = global_rows
+        .into_iter()
+        .map(|row| (row.name, row.mount))
+        .collect();
+    let global_mounts = crate::config::AppConfig::expand_and_validate_named_mounts(&global_mounts)?;
 
     for mount in global_mounts {
         if mounts.iter().any(|existing| existing.dst == mount.dst) {
@@ -619,6 +623,55 @@ mod tests {
             error
                 .to_string()
                 .contains("ad-hoc mount destination conflicts")
+        );
+    }
+
+    #[test]
+    fn resolve_rejects_duplicate_effective_global_workspace_destination() {
+        let temp = tempdir().unwrap();
+        let workspace_src = temp.path().join("project");
+        let global_src = temp.path().join("cache");
+        std::fs::create_dir_all(&workspace_src).unwrap();
+        std::fs::create_dir_all(&global_src).unwrap();
+
+        let mut config = crate::config::AppConfig::default();
+        config.add_mount(
+            "cache",
+            MountConfig {
+                src: global_src.display().to_string(),
+                dst: "/workspace/project".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            None,
+        );
+        config.workspaces.insert(
+            "my-ws".to_string(),
+            WorkspaceConfig {
+                workdir: "/workspace/project".to_string(),
+                mounts: vec![MountConfig {
+                    src: workspace_src.display().to_string(),
+                    dst: "/workspace/project".to_string(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                }],
+                ..Default::default()
+            },
+        );
+
+        let error = resolve_load_workspace(
+            &config,
+            &crate::selector::RoleSelector::new(None, "agent-smith"),
+            &std::env::temp_dir(),
+            LoadWorkspaceInput::Saved("my-ws".to_string()),
+            &[],
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("global mount destination conflicts")
         );
     }
 }

@@ -335,7 +335,6 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Config versioning and migration', slug: 'reference/roadmap/config-versioning-migration' },
-                    { label: 'Global mount visibility', slug: 'reference/roadmap/global-mount-visibility' },
                   ],
                 },
                 {
@@ -347,6 +346,7 @@ export default defineConfig({
                     { label: 'DinD hostname env var', slug: 'reference/roadmap/dind-hostname-env-var' },
                     { label: 'DinD TLS', slug: 'reference/roadmap/dind-tls' },
                     { label: 'Env var interpolation', slug: 'reference/roadmap/env-var-interpolation' },
+                    { label: 'Global mount visibility', slug: 'reference/roadmap/global-mount-visibility' },
                     { label: 'JACKIN_DEBUG env var', slug: 'reference/roadmap/jackin-debug-env-var' },
                     { label: 'Orphaned DinD cleanup', slug: 'reference/roadmap/orphaned-dind-cleanup' },
                     { label: 'Per-mount isolation', slug: 'reference/roadmap/per-mount-isolation' },

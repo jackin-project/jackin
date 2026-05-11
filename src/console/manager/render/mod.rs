@@ -5,13 +5,14 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 
 use super::state::{ManagerListRow, ManagerStage, ManagerState};
 use crate::config::AppConfig;
 
 pub mod editor;
+mod global_mounts;
 pub(super) mod list;
 pub(super) mod modal;
 
@@ -84,6 +85,74 @@ pub(super) fn render_footer(frame: &mut Frame, area: Rect, items: &[FooterItem])
     frame.render_widget(p, area);
 }
 
+pub(super) fn line_width(line: &Line<'_>) -> usize {
+    line.spans
+        .iter()
+        .map(|span| span.content.chars().count())
+        .sum()
+}
+
+pub(super) fn max_line_width(lines: &[Line<'_>]) -> usize {
+    lines.iter().map(line_width).max().unwrap_or(0)
+}
+
+pub(super) fn render_horizontal_scrollbar(
+    frame: &mut Frame,
+    block_area: Rect,
+    content_width: usize,
+    scroll_x: u16,
+) {
+    let viewport = block_area.width.saturating_sub(2) as usize;
+    if viewport == 0 || content_width <= viewport {
+        return;
+    }
+    let position = scrollbar_position(content_width, viewport, scroll_x);
+    let mut state = ScrollbarState::new(content_width)
+        .position(position)
+        .viewport_content_length(viewport);
+    let scrollbar = Scrollbar::new(ScrollbarOrientation::HorizontalBottom)
+        .begin_symbol(None)
+        .end_symbol(None)
+        .track_symbol(Some("·"))
+        .thumb_symbol("━")
+        .track_style(Style::default().fg(PHOSPHOR_DARK))
+        .thumb_style(Style::default().fg(PHOSPHOR_DIM));
+    let area = Rect {
+        x: block_area.x + 1,
+        y: block_area.y + block_area.height.saturating_sub(1),
+        width: block_area.width.saturating_sub(2),
+        height: 1,
+    };
+    frame.render_stateful_widget(scrollbar, area, &mut state);
+}
+
+pub(super) fn effective_scroll_x(content_width: usize, viewport: usize, scroll_x: u16) -> u16 {
+    if viewport == 0 || content_width <= viewport {
+        0
+    } else {
+        scroll_x.min(
+            content_width
+                .saturating_sub(viewport)
+                .min(usize::from(u16::MAX)) as u16,
+        )
+    }
+}
+
+pub(super) fn clamp_scroll_x(content_width: usize, viewport: usize, scroll_x: &mut u16) -> u16 {
+    let effective = effective_scroll_x(content_width, viewport, *scroll_x);
+    *scroll_x = effective;
+    effective
+}
+
+fn scrollbar_position(content_width: usize, viewport: usize, scroll_x: u16) -> usize {
+    let scroll_x = usize::from(effective_scroll_x(content_width, viewport, scroll_x));
+    let max_scroll = content_width.saturating_sub(viewport);
+    scroll_x
+        .saturating_mul(content_width.saturating_sub(1))
+        .checked_div(max_scroll)
+        .unwrap_or(0)
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn render(
     frame: &mut Frame,
@@ -91,11 +160,13 @@ pub fn render(
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
-    // Phase 1: render the base stage (Editor full-screen OR List chrome).
-    if let ManagerStage::Editor(editor) = &state.stage {
+    if let ManagerStage::Editor(editor) = &mut state.stage {
+        clamp_editor_scroll_for_frame(frame.area(), editor);
         editor::render_editor(frame, editor, config, state.op_available);
+    } else if let ManagerStage::GlobalMounts(global) = &mut state.stage {
+        clamp_global_mounts_scroll_for_frame(frame.area(), global);
+        global_mounts::render_global_mounts(frame, global);
     } else {
-        // List / CreatePrelude / ConfirmDelete share the list-like chrome.
         let area = frame.area();
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -109,51 +180,92 @@ pub fn render(
         render_header(frame, chunks[0], "workspaces");
 
         if matches!(&state.stage, ManagerStage::List) {
+            clamp_list_scroll_for_area(chunks[1], state, config, cwd);
             list::render_list_body(frame, chunks[1], state, config, cwd);
         }
 
         let footer_items: Vec<FooterItem> = match &state.stage {
             ManagerStage::List => {
-                // Surface "o open in GitHub" on rows whose workspace has at
-                // least one GitHub-hosted mount with a resolvable web URL.
-                // See `ManagerListRow` docs for row layout — current-dir and
-                // the "+ New workspace" sentinel skip the hint entirely.
-                let show_open_hint =
-                    matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_))
-                        && state
-                            .selected_workspace_summary()
-                            .and_then(|s| config.workspaces.get(&s.name))
-                            .is_some_and(|ws| {
-                                !super::github_mounts::resolve_for_workspace(ws).is_empty()
-                            });
+                if state.inline_agent_picker.is_some() {
+                    let mut items = vec![
+                        FooterItem::Key("\u{2191}\u{2193}"),
+                        FooterItem::Sep,
+                        FooterItem::Key("Enter"),
+                        FooterItem::Text("launch"),
+                        FooterItem::GroupSep,
+                        FooterItem::Key("Esc"),
+                        FooterItem::Text("return to workspaces"),
+                    ];
+                    if state.list_scroll_focus.is_some() {
+                        items.push(FooterItem::GroupSep);
+                        items.push(FooterItem::Key("←/→"));
+                        items.push(FooterItem::Text("scroll focused block"));
+                    }
+                    items
+                } else if state.inline_role_picker.is_some() {
+                    let mut items = vec![
+                        FooterItem::Key("\u{2191}\u{2193}"),
+                        FooterItem::Sep,
+                        FooterItem::Key("Enter"),
+                        FooterItem::Text("launch"),
+                        FooterItem::GroupSep,
+                        FooterItem::Key("Esc"),
+                        FooterItem::Text("return to workspaces"),
+                    ];
+                    if state.list_scroll_focus.is_some() {
+                        items.push(FooterItem::GroupSep);
+                        items.push(FooterItem::Key("←/→"));
+                        items.push(FooterItem::Text("scroll focused block"));
+                    }
+                    items.push(FooterItem::GroupSep);
+                    items.push(FooterItem::Key("Q"));
+                    items.push(FooterItem::Text("quit"));
+                    items
+                } else {
+                    // Hidden on current-dir and "+ New workspace" rows because
+                    // they have no workspace config.
+                    let show_open_hint =
+                        matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_))
+                            && state
+                                .selected_workspace_summary()
+                                .and_then(|s| config.workspaces.get(&s.name))
+                                .is_some_and(|ws| {
+                                    !super::github_mounts::resolve_for_workspace(ws).is_empty()
+                                });
 
-                let mut items = vec![
-                    // Navigation group
-                    FooterItem::Key("\u{2191}\u{2193}"),
-                    FooterItem::Sep,
-                    FooterItem::Key("Enter"),
-                    FooterItem::Text("launch"),
-                    FooterItem::GroupSep,
-                    // Per-row actions
-                    FooterItem::Key("E"),
-                    FooterItem::Text("edit"),
-                    FooterItem::Sep,
-                    FooterItem::Key("N"),
-                    FooterItem::Text("new"),
-                    FooterItem::Sep,
-                    FooterItem::Key("D"),
-                    FooterItem::Text("delete"),
-                ];
-                if show_open_hint {
-                    items.push(FooterItem::Sep);
-                    items.push(FooterItem::Key("O"));
-                    items.push(FooterItem::Text("open in GitHub"));
+                    let mut items = vec![
+                        FooterItem::Key("\u{2191}\u{2193}"),
+                        FooterItem::Sep,
+                        FooterItem::Key("Enter"),
+                        FooterItem::Text("launch"),
+                        FooterItem::GroupSep,
+                        FooterItem::Key("E"),
+                        FooterItem::Text("edit"),
+                        FooterItem::Sep,
+                        FooterItem::Key("N"),
+                        FooterItem::Text("new"),
+                        FooterItem::Sep,
+                        FooterItem::Key("D"),
+                        FooterItem::Text("delete"),
+                        FooterItem::Sep,
+                        FooterItem::Key("G"),
+                        FooterItem::Text("global config"),
+                    ];
+                    if show_open_hint {
+                        items.push(FooterItem::Sep);
+                        items.push(FooterItem::Key("O"));
+                        items.push(FooterItem::Text("open in GitHub"));
+                    }
+                    if state.list_scroll_focus.is_some() {
+                        items.push(FooterItem::GroupSep);
+                        items.push(FooterItem::Key("←/→"));
+                        items.push(FooterItem::Text("scroll focused block"));
+                    }
+                    items.push(FooterItem::GroupSep);
+                    items.push(FooterItem::Key("Q"));
+                    items.push(FooterItem::Text("quit"));
+                    items
                 }
-                items.push(FooterItem::GroupSep);
-                // Exit
-                items.push(FooterItem::Key("Q"));
-                items.push(FooterItem::Text("quit"));
-                items
             }
             ManagerStage::CreatePrelude(_) => vec![
                 FooterItem::Dyn("Create workspace — follow the prompts".to_string()),
@@ -172,16 +284,14 @@ pub fn render(
                 FooterItem::Text("cancel"),
             ],
             ManagerStage::Editor(_) => unreachable!("Editor has its own render path"),
+            ManagerStage::GlobalMounts(_) => unreachable!("Global mounts has its own render path"),
         };
         render_footer(frame, chunks[2], &footer_items);
     }
 
-    // Phase 2: overlay any active modal.
-    //
-    // The list-anchored modal lives on `ManagerState` itself rather
-    // than on a stage variant, so its borrow has to be split off
-    // separately from the stage-anchored modals to keep the borrow
-    // checker happy with the shared `state` argument.
+    // List-anchored modal lives on `ManagerState`, not on a stage
+    // variant, so the borrow splits separately from stage-anchored
+    // modals.
     let is_list_stage = matches!(state.stage, ManagerStage::List);
     if is_list_stage {
         if let Some(modal) = &mut state.list_modal {
@@ -212,8 +322,161 @@ pub fn render(
             ManagerStage::List => {
                 // Handled above via the `is_list_stage` early branch.
             }
+            ManagerStage::GlobalMounts(global) => {
+                if let Some(modal) = &mut global.modal {
+                    global_mounts::render_global_mount_modal(frame, modal);
+                }
+            }
         }
     }
+}
+
+fn clamp_editor_scroll_for_frame(area: Rect, editor: &mut super::state::EditorState<'_>) {
+    if editor.active_tab != super::state::EditorTab::Mounts {
+        return;
+    }
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(2),
+            Constraint::Min(8),
+            Constraint::Length(2),
+        ])
+        .split(area);
+    clamp_scroll_x(
+        list::workspace_mounts_content_width(&editor.pending.mounts),
+        chunks[2].width.saturating_sub(2) as usize,
+        &mut editor.workspace_mounts_scroll_x,
+    );
+}
+
+fn clamp_global_mounts_scroll_for_frame(
+    area: Rect,
+    global: &mut super::state::GlobalMountsState<'_>,
+) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(10),
+            Constraint::Length(2),
+        ])
+        .split(area);
+    clamp_scroll_x(
+        global_mounts::global_mounts_content_width(&global.pending),
+        chunks[1].width.saturating_sub(2) as usize,
+        &mut global.scroll_x,
+    );
+}
+
+fn clamp_list_scroll_for_area(
+    area: Rect,
+    state: &mut ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+) {
+    let left_pct = state.list_split_pct;
+    let right_pct = 100u16.saturating_sub(left_pct);
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(left_pct),
+            Constraint::Percentage(right_pct),
+        ])
+        .split(area);
+    let viewport = columns[1].width.saturating_sub(2) as usize;
+
+    match state.selected_row() {
+        ManagerListRow::CurrentDirectory => {
+            let cwd = cwd.display().to_string();
+            let mounts = [crate::workspace::MountConfig {
+                src: cwd.clone(),
+                dst: cwd,
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }];
+            clamp_scroll_x(
+                list::workspace_mounts_content_width(&mounts),
+                viewport,
+                &mut state.list_mounts_scroll_x,
+            );
+            state.list_global_mounts_scroll_x = 0;
+            state.list_role_global_mounts_scroll_x = 0;
+            state.list_scroll_focus = None;
+        }
+        ManagerListRow::SavedWorkspace(i) => {
+            let Some(summary) = state.workspaces.get(i) else {
+                return;
+            };
+            let Some(workspace) = config.workspaces.get(&summary.name) else {
+                return;
+            };
+            clamp_scroll_x(
+                list::workspace_mounts_content_width(&workspace.mounts),
+                viewport,
+                &mut state.list_mounts_scroll_x,
+            );
+            let picker_role = state.inline_role_picker.as_ref().and_then(|picker| {
+                picker
+                    .list_state
+                    .selected
+                    .and_then(|idx| picker.filtered.get(idx).cloned())
+            });
+            let global_rows = global_rows_for(config, picker_role.as_ref());
+            let (global, scoped) = partition_mounts_by_scope(&global_rows);
+            clamp_scroll_x(
+                list::global_mounts_content_width(&global),
+                viewport,
+                &mut state.list_global_mounts_scroll_x,
+            );
+            clamp_scroll_x(
+                list::global_mounts_content_width(&scoped),
+                viewport,
+                &mut state.list_role_global_mounts_scroll_x,
+            );
+        }
+        ManagerListRow::NewWorkspace => {
+            state.list_mounts_scroll_x = 0;
+            state.list_global_mounts_scroll_x = 0;
+            state.list_role_global_mounts_scroll_x = 0;
+        }
+    }
+}
+
+/// `None` role → unscoped rows only; `Some(role)` → merged scoped + unscoped.
+pub(super) fn global_rows_for(
+    config: &AppConfig,
+    picker_role: Option<&crate::selector::RoleSelector>,
+) -> Vec<crate::config::GlobalMountRow> {
+    picker_role.map_or_else(
+        || {
+            config
+                .list_mount_rows()
+                .into_iter()
+                .filter(|row| row.scope.is_none())
+                .collect()
+        },
+        |role| config.resolve_mount_rows(role),
+    )
+}
+
+pub(super) fn partition_mounts_by_scope(
+    rows: &[crate::config::GlobalMountRow],
+) -> (
+    Vec<crate::workspace::MountConfig>,
+    Vec<crate::workspace::MountConfig>,
+) {
+    let mut global = Vec::new();
+    let mut scoped = Vec::new();
+    for row in rows {
+        if row.scope.is_none() {
+            global.push(row.mount.clone());
+        } else {
+            scoped.push(row.mount.clone());
+        }
+    }
+    (global, scoped)
 }
 
 pub(super) fn render_header(frame: &mut Frame, area: Rect, title: &str) {
@@ -239,6 +502,36 @@ pub(super) fn centered_rect_fixed(outer: Rect, pct_w: u16, rows: u16) -> Rect {
         y: outer.y + outer.height.saturating_sub(h) / 2,
         width: w,
         height: h,
+    }
+}
+
+#[cfg(test)]
+mod horizontal_scrollbar_tests {
+    use super::{clamp_scroll_x, scrollbar_position};
+
+    #[test]
+    fn text_scroll_end_maps_to_scrollbar_end() {
+        assert_eq!(scrollbar_position(100, 60, 0), 0);
+        assert_eq!(scrollbar_position(100, 60, 20), 49);
+        assert_eq!(scrollbar_position(100, 60, 40), 99);
+    }
+
+    #[test]
+    fn scrollbar_position_clamps_overscroll_to_end() {
+        assert_eq!(scrollbar_position(100, 60, 400), 99);
+    }
+
+    #[test]
+    fn stored_scroll_offset_clamps_to_visible_end() {
+        let mut scroll_x = 400;
+
+        let effective = clamp_scroll_x(100, 60, &mut scroll_x);
+
+        assert_eq!(effective, 40);
+        assert_eq!(scroll_x, 40);
+
+        scroll_x = scroll_x.saturating_sub(8);
+        assert_eq!(scroll_x, 32);
     }
 }
 
