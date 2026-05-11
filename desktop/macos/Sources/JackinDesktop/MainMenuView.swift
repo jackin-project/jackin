@@ -14,6 +14,7 @@ struct MainMenuView: View {
                 Text("jackin \(hello.version)")
                 Text("Protocol \(hello.minProtocol)-\(hello.maxProtocol)")
                 Text("\(hello.capabilities.count) capabilities")
+                Text("\(model.sessions.count) running agents")
             case .disconnected(let message):
                 Label("Daemon disconnected", systemImage: "exclamationmark.triangle")
                 Text(message)
@@ -21,6 +22,15 @@ struct MainMenuView: View {
             }
 
             Divider()
+
+            if !model.workspaces.isEmpty {
+                Section("Workspaces") {
+                    ForEach(model.workspaces) { workspace in
+                        workspaceRow(workspace)
+                    }
+                }
+                Divider()
+            }
 
             Button {
                 Task {
@@ -37,5 +47,20 @@ struct MainMenuView: View {
             }
         }
         .padding(8)
+    }
+
+    private func workspaceRow(_ workspace: DesktopWorkspace) -> some View {
+        let running = model.runningCount(for: workspace)
+        return HStack {
+            VStack(alignment: .leading) {
+                Text(workspace.name)
+                Text(workspace.defaultRole ?? workspace.workdir)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(running == 1 ? "1 agent" : "\(running) agents")
+                .foregroundStyle(running > 0 ? .primary : .secondary)
+        }
     }
 }

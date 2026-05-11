@@ -3,6 +3,8 @@ import Foundation
 @MainActor
 final class StatusBarModel: ObservableObject {
     @Published private(set) var daemon: DaemonHealth = .checking
+    @Published private(set) var workspaces: [DesktopWorkspace] = []
+    @Published private(set) var sessions: [DesktopSession] = []
     @Published private(set) var isRefreshing = false
 
     private let client: DaemonClient
@@ -16,7 +18,7 @@ final class StatusBarModel: ObservableObject {
         case .checking:
             "circle.dotted"
         case .connected:
-            "bolt.horizontal.circle"
+            sessions.isEmpty ? "bolt.horizontal.circle" : "bolt.horizontal.circle.fill"
         case .disconnected:
             "exclamationmark.circle"
         }
@@ -28,10 +30,20 @@ final class StatusBarModel: ObservableObject {
 
         do {
             let hello = try await client.hello()
+            async let workspaceList = client.workspaces()
+            async let sessionList = client.sessions()
+            workspaces = try await workspaceList.workspaces
+            sessions = try await sessionList.sessions
             daemon = .connected(hello)
         } catch {
+            workspaces = []
+            sessions = []
             daemon = .disconnected(error.localizedDescription)
         }
+    }
+
+    func runningCount(for workspace: DesktopWorkspace) -> Int {
+        sessions.filter { $0.workspace == workspace.name }.count
     }
 }
 
