@@ -3,7 +3,7 @@ title: "Unique Container Identity and Restore"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open — design proposal (Infrastructure)
+**Status**: Partially implemented — DNS-safe unique names, per-instance manifests with last attach outcomes, the rebuildable instance index, first-pass missing-container detection, Docker-unavailable diagnostics, explicit deleted-container writable-layer loss reporting, metadata-rich load/hardline recovery prompts, instance-ID targeting for hardline/eject/purge, purged lifecycle tombstones, exact `hardline` rebuild for missing recoverable instances using the recorded role source/ref, stopped/missing-DinD hardline recovery for existing crashed role containers, read-only `hardline --inspect` state reports, a console active-instance panel backed by local state, Java Testcontainers DinD smoke coverage, and legacy isolation-state manifest backfill have shipped; full hardline recovery actions, richer console recovery controls, and stronger restore guarantees remain open (Infrastructure)
 
 ## Problem
 
@@ -128,12 +128,12 @@ When launching or hardlining a configured workspace or ad-hoc directory, jackin 
 Restore paths:
 
 - **Role container exists and DIND exists/running**: `jackin hardline` attaches to an existing agent session, or prompts to start a new agent session inside the selected container when requested.
-- **Role container exists but DIND is missing/stopped**: rebuild the network, DIND sidecar, cert volume, and environment contract, then start or recreate the role container only if the role container's filesystem state is not required. If the role container has important writable-layer state, surface that it cannot be safely rehydrated without the original container.
+- **Role container exists but DIND is missing/stopped**: hardline restarts a stopped existing DIND sidecar or recreates the derived jackin network and DIND sidecar, then waits for TLS readiness before restarting the role container. If the role container has important writable-layer state, surface that it remains tied to the existing role container.
 - **Docker containers are missing but state directory exists with worktree/clone records**: recreate a new role container using the same `container_base` and remount the stored worktree/clone paths. Do not regenerate a different base name for a restore, because isolation paths and scratch branches are keyed by the original container name.
 - **Docker containers are missing and only shared mounts existed**: there is no private worktree to restore, but jackin can restart a fresh container against the same workspace and mark the old instance as superseded.
 - **Docker containers are missing and the instance had unpersisted container-layer changes**: tell the operator those container-layer changes are gone. This is the boundary that motivates future snapshot work.
 - **State directory exists but host workdir moved**: resolve by workspace config first; if the original path fingerprint no longer matches, prompt the operator to locate the new directory or inspect the state path directly.
-- **State directory exists but role source changed**: default to the stored role source/ref for hardline/recovery when available. Offer a fresh launch path if the operator wants the latest trusted role instead.
+- **State directory exists but role source changed**: exact hardline restore defaults to the stored role source/ref when available. A future picker should offer a fresh launch path if the operator wants the latest trusted role instead.
 
 Do not introduce a separate `jackin restore` command. `hardline` is the CLI verb for reconnecting to existing work. It should become directory-aware in the same way `load` is: running `jackin hardline` from inside a configured workspace or ad-hoc project directory looks up matching unfinished/running instances, prompts when more than one exists, then prompts for the exact agent session when the selected container has multiple sessions. If no matching instance exists, it should fail with a clear "nothing to hardline" message or offer the operator the normal fresh `load` path.
 
@@ -198,6 +198,8 @@ This avoids mutating live operator work while stopping new launches from creatin
 
 ### Phase 1 — DNS-safe unique names
 
+Status: implemented for new launches. Legacy exact-name operations still understand deterministic role names while new `jackin load` invocations claim DNS-safe random instance bases, and the DinD e2e smoke now runs Java Testcontainers from inside the launched role.
+
 - Add `src/runtime/instance_identity.rs` or equivalent for slugging, truncation, ID generation, and validation.
 - Replace `primary_container_name`, `next_container_name`, and clone-family matching in launch paths with generated instance names for new launches.
 - Keep exact-name operations for `hardline`, `eject`, and cleanup.
@@ -206,6 +208,8 @@ This avoids mutating live operator work while stopping new launches from creatin
 
 ### Phase 2 — Instance manifest and restore detection
 
+Status: partially implemented. New launches write `.jackin/instance.json` with lifecycle status, last attach outcome, and Docker resource names, maintain a rebuildable `~/.jackin/data/instances.json` lookup index, backfill legacy isolation-only state directories during index rebuild, retain `purged` tombstones when state is intentionally discarded, `jackin load` detects matching unfinished state whose Docker container is missing before allocating a fresh name, distinguishes missing containers from Docker-unavailable inspect failures, reports that deleted container writable-layer changes are unrecoverable, shows restore choices with instance ID/status/agent/role/mount state, and `jackin hardline`/`eject`/`purge` can resolve indexed instances by ID. Full cross-role recovery pickers remain open.
+
 - Write `.jackin/instance.json` before workspace materialization and update lifecycle fields throughout launch/finalize/error paths.
 - Add the rebuildable global index for lookup by workspace/directory/role.
 - Add reconciliation that compares manifest state with Docker state on launch.
@@ -213,8 +217,10 @@ This avoids mutating live operator work while stopping new launches from creatin
 
 ### Phase 3 — Hardline and UI recovery
 
+Status: partially implemented for CLI targeting and exact missing-instance rebuilds. Bare `jackin hardline` can resolve indexed workspace/ad-hoc instances from the current directory and shows candidate prompts with workspace, role, agent runtime, lifecycle status, Docker state, and mount-state summary. Exact `hardline` targets rebuild recoverable missing instances through the launch restore path with the recorded role source/ref, stopped/missing DIND sidecars are restored before crashed role containers, explicit `hardline`, `eject`, and `purge` selectors can target an indexed instance ID, `jackin hardline --inspect` prints read-only manifest/Docker/DinD/network/mount state without attaching, and the console shows local active/recoverable instances for the highlighted workspace or current directory. Full hardline recovery actions, agent-session selection, and richer console controls remain open.
+
 - Expand `jackin hardline` so it resolves the current workspace/directory, prompts across matching instances, prompts across agent sessions, and can start a new agent session inside the selected running container.
-- Add a console restore picker and active-instance panel that separates human labels from Docker names.
+- Expand the console active-instance panel into recovery controls that can hardline, purge, and inspect without requiring raw Docker names.
 - Teach cleanup and purge to operate by instance ID/name and to distinguish Docker resource deletion from local state deletion.
 
 ### Phase 4 — Stronger recovery guarantees
@@ -245,15 +251,16 @@ This feature writes only under jackin-managed state directories and creates/remo
 
 ## Related Files
 
-- <RepoFile path="src/instance/naming.rs" /> — current deterministic `clone-N` naming.
+- <RepoFile path="src/instance/naming.rs" /> — DNS-safe unique naming for new launches plus legacy deterministic-name matching.
 - <RepoFile path="src/runtime/naming.rs" /> — Docker labels, display formatting, and derived DIND cert volume naming.
 - <RepoFile path="src/runtime/launch.rs" /> — name claiming, DIND launch, env wiring, state preparation, and foreground finalization.
 - <RepoFile path="src/runtime/attach.rs" /> — current hardline restart behavior when containers exist.
 - <RepoFile path="src/runtime/cleanup.rs" /> — DIND/network/volume cleanup and orphan detection.
+- <RepoFile path="src/console/manager/render/list.rs" /> — workspace/current-directory detail panes, including local active-instance visibility.
 - <RepoFile path="src/isolation/state.rs" /> — mount-level isolation records that restore should reference, not replace.
 - <RepoFile path="src/isolation/materialize.rs" /> — worktree/clone paths currently keyed by container name.
 - <RepoFile path="src/paths.rs" /> — data/cache/config directory roots.
-- <RepoFile path="tests/dind_e2e.rs" /> — DIND env and connectivity coverage that should grow a Testcontainers smoke case.
+- <RepoFile path="tests/dind_e2e.rs" /> — DIND env/connectivity coverage plus Java Testcontainers child-container smoke coverage.
 
 ## Source Materials
 

@@ -15,6 +15,7 @@ pub fn purge_class_data(paths: &JackinPaths, selector: &RoleSelector) -> anyhow:
         let entry = entry?;
         let file_name = entry.file_name().to_string_lossy().to_string();
         if crate::instance::class_family_matches(selector, &file_name) {
+            crate::instance::InstanceIndex::mark_purged(&paths.data_dir, &file_name)?;
             std::fs::remove_dir_all(entry.path())?;
         }
     }
@@ -299,8 +300,52 @@ mod tests {
     fn purge_all_removes_matching_state_directories() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        std::fs::create_dir_all(paths.data_dir.join("jackin-agent-smith")).unwrap();
-        std::fs::create_dir_all(paths.data_dir.join("jackin-agent-smith-clone-1")).unwrap();
+        let container = "jackin-agent-smith";
+        let clone = "jackin-agent-smith-clone-1";
+        let manifest =
+            crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+                container_base: container,
+                workspace_name: Some("workspace"),
+                workspace_label: "workspace",
+                workdir: "/workspace",
+                host_workdir_fingerprint: "sha256:test",
+                role_key: "agent-smith",
+                role_display_name: "Agent Smith",
+                agent_runtime: crate::agent::Agent::Claude,
+                role_source_git: "https://example.invalid/agent-smith.git",
+                role_source_ref: None,
+                image_tag: "jackin-agent-smith",
+                docker: crate::instance::DockerResources {
+                    role_container: container.into(),
+                    dind_container: format!("{container}-dind"),
+                    network: format!("{container}-net"),
+                    certs_volume: format!("{container}-dind-certs"),
+                },
+            });
+        manifest.write(&paths.data_dir.join(container)).unwrap();
+        crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let clone_manifest =
+            crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+                container_base: clone,
+                workspace_name: Some("workspace"),
+                workspace_label: "workspace",
+                workdir: "/workspace",
+                host_workdir_fingerprint: "sha256:test",
+                role_key: "agent-smith",
+                role_display_name: "Agent Smith",
+                agent_runtime: crate::agent::Agent::Claude,
+                role_source_git: "https://example.invalid/agent-smith.git",
+                role_source_ref: None,
+                image_tag: "jackin-agent-smith",
+                docker: crate::instance::DockerResources {
+                    role_container: clone.into(),
+                    dind_container: format!("{clone}-dind"),
+                    network: format!("{clone}-net"),
+                    certs_volume: format!("{clone}-dind-certs"),
+                },
+            });
+        clone_manifest.write(&paths.data_dir.join(clone)).unwrap();
+        crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &clone_manifest).unwrap();
         std::fs::create_dir_all(paths.data_dir.join("jackin-chainargos-the-architect")).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
 
@@ -313,6 +358,15 @@ mod tests {
                 .data_dir
                 .join("jackin-chainargos-the-architect")
                 .exists()
+        );
+        let index = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
+        assert_eq!(
+            index
+                .instances
+                .iter()
+                .filter(|entry| entry.status == crate::instance::InstanceStatus::Purged)
+                .count(),
+            2
         );
     }
 

@@ -13,8 +13,6 @@ use jackin::derived_image::shell_quote;
 use tempfile::tempdir;
 
 const ROLE_KEY: &str = "jackin-e2e/agent-smith";
-const CONTAINER_NAME: &str = "jackin-jackin-e2e__agent-smith";
-const DIND_HOSTNAME: &str = "jackin-jackin-e2e__agent-smith-dind";
 
 /// RAII cleanup so the test's Docker resources are removed even if an
 /// assertion or `script(1)` invocation panics. Without this, a flaky run
@@ -78,15 +76,24 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
         panic!("agent did not emit {REPORT_END} marker\nstdout:\n{stdout}\nstderr:\n{stderr}");
     };
 
-    assert!(report.contains(&format!("DOCKER_HOST=tcp://{DIND_HOSTNAME}:2376")));
+    let dind_hostname = report
+        .lines()
+        .find_map(|line| line.strip_prefix("JACKIN_DIND_HOSTNAME="))
+        .expect("report must include JACKIN_DIND_HOSTNAME");
+    assert!(is_dns_label(dind_hostname), "{dind_hostname}");
+    assert!(!dind_hostname.contains("__"));
+    assert!(!dind_hostname.contains("clone-"));
+
+    assert!(report.contains(&format!("DOCKER_HOST=tcp://{dind_hostname}:2376")));
     assert!(report.contains("DOCKER_TLS_VERIFY=1"));
     assert!(report.contains("DOCKER_CERT_PATH=/certs/client"));
-    assert!(report.contains(&format!("JACKIN_DIND_HOSTNAME={DIND_HOSTNAME}")));
+    assert!(report.contains(&format!("JACKIN_DIND_HOSTNAME={dind_hostname}")));
+    assert!(report.contains(&format!("TESTCONTAINERS_HOST_OVERRIDE={dind_hostname}")));
     // Both casings carry the merged list — operator's localhost,127.0.0.1
     // must reach tools that read either uppercase NO_PROXY (Go runtime) or
     // lowercase no_proxy (curl, Python requests, wget).
-    let merged = format!("NO_PROXY=localhost,127.0.0.1,{DIND_HOSTNAME}");
-    let merged_lower = format!("no_proxy=localhost,127.0.0.1,{DIND_HOSTNAME}");
+    let merged = format!("NO_PROXY=localhost,127.0.0.1,{dind_hostname}");
+    let merged_lower = format!("no_proxy=localhost,127.0.0.1,{dind_hostname}");
     assert!(report.contains(&merged), "missing {merged}\n{report}");
     assert!(
         report.contains(&merged_lower),
@@ -95,6 +102,10 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     assert!(
         report.contains("CONTAINER ID"),
         "agent's `docker ps` did not list any containers\n{report}"
+    );
+    assert!(
+        report.contains("TESTCONTAINERS_SMOKE=ok"),
+        "agent's Java Testcontainers smoke did not pass\n{report}"
     );
 }
 
@@ -124,6 +135,22 @@ fn docker_available() -> bool {
         .arg("info")
         .output()
         .is_ok_and(|output| output.status.success())
+}
+
+fn is_dns_label(input: &str) -> bool {
+    !input.is_empty()
+        && input.len() <= 63
+        && input
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && input
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && input
+            .as_bytes()
+            .last()
+            .is_some_and(u8::is_ascii_alphanumeric)
 }
 
 /// Probe `script(1)` via the canonical PATH lookup. The previous
@@ -228,6 +255,12 @@ NO_PROXY = "localhost,127.0.0.1"
 const fn role_dockerfile() -> &'static str {
     r"FROM projectjackin/construct:trixie
 USER root
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends default-jdk-headless maven && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/* \
+           /var/cache/apt/* \
+           /tmp/*
 COPY fake-curl /usr/local/bin/curl
 RUN chmod +x /usr/local/bin/curl
 USER agent
@@ -260,9 +293,67 @@ echo "DOCKER_HOST=$DOCKER_HOST"
 echo "DOCKER_TLS_VERIFY=$DOCKER_TLS_VERIFY"
 echo "DOCKER_CERT_PATH=$DOCKER_CERT_PATH"
 echo "JACKIN_DIND_HOSTNAME=$JACKIN_DIND_HOSTNAME"
+echo "TESTCONTAINERS_HOST_OVERRIDE=$TESTCONTAINERS_HOST_OVERRIDE"
 echo "NO_PROXY=${{NO_PROXY:-}}"
 echo "no_proxy=${{no_proxy:-}}"
 docker ps
+tmpdir="$(mktemp -d)"
+cat > "$tmpdir/pom.xml" <<'POM'
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>dev.jackin</groupId>
+  <artifactId>dind-testcontainers-smoke</artifactId>
+  <version>1.0.0</version>
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+      <version>2.0.5</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>${{exec-maven-plugin.version}}</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+POM
+mkdir -p "$tmpdir/src/main/java"
+cat > "$tmpdir/src/main/java/JackinTestcontainersSmoke.java" <<'JAVA'
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.utility.DockerImageName;
+
+public final class JackinTestcontainersSmoke {{
+    public static void main(String[] args) {{
+        GenericContainer<?> container = new GenericContainer<>(DockerImageName.parse("alpine:3.20"))
+                .withCommand("sh", "-c", "echo jackin-testcontainers-child-ok && sleep 1");
+        container.start();
+        String logs = container.getLogs();
+        if (!logs.contains("jackin-testcontainers-child-ok")) {{
+            throw new IllegalStateException("child container logs missing marker: " + logs);
+        }}
+        System.out.println("TESTCONTAINERS_SMOKE=ok");
+        System.exit(0);
+    }}
+}}
+JAVA
+(
+  unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
+  cd "$tmpdir"
+  mvn -q -DskipTests compile exec:java -Dexec.mainClass=JackinTestcontainersSmoke
+)
+rm -rf "$tmpdir"
 echo "{REPORT_END}"
 CLAUDE
 chmod +x "$HOME/.local/bin/claude"
@@ -272,20 +363,35 @@ INSTALL
 }
 
 fn cleanup_role() {
-    let _ = Command::new("docker")
-        .args(["rm", "-f", CONTAINER_NAME])
+    let output = Command::new("docker")
+        .args([
+            "ps",
+            "-a",
+            "--filter",
+            &format!("label=jackin.class={ROLE_KEY}"),
+            "--format",
+            "{{.Names}}",
+        ])
         .output();
+    if let Ok(output) = output {
+        for name in String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|line| !line.is_empty())
+        {
+            let _ = Command::new("docker").args(["rm", "-f", name]).output();
+            let _ = Command::new("docker")
+                .args(["rm", "-f", &format!("{name}-dind")])
+                .output();
+            let _ = Command::new("docker")
+                .args(["network", "rm", &format!("{name}-net")])
+                .output();
+            let _ = Command::new("docker")
+                .args(["volume", "rm", &format!("{name}-dind-certs")])
+                .output();
+        }
+    }
     let _ = Command::new("docker")
-        .args(["rm", "-f", &format!("{CONTAINER_NAME}-dind")])
-        .output();
-    let _ = Command::new("docker")
-        .args(["network", "rm", &format!("{CONTAINER_NAME}-net")])
-        .output();
-    let _ = Command::new("docker")
-        .args(["volume", "rm", &format!("{CONTAINER_NAME}-dind-certs")])
-        .output();
-    let _ = Command::new("docker")
-        .args(["rmi", CONTAINER_NAME])
+        .args(["rmi", "jackin-jackin-e2e__agent-smith"])
         .output();
 }
 

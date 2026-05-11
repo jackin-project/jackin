@@ -92,14 +92,20 @@ fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
     after_long_help = "\
 Examples:
   jackin hardline                              # auto-detect workspace + running role for cwd
+  jackin hardline --inspect                    # inspect detected instance state without attaching
   jackin hardline agent-smith
+  jackin hardline --inspect k7p9m2xq
   jackin hardline chainargos/the-architect
+  jackin hardline k7p9m2xq
   jackin hardline jackin-agent-smith-clone-1"
 )]
 pub struct HardlineArgs {
-    /// Role class selector or container name to reconnect to.
+    /// Role class selector, instance ID, or container name to reconnect to.
     /// When omitted, uses the running role in the workspace for the current directory.
     pub selector: Option<String>,
+    /// Print manifest, Docker, `DinD`, and mount state without attaching or restarting.
+    #[arg(long)]
+    pub inspect: bool,
 }
 
 /// Open the operator console to manage workspaces, launch roles, and more
@@ -396,7 +402,10 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "hardline"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Hardline(super::HardlineArgs { selector: None }))
+            Some(Command::Hardline(super::HardlineArgs {
+                selector: None,
+                inspect: false,
+            }))
         ));
     }
 
@@ -405,7 +414,22 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "hardline", "agent-smith"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Hardline(super::HardlineArgs { selector: Some(ref s) })) if s == "agent-smith"
+            Some(Command::Hardline(super::HardlineArgs {
+                selector: Some(ref s),
+                inspect: false,
+            })) if s == "agent-smith"
+        ));
+    }
+
+    #[test]
+    fn parses_hardline_inspect_flag() {
+        let cli = Cli::try_parse_from(["jackin", "hardline", "--inspect", "k7p9m2xq"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Hardline(super::HardlineArgs {
+                selector: Some(ref s),
+                inspect: true,
+            })) if s == "k7p9m2xq"
         ));
     }
 }

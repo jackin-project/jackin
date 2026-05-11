@@ -56,6 +56,7 @@ impl ManagerListRow {
 pub struct ManagerState<'a> {
     pub stage: ManagerStage<'a>,
     pub workspaces: Vec<WorkspaceSummary>,
+    pub instances: Vec<crate::instance::InstanceIndexEntry>,
     pub current_dir: String,
     pub selected: usize,
     pub toast: Option<Toast>,
@@ -698,6 +699,7 @@ impl ManagerState<'_> {
         Self {
             stage: ManagerStage::List,
             workspaces,
+            instances: Vec::new(),
             current_dir: cwd.display().to_string(),
             selected,
             toast: None,
@@ -801,6 +803,11 @@ impl ManagerState<'_> {
         } else {
             None
         }
+    }
+
+    pub fn refresh_instances(&mut self, paths: &crate::paths::JackinPaths) {
+        self.instances = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir)
+            .map_or_else(|_| Vec::new(), |index| index.instances);
     }
 
     /// Drained from the outer event loop every tick so picker results
@@ -1111,6 +1118,47 @@ mod tests {
         assert_eq!(state.workspaces.len(), 1);
         assert!(matches!(state.stage, ManagerStage::List));
         assert_eq!(state.selected, 0);
+    }
+
+    #[test]
+    fn refresh_instances_loads_rebuildable_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let mut manifest =
+            crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+                container_base: "jackin-demo-alpha-k7p9m2xq",
+                workspace_name: Some("demo"),
+                workspace_label: "demo",
+                workdir: "/workspace/demo",
+                host_workdir_fingerprint: "sha256:test",
+                role_key: "alpha",
+                role_display_name: "Alpha",
+                agent_runtime: crate::agent::Agent::Claude,
+                role_source_git: "https://example.invalid/alpha.git",
+                role_source_ref: None,
+                image_tag: "jackin-alpha",
+                docker: crate::instance::DockerResources {
+                    role_container: "jackin-demo-alpha-k7p9m2xq".into(),
+                    dind_container: "jackin-demo-alpha-k7p9m2xq-dind".into(),
+                    network: "jackin-demo-alpha-k7p9m2xq-net".into(),
+                    certs_volume: "jackin-demo-alpha-k7p9m2xq-dind-certs".into(),
+                },
+            });
+        manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
+        manifest
+            .write(&paths.data_dir.join("jackin-demo-alpha-k7p9m2xq"))
+            .unwrap();
+
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.refresh_instances(&paths);
+
+        assert_eq!(state.instances.len(), 1);
+        assert_eq!(state.instances[0].instance_id, "k7p9m2xq");
+        assert_eq!(
+            state.instances[0].status,
+            crate::instance::InstanceStatus::RestoreAvailable
+        );
     }
 
     #[test]

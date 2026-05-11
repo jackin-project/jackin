@@ -14,7 +14,9 @@ pub mod test_support;
 #[cfg(test)]
 pub use self::test_support::FakeRunner;
 
-pub use self::attach::{ContainerState, hardline_agent, inspect_container_state};
+pub use self::attach::{
+    ContainerState, hardline_agent, inspect_container_state, inspect_hardline_instance,
+};
 pub use self::caffeinate::reconcile as reconcile_keep_awake;
 pub use self::cleanup::{eject_role, ensure_role_not_running, exile_all, purge_class_data};
 pub(crate) use self::discovery::list_role_names;
