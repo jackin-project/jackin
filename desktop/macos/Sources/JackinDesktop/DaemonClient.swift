@@ -11,10 +11,27 @@ struct DaemonClient {
     }
 
     func hello() async throws -> DaemonHello {
+        try await request(type: "daemon/hello", as: DaemonHello.self)
+    }
+
+    func workspaces() async throws -> WorkspaceList {
+        try await request(type: "workspace/list", as: WorkspaceList.self)
+    }
+
+    func sessions() async throws -> SessionList {
+        try await request(type: "session/list", as: SessionList.self)
+    }
+
+    private func request<T: Decodable>(
+        type: String,
+        as responseType: T.Type
+    ) async throws -> T {
+        let socketPath = socketPath
+        let protocolVersion = protocolVersion
         try await Task.detached {
-            let request = #"{"type":"daemon/hello","protocol":\#(protocolVersion)}"# + "\n"
-            let line = try sendJSONLine(request, to: socketPath)
-            return try JSONDecoder.daemon.decode(DaemonHello.self, from: Data(line.utf8))
+            let line = #"{"type":"\#(type)","protocol":\#(protocolVersion)}"# + "\n"
+            let response = try sendJSONLine(line, to: socketPath)
+            return try JSONDecoder.daemon.decode(responseType, from: Data(response.utf8))
         }.value
     }
 }
@@ -44,6 +61,58 @@ struct DaemonCapability: Decodable, Equatable {
     enum CodingKeys: String, CodingKey {
         case method
         case sinceProtocol = "since_protocol"
+    }
+}
+
+struct WorkspaceList: Decodable, Equatable {
+    let type: String
+    let workspaces: [DesktopWorkspace]
+}
+
+struct DesktopWorkspace: Decodable, Identifiable, Equatable {
+    var id: String { name }
+
+    let name: String
+    let workdir: String
+    let mountCount: Int
+    let defaultRole: String?
+    let lastRole: String?
+    let defaultAgent: String?
+    let keepAwake: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case workdir
+        case mountCount = "mount_count"
+        case defaultRole = "default_role"
+        case lastRole = "last_role"
+        case defaultAgent = "default_agent"
+        case keepAwake = "keep_awake"
+    }
+}
+
+struct SessionList: Decodable, Equatable {
+    let type: String
+    let sessions: [DesktopSession]
+}
+
+struct DesktopSession: Decodable, Identifiable, Equatable {
+    var id: String { containerName }
+
+    let containerName: String
+    let status: String
+    let displayName: String
+    let workspace: String?
+    let role: String?
+    let agent: String?
+
+    enum CodingKeys: String, CodingKey {
+        case containerName = "container_name"
+        case status
+        case displayName = "display_name"
+        case workspace
+        case role
+        case agent
     }
 }
 
