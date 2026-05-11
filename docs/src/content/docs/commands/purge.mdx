@@ -15,7 +15,7 @@ Delete persisted state (Claude history, settings, GitHub CLI state, plugins) for
 
 | Argument | Required | Description |
 |---|---|---|
-| `SELECTOR` | Yes | Role selector (e.g., `agent-smith`, `chainargos/backend-engineer`) |
+| `SELECTOR` | Yes | Role selector, instance ID, or container name |
 
 ## Options
 
@@ -31,6 +31,9 @@ jackin purge agent-smith
 
 # Purge all instances
 jackin purge agent-smith --all
+
+# Purge a specific indexed instance
+jackin purge k7p9m2xq
 
 # Purge a namespaced agent
 jackin purge chainargos/backend-engineer

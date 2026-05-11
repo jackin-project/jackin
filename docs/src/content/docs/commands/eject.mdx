@@ -15,7 +15,7 @@ Stop a running agent container.
 
 | Argument | Required | Description |
 |---|---|---|
-| `SELECTOR` | Yes | Role selector or container name |
+| `SELECTOR` | Yes | Role selector, instance ID, or container name |
 
 ## Options
 
@@ -35,6 +35,9 @@ jackin eject agent-smith --all
 
 # Stop and delete all persisted state
 jackin eject agent-smith --purge
+
+# Stop a specific indexed instance
+jackin eject k7p9m2xq
 
 # Stop a specific container by name
 jackin eject jackin-agent-smith-clone-1

@@ -6,20 +6,20 @@ description: "Reattach to a running agent's session, or restart a crashed one"
 ## Synopsis
 
 ```bash
-jackin hardline <SELECTOR>
+jackin hardline [SELECTOR]
 ```
 
 Reconnect your terminal to an agent container. Use this when you've closed your terminal but the agent is still running in the background, or when an agent crashed and you want to resume the same session without rebuilding the whole stack.
 
 A `hardline` is the direct line back into an agent session that's already running — the operator's way to step back inside without loading a fresh instance.
 
-If you pass an role selector, `jackin hardline` targets that class's primary container. If you have multiple instances, use the full container name to pick a specific clone.
+When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspace or ad-hoc directory from the local instance index and reconnects to a matching indexed instance. If you pass a role selector, `jackin hardline` targets that class's primary container. If you have multiple instances, use the instance ID or full container name to pick a specific one.
 
 ## Arguments
 
 | Argument | Required | Description |
 |---|---|---|
-| `SELECTOR` | Yes | Role selector (e.g., `agent-smith`) or full container name (e.g., `jackin-agent-smith-clone-1`) |
+| `SELECTOR` | No | Role selector (e.g., `agent-smith`), instance ID, or full container name (e.g., `jackin-agent-smith-clone-1`) |
 
 ## Behavior
 
@@ -47,6 +47,9 @@ To stop an agent, exit it from inside (e.g., `/exit` in Claude Code). That ends 
 ```bash
 # Reconnect to agent-smith
 jackin hardline agent-smith
+
+# Reconnect from the current workspace or ad-hoc directory
+jackin hardline
 
 # Reconnect to a specific container by name
 jackin hardline jackin-agent-smith-clone-1

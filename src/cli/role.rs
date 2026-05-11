@@ -94,10 +94,11 @@ Examples:
   jackin hardline                              # auto-detect workspace + running role for cwd
   jackin hardline agent-smith
   jackin hardline chainargos/the-architect
+  jackin hardline k7p9m2xq
   jackin hardline jackin-agent-smith-clone-1"
 )]
 pub struct HardlineArgs {
-    /// Role class selector or container name to reconnect to.
+    /// Role class selector, instance ID, or container name to reconnect to.
     /// When omitted, uses the running role in the workspace for the current directory.
     pub selector: Option<String>,
 }

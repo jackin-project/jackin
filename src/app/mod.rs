@@ -171,9 +171,13 @@ pub fn run(cli: Cli) -> Result<()> {
         }
         Command::Hardline(HardlineArgs { selector }) => {
             let container = if let Some(sel) = selector {
-                match Selector::parse(&sel)? {
-                    Selector::Container(name) => name,
-                    Selector::Role(class) => instance::primary_container_name(&class),
+                if let Some(container) = resolve_instance_reference(&paths, &sel)? {
+                    container
+                } else {
+                    match Selector::parse(&sel)? {
+                        Selector::Container(name) => name,
+                        Selector::Role(class) => instance::primary_container_name(&class),
+                    }
                 }
             } else {
                 let cwd = std::env::current_dir()?;
@@ -189,16 +193,24 @@ pub fn run(cli: Cli) -> Result<()> {
             all,
             purge,
         }) => {
-            let containers = match Selector::parse(&selector)? {
-                Selector::Container(container) => vec![container],
-                Selector::Role(class) => {
-                    if all {
-                        runtime::matching_family(
-                            &class,
-                            &runtime::list_managed_role_names(&mut runner)?,
-                        )
-                    } else {
-                        vec![instance::primary_container_name(&class)]
+            let containers = if let Some(container) = resolve_instance_reference(&paths, &selector)?
+            {
+                if all {
+                    anyhow::bail!("--all applies only to role selectors, not instance IDs");
+                }
+                vec![container]
+            } else {
+                match Selector::parse(&selector)? {
+                    Selector::Container(container) => vec![container],
+                    Selector::Role(class) => {
+                        if all {
+                            runtime::matching_family(
+                                &class,
+                                &runtime::list_managed_role_names(&mut runner)?,
+                            )
+                        } else {
+                            vec![instance::primary_container_name(&class)]
+                        }
                     }
                 }
             };
@@ -1075,8 +1087,11 @@ pub fn run(cli: Cli) -> Result<()> {
                 handle_claude_token(&paths, &mut config, action)
             }
         },
-        Command::Purge(PurgeArgs { selector, all }) => match Selector::parse(&selector)? {
-            Selector::Container(container) => {
+        Command::Purge(PurgeArgs { selector, all }) => {
+            if let Some(container) = resolve_instance_reference(&paths, &selector)? {
+                if all {
+                    anyhow::bail!("--all applies only to role selectors, not instance IDs");
+                }
                 let short_name = container.trim_start_matches("jackin-");
                 runtime::ensure_role_not_running(&mut runner, short_name)?;
                 crate::isolation::cleanup::purge_isolated_for_container(
@@ -1086,14 +1101,11 @@ pub fn run(cli: Cli) -> Result<()> {
                 remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
                 instance::InstanceIndex::remove(&paths.data_dir, &container)?;
                 println!("Purged state for {container}.");
-                Ok(())
+                return Ok(());
             }
-            Selector::Role(class) => {
-                if all {
-                    runtime::purge_class_data(&paths, &class)?;
-                    println!("Purged all state for {}.", class.key());
-                } else {
-                    let container = instance::primary_container_name(&class);
+
+            match Selector::parse(&selector)? {
+                Selector::Container(container) => {
                     let short_name = container.trim_start_matches("jackin-");
                     runtime::ensure_role_not_running(&mut runner, short_name)?;
                     crate::isolation::cleanup::purge_isolated_for_container(
@@ -1103,10 +1115,28 @@ pub fn run(cli: Cli) -> Result<()> {
                     remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
                     instance::InstanceIndex::remove(&paths.data_dir, &container)?;
                     println!("Purged state for {container}.");
+                    Ok(())
                 }
-                Ok(())
+                Selector::Role(class) => {
+                    if all {
+                        runtime::purge_class_data(&paths, &class)?;
+                        println!("Purged all state for {}.", class.key());
+                    } else {
+                        let container = instance::primary_container_name(&class);
+                        let short_name = container.trim_start_matches("jackin-");
+                        runtime::ensure_role_not_running(&mut runner, short_name)?;
+                        crate::isolation::cleanup::purge_isolated_for_container(
+                            &paths.data_dir.join(&container),
+                            &mut runner,
+                        )?;
+                        remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
+                        instance::InstanceIndex::remove(&paths.data_dir, &container)?;
+                        println!("Purged state for {container}.");
+                    }
+                    Ok(())
+                }
             }
-        },
+        }
         Command::Help { .. } => {
             // Handled upstream in dispatch before reaching this function.
             unreachable!("Command::Help is dispatched to Action::PrintHelp before run() is called")
@@ -1384,6 +1414,34 @@ fn remove_data_dir_if_exists(path: &Path) -> Result<()> {
     }
 }
 
+fn resolve_instance_reference(paths: &JackinPaths, input: &str) -> Result<Option<String>> {
+    let index = instance::InstanceIndex::read_or_rebuild(&paths.data_dir)?;
+    let mut matches = Vec::new();
+    for entry in index.instances {
+        if entry.container_base == input {
+            matches.push(entry.container_base);
+            continue;
+        }
+        let state_dir = paths.data_dir.join(&entry.container_base);
+        let Ok(manifest) = instance::InstanceManifest::read(&state_dir) else {
+            continue;
+        };
+        if manifest.instance_id == input {
+            matches.push(manifest.container_base);
+        }
+    }
+    matches.sort();
+    matches.dedup();
+
+    match matches.as_slice() {
+        [] => Ok(None),
+        [container] => Ok(Some(container.clone())),
+        _ => anyhow::bail!(
+            "instance reference {input:?} is ambiguous; pass the full container name instead"
+        ),
+    }
+}
+
 /// Render the `config auth show` output as a string. Empty workspace + role
 /// names fall through to layer 1 (global), so this prints the global default
 /// for each agent. Printing every built-in agent avoids privileging any one
@@ -1593,6 +1651,41 @@ mod auth_set_tests {
         assert!(out.contains("claude:"), "missing claude line: {out}");
         assert!(out.contains("codex:"), "missing codex line: {out}");
         assert!(out.contains("amp:"), "missing amp line: {out}");
+    }
+
+    #[test]
+    fn resolve_instance_reference_matches_manifest_instance_id() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
+            container_base: "jackin-workspace-agentsmith-k7p9m2xq",
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: instance::DockerResources {
+                role_container: "jackin-workspace-agentsmith-k7p9m2xq".to_string(),
+                dind_container: "jackin-workspace-agentsmith-k7p9m2xq-dind".to_string(),
+                network: "jackin-workspace-agentsmith-k7p9m2xq-net".to_string(),
+                certs_volume: "jackin-workspace-agentsmith-k7p9m2xq-dind-certs".to_string(),
+            },
+        });
+        let state_dir = paths.data_dir.join(&manifest.container_base);
+        manifest.write(&state_dir).unwrap();
+        instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+
+        let resolved = resolve_instance_reference(&paths, "k7p9m2xq").unwrap();
+
+        assert_eq!(
+            resolved.as_deref(),
+            Some("jackin-workspace-agentsmith-k7p9m2xq")
+        );
     }
 
     #[test]
