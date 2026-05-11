@@ -43,7 +43,7 @@ pub(super) fn render_list_body(
 
     match state.selected_row() {
         ManagerListRow::CurrentDirectory => {
-            render_current_dir_details_pane(frame, columns[1], cwd, config);
+            render_current_dir_details_pane(frame, columns[1], cwd, config, state);
         }
         ManagerListRow::NewWorkspace => {
             render_sentinel_description_pane(frame, columns[1]);
@@ -514,6 +514,7 @@ fn render_current_dir_details_pane(
     area: Rect,
     cwd: &std::path::Path,
     config: &AppConfig,
+    state: &ManagerState<'_>,
 ) {
     let cwd_str = cwd.display().to_string();
     let workdir_short = crate::tui::shorten_home(&cwd_str);
@@ -563,7 +564,13 @@ fn render_current_dir_details_pane(
         rows[0],
     );
 
-    render_mounts_subpanel(frame, rows[1], &mounts, 0, false);
+    render_mounts_subpanel(
+        frame,
+        rows[1],
+        &mounts,
+        state.list_mounts_scroll_x,
+        state.list_scroll_focus == Some(MountScrollFocus::Workspace),
+    );
 
     // Roles block — reuse the no-`ws_config` branch of the shared renderer,
     // which lists every globally-configured role (without per-role

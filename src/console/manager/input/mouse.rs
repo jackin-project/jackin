@@ -405,12 +405,15 @@ fn list_scroll_areas(
     config: Option<&crate::config::AppConfig>,
 ) -> Option<ListScrollAreas> {
     let config = config?;
-    let summary = state.selected_workspace_summary()?;
-    let workspace = config.workspaces.get(&summary.name)?;
     let seam_x = seam_column(state.list_split_pct, term_size.width);
     let right_x = seam_x;
     let right_w = term_size.width.saturating_sub(seam_x);
     let body_y = LIST_HEADER_HEIGHT;
+    if state.is_current_dir_selected() {
+        return Some(current_dir_scroll_areas(state, right_x, right_w, body_y));
+    }
+    let summary = state.selected_workspace_summary()?;
+    let workspace = config.workspaces.get(&summary.name)?;
     let mounts_h = mount_block_height(workspace.mounts.as_slice());
     let picker_role = state.inline_role_picker.as_ref().and_then(|picker| {
         picker
@@ -483,6 +486,46 @@ fn list_scroll_areas(
             ),
         }),
     })
+}
+
+fn current_dir_scroll_areas(
+    state: &ManagerState<'_>,
+    right_x: u16,
+    right_w: u16,
+    body_y: u16,
+) -> ListScrollAreas {
+    let mounts = [current_dir_mount(state)];
+    let mounts_h = mount_block_height(&mounts);
+    ListScrollAreas {
+        workspace: ScrollArea {
+            area: Rect {
+                x: right_x,
+                y: body_y + 3,
+                width: right_w,
+                height: mounts_h,
+            },
+            content_width: super::super::render::list::workspace_mounts_content_width(&mounts),
+        },
+        global: ScrollArea {
+            area: Rect {
+                x: right_x,
+                y: body_y + 3 + mounts_h,
+                width: right_w,
+                height: 0,
+            },
+            content_width: 0,
+        },
+        role_global: None,
+    }
+}
+
+fn current_dir_mount(state: &ManagerState<'_>) -> crate::workspace::MountConfig {
+    crate::workspace::MountConfig {
+        src: state.current_dir.clone(),
+        dst: state.current_dir.clone(),
+        readonly: false,
+        isolation: crate::isolation::MountIsolation::Shared,
+    }
 }
 
 fn editor_scroll_area(
@@ -1087,6 +1130,11 @@ mod mouse_drag_tests {
         state
     }
 
+    fn current_dir_state_at(path: &std::path::Path) -> ManagerState<'static> {
+        let config = crate::config::AppConfig::default();
+        ManagerState::from_config(&config, path)
+    }
+
     fn config_with_long_git_type_mount(source: &std::path::Path) -> crate::config::AppConfig {
         let mut config = crate::config::AppConfig::default();
         config.workspaces.insert(
@@ -1209,6 +1257,30 @@ mod mouse_drag_tests {
         handle_mouse_with_config(&mut state, mouse_at(31, 7), term(100), Some(&config));
 
         assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Workspace));
+    }
+
+    #[test]
+    fn click_current_directory_mount_block_focuses_and_scrolls_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cwd = tmp.path().join(
+            "very-long-current-directory-name-that-forces-horizontal-scrolling-in-the-preview",
+        );
+        std::fs::create_dir_all(&cwd).unwrap();
+        let config = crate::config::AppConfig::default();
+        let mut state = current_dir_state_at(&cwd);
+        assert!(state.is_current_dir_selected());
+
+        handle_mouse_with_config(&mut state, mouse_at(31, 7), term(100), Some(&config));
+        assert_eq!(state.list_scroll_focus, Some(MountScrollFocus::Workspace));
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollDown, 31, 7),
+            term(100),
+            Some(&config),
+        );
+
+        assert_eq!(state.list_mounts_scroll_x, MOUSE_HORIZONTAL_SCROLL_STEP);
     }
 
     #[test]

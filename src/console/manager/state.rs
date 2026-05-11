@@ -56,6 +56,7 @@ impl ManagerListRow {
 pub struct ManagerState<'a> {
     pub stage: ManagerStage<'a>,
     pub workspaces: Vec<WorkspaceSummary>,
+    pub current_dir: String,
     pub selected: usize,
     pub toast: Option<Toast>,
     /// Modal slot at the list level (e.g. `Modal::GithubPicker`); the
@@ -659,6 +660,7 @@ impl ManagerState<'_> {
         Self {
             stage: ManagerStage::List,
             workspaces,
+            current_dir: cwd.display().to_string(),
             selected,
             toast: None,
             list_modal: None,
