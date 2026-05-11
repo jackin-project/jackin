@@ -3,7 +3,7 @@ title: "Unique Container Identity and Restore"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — DNS-safe unique names, per-instance manifests, the rebuildable instance index, first-pass missing-container detection, explicit deleted-container writable-layer loss reporting, instance-ID targeting for hardline/eject/purge, bare `hardline` lookup for indexed workspace/ad-hoc instances, and legacy isolation-state manifest backfill have shipped; hardline recovery UI and stronger restore guarantees remain open (Infrastructure)
+**Status**: Partially implemented — DNS-safe unique names, per-instance manifests, the rebuildable instance index, first-pass missing-container detection, explicit deleted-container writable-layer loss reporting, instance-ID targeting for hardline/eject/purge, bare `hardline` lookup for indexed workspace/ad-hoc instances, Java Testcontainers DinD smoke coverage, and legacy isolation-state manifest backfill have shipped; hardline recovery UI and stronger restore guarantees remain open (Infrastructure)
 
 ## Problem
 
@@ -198,7 +198,7 @@ This avoids mutating live operator work while stopping new launches from creatin
 
 ### Phase 1 — DNS-safe unique names
 
-Status: implemented for new launches. Legacy exact-name operations still understand deterministic role names while new `jackin load` invocations claim DNS-safe random instance bases.
+Status: implemented for new launches. Legacy exact-name operations still understand deterministic role names while new `jackin load` invocations claim DNS-safe random instance bases, and the DinD e2e smoke now runs Java Testcontainers from inside the launched role.
 
 - Add `src/runtime/instance_identity.rs` or equivalent for slugging, truncation, ID generation, and validation.
 - Replace `primary_container_name`, `next_container_name`, and clone-family matching in launch paths with generated instance names for new launches.
@@ -259,7 +259,7 @@ This feature writes only under jackin-managed state directories and creates/remo
 - <RepoFile path="src/isolation/state.rs" /> — mount-level isolation records that restore should reference, not replace.
 - <RepoFile path="src/isolation/materialize.rs" /> — worktree/clone paths currently keyed by container name.
 - <RepoFile path="src/paths.rs" /> — data/cache/config directory roots.
-- <RepoFile path="tests/dind_e2e.rs" /> — DIND env and connectivity coverage that should grow a Testcontainers smoke case.
+- <RepoFile path="tests/dind_e2e.rs" /> — DIND env/connectivity coverage plus Java Testcontainers child-container smoke coverage.
 
 ## Source Materials
 
