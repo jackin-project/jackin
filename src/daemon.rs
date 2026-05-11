@@ -4,7 +4,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicBool, Ordering},
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -72,6 +72,11 @@ enum Request {
         kind: DesktopOpenKind,
         target: String,
     },
+    #[serde(rename = "account/status")]
+    AccountStatus {
+        protocol: u32,
+        refresh: Option<bool>,
+    },
     Status {
         protocol: u32,
     },
@@ -105,6 +110,8 @@ enum Response {
     GithubPullRequests(GithubPullRequestListResponse),
     #[serde(rename = "desktop/action")]
     DesktopAction(DesktopActionResponse),
+    #[serde(rename = "account/status")]
+    AccountStatus(AccountStatusResponse),
     Status(StatusResponse),
     Error {
         message: String,
@@ -192,6 +199,22 @@ pub struct DesktopActionResponse {
     pub command: Vec<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct AccountStatusResponse {
+    pub providers: Vec<AccountProviderStatus>,
+    pub fetched_at_epoch_seconds: u64,
+    pub refresh_after_seconds: u64,
+    pub cache_hit: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct AccountProviderStatus {
+    pub provider: String,
+    pub state: String,
+    pub source: Option<String>,
+    pub detail: String,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StatusResponse {
     pub version: String,
@@ -209,6 +232,13 @@ struct DaemonState {
     paths: JackinPaths,
     started_at: SystemTime,
     shutdown: Arc<AtomicBool>,
+    account_status_cache: Mutex<Option<CachedAccountStatus>>,
+}
+
+#[derive(Clone)]
+struct CachedAccountStatus {
+    response: AccountStatusResponse,
+    expires_at: SystemTime,
 }
 
 pub fn exec(command: DaemonCommand) -> Result<()> {
@@ -327,6 +357,7 @@ fn serve(paths: &JackinPaths) -> Result<()> {
         paths: paths.clone(),
         started_at: SystemTime::now(),
         shutdown: Arc::clone(&shutdown),
+        account_status_cache: Mutex::new(None),
     });
 
     log_line(paths, "daemon started");
@@ -437,6 +468,14 @@ fn handle_request(request: Request, state: &DaemonState) -> Response {
                 message: format!("{err:#}"),
             },
         },
+        Request::AccountStatus { refresh, .. } => {
+            match account_status(state, refresh.unwrap_or(false)) {
+                Ok(response) => Response::AccountStatus(response),
+                Err(err) => Response::Error {
+                    message: format!("{err:#}"),
+                },
+            }
+        }
         Request::Status { .. } => Response::Status(status(state)),
         Request::Shutdown { .. } => {
             state.shutdown.store(true, Ordering::Relaxed);
@@ -476,6 +515,7 @@ fn validate_protocol(request: &Request) -> std::result::Result<(), String> {
         | Request::GithubRepositoryPrs { protocol, .. }
         | Request::WorkspaceLaunch { protocol, .. }
         | Request::DesktopOpen { protocol, .. }
+        | Request::AccountStatus { protocol, .. }
         | Request::Status { protocol }
         | Request::Shutdown { protocol }
         | Request::WarmCache { protocol }
@@ -513,6 +553,7 @@ fn daemon_capabilities() -> Vec<DaemonCapability> {
         "github/repository_prs",
         "workspace/launch",
         "desktop/open",
+        "account/status",
         "notification/send",
     ]
     .into_iter()
@@ -861,6 +902,106 @@ fn run_open_command(command: &[String]) -> Result<()> {
         command.join(" ")
     );
     Ok(())
+}
+
+const ACCOUNT_STATUS_CACHE_SECONDS: u64 = 30;
+
+fn account_status(state: &DaemonState, refresh: bool) -> Result<AccountStatusResponse> {
+    let now = SystemTime::now();
+    if !refresh
+        && let Some(cached) = state
+            .account_status_cache
+            .lock()
+            .map_err(|_| anyhow::anyhow!("account status cache poisoned"))?
+            .as_ref()
+        && cached.expires_at > now
+    {
+        let mut response = cached.response.clone();
+        response.cache_hit = true;
+        return Ok(response);
+    }
+
+    let response = read_account_status(&state.paths.home_dir, now);
+    *state
+        .account_status_cache
+        .lock()
+        .map_err(|_| anyhow::anyhow!("account status cache poisoned"))? =
+        Some(CachedAccountStatus {
+            response: response.clone(),
+            expires_at: now + Duration::from_secs(ACCOUNT_STATUS_CACHE_SECONDS),
+        });
+    Ok(response)
+}
+
+fn read_account_status(home: &Path, fetched_at: SystemTime) -> AccountStatusResponse {
+    AccountStatusResponse {
+        providers: vec![
+            claude_account_status(home),
+            codex_account_status(home),
+            amp_account_status(home),
+        ],
+        fetched_at_epoch_seconds: epoch_seconds(fetched_at),
+        refresh_after_seconds: ACCOUNT_STATUS_CACHE_SECONDS,
+        cache_hit: false,
+    }
+}
+
+fn claude_account_status(home: &Path) -> AccountProviderStatus {
+    if env_present("CLAUDE_CODE_OAUTH_TOKEN") {
+        return account_available("claude", "env:CLAUDE_CODE_OAUTH_TOKEN");
+    }
+    if env_present("ANTHROPIC_API_KEY") {
+        return account_available("claude", "env:ANTHROPIC_API_KEY");
+    }
+    if home.join(".claude/.credentials.json").is_file() {
+        return account_available("claude", "file:~/.claude/.credentials.json");
+    }
+    if home.join(".claude.json").is_file() {
+        return account_available("claude", "file:~/.claude.json");
+    }
+    account_missing("claude", "no Claude env token or host auth file found")
+}
+
+fn codex_account_status(home: &Path) -> AccountProviderStatus {
+    if env_present("OPENAI_API_KEY") {
+        return account_available("codex", "env:OPENAI_API_KEY");
+    }
+    if home.join(".codex/auth.json").is_file() {
+        return account_available("codex", "file:~/.codex/auth.json");
+    }
+    account_missing("codex", "no Codex env token or host auth file found")
+}
+
+fn amp_account_status(home: &Path) -> AccountProviderStatus {
+    if env_present("AMP_API_KEY") {
+        return account_available("amp", "env:AMP_API_KEY");
+    }
+    if home.join(".local/share/amp/secrets.json").is_file() {
+        return account_available("amp", "file:~/.local/share/amp/secrets.json");
+    }
+    account_missing("amp", "no Amp env token or host auth file found")
+}
+
+fn account_available(provider: &str, source: &str) -> AccountProviderStatus {
+    AccountProviderStatus {
+        provider: provider.to_string(),
+        state: "available".to_string(),
+        source: Some(source.to_string()),
+        detail: "credential source present".to_string(),
+    }
+}
+
+fn account_missing(provider: &str, detail: &str) -> AccountProviderStatus {
+    AccountProviderStatus {
+        provider: provider.to_string(),
+        state: "missing".to_string(),
+        source: None,
+        detail: detail.to_string(),
+    }
+}
+
+fn env_present(key: &str) -> bool {
+    std::env::var_os(key).is_some_and(|value| !value.is_empty())
 }
 
 fn status(state: &DaemonState) -> StatusResponse {
@@ -1363,15 +1504,16 @@ fn print_response(response: Response) {
         Response::DesktopAction(response) => {
             println!("{}: {}", response.action, response.command.join(" "));
         }
+        Response::AccountStatus(response) => {
+            println!("{} account statuses", response.providers.len());
+        }
         Response::Status(status) => println!("daemon running: pid {}", status.pid),
         Response::Error { message } => eprintln!("error: {message}"),
     }
 }
 
 fn log_line(paths: &JackinPaths, message: &str) {
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs());
+    let ts = epoch_seconds(SystemTime::now());
     if let Ok(mut file) = OpenOptions::new()
         .create(true)
         .append(true)
@@ -1379,6 +1521,11 @@ fn log_line(paths: &JackinPaths, message: &str) {
     {
         let _ = writeln!(file, "{ts} {message}");
     }
+}
+
+fn epoch_seconds(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs())
 }
 
 fn socket_path(paths: &JackinPaths) -> PathBuf {
@@ -1476,6 +1623,7 @@ published_image = "ghcr.io/example/role:latest"
         assert!(methods.contains(&"github/repository_prs"));
         assert!(methods.contains(&"workspace/launch"));
         assert!(methods.contains(&"desktop/open"));
+        assert!(methods.contains(&"account/status"));
         assert!(methods.contains(&"notification/send"));
     }
 
@@ -1501,6 +1649,7 @@ published_image = "ghcr.io/example/role:latest"
             paths: JackinPaths::for_tests(tmp.path()),
             started_at: SystemTime::now(),
             shutdown: Arc::new(AtomicBool::new(false)),
+            account_status_cache: Mutex::new(None),
         };
 
         let response = handle_request(Request::Hello { protocol: 999 }, &state);
@@ -1723,6 +1872,56 @@ published_image = "ghcr.io/example/role:latest"
         let error = ensure_browser_target("file:///tmp/secret").unwrap_err();
 
         assert!(error.to_string().contains("http or https"));
+    }
+
+    #[test]
+    fn account_status_reports_provider_file_sources() {
+        let tmp = tempdir().unwrap();
+        let home = tmp.path();
+        std::fs::create_dir_all(home.join(".claude")).unwrap();
+        std::fs::write(home.join(".claude/.credentials.json"), "{}").unwrap();
+        std::fs::create_dir_all(home.join(".codex")).unwrap();
+        std::fs::write(home.join(".codex/auth.json"), "{}").unwrap();
+        std::fs::create_dir_all(home.join(".local/share/amp")).unwrap();
+        std::fs::write(home.join(".local/share/amp/secrets.json"), "{}").unwrap();
+
+        let response = read_account_status(home, UNIX_EPOCH + Duration::from_secs(42));
+
+        assert_eq!(response.fetched_at_epoch_seconds, 42);
+        assert_eq!(response.refresh_after_seconds, ACCOUNT_STATUS_CACHE_SECONDS);
+        assert!(!response.cache_hit);
+        assert_eq!(
+            response
+                .providers
+                .iter()
+                .map(|provider| (provider.provider.as_str(), provider.state.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("claude", "available"),
+                ("codex", "available"),
+                ("amp", "available")
+            ]
+        );
+    }
+
+    #[test]
+    fn account_status_cache_marks_cache_hits() {
+        let tmp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        let state = DaemonState {
+            paths,
+            started_at: SystemTime::now(),
+            shutdown: Arc::new(AtomicBool::new(false)),
+            account_status_cache: Mutex::new(None),
+        };
+
+        let first = account_status(&state, false).unwrap();
+        let second = account_status(&state, false).unwrap();
+        let refreshed = account_status(&state, true).unwrap();
+
+        assert!(!first.cache_hit);
+        assert!(second.cache_hit);
+        assert!(!refreshed.cache_hit);
     }
 
     fn github_pull(repository: &str, number: u64, created_at: &str) -> GithubPullRequest {
