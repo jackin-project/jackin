@@ -19,6 +19,12 @@ pub(super) fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEve
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
             state.stage = ManagerStage::List;
         }
+        KeyCode::Left | KeyCode::Char('h' | 'H') => {
+            global.scroll_x = global.scroll_x.saturating_sub(8);
+        }
+        KeyCode::Right | KeyCode::Char('l' | 'L') => {
+            global.scroll_x = global.scroll_x.saturating_add(8);
+        }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             global.selected = global.selected.saturating_sub(1);
         }

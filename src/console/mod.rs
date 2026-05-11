@@ -73,11 +73,11 @@ impl ConsoleState {
                 // `LaunchWithAgent` arm rebuilds the choice on commit.
                 self.pending_launch = Some(input);
                 if let ConsoleStage::Manager(ms) = &mut self.stage {
-                    ms.list_modal = Some(crate::console::manager::state::Modal::RolePicker {
-                        state: crate::console::widgets::role_picker::RolePickerState::with_confirm_label(
+                    ms.inline_role_picker = Some(
+                        crate::console::widgets::role_picker::RolePickerState::with_confirm_label(
                             roles, "launch",
                         ),
-                    });
+                    );
                 }
                 Ok(None)
             }

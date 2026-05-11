@@ -59,6 +59,9 @@ pub fn handle_key(
     if state.list_modal.is_some() {
         return Ok(list::handle_list_modal(state, key));
     }
+    if state.inline_role_picker.is_some() {
+        return Ok(list::handle_inline_role_picker(state, key));
+    }
     // Modal precedence: if a modal is open, it gets the event.
     // Use a discriminant check so we can take &mut without keeping an
     // immutable borrow alive across the call.

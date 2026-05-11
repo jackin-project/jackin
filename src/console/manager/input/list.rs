@@ -14,6 +14,7 @@ use super::InputOutcome;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn handle_list_key(
     state: &mut ManagerState<'_>,
     config: &AppConfig,
@@ -24,11 +25,21 @@ pub(super) fn handle_list_key(
     // See ManagerListRow docs for row layout.
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => Ok(InputOutcome::ExitJackin),
+        KeyCode::Left | KeyCode::Char('h' | 'H') => {
+            state.list_scroll_x = state.list_scroll_x.saturating_sub(8);
+            Ok(InputOutcome::Continue)
+        }
+        KeyCode::Right | KeyCode::Char('l' | 'L') => {
+            state.list_scroll_x = state.list_scroll_x.saturating_add(8);
+            Ok(InputOutcome::Continue)
+        }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            state.inline_role_picker = None;
             state.selected = state.selected.saturating_sub(1);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            state.inline_role_picker = None;
             state.selected = (state.selected + 1).min(state.row_count() - 1);
             Ok(InputOutcome::Continue)
         }
@@ -213,6 +224,36 @@ pub(super) fn handle_list_modal(state: &mut ManagerState<'_>, key: KeyEvent) -> 
             state.list_modal = None;
             InputOutcome::Continue
         }
+    }
+}
+
+pub(super) fn handle_inline_role_picker(
+    state: &mut ManagerState<'_>,
+    key: KeyEvent,
+) -> InputOutcome {
+    let Some(picker) = state.inline_role_picker.as_mut() else {
+        return InputOutcome::Continue;
+    };
+    match key.code {
+        KeyCode::Left | KeyCode::Char('h' | 'H') => {
+            state.list_scroll_x = state.list_scroll_x.saturating_sub(8);
+            InputOutcome::Continue
+        }
+        KeyCode::Right | KeyCode::Char('l' | 'L') => {
+            state.list_scroll_x = state.list_scroll_x.saturating_add(8);
+            InputOutcome::Continue
+        }
+        _ => match picker.handle_key(key) {
+            ModalOutcome::Commit(role) => {
+                state.inline_role_picker = None;
+                InputOutcome::LaunchWithAgent(role)
+            }
+            ModalOutcome::Cancel => {
+                state.inline_role_picker = None;
+                InputOutcome::Continue
+            }
+            ModalOutcome::Continue => InputOutcome::Continue,
+        },
     }
 }
 

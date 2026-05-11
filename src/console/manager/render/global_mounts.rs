@@ -81,7 +81,12 @@ pub(super) fn render_global_mounts(frame: &mut Frame, state: &GlobalMountsState<
             Style::default().fg(ratatui::style::Color::Rgb(255, 94, 122)),
         )));
     }
-    frame.render_widget(Paragraph::new(lines).block(block), chunks[1]);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .scroll((0, state.scroll_x)),
+        chunks[1],
+    );
 
     let mut items = vec![
         FooterItem::Key("A"),
@@ -107,6 +112,9 @@ pub(super) fn render_global_mounts(frame: &mut Frame, state: &GlobalMountsState<
         FooterItem::GroupSep,
         FooterItem::Key("S"),
         FooterItem::Text("save global config"),
+        FooterItem::GroupSep,
+        FooterItem::Key("←/→"),
+        FooterItem::Text("scroll"),
     ];
     if state.is_dirty() {
         items.push(FooterItem::Dyn("(unsaved)".to_string()));

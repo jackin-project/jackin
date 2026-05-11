@@ -50,7 +50,7 @@ pub(super) fn render_list_body(
         }
         ManagerListRow::SavedWorkspace(i) => {
             if let Some(ws) = state.workspaces.get(i) {
-                render_details_pane(frame, columns[1], ws, config);
+                render_details_pane(frame, columns[1], ws, config, state);
             }
         }
     }
@@ -247,10 +247,28 @@ pub(super) fn render_mount_lines(rows: &[MountDisplayRow], path_w: usize) -> Vec
     lines
 }
 
-fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, config: &AppConfig) {
+fn render_details_pane(
+    frame: &mut Frame,
+    area: Rect,
+    ws: &WorkspaceSummary,
+    config: &AppConfig,
+    state: &ManagerState<'_>,
+) {
     let ws_config = config.workspaces.get(&ws.name);
     let mounts = ws_config.map_or(&[][..], |w| w.mounts.as_slice());
-    let global_display = ws_config.map(|w| config.workspace_applicable_mount_rows(w));
+    let picker_role = state
+        .inline_role_picker
+        .as_ref()
+        .and_then(selected_picker_role);
+    let global_display = ws_config.map(|w| {
+        picker_role.as_ref().map_or_else(
+            || config.workspace_applicable_mount_rows(w),
+            |role| crate::config::WorkspaceGlobalMountRows::Applicable {
+                role: role.key(),
+                rows: config.resolve_mount_rows(role),
+            },
+        )
+    });
     let global_mounts: Vec<crate::workspace::MountConfig> = match &global_display {
         Some(crate::config::WorkspaceGlobalMountRows::Applicable { rows, .. }) => {
             rows.iter().map(|row| row.mount.clone()).collect()
@@ -281,15 +299,34 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
     let mut idx = 0;
     render_general_subpanel(frame, rows[idx], ws);
     idx += 1;
-    render_mounts_subpanel(frame, rows[idx], mounts);
+    render_mounts_subpanel(frame, rows[idx], mounts, state.list_scroll_x);
     idx += 1;
-    render_global_mounts_subpanel(frame, rows[idx], global_display.as_ref(), &global_mounts);
+    render_global_mounts_subpanel(
+        frame,
+        rows[idx],
+        global_display.as_ref(),
+        &global_mounts,
+        state.list_scroll_x,
+    );
     idx += 1;
     if show_envs {
         render_environments_subpanel(frame, rows[idx], ws_config);
         idx += 1;
     }
-    render_agents_subpanel(frame, rows[idx], ws_config, config);
+    if let Some(picker) = state.inline_role_picker.as_ref() {
+        render_role_picker_subpanel(frame, rows[idx], picker);
+    } else {
+        render_agents_subpanel(frame, rows[idx], ws_config, config);
+    }
+}
+
+fn selected_picker_role(
+    picker: &crate::console::widgets::role_picker::RolePickerState,
+) -> Option<crate::selector::RoleSelector> {
+    picker
+        .list_state
+        .selected
+        .and_then(|idx| picker.filtered.get(idx).cloned())
 }
 
 fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
@@ -408,7 +445,7 @@ fn render_current_dir_details_pane(
         rows[0],
     );
 
-    render_mounts_subpanel(frame, rows[1], &mounts);
+    render_mounts_subpanel(frame, rows[1], &mounts, 0);
 
     // Roles block — reuse the no-`ws_config` branch of the shared renderer,
     // which lists every globally-configured role (without per-role
@@ -521,7 +558,12 @@ fn render_general_subpanel(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary)
 /// `subpanel_content_column_alignment` in the visual regression tests.
 const SUBPANEL_CONTENT_INDENT: usize = 2;
 
-fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::workspace::MountConfig]) {
+fn render_mounts_subpanel(
+    frame: &mut Frame,
+    area: Rect,
+    mounts: &[crate::workspace::MountConfig],
+    scroll_x: u16,
+) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
@@ -551,6 +593,7 @@ fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::worksp
 
     let p = Paragraph::new(lines)
         .block(block)
+        .scroll((0, scroll_x))
         .style(Style::default().fg(PHOSPHOR_GREEN));
     frame.render_widget(p, area);
 }
@@ -560,6 +603,7 @@ fn render_global_mounts_subpanel(
     area: Rect,
     display: Option<&crate::config::WorkspaceGlobalMountRows>,
     mounts: &[crate::workspace::MountConfig],
+    scroll_x: u16,
 ) {
     let title = match display {
         Some(crate::config::WorkspaceGlobalMountRows::Applicable { role, .. }) => {
@@ -612,8 +656,51 @@ fn render_global_mounts_subpanel(
 
     let p = Paragraph::new(lines)
         .block(block)
+        .scroll((0, scroll_x))
         .style(Style::default().fg(PHOSPHOR_GREEN));
     frame.render_widget(p, area);
+}
+
+fn render_role_picker_subpanel(
+    frame: &mut Frame,
+    area: Rect,
+    picker: &crate::console::widgets::role_picker::RolePickerState,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            " Select role ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let mut lines = Vec::new();
+    if !picker.filter.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!("  Filter: {}", picker.filter),
+            Style::default().fg(PHOSPHOR_DIM),
+        )));
+    }
+    for (i, role) in picker.filtered.iter().enumerate() {
+        let selected = Some(i) == picker.list_state.selected;
+        let prefix = if selected { "▸ " } else { "  " };
+        let style = if selected {
+            Style::default()
+                .fg(PHOSPHOR_GREEN)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(WHITE)
+        };
+        lines.push(Line::from(Span::styled(
+            format!("{prefix}{}", role.key()),
+            style,
+        )));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  Enter launch · Esc cancel",
+        Style::default().fg(PHOSPHOR_DIM),
+    )));
+    frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
 /// One row in the flat Environments preview list.
@@ -1167,7 +1254,7 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(40, 4);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_mounts_subpanel(f, Rect::new(0, 0, 40, 4), &[]);
+            render_mounts_subpanel(f, Rect::new(0, 0, 40, 4), &[], 0);
         })
         .unwrap();
         let mounts_col = first_content_indent(&term).expect("mounts has content");
@@ -2018,8 +2105,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
+        let state = crate::console::manager::state::ManagerState::from_config(
+            &cfg,
+            std::path::Path::new("/tmp"),
+        );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -2066,8 +2157,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
+        let state = crate::console::manager::state::ManagerState::from_config(
+            &cfg,
+            std::path::Path::new("/tmp"),
+        );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -2118,8 +2213,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
+        let state = crate::console::manager::state::ManagerState::from_config(
+            &cfg,
+            std::path::Path::new("/tmp"),
+        );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
         })
         .unwrap();
 
@@ -2177,8 +2276,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
+        let state = crate::console::manager::state::ManagerState::from_config(
+            &cfg,
+            std::path::Path::new("/tmp"),
+        );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
         })
         .unwrap();
 

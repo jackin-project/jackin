@@ -156,6 +156,9 @@ pub fn render(
                     items.push(FooterItem::Text("open in GitHub"));
                 }
                 items.push(FooterItem::GroupSep);
+                items.push(FooterItem::Key("←/→"));
+                items.push(FooterItem::Text("scroll"));
+                items.push(FooterItem::GroupSep);
                 // Exit
                 items.push(FooterItem::Key("Q"));
                 items.push(FooterItem::Text("quit"));

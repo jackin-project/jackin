@@ -182,12 +182,24 @@ fn contextual_row_items(
                     items.push(FooterItem::Sep);
                     items.push(FooterItem::Key("I"));
                     items.push(FooterItem::Text("cycle isolation"));
+                    items.push(FooterItem::Sep);
+                    items.push(FooterItem::Key("H/L"));
+                    items.push(FooterItem::Text("scroll"));
                     items
                 }
-                Ordering::Equal => vec![FooterItem::Key("Enter/A"), FooterItem::Text("add")],
-                Ordering::Greater => vec![FooterItem::Dyn(
-                    "global mount - edit from config mounts".to_string(),
-                )],
+                Ordering::Equal => vec![
+                    FooterItem::Key("Enter/A"),
+                    FooterItem::Text("add"),
+                    FooterItem::Sep,
+                    FooterItem::Key("H/L"),
+                    FooterItem::Text("scroll"),
+                ],
+                Ordering::Greater => vec![
+                    FooterItem::Dyn("global mount - edit from config mounts".to_string()),
+                    FooterItem::Sep,
+                    FooterItem::Key("H/L"),
+                    FooterItem::Text("scroll"),
+                ],
             }
         }
         EditorTab::Roles => {
@@ -447,10 +459,8 @@ fn render_editor_row(row: usize, cursor: usize, label: &str, value: &str) -> Lin
     Line::from(spans)
 }
 
+#[allow(clippy::too_many_lines)]
 fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK));
     let FieldFocus::Row(cursor) = state.active_field;
 
     // Build aligned table rows for all mounts.
@@ -513,40 +523,77 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
         action_row_style(sentinel_selected),
     )));
 
-    if let Some(workspace) = workspace_for_global_mount_context(state) {
-        match config.workspace_applicable_mount_rows(workspace) {
-            crate::config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
-                lines.push(Line::from(""));
-                let offset = state.pending.mounts.len() + 1;
-                append_global_mount_lines(&mut lines, &role, &rows, cursor, offset);
-            }
-            crate::config::WorkspaceGlobalMountRows::Ambiguous { candidates } => {
-                lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(
-                    format!(
-                        "Global mounts: selected role affects visibility ({})",
-                        candidates.join(", ")
-                    ),
-                    Style::default().fg(PHOSPHOR_DIM),
-                )));
-            }
+    let workspace_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            " Workspace mounts ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+
+    let Some(workspace) = workspace_for_global_mount_context(state) else {
+        frame.render_widget(
+            Paragraph::new(lines)
+                .block(workspace_block)
+                .scroll((0, state.scroll_x)),
+            area,
+        );
+        return;
+    };
+
+    let workspace_height = (lines.len() as u16 + 2).min(area.height.saturating_sub(4).max(4));
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(workspace_height), Constraint::Min(4)])
+        .split(area);
+
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(workspace_block)
+            .scroll((0, state.scroll_x)),
+        chunks[0],
+    );
+
+    let mut global_lines = Vec::new();
+    let mut global_title = " Global mounts ".to_string();
+    match config.workspace_applicable_mount_rows(workspace) {
+        crate::config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
+            global_title = format!(" Global mounts · {role} ");
+            let offset = state.pending.mounts.len() + 1;
+            append_global_mount_lines(&mut global_lines, &rows, cursor, offset);
+        }
+        crate::config::WorkspaceGlobalMountRows::Ambiguous { candidates } => {
+            global_lines.push(Line::from(Span::styled(
+                format!(
+                    "  selected role affects visibility ({})",
+                    candidates.join(", ")
+                ),
+                Style::default().fg(PHOSPHOR_DIM),
+            )));
         }
     }
 
-    frame.render_widget(Paragraph::new(lines).block(block), area);
+    let global_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            global_title,
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    frame.render_widget(
+        Paragraph::new(global_lines)
+            .block(global_block)
+            .scroll((0, state.scroll_x)),
+        chunks[1],
+    );
 }
 
 fn append_global_mount_lines(
     lines: &mut Vec<Line<'_>>,
-    role: &str,
     rows: &[crate::config::GlobalMountRow],
     cursor: usize,
     offset: usize,
 ) {
-    lines.push(Line::from(Span::styled(
-        format!("  Global mounts ({role})"),
-        Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-    )));
     let global_rows: Vec<MountDisplayRow> = rows
         .iter()
         .map(|row| {

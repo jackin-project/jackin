@@ -61,6 +61,8 @@ pub struct ManagerState<'a> {
     /// Modal slot at the list level (e.g. `Modal::GithubPicker`); the
     /// Editor / `CreatePrelude` stages own their own modal slots.
     pub list_modal: Option<Modal<'a>>,
+    pub inline_role_picker: Option<RolePickerState>,
+    pub list_scroll_x: u16,
     pub list_split_pct: u16,
     pub drag_state: Option<DragState>,
     /// Process-lifetime cache of `op` structural metadata, threaded
@@ -112,6 +114,7 @@ pub struct GlobalMountsState<'a> {
     pub modal: Option<GlobalMountModal<'a>>,
     pub add_draft: Option<GlobalMountDraft>,
     pub error: Option<String>,
+    pub scroll_x: u16,
 }
 
 #[derive(Debug, Default)]
@@ -221,6 +224,7 @@ pub struct EditorState<'a> {
     /// touch this slot — see `AUTH00x` debug tags in
     /// `input::auth` for the recovery path on stash desync.
     pub pending_auth_form_return: Option<AuthFormReturnPath>,
+    pub scroll_x: u16,
 }
 
 /// Captured auth-form context to re-mount the form after a side
@@ -288,6 +292,7 @@ impl GlobalMountsState<'_> {
             modal: None,
             add_draft: None,
             error: None,
+            scroll_x: 0,
         }
     }
 
@@ -646,6 +651,8 @@ impl ManagerState<'_> {
             selected,
             toast: None,
             list_modal: None,
+            inline_role_picker: None,
+            list_scroll_x: 0,
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
             op_cache,
@@ -776,6 +783,7 @@ impl EditorState<'_> {
             pending_picker_target: None,
             pending_picker_value: None,
             pending_auth_form_return: None,
+            scroll_x: 0,
         }
     }
 
@@ -799,6 +807,7 @@ impl EditorState<'_> {
             pending_picker_target: None,
             pending_picker_value: None,
             pending_auth_form_return: None,
+            scroll_x: 0,
         }
     }
 

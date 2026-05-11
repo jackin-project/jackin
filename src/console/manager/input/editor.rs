@@ -91,6 +91,12 @@ pub(super) fn handle_editor_key(
     };
 
     match key.code {
+        KeyCode::Char('h' | 'H') if editor.active_tab == EditorTab::Mounts => {
+            editor.scroll_x = editor.scroll_x.saturating_sub(8);
+        }
+        KeyCode::Char('l' | 'L') if editor.active_tab == EditorTab::Mounts => {
+            editor.scroll_x = editor.scroll_x.saturating_add(8);
+        }
         KeyCode::Tab | KeyCode::Right => {
             // Secrets tab `AgentHeader` absorbs `→` in both states
             // (expand or no-op) — falling through to tab-cycle on an

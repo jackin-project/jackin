@@ -48,6 +48,18 @@ pub fn handle_mouse(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
         return;
     }
 
+    match mouse.kind {
+        MouseEventKind::ScrollLeft => {
+            scroll_active_panel(state, -8);
+            return;
+        }
+        MouseEventKind::ScrollRight => {
+            scroll_active_panel(state, 8);
+            return;
+        }
+        _ => {}
+    }
+
     // Editor / CreatePrelude file-browser URL click: only on Down(Left),
     // only when the modal is a FileBrowser with a resolved git URL.
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
@@ -82,6 +94,7 @@ pub fn handle_mouse(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
             // Otherwise, treat as click-to-select if the click lands inside
             // the list pane's content area (excluding borders).
             if let Some(row) = list_content_row_index(state, mouse, term_size, seam_x) {
+                state.inline_role_picker = None;
                 state.selected = row.to_screen_index(state.workspaces.len());
             }
         }
@@ -95,6 +108,22 @@ pub fn handle_mouse(state: &mut ManagerState<'_>, mouse: MouseEvent, term_size: 
             state.drag_state = None;
         }
         _ => {}
+    }
+}
+
+fn scroll_active_panel(state: &mut ManagerState<'_>, delta: i16) {
+    let apply = |value: &mut u16| {
+        if delta.is_negative() {
+            *value = value.saturating_sub(delta.unsigned_abs());
+        } else {
+            *value = value.saturating_add(delta as u16);
+        }
+    };
+    match &mut state.stage {
+        ManagerStage::List => apply(&mut state.list_scroll_x),
+        ManagerStage::Editor(editor) => apply(&mut editor.scroll_x),
+        ManagerStage::GlobalMounts(global) => apply(&mut global.scroll_x),
+        ManagerStage::CreatePrelude(_) | ManagerStage::ConfirmDelete { .. } => {}
     }
 }
 
