@@ -324,6 +324,7 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Config versioning and migration', slug: 'reference/roadmap/config-versioning-migration' },
+                    { label: 'Global mount visibility', slug: 'reference/roadmap/global-mount-visibility' },
                   ],
                 },
                 {
