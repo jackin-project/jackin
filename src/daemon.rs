@@ -59,6 +59,19 @@ enum Request {
         repository: String,
         limit: Option<usize>,
     },
+    #[serde(rename = "workspace/launch")]
+    WorkspaceLaunch {
+        protocol: u32,
+        workspace: String,
+        role: Option<String>,
+        agent: Option<crate::agent::Agent>,
+    },
+    #[serde(rename = "desktop/open")]
+    DesktopOpen {
+        protocol: u32,
+        kind: DesktopOpenKind,
+        target: String,
+    },
     Status {
         protocol: u32,
     },
@@ -90,6 +103,8 @@ enum Response {
     SessionList(SessionListResponse),
     #[serde(rename = "github/prs")]
     GithubPullRequests(GithubPullRequestListResponse),
+    #[serde(rename = "desktop/action")]
+    DesktopAction(DesktopActionResponse),
     Status(StatusResponse),
     Error {
         message: String,
@@ -162,6 +177,19 @@ pub struct GithubPullRequest {
     pub updated_at: String,
     pub state: String,
     pub is_draft: bool,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DesktopOpenKind {
+    Browser,
+    GhosttyHardline,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct DesktopActionResponse {
+    pub action: String,
+    pub command: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -392,6 +420,23 @@ fn handle_request(request: Request, state: &DaemonState) -> Response {
             let mut runner = ShellRunner::default();
             github_response(github_repository_prs(&mut runner, &repository, limit))
         }
+        Request::WorkspaceLaunch {
+            workspace,
+            role,
+            agent,
+            ..
+        } => match launch_workspace_in_ghostty(&state.paths, &workspace, role.as_deref(), agent) {
+            Ok(response) => Response::DesktopAction(response),
+            Err(err) => Response::Error {
+                message: format!("{err:#}"),
+            },
+        },
+        Request::DesktopOpen { kind, target, .. } => match desktop_open(kind, &target) {
+            Ok(response) => Response::DesktopAction(response),
+            Err(err) => Response::Error {
+                message: format!("{err:#}"),
+            },
+        },
         Request::Status { .. } => Response::Status(status(state)),
         Request::Shutdown { .. } => {
             state.shutdown.store(true, Ordering::Relaxed);
@@ -429,6 +474,8 @@ fn validate_protocol(request: &Request) -> std::result::Result<(), String> {
         | Request::GithubMyOpenPrs { protocol, .. }
         | Request::GithubProjectInbox { protocol, .. }
         | Request::GithubRepositoryPrs { protocol, .. }
+        | Request::WorkspaceLaunch { protocol, .. }
+        | Request::DesktopOpen { protocol, .. }
         | Request::Status { protocol }
         | Request::Shutdown { protocol }
         | Request::WarmCache { protocol }
@@ -464,6 +511,8 @@ fn daemon_capabilities() -> Vec<DaemonCapability> {
         "github/my_open_prs",
         "github/project_inbox",
         "github/repository_prs",
+        "workspace/launch",
+        "desktop/open",
         "notification/send",
     ]
     .into_iter()
@@ -708,6 +757,110 @@ impl From<RawGithubPullRequest> for GithubPullRequest {
             is_draft: raw.is_draft,
         }
     }
+}
+
+fn launch_workspace_in_ghostty(
+    paths: &JackinPaths,
+    workspace: &str,
+    role: Option<&str>,
+    agent: Option<crate::agent::Agent>,
+) -> Result<DesktopActionResponse> {
+    let config = load_daemon_config(paths)?;
+    anyhow::ensure!(
+        config.workspaces.contains_key(workspace),
+        "unknown workspace {workspace}"
+    );
+    let exe = std::env::current_exe().context("resolving current jackin executable")?;
+    let command = ghostty_workspace_launch_command(&exe, workspace, role, agent);
+    run_open_command(&command)?;
+    Ok(DesktopActionResponse {
+        action: "workspace/launch".to_string(),
+        command,
+    })
+}
+
+fn desktop_open(kind: DesktopOpenKind, target: &str) -> Result<DesktopActionResponse> {
+    match kind {
+        DesktopOpenKind::Browser => {
+            ensure_browser_target(target)?;
+            let command = vec!["open".to_string(), target.to_string()];
+            run_open_command(&command)?;
+            Ok(DesktopActionResponse {
+                action: "desktop/open".to_string(),
+                command,
+            })
+        }
+        DesktopOpenKind::GhosttyHardline => {
+            let exe = std::env::current_exe().context("resolving current jackin executable")?;
+            let command = ghostty_hardline_command(&exe, target);
+            run_open_command(&command)?;
+            Ok(DesktopActionResponse {
+                action: "desktop/open".to_string(),
+                command,
+            })
+        }
+    }
+}
+
+fn ghostty_workspace_launch_command(
+    exe: &Path,
+    workspace: &str,
+    role: Option<&str>,
+    agent: Option<crate::agent::Agent>,
+) -> Vec<String> {
+    let mut command = ghostty_command_prefix(exe);
+    command.push("load".to_string());
+    if let Some(role) = role {
+        command.push(role.to_string());
+    }
+    command.push(workspace.to_string());
+    if let Some(agent) = agent {
+        command.push("--agent".to_string());
+        command.push(agent.slug().to_string());
+    }
+    command
+}
+
+fn ghostty_hardline_command(exe: &Path, target: &str) -> Vec<String> {
+    let mut command = ghostty_command_prefix(exe);
+    command.push("hardline".to_string());
+    command.push(target.to_string());
+    command
+}
+
+fn ghostty_command_prefix(exe: &Path) -> Vec<String> {
+    vec![
+        "open".to_string(),
+        "-na".to_string(),
+        "Ghostty".to_string(),
+        "--args".to_string(),
+        "-e".to_string(),
+        exe.display().to_string(),
+    ]
+}
+
+fn ensure_browser_target(target: &str) -> Result<()> {
+    anyhow::ensure!(
+        target.starts_with("https://") || target.starts_with("http://"),
+        "desktop/open browser target must be http or https"
+    );
+    Ok(())
+}
+
+fn run_open_command(command: &[String]) -> Result<()> {
+    let (program, args) = command
+        .split_first()
+        .ok_or_else(|| anyhow::anyhow!("empty desktop action command"))?;
+    let status = Command::new(program)
+        .args(args)
+        .status()
+        .with_context(|| format!("running {}", command.join(" ")))?;
+    anyhow::ensure!(
+        status.success(),
+        "desktop action failed: {}",
+        command.join(" ")
+    );
+    Ok(())
 }
 
 fn status(state: &DaemonState) -> StatusResponse {
@@ -1207,6 +1360,9 @@ fn print_response(response: Response) {
         Response::GithubPullRequests(response) => {
             println!("{} pull requests", response.pull_requests.len());
         }
+        Response::DesktopAction(response) => {
+            println!("{}: {}", response.action, response.command.join(" "));
+        }
         Response::Status(status) => println!("daemon running: pid {}", status.pid),
         Response::Error { message } => eprintln!("error: {message}"),
     }
@@ -1318,6 +1474,8 @@ published_image = "ghcr.io/example/role:latest"
         assert!(methods.contains(&"github/my_open_prs"));
         assert!(methods.contains(&"github/project_inbox"));
         assert!(methods.contains(&"github/repository_prs"));
+        assert!(methods.contains(&"workspace/launch"));
+        assert!(methods.contains(&"desktop/open"));
         assert!(methods.contains(&"notification/send"));
     }
 
@@ -1511,6 +1669,60 @@ published_image = "ghcr.io/example/role:latest"
         assert_eq!(github_limit(None), 50);
         assert_eq!(github_limit(Some(0)), 1);
         assert_eq!(github_limit(Some(500)), 100);
+    }
+
+    #[test]
+    fn ghostty_workspace_launch_command_builds_load_action() {
+        let command = ghostty_workspace_launch_command(
+            Path::new("/opt/jackin/bin/jackin"),
+            "project",
+            Some("agent-smith"),
+            Some(crate::agent::Agent::Codex),
+        );
+
+        assert_eq!(
+            command,
+            vec![
+                "open",
+                "-na",
+                "Ghostty",
+                "--args",
+                "-e",
+                "/opt/jackin/bin/jackin",
+                "load",
+                "agent-smith",
+                "project",
+                "--agent",
+                "codex",
+            ]
+        );
+    }
+
+    #[test]
+    fn ghostty_hardline_command_builds_reconnect_action() {
+        let command =
+            ghostty_hardline_command(Path::new("/opt/jackin/bin/jackin"), "jackin-agent-smith");
+
+        assert_eq!(
+            command,
+            vec![
+                "open",
+                "-na",
+                "Ghostty",
+                "--args",
+                "-e",
+                "/opt/jackin/bin/jackin",
+                "hardline",
+                "jackin-agent-smith",
+            ]
+        );
+    }
+
+    #[test]
+    fn browser_open_rejects_non_web_targets() {
+        let error = ensure_browser_target("file:///tmp/secret").unwrap_err();
+
+        assert!(error.to_string().contains("http or https"));
     }
 
     fn github_pull(repository: &str, number: u64, created_at: &str) -> GithubPullRequest {
