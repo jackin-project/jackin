@@ -275,7 +275,15 @@ pub fn run(cli: Cli) -> Result<()> {
                     {
                         anyhow::bail!("aborted — sensitive mount paths were not confirmed");
                     }
-                    let mut candidate_rows = config.list_mount_rows();
+                    let existing = config
+                        .list_mount_rows()
+                        .into_iter()
+                        .find(|row| row.name == name && row.scope == scope);
+                    let mut candidate_rows: Vec<crate::config::GlobalMountRow> = config
+                        .list_mount_rows()
+                        .into_iter()
+                        .filter(|row| !(row.name == name && row.scope == scope))
+                        .collect();
                     candidate_rows.push(crate::config::GlobalMountRow {
                         scope: scope.clone(),
                         name: name.clone(),
@@ -285,7 +293,16 @@ pub fn run(cli: Cli) -> Result<()> {
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     editor.add_mount(&name, mount, scope.as_deref());
                     editor.save()?;
-                    println!("Added mount {name:?} ({scope_label}):\n  {dst}\n  host: {src}{ro}");
+                    if let Some(prev) = existing {
+                        println!(
+                            "Replaced mount {name:?} ({scope_label}):\n  was: {} -> {}\n  now: {} -> {}{ro}",
+                            prev.mount.src, prev.mount.dst, src, dst
+                        );
+                    } else {
+                        println!(
+                            "Added mount {name:?} ({scope_label}):\n  {dst}\n  host: {src}{ro}"
+                        );
+                    }
                     Ok(())
                 }
                 cli::MountCommand::Remove { name, scope } => {
@@ -1462,11 +1479,7 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
             .iter()
             .map(|m| MountRow {
                 mount: mount_display(&m.src, &m.dst),
-                mode: if m.readonly {
-                    "read-only".to_string()
-                } else {
-                    "read-write".to_string()
-                },
+                mode: mount_mode(m.readonly),
                 isolation: m.isolation.as_str().to_string(),
                 kind: crate::console::manager::mount_info::inspect(&m.src).label(),
             })
@@ -1478,44 +1491,55 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
         let _ = writeln!(out, "{mount_table}");
     }
 
+    let render_unscoped_table = |out: &mut String, rows: &[&crate::config::GlobalMountRow]| {
+        if rows.is_empty() {
+            return;
+        }
+        let mut table = Table::new(rows.iter().map(|row| GlobalMountRow {
+            name: row.name.clone(),
+            mount: mount_display(&row.mount.src, &row.mount.dst),
+            mode: mount_mode(row.mount.readonly),
+        }));
+        table.with(Style::modern_rounded());
+        let _ = writeln!(out);
+        let _ = writeln!(out, "Global mounts:");
+        let _ = writeln!(out, "{table}");
+    };
+
     match config.workspace_applicable_mount_rows(workspace) {
         crate::config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
-            if !rows.is_empty() {
-                let has_scoped_rows = rows.iter().any(|row| row.scope.is_some());
-                let mut global_table = if has_scoped_rows {
-                    Table::new(rows.iter().map(|row| GlobalMountRowWithScope {
-                        scope: row.scope.as_deref().unwrap_or("global").to_string(),
-                        name: row.name.clone(),
-                        mount: mount_display(&row.mount.src, &row.mount.dst),
-                        mode: mount_mode(row.mount.readonly),
-                    }))
-                } else {
-                    Table::new(rows.iter().map(|row| GlobalMountRow {
-                        name: row.name.clone(),
-                        mount: mount_display(&row.mount.src, &row.mount.dst),
-                        mode: mount_mode(row.mount.readonly),
-                    }))
-                };
-                global_table.with(Style::modern_rounded());
-                let _ = writeln!(out);
-                if has_scoped_rows {
-                    let _ = writeln!(out, "Global mounts ({role}):");
-                } else {
-                    let _ = writeln!(out, "Global mounts:");
-                }
-                let _ = writeln!(out, "{global_table}");
+            if rows.is_empty() {
+                return out;
             }
+            let has_scoped_rows = rows.iter().any(|row| row.scope.is_some());
+            if !has_scoped_rows {
+                render_unscoped_table(&mut out, &rows.iter().collect::<Vec<_>>());
+                return out;
+            }
+            let mut table = Table::new(rows.iter().map(|row| GlobalMountRowWithScope {
+                scope: row.scope.as_deref().unwrap_or("global").to_string(),
+                name: row.name.clone(),
+                mount: mount_display(&row.mount.src, &row.mount.dst),
+                mode: mount_mode(row.mount.readonly),
+            }));
+            table.with(Style::modern_rounded());
+            let _ = writeln!(out);
+            let _ = writeln!(out, "Global mounts ({role}):");
+            let _ = writeln!(out, "{table}");
         }
         crate::config::WorkspaceGlobalMountRows::Ambiguous { candidates } => {
-            if config
-                .list_mount_rows()
-                .iter()
-                .any(|row| row.scope.is_some())
-            {
+            // Unscoped global mounts apply regardless of role — render
+            // them even when the role is ambiguous. Only the scoped
+            // subset depends on role selection.
+            let all_rows = config.list_mount_rows();
+            let unscoped: Vec<&crate::config::GlobalMountRow> =
+                all_rows.iter().filter(|row| row.scope.is_none()).collect();
+            render_unscoped_table(&mut out, &unscoped);
+            if all_rows.iter().any(|row| row.scope.is_some()) {
                 let _ = writeln!(out);
                 let _ = writeln!(
                     out,
-                    "Global mounts: role-scoped mounts depend on selected role ({})",
+                    "Role-scoped global mounts depend on selected role ({})",
                     candidates.join(", ")
                 );
             }
@@ -1526,11 +1550,7 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
 }
 
 fn mount_mode(readonly: bool) -> String {
-    if readonly {
-        "read-only".to_string()
-    } else {
-        "read-write".to_string()
-    }
+    if readonly { "read-only" } else { "read-write" }.to_string()
 }
 
 fn mount_display(src: &str, dst: &str) -> String {

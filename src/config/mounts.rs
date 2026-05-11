@@ -288,9 +288,12 @@ impl AppConfig {
         }
         for row in rows {
             if !seen.insert(row.mount.dst.as_str()) {
+                let scope = row.scope.as_deref().unwrap_or("global");
                 anyhow::bail!(
-                    "global mount destination conflicts with workspace destination: {}",
-                    row.mount.dst
+                    "global mount destination conflicts with workspace destination: {} (from global mount {} [{}])",
+                    row.mount.dst,
+                    row.name,
+                    scope
                 );
             }
         }
@@ -298,26 +301,21 @@ impl AppConfig {
     }
 
     pub fn validate_global_mount_rows(rows: &[GlobalMountRow]) -> anyhow::Result<()> {
-        let expanded: Vec<GlobalMountRow> = rows
-            .iter()
-            .map(|row| GlobalMountRow {
-                scope: row.scope.clone(),
-                name: row.name.clone(),
-                mount: MountConfig {
-                    src: expand_tilde(&row.mount.src),
-                    dst: row.mount.dst.clone(),
-                    readonly: row.mount.readonly,
-                    isolation: row.mount.isolation,
-                },
-            })
-            .collect();
-
-        for row in &expanded {
-            crate::workspace::validate_mounts(std::slice::from_ref(&row.mount))
+        for row in rows {
+            if row.name.trim().is_empty() {
+                anyhow::bail!("global mount name cannot be empty");
+            }
+            let expanded = MountConfig {
+                src: expand_tilde(&row.mount.src),
+                dst: row.mount.dst.clone(),
+                readonly: row.mount.readonly,
+                isolation: row.mount.isolation,
+            };
+            crate::workspace::validate_mounts(std::slice::from_ref(&expanded))
                 .with_context(|| format!("validating global mount {}", row.name))?;
         }
-        for (idx, left) in expanded.iter().enumerate() {
-            for right in expanded.iter().skip(idx + 1) {
+        for (idx, left) in rows.iter().enumerate() {
+            for right in rows.iter().skip(idx + 1) {
                 if left.name != right.name
                     && left.mount.dst == right.mount.dst
                     && scopes_overlap(left.scope.as_ref(), right.scope.as_ref())
@@ -548,6 +546,25 @@ shared = { src = "/tmp/specific", dst = "/data" }
         ];
         let err = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap_err();
         assert!(err.to_string().contains("duplicate"));
+    }
+
+    #[test]
+    fn validate_global_mount_rows_rejects_empty_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let rows = vec![GlobalMountRow {
+            scope: None,
+            name: "  ".into(),
+            mount: MountConfig {
+                src: temp.path().display().to_string(),
+                dst: "/x".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+        }];
+
+        let err = AppConfig::validate_global_mount_rows(&rows).unwrap_err();
+
+        assert!(err.to_string().contains("name cannot be empty"));
     }
 
     #[test]
