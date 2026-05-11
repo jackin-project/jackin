@@ -64,23 +64,30 @@ Recommended V1: use `tmux` or an equivalent terminal multiplexer installed in th
 
 If `tmux` is not acceptable long term, replace it with a tiny in-container session supervisor. The important invariant is the same: jackin starts named, reconnectable sessions and records them. It should not pretend a raw exec process can be reattached after the terminal is gone.
 
-## CLI Surface
+## Hardline CLI Surface
 
-Add CLI commands that operate by workspace/instance/session identity, not by raw Docker container names:
+Do not add a separate `jackin restore`, `jackin instance`, or `jackin session` command family for the core flow. `hardline` is the operator verb for reconnecting to existing work and for entering an already-running isolated container.
+
+The command should work from the current directory, similar to `jackin load`:
+
+- If the current directory maps to one configured workspace or ad-hoc launch root with one running/preserved instance, `jackin hardline` selects it.
+- If multiple matching containers exist for that folder, `jackin hardline` prompts for the target runtime instance.
+- If the selected container has multiple agent sessions, `jackin hardline` prompts for the exact session to attach.
+- If the operator asks for another agent runtime, `jackin hardline --agent codex --new` or an equivalent flag starts a new Codex session inside the selected container instead of creating a fresh container.
+- If no matching instance exists, `jackin hardline` reports that there is nothing to reconnect to and points the operator at `jackin load`.
+
+Illustrative shape:
 
 ```sh
-jackin instance list
-jackin instance shell <instance-id-or-selector>
-jackin instance hardline <instance-id-or-selector>
-jackin session list <instance-id-or-selector>
-jackin session start <instance-id-or-selector> --agent codex --name review
-jackin session attach <session-id-or-selector>
-jackin session stop <session-id-or-selector>
+jackin hardline
+jackin hardline --agent claude
+jackin hardline --agent codex --new --name review
+jackin hardline --shell
 ```
 
-Names are illustrative. The implementation can choose shorter command names, but the command model should preserve the distinction between a container/runtime instance and an agent session inside it.
+The exact flags are design placeholders. The command model is the important part: `hardline` resolves workspace/directory context, then resolves runtime instance, then resolves or creates an agent session inside that instance.
 
-Existing `jackin hardline` should remain as a compatibility surface while this lands, then move toward instance/session selectors. The long-term direction is that raw Docker container names are accepted only as an advanced/debug selector, not as the normal UX.
+Legacy `jackin hardline <container-name>` should remain usable while this lands, but raw Docker names should become an advanced/debug selector rather than the normal path.
 
 ## Console Actions
 
@@ -139,7 +146,7 @@ Session status should be reconciled from the backend. For `tmux`, list sessions 
 ### Phase 1 — Discovery and shell entry
 
 - Add instance discovery that lists running jackin-managed containers by manifest/labels instead of clone-family parsing.
-- Add `jackin instance shell` or equivalent to open zsh in a selected running container.
+- Add `jackin hardline --shell` or equivalent to open zsh in a selected running container.
 - Add a console action that opens the same shell path.
 - Keep the first version one-shot if needed, but design the command name and UI around the future reconnectable session model.
 
@@ -151,7 +158,7 @@ Session status should be reconciled from the backend. For `tmux`, list sessions 
 
 ### Phase 3 — Secondary agent sessions
 
-- Add `session start/list/attach/stop` commands.
+- Expand `jackin hardline` flags/prompts so it can list, attach, start, and stop secondary sessions without a separate command family.
 - Add console actions for starting Claude/Codex/Amp sessions inside an existing instance.
 - Persist session records and reconcile them on console startup.
 

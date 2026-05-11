@@ -117,32 +117,33 @@ Also add a lightweight global index under `~/.jackin/data/instances.json` or `~/
 
 Jackin's restore promise should be precise: if work was written to jackin-managed local storage, jackin can guide the operator back to it even when Docker containers are deleted. Jackin cannot recover writes that existed only in a deleted container's writable layer unless those paths were explicitly persisted or snapshotted.
 
-When launching a configured workspace or ad-hoc directory, jackin should:
+When launching or hardlining a configured workspace or ad-hoc directory, jackin should:
 
 1. Compute a lookup key from the configured workspace name, or from the canonical host directory path for ad-hoc mode. Include role key and agent runtime as filters, but allow the UI to show all unfinished instances for that workspace/directory.
 2. Scan the instance index for records whose status is `active`, `crashed`, `preserved_dirty`, `preserved_unpushed`, or `restore_available`.
 3. Inspect Docker state for each candidate. A candidate can have role/DIND containers running, stopped, missing, partially missing, or replaced by unrelated resources.
-4. If candidates exist, show a restore picker before creating a fresh instance. The picker should show workspace, role, agent, created/updated time, mount isolation summary, dirty/unpushed status, and Docker resource state.
-5. Provide explicit actions: `restore`, `start fresh`, `inspect path`, `purge`, and `cancel`.
+4. If candidates exist, show an instance picker before creating a fresh instance or attaching. The picker should show workspace, role, agent sessions, created/updated time, mount isolation summary, dirty/unpushed status, and Docker resource state.
+5. Provide explicit actions through existing surfaces: `hardline` to attach/restart/spawn inside an instance, `load` to start fresh, `purge` to discard, and console actions for inspection.
 
 Restore paths:
 
-- **Role container exists and DIND exists/running**: use `hardline` behavior and attach or restart in place.
+- **Role container exists and DIND exists/running**: `jackin hardline` attaches to an existing agent session, or prompts to start a new agent session inside the selected container when requested.
 - **Role container exists but DIND is missing/stopped**: rebuild the network, DIND sidecar, cert volume, and environment contract, then start or recreate the role container only if the role container's filesystem state is not required. If the role container has important writable-layer state, surface that it cannot be safely rehydrated without the original container.
 - **Docker containers are missing but state directory exists with worktree/clone records**: recreate a new role container using the same `container_base` and remount the stored worktree/clone paths. Do not regenerate a different base name for a restore, because isolation paths and scratch branches are keyed by the original container name.
 - **Docker containers are missing and only shared mounts existed**: there is no private worktree to restore, but jackin can restart a fresh container against the same workspace and mark the old instance as superseded.
 - **Docker containers are missing and the instance had unpersisted container-layer changes**: tell the operator those container-layer changes are gone. This is the boundary that motivates future snapshot work.
 - **State directory exists but host workdir moved**: resolve by workspace config first; if the original path fingerprint no longer matches, prompt the operator to locate the new directory or inspect the state path directly.
-- **State directory exists but role source changed**: default to the stored role source/ref for restore when available. Offer a fresh launch path if the operator wants the latest trusted role instead.
+- **State directory exists but role source changed**: default to the stored role source/ref for hardline/recovery when available. Offer a fresh launch path if the operator wants the latest trusted role instead.
 
-The restore picker belongs in `jackin console` first because it is a multi-instance decision. CLI should get scriptable equivalents:
+Do not introduce a separate `jackin restore` command. `hardline` is the CLI verb for reconnecting to existing work. It should become directory-aware in the same way `load` is: running `jackin hardline` from inside a configured workspace or ad-hoc project directory looks up matching unfinished/running instances, prompts when more than one exists, then prompts for the exact agent session when the selected container has multiple sessions. If no matching instance exists, it should fail with a clear "nothing to hardline" message or offer the operator the normal fresh `load` path.
 
 ```sh
-jackin restore list [--workspace <name>|--dir <path>]
-jackin restore show <instance-id-or-name>
-jackin restore attach <instance-id-or-name>
-jackin restore fresh <workspace-or-dir> <role>
+jackin hardline
+jackin hardline --agent claude
+jackin hardline --agent codex --new
 ```
+
+The exact flags are design placeholders. The invariant is that `hardline` owns reconnecting and spawning additional agent sessions inside an existing container, while `load` owns creating a fresh runtime instance.
 
 ## Required State Transitions
 
@@ -185,13 +186,13 @@ This avoids mutating live operator work while stopping new launches from creatin
 - **Manual Docker prune**: cert volumes may disappear while role containers remain stopped. Recreate DIND/certs/network when safe; otherwise explain why a full container-layer restore is impossible.
 - **Partial launch failure**: if state exists but mount materialization failed, mark the instance as `failed_setup` or keep `active` with an error field. The restore picker should show it as inspect/purge, not attachable.
 - **Clean exit with dirty shared mount**: shared mounts are already host state. Do not create a restore candidate solely because a shared host repo is dirty; jackin did not isolate that work.
-- **Clean exit with dirty isolated mount**: preserve and surface through restore/hardline/purge until the operator finalizes or discards it.
+- **Clean exit with dirty isolated mount**: preserve and surface through hardline/console/purge until the operator finalizes or discards it.
 - **Non-git mounts**: clone/worktree restore does not cover them. If they are writable and important, link this design to [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/) for opt-in file snapshots.
 - **Secrets and auth state**: do not restore stale copied credentials silently across changed auth modes. Re-run the normal auth provisioning path on restore, then mount preserved state only where the current mode allows it.
 - **Role image drift**: the restored container should use the stored image tag/ref by default. If the image no longer exists locally, rebuild from the stored trusted source/ref or ask the operator whether to rebuild from the current source.
 - **Labels too long or invalid**: Docker labels can carry full metadata values that are not DNS-safe. Use labels for filtering and metadata for exact values; do not round-trip restore state by parsing DNS-safe slugs.
 - **Testcontainers reachability**: Java Testcontainers parses `DOCKER_HOST` strictly and may also need `TESTCONTAINERS_HOST_OVERRIDE`. A smoke test must run inside a jackin-launched role and start a trivial container through Testcontainers with TLS enabled.
-- **No Docker available**: restore listing should still work from local state; attach/recreate should fail with a Docker-specific error.
+- **No Docker available**: hardline/console listing should still work from local state; attach/recreate should fail with a Docker-specific error.
 
 ## Implementation Plan
 
@@ -208,11 +209,11 @@ This avoids mutating live operator work while stopping new launches from creatin
 - Write `.jackin/instance.json` before workspace materialization and update lifecycle fields throughout launch/finalize/error paths.
 - Add the rebuildable global index for lookup by workspace/directory/role.
 - Add reconciliation that compares manifest state with Docker state on launch.
-- Add restore prompts for interactive `jackin load` and `jackin console`; non-interactive CLI should fail with a clear message unless an explicit `--fresh` or restore target is supplied.
+- Add recovery prompts for interactive `jackin load`, `jackin hardline`, and `jackin console`; non-interactive CLI should fail with a clear message unless an explicit fresh-load or hardline target is supplied.
 
-### Phase 3 — Restore commands and UI
+### Phase 3 — Hardline and UI recovery
 
-- Add `jackin restore list/show/attach` or equivalent commands.
+- Expand `jackin hardline` so it resolves the current workspace/directory, prompts across matching instances, prompts across agent sessions, and can start a new agent session inside the selected running container.
 - Add a console restore picker and active-instance panel that separates human labels from Docker names.
 - Teach cleanup and purge to operate by instance ID/name and to distinguish Docker resource deletion from local state deletion.
 
