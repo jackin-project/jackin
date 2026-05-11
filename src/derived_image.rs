@@ -24,6 +24,7 @@ pub fn render_derived_dockerfile(
     use std::fmt::Write as _;
 
     let mut hook_section = String::new();
+    let source_hook_declared = hooks.and_then(|hooks| hooks.source.as_ref()).is_some();
     let mut entries = hooks.into_iter().flat_map(HooksConfig::entries).peekable();
     if entries.peek().is_some() {
         // chown only /jackin/state — agent writes the marker here.
@@ -48,6 +49,22 @@ RUN chmod +x /jackin/runtime/hooks/{dst}
                 dst = entry.filename,
             )
             .expect("writing to String is infallible");
+        }
+        if source_hook_declared {
+            hook_section.push_str(
+                "\
+RUN printf '%s\\n' \\
+    'if [ -z \"",
+            );
+            hook_section.push('$');
+            hook_section.push_str(
+                "\
+{JACKIN_SOURCE_HOOK_LOADED:-}\" ] && [ -f /jackin/runtime/hooks/source.sh ]; then' \\
+    '  export JACKIN_SOURCE_HOOK_LOADED=1' \\
+    '  source /jackin/runtime/hooks/source.sh' \\
+    'fi' >> /home/agent/.zshenv
+",
+            );
         }
     }
 
@@ -339,6 +356,9 @@ mod tests {
         assert!(dockerfile.contains(
             "COPY --chown=agent:agent hooks/preflight.sh /jackin/runtime/hooks/preflight.sh"
         ));
+        assert!(dockerfile.contains(">> /home/agent/.zshenv"));
+        assert!(dockerfile.contains("JACKIN_SOURCE_HOOK_LOADED"));
+        assert!(dockerfile.contains("source /jackin/runtime/hooks/source.sh"));
     }
 
     #[test]
@@ -355,6 +375,7 @@ mod tests {
         assert!(!dockerfile.contains("preflight.sh"));
         assert!(!dockerfile.contains("/jackin/runtime/hooks"));
         assert!(!dockerfile.contains("/jackin/state/hooks"));
+        assert!(!dockerfile.contains("/home/agent/.zshenv"));
     }
 
     #[test]
@@ -688,6 +709,8 @@ mod tests {
                 "COPY --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh"
             )
         );
+        assert!(dockerfile.contains(">> /home/agent/.zshenv"));
+        assert!(dockerfile.contains("source /jackin/runtime/hooks/source.sh"));
         assert!(!dockerfile.contains("setup-once.sh"));
         assert!(!dockerfile.contains("preflight.sh"));
         assert_eq!(
@@ -696,6 +719,25 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn source_hook_zshenv_shim_is_not_rendered_for_non_source_hooks() {
+        let dockerfile = render_derived_dockerfile(
+            "FROM projectjackin/construct:trixie\n",
+            Some(&HooksConfig {
+                setup_once: Some("hooks/setup-once.sh".to_string()),
+                source: None,
+                preflight: Some("hooks/preflight.sh".to_string()),
+            }),
+            &[Agent::Claude],
+            None,
+        );
+
+        assert!(dockerfile.contains("/jackin/runtime/hooks/setup-once.sh"));
+        assert!(dockerfile.contains("/jackin/runtime/hooks/preflight.sh"));
+        assert!(!dockerfile.contains(">> /home/agent/.zshenv"));
+        assert!(!dockerfile.contains("JACKIN_SOURCE_HOOK_LOADED"));
     }
 
     #[test]
