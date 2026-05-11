@@ -28,6 +28,7 @@ The console opens directly to a workspace manager list — no separate workspace
 
 - **Launch an agent into a workspace.** Each workspace row launches a container running the workspace's allowed roles and agents. When the workspace has a single eligible role and agent, launch is one keystroke. When there's ambiguity, the console asks you to pick.
 - **Use your current directory as a workspace.** A synthetic row at the top of the manager list mounts your `cwd` at the same path inside the container. Useful for quick one-off launches without saving a workspace definition.
+- **See active and recoverable instances.** Workspace and current-directory detail panes show an Instances panel when jackin-managed local state exists for that scope, with instance ID, status, agent runtime, and role.
 - **Open the workspace editor.** Edit the workspace's roles, environment variables, and authentication settings. Each editor surface lives on its own tab inside the editor.
 
 For the per-axis details — what each tab manages, what defaults apply, where the launch summary surfaces what's effective — see the per-axis guide pages linked below.

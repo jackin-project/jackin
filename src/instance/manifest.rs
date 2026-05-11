@@ -56,6 +56,7 @@ pub struct InstanceManifest {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceIndexEntry {
+    pub instance_id: String,
     pub container_base: String,
     pub workspace_name: Option<String>,
     pub workspace_label: String,
@@ -186,6 +187,7 @@ fn is_false(value: &bool) -> bool {
 impl InstanceIndexEntry {
     fn from_manifest(manifest: &InstanceManifest) -> Self {
         Self {
+            instance_id: manifest.instance_id.clone(),
             container_base: manifest.container_base.clone(),
             workspace_name: manifest.workspace_name.clone(),
             workspace_label: manifest.workspace_label.clone(),

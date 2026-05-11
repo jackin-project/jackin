@@ -3,7 +3,7 @@ title: "Unique Container Identity and Restore"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — DNS-safe unique names, per-instance manifests with last attach outcomes, the rebuildable instance index, first-pass missing-container detection, Docker-unavailable diagnostics, explicit deleted-container writable-layer loss reporting, instance-ID targeting for hardline/eject/purge, bare `hardline` lookup plus metadata-rich prompts for indexed workspace/ad-hoc instances, exact `hardline` rebuild for missing recoverable instances using the recorded role source/ref, stopped/missing-DinD hardline recovery for existing crashed role containers, Java Testcontainers DinD smoke coverage, and legacy isolation-state manifest backfill have shipped; full recovery pickers, console recovery UI, and stronger restore guarantees remain open (Infrastructure)
+**Status**: Partially implemented — DNS-safe unique names, per-instance manifests with last attach outcomes, the rebuildable instance index, first-pass missing-container detection, Docker-unavailable diagnostics, explicit deleted-container writable-layer loss reporting, instance-ID targeting for hardline/eject/purge, bare `hardline` lookup plus metadata-rich prompts for indexed workspace/ad-hoc instances, exact `hardline` rebuild for missing recoverable instances using the recorded role source/ref, stopped/missing-DinD hardline recovery for existing crashed role containers, a console active-instance panel backed by local state, Java Testcontainers DinD smoke coverage, and legacy isolation-state manifest backfill have shipped; full hardline recovery actions, richer console recovery controls, and stronger restore guarantees remain open (Infrastructure)
 
 ## Problem
 
@@ -217,10 +217,10 @@ Status: partially implemented. New launches write `.jackin/instance.json` with l
 
 ### Phase 3 — Hardline and UI recovery
 
-Status: partially implemented for CLI targeting and exact missing-instance rebuilds. Bare `jackin hardline` can resolve indexed workspace/ad-hoc instances from the current directory and shows candidate prompts with workspace, role, agent runtime, lifecycle status, Docker state, and mount-state summary. Exact `hardline` targets rebuild recoverable missing instances through the launch restore path with the recorded role source/ref, stopped/missing DIND sidecars are restored before crashed role containers, and explicit `hardline`, `eject`, and `purge` selectors can target an indexed instance ID. Full recovery pickers, agent-session selection, and console panels remain open.
+Status: partially implemented for CLI targeting and exact missing-instance rebuilds. Bare `jackin hardline` can resolve indexed workspace/ad-hoc instances from the current directory and shows candidate prompts with workspace, role, agent runtime, lifecycle status, Docker state, and mount-state summary. Exact `hardline` targets rebuild recoverable missing instances through the launch restore path with the recorded role source/ref, stopped/missing DIND sidecars are restored before crashed role containers, explicit `hardline`, `eject`, and `purge` selectors can target an indexed instance ID, and the console shows local active/recoverable instances for the highlighted workspace or current directory. Full hardline recovery actions, agent-session selection, and richer console controls remain open.
 
 - Expand `jackin hardline` so it resolves the current workspace/directory, prompts across matching instances, prompts across agent sessions, and can start a new agent session inside the selected running container.
-- Add a console restore picker and active-instance panel that separates human labels from Docker names.
+- Expand the console active-instance panel into recovery controls that can hardline, purge, and inspect without requiring raw Docker names.
 - Teach cleanup and purge to operate by instance ID/name and to distinguish Docker resource deletion from local state deletion.
 
 ### Phase 4 — Stronger recovery guarantees
@@ -256,6 +256,7 @@ This feature writes only under jackin-managed state directories and creates/remo
 - <RepoFile path="src/runtime/launch.rs" /> — name claiming, DIND launch, env wiring, state preparation, and foreground finalization.
 - <RepoFile path="src/runtime/attach.rs" /> — current hardline restart behavior when containers exist.
 - <RepoFile path="src/runtime/cleanup.rs" /> — DIND/network/volume cleanup and orphan detection.
+- <RepoFile path="src/console/manager/render/list.rs" /> — workspace/current-directory detail panes, including local active-instance visibility.
 - <RepoFile path="src/isolation/state.rs" /> — mount-level isolation records that restore should reference, not replace.
 - <RepoFile path="src/isolation/materialize.rs" /> — worktree/clone paths currently keyed by container name.
 - <RepoFile path="src/paths.rs" /> — data/cache/config directory roots.

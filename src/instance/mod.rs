@@ -7,8 +7,8 @@ mod auth;
 pub mod manifest;
 pub mod naming;
 pub use manifest::{
-    DockerResources, InstanceIndex, InstanceManifest, InstanceQuery, InstanceStatus,
-    NewInstanceManifest,
+    DockerResources, InstanceIndex, InstanceIndexEntry, InstanceManifest, InstanceQuery,
+    InstanceStatus, NewInstanceManifest,
 };
 pub use naming::{
     class_family_matches, container_name_with_id, new_container_name, next_container_name,

@@ -406,6 +406,7 @@ pub fn run_console(
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
             ms.poll_picker_loads();
+            ms.refresh_instances(paths);
         }
 
         if let ConsoleStage::Manager(ms) = &mut state.stage {
