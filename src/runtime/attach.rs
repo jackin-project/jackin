@@ -3,6 +3,8 @@ use crate::instance::{InstanceIndex, InstanceManifest, InstanceStatus};
 use crate::paths::JackinPaths;
 use crate::tui;
 
+use super::naming::{LABEL_KIND_DIND, LABEL_MANAGED, dind_certs_volume};
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum ContainerState {
     /// `docker inspect` confirmed the named container does not exist.
@@ -70,8 +72,14 @@ pub fn inspect_container_state(runner: &mut impl CommandRunner, name: &str) -> C
 }
 
 fn docker_inspect_reports_missing_container(error: &str) -> bool {
+    docker_inspect_reports_missing_resource(error)
+}
+
+fn docker_inspect_reports_missing_resource(error: &str) -> bool {
     let error = error.to_ascii_lowercase();
-    error.contains("no such object") || error.contains("no such container")
+    error.contains("no such object")
+        || error.contains("no such container")
+        || error.contains("no such network")
 }
 
 fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
@@ -86,10 +94,8 @@ fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
 ///   - `Running`                  → attach directly.
 ///   - `Stopped` / exit 0         → error.  The previous session ended cleanly;
 ///     the user wants `jackin load` for a new one.
-///   - `Stopped` / exit ≠0 or OOM → restart the existing container, then
-///     attach, provided the `DinD` sidecar is still present and running.  If
-///     `DinD` is gone or stopped, error — the network plumbing must be rebuilt
-///     via `jackin load`.
+///   - `Stopped` / exit ≠0 or OOM → ensure the derived `DinD` sidecar is
+///     ready, restart the existing container, then attach.
 ///   - `NotFound`                 → error.
 pub(super) fn attach_running(
     container_name: &str,
@@ -152,11 +158,9 @@ pub fn hardline_agent(
             let dind = format!("{container_name}-dind");
             match inspect_container_state(runner, &dind) {
                 ContainerState::Running => {}
-                ContainerState::NotFound => anyhow::bail!(
-                    "DinD sidecar '{dind}' not found; use `jackin load` to rebuild jackin-managed network state. \
-                     The role container still exists, so jackin will not recreate it in place; any changes written \
-                     only to that container's writable layer must be inspected from the existing container."
-                ),
+                ContainerState::NotFound => {
+                    restore_missing_dind_sidecar(container_name, &dind, runner)?;
+                }
                 ContainerState::InspectUnavailable(reason) => {
                     anyhow::bail!("{}", inspect_unavailable_message(&dind, &reason))
                 }
@@ -201,6 +205,109 @@ pub fn hardline_agent(
         runner,
     )?;
     Ok(())
+}
+
+fn restore_missing_dind_sidecar(
+    container_name: &str,
+    dind: &str,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    let network = format!("{container_name}-net");
+    let certs_volume = dind_certs_volume(container_name);
+    let role_label = format!("jackin.role={container_name}");
+    ensure_hardline_network(container_name, &network, &role_label, runner)?;
+
+    eprintln!("Recreating missing DinD sidecar '{dind}'...");
+    let certs_dind_mount = format!("{certs_volume}:/certs/client");
+    let dind_tls_san = format!("DOCKER_TLS_SAN=DNS:{dind}");
+    runner.run(
+        "docker",
+        &[
+            "run",
+            "-d",
+            "--name",
+            dind,
+            "--network",
+            &network,
+            "--privileged",
+            "--label",
+            LABEL_MANAGED,
+            "--label",
+            LABEL_KIND_DIND,
+            "--label",
+            &role_label,
+            "-e",
+            "DOCKER_TLS_CERTDIR=/certs",
+            "-e",
+            &dind_tls_san,
+            "-v",
+            &certs_dind_mount,
+            "docker:dind",
+        ],
+        None,
+        &RunOptions::default(),
+    )?;
+    wait_for_dind(dind, &certs_volume, runner, false)
+}
+
+fn ensure_hardline_network(
+    container_name: &str,
+    network: &str,
+    role_label: &str,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    match inspect_docker_network(runner, network) {
+        DockerNetworkState::Present => Ok(()),
+        DockerNetworkState::InspectUnavailable(reason) => {
+            anyhow::bail!(
+                "cannot inspect Docker network '{network}' while rebuilding DinD sidecar: {reason}"
+            );
+        }
+        DockerNetworkState::NotFound => {
+            eprintln!("Recreating missing Docker network '{network}'...");
+            runner.run(
+                "docker",
+                &[
+                    "network",
+                    "create",
+                    "--label",
+                    LABEL_MANAGED,
+                    "--label",
+                    role_label,
+                    network,
+                ],
+                None,
+                &RunOptions::default(),
+            )?;
+            runner.run(
+                "docker",
+                &["network", "connect", network, container_name],
+                None,
+                &RunOptions::default(),
+            )
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DockerNetworkState {
+    Present,
+    NotFound,
+    InspectUnavailable(String),
+}
+
+fn inspect_docker_network(runner: &mut impl CommandRunner, network: &str) -> DockerNetworkState {
+    match runner.capture("docker", &["network", "inspect", network], None) {
+        Ok(_) => DockerNetworkState::Present,
+        Err(error) => {
+            let error = error.to_string();
+            if docker_inspect_reports_missing_resource(&error) {
+                DockerNetworkState::NotFound
+            } else {
+                DockerNetworkState::InspectUnavailable(error)
+            }
+        }
+    }
 }
 
 fn missing_restore_message(
@@ -440,23 +547,64 @@ mod tests {
     }
 
     #[test]
-    fn hardline_refuses_when_dind_missing() {
+    fn hardline_recreates_missing_dind_and_network() {
         let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::with_capture_queue([
             "false 137 false".to_string(),
-            // Second inspect (DinD) returns empty → NotFound
+            String::new(),
             String::new(),
         ]);
+        runner.fail_with.push((
+            "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-agent-smith-dind".to_string(),
+            "Error: No such object: jackin-agent-smith-dind".to_string(),
+        ));
+        runner.fail_with.push((
+            "docker network inspect jackin-agent-smith-net".to_string(),
+            "Error: No such network: jackin-agent-smith-net".to_string(),
+        ));
 
-        let err = hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap_err();
+        hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap();
 
-        assert!(err.to_string().contains("DinD sidecar"));
-        assert!(
-            !runner
-                .recorded
-                .iter()
-                .any(|c| c.contains("docker start") || c.contains("docker attach"))
-        );
+        let network_create_idx = runner
+            .recorded
+            .iter()
+            .position(|c| c == "docker network create --label jackin.managed=true --label jackin.role=jackin-agent-smith jackin-agent-smith-net")
+            .expect("expected missing network recreation");
+        let network_connect_idx = runner
+            .recorded
+            .iter()
+            .position(|c| c == "docker network connect jackin-agent-smith-net jackin-agent-smith")
+            .expect("expected role container network reconnect");
+        let dind_run_idx = runner
+            .recorded
+            .iter()
+            .position(|c| {
+                c.contains("docker run -d --name jackin-agent-smith-dind")
+                    && c.contains("--network jackin-agent-smith-net")
+                    && c.contains("DOCKER_TLS_SAN=DNS:jackin-agent-smith-dind")
+                    && c.contains("jackin-agent-smith-dind-certs:/certs/client")
+            })
+            .expect("expected missing DinD sidecar recreation");
+        let dind_ready_idx = runner
+            .recorded
+            .iter()
+            .position(|c| c == "docker exec jackin-agent-smith-dind docker info")
+            .expect("expected DinD readiness check");
+        let role_start_idx = runner
+            .recorded
+            .iter()
+            .position(|c| c == "docker start jackin-agent-smith")
+            .expect("expected role restart");
+        let attach_idx = runner
+            .recorded
+            .iter()
+            .position(|c| c.contains("docker attach"))
+            .expect("expected role attach");
+        assert!(network_create_idx < network_connect_idx);
+        assert!(network_connect_idx < dind_run_idx);
+        assert!(dind_run_idx < dind_ready_idx);
+        assert!(dind_ready_idx < role_start_idx);
+        assert!(role_start_idx < attach_idx);
     }
 
     #[test]
