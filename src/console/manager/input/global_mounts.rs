@@ -4,6 +4,11 @@ use super::super::state::{
     GlobalMountConfirm, GlobalMountDraft, GlobalMountModal, GlobalMountTextTarget, ManagerStage,
     ManagerState, Toast, ToastKind,
 };
+
+const NO_MOUNT_SELECTED: &str = "No mount selected.";
+const MOUNT_NAME_EMPTY: &str = "Mount name cannot be empty.";
+const MOUNT_GONE: &str = "Mount no longer exists; selection was cleared.";
+const ADD_DRAFT_LOST: &str = "Add-mount draft was lost; press 'a' to start over.";
 use crate::config::AppConfig;
 use crate::console::widgets::ModalOutcome;
 use crate::console::widgets::confirm::ConfirmState;
@@ -18,10 +23,7 @@ pub(super) fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEve
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
             if global.is_dirty() {
-                global.modal = Some(confirm_modal(
-                    GlobalMountConfirm::Discard,
-                    "Discard unsaved global mount changes?",
-                ));
+                global.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
             } else {
                 state.stage = ManagerStage::List;
             }
@@ -49,37 +51,26 @@ pub(super) fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEve
             } else {
                 GlobalMountConfirm::Save
             };
-            global.modal = Some(confirm_modal(action, prompt_for(action)));
+            global.modal = Some(confirm_modal(action));
         }
         KeyCode::Char('d' | 'D') => {
             if global.pending.is_empty() {
                 set_toast(state, "Nothing to remove.", ToastKind::Error);
             } else if let ManagerStage::GlobalMounts(global) = &mut state.stage {
-                global.modal = Some(confirm_modal(
-                    GlobalMountConfirm::Remove,
-                    "Remove selected global mount?",
-                ));
+                global.modal = Some(confirm_modal(GlobalMountConfirm::Remove));
             }
         }
         KeyCode::Char('r' | 'R') => {
             if let Some(row) = global.pending.get_mut(global.selected) {
                 row.mount.readonly = !row.mount.readonly;
             } else {
-                set_toast(state, "No mount selected.", ToastKind::Error);
+                set_toast(state, NO_MOUNT_SELECTED, ToastKind::Error);
             }
         }
-        KeyCode::Char('n' | 'N') => {
-            open_edit_text(state, GlobalMountTextTarget::Rename, "Rename mount");
-        }
-        KeyCode::Char('1') => open_edit_text(state, GlobalMountTextTarget::Source, "Source"),
-        KeyCode::Char('2') => {
-            open_edit_text(state, GlobalMountTextTarget::Destination, "Destination");
-        }
-        KeyCode::Char('3') => open_edit_text(
-            state,
-            GlobalMountTextTarget::Scope,
-            "Scope (empty = global)",
-        ),
+        KeyCode::Char('n' | 'N') => open_edit_text(state, GlobalMountTextTarget::Rename),
+        KeyCode::Char('1') => open_edit_text(state, GlobalMountTextTarget::Source),
+        KeyCode::Char('2') => open_edit_text(state, GlobalMountTextTarget::Destination),
+        KeyCode::Char('3') => open_edit_text(state, GlobalMountTextTarget::Scope),
         _ => {}
     }
 }
@@ -137,10 +128,7 @@ fn commit_confirm(
             Err(err) => global.error = Some(err.to_string()),
         },
         GlobalMountConfirm::Sensitive => {
-            global.modal = Some(confirm_modal(
-                GlobalMountConfirm::Save,
-                prompt_for(GlobalMountConfirm::Save),
-            ));
+            global.modal = Some(confirm_modal(GlobalMountConfirm::Save));
         }
         GlobalMountConfirm::Discard => {
             global.discard();
@@ -158,98 +146,120 @@ fn commit_text(
     match target {
         GlobalMountTextTarget::AddName => {
             if trimmed.is_empty() {
-                global.error = Some("Mount name cannot be empty.".into());
+                global.error = Some(MOUNT_NAME_EMPTY.into());
                 global.modal = Some(text_modal(GlobalMountTextTarget::AddName, "Mount name", ""));
                 return;
             }
-            if let Some(draft) = global.add_draft.as_mut() {
-                draft.name = trimmed.to_string();
-                global.modal = Some(text_modal(GlobalMountTextTarget::AddSource, "Source", ""));
-            }
+            let Some(draft) = global.add_draft.as_mut() else {
+                global.error = Some(ADD_DRAFT_LOST.into());
+                return;
+            };
+            draft.name = trimmed.to_string();
+            global.modal = Some(text_modal(GlobalMountTextTarget::AddSource, "Source", ""));
         }
         GlobalMountTextTarget::AddSource => {
-            if let Some(draft) = global.add_draft.as_mut() {
-                draft.src = resolve_path(trimmed);
-                global.modal = Some(text_modal(
-                    GlobalMountTextTarget::AddDestination,
-                    "Destination",
-                    "",
-                ));
-            }
+            let Some(draft) = global.add_draft.as_mut() else {
+                global.error = Some(ADD_DRAFT_LOST.into());
+                return;
+            };
+            draft.src = resolve_path(trimmed);
+            global.modal = Some(text_modal(
+                GlobalMountTextTarget::AddDestination,
+                "Destination",
+                "",
+            ));
         }
         GlobalMountTextTarget::AddDestination => {
-            if let Some(draft) = global.add_draft.as_mut() {
-                draft.dst = trimmed.to_string();
-                global.modal = Some(text_modal(
-                    GlobalMountTextTarget::AddScope,
-                    "Scope (empty = global)",
-                    "",
-                ));
-            }
+            let Some(draft) = global.add_draft.as_mut() else {
+                global.error = Some(ADD_DRAFT_LOST.into());
+                return;
+            };
+            draft.dst = trimmed.to_string();
+            global.modal = Some(text_modal(
+                GlobalMountTextTarget::AddScope,
+                "Scope (empty = global)",
+                "",
+            ));
         }
         GlobalMountTextTarget::AddScope => {
-            if let Some(draft) = global.add_draft.take() {
-                global.pending.push(crate::config::GlobalMountRow {
-                    scope: scope_value(trimmed),
-                    name: draft.name,
-                    mount: MountConfig {
-                        src: draft.src,
-                        dst: draft.dst,
-                        readonly: false,
-                        isolation: crate::isolation::MountIsolation::Shared,
-                    },
-                });
-                global.selected = global.pending.len().saturating_sub(1);
-            }
+            let Some(draft) = global.add_draft.take() else {
+                global.error = Some(ADD_DRAFT_LOST.into());
+                return;
+            };
+            global.pending.push(crate::config::GlobalMountRow {
+                scope: scope_value(trimmed),
+                name: draft.name,
+                mount: MountConfig {
+                    src: draft.src,
+                    dst: draft.dst,
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            });
+            global.selected = global.pending.len().saturating_sub(1);
         }
         GlobalMountTextTarget::Source => {
-            if let Some(row) = global.pending.get_mut(global.selected) {
-                row.mount.src = resolve_path(trimmed);
-            }
+            let Some(row) = global.pending.get_mut(global.selected) else {
+                global.error = Some(MOUNT_GONE.into());
+                return;
+            };
+            row.mount.src = resolve_path(trimmed);
         }
         GlobalMountTextTarget::Destination => {
-            if let Some(row) = global.pending.get_mut(global.selected) {
-                row.mount.dst = trimmed.to_string();
-            }
+            let Some(row) = global.pending.get_mut(global.selected) else {
+                global.error = Some(MOUNT_GONE.into());
+                return;
+            };
+            row.mount.dst = trimmed.to_string();
         }
         GlobalMountTextTarget::Scope => {
-            if let Some(row) = global.pending.get_mut(global.selected) {
-                row.scope = scope_value(trimmed);
-            }
+            let Some(row) = global.pending.get_mut(global.selected) else {
+                global.error = Some(MOUNT_GONE.into());
+                return;
+            };
+            row.scope = scope_value(trimmed);
         }
         GlobalMountTextTarget::Rename => {
             if trimmed.is_empty() {
-                global.error = Some("Mount name cannot be empty.".into());
+                global.error = Some(MOUNT_NAME_EMPTY.into());
                 return;
             }
-            if let Some(row) = global.pending.get_mut(global.selected) {
-                row.name = trimmed.to_string();
-            }
+            let Some(row) = global.pending.get_mut(global.selected) else {
+                global.error = Some(MOUNT_GONE.into());
+                return;
+            };
+            row.name = trimmed.to_string();
         }
     }
 }
 
-fn open_edit_text(state: &mut ManagerState<'_>, target: GlobalMountTextTarget, label: &str) {
+fn open_edit_text(state: &mut ManagerState<'_>, target: GlobalMountTextTarget) {
     let ManagerStage::GlobalMounts(global) = &mut state.stage else {
         return;
     };
     let Some(row) = global.pending.get(global.selected) else {
-        set_toast(state, "No mount selected.", ToastKind::Error);
+        set_toast(state, NO_MOUNT_SELECTED, ToastKind::Error);
         return;
     };
-    let initial = match target {
-        GlobalMountTextTarget::Rename => row.name.clone(),
-        GlobalMountTextTarget::Source => row.mount.src.clone(),
-        GlobalMountTextTarget::Destination => row.mount.dst.clone(),
-        GlobalMountTextTarget::Scope => row.scope.clone().unwrap_or_default(),
-        _ => return,
+    let (label, initial) = match target {
+        GlobalMountTextTarget::Rename => ("Rename mount", row.name.clone()),
+        GlobalMountTextTarget::Source => ("Source", row.mount.src.clone()),
+        GlobalMountTextTarget::Destination => ("Destination", row.mount.dst.clone()),
+        GlobalMountTextTarget::Scope => (
+            "Scope (empty = global)",
+            row.scope.clone().unwrap_or_default(),
+        ),
+        // Add-flow targets are driven by the four-step text wizard, not this entry point.
+        GlobalMountTextTarget::AddName
+        | GlobalMountTextTarget::AddSource
+        | GlobalMountTextTarget::AddDestination
+        | GlobalMountTextTarget::AddScope => return,
     };
     global.modal = Some(text_modal(target, label, &initial));
 }
 
-/// Drain transient signals (`error`, `success`, `exit_requested`) that
-/// the `GlobalMounts` handlers set. Promote messages to toasts and pop
-/// back to the workspace list when the handlers asked for it.
+/// Promote pending error/success messages to toasts; pop back to the
+/// workspace list when the handler set `exit_requested`.
 pub(super) fn after_global_mounts_event(state: &mut ManagerState<'_>) {
     let ManagerStage::GlobalMounts(global) = &mut state.stage else {
         return;
@@ -258,18 +268,9 @@ pub(super) fn after_global_mounts_event(state: &mut ManagerState<'_>) {
     let success = global.success.take();
     let exit = std::mem::take(&mut global.exit_requested);
     if let Some(err) = error {
-        state.toast = Some(Toast {
-            message: err,
-            kind: ToastKind::Error,
-            shown_at: std::time::Instant::now(),
-        });
-    }
-    if let Some(msg) = success {
-        state.toast = Some(Toast {
-            message: msg,
-            kind: ToastKind::Success,
-            shown_at: std::time::Instant::now(),
-        });
+        set_toast(state, &err, ToastKind::Error);
+    } else if let Some(msg) = success {
+        set_toast(state, &msg, ToastKind::Success);
     }
     if exit {
         state.stage = ManagerStage::List;
@@ -284,19 +285,16 @@ fn set_toast(state: &mut ManagerState<'_>, msg: &str, kind: ToastKind) {
     });
 }
 
-fn confirm_modal(action: GlobalMountConfirm, prompt: &str) -> GlobalMountModal<'static> {
-    GlobalMountModal::Confirm {
-        action,
-        state: ConfirmState::new(prompt),
-    }
-}
-
-const fn prompt_for(action: GlobalMountConfirm) -> &'static str {
-    match action {
+fn confirm_modal(action: GlobalMountConfirm) -> GlobalMountModal<'static> {
+    let prompt = match action {
         GlobalMountConfirm::Save => "Save global mounts to ~/.config/jackin/config.toml?",
         GlobalMountConfirm::Sensitive => "Sensitive global mount path detected. Save anyway?",
         GlobalMountConfirm::Remove => "Remove selected global mount?",
         GlobalMountConfirm::Discard => "Discard unsaved global mount changes?",
+    };
+    GlobalMountModal::Confirm {
+        action,
+        state: ConfirmState::new(prompt),
     }
 }
 

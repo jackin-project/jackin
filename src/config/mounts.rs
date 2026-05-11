@@ -259,9 +259,17 @@ impl AppConfig {
     }
 
     pub fn validate_global_mount_rows(rows: &[GlobalMountRow]) -> anyhow::Result<()> {
+        let mut seen_keys: BTreeSet<(Option<&str>, &str)> = BTreeSet::new();
         for row in rows {
             if row.name.trim().is_empty() {
                 anyhow::bail!("global mount name cannot be empty");
+            }
+            // Two rows with the same (scope, name) silently collapse on
+            // wire-write because `add_mount` keys the BTreeMap by name —
+            // catch it here before the editor loses one row's data.
+            if !seen_keys.insert((row.scope.as_deref(), row.name.as_str())) {
+                let scope = row.scope.as_deref().unwrap_or("global");
+                anyhow::bail!("duplicate global mount entry: {} [{}]", row.name, scope);
             }
             let expanded = MountConfig {
                 src: expand_tilde(&row.mount.src),
@@ -498,6 +506,41 @@ shared = { src = "/tmp/specific", dst = "/data" }
         ];
         let err = AppConfig::expand_and_validate_named_mounts(&mounts).unwrap_err();
         assert!(err.to_string().contains("duplicate"));
+    }
+
+    #[test]
+    fn validate_global_mount_rows_rejects_duplicate_scope_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let src = temp.path().display().to_string();
+        let rows = vec![
+            GlobalMountRow {
+                scope: None,
+                name: "cache".into(),
+                mount: MountConfig {
+                    src: src.clone(),
+                    dst: "/a".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            },
+            GlobalMountRow {
+                scope: None,
+                name: "cache".into(),
+                mount: MountConfig {
+                    src,
+                    dst: "/b".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            },
+        ];
+
+        let err = AppConfig::validate_global_mount_rows(&rows).unwrap_err();
+
+        assert!(
+            err.to_string().contains("duplicate global mount entry"),
+            "expected duplicate-entry error, got: {err}"
+        );
     }
 
     #[test]
