@@ -27,7 +27,7 @@ const LIST_HEADER_HEIGHT: u16 = 3;
 /// Height of the footer chunk in the list-view chrome. Mirrors
 /// `Constraint::Length(2)` in `render::render`.
 const LIST_FOOTER_HEIGHT: u16 = 2;
-const MOUSE_HORIZONTAL_SCROLL_STEP: u16 = 8;
+const MOUSE_HORIZONTAL_SCROLL_STEP: u16 = 4;
 
 /// Dispatch a mouse event into the workspace manager's list view. Drives
 /// the mouse-draggable seam between the list pane and the details pane.
@@ -127,7 +127,11 @@ pub fn handle_mouse_with_config(
             // the list pane's content area (excluding borders).
             if let Some(row) = list_content_row_index(state, mouse, term_size, seam_x) {
                 state.inline_role_picker = None;
-                state.selected = row.to_screen_index(state.workspaces.len());
+                let selected = row.to_screen_index(state.workspaces.len());
+                if selected != state.selected {
+                    reset_list_mount_scroll(state);
+                    state.selected = selected;
+                }
             }
         }
         MouseEventKind::Drag(MouseButton::Left) => {
@@ -526,6 +530,13 @@ fn current_dir_mount(state: &ManagerState<'_>) -> crate::workspace::MountConfig 
         readonly: false,
         isolation: crate::isolation::MountIsolation::Shared,
     }
+}
+
+const fn reset_list_mount_scroll(state: &mut ManagerState<'_>) {
+    state.list_mounts_scroll_x = 0;
+    state.list_global_mounts_scroll_x = 0;
+    state.list_role_global_mounts_scroll_x = 0;
+    state.list_scroll_focus = None;
 }
 
 fn editor_scroll_area(

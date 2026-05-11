@@ -35,14 +35,20 @@ pub(super) fn handle_list_key(
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             state.inline_role_picker = None;
-            state.list_scroll_focus = None;
-            state.selected = state.selected.saturating_sub(1);
+            let selected = state.selected.saturating_sub(1);
+            if selected != state.selected {
+                reset_list_mount_scroll(state);
+                state.selected = selected;
+            }
             Ok(InputOutcome::Continue)
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
             state.inline_role_picker = None;
-            state.list_scroll_focus = None;
-            state.selected = (state.selected + 1).min(state.row_count() - 1);
+            let selected = (state.selected + 1).min(state.row_count() - 1);
+            if selected != state.selected {
+                reset_list_mount_scroll(state);
+                state.selected = selected;
+            }
             Ok(InputOutcome::Continue)
         }
         KeyCode::Enter => match state.selected_row() {
@@ -275,11 +281,20 @@ fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
     }
 }
 
+const fn reset_list_mount_scroll(state: &mut ManagerState<'_>) {
+    state.list_mounts_scroll_x = 0;
+    state.list_global_mounts_scroll_x = 0;
+    state.list_role_global_mounts_scroll_x = 0;
+    state.list_scroll_focus = None;
+}
+
 #[cfg(test)]
 mod tests {
     //! List-stage tests: row-0 (current dir) gating, Enter routing,
     //! `o`-key resolver to GitHub URLs, and the `GithubPicker` modal.
-    use super::super::super::state::{ManagerStage, ManagerState, Modal, ToastKind};
+    use super::super::super::state::{
+        ManagerStage, ManagerState, Modal, MountScrollFocus, ToastKind,
+    };
     use super::super::test_support::{key, mount};
     use super::InputOutcome;
     use crate::config::AppConfig;
@@ -433,6 +448,38 @@ mod tests {
             InputOutcome::LaunchNamed(name) => assert_eq!(name, "alpha"),
             other => panic!("row 1 Enter must produce LaunchNamed(\"alpha\"); got {other:?}"),
         }
+    }
+
+    #[test]
+    fn moving_selection_resets_mount_scroll_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let cwd = tmp.path();
+
+        let mut config = AppConfig::default();
+        config.workspaces.insert(
+            "alpha".into(),
+            WorkspaceConfig {
+                workdir: "/alpha".into(),
+                mounts: vec![],
+                ..Default::default()
+            },
+        );
+        let mut state = ManagerState::from_config(&config, cwd);
+        state.selected = 0;
+        state.list_mounts_scroll_x = 24;
+        state.list_global_mounts_scroll_x = 16;
+        state.list_role_global_mounts_scroll_x = 8;
+        state.list_scroll_focus = Some(MountScrollFocus::Workspace);
+
+        handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Down)).unwrap();
+
+        assert_eq!(state.selected, 1);
+        assert_eq!(state.list_mounts_scroll_x, 0);
+        assert_eq!(state.list_global_mounts_scroll_x, 0);
+        assert_eq!(state.list_role_global_mounts_scroll_x, 0);
+        assert_eq!(state.list_scroll_focus, None);
     }
 
     // ── List-view `o` key → GitHub resolver + picker ──────────────────

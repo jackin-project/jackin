@@ -106,7 +106,7 @@ pub(super) fn render_horizontal_scrollbar(
     if viewport == 0 || content_width <= viewport {
         return;
     }
-    let position = usize::from(effective_scroll_x(content_width, viewport, scroll_x));
+    let position = scrollbar_position(content_width, viewport, scroll_x);
     let mut state = ScrollbarState::new(content_width)
         .position(position)
         .viewport_content_length(viewport);
@@ -136,6 +136,15 @@ pub(super) fn effective_scroll_x(content_width: usize, viewport: usize, scroll_x
                 .min(usize::from(u16::MAX)) as u16,
         )
     }
+}
+
+fn scrollbar_position(content_width: usize, viewport: usize, scroll_x: u16) -> usize {
+    let scroll_x = usize::from(effective_scroll_x(content_width, viewport, scroll_x));
+    let max_scroll = content_width.saturating_sub(viewport);
+    scroll_x
+        .saturating_mul(content_width.saturating_sub(1))
+        .checked_div(max_scroll)
+        .unwrap_or(0)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -330,6 +339,23 @@ pub(super) fn centered_rect_fixed(outer: Rect, pct_w: u16, rows: u16) -> Rect {
         y: outer.y + outer.height.saturating_sub(h) / 2,
         width: w,
         height: h,
+    }
+}
+
+#[cfg(test)]
+mod horizontal_scrollbar_tests {
+    use super::scrollbar_position;
+
+    #[test]
+    fn text_scroll_end_maps_to_scrollbar_end() {
+        assert_eq!(scrollbar_position(100, 60, 0), 0);
+        assert_eq!(scrollbar_position(100, 60, 20), 49);
+        assert_eq!(scrollbar_position(100, 60, 40), 99);
+    }
+
+    #[test]
+    fn scrollbar_position_clamps_overscroll_to_end() {
+        assert_eq!(scrollbar_position(100, 60, 400), 99);
     }
 }
 
