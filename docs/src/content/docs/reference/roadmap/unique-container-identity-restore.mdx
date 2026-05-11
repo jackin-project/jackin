@@ -3,7 +3,7 @@ title: "Unique Container Identity and Restore"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open — design proposal (Infrastructure)
+**Status**: Partially implemented — DNS-safe unique names, per-instance manifests, the rebuildable instance index, and first-pass missing-container detection have shipped; hardline recovery UI and stronger restore guarantees remain open (Infrastructure)
 
 ## Problem
 
@@ -198,6 +198,8 @@ This avoids mutating live operator work while stopping new launches from creatin
 
 ### Phase 1 — DNS-safe unique names
 
+Status: implemented for new launches. Legacy exact-name operations still understand deterministic role names while new `jackin load` invocations claim DNS-safe random instance bases.
+
 - Add `src/runtime/instance_identity.rs` or equivalent for slugging, truncation, ID generation, and validation.
 - Replace `primary_container_name`, `next_container_name`, and clone-family matching in launch paths with generated instance names for new launches.
 - Keep exact-name operations for `hardline`, `eject`, and cleanup.
@@ -205,6 +207,8 @@ This avoids mutating live operator work while stopping new launches from creatin
 - Update tests that assert `__` and `clone-N` names. Add DNS-label and max-length tests.
 
 ### Phase 2 — Instance manifest and restore detection
+
+Status: partially implemented. New launches write `.jackin/instance.json` with lifecycle status and Docker resource names, maintain a rebuildable `~/.jackin/data/instances.json` lookup index, and `jackin load` detects matching unfinished state whose Docker container is missing before allocating a fresh name. Full interactive recovery pickers remain open.
 
 - Write `.jackin/instance.json` before workspace materialization and update lifecycle fields throughout launch/finalize/error paths.
 - Add the rebuildable global index for lookup by workspace/directory/role.
@@ -245,7 +249,7 @@ This feature writes only under jackin-managed state directories and creates/remo
 
 ## Related Files
 
-- <RepoFile path="src/instance/naming.rs" /> — current deterministic `clone-N` naming.
+- <RepoFile path="src/instance/naming.rs" /> — DNS-safe unique naming for new launches plus legacy deterministic-name matching.
 - <RepoFile path="src/runtime/naming.rs" /> — Docker labels, display formatting, and derived DIND cert volume naming.
 - <RepoFile path="src/runtime/launch.rs" /> — name claiming, DIND launch, env wiring, state preparation, and foreground finalization.
 - <RepoFile path="src/runtime/attach.rs" /> — current hardline restart behavior when containers exist.

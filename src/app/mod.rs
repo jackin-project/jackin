@@ -177,7 +177,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
             } else {
                 let cwd = std::env::current_dir()?;
-                resolve_running_container_from_context(&config, &cwd, &mut runner)?
+                resolve_running_container_from_context(&paths, &config, &cwd, &mut runner)?
             };
             runtime::reconcile_keep_awake(&paths, &mut runner);
             let result = runtime::hardline_agent(&paths, &container, &mut runner);
@@ -221,6 +221,10 @@ pub fn run(cli: Cli) -> Result<()> {
                             .with_context(|| format!("purging isolated state for {container}"))?;
                             remove_data_dir_if_exists(&paths.data_dir.join(container))
                                 .with_context(|| format!("removing data dir for {container}"))?;
+                            instance::InstanceIndex::remove(&paths.data_dir, container)
+                                .with_context(|| {
+                                    format!("removing instance index entry for {container}")
+                                })?;
                             println!("Ejected and purged {container}.");
                         } else {
                             println!("Ejected {container}.");
@@ -1080,6 +1084,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     &mut runner,
                 )?;
                 remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
+                instance::InstanceIndex::remove(&paths.data_dir, &container)?;
                 println!("Purged state for {container}.");
                 Ok(())
             }
@@ -1096,6 +1101,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         &mut runner,
                     )?;
                     remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
+                    instance::InstanceIndex::remove(&paths.data_dir, &container)?;
                     println!("Purged state for {container}.");
                 }
                 Ok(())

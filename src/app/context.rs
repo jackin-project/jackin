@@ -231,17 +231,18 @@ pub(crate) fn resolve_agent_from_context(
     );
 }
 
-/// Resolve a running role container from the current directory context.
+/// Resolve a hardline target from the current directory context.
 ///
 /// Finds the saved workspace whose host workdir or mounted host path best
-/// matches `cwd`, then picks a currently-running container whose class is
-/// permitted by the workspace:
-/// 1. If the workspace's `last_role` has a running container — prefer it
-/// 2. If exactly one running candidate — use it
+/// matches `cwd`, then picks an indexed or currently-running container whose
+/// class is permitted by the workspace:
+/// 1. If the workspace's `last_role` has a candidate — prefer it
+/// 2. If exactly one candidate — use it
 /// 3. If multiple — prompt
 /// 4. If zero — error with guidance to run `jackin load`
 /// 5. No workspace match — error with guidance to pass an explicit selector
 pub(crate) fn resolve_running_container_from_context(
+    paths: &JackinPaths,
     config: &AppConfig,
     cwd: &Path,
     runner: &mut impl docker::CommandRunner,
@@ -267,21 +268,27 @@ pub(crate) fn resolve_running_container_from_context(
             .collect()
     };
 
-    let running = runtime::list_running_agent_names(runner)?;
-    let mut candidates: Vec<String> = allowed_classes
-        .iter()
-        .flat_map(|class| runtime::matching_family(class, &running))
-        .collect();
+    let mut candidates = indexed_hardline_candidates(paths, name, ws, &allowed_classes, runner)?;
+    if candidates.is_empty() {
+        let running = runtime::list_running_agent_names(runner)?;
+        candidates = allowed_classes
+            .iter()
+            .flat_map(|class| runtime::matching_family(class, &running))
+            .collect();
+    }
     candidates.sort();
     candidates.dedup();
 
     if let Some(last) = ws.last_role.as_deref()
-        && let Ok(last_class) = RoleSelector::parse(last)
+        && let Some(preferred) = preferred_indexed_container(paths, name, ws, last, &candidates)
+            .or_else(|| {
+                RoleSelector::parse(last).ok().and_then(|last_class| {
+                    let primary = instance::primary_container_name(&last_class);
+                    candidates.contains(&primary).then_some(primary)
+                })
+            })
     {
-        let primary = instance::primary_container_name(&last_class);
-        if candidates.contains(&primary) {
-            return Ok(primary);
-        }
+        return Ok(preferred);
     }
 
     match candidates.as_slice() {
@@ -299,6 +306,64 @@ pub(crate) fn resolve_running_container_from_context(
             Ok(candidates.swap_remove(choice))
         }
     }
+}
+
+fn indexed_hardline_candidates(
+    paths: &JackinPaths,
+    workspace_name: &str,
+    workspace: &WorkspaceConfig,
+    allowed_classes: &[RoleSelector],
+    runner: &mut impl docker::CommandRunner,
+) -> Result<Vec<String>> {
+    let manifests = instance::InstanceIndex::matching_manifests(
+        &paths.data_dir,
+        instance::InstanceQuery {
+            workspace_name: Some(workspace_name),
+            workspace_label: workspace_name,
+            workdir: &workspace.workdir,
+            role_key: None,
+            agent_runtime: None,
+        },
+    )?;
+    Ok(manifests
+        .into_iter()
+        .filter(|manifest| {
+            allowed_classes
+                .iter()
+                .any(|class| class.key() == manifest.role_key)
+        })
+        .filter(|manifest| {
+            matches!(
+                runtime::inspect_container_state(runner, &manifest.container_base),
+                runtime::ContainerState::Running | runtime::ContainerState::Stopped { .. }
+            ) || manifest.is_restore_candidate()
+        })
+        .map(|manifest| manifest.container_base)
+        .collect())
+}
+
+fn preferred_indexed_container(
+    paths: &JackinPaths,
+    workspace_name: &str,
+    workspace: &WorkspaceConfig,
+    last_role: &str,
+    candidates: &[String],
+) -> Option<String> {
+    let manifests = instance::InstanceIndex::matching_manifests(
+        &paths.data_dir,
+        instance::InstanceQuery {
+            workspace_name: Some(workspace_name),
+            workspace_label: workspace_name,
+            workdir: &workspace.workdir,
+            role_key: Some(last_role),
+            agent_runtime: None,
+        },
+    )
+    .ok()?;
+    manifests
+        .into_iter()
+        .map(|manifest| manifest.container_base)
+        .find(|container| candidates.contains(container))
 }
 
 /// Resolve which agent to launch when the operator hasn't explicitly
@@ -730,8 +795,10 @@ mod tests {
         let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
         let mut runner = fake_runner_with_running_agents(&["jackin-agent-smith"]);
 
+        let paths = paths::JackinPaths::for_tests(temp.path());
         let container =
-            resolve_running_container_from_context(&config, &nested_dir, &mut runner).unwrap();
+            resolve_running_container_from_context(&paths, &config, &nested_dir, &mut runner)
+                .unwrap();
 
         assert_eq!(container, "jackin-agent-smith");
     }
@@ -750,10 +817,51 @@ mod tests {
         let mut runner =
             fake_runner_with_running_agents(&["jackin-agent-smith", "jackin-the-architect"]);
 
+        let paths = paths::JackinPaths::for_tests(temp.path());
         let container =
-            resolve_running_container_from_context(&config, &project_dir, &mut runner).unwrap();
+            resolve_running_container_from_context(&paths, &config, &project_dir, &mut runner)
+                .unwrap();
 
         assert_eq!(container, "jackin-the-architect");
+    }
+
+    #[test]
+    fn resolve_running_container_from_context_uses_indexed_unique_instance() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
+        let manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
+            container_base: "jackin-myapp-agentsmith-k7p9m2xq",
+            workspace_name: Some("my-app"),
+            workspace_label: "my-app",
+            workdir: "/workspace",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: instance::DockerResources {
+                role_container: "jackin-myapp-agentsmith-k7p9m2xq".to_string(),
+                dind_container: "jackin-myapp-agentsmith-k7p9m2xq-dind".to_string(),
+                network: "jackin-myapp-agentsmith-k7p9m2xq-net".to_string(),
+                certs_volume: "jackin-myapp-agentsmith-k7p9m2xq-dind-certs".to_string(),
+            },
+        });
+        let state_dir = paths.data_dir.join(&manifest.container_base);
+        manifest.write(&state_dir).unwrap();
+        instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let mut runner = runtime::FakeRunner::default();
+        runner.capture_queue.push_back("true 0 false".to_string());
+
+        let container =
+            resolve_running_container_from_context(&paths, &config, &project_dir, &mut runner)
+                .unwrap();
+
+        assert_eq!(container, "jackin-myapp-agentsmith-k7p9m2xq");
     }
 
     #[test]
@@ -765,9 +873,11 @@ mod tests {
         let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
         let mut runner = fake_runner_with_running_agents(&[]);
 
-        let err = resolve_running_container_from_context(&config, &project_dir, &mut runner)
-            .unwrap_err()
-            .to_string();
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let err =
+            resolve_running_container_from_context(&paths, &config, &project_dir, &mut runner)
+                .unwrap_err()
+                .to_string();
 
         assert!(err.contains("no running roles"), "got: {err}");
         assert!(err.contains("my-app"), "got: {err}");
@@ -783,9 +893,11 @@ mod tests {
         // the-architect is running but not allowed in this workspace.
         let mut runner = fake_runner_with_running_agents(&["jackin-the-architect"]);
 
-        let err = resolve_running_container_from_context(&config, &project_dir, &mut runner)
-            .unwrap_err()
-            .to_string();
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let err =
+            resolve_running_container_from_context(&paths, &config, &project_dir, &mut runner)
+                .unwrap_err()
+                .to_string();
 
         assert!(err.contains("no running roles"), "got: {err}");
     }
@@ -801,7 +913,8 @@ mod tests {
         let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
         let mut runner = fake_runner_with_running_agents(&["jackin-agent-smith"]);
 
-        let err = resolve_running_container_from_context(&config, &unrelated, &mut runner)
+        let paths = paths::JackinPaths::for_tests(temp.path());
+        let err = resolve_running_container_from_context(&paths, &config, &unrelated, &mut runner)
             .unwrap_err()
             .to_string();
 

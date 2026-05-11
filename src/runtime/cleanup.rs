@@ -16,6 +16,7 @@ pub fn purge_class_data(paths: &JackinPaths, selector: &RoleSelector) -> anyhow:
         let file_name = entry.file_name().to_string_lossy().to_string();
         if crate::instance::class_family_matches(selector, &file_name) {
             std::fs::remove_dir_all(entry.path())?;
+            crate::instance::InstanceIndex::remove(&paths.data_dir, &file_name)?;
         }
     }
 

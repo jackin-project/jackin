@@ -4,8 +4,16 @@ use crate::paths::JackinPaths;
 use std::path::{Path, PathBuf};
 
 mod auth;
+pub mod manifest;
 pub mod naming;
-pub use naming::{class_family_matches, next_container_name, primary_container_name, runtime_slug};
+pub use manifest::{
+    DockerResources, InstanceIndex, InstanceManifest, InstanceQuery, InstanceStatus,
+    NewInstanceManifest,
+};
+pub use naming::{
+    class_family_matches, container_name_with_id, new_container_name, next_container_name,
+    primary_container_name, runtime_slug,
+};
 
 /// Outcome of the `.claude.json` provisioning step, so callers can surface
 /// a one-time notice when host credentials are forwarded.
