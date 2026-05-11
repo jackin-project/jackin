@@ -41,7 +41,7 @@ These names are technical identifiers, not the long-term operator API. The conso
 Container names that jackin uses as hostnames must obey hostname label rules, not only Docker's permissive container-name rules.
 
 - DNS labels are limited to 63 octets, and full domain names are limited to 255 octets including length bytes. See [RFC 1035 section 2.3.4](https://www.rfc-editor.org/rfc/rfc1035#section-2.3.4).
-- Hostname labels use letters, digits, and hyphen, with labels beginning with a letter and ending with a letter or digit under the preferred hostname syntax. See [RFC 1035 section 2.3.1](https://www.rfc-editor.org/rfc/rfc1035#section-2.3.1) and [RFC 1123 section 2.1](https://www.rfc-editor.org/rfc/rfc1123#section-2.1), which permits a leading digit.
+- Hostname labels use letters, digits, and hyphen, with labels beginning with a letter and ending with a letter or digit under the preferred hostname syntax. See [RFC 1035 section 2.3.1](https://www.rfc-editor.org/rfc/rfc1035#section-2.3.1) and [RFC 1123](https://www.rfc-editor.org/rfc/rfc1123), section 2.1, which permits a leading digit.
 - Underscores are not valid hostname label characters. Some Docker and libc paths resolve them, but Java URI parsing and many libraries reject them.
 
 Recommended invariant: every Docker network DNS name jackin emits must match lowercase RFC-1123 label syntax: `[a-z0-9]([-a-z0-9]*[a-z0-9])?`, with length `1..=63`. Human-derived components should be stricter than the full label: `[a-z0-9]+` only. Hyphens are reserved for jackin's structural separators, which keeps `docker ps` visually scannable.
@@ -259,6 +259,6 @@ This feature writes only under jackin-managed state directories and creates/remo
 
 - Issue [#318](https://github.com/jackin-project/jackin/issues/318) — Testcontainers-compatible Docker host env failure caused by underscore-bearing DIND hostname.
 - [RFC 1035 section 2.3.4](https://www.rfc-editor.org/rfc/rfc1035#section-2.3.4) — DNS label and name size limits.
-- [RFC 1035 section 2.3.1](https://www.rfc-editor.org/rfc/rfc1035#section-2.3.1) and [RFC 1123 section 2.1](https://www.rfc-editor.org/rfc/rfc1123#section-2.1) — preferred hostname syntax and leading-digit relaxation.
+- [RFC 1035 section 2.3.1](https://www.rfc-editor.org/rfc/rfc1035#section-2.3.1) and [RFC 1123](https://www.rfc-editor.org/rfc/rfc1123), section 2.1 — preferred hostname syntax and leading-digit relaxation.
 - [Testcontainers Docker environment discovery](https://java.testcontainers.org/supported_docker_environment/#docker-environment-discovery) — uses `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, and `DOCKER_CERT_PATH`.
 - [Testcontainers DinD patterns](https://java.testcontainers.org/supported_docker_environment/continuous_integration/dind_patterns/) — documents `TESTCONTAINERS_HOST_OVERRIDE` for tests running inside containers.
