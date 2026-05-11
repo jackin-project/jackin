@@ -1,4 +1,5 @@
 use crate::docker::{CommandRunner, RunOptions};
+use crate::instance::{InstanceIndex, InstanceManifest, InstanceStatus};
 use crate::paths::JackinPaths;
 use crate::tui;
 
@@ -94,6 +95,9 @@ pub fn hardline_agent(
             attach_running(container_name, runner)
         }
         ContainerState::NotFound => {
+            if let Some(message) = missing_restore_message(paths, container_name)? {
+                anyhow::bail!("{message}");
+            }
             anyhow::bail!(
                 "container '{container_name}' not found; use `jackin load` to start a new session"
             )
@@ -154,6 +158,27 @@ pub fn hardline_agent(
         runner,
     )?;
     Ok(())
+}
+
+fn missing_restore_message(
+    paths: &JackinPaths,
+    container_name: &str,
+) -> anyhow::Result<Option<String>> {
+    let state_dir = paths.data_dir.join(container_name);
+    let Ok(mut manifest) = InstanceManifest::read(&state_dir) else {
+        return Ok(None);
+    };
+    if !manifest.is_restore_candidate() {
+        return Ok(None);
+    }
+
+    manifest.mark_status(InstanceStatus::RestoreAvailable);
+    manifest.write(&state_dir)?;
+    InstanceIndex::update_manifest(&paths.data_dir, &manifest)?;
+    Ok(Some(format!(
+        "container '{container_name}' is missing, but jackin state remains recoverable at {}; run `jackin load` from the matching workspace to rebuild it, or `jackin eject {container_name} --purge` to discard it",
+        state_dir.display()
+    )))
 }
 
 pub(super) fn wait_for_dind(
@@ -238,6 +263,44 @@ mod tests {
                 .iter()
                 .any(|c| c.contains("docker start") || c.contains("docker attach"))
         );
+    }
+
+    #[test]
+    fn hardline_marks_missing_manifest_restore_available() {
+        let (_tmp, paths) = test_paths();
+        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: crate::instance::DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest.mark_status(InstanceStatus::Crashed);
+        let state_dir = paths.data_dir.join(container_name);
+        manifest.write(&state_dir).unwrap();
+        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let mut runner = FakeRunner::default();
+
+        let err = hardline_agent(&paths, container_name, &mut runner).unwrap_err();
+
+        assert!(err.to_string().contains("state remains recoverable"));
+        let manifest = InstanceManifest::read(&state_dir).unwrap();
+        assert_eq!(manifest.status, InstanceStatus::RestoreAvailable);
+        let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
+        assert_eq!(index.instances[0].status, InstanceStatus::RestoreAvailable);
     }
 
     #[test]
