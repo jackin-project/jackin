@@ -9,8 +9,10 @@ use ratatui::{
 use super::{
     FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_footer, render_header,
 };
+use crate::console::manager::render::list::mount_display_paths;
 use crate::console::manager::state::{GlobalMountModal, GlobalMountsState};
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn render_global_mounts(frame: &mut Frame, state: &GlobalMountsState<'_>) {
     let area = frame.area();
     let chunks = Layout::default()
@@ -31,7 +33,7 @@ pub(super) fn render_global_mounts(frame: &mut Frame, state: &GlobalMountsState<
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
     let mut lines = vec![Line::from(Span::styled(
-        "  Name                 Source                         Destination                    Mode Scope Type",
+        "  Name                 Destination                    Mode Scope Type",
         Style::default().fg(WHITE),
     ))];
     if state.pending.is_empty() {
@@ -53,18 +55,24 @@ pub(super) fn render_global_mounts(frame: &mut Frame, state: &GlobalMountsState<
         let mode = if row.mount.readonly { "ro" } else { "rw" };
         let scope = row.scope.as_deref().unwrap_or("global");
         let kind = crate::console::manager::mount_info::inspect(&row.mount.src).label();
+        let (destination, host_source) = mount_display_paths(&row.mount);
         lines.push(Line::from(Span::styled(
             format!(
-                "{prefix}{:<20} {:<30} {:<30} {:<4} {:<16} {}",
+                "{prefix}{:<20} {:<30} {:<4} {:<16} {}",
                 truncate(&row.name, 20),
-                truncate(&crate::tui::shorten_home(&row.mount.src), 30),
-                truncate(&row.mount.dst, 30),
+                truncate(&destination, 30),
                 mode,
                 truncate(scope, 16),
                 kind
             ),
             style,
         )));
+        if let Some(host_source) = host_source {
+            lines.push(Line::from(Span::styled(
+                format!("  {:<20} {}", "", truncate(&host_source, 64)),
+                Style::default().fg(PHOSPHOR_DIM),
+            )));
+        }
     }
     if let Some(err) = &state.error {
         lines.push(Line::from(""));

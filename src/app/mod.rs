@@ -280,7 +280,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     editor.add_mount(&name, mount, scope.as_deref());
                     editor.save()?;
-                    println!("Added mount {name:?} ({scope_label}): {src} -> {dst}{ro}");
+                    println!("Added mount {name:?} ({scope_label}):\n  {dst}\n  host: {src}{ro}");
                     Ok(())
                 }
                 cli::MountCommand::Remove { name, scope } => {
@@ -307,10 +307,8 @@ pub fn run(cli: Cli) -> Result<()> {
                             scope: String,
                             #[tabled(rename = "Name")]
                             name: String,
-                            #[tabled(rename = "Source")]
-                            src: String,
-                            #[tabled(rename = "Destination")]
-                            dst: String,
+                            #[tabled(rename = "Mount")]
+                            mount: String,
                             #[tabled(rename = "Mode")]
                             mode: String,
                         }
@@ -319,8 +317,7 @@ pub fn run(cli: Cli) -> Result<()> {
                             .map(|(scope, name, m)| Row {
                                 scope: scope.clone(),
                                 name: name.clone(),
-                                src: tui::shorten_home(&m.src),
-                                dst: m.dst.clone(),
+                                mount: mount_display(&m.src, &m.dst),
                                 mode: if m.readonly {
                                     "read-only".to_string()
                                 } else {
@@ -1361,10 +1358,8 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
 
     #[derive(Tabled)]
     struct MountRow {
-        #[tabled(rename = "Source")]
-        src: String,
-        #[tabled(rename = "Destination")]
-        dst: String,
+        #[tabled(rename = "Mount")]
+        mount: String,
         #[tabled(rename = "Mode")]
         mode: String,
         #[tabled(rename = "Isolation")]
@@ -1376,10 +1371,8 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
         scope: String,
         #[tabled(rename = "Name")]
         name: String,
-        #[tabled(rename = "Source")]
-        src: String,
-        #[tabled(rename = "Destination")]
-        dst: String,
+        #[tabled(rename = "Mount")]
+        mount: String,
         #[tabled(rename = "Mode")]
         mode: String,
     }
@@ -1387,10 +1380,8 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
     struct GlobalMountRow {
         #[tabled(rename = "Name")]
         name: String,
-        #[tabled(rename = "Source")]
-        src: String,
-        #[tabled(rename = "Destination")]
-        dst: String,
+        #[tabled(rename = "Mount")]
+        mount: String,
         #[tabled(rename = "Mode")]
         mode: String,
     }
@@ -1435,8 +1426,7 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
             .mounts
             .iter()
             .map(|m| MountRow {
-                src: tui::shorten_home(&m.src),
-                dst: tui::shorten_home(&m.dst),
+                mount: mount_display(&m.src, &m.dst),
                 mode: if m.readonly {
                     "read-only".to_string()
                 } else {
@@ -1459,15 +1449,13 @@ fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceCo
                     Table::new(rows.iter().map(|row| GlobalMountRowWithScope {
                         scope: row.scope.as_deref().unwrap_or("global").to_string(),
                         name: row.name.clone(),
-                        src: tui::shorten_home(&row.mount.src),
-                        dst: row.mount.dst.clone(),
+                        mount: mount_display(&row.mount.src, &row.mount.dst),
                         mode: mount_mode(row.mount.readonly),
                     }))
                 } else {
                     Table::new(rows.iter().map(|row| GlobalMountRow {
                         name: row.name.clone(),
-                        src: tui::shorten_home(&row.mount.src),
-                        dst: row.mount.dst.clone(),
+                        mount: mount_display(&row.mount.src, &row.mount.dst),
                         mode: mount_mode(row.mount.readonly),
                     }))
                 };
@@ -1501,6 +1489,15 @@ fn mount_mode(readonly: bool) -> String {
         "read-only".to_string()
     } else {
         "read-write".to_string()
+    }
+}
+
+fn mount_display(src: &str, dst: &str) -> String {
+    let short_dst = tui::shorten_home(dst);
+    if src == dst {
+        short_dst
+    } else {
+        format!("{}\nhost: {}", short_dst, tui::shorten_home(src))
     }
 }
 

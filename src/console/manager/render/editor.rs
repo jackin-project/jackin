@@ -15,8 +15,8 @@ use std::cmp::Ordering;
 
 use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
 use super::list::{
-    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
-    render_mount_header,
+    MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows,
+    mount_display_paths, mount_path_width, render_mount_header,
 };
 use super::{
     FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_footer, render_header,
@@ -461,7 +461,7 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
     // with data rows regardless of path width.
     let mut lines: Vec<Line> = vec![render_mount_header(path_w)];
 
-    lines.extend(rows.iter().enumerate().map(|(i, (path, mode, iso, kind))| {
+    for (i, row) in rows.iter().enumerate() {
         let selected = i == cursor;
         let prefix = if selected { "▸ " } else { "  " };
         let base_style = if selected {
@@ -474,23 +474,32 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, con
         let dim_style = Style::default()
             .fg(PHOSPHOR_DIM)
             .add_modifier(Modifier::ITALIC);
-        Line::from(vec![
-            Span::styled(format!("{prefix}{path:<path_w$}  "), base_style),
+        lines.push(Line::from(vec![
             Span::styled(
-                format!("{mode:<MOUNT_MODE_COL_WIDTH$}"),
+                format!("{prefix}{:<path_w$}  ", row.destination),
+                base_style,
+            ),
+            Span::styled(
+                format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
                 Style::default().fg(PHOSPHOR_DIM),
             ),
             // Two-space gap before the iso column — matches the header.
             Span::raw("  "),
             Span::styled(
-                format!("{iso:<MOUNT_ISOLATION_COL_WIDTH$}"),
+                format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
                 Style::default().fg(PHOSPHOR_DIM),
             ),
             // Two-space gap before the type column — matches the header.
             Span::raw("  "),
-            Span::styled(kind.clone(), dim_style),
-        ])
-    }));
+            Span::styled(row.kind.clone(), dim_style),
+        ]));
+        if let Some(host_source) = &row.host_source {
+            lines.push(Line::from(Span::styled(
+                format!("  {host_source:<path_w$}"),
+                Style::default().fg(PHOSPHOR_DIM),
+            )));
+        }
+    }
 
     // Sentinel row: + Add mount — selectable, styled distinctly from mounts.
     let sentinel_idx = state.pending.mounts.len();
@@ -538,28 +547,28 @@ fn append_global_mount_lines(
         format!("  Global mounts ({role})"),
         Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
     )));
-    let global_rows: Vec<(String, &'static str, &'static str, String)> = rows
+    let global_rows: Vec<MountDisplayRow> = rows
         .iter()
         .map(|row| {
-            let src = crate::tui::shorten_home(&row.mount.src);
-            let dst = crate::tui::shorten_home(&row.mount.dst);
-            let path = if row.mount.src == row.mount.dst {
-                src
-            } else {
-                format!("{src} \u{2192} {dst}")
-            };
+            let (destination, host_source) = mount_display_paths(&row.mount);
             let mode = if row.mount.readonly { "ro" } else { "rw" };
             let kind = super::super::mount_info::inspect(&row.mount.src).label();
             let kind = row
                 .scope
                 .as_ref()
                 .map_or_else(|| kind.clone(), |scope| format!("{kind} · {scope}"));
-            (path, mode, "shared", kind)
+            MountDisplayRow {
+                destination,
+                host_source,
+                mode,
+                isolation: "shared",
+                kind,
+            }
         })
         .collect();
     let path_w = mount_path_width(&global_rows);
     lines.push(render_mount_header(path_w));
-    for (i, (path, mode, iso, kind)) in global_rows.iter().enumerate() {
+    for (i, row) in global_rows.iter().enumerate() {
         let selected = cursor == offset + i;
         let prefix = if selected { "▸ " } else { "  " };
         let base_style = if selected {
@@ -573,19 +582,28 @@ fn append_global_mount_lines(
             .fg(PHOSPHOR_DIM)
             .add_modifier(Modifier::ITALIC);
         lines.push(Line::from(vec![
-            Span::styled(format!("{prefix}{path:<path_w$}  "), base_style),
             Span::styled(
-                format!("{mode:<MOUNT_MODE_COL_WIDTH$}"),
+                format!("{prefix}{:<path_w$}  ", row.destination),
+                base_style,
+            ),
+            Span::styled(
+                format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
                 Style::default().fg(PHOSPHOR_DIM),
             ),
             Span::raw("  "),
             Span::styled(
-                format!("{iso:<MOUNT_ISOLATION_COL_WIDTH$}"),
+                format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
                 Style::default().fg(PHOSPHOR_DIM),
             ),
             Span::raw("  "),
-            Span::styled(kind.clone(), dim_style),
+            Span::styled(row.kind.clone(), dim_style),
         ]));
+        if let Some(host_source) = &row.host_source {
+            lines.push(Line::from(Span::styled(
+                format!("  {host_source:<path_w$}"),
+                Style::default().fg(PHOSPHOR_DIM),
+            )));
+        }
     }
 }
 

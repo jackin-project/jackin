@@ -130,27 +130,44 @@ fn render_toast(frame: &mut Frame, area: Rect, toast: &super::super::state::Toas
     frame.render_widget(Paragraph::new(line), banner_area);
 }
 
-/// Build aligned 4-column mount rows: (`path_display`, mode, `iso_label`,
-/// `kind_label`). `iso_label` is the canonical spelling of the mount's
-/// isolation strategy ("shared" / "worktree") — rendered for every
-/// mount including `shared` per the per-mount-isolation spec.
-pub(super) fn format_mount_rows(
-    mounts: &[crate::workspace::MountConfig],
-) -> Vec<(String, &'static str, &'static str, String)> {
+/// Build aligned 4-column mount rows. The path column renders destination
+/// first, then host source on a continuation line when the paths differ.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct MountDisplayRow {
+    pub(super) destination: String,
+    pub(super) host_source: Option<String>,
+    pub(super) mode: &'static str,
+    pub(super) isolation: &'static str,
+    pub(super) kind: String,
+}
+
+pub(super) fn mount_display_paths(
+    mount: &crate::workspace::MountConfig,
+) -> (String, Option<String>) {
+    let src = crate::tui::shorten_home(&mount.src);
+    let dst = crate::tui::shorten_home(&mount.dst);
+    if mount.src == mount.dst {
+        (dst, None)
+    } else {
+        (dst, Some(format!("host: {src}")))
+    }
+}
+
+pub(super) fn format_mount_rows(mounts: &[crate::workspace::MountConfig]) -> Vec<MountDisplayRow> {
     mounts
         .iter()
         .map(|m| {
-            let src = crate::tui::shorten_home(&m.src);
-            let dst = crate::tui::shorten_home(&m.dst);
-            let path = if m.src == m.dst {
-                src
-            } else {
-                format!("{src} \u{2192} {dst}")
-            };
+            let (destination, host_source) = mount_display_paths(m);
             let mode: &'static str = if m.readonly { "ro" } else { "rw" };
             let iso: &'static str = m.isolation.as_str();
             let kind = super::super::mount_info::inspect(&m.src).label();
-            (path, mode, iso, kind)
+            MountDisplayRow {
+                destination,
+                host_source,
+                mode,
+                isolation: iso,
+                kind,
+            }
         })
         .collect()
 }
@@ -168,17 +185,23 @@ pub(super) const MOUNT_ISOLATION_COL_WIDTH: usize = 9;
 /// Compute the width used for the `Path` column so that header and data rows
 /// align. Derived from both the "Path" header label and the widest row path,
 /// with a minimum floor so short-path tables still look tabular.
-pub(super) fn mount_path_width(rows: &[(String, &str, &str, String)]) -> usize {
+pub(super) fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
     rows.iter()
-        .map(|(p, _, _, _)| p.chars().count())
+        .flat_map(|row| {
+            [
+                &row.destination,
+                row.host_source.as_ref().unwrap_or(&row.destination),
+            ]
+        })
+        .map(|p| p.chars().count())
         .max()
         .unwrap_or(0)
         .max(10)
-        .max("Path".len())
+        .max("Destination".len())
 }
 
 pub(super) fn render_mount_header(path_w: usize) -> Line<'static> {
-    // Format: "  <path padded to path_w>  <mode padded>  <iso padded>  Type"
+    // Format: "  <destination padded>  <mode padded>  <iso padded>  Type"
     // Leading two-space gutter + two-space gap between every column matches
     // the data-row format so columns never run into each other.
     let mode_col = format!("{:<mw$}", "Mode", mw = MOUNT_MODE_COL_WIDTH);
@@ -186,41 +209,42 @@ pub(super) fn render_mount_header(path_w: usize) -> Line<'static> {
     Line::from(Span::styled(
         format!(
             "  {path:<path_w$}  {mode_col}  {iso_col}  Type",
-            path = "Path"
+            path = "Destination"
         ),
         Style::default().fg(WHITE),
     ))
 }
 
-pub(super) fn render_mount_lines(
-    rows: &[(String, &str, &str, String)],
-    path_w: usize,
-) -> Vec<Line<'static>> {
-    rows.iter()
-        .map(|(path, mode, iso, kind)| {
-            Line::from(vec![
-                Span::raw(format!("  {path:<path_w$}  ")),
-                Span::styled(
-                    format!("{mode:<MOUNT_MODE_COL_WIDTH$}"),
-                    Style::default().fg(PHOSPHOR_DIM),
-                ),
-                // Two-space gap before the iso column — matches the header.
-                Span::raw("  "),
-                Span::styled(
-                    format!("{iso:<MOUNT_ISOLATION_COL_WIDTH$}"),
-                    Style::default().fg(PHOSPHOR_DIM),
-                ),
-                // Two-space gap before the type column — matches the header.
-                Span::raw("  "),
-                Span::styled(
-                    kind.clone(),
-                    Style::default()
-                        .fg(PHOSPHOR_DIM)
-                        .add_modifier(Modifier::ITALIC),
-                ),
-            ])
-        })
-        .collect()
+pub(super) fn render_mount_lines(rows: &[MountDisplayRow], path_w: usize) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    for row in rows {
+        lines.push(Line::from(vec![
+            Span::raw(format!("  {:<path_w$}  ", row.destination)),
+            Span::styled(
+                format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
+                Style::default().fg(PHOSPHOR_DIM),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
+                Style::default().fg(PHOSPHOR_DIM),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                row.kind.clone(),
+                Style::default()
+                    .fg(PHOSPHOR_DIM)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ]));
+        if let Some(host_source) = &row.host_source {
+            lines.push(Line::from(Span::styled(
+                format!("  {host_source:<path_w$}"),
+                Style::default().fg(PHOSPHOR_DIM),
+            )));
+        }
+    }
+    lines
 }
 
 fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, config: &AppConfig) {
@@ -273,7 +297,14 @@ fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
 }
 
 fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
-    let data_rows = if mounts.is_empty() { 1 } else { mounts.len() };
+    let data_rows = if mounts.is_empty() {
+        1
+    } else {
+        mounts
+            .iter()
+            .map(|mount| if mount.src == mount.dst { 1 } else { 2 })
+            .sum()
+    };
     (data_rows + 2 + 1).min(12) as u16
 }
 
@@ -790,8 +821,8 @@ fn render_agents_subpanel(
 #[cfg(test)]
 mod mount_table_tests {
     use super::{
-        MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
-        render_mount_header, render_mount_lines,
+        MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows,
+        mount_path_width, render_mount_header, render_mount_lines,
     };
     use crate::workspace::MountConfig;
 
@@ -838,16 +869,31 @@ mod mount_table_tests {
         panic!("mode column not found in line: {s:?}");
     }
 
+    fn mount_row(
+        destination: &str,
+        mode: &'static str,
+        isolation: &'static str,
+        kind: &str,
+    ) -> MountDisplayRow {
+        MountDisplayRow {
+            destination: destination.into(),
+            host_source: None,
+            mode,
+            isolation,
+            kind: kind.into(),
+        }
+    }
+
     #[test]
     fn header_and_data_rows_share_path_column_width() {
         // Short path + long path forces path_w to be the length of the long one.
-        let rows: Vec<(String, &str, &str, String)> = vec![
-            ("~/short".into(), "rw", "shared", "git · main".into()),
-            (
-                "~/Projects/very/deeply/nested/directory".into(),
+        let rows = vec![
+            mount_row("~/short", "rw", "shared", "git · main"),
+            mount_row(
+                "~/Projects/very/deeply/nested/directory",
                 "ro",
                 "worktree",
-                "dir".into(),
+                "dir",
             ),
         ];
         let path_w = mount_path_width(&rows);
@@ -874,11 +920,11 @@ mod mount_table_tests {
     fn single_row_still_uses_minimum_column_width() {
         // Single short mount — path_w should stay at the floor so the
         // table is still visibly tabular.
-        let rows: Vec<(String, &str, &str, String)> = vec![(
-            "~/Projects/ChainArgos/blockchain-nodes".into(),
+        let rows = vec![mount_row(
+            "~/Projects/ChainArgos/blockchain-nodes",
             "rw",
             "shared",
-            "git · main".into(),
+            "git · main",
         )];
         let path_w = mount_path_width(&rows);
         assert_eq!(path_w, "~/Projects/ChainArgos/blockchain-nodes".len());
@@ -893,12 +939,12 @@ mod mount_table_tests {
         // Empty case: header should still render with the floor width and
         // include the two-space gap between every column.
         let path_w = mount_path_width(&[]);
-        assert_eq!(path_w, 10);
+        assert_eq!(path_w, "Destination".len());
         let header = render_mount_header(path_w);
         // "  <path padded>  <mode padded>  <iso padded>  Type"
         let expected = format!(
             "  {path:<path_w$}  {mode:<mw$}  {iso:<iw$}  Type",
-            path = "Path",
+            path = "Destination",
             mode = "Mode",
             iso = "Isolation",
             path_w = path_w,
@@ -918,8 +964,7 @@ mod mount_table_tests {
         // kind. Additionally pins the type-column alignment: the `Type`
         // header label must start at the same character offset as the data
         // row's kind label.
-        let rows: Vec<(String, &str, &str, String)> =
-            vec![("~/p".into(), "rw", "shared", "folder".into())];
+        let rows = vec![mount_row("~/p", "rw", "shared", "folder")];
         let path_w = mount_path_width(&rows);
         let header = render_mount_header(path_w);
         let data = render_mount_lines(&rows, path_w);
