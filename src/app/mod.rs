@@ -1528,6 +1528,7 @@ fn restore_hardline_instance(
         })?),
         role_branch: manifest.role_source_ref.clone(),
         restore_container_base: Some(manifest.container_base.clone()),
+        restore_role_source_git: Some(manifest.role_source_git.clone()),
         ..runtime::LoadOptions::default()
     };
     runtime::load_role(paths, config, &class, &workspace, runner, &opts)

@@ -3,7 +3,7 @@ title: "Unique Container Identity and Restore"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — DNS-safe unique names, per-instance manifests with last attach outcomes, the rebuildable instance index, first-pass missing-container detection, Docker-unavailable diagnostics, explicit deleted-container writable-layer loss reporting, instance-ID targeting for hardline/eject/purge, bare `hardline` lookup for indexed workspace/ad-hoc instances, exact `hardline` rebuild for missing recoverable instances, Java Testcontainers DinD smoke coverage, and legacy isolation-state manifest backfill have shipped; recovery pickers, console recovery UI, and stronger restore guarantees remain open (Infrastructure)
+**Status**: Partially implemented — DNS-safe unique names, per-instance manifests with last attach outcomes, the rebuildable instance index, first-pass missing-container detection, Docker-unavailable diagnostics, explicit deleted-container writable-layer loss reporting, instance-ID targeting for hardline/eject/purge, bare `hardline` lookup for indexed workspace/ad-hoc instances, exact `hardline` rebuild for missing recoverable instances using the recorded role source/ref, Java Testcontainers DinD smoke coverage, and legacy isolation-state manifest backfill have shipped; recovery pickers, console recovery UI, and stronger restore guarantees remain open (Infrastructure)
 
 ## Problem
 
@@ -133,7 +133,7 @@ Restore paths:
 - **Docker containers are missing and only shared mounts existed**: there is no private worktree to restore, but jackin can restart a fresh container against the same workspace and mark the old instance as superseded.
 - **Docker containers are missing and the instance had unpersisted container-layer changes**: tell the operator those container-layer changes are gone. This is the boundary that motivates future snapshot work.
 - **State directory exists but host workdir moved**: resolve by workspace config first; if the original path fingerprint no longer matches, prompt the operator to locate the new directory or inspect the state path directly.
-- **State directory exists but role source changed**: default to the stored role source/ref for hardline/recovery when available. Offer a fresh launch path if the operator wants the latest trusted role instead.
+- **State directory exists but role source changed**: exact hardline restore defaults to the stored role source/ref when available. A future picker should offer a fresh launch path if the operator wants the latest trusted role instead.
 
 Do not introduce a separate `jackin restore` command. `hardline` is the CLI verb for reconnecting to existing work. It should become directory-aware in the same way `load` is: running `jackin hardline` from inside a configured workspace or ad-hoc project directory looks up matching unfinished/running instances, prompts when more than one exists, then prompts for the exact agent session when the selected container has multiple sessions. If no matching instance exists, it should fail with a clear "nothing to hardline" message or offer the operator the normal fresh `load` path.
 
@@ -217,7 +217,7 @@ Status: partially implemented. New launches write `.jackin/instance.json` with l
 
 ### Phase 3 — Hardline and UI recovery
 
-Status: partially implemented for CLI targeting and exact missing-instance rebuilds. Bare `jackin hardline` can resolve indexed workspace/ad-hoc instances from the current directory, exact `hardline` targets rebuild recoverable missing instances through the launch restore path, and explicit `hardline`, `eject`, and `purge` selectors can target an indexed instance ID. Interactive recovery pickers, agent-session selection, and console panels remain open.
+Status: partially implemented for CLI targeting and exact missing-instance rebuilds. Bare `jackin hardline` can resolve indexed workspace/ad-hoc instances from the current directory, exact `hardline` targets rebuild recoverable missing instances through the launch restore path with the recorded role source/ref, and explicit `hardline`, `eject`, and `purge` selectors can target an indexed instance ID. Interactive recovery pickers, agent-session selection, and console panels remain open.
 
 - Expand `jackin hardline` so it resolves the current workspace/directory, prompts across matching instances, prompts across agent sessions, and can start a new agent session inside the selected running container.
 - Add a console restore picker and active-instance panel that separates human labels from Docker names.

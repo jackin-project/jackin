@@ -62,6 +62,9 @@ pub struct LoadOptions {
 
     /// Exact missing instance to restore instead of scanning for candidates.
     pub restore_container_base: Option<String>,
+
+    /// Role source URL captured in the instance manifest for restore paths.
+    pub restore_role_source_git: Option<String>,
 }
 
 impl LoadOptions {
@@ -77,6 +80,7 @@ impl LoadOptions {
             agent: None,
             role_branch: None,
             restore_container_base: None,
+            restore_role_source_git: None,
         }
     }
 
@@ -93,6 +97,7 @@ impl LoadOptions {
             agent: None,
             role_branch: None,
             restore_container_base: None,
+            restore_role_source_git: None,
         }
     }
 }
@@ -109,6 +114,7 @@ impl Default for LoadOptions {
             agent: None,
             role_branch: None,
             restore_container_base: None,
+            restore_role_source_git: None,
         }
     }
 }
@@ -1335,7 +1341,8 @@ fn load_role_with(
         pull_workspace_repos(workspace, opts.debug);
     }
 
-    let (source, is_new) = config.resolve_role_source(selector)?;
+    let (source, is_new, restore_source_override) =
+        resolve_launch_role_source(config, selector, opts.restore_role_source_git.as_deref())?;
 
     let mut steps = StepCounter::new(opts.no_intro, &selector.name);
 
@@ -1364,7 +1371,7 @@ fn load_role_with(
         true
     };
 
-    if is_new || newly_trusted {
+    if !restore_source_override && (is_new || newly_trusted) {
         let mut editor = crate::config::ConfigEditor::open(paths)?;
         if let Some(role_source) = config.roles.get(&selector.key()) {
             editor.upsert_agent_source(&selector.key(), role_source);
@@ -1956,6 +1963,25 @@ fn load_role_with(
             Err(error)
         }
     }
+}
+
+fn resolve_launch_role_source(
+    config: &mut AppConfig,
+    selector: &RoleSelector,
+    restore_role_source_git: Option<&str>,
+) -> anyhow::Result<(crate::config::RoleSource, bool, bool)> {
+    if let Some(git) = restore_role_source_git {
+        let mut source = config
+            .roles
+            .get(&selector.key())
+            .cloned()
+            .unwrap_or_default();
+        source.git = git.to_string();
+        source.trusted = true;
+        return Ok((source, false, true));
+    }
+    let (source, is_new) = config.resolve_role_source(selector)?;
+    Ok((source, is_new, false))
 }
 
 fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: &LoadOptions) {
@@ -3885,6 +3911,36 @@ plugins = []
         assert!(
             message.contains("evil-org/jackin-backdoor.git"),
             "expected git URL in error: {message}"
+        );
+    }
+
+    #[test]
+    fn restore_role_source_override_uses_manifest_source_without_mutating_config() {
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut config = AppConfig::default();
+        config.roles.insert(
+            "agent-smith".to_string(),
+            crate::config::RoleSource {
+                git: "https://example.invalid/current.git".to_string(),
+                trusted: true,
+                env: std::collections::BTreeMap::new(),
+            },
+        );
+
+        let (source, is_new, restore_override) = resolve_launch_role_source(
+            &mut config,
+            &selector,
+            Some("https://example.invalid/recorded.git"),
+        )
+        .unwrap();
+
+        assert_eq!(source.git, "https://example.invalid/recorded.git");
+        assert!(source.trusted);
+        assert!(!is_new);
+        assert!(restore_override);
+        assert_eq!(
+            config.roles.get("agent-smith").unwrap().git,
+            "https://example.invalid/current.git"
         );
     }
 
