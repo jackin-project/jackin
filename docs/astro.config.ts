@@ -130,6 +130,11 @@ export default defineConfig({
             { label: 'Codebase Map', slug: 'reference/codebase-map' },
             { label: 'Claude Token Orchestrator', slug: 'reference/claude-token-orchestrator' },
             {
+              label: 'Goal prompts',
+              collapsed: true,
+              items: [{ label: 'Jackin Desktop Agent Hub', slug: 'reference/goals/jackin-desktop-agent-hub' }],
+            },
+            {
               // Roadmap groups are flat — every group below is open
               // work. Some groups happen to be phased programs that
               // should be read together (Agent Orchestrator
@@ -263,6 +268,7 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Overview', slug: 'reference/roadmap/jackin-daemon' },
+                    { label: 'Jackin Desktop Agent Hub', slug: 'reference/roadmap/jackin-desktop-agent-hub' },
                     {
                       label: 'Phase 2 — First reactive adapters',
                       collapsed: false,
