@@ -47,7 +47,7 @@ If the DinD sidecar has been removed, `jackin hardline` recreates the derived ja
 
 If the role container itself was deleted, jackin can rebuild the runtime around jackin-managed local state such as the per-instance agent home and preserved worktrees/clones. Changes written only to the deleted container's writable layer are gone. Jackin intentionally does not restore packages installed ad hoc inside the container, global files edited outside mounted paths, DinD images, or other container-layer mutations.
 
-For ad-hoc instances, `jackin hardline <instance-id>` normally expects the original project directory. If that directory moved, run the exact hardline command in an interactive terminal; jackin lets you mount either the current directory or another entered moved path at the original in-container workdir before rebuilding the missing runtime.
+For ad-hoc instances, `jackin hardline <instance-id>` normally expects the original project directory. If that directory moved, run the exact hardline command in an interactive terminal; jackin lets you mount the current directory, browse for the moved project directory, or enter another path manually at the original in-container workdir before rebuilding the missing runtime.
 
 `--inspect` is read-only. It works from the current workspace or ad-hoc directory, or with an explicit selector/instance ID/container name, and reports local manifest details even when Docker is unavailable. When the role container is running, it also reports detected agent processes from `docker top`.
 

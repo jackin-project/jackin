@@ -1744,6 +1744,7 @@ fn prompt_moved_ad_hoc_project_path(
     }
     let choices = [
         format!("Use current directory ({})", cwd.display()),
+        "Browse for moved project path".to_string(),
         "Enter another moved project path".to_string(),
         "Cancel restore".to_string(),
     ];
@@ -1760,9 +1761,97 @@ fn prompt_moved_ad_hoc_project_path(
 
     match selected {
         0 => Ok(Some(cwd.to_path_buf())),
-        1 => prompt_ad_hoc_moved_path_entry(),
+        1 => prompt_ad_hoc_moved_path_browser(cwd),
+        2 => prompt_ad_hoc_moved_path_entry(),
         _ => Ok(None),
     }
+}
+
+fn prompt_ad_hoc_moved_path_browser(start: &std::path::Path) -> Result<Option<std::path::PathBuf>> {
+    let mut cwd = start.canonicalize().unwrap_or_else(|_| start.to_path_buf());
+    loop {
+        let choices = moved_path_browser_choices(&cwd);
+        let labels: Vec<String> = choices.iter().map(MovedPathBrowserChoice::label).collect();
+        let selected = dialoguer::Select::new()
+            .with_prompt(format!(
+                "Browse to the moved project directory from {}",
+                cwd.display()
+            ))
+            .items(&labels)
+            .default(0)
+            .interact()?;
+        match choices
+            .get(selected)
+            .cloned()
+            .unwrap_or(MovedPathBrowserChoice::Cancel)
+        {
+            MovedPathBrowserChoice::SelectCurrent(path) => return Ok(Some(path)),
+            MovedPathBrowserChoice::Parent(path) | MovedPathBrowserChoice::Child(path) => {
+                cwd = path;
+            }
+            MovedPathBrowserChoice::Manual => return prompt_ad_hoc_moved_path_entry(),
+            MovedPathBrowserChoice::Cancel => return Ok(None),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MovedPathBrowserChoice {
+    SelectCurrent(std::path::PathBuf),
+    Parent(std::path::PathBuf),
+    Child(std::path::PathBuf),
+    Manual,
+    Cancel,
+}
+
+impl MovedPathBrowserChoice {
+    fn label(&self) -> String {
+        match self {
+            Self::SelectCurrent(path) => format!("Use this directory ({})", path.display()),
+            Self::Parent(path) => format!("Go up ({})", path.display()),
+            Self::Child(path) => format!(
+                "{}/",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            ),
+            Self::Manual => "Enter a path manually".to_string(),
+            Self::Cancel => "Cancel restore".to_string(),
+        }
+    }
+}
+
+fn moved_path_browser_choices(cwd: &std::path::Path) -> Vec<MovedPathBrowserChoice> {
+    let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    let mut choices = vec![MovedPathBrowserChoice::SelectCurrent(cwd.clone())];
+    if let Some(parent) = cwd.parent() {
+        choices.push(MovedPathBrowserChoice::Parent(parent.to_path_buf()));
+    }
+    choices.extend(
+        moved_path_browser_child_dirs(&cwd)
+            .into_iter()
+            .map(MovedPathBrowserChoice::Child),
+    );
+    choices.push(MovedPathBrowserChoice::Manual);
+    choices.push(MovedPathBrowserChoice::Cancel);
+    choices
+}
+
+fn moved_path_browser_child_dirs(cwd: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = std::fs::read_dir(cwd) else {
+        return Vec::new();
+    };
+    let mut dirs: Vec<std::path::PathBuf> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            path.is_dir().then_some(path)
+        })
+        .collect();
+    dirs.sort_by_key(|path| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().to_lowercase())
+            .unwrap_or_default()
+    });
+    dirs
 }
 
 fn prompt_ad_hoc_moved_path_entry() -> Result<Option<std::path::PathBuf>> {
@@ -2176,6 +2265,32 @@ mod auth_set_tests {
         let input = ad_hoc_restore_input_for_moved_path(&manifest, &temp.path().join("missing"));
 
         assert!(input.is_none());
+    }
+
+    #[test]
+    fn moved_path_browser_choices_include_parent_sorted_children_and_manual_escape() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let cwd = root.join("current");
+        let alpha = cwd.join("alpha");
+        let beta = cwd.join("Beta");
+        std::fs::create_dir_all(&beta).unwrap();
+        std::fs::create_dir_all(&alpha).unwrap();
+        std::fs::write(cwd.join("not-a-dir"), "").unwrap();
+
+        let choices = moved_path_browser_choices(&cwd);
+
+        assert_eq!(
+            choices,
+            vec![
+                MovedPathBrowserChoice::SelectCurrent(cwd.canonicalize().unwrap()),
+                MovedPathBrowserChoice::Parent(root.canonicalize().unwrap()),
+                MovedPathBrowserChoice::Child(alpha.canonicalize().unwrap()),
+                MovedPathBrowserChoice::Child(beta.canonicalize().unwrap()),
+                MovedPathBrowserChoice::Manual,
+                MovedPathBrowserChoice::Cancel,
+            ]
+        );
     }
 
     fn ad_hoc_manifest_for_workdir(workdir: &std::path::Path) -> instance::InstanceManifest {
