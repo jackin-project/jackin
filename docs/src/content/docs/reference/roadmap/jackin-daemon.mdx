@@ -95,9 +95,21 @@ The console / TUI gets a one-line daemon-status indicator in its footer, mirrori
 - **Transport.** Unix domain socket. Path per-operator: `~/.jackin/run/jackin-daemon.sock`.
 - **Wire format.** JSON Lines — one JSON object per line, request/response.
 - **Authentication.** Filesystem permissions on the runtime directory (`0700`) and same-UID Unix socket access. No TCP listener and no root daemon.
-- **Versioning.** Each request carries a protocol version. The daemon rejects protocol mismatches and the CLI restarts daemon binary version mismatches.
+- **Versioning.** Each request carries a protocol version. The daemon rejects protocol mismatches and the CLI restarts daemon binary version mismatches. The `daemon/hello` request is the compatibility handshake Desktop and future daemon clients must call first: it returns the jackin binary version, supported protocol range, and the daemon capabilities currently available on that socket.
 - **Container bridge.** Role containers receive the socket as `/jackin/daemon.sock` and can use `jackin-notify --title ... --body ...` from hooks or agent-created scripts.
 - **Notifications.** macOS is the v1 target. The daemon shells out to `/usr/bin/osascript` with `display notification`, so notifications are native Notification Center toasts but do not require a bundled `.app`, Apple Developer account, certificate, or notarization for local developer-machine use. Linux and Windows adapters are deferred.
+
+Initial protocol capabilities:
+
+| Method | Purpose |
+|---|---|
+| `daemon/hello` | Return jackin version, supported protocol range, and capability list. |
+| `daemon/status` | Return daemon pid, uptime, socket/log paths, keep-awake, cache warmup, and notification adapter status. |
+| `daemon/shutdown` | Stop the daemon cleanly. |
+| `daemon/warm_cache` | Ask the daemon to warm construct, DinD, and cached role images. |
+| `notification/send` | Dispatch a host macOS Notification Center notification. |
+
+Desktop-specific methods are deliberately absent until their slices land. The next phase adds read-only discovery and action endpoints such as `workspace/list`, `session/list`, `workspace/launch`, `desktop/open`, GitHub PR inbox methods, account status methods, and event subscription.
 
 ### Security posture
 
@@ -132,8 +144,8 @@ Rough order of operations — not committed; to be confirmed during the design p
 1. **Phase 0 — design.** Complete.
 2. **Phase 1 — daemon base.** Complete: lifecycle, install, singleton, socket protocol, logs, version skew restart.
 3. **Phase 2 — first adapters.** Started: keep-awake reconciliation, cache warmup, and host notification dispatch are daemon-owned.
-4. **Phase 3 — Desktop-ready daemon API.** Add the small versioned endpoints
-   that Desktop needs first: `daemon/hello`, workspace/session discovery,
+4. **Phase 3 — Desktop-ready daemon API.** Started: `daemon/hello` now provides a versioned capability handshake. Next, add the small versioned endpoints
+   that Desktop needs first: workspace/session discovery,
    GitHub PR lookup, account status, event subscription, and Ghostty/browser
    open actions.
 5. **Phase 4 — live auth sync.** Not started. Add per-axis host watchers and shared-store flocks on top of this daemon.

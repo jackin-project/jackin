@@ -34,7 +34,9 @@ prompts when an agent is blocked or finished.
 - <RepoFile path="src/daemon.rs" /> from PR 283 implements the first daemon
   shape: per-user Unix socket, singleton lock, lifecycle commands, launchd /
   systemd install, keep-awake reconciliation, cache warmup, and macOS
-  notification dispatch.
+  notification dispatch. The Desktop-ready protocol work has started with a
+  `daemon/hello` handshake that reports the jackin version, supported protocol
+  range, and currently available daemon capabilities.
 - <RepoFile path="src/runtime/launch.rs" /> already bind-mounts the daemon
   socket into role containers as `/jackin/daemon.sock` and injects
   `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock` when available.
