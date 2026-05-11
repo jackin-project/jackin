@@ -289,8 +289,10 @@ Recommended layout:
 The first window slice now adds this `NavigationSplitView` shell and wires the
 sidebar destinations to the same daemon-backed menu model. The Pull Requests
 and Projects panes now include first-pass organization, project, and draft/open
-filters over daemon-provided PR state. Launch buttons, account cards, and
-attention actions remain in focused follow-up PRs.
+filters over daemon-provided PR state. The Workspaces and Running Agents panes
+now add launch-only Ghostty actions through `workspace/launch` and reconnect
+actions through `desktop/open`. Account cards and attention actions remain in
+focused follow-up PRs.
 
 Launching a workspace from the app should always use Ghostty in v1. The app can open a new Ghostty tab or new Ghostty window and run the appropriate `jackin load` / `jackin hardline` flow with `--debug` only for operator-requested smoke validation, not normal app launches. Other terminal adapters are out of scope until the Ghostty path proves the product shape.
 
@@ -559,8 +561,12 @@ Delivery rules:
   organization filter.
 - PR 4: Add the Workspaces view for saved workspace visibility and launch-only
   actions.
+  Started with saved workspace rows, running counts, and Ghostty launch buttons
+  through `workspace/launch`.
 - PR 5: Add the Running Agents view with per-workspace agent counts and Ghostty
   open/hardline actions.
+  Started with daemon-backed session rows and Ghostty hardline buttons through
+  `desktop/open`.
 - Keep workspace creation/editing in `jackin console` across all Phase 2 PRs.
 
 ### Phase 3 — Attention and PR readiness loop

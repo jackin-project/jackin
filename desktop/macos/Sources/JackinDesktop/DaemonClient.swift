@@ -36,6 +36,25 @@ struct DaemonClient {
         )
     }
 
+    func launchWorkspace(_ workspace: DesktopWorkspace) async throws -> DesktopActionResponse {
+        try await request(
+            WorkspaceLaunchRequest(
+                type: "workspace/launch",
+                protocolVersion: protocolVersion,
+                workspace: workspace.name,
+                role: workspace.lastRole ?? workspace.defaultRole
+            ),
+            as: DesktopActionResponse.self
+        )
+    }
+
+    func openGhosttyHardline(target: String) async throws -> DesktopActionResponse {
+        try await request(
+            DesktopOpenRequest(type: "desktop/open", protocolVersion: protocolVersion, kind: "ghostty_hardline", target: target),
+            as: DesktopActionResponse.self
+        )
+    }
+
     private func request<Request: Encodable & Sendable, Response: Decodable>(
         _ request: Request,
         as responseType: Response.Type
@@ -83,6 +102,20 @@ private struct DesktopOpenRequest: Encodable, Sendable {
         case protocolVersion = "protocol"
         case kind
         case target
+    }
+}
+
+private struct WorkspaceLaunchRequest: Encodable, Sendable {
+    let type: String
+    let protocolVersion: Int
+    let workspace: String
+    let role: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case protocolVersion = "protocol"
+        case workspace
+        case role
     }
 }
 
