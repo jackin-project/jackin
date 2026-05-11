@@ -1,0 +1,137 @@
+---
+title: "Global Mount Visibility goal prompt"
+---
+
+This page is an execution prompt, not the product proposal. Copy the prompt
+below when starting the implementation goal.
+
+Source of truth:
+
+- [Global Mount Visibility roadmap](/reference/roadmap/global-mount-visibility/)
+- [Roadmap overview](/reference/roadmap/)
+- [Mounts guide](/guides/mounts/)
+
+## Goal prompt
+
+```text
+/goal Implement the Global Mount Visibility roadmap item completely in one pull request.
+
+Context:
+- Work in the jackin repo from a new `feature/<short-description>` branch.
+- Read the roadmap source of truth first. If implementation details conflict
+  with these docs, update the relevant roadmap doc in the same PR before coding
+  around the conflict:
+  - docs/src/content/docs/reference/roadmap.mdx
+  - docs/src/content/docs/reference/roadmap/global-mount-visibility.mdx
+  - docs/src/content/docs/guides/mounts.mdx
+- Read and follow the repository process files before editing or opening the PR:
+  - AGENTS.md
+  - PULL_REQUESTS.md
+  - COMMITS.md
+  - BRANCHING.md
+- Read the mount and workspace implementation paths before choosing the code
+  shape:
+  - src/config/mounts.rs
+  - src/config/editor.rs
+  - src/workspace/resolve.rs
+  - src/config/workspaces.rs
+  - src/console/manager/mod.rs
+  - src/console/manager/state.rs
+
+Product goal:
+Build global mount visibility and editing so operators can understand and
+manage effective Gradle, Cargo, and other global cache mounts without confusing
+global operator config with per-workspace config. Workspace views should answer
+"what will this container see?" while clearly showing which rows come from the
+workspace file and which rows come from global config. Global mounts must be
+editable from a dedicated global-config TUI surface, not from workspace screens.
+
+Required behavior:
+- `jackin workspace show <name>` displays saved workspace mounts and applicable
+  global mounts in separate groups.
+- Role-scoped global mounts are shown only when the workspace/role context can
+  decide applicability; otherwise the CLI explains that the selected role
+  affects global mount visibility.
+- The console workspace overview shows applicable global mounts separately from
+  workspace mounts.
+- `edit workspace -> Mounts` shows applicable global mounts for orientation, but
+  workspace edit actions cannot mutate them.
+- Selecting a global mount in the workspace editor shows disabled action hints
+  or a short status message such as `global mount - edit from config mounts`.
+- A dedicated global-config TUI surface lists all configured global mounts and
+  supports add, edit source, edit destination, toggle readonly, edit scope,
+  rename, and remove.
+- The global mounts TUI saves through the same persistence path as
+  `jackin config mount` and writes `~/.config/jackin/config.toml` only after an
+  explicit operator save.
+- Duplicate effective destinations still fail instead of silently shadowing one
+  mount with another.
+- Existing launch behavior remains compatible with the displayed effective mount
+  set.
+
+Constraints:
+- Work autonomously and silently until the goal is complete or a real blocker
+  prevents completion.
+- Implement the full roadmap item in one pull request.
+- Keep workspace-owned configuration and global operator configuration separate
+  in code, UI labels, TUI state, and persistence.
+- Reuse existing config editor and mount-resolution primitives where practical.
+- Do not create a second persistence path for `~/.config/jackin/config.toml`.
+- Do not make workspace show, workspace overview, or workspace edit screens
+  write global config.
+- Do not force-push, rewrite commits, mark the PR ready, or merge unless the
+  operator explicitly asks.
+- If implementation changes a versioned schema described in AGENTS.md, ship the
+  required migration artifacts in the same PR.
+
+Tests to add or update:
+- CLI rendering test for separate workspace/global mount groups.
+- Role-scoped global mount display test.
+- Workspace editor read-only behavior test for global mount rows.
+- Global mounts TUI persistence test for add/edit/remove/rename/scope/readonly.
+- Validation tests for missing source, non-absolute destination, sensitive path
+  confirmation when applicable, and duplicate effective destinations.
+- Regression test proving launch conflict behavior still rejects duplicate
+  destinations.
+
+Verification before opening the PR:
+- Run:
+  - `cargo fmt --check`
+  - `cargo clippy --all-targets --all-features -- -D warnings`
+  - `cargo check --all-targets`
+  - `cargo nextest run --all-features`
+- Run manual smoke:
+  - `cargo run --bin jackin -- --debug workspace show chainargos`
+  - `cargo run --bin jackin -- console --debug`
+- In manual smoke, verify workspace views show workspace mounts and global
+  mounts in separate sections.
+- In manual smoke, verify global mounts are visible but not editable from the
+  workspace editor.
+- In manual smoke, verify the dedicated global mounts TUI can add, edit, scope,
+  rename, and remove a test global mount only after explicit save.
+
+Pull request requirements:
+- Open one draft PR and stop for operator review. Do not merge it.
+- Follow PULL_REQUESTS.md exactly, including the canonical PR body shape and
+  copy-pasteable local verification commands.
+- Use a Conventional Commit PR title because the PR title becomes the squash
+  subject.
+- Include user-smoke steps for every CLI/TUI behavior changed by this goal.
+- Mention host-side effects explicitly: the implementation reads
+  `~/.config/jackin/config.toml` for display and writes it only from the
+  dedicated global mounts TUI after explicit save.
+- Every commit must be signed off with `git commit -s`.
+- Every agent-authored commit must include exactly one Codex trailer:
+  `Co-authored-by: Codex <codex@openai.com>`.
+- Use normal pushes for follow-up commits. Do not force-push or rewrite review
+  history unless the operator explicitly approves that force push for this PR.
+
+Deliverables:
+- One draft PR implementing the full global mount visibility/editing behavior.
+- Focused tests and full local verification output summarized in the PR body.
+- Updated operator documentation if the implementation adds or changes
+  user-facing commands or TUI flows.
+- A concise final report in the PR body naming remaining risks, especially any
+  role-scoped display ambiguity or TUI validation behavior that needs operator
+  attention.
+```

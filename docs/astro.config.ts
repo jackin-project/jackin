@@ -132,7 +132,10 @@ export default defineConfig({
             {
               label: 'Goal prompts',
               collapsed: true,
-              items: [{ label: 'Jackin Desktop Agent Hub', slug: 'reference/goals/jackin-desktop-agent-hub' }],
+              items: [
+                { label: 'Global Mount Visibility', slug: 'reference/goals/global-mount-visibility' },
+                { label: 'Jackin Desktop Agent Hub', slug: 'reference/goals/jackin-desktop-agent-hub' },
+              ],
             },
             {
               // Roadmap groups are flat — every group below is open
