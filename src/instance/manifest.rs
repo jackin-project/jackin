@@ -32,6 +32,8 @@ pub struct DockerResources {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceManifest {
     pub version: u32,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub legacy_name: bool,
     pub instance_id: String,
     pub container_base: String,
     pub created_at: String,
@@ -96,6 +98,7 @@ impl InstanceManifest {
         let now = now_rfc3339();
         Self {
             version: INSTANCE_MANIFEST_VERSION,
+            legacy_name: false,
             instance_id: input
                 .container_base
                 .rsplit_once('-')
@@ -151,6 +154,11 @@ impl InstanceManifest {
         std::fs::write(path, bytes)?;
         Ok(())
     }
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 impl InstanceIndexEntry {
@@ -259,8 +267,14 @@ impl InstanceIndex {
             if !entry.file_type()?.is_dir() {
                 continue;
             }
-            let Ok(manifest) = InstanceManifest::read(&entry.path()) else {
-                continue;
+            let manifest = if let Ok(manifest) = InstanceManifest::read(&entry.path()) {
+                manifest
+            } else {
+                let Some(manifest) = legacy_manifest_from_isolation(&entry.path())? else {
+                    continue;
+                };
+                manifest.write(&entry.path())?;
+                manifest
             };
             index
                 .instances
@@ -287,9 +301,73 @@ fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
+fn legacy_manifest_from_isolation(state_dir: &Path) -> anyhow::Result<Option<InstanceManifest>> {
+    let records = crate::isolation::state::read_records(state_dir)?;
+    let Some(first) = records.first() else {
+        return Ok(None);
+    };
+    let Some(container_base) = state_dir.file_name().and_then(|name| name.to_str()) else {
+        return Ok(None);
+    };
+    if !is_legacy_container_name(container_base) {
+        return Ok(None);
+    }
+
+    let status = if records.iter().any(|record| {
+        record.cleanup_status == crate::isolation::state::CleanupStatus::PreservedDirty
+    }) {
+        InstanceStatus::PreservedDirty
+    } else if records.iter().any(|record| {
+        record.cleanup_status == crate::isolation::state::CleanupStatus::PreservedUnpushed
+    }) {
+        InstanceStatus::PreservedUnpushed
+    } else {
+        InstanceStatus::Active
+    };
+    let now = now_rfc3339();
+    Ok(Some(InstanceManifest {
+        version: INSTANCE_MANIFEST_VERSION,
+        legacy_name: true,
+        instance_id: container_base.to_string(),
+        container_base: container_base.to_string(),
+        created_at: now.clone(),
+        updated_at: now,
+        workspace_name: (!first.workspace.starts_with('/')).then(|| first.workspace.clone()),
+        workspace_label: first.workspace.clone(),
+        workdir: first.mount_dst.clone(),
+        role_key: first.selector_key.clone(),
+        role_display_name: first.selector_key.clone(),
+        agent_runtime: Agent::Claude.slug().to_string(),
+        role_source_git: String::new(),
+        role_source_ref: None,
+        image_tag: legacy_image_tag(&first.selector_key),
+        status,
+        last_attach_outcome: None,
+        docker: DockerResources {
+            role_container: container_base.to_string(),
+            dind_container: format!("{container_base}-dind"),
+            network: format!("{container_base}-net"),
+            certs_volume: format!("{container_base}-dind-certs"),
+        },
+    }))
+}
+
+fn is_legacy_container_name(container_base: &str) -> bool {
+    container_base.contains("__") || container_base.contains("-clone-")
+}
+
+fn legacy_image_tag(role_key: &str) -> String {
+    role_key.split_once('/').map_or_else(
+        || format!("jackin-{role_key}"),
+        |(namespace, name)| format!("jackin-{namespace}__{name}"),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::isolation::MountIsolation;
+    use crate::isolation::state::{CleanupStatus, IsolationRecord};
     use tempfile::tempdir;
 
     #[test]
@@ -396,5 +474,41 @@ mod tests {
         let index = InstanceIndex::read(data_dir).unwrap();
         assert_eq!(index.instances.len(), 1);
         assert_eq!(index.instances[0].status, InstanceStatus::Running);
+    }
+
+    #[test]
+    fn index_rebuild_backfills_legacy_isolation_manifest() {
+        let temp = tempdir().unwrap();
+        let data_dir = temp.path();
+        let state_dir = data_dir.join("jackin-chainargos__agent-brown-clone-1");
+        crate::isolation::state::write_records(
+            &state_dir,
+            &[IsolationRecord {
+                workspace: "chainargos-project".to_string(),
+                mount_dst: "/workspace".to_string(),
+                original_src: "/host/project".to_string(),
+                isolation: MountIsolation::Worktree,
+                worktree_path: "/host/worktree".to_string(),
+                scratch_branch: "jackin/test".to_string(),
+                base_commit: "abc123".to_string(),
+                selector_key: "chainargos/agent-brown".to_string(),
+                container_name: "jackin-chainargos__agent-brown-clone-1".to_string(),
+                cleanup_status: CleanupStatus::PreservedDirty,
+            }],
+        )
+        .unwrap();
+
+        let index = InstanceIndex::read_or_rebuild(data_dir).unwrap();
+
+        assert_eq!(index.instances.len(), 1);
+        let manifest = InstanceManifest::read(&state_dir).unwrap();
+        assert!(manifest.legacy_name);
+        assert_eq!(
+            manifest.container_base,
+            "jackin-chainargos__agent-brown-clone-1"
+        );
+        assert_eq!(manifest.role_key, "chainargos/agent-brown");
+        assert_eq!(manifest.status, InstanceStatus::PreservedDirty);
+        assert_eq!(manifest.image_tag, "jackin-chainargos__agent-brown");
     }
 }
