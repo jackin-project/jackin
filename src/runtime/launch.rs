@@ -1994,6 +1994,7 @@ fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: 
     );
 }
 
+#[allow(clippy::too_many_lines)]
 fn resolve_restore_candidate(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -2034,8 +2035,19 @@ fn resolve_restore_candidate(
         }
     }
 
+    let related = related_restore_candidates(
+        paths,
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key,
+        agent,
+        runner,
+    )?;
+
     match candidates.as_slice() {
-        [] => Ok(None),
+        [] if related.is_empty() => Ok(None),
+        [] => prompt_related_restore_candidate(workspace_label, &related),
         [only] if !std::io::stdin().is_terminal() => anyhow::bail!(
             "restore is available for `{}` but stdin is not interactive; run `jackin hardline {}` to inspect it or `jackin load` interactively from the matching workspace to rebuild jackin-managed local state. Run `jackin eject {} --purge` to discard it before starting a fresh load. Any changes written only to a deleted container's writable layer are gone.",
             only.container_base,
@@ -2043,17 +2055,27 @@ fn resolve_restore_candidate(
             only.container_base
         ),
         [only] => {
+            let mut options = vec![format!("Restore {}", restore_candidate_label(paths, only))];
+            options.extend(related.iter().map(|candidate| {
+                format!(
+                    "Recover other role with hardline {}",
+                    related_restore_candidate_label(paths, candidate)
+                )
+            }));
+            options.push("Start fresh instead".to_string());
+            let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
             let choice = tui::prompt_choice(
-                &format!(
-                    "Unfinished jackin state exists for role `{role_key}` in workspace `{workspace_label}`."
-                ),
-                &[
-                    &format!("Restore {}", restore_candidate_label(paths, only)),
-                    "Start fresh instead",
-                ],
+                &format!("Unfinished jackin state exists for workspace `{workspace_label}`."),
+                &option_refs,
             )?;
             if choice == 0 {
                 Ok(Some(only.container_base.clone()))
+            } else if let Some(candidate) = related.get(choice.saturating_sub(1)) {
+                anyhow::bail!(
+                    "run `jackin hardline {}` to recover role `{}` before starting a fresh load",
+                    candidate.manifest.container_base,
+                    candidate.manifest.role_key
+                )
             } else {
                 supersede_restore_candidates(paths, candidates)?;
                 Ok(None)
@@ -2067,21 +2089,163 @@ fn resolve_restore_candidate(
                 .iter()
                 .map(|manifest| format!("Restore {}", restore_candidate_label(paths, manifest)))
                 .collect();
+            options.extend(related.iter().map(|candidate| {
+                format!(
+                    "Recover other role with hardline {}",
+                    related_restore_candidate_label(paths, candidate)
+                )
+            }));
             options.push("Start fresh instead".to_string());
             let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
             let choice = tui::prompt_choice(
                 &format!(
-                    "Multiple unfinished jackin instances exist for role `{role_key}` in workspace `{workspace_label}`."
+                    "Multiple unfinished jackin instances exist for workspace `{workspace_label}`."
                 ),
                 &option_refs,
             )?;
             if choice < candidates.len() {
                 Ok(Some(candidates[choice].container_base.clone()))
+            } else if let Some(candidate) = related.get(choice - candidates.len()) {
+                anyhow::bail!(
+                    "run `jackin hardline {}` to recover role `{}` before starting a fresh load",
+                    candidate.manifest.container_base,
+                    candidate.manifest.role_key
+                )
             } else {
                 supersede_restore_candidates(paths, candidates)?;
                 Ok(None)
             }
         }
+    }
+}
+
+#[derive(Debug)]
+struct RelatedRestoreCandidate {
+    manifest: InstanceManifest,
+    docker_state: ContainerState,
+}
+
+fn related_restore_candidates(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    agent: crate::agent::Agent,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<Vec<RelatedRestoreCandidate>> {
+    let mut candidates = Vec::new();
+    for manifest in InstanceIndex::matching_manifests(
+        &paths.data_dir,
+        InstanceQuery {
+            workspace_name,
+            workspace_label,
+            workdir,
+            role_key: None,
+            agent_runtime: None,
+        },
+    )? {
+        if manifest.role_key == role_key && manifest.agent_runtime == agent.slug() {
+            continue;
+        }
+        if matches!(
+            manifest.status,
+            InstanceStatus::CleanExited | InstanceStatus::Superseded | InstanceStatus::Purged
+        ) {
+            continue;
+        }
+        let docker_state = inspect_container_state(runner, &manifest.container_base);
+        match docker_state {
+            ContainerState::Running
+            | ContainerState::Stopped { .. }
+            | ContainerState::InspectUnavailable(_) => {
+                candidates.push(RelatedRestoreCandidate {
+                    manifest,
+                    docker_state,
+                });
+            }
+            ContainerState::NotFound if manifest.is_restore_candidate() => {
+                candidates.push(RelatedRestoreCandidate {
+                    manifest,
+                    docker_state,
+                });
+            }
+            ContainerState::NotFound => {}
+        }
+    }
+    Ok(candidates)
+}
+
+fn prompt_related_restore_candidate(
+    workspace_label: &str,
+    candidates: &[RelatedRestoreCandidate],
+) -> anyhow::Result<Option<String>> {
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "unfinished jackin instances exist for workspace `{workspace_label}` under a different role or agent; run `jackin hardline <instance>` to inspect or recover them before starting a fresh load"
+        );
+    }
+
+    let mut options: Vec<String> = candidates
+        .iter()
+        .map(|candidate| {
+            format!(
+                "Recover with hardline {}",
+                related_restore_candidate_label_for_prompt(candidate)
+            )
+        })
+        .collect();
+    options.push("Start fresh instead".to_string());
+    let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
+    let choice = tui::prompt_choice(
+        &format!("Unfinished jackin instances exist for workspace `{workspace_label}`."),
+        &option_refs,
+    )?;
+    if let Some(candidate) = candidates.get(choice) {
+        anyhow::bail!(
+            "run `jackin hardline {}` to recover role `{}` before starting a fresh load",
+            candidate.manifest.container_base,
+            candidate.manifest.role_key
+        );
+    }
+    Ok(None)
+}
+
+fn related_restore_candidate_label(
+    paths: &JackinPaths,
+    candidate: &RelatedRestoreCandidate,
+) -> String {
+    format!(
+        "{} docker:{}",
+        restore_candidate_label(paths, &candidate.manifest),
+        restore_candidate_docker_state_label(&candidate.docker_state)
+    )
+}
+
+fn related_restore_candidate_label_for_prompt(candidate: &RelatedRestoreCandidate) -> String {
+    format!(
+        "{} role:{} agent:{} status:{} docker:{} updated:{}",
+        candidate.manifest.instance_id,
+        candidate.manifest.role_key,
+        candidate.manifest.agent_runtime,
+        instance_status_label(candidate.manifest.status),
+        restore_candidate_docker_state_label(&candidate.docker_state),
+        candidate.manifest.updated_at
+    )
+}
+
+fn restore_candidate_docker_state_label(state: &ContainerState) -> String {
+    match state {
+        ContainerState::Running => "running".to_string(),
+        ContainerState::Stopped {
+            exit_code,
+            oom_killed: false,
+        } => format!("stopped exit:{exit_code}"),
+        ContainerState::Stopped {
+            oom_killed: true, ..
+        } => "stopped oom_killed".to_string(),
+        ContainerState::NotFound => "missing".to_string(),
+        ContainerState::InspectUnavailable(_) => "unavailable".to_string(),
     }
 }
 
@@ -6228,6 +6392,101 @@ plugins = []
 
         assert!(error.to_string().contains("restore is available"));
         assert!(error.to_string().contains(container_name));
+    }
+
+    #[test]
+    fn related_restore_candidate_blocks_noninteractive_fresh_load() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
+        let manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "the-architect",
+            role_display_name: "The Architect",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/the-architect.git",
+            role_source_ref: None,
+            image_tag: "jackin-the-architect",
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest
+            .write(&paths.data_dir.join(container_name))
+            .unwrap();
+        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+
+        let error = resolve_restore_candidate(
+            &paths,
+            Some("workspace"),
+            "workspace",
+            "/workspace",
+            "agent-smith",
+            crate::agent::Agent::Claude,
+            &mut runner,
+        )
+        .unwrap_err();
+
+        let message = error.to_string();
+        assert!(
+            message.contains("different role or agent"),
+            "unexpected error: {message}"
+        );
+        assert!(message.contains("jackin hardline <instance>"), "{message}");
+    }
+
+    #[test]
+    fn related_restore_candidates_ignore_finished_instances() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
+        let mut manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "the-architect",
+            role_display_name: "The Architect",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/the-architect.git",
+            role_source_ref: None,
+            image_tag: "jackin-the-architect",
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest.mark_status(InstanceStatus::CleanExited);
+        manifest
+            .write(&paths.data_dir.join(container_name))
+            .unwrap();
+        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let mut runner = FakeRunner::default();
+
+        let candidate = resolve_restore_candidate(
+            &paths,
+            Some("workspace"),
+            "workspace",
+            "/workspace",
+            "agent-smith",
+            crate::agent::Agent::Claude,
+            &mut runner,
+        )
+        .unwrap();
+
+        assert!(candidate.is_none());
+        assert!(runner.recorded.is_empty());
     }
 
     #[test]
