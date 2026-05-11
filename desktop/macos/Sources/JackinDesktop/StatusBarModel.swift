@@ -68,6 +68,24 @@ final class StatusBarModel: ObservableObject {
             openError = error.localizedDescription
         }
     }
+
+    func launchWorkspace(_ workspace: DesktopWorkspace) async {
+        do {
+            _ = try await client.launchWorkspace(workspace)
+            openError = nil
+        } catch {
+            openError = error.localizedDescription
+        }
+    }
+
+    func openSession(_ session: DesktopSession) async {
+        do {
+            _ = try await client.openGhosttyHardline(target: session.containerName)
+            openError = nil
+        } catch {
+            openError = error.localizedDescription
+        }
+    }
 }
 
 enum DaemonHealth: Equatable {

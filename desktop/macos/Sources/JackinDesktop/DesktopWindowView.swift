@@ -161,12 +161,19 @@ struct DesktopWindowView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(workspace.name)
                         .font(.headline)
-                    Text(workspace.workdir)
+                    Text(workspaceSubtitle(workspace))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text("\(model.runningCount(for: workspace)) running")
                     .foregroundStyle(.secondary)
+                Button {
+                    Task {
+                        await model.launchWorkspace(workspace)
+                    }
+                } label: {
+                    Label("Launch", systemImage: "terminal")
+                }
             }
         }
         .navigationTitle("Workspaces")
@@ -174,11 +181,23 @@ struct DesktopWindowView: View {
 
     private var runningAgentsView: some View {
         List(model.sessions) { session in
-            VStack(alignment: .leading, spacing: 3) {
-                Text(session.displayName)
-                    .font(.headline)
-                Text([session.workspace, session.role, session.agent].compactMap { $0 }.joined(separator: " / "))
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(session.displayName)
+                        .font(.headline)
+                    Text(sessionSubtitle(session))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(session.status)
                     .foregroundStyle(.secondary)
+                Button {
+                    Task {
+                        await model.openSession(session)
+                    }
+                } label: {
+                    Label("Open", systemImage: "terminal")
+                }
             }
         }
         .navigationTitle("Running Agents")
@@ -247,6 +266,18 @@ struct DesktopWindowView: View {
             return pullRequestError
         }
         return model.pullRequests.isEmpty ? "No Open Pull Requests" : "No Matching Pull Requests"
+    }
+
+    private func workspaceSubtitle(_ workspace: DesktopWorkspace) -> String {
+        [workspace.lastRole ?? workspace.defaultRole, workspace.defaultAgent, workspace.workdir]
+            .compactMap { $0 }
+            .joined(separator: " / ")
+    }
+
+    private func sessionSubtitle(_ session: DesktopSession) -> String {
+        [session.workspace, session.role, session.agent]
+            .compactMap { $0 }
+            .joined(separator: " / ")
     }
 }
 
