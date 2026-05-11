@@ -13,9 +13,9 @@ Jackin's current operator escape hatches still leak Docker details. When the ope
 docker exec -ti jackin-chainargos__agent-brown zsh
 ```
 
-When the operator wants to reconnect to the original foreground agent, the path is `jackin hardline <container-name>`. That works for one primary process, but it does not give the console a first-class model of "this workspace has one isolated container with multiple active agent sessions inside it."
+When the operator wants to reconnect to the original foreground agent, the path is `jackin hardline <container-name>`. That works for one primary process, but it does not give the console a first-class model of "this workspace or directory has one isolated container with multiple active agent sessions inside it."
 
-The missing product model is a running container as an isolated collaboration environment, with one or more agent sessions inside it. The operator should be able to open a workspace in `jackin console`, see the running container, see each agent session inside that container, attach to one, start another, open a shell, or hardline the original agent without remembering Docker names.
+The missing product model is a running container as an isolated collaboration environment, with one or more agent sessions inside it. The operator should be able to open `jackin console`, see all running instances for configured workspaces and ad-hoc directories, see each agent role and exact agent session inside those containers, attach to one, start another, open a shell, or hardline the original agent without remembering Docker names.
 
 ## Why It Matters
 
@@ -36,19 +36,21 @@ The identity roadmap owns the container base name and restore metadata. This roa
 
 ## Recommended Shape
 
-Model three levels explicitly:
+Model four levels explicitly:
 
-1. **Workspace or ad-hoc directory** — the thing the operator chose.
-2. **Runtime instance** — one jackin-managed isolated container, with DIND/network/state attached.
-3. **Agent session** — one interactive process inside that container, such as Claude Code, Codex, Amp, or a plain shell.
+1. **Workspace or ad-hoc directory** — the configured workspace name or the concrete directory path the operator launched from.
+2. **Agent role** — the role used to build/run the environment, such as `agentbrown` for display and `chainargos/agent-brown` in metadata.
+3. **Runtime instance** — one jackin-managed isolated container, with DIND/network/state attached.
+4. **Agent session** — one interactive process inside that container, such as Claude Code, Codex, Amp, or a plain shell.
 
-The console should render this as a nested view: workspace rows expand to runtime instances, and each instance expands to active sessions. A compact table is enough for V1:
+The console should render this as a nested view: workspace/directory rows expand to agent roles, roles expand to runtime instances, and each instance expands to active sessions. Configured workspaces and arbitrary directories belong in the same active-instances surface so the operator does not need two mental models for reconnecting.
 
-| Workspace | Runtime instance | Sessions | Actions |
+| Scope | Role | Runtime instance | Sessions | Actions |
 |---|---|---|---|
-| `chainargos` | `agentbrown · k7p9m2xq` | `Claude · running`, `Codex review · idle`, `shell · attached` | attach, new agent, shell, hardline, stop |
+| `workspace: chainargos` | `agentbrown` | `k7p9m2xq · running` | `Claude · running`, `Codex review · idle`, `shell · attached` | attach, new agent, shell, hardline, stop |
+| `dir: ~/Projects/tmp/spike` | `architect` | `m4d8q2xz · preserved` | `Claude · stopped` | attach, shell, purge |
 
-The visible runtime row should use workspace, role, short unique ID, and status. The raw Docker container name can be shown in a details pane for debugging, but not as the primary handle.
+The visible runtime row should use scope, role, short unique ID, and status. The raw Docker container name can be shown in a details pane for debugging, but not as the primary handle.
 
 ## Session Management
 
@@ -93,6 +95,7 @@ Legacy `jackin hardline <container-name>` should remain usable while this lands,
 
 The console should support these actions from the active-instance view:
 
+- **Filter by scope** — show active/preserved instances for all configured workspaces, for the current directory, or for a chosen arbitrary directory.
 - **Attach** — reconnect to an existing agent session.
 - **Hardline** — reconnect to the original foreground agent/session when the container is still recoverable.
 - **New agent** — start another runtime inside the same container, sharing the same workspace state.
@@ -101,7 +104,7 @@ The console should support these actions from the active-instance view:
 - **Stop instance** — stop the whole isolated container after confirmation.
 - **Inspect** — show raw Docker names, labels, mount summary, DIND endpoint, and state paths for debugging.
 
-The UI should make it visually clear when several sessions share the same container. That is the point of the feature: one isolated feature environment can host multiple cooperating agents.
+The UI should make it visually clear which scope owns the container, which agent role produced it, and which exact agent sessions are running inside it. When several sessions share the same container, the UI should say so plainly. That is the point of the feature: one isolated feature environment can host multiple cooperating agents.
 
 ## State Model
 
@@ -132,6 +135,7 @@ Session status should be reconciled from the backend. For `tmux`, list sessions 
 - **Secondary agent exits**: keep the session record with exit status/log pointer when possible. The console should offer "restart" and "discard" instead of silently removing it.
 - **Operator disconnects**: the tmux session keeps running. Reopening `jackin console` should list and reattach it.
 - **Container exits while sessions exist**: all sessions become stopped/unreachable, and restore follows the instance-level rules.
+- **Ad-hoc directory moves**: directory-backed instances should remain visible through stored metadata, but hardline from the old path should explain that the original directory no longer matches and offer inspect/purge rather than silently creating a wrong association.
 - **DIND reset**: secondary sessions may still run, but Docker commands inside them may fail until the instance restore path rebuilds DIND/network/certs. Surface this at the instance row, not per session only.
 - **Two agents write the same files**: this feature intentionally allows it because the operator asked for one shared feature branch. The UI should label the sessions as sharing one filesystem and should not imply per-agent isolation inside the same container.
 - **Credential mode differs by agent runtime**: starting a secondary runtime must run the same auth provisioning rules used for primary launch. Do not leak a credential for an agent runtime whose current workspace/role mode says `ignore`.
@@ -146,6 +150,7 @@ Session status should be reconciled from the backend. For `tmux`, list sessions 
 ### Phase 1 — Discovery and shell entry
 
 - Add instance discovery that lists running jackin-managed containers by manifest/labels instead of clone-family parsing.
+- Add a console active-instances view that includes configured workspaces and ad-hoc directory launches in one list.
 - Add `jackin hardline --shell` or equivalent to open zsh in a selected running container.
 - Add a console action that opens the same shell path.
 - Keep the first version one-shot if needed, but design the command name and UI around the future reconnectable session model.
@@ -171,8 +176,9 @@ Session status should be reconciled from the backend. For `tmux`, list sessions 
 ## Acceptance Criteria
 
 - Operators can open a shell in a running jackin container from CLI and console without typing `docker exec`.
-- Operators can see which workspaces/directories have running instances.
-- Operators can see which agent sessions are running inside each instance.
+- Operators can see which configured workspaces and ad-hoc directories have running or preserved instances.
+- Operators can see which agent roles are running under each workspace/directory scope.
+- Operators can see the exact agent sessions running inside each role/container.
 - Operators can reconnect to the primary session through the console.
 - Operators can start and reconnect to a secondary agent session inside the same container.
 - The UI clearly communicates when multiple agents share one container, one branch, and one filesystem.
