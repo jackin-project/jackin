@@ -18,6 +18,7 @@ use crate::docker::{CommandRunner, RunOptions, ShellRunner};
 use crate::paths::JackinPaths;
 
 const PROTOCOL_VERSION: u32 = 2;
+const MIN_PROTOCOL_VERSION: u32 = PROTOCOL_VERSION;
 const SOCKET_FILENAME: &str = "jackin-daemon.sock";
 const LOCK_FILENAME: &str = "jackin-daemon.lock";
 const PID_FILENAME: &str = "jackin-daemon.pid";
@@ -28,6 +29,10 @@ const SYSTEMD_UNIT: &str = "jackin-daemon.service";
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Request {
+    #[serde(rename = "daemon/hello")]
+    Hello {
+        protocol: u32,
+    },
     Status {
         protocol: u32,
     },
@@ -48,9 +53,30 @@ enum Request {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Response {
-    Ok { message: String },
+    Ok {
+        message: String,
+    },
+    #[serde(rename = "daemon/hello")]
+    Hello(HelloResponse),
     Status(StatusResponse),
-    Error { message: String },
+    Error {
+        message: String,
+    },
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct HelloResponse {
+    pub version: String,
+    pub protocol: u32,
+    pub min_protocol: u32,
+    pub max_protocol: u32,
+    pub capabilities: Vec<DaemonCapability>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct DaemonCapability {
+    pub method: String,
+    pub since_protocol: u32,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -239,6 +265,7 @@ fn handle_request(request: Request, state: &DaemonState) -> Response {
     }
 
     match request {
+        Request::Hello { .. } => Response::Hello(hello()),
         Request::Status { .. } => Response::Status(status(state)),
         Request::Shutdown { .. } => {
             state.shutdown.store(true, Ordering::Relaxed);
@@ -270,18 +297,45 @@ fn handle_request(request: Request, state: &DaemonState) -> Response {
 
 fn validate_protocol(request: &Request) -> std::result::Result<(), String> {
     let protocol = match request {
-        Request::Status { protocol }
+        Request::Hello { protocol }
+        | Request::Status { protocol }
         | Request::Shutdown { protocol }
         | Request::WarmCache { protocol }
         | Request::Notify { protocol, .. } => *protocol,
     };
-    if protocol == PROTOCOL_VERSION {
+    if (MIN_PROTOCOL_VERSION..=PROTOCOL_VERSION).contains(&protocol) {
         Ok(())
     } else {
         Err(format!(
-            "daemon protocol mismatch: client={protocol} daemon={PROTOCOL_VERSION}; run `jackin daemon restart`"
+            "daemon protocol mismatch: client={protocol} daemon={MIN_PROTOCOL_VERSION}..={PROTOCOL_VERSION}; run `jackin daemon restart`"
         ))
     }
+}
+
+fn hello() -> HelloResponse {
+    HelloResponse {
+        version: env!("JACKIN_VERSION").to_string(),
+        protocol: PROTOCOL_VERSION,
+        min_protocol: MIN_PROTOCOL_VERSION,
+        max_protocol: PROTOCOL_VERSION,
+        capabilities: daemon_capabilities(),
+    }
+}
+
+fn daemon_capabilities() -> Vec<DaemonCapability> {
+    [
+        "daemon/hello",
+        "daemon/status",
+        "daemon/shutdown",
+        "daemon/warm_cache",
+        "notification/send",
+    ]
+    .into_iter()
+    .map(|method| DaemonCapability {
+        method: method.to_string(),
+        since_protocol: PROTOCOL_VERSION,
+    })
+    .collect()
 }
 
 fn status(state: &DaemonState) -> StatusResponse {
@@ -766,6 +820,12 @@ fn write_pid(paths: &JackinPaths, pid: u32) -> Result<()> {
 fn print_response(response: Response) {
     match response {
         Response::Ok { message } => println!("{message}"),
+        Response::Hello(hello) => println!(
+            "daemon protocol {} (version {}, {} capabilities)",
+            hello.protocol,
+            hello.version,
+            hello.capabilities.len()
+        ),
         Response::Status(status) => println!("daemon running: pid {}", status.pid),
         Response::Error { message } => eprintln!("error: {message}"),
     }
@@ -858,9 +918,58 @@ published_image = "ghcr.io/example/role:latest"
     }
 
     #[test]
+    fn hello_response_advertises_versioned_capabilities() {
+        let response = hello();
+        let methods = response
+            .capabilities
+            .iter()
+            .map(|capability| capability.method.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(response.version, env!("JACKIN_VERSION"));
+        assert_eq!(response.protocol, PROTOCOL_VERSION);
+        assert_eq!(response.min_protocol, MIN_PROTOCOL_VERSION);
+        assert_eq!(response.max_protocol, PROTOCOL_VERSION);
+        assert!(methods.contains(&"daemon/hello"));
+        assert!(methods.contains(&"daemon/status"));
+        assert!(methods.contains(&"notification/send"));
+    }
+
+    #[test]
+    fn hello_request_and_response_use_versioned_wire_names() {
+        let request_json = serde_json::to_value(Request::Hello {
+            protocol: PROTOCOL_VERSION,
+        })
+        .unwrap();
+        let response_json = serde_json::to_value(Response::Hello(hello())).unwrap();
+
+        assert_eq!(request_json["type"], "daemon/hello");
+        assert_eq!(request_json["protocol"], PROTOCOL_VERSION);
+        assert_eq!(response_json["type"], "daemon/hello");
+        assert_eq!(response_json["protocol"], PROTOCOL_VERSION);
+        assert!(response_json["capabilities"].is_array());
+    }
+
+    #[test]
+    fn hello_request_rejects_protocol_mismatch() {
+        let tmp = tempdir().unwrap();
+        let state = DaemonState {
+            paths: JackinPaths::for_tests(tmp.path()),
+            started_at: SystemTime::now(),
+            shutdown: Arc::new(AtomicBool::new(false)),
+        };
+
+        let response = handle_request(Request::Hello { protocol: 999 }, &state);
+
+        assert!(
+            matches!(response, Response::Error { message } if message.contains("protocol mismatch"))
+        );
+    }
+
+    #[test]
     fn protocol_mismatch_response_is_shutdown_fallback_signal() {
         let response = Response::Error {
-            message: "daemon protocol mismatch: client=2 daemon=1".to_string(),
+            message: "daemon protocol mismatch: client=2 daemon=1..=1".to_string(),
         };
 
         assert!(is_protocol_mismatch_response(&response));
@@ -881,7 +990,7 @@ published_image = "ghcr.io/example/role:latest"
 
         assert!(is_ready_response(&Response::Status(status)));
         assert!(!is_ready_response(&Response::Error {
-            message: "daemon protocol mismatch: client=2 daemon=1".to_string(),
+            message: "daemon protocol mismatch: client=2 daemon=1..=1".to_string(),
         }));
     }
 

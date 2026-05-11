@@ -30,9 +30,7 @@ routing. The phased plan below is the review strategy, not a reduced scope.
 ## Existing local foundation
 
 - The proposal layers on the roadmap items that motivated it: [jackin' daemon](/reference/roadmap/jackin-daemon/), [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/), [Agent attention prompts](/reference/roadmap/agent-attention-prompts/), and [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/). Those documents define the backend responsibilities Desktop should surface rather than reimplement.
-- PR 283 implements the first daemon shape: per-user Unix socket, singleton
-  lock, lifecycle commands, launchd / systemd install, keep-awake
-  reconciliation, cache warmup, and macOS notification dispatch.
+- <RepoFile path="src/daemon.rs" /> implements the first daemon shape: per-user Unix socket, singleton lock, lifecycle commands, launchd / systemd install, keep-awake reconciliation, cache warmup, and macOS notification dispatch. The Desktop-ready protocol work has started with a `daemon/hello` handshake that reports the jackin' version, supported protocol range, and currently available daemon capabilities.
 - <RepoFile path="src/runtime/launch.rs" /> already bind-mounts the daemon
   socket into role containers as `/jackin/daemon.sock` and injects
   `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock` when available.
