@@ -237,12 +237,12 @@ pub fn run(cli: Cli) -> Result<()> {
                                 &mut runner,
                             )
                             .with_context(|| format!("purging isolated state for {container}"))?;
+                            instance::InstanceIndex::mark_purged(&paths.data_dir, container)
+                                .with_context(|| {
+                                    format!("marking instance index entry purged for {container}")
+                                })?;
                             remove_data_dir_if_exists(&paths.data_dir.join(container))
                                 .with_context(|| format!("removing data dir for {container}"))?;
-                            instance::InstanceIndex::remove(&paths.data_dir, container)
-                                .with_context(|| {
-                                    format!("removing instance index entry for {container}")
-                                })?;
                             println!("Ejected and purged {container}.");
                         } else {
                             println!("Ejected {container}.");
@@ -1104,8 +1104,8 @@ pub fn run(cli: Cli) -> Result<()> {
                     &paths.data_dir.join(&container),
                     &mut runner,
                 )?;
+                instance::InstanceIndex::mark_purged(&paths.data_dir, &container)?;
                 remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
-                instance::InstanceIndex::remove(&paths.data_dir, &container)?;
                 println!("Purged state for {container}.");
                 return Ok(());
             }
@@ -1118,8 +1118,8 @@ pub fn run(cli: Cli) -> Result<()> {
                         &paths.data_dir.join(&container),
                         &mut runner,
                     )?;
+                    instance::InstanceIndex::mark_purged(&paths.data_dir, &container)?;
                     remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
-                    instance::InstanceIndex::remove(&paths.data_dir, &container)?;
                     println!("Purged state for {container}.");
                     Ok(())
                 }
@@ -1135,8 +1135,8 @@ pub fn run(cli: Cli) -> Result<()> {
                             &paths.data_dir.join(&container),
                             &mut runner,
                         )?;
+                        instance::InstanceIndex::mark_purged(&paths.data_dir, &container)?;
                         remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
-                        instance::InstanceIndex::remove(&paths.data_dir, &container)?;
                         println!("Purged state for {container}.");
                     }
                     Ok(())
@@ -1424,6 +1424,9 @@ fn resolve_instance_reference(paths: &JackinPaths, input: &str) -> Result<Option
     let index = instance::InstanceIndex::read_or_rebuild(&paths.data_dir)?;
     let mut matches = Vec::new();
     for entry in index.instances {
+        if entry.status == instance::InstanceStatus::Purged {
+            continue;
+        }
         if entry.container_base == input {
             matches.push(entry.container_base);
             continue;
@@ -1778,6 +1781,37 @@ mod auth_set_tests {
             resolved.as_deref(),
             Some("jackin-workspace-agentsmith-k7p9m2xq")
         );
+    }
+
+    #[test]
+    fn resolve_instance_reference_ignores_purged_tombstones() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
+            container_base: "jackin-workspace-agentsmith-k7p9m2xq",
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: instance::DockerResources {
+                role_container: "jackin-workspace-agentsmith-k7p9m2xq".to_string(),
+                dind_container: "jackin-workspace-agentsmith-k7p9m2xq-dind".to_string(),
+                network: "jackin-workspace-agentsmith-k7p9m2xq-net".to_string(),
+                certs_volume: "jackin-workspace-agentsmith-k7p9m2xq-dind-certs".to_string(),
+            },
+        });
+        manifest.mark_status(instance::InstanceStatus::Purged);
+        instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+
+        let resolved = resolve_instance_reference(&paths, "k7p9m2xq").unwrap();
+
+        assert!(resolved.is_none());
     }
 
     #[test]

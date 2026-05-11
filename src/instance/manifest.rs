@@ -243,6 +243,31 @@ impl InstanceIndex {
         index.write(data_dir)
     }
 
+    pub fn mark_purged(data_dir: &Path, container_base: &str) -> anyhow::Result<()> {
+        let mut index = Self::read_or_rebuild(data_dir)?;
+        if let Some(entry) = index
+            .instances
+            .iter_mut()
+            .find(|entry| entry.container_base == container_base)
+        {
+            entry.status = InstanceStatus::Purged;
+            entry.updated_at = now_rfc3339();
+            index.sort();
+            return index.write(data_dir);
+        }
+
+        let state_dir = data_dir.join(container_base);
+        if let Ok(mut manifest) = InstanceManifest::read(&state_dir) {
+            manifest.mark_status(InstanceStatus::Purged);
+            index
+                .instances
+                .push(InstanceIndexEntry::from_manifest(&manifest));
+            index.sort();
+            index.write(data_dir)?;
+        }
+        Ok(())
+    }
+
     pub fn matching_manifests(
         data_dir: &Path,
         query: InstanceQuery<'_>,
@@ -395,6 +420,28 @@ mod tests {
     use crate::isolation::state::{CleanupStatus, IsolationRecord};
     use tempfile::tempdir;
 
+    fn sample_manifest() -> InstanceManifest {
+        InstanceManifest::new(NewInstanceManifest {
+            container_base: "jackin-workspace-agent-k7p9m2xq",
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "org/agent",
+            role_display_name: "Agent",
+            agent_runtime: Agent::Claude,
+            role_source_git: "https://example.invalid/role.git",
+            role_source_ref: Some("main"),
+            image_tag: "jackin-org__agent",
+            docker: DockerResources {
+                role_container: "jackin-workspace-agent-k7p9m2xq".to_string(),
+                dind_container: "jackin-workspace-agent-k7p9m2xq-dind".to_string(),
+                network: "jackin-workspace-agent-k7p9m2xq-net".to_string(),
+                certs_volume: "jackin-workspace-agent-k7p9m2xq-dind-certs".to_string(),
+            },
+        })
+    }
+
     #[test]
     fn writes_manifest_under_jackin_state_dir() {
         let temp = tempdir().unwrap();
@@ -502,6 +549,23 @@ mod tests {
         let index = InstanceIndex::read(data_dir).unwrap();
         assert_eq!(index.instances.len(), 1);
         assert_eq!(index.instances[0].status, InstanceStatus::Running);
+    }
+
+    #[test]
+    fn index_mark_purged_retains_tombstone_after_state_removal() {
+        let data_dir = tempdir().unwrap();
+        let manifest = sample_manifest();
+        let state_dir = data_dir.path().join(manifest.container_base.as_str());
+        manifest.write(&state_dir).unwrap();
+        InstanceIndex::update_manifest(data_dir.path(), &manifest).unwrap();
+
+        InstanceIndex::mark_purged(data_dir.path(), &manifest.container_base).unwrap();
+        std::fs::remove_dir_all(&state_dir).unwrap();
+
+        let index = InstanceIndex::read(data_dir.path()).unwrap();
+        assert_eq!(index.instances.len(), 1);
+        assert_eq!(index.instances[0].container_base, manifest.container_base);
+        assert_eq!(index.instances[0].status, InstanceStatus::Purged);
     }
 
     #[test]
