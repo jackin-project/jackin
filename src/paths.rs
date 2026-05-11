@@ -9,6 +9,7 @@ pub struct JackinPaths {
     pub workspaces_dir: PathBuf,
     pub roles_dir: PathBuf,
     pub data_dir: PathBuf,
+    pub archive_dir: PathBuf,
     pub cache_dir: PathBuf,
 }
 
@@ -24,6 +25,7 @@ impl JackinPaths {
             workspaces_dir: config_dir.join("workspaces"),
             roles_dir: home_dir.join(".jackin/roles"),
             data_dir: home_dir.join(".jackin/data"),
+            archive_dir: home_dir.join(".jackin/archive"),
             cache_dir: home_dir.join(".jackin/cache"),
             home_dir,
             config_dir,
@@ -38,6 +40,7 @@ impl JackinPaths {
             workspaces_dir: config_dir.join("workspaces"),
             roles_dir: home_dir.join(".jackin/roles"),
             data_dir: home_dir.join(".jackin/data"),
+            archive_dir: home_dir.join(".jackin/archive"),
             cache_dir: home_dir.join(".jackin/cache"),
             home_dir,
             config_dir,
@@ -48,6 +51,7 @@ impl JackinPaths {
         std::fs::create_dir_all(&self.config_dir)?;
         std::fs::create_dir_all(&self.roles_dir)?;
         std::fs::create_dir_all(&self.data_dir)?;
+        std::fs::create_dir_all(&self.archive_dir)?;
         std::fs::create_dir_all(&self.cache_dir)?;
         Ok(())
     }

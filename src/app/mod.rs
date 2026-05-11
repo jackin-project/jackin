@@ -2,7 +2,7 @@ pub mod context;
 
 use anyhow::{Context, Result};
 
-use crate::cli::cleanup::{EjectArgs, PurgeArgs};
+use crate::cli::cleanup::{ArchiveArgs, EjectArgs, PurgeArgs};
 use crate::cli::role::{ConsoleArgs, HardlineArgs, LoadArgs};
 use crate::cli::{self, Cli, Command, WorkspaceCommand};
 use crate::config::{self, AppConfig};
@@ -1179,6 +1179,27 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
             }
+        }
+        Command::Archive(ArchiveArgs { selector, output }) => {
+            let container = if let Some(container) = resolve_instance_reference(&paths, &selector)?
+            {
+                container
+            } else {
+                match Selector::parse(&selector)? {
+                    Selector::Container(container) => container,
+                    Selector::Role(_) => anyhow::bail!(
+                        "`jackin archive` requires an instance ID or full container name, not a role selector"
+                    ),
+                }
+            };
+            let archive = runtime::archive_container_state(
+                &paths,
+                &container,
+                output.as_deref(),
+                &mut runner,
+            )?;
+            println!("Archived state for {container} at {}.", archive.display());
+            Ok(())
         }
         Command::Help { .. } => {
             // Handled upstream in dispatch before reaching this function.

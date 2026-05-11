@@ -1,0 +1,47 @@
+---
+title: jackin archive
+description: "Export persisted state for an ejected instance"
+---
+
+## Synopsis
+
+```bash
+jackin archive <SELECTOR> [--output <PATH>]
+```
+
+Export a jackin-managed instance state directory to a tar archive. `SELECTOR` must be an instance ID or full container name.
+
+Archive is intentionally read-only for host projects. It packages `~/.jackin/data/<container>/` and writes either to `~/.jackin/archive/<container>.tar` or to the explicit `--output` path.
+
+## Arguments
+
+| Argument | Required | Description |
+|---|---|---|
+| `SELECTOR` | Yes | Instance ID or full container name |
+
+## Options
+
+| Option | Description |
+|---|---|
+| `--output <PATH>` | Destination tar path. Defaults to `~/.jackin/archive/<container>.tar`. |
+
+## Behavior
+
+`jackin archive` refuses while the role container or DinD sidecar still exists, even if stopped. Run `jackin eject <instance>` first so Docker resources are gone and the archive captures only local jackin-managed state.
+
+The archive contains the instance state directory, including `.jackin/instance.json`, isolation records, preserved worktree/clone metadata, and agent runtime state stored under jackin's data root. It does not copy host repositories outside that state directory.
+
+If the destination archive already exists, jackin refuses instead of overwriting it.
+
+## Examples
+
+```bash
+# Archive by instance ID
+jackin archive k7p9m2xq
+
+# Archive by full container name
+jackin archive jackin-agent-smith-k7p9m2xq
+
+# Write to an explicit tar path
+jackin archive k7p9m2xq --output ~/Desktop/k7p9m2xq.tar
+```
