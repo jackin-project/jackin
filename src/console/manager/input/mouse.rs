@@ -100,6 +100,12 @@ pub fn handle_mouse_with_config(
         _ => {}
     }
 
+    if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+        && try_select_editor_mount_row(state, mouse, term_size)
+    {
+        return;
+    }
+
     // Editor / CreatePrelude file-browser URL click: only on Down(Left),
     // only when the modal is a FileBrowser with a resolved git URL.
     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
@@ -205,6 +211,68 @@ fn editor_tab_at(mouse: MouseEvent) -> Option<EditorTab> {
         x = x.saturating_add(width + 1);
     }
     None
+}
+
+fn try_select_editor_mount_row(
+    state: &mut ManagerState<'_>,
+    mouse: MouseEvent,
+    term_size: Rect,
+) -> bool {
+    let ManagerStage::Editor(editor) = &mut state.stage else {
+        return false;
+    };
+    if editor.active_tab != EditorTab::Mounts || editor.modal.is_some() {
+        return false;
+    }
+
+    let area = editor_scroll_area(editor, term_size).area;
+    if mouse.column <= area.x
+        || mouse.column >= area.x.saturating_add(area.width).saturating_sub(1)
+        || mouse.row <= area.y
+        || mouse.row >= area.y.saturating_add(area.height).saturating_sub(1)
+    {
+        return false;
+    }
+
+    let row = usize::from(mouse.row.saturating_sub(area.y + 1));
+    let Some(index) = editor_mount_index_at_visual_row(editor, row) else {
+        return false;
+    };
+    editor.active_field = FieldFocus::Row(index);
+    editor.workspace_mounts_scroll_focused = true;
+    true
+}
+
+fn editor_mount_index_at_visual_row(
+    editor: &super::super::state::EditorState<'_>,
+    row: usize,
+) -> Option<usize> {
+    if row == 0 {
+        return None;
+    }
+
+    let mut visual = 1usize;
+    for (index, mount) in editor.pending.mounts.iter().enumerate() {
+        if row == visual {
+            return Some(index);
+        }
+        visual += 1;
+        if mount.src != mount.dst {
+            if row == visual {
+                return Some(index);
+            }
+            visual += 1;
+        }
+    }
+
+    if !editor.pending.mounts.is_empty() {
+        if row == visual {
+            return None;
+        }
+        visual += 1;
+    }
+
+    (row == visual).then_some(editor.pending.mounts.len())
 }
 
 fn try_drag_horizontal_scrollbar(
@@ -770,8 +838,8 @@ mod mouse_drag_tests {
     //! real terminal.
     use super::{MOUSE_HORIZONTAL_SCROLL_STEP, handle_mouse, handle_mouse_with_config};
     use crate::console::manager::state::{
-        DEFAULT_SPLIT_PCT, EditorState, EditorTab, MAX_SPLIT_PCT, MIN_SPLIT_PCT, ManagerStage,
-        ManagerState, Modal, MountScrollFocus, SecretsScopeTag,
+        DEFAULT_SPLIT_PCT, EditorState, EditorTab, FieldFocus, MAX_SPLIT_PCT, MIN_SPLIT_PCT,
+        ManagerStage, ManagerState, Modal, MountScrollFocus, SecretsScopeTag,
     };
     use crate::workspace::{MountConfig, WorkspaceConfig};
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
@@ -1679,5 +1747,71 @@ mod mouse_drag_tests {
             editor.workspace_mounts_scroll_x,
             MOUSE_HORIZONTAL_SCROLL_STEP
         );
+    }
+
+    #[test]
+    fn editor_mounts_tab_click_full_row_width_selects_mount() {
+        let mut state = list_state();
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![
+                MountConfig {
+                    src: "/host/one".into(),
+                    dst: "/host/one".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+                MountConfig {
+                    src: "/host/two".into(),
+                    dst: "/host/two".into(),
+                    readonly: true,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            ],
+            ..Default::default()
+        };
+        let mut editor = EditorState::new_edit("x".into(), ws);
+        editor.active_tab = EditorTab::Mounts;
+        editor.active_field = FieldFocus::Row(0);
+        state.stage = ManagerStage::Editor(editor);
+
+        // Mounts editor body begins at y=5. Interior row y=6 is the
+        // header, y=7 is mount 0, y=8 is mount 1. Click far to the
+        // right in whitespace on mount 1's row, not on the path text.
+        handle_mouse_with_config(&mut state, mouse_at(95, 8), term(100), None);
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(matches!(editor.active_field, FieldFocus::Row(1)));
+        assert!(editor.workspace_mounts_scroll_focused);
+    }
+
+    #[test]
+    fn editor_mounts_tab_click_host_source_continuation_selects_parent_mount() {
+        let mut state = list_state();
+        let ws = WorkspaceConfig {
+            workdir: "/w".into(),
+            mounts: vec![MountConfig {
+                src: "/host/source".into(),
+                dst: "/container/destination".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }],
+            ..Default::default()
+        };
+        let mut editor = EditorState::new_edit("x".into(), ws);
+        editor.active_tab = EditorTab::Mounts;
+        editor.active_field = FieldFocus::Row(editor.pending.mounts.len());
+        state.stage = ManagerStage::Editor(editor);
+
+        // y=8 is the host-source continuation line for the first mount.
+        handle_mouse_with_config(&mut state, mouse_at(95, 8), term(100), None);
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(matches!(editor.active_field, FieldFocus::Row(0)));
+        assert!(editor.workspace_mounts_scroll_focused);
     }
 }
