@@ -3,7 +3,7 @@ title: "Unique Container Identity and Restore"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — DNS-safe unique names, per-instance manifests with last attach outcomes, the rebuildable instance index, first-pass missing-container detection, Docker-unavailable diagnostics, explicit deleted-container writable-layer loss reporting, instance-ID targeting for hardline/eject/purge, bare `hardline` lookup plus metadata-rich prompts for indexed workspace/ad-hoc instances, exact `hardline` rebuild for missing recoverable instances using the recorded role source/ref, Java Testcontainers DinD smoke coverage, and legacy isolation-state manifest backfill have shipped; full recovery pickers, console recovery UI, and stronger restore guarantees remain open (Infrastructure)
+**Status**: Partially implemented — DNS-safe unique names, per-instance manifests with last attach outcomes, the rebuildable instance index, first-pass missing-container detection, Docker-unavailable diagnostics, explicit deleted-container writable-layer loss reporting, instance-ID targeting for hardline/eject/purge, bare `hardline` lookup plus metadata-rich prompts for indexed workspace/ad-hoc instances, exact `hardline` rebuild for missing recoverable instances using the recorded role source/ref, stopped-DinD hardline restart, Java Testcontainers DinD smoke coverage, and legacy isolation-state manifest backfill have shipped; full recovery pickers, console recovery UI, and stronger restore guarantees remain open (Infrastructure)
 
 ## Problem
 
@@ -128,7 +128,7 @@ When launching or hardlining a configured workspace or ad-hoc directory, jackin 
 Restore paths:
 
 - **Role container exists and DIND exists/running**: `jackin hardline` attaches to an existing agent session, or prompts to start a new agent session inside the selected container when requested.
-- **Role container exists but DIND is missing/stopped**: rebuild the network, DIND sidecar, cert volume, and environment contract, then start or recreate the role container only if the role container's filesystem state is not required. If the role container has important writable-layer state, surface that it cannot be safely rehydrated without the original container.
+- **Role container exists but DIND is missing/stopped**: hardline restarts a stopped existing DIND sidecar and waits for TLS readiness before restarting the role container. Missing sidecar/network rebuild remains open; if the role container has important writable-layer state, surface that it cannot be safely rehydrated without the original container.
 - **Docker containers are missing but state directory exists with worktree/clone records**: recreate a new role container using the same `container_base` and remount the stored worktree/clone paths. Do not regenerate a different base name for a restore, because isolation paths and scratch branches are keyed by the original container name.
 - **Docker containers are missing and only shared mounts existed**: there is no private worktree to restore, but jackin can restart a fresh container against the same workspace and mark the old instance as superseded.
 - **Docker containers are missing and the instance had unpersisted container-layer changes**: tell the operator those container-layer changes are gone. This is the boundary that motivates future snapshot work.
@@ -217,7 +217,7 @@ Status: partially implemented. New launches write `.jackin/instance.json` with l
 
 ### Phase 3 — Hardline and UI recovery
 
-Status: partially implemented for CLI targeting and exact missing-instance rebuilds. Bare `jackin hardline` can resolve indexed workspace/ad-hoc instances from the current directory and shows candidate prompts with workspace, role, agent runtime, lifecycle status, Docker state, and mount-state summary. Exact `hardline` targets rebuild recoverable missing instances through the launch restore path with the recorded role source/ref, and explicit `hardline`, `eject`, and `purge` selectors can target an indexed instance ID. Full recovery pickers, agent-session selection, and console panels remain open.
+Status: partially implemented for CLI targeting and exact missing-instance rebuilds. Bare `jackin hardline` can resolve indexed workspace/ad-hoc instances from the current directory and shows candidate prompts with workspace, role, agent runtime, lifecycle status, Docker state, and mount-state summary. Exact `hardline` targets rebuild recoverable missing instances through the launch restore path with the recorded role source/ref, stopped DIND sidecars are restarted before crashed role containers, and explicit `hardline`, `eject`, and `purge` selectors can target an indexed instance ID. Full recovery pickers, agent-session selection, missing-sidecar/network rebuild, and console panels remain open.
 
 - Expand `jackin hardline` so it resolves the current workspace/directory, prompts across matching instances, prompts across agent sessions, and can start a new agent session inside the selected running container.
 - Add a console restore picker and active-instance panel that separates human labels from Docker names.

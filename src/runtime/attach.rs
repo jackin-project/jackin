@@ -160,11 +160,12 @@ pub fn hardline_agent(
                 ContainerState::InspectUnavailable(reason) => {
                     anyhow::bail!("{}", inspect_unavailable_message(&dind, &reason))
                 }
-                ContainerState::Stopped { .. } => anyhow::bail!(
-                    "DinD sidecar '{dind}' is stopped; use `jackin load` to rebuild jackin-managed network state. \
-                     The role container still exists, so jackin will not recreate it in place; any changes written \
-                     only to that container's writable layer must be inspected from the existing container."
-                ),
+                ContainerState::Stopped { .. } => {
+                    eprintln!("Restarting stopped DinD sidecar '{dind}'...");
+                    runner.run("docker", &["start", &dind], None, &RunOptions::default())?;
+                    let certs_volume = format!("{container_name}-dind-certs");
+                    wait_for_dind(&dind, &certs_volume, runner, false)?;
+                }
             }
             let reason = if oom_killed {
                 "OOM killed".to_string()
@@ -479,21 +480,39 @@ mod tests {
     }
 
     #[test]
-    fn hardline_refuses_when_dind_stopped() {
+    fn hardline_restarts_dind_when_sidecar_is_stopped() {
         let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::with_capture_queue([
             "false 137 false".to_string(),
             "false 0 false".to_string(),
+            String::new(),
+            String::new(),
         ]);
 
-        let err = hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap_err();
+        hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap();
 
-        assert!(err.to_string().contains("stopped"));
-        assert!(
-            !runner
-                .recorded
-                .iter()
-                .any(|c| c.contains("docker start") || c.contains("docker attach"))
-        );
+        let dind_start_idx = runner
+            .recorded
+            .iter()
+            .position(|c| c == "docker start jackin-agent-smith-dind")
+            .expect("expected stopped DinD sidecar restart");
+        let dind_ready_idx = runner
+            .recorded
+            .iter()
+            .position(|c| c == "docker exec jackin-agent-smith-dind docker info")
+            .expect("expected DinD readiness check");
+        let role_start_idx = runner
+            .recorded
+            .iter()
+            .position(|c| c == "docker start jackin-agent-smith")
+            .expect("expected role restart");
+        let attach_idx = runner
+            .recorded
+            .iter()
+            .position(|c| c.contains("docker attach"))
+            .expect("expected role attach");
+        assert!(dind_start_idx < dind_ready_idx);
+        assert!(dind_ready_idx < role_start_idx);
+        assert!(role_start_idx < attach_idx);
     }
 }
