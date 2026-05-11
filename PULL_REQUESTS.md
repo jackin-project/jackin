@@ -4,6 +4,13 @@ Canonical guide for how pull requests are created, iterated on, reviewed, and me
 
 Read this file before opening, updating, or merging a pull request.
 
+All pull requests created by agents must target `main` as the base branch unless
+the operator explicitly names a different target branch in the same request.
+Checking out, researching, or stacking on another branch does not imply that the
+opened pull request should target that branch. If a change depends on an
+unmerged branch, open a `main`-targeted PR only after the dependency is merged
+or explicitly ask the operator how they want the dependency represented.
+
 PR-body refreshes during iteration are **operator-triggered, not commit-triggered.** Do not rewrite the body after every follow-up commit. The operator may iterate on a PR for many commits before deciding the shape is right; auto-updating the body each time wastes attention and produces churn. Refresh the body only when:
 
 1. The operator explicitly asks for it ("refresh the PR body", "update the description", "the body is out of date").
