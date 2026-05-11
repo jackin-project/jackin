@@ -18,9 +18,7 @@ pub use migrations::{
     migrate_workspace_file_if_needed,
 };
 pub(crate) use mounts::MountEntry;
-pub use mounts::{
-    DockerMounts, GlobalMountRow, WorkspaceGlobalMountRows, WorkspaceMountRoleContext,
-};
+pub use mounts::{DockerMounts, GlobalMountRow, WorkspaceGlobalMountRows};
 pub use roles::{build_github_env_layers, resolve_github_mode, resolve_mode};
 pub use workspaces::{DriftDetection, detect_workspace_edit_drift};
 

@@ -6,19 +6,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Wire format for global mounts (top-level `[[mounts]]` and scoped
-/// `[mounts.<scope>]` entries). Mirrors `MountConfig` minus the
-/// `isolation` field, which is a workspace-mount concept only.
-/// Rejects unknown fields so an operator who tries to set `isolation`
-/// directly on this struct gets a serde "unknown field" error.
-///
-/// Note: at the actual wire path (`AppConfig` → `DockerMounts` →
-/// `MountEntry`), `MountEntry` is `#[serde(untagged)]`, so the error
-/// surfaces as "data did not match any variant of untagged enum
-/// `MountEntry`" rather than a clean "unknown field `isolation`"
-/// message. This is acceptable; a custom `Deserialize` for
-/// `MountEntry` could improve the message but is not implemented
-/// here.
+/// Wire format for `[[mounts]]` / `[mounts.<scope>]` entries. Lacks
+/// the `isolation` field (workspace-only) and rejects unknown fields so
+/// setting `isolation` here fails deserialization with the generic
+/// `MountEntry` untagged-enum error.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct GlobalMountConfig {
@@ -71,45 +62,39 @@ impl DockerMounts {
 }
 
 impl AppConfig {
-    pub fn workspace_mount_role_context(
-        &self,
-        workspace: &crate::workspace::WorkspaceConfig,
-    ) -> WorkspaceMountRoleContext {
-        let mut candidates: Vec<String> = workspace.allowed_roles.clone();
-        if let Some(default) = &workspace.default_role
-            && !candidates.iter().any(|role| role == default)
-        {
-            candidates.push(default.clone());
-        }
-        if let Some(last) = &workspace.last_role
-            && !candidates.iter().any(|role| role == last)
-        {
-            candidates.push(last.clone());
-        }
-        candidates.sort();
-        candidates.dedup();
-
-        if candidates.len() == 1 {
-            return WorkspaceMountRoleContext::Selected(candidates.remove(0));
-        }
-        if candidates.is_empty()
-            && self.roles.len() == 1
-            && let Some(role) = self.roles.keys().next()
-        {
-            return WorkspaceMountRoleContext::Selected(role.clone());
-        }
-        if candidates.is_empty() {
-            candidates = self.roles.keys().cloned().collect();
-        }
-        WorkspaceMountRoleContext::Ambiguous(candidates)
-    }
-
+    /// Determine which role drives role-scoped global mounts for this
+    /// workspace. Returns `Applicable` (with the resolved role + merged
+    /// rows) when role is determinable; `Ambiguous` (with candidates)
+    /// otherwise. Role candidates merge `allowed_roles`, `default_role`,
+    /// and `last_role`; if none is set and the config has exactly one
+    /// role, that one is used.
     pub fn workspace_applicable_mount_rows(
         &self,
         workspace: &crate::workspace::WorkspaceConfig,
     ) -> WorkspaceGlobalMountRows {
-        match self.workspace_mount_role_context(workspace) {
-            WorkspaceMountRoleContext::Selected(role) => RoleSelector::parse(&role).map_or_else(
+        let mut candidates: Vec<String> = workspace.allowed_roles.clone();
+        for extra in workspace
+            .default_role
+            .iter()
+            .chain(workspace.last_role.iter())
+        {
+            if !candidates.iter().any(|role| role == extra) {
+                candidates.push(extra.clone());
+            }
+        }
+        candidates.sort();
+        candidates.dedup();
+
+        let resolved_role = if candidates.len() == 1 {
+            Some(candidates.remove(0))
+        } else if candidates.is_empty() && self.roles.len() == 1 {
+            self.roles.keys().next().cloned()
+        } else {
+            None
+        };
+
+        if let Some(role) = resolved_role {
+            return RoleSelector::parse(&role).map_or_else(
                 |_| WorkspaceGlobalMountRows::Ambiguous {
                     candidates: vec![role],
                 },
@@ -117,11 +102,13 @@ impl AppConfig {
                     role: selector.key(),
                     rows: self.resolve_mount_rows(&selector),
                 },
-            ),
-            WorkspaceMountRoleContext::Ambiguous(candidates) => {
-                WorkspaceGlobalMountRows::Ambiguous { candidates }
-            }
+            );
         }
+
+        if candidates.is_empty() {
+            candidates = self.roles.keys().cloned().collect();
+        }
+        WorkspaceGlobalMountRows::Ambiguous { candidates }
     }
 
     pub fn resolve_mount_rows(&self, selector: &RoleSelector) -> Vec<GlobalMountRow> {
@@ -191,14 +178,9 @@ impl AppConfig {
         Ok(expanded)
     }
 
-    // pub(crate): test-only affordance for in-memory AppConfig setup in tests
-    // (launch/preview.rs, workspace/resolve.rs). Production callers use ConfigEditor.
+    // Test-only; production writes go through ConfigEditor.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn add_mount(&mut self, name: &str, mount: MountConfig, scope: Option<&str>) {
-        // Global mounts cannot carry isolation; the wire format
-        // (`GlobalMountConfig`) doesn't have the field. Convert
-        // explicitly to make the lossy projection visible at the
-        // call site rather than hidden behind `Into`.
         debug_assert!(
             matches!(mount.isolation, crate::isolation::MountIsolation::Shared),
             "global mounts cannot carry isolation"
@@ -229,19 +211,6 @@ impl AppConfig {
         }
     }
 
-    pub fn list_mounts(&self) -> Vec<(String, String, MountConfig)> {
-        self.list_mount_rows()
-            .into_iter()
-            .map(|row| {
-                (
-                    row.scope.unwrap_or_else(|| "(global)".to_string()),
-                    row.name,
-                    row.mount,
-                )
-            })
-            .collect()
-    }
-
     pub fn list_mount_rows(&self) -> Vec<GlobalMountRow> {
         let mut result = Vec::new();
         for (key, entry) in self.docker.mounts.iter() {
@@ -263,17 +232,6 @@ impl AppConfig {
             }
         }
         result
-    }
-
-    pub fn global_mounts(&self) -> Vec<MountConfig> {
-        self.docker
-            .mounts
-            .iter()
-            .filter_map(|(_, entry)| match entry {
-                MountEntry::Mount(m) => Some(MountConfig::from(m.clone())),
-                MountEntry::Scoped(_) => None,
-            })
-            .collect()
     }
 
     pub fn validate_effective_mount_destinations(
@@ -336,12 +294,6 @@ pub struct GlobalMountRow {
     pub scope: Option<String>,
     pub name: String,
     pub mount: MountConfig,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WorkspaceMountRoleContext {
-    Selected(String),
-    Ambiguous(Vec<String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -190,6 +190,13 @@ mod tests {
     }
 
     #[test]
+    fn empty_choices_falls_back_to_agent_all() {
+        let s = AgentChoiceState::with_choices(Vec::new());
+        assert_eq!(s.choices, Agent::ALL.to_vec());
+        assert_eq!(s.focused, Agent::ALL[0]);
+    }
+
+    #[test]
     fn esc_cancels() {
         let mut s = AgentChoiceState::new();
         assert!(matches!(

@@ -160,7 +160,6 @@ pub fn render(
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
-    // Phase 1: render the base stage (Editor full-screen OR List chrome).
     if let ManagerStage::Editor(editor) = &mut state.stage {
         clamp_editor_scroll_for_frame(frame.area(), editor);
         editor::render_editor(frame, editor, config, state.op_available);
@@ -168,7 +167,6 @@ pub fn render(
         clamp_global_mounts_scroll_for_frame(frame.area(), global);
         global_mounts::render_global_mounts(frame, global);
     } else {
-        // List / CreatePrelude / ConfirmDelete share the list-like chrome.
         let area = frame.area();
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -224,10 +222,8 @@ pub fn render(
                     items.push(FooterItem::Text("quit"));
                     items
                 } else {
-                    // Surface "o open in GitHub" on rows whose workspace has at
-                    // least one GitHub-hosted mount with a resolvable web URL.
-                    // See `ManagerListRow` docs for row layout — current-dir and
-                    // the "+ New workspace" sentinel skip the hint entirely.
+                    // Hidden on current-dir and "+ New workspace" rows because
+                    // they have no workspace config.
                     let show_open_hint =
                         matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_))
                             && state
@@ -238,13 +234,11 @@ pub fn render(
                                 });
 
                     let mut items = vec![
-                        // Navigation group
                         FooterItem::Key("\u{2191}\u{2193}"),
                         FooterItem::Sep,
                         FooterItem::Key("Enter"),
                         FooterItem::Text("launch"),
                         FooterItem::GroupSep,
-                        // Per-row actions
                         FooterItem::Key("E"),
                         FooterItem::Text("edit"),
                         FooterItem::Sep,
@@ -268,7 +262,6 @@ pub fn render(
                         items.push(FooterItem::Text("scroll focused block"));
                     }
                     items.push(FooterItem::GroupSep);
-                    // Exit
                     items.push(FooterItem::Key("Q"));
                     items.push(FooterItem::Text("quit"));
                     items
@@ -296,12 +289,9 @@ pub fn render(
         render_footer(frame, chunks[2], &footer_items);
     }
 
-    // Phase 2: overlay any active modal.
-    //
-    // The list-anchored modal lives on `ManagerState` itself rather
-    // than on a stage variant, so its borrow has to be split off
-    // separately from the stage-anchored modals to keep the borrow
-    // checker happy with the shared `state` argument.
+    // List-anchored modal lives on `ManagerState`, not on a stage
+    // variant, so the borrow splits separately from stage-anchored
+    // modals.
     let is_list_stage = matches!(state.stage, ManagerStage::List);
     if is_list_stage {
         if let Some(modal) = &mut state.list_modal {
@@ -413,6 +403,7 @@ fn clamp_list_scroll_for_area(
             );
             state.list_global_mounts_scroll_x = 0;
             state.list_role_global_mounts_scroll_x = 0;
+            state.list_scroll_focus = None;
         }
         ManagerListRow::SavedWorkspace(i) => {
             let Some(summary) = state.workspaces.get(i) else {
@@ -426,40 +417,21 @@ fn clamp_list_scroll_for_area(
                 viewport,
                 &mut state.list_mounts_scroll_x,
             );
-
             let picker_role = state.inline_role_picker.as_ref().and_then(|picker| {
                 picker
                     .list_state
                     .selected
                     .and_then(|idx| picker.filtered.get(idx).cloned())
             });
-            let global_rows = picker_role.as_ref().map_or_else(
-                || {
-                    config
-                        .list_mount_rows()
-                        .into_iter()
-                        .filter(|row| row.scope.is_none())
-                        .collect()
-                },
-                |role| config.resolve_mount_rows(role),
-            );
-            let global_mounts: Vec<_> = global_rows
-                .iter()
-                .filter(|row| row.scope.is_none())
-                .map(|row| row.mount.clone())
-                .collect();
-            let role_global_mounts: Vec<_> = global_rows
-                .iter()
-                .filter(|row| row.scope.is_some())
-                .map(|row| row.mount.clone())
-                .collect();
+            let global_rows = global_rows_for(config, picker_role.as_ref());
+            let (global, scoped) = partition_mounts_by_scope(&global_rows);
             clamp_scroll_x(
-                list::global_mounts_content_width(&global_mounts),
+                list::global_mounts_content_width(&global),
                 viewport,
                 &mut state.list_global_mounts_scroll_x,
             );
             clamp_scroll_x(
-                list::global_mounts_content_width(&role_global_mounts),
+                list::global_mounts_content_width(&scoped),
                 viewport,
                 &mut state.list_role_global_mounts_scroll_x,
             );
@@ -470,6 +442,42 @@ fn clamp_list_scroll_for_area(
             state.list_role_global_mounts_scroll_x = 0;
         }
     }
+}
+
+/// Resolve global mount rows for the workspace's effective role, falling
+/// back to unscoped-only when the role is undecided.
+pub(super) fn global_rows_for(
+    config: &AppConfig,
+    picker_role: Option<&crate::selector::RoleSelector>,
+) -> Vec<crate::config::GlobalMountRow> {
+    picker_role.map_or_else(
+        || {
+            config
+                .list_mount_rows()
+                .into_iter()
+                .filter(|row| row.scope.is_none())
+                .collect()
+        },
+        |role| config.resolve_mount_rows(role),
+    )
+}
+
+pub(super) fn partition_mounts_by_scope(
+    rows: &[crate::config::GlobalMountRow],
+) -> (
+    Vec<crate::workspace::MountConfig>,
+    Vec<crate::workspace::MountConfig>,
+) {
+    let mut global = Vec::new();
+    let mut scoped = Vec::new();
+    for row in rows {
+        if row.scope.is_none() {
+            global.push(row.mount.clone());
+        } else {
+            scoped.push(row.mount.clone());
+        }
+    }
+    (global, scoped)
 }
 
 pub(super) fn render_header(frame: &mut Frame, area: Rect, title: &str) {

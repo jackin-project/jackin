@@ -5,6 +5,9 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
 use super::super::super::widgets::file_browser::FileBrowserState;
+use super::super::render::list::{
+    global_mounts_content_width, mount_block_height, workspace_mounts_content_width,
+};
 use super::super::state::{
     DragState, EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, Modal,
     MountScrollFocus, clamp_split,
@@ -143,7 +146,7 @@ pub fn handle_mouse_with_config(
                 state.inline_role_picker = None;
                 let selected = row.to_screen_index(state.workspaces.len());
                 if selected != state.selected {
-                    reset_list_mount_scroll(state);
+                    super::list::reset_list_mount_scroll(state);
                     state.selected = selected;
                     state.inline_agent_picker = None;
                 }
@@ -195,15 +198,8 @@ fn editor_tab_at(mouse: MouseEvent) -> Option<EditorTab> {
         return None;
     }
 
-    let labels = [
-        (EditorTab::General, "General"),
-        (EditorTab::Mounts, "Mounts"),
-        (EditorTab::Roles, "Roles"),
-        (EditorTab::Secrets, "Environments"),
-        (EditorTab::Auth, "Auth"),
-    ];
     let mut x = 0u16;
-    for (tab, label) in labels {
+    for &(tab, label) in super::super::render::editor::EDITOR_TAB_LABELS {
         let width = label.len() as u16 + 2;
         if mouse.column >= x && mouse.column < x.saturating_add(width) {
             return Some(tab);
@@ -442,31 +438,23 @@ fn scroll_active_panel(
                 state.list_scroll_focus = None;
                 return;
             };
-            match state.list_scroll_focus {
-                Some(MountScrollFocus::Global) => apply_horizontal_scroll(
-                    &mut state.list_global_mounts_scroll_x,
-                    delta,
-                    areas.global.area,
-                    areas.global.content_width,
-                ),
-                Some(MountScrollFocus::RoleGlobal) => {
-                    if let Some(role) = areas.role_global {
-                        apply_horizontal_scroll(
-                            &mut state.list_role_global_mounts_scroll_x,
-                            delta,
-                            role.area,
-                            role.content_width,
-                        );
-                    }
-                }
-                Some(MountScrollFocus::Workspace) => apply_horizontal_scroll(
-                    &mut state.list_mounts_scroll_x,
-                    delta,
-                    areas.workspace.area,
-                    areas.workspace.content_width,
-                ),
-                None => {}
-            }
+            let Some(focus) = state.list_scroll_focus else {
+                return;
+            };
+            let area_info = match focus {
+                MountScrollFocus::Workspace => Some(areas.workspace),
+                MountScrollFocus::Global => Some(areas.global),
+                MountScrollFocus::RoleGlobal => areas.role_global,
+            };
+            let Some(area_info) = area_info else {
+                return;
+            };
+            apply_horizontal_scroll(
+                state.list_scroll_x_mut(focus),
+                delta,
+                area_info.area,
+                area_info.content_width,
+            );
         }
         ManagerStage::Editor(editor) => {
             if editor.active_tab != EditorTab::Mounts {
@@ -562,26 +550,9 @@ fn list_scroll_areas(
                 .as_ref()
                 .map(|(role, _)| role.clone())
         });
-    let global_rows = picker_role.as_ref().map_or_else(
-        || {
-            config
-                .list_mount_rows()
-                .into_iter()
-                .filter(|row| row.scope.is_none())
-                .collect()
-        },
-        |role| config.resolve_mount_rows(role),
-    );
-    let global_mounts: Vec<crate::workspace::MountConfig> = global_rows
-        .iter()
-        .filter(|row| row.scope.is_none())
-        .map(|row| row.mount.clone())
-        .collect();
-    let role_global_mounts: Vec<crate::workspace::MountConfig> = global_rows
-        .iter()
-        .filter(|row| row.scope.is_some())
-        .map(|row| row.mount.clone())
-        .collect();
+    let global_rows = super::super::render::global_rows_for(config, picker_role.as_ref());
+    let (global_mounts, role_global_mounts) =
+        super::super::render::partition_mounts_by_scope(&global_rows);
     let global_h = if global_mounts.is_empty() {
         0
     } else {
@@ -600,9 +571,7 @@ fn list_scroll_areas(
                 width: right_w,
                 height: mounts_h,
             },
-            content_width: super::super::render::list::workspace_mounts_content_width(
-                workspace.mounts.as_slice(),
-            ),
+            content_width: workspace_mounts_content_width(workspace.mounts.as_slice()),
         },
         global: ScrollArea {
             area: Rect {
@@ -611,9 +580,7 @@ fn list_scroll_areas(
                 width: right_w,
                 height: global_h,
             },
-            content_width: super::super::render::list::global_mounts_content_width(
-                global_mounts.as_slice(),
-            ),
+            content_width: global_mounts_content_width(global_mounts.as_slice()),
         },
         role_global: (role_global_h > 0).then(|| ScrollArea {
             area: Rect {
@@ -622,9 +589,7 @@ fn list_scroll_areas(
                 width: right_w,
                 height: role_global_h,
             },
-            content_width: super::super::render::list::global_mounts_content_width(
-                role_global_mounts.as_slice(),
-            ),
+            content_width: global_mounts_content_width(role_global_mounts.as_slice()),
         }),
     })
 }
@@ -645,7 +610,7 @@ fn current_dir_scroll_areas(
                 width: right_w,
                 height: mounts_h,
             },
-            content_width: super::super::render::list::workspace_mounts_content_width(&mounts),
+            content_width: workspace_mounts_content_width(&mounts),
         },
         global: ScrollArea {
             area: Rect {
@@ -669,13 +634,6 @@ fn current_dir_mount(state: &ManagerState<'_>) -> crate::workspace::MountConfig 
     }
 }
 
-const fn reset_list_mount_scroll(state: &mut ManagerState<'_>) {
-    state.list_mounts_scroll_x = 0;
-    state.list_global_mounts_scroll_x = 0;
-    state.list_role_global_mounts_scroll_x = 0;
-    state.list_scroll_focus = None;
-}
-
 fn editor_scroll_area(
     editor: &super::super::state::EditorState<'_>,
     term_size: Rect,
@@ -692,33 +650,14 @@ fn editor_scroll_area(
             width: term_size.width,
             height: (rows as u16 + 2).min(body_h.max(4)),
         },
-        content_width: super::super::render::list::workspace_mounts_content_width(
-            editor.pending.mounts.as_slice(),
-        ),
+        content_width: workspace_mounts_content_width(editor.pending.mounts.as_slice()),
     }
 }
 
-fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
-    let data_rows: usize = if mounts.is_empty() {
-        1
-    } else {
-        mounts
-            .iter()
-            .map(|mount| if mount.src == mount.dst { 1 } else { 2 })
-            .sum()
-    };
-    (data_rows + 3).min(12) as u16
-}
-
-fn global_mount_configs_content_width(mounts: &[crate::workspace::MountConfig]) -> usize {
-    super::super::render::list::global_mounts_content_width(mounts)
-}
-
 fn global_mount_rows_content_width(rows: &[crate::config::GlobalMountRow]) -> usize {
-    rows.iter()
-        .map(|row| global_mount_configs_content_width(std::slice::from_ref(&row.mount)))
-        .max()
-        .unwrap_or("  Name                 Destination                    Mode Scope".len())
+    let mounts: Vec<crate::workspace::MountConfig> =
+        rows.iter().map(|row| row.mount.clone()).collect();
+    global_mounts_content_width(&mounts)
 }
 
 /// If the `Editor` or `CreatePrelude` stage has an open `FileBrowser`
@@ -1602,7 +1541,7 @@ mod mouse_drag_tests {
         };
         let expected_max = super::max_scroll_offset(
             global_area,
-            super::global_mount_configs_content_width(global_mounts.as_slice()),
+            super::global_mounts_content_width(global_mounts.as_slice()),
         );
         assert_eq!(state.list_global_mounts_scroll_x, expected_max);
 
@@ -1650,9 +1589,7 @@ mod mouse_drag_tests {
                 width: 70,
                 height: 4,
             },
-            super::super::super::render::list::workspace_mounts_content_width(
-                workspace.mounts.as_slice(),
-            ),
+            super::workspace_mounts_content_width(workspace.mounts.as_slice()),
         );
 
         assert_eq!(
@@ -1681,7 +1618,7 @@ mod mouse_drag_tests {
         };
         let expected_max = super::max_scroll_offset(
             global_area,
-            super::global_mount_configs_content_width(global_mounts.as_slice()),
+            super::global_mounts_content_width(global_mounts.as_slice()),
         );
 
         handle_mouse_with_config(

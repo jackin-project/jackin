@@ -204,8 +204,8 @@ fn render_toast(frame: &mut Frame, area: Rect, toast: &super::super::state::Toas
     frame.render_widget(Paragraph::new(line), banner_area);
 }
 
-/// Build aligned 4-column mount rows. The path column renders destination
-/// first, then host source on a continuation line when the paths differ.
+/// Pre-formatted mount row. `host_source` is `Some` only when src != dst
+/// (rendered as a continuation line).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct MountDisplayRow {
     pub(super) destination: String,
@@ -256,17 +256,11 @@ pub(super) const MOUNT_MODE_COL_WIDTH: usize = 4;
 /// the downstream `Type` column shifting.
 pub(super) const MOUNT_ISOLATION_COL_WIDTH: usize = 9;
 
-/// Compute the width used for the `Path` column so that header and data rows
-/// align. Derived from both the "Path" header label and the widest row path,
-/// with a minimum floor so short-path tables still look tabular.
+/// Width of the `Destination` column, sized to fit the widest path plus
+/// the header label. Floored at 10 so short-path tables still look tabular.
 pub(super) fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
     rows.iter()
-        .flat_map(|row| {
-            [
-                &row.destination,
-                row.host_source.as_ref().unwrap_or(&row.destination),
-            ]
-        })
+        .flat_map(|row| std::iter::once(&row.destination).chain(row.host_source.as_ref()))
         .map(|p| p.chars().count())
         .max()
         .unwrap_or(0)
@@ -275,9 +269,8 @@ pub(super) fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
 }
 
 pub(super) fn render_mount_header(path_w: usize) -> Line<'static> {
-    // Format: "  <destination padded>  <mode padded>  <iso padded>  Type"
-    // Leading two-space gutter + two-space gap between every column matches
-    // the data-row format so columns never run into each other.
+    // Two-space gutter + two-space gaps match the data-row format so
+    // columns never run into each other.
     let mode_col = format!("{:<mw$}", "Mode", mw = MOUNT_MODE_COL_WIDTH);
     let iso_col = format!("{:<iw$}", "Isolation", iw = MOUNT_ISOLATION_COL_WIDTH);
     Line::from(Span::styled(
@@ -387,24 +380,15 @@ fn render_details_pane(
                 .as_ref()
                 .map(|(role, _)| role.clone())
         });
-    let global_display = ws_config.and_then(|_| {
-        let rows = picker_role.as_ref().map_or_else(
-            || {
-                config
-                    .list_mount_rows()
-                    .into_iter()
-                    .filter(|row| row.scope.is_none())
-                    .collect()
-            },
-            |role| config.resolve_mount_rows(role),
-        );
-        (!rows.is_empty()).then(|| crate::config::WorkspaceGlobalMountRows::Applicable {
-            role: picker_role
-                .as_ref()
-                .map_or_else(String::new, crate::selector::RoleSelector::key),
-            rows,
-        })
-    });
+    let global_rows: Vec<crate::config::GlobalMountRow> = if ws_config.is_some() {
+        super::global_rows_for(config, picker_role.as_ref())
+    } else {
+        Vec::new()
+    };
+    let role_label = picker_role
+        .as_ref()
+        .map_or_else(String::new, crate::selector::RoleSelector::key);
+    let has_global = !global_rows.is_empty();
     let inline_picker_active =
         state.inline_role_picker.is_some() || state.inline_agent_picker.is_some();
     let agent_count = if inline_picker_active {
@@ -418,10 +402,8 @@ fn render_details_pane(
         Constraint::Length(3),
         Constraint::Length(mount_block_height(mounts)),
     ];
-    if global_display.is_some() {
-        constraints.push(Constraint::Length(global_mount_block_height(
-            global_display.as_ref(),
-        )));
+    if has_global {
+        constraints.push(Constraint::Length(global_mount_block_height(&global_rows)));
     }
     if show_envs {
         constraints.push(Constraint::Length(env_block_height(ws_config)));
@@ -446,11 +428,12 @@ fn render_details_pane(
         state.list_scroll_focus == Some(MountScrollFocus::Workspace),
     );
     idx += 1;
-    if global_display.is_some() {
+    if has_global {
         render_global_mounts_subpanel(
             frame,
             rows[idx],
-            global_display.as_ref(),
+            &role_label,
+            &global_rows,
             state.list_global_mounts_scroll_x,
             state.list_role_global_mounts_scroll_x,
             state.list_scroll_focus,
@@ -479,7 +462,9 @@ fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
     !ws.env.is_empty() || ws.roles.values().any(|o| !o.env.is_empty())
 }
 
-fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
+pub(in crate::console::manager) fn mount_block_height(
+    mounts: &[crate::workspace::MountConfig],
+) -> u16 {
     let data_rows = if mounts.is_empty() {
         1
     } else {
@@ -491,22 +476,16 @@ fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
     (data_rows + 2 + 1).min(12) as u16
 }
 
-fn global_mount_block_height(display: Option<&crate::config::WorkspaceGlobalMountRows>) -> u16 {
-    match display {
-        Some(crate::config::WorkspaceGlobalMountRows::Applicable { rows, .. }) => {
-            let (global, scoped) = split_global_mount_rows(rows);
-            let mut h = 0;
-            if !global.is_empty() || scoped.is_empty() {
-                h += global_mount_rows_height(global.len());
-            }
-            if !scoped.is_empty() {
-                h += global_mount_rows_height(scoped.len());
-            }
-            h
-        }
-        Some(crate::config::WorkspaceGlobalMountRows::Ambiguous { .. }) => 4,
-        None => 0,
+fn global_mount_block_height(rows: &[crate::config::GlobalMountRow]) -> u16 {
+    let (global, scoped) = split_global_mount_rows(rows);
+    let mut h = 0;
+    if !global.is_empty() || scoped.is_empty() {
+        h += global_mount_rows_height(global.len());
     }
+    if !scoped.is_empty() {
+        h += global_mount_rows_height(scoped.len());
+    }
+    h
 }
 
 fn global_mount_rows_height(count: usize) -> u16 {
@@ -787,102 +766,53 @@ fn render_mounts_subpanel(
 fn render_global_mounts_subpanel(
     frame: &mut Frame,
     area: Rect,
-    display: Option<&crate::config::WorkspaceGlobalMountRows>,
+    role: &str,
+    rows: &[crate::config::GlobalMountRow],
     global_scroll_x: u16,
     role_scroll_x: u16,
     focused: Option<MountScrollFocus>,
 ) {
-    if let Some(crate::config::WorkspaceGlobalMountRows::Applicable { role, rows }) = display {
-        let (global, scoped) = split_global_mount_rows(rows);
-        let mut sections = Vec::new();
-        if !global.is_empty() || scoped.is_empty() {
-            sections.push((" Global mounts ".to_string(), global));
-        }
-        if !scoped.is_empty() {
-            sections.push((format!(" Role global mounts · {role} "), scoped));
-        }
-        let constraints: Vec<Constraint> = sections
-            .iter()
-            .map(|(_, rows)| Constraint::Length(global_mount_rows_height(rows.len())))
-            .collect();
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(constraints)
-            .split(area);
-        for ((title, rows), chunk) in sections.into_iter().zip(chunks.iter()) {
-            let is_role = title.starts_with(" Role global mounts ");
-            let scroll_x = if is_role {
-                role_scroll_x
-            } else {
-                global_scroll_x
-            };
-            let section_focused = focused
-                == Some(if is_role {
-                    MountScrollFocus::RoleGlobal
-                } else {
-                    MountScrollFocus::Global
-                });
-            render_global_mount_rows_section(
-                frame,
-                *chunk,
-                &title,
-                &rows,
-                scroll_x,
-                section_focused,
-            );
-        }
-        return;
-    }
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(
-            Style::default().fg(if focused == Some(MountScrollFocus::Global) {
-                PHOSPHOR_GREEN
-            } else {
-                PHOSPHOR_DARK
-            }),
-        )
-        .title(Span::styled(
-            " Global mounts ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+    let (global, scoped) = split_global_mount_rows(rows);
+    let mut sections: Vec<(
+        String,
+        Vec<&crate::config::GlobalMountRow>,
+        MountScrollFocus,
+        u16,
+    )> = Vec::new();
+    if !global.is_empty() || scoped.is_empty() {
+        sections.push((
+            " Global mounts ".to_string(),
+            global,
+            MountScrollFocus::Global,
+            global_scroll_x,
         ));
-
-    let mut lines: Vec<Line> = Vec::new();
-    match display {
-        Some(crate::config::WorkspaceGlobalMountRows::Ambiguous { candidates }) => {
-            let suffix = if candidates.is_empty() {
-                "selected role affects global mount visibility".to_string()
-            } else {
-                format!(
-                    "selected role affects global mount visibility: {}",
-                    candidates.join(", ")
-                )
-            };
-            lines.push(Line::from(Span::styled(
-                format!("  {suffix}"),
-                Style::default().fg(PHOSPHOR_DIM),
-            )));
-        }
-        None => lines.push(Line::from(Span::styled(
-            "  (workspace missing)",
-            Style::default().fg(PHOSPHOR_DIM),
-        ))),
-        Some(crate::config::WorkspaceGlobalMountRows::Applicable { .. }) => unreachable!(),
     }
-
-    let content_width = super::max_line_width(&lines);
-    let scroll_x = super::effective_scroll_x(
-        content_width,
-        area.width.saturating_sub(2) as usize,
-        global_scroll_x,
-    );
-    let p = Paragraph::new(lines)
-        .block(block)
-        .scroll((0, scroll_x))
-        .style(Style::default().fg(PHOSPHOR_GREEN));
-    frame.render_widget(p, area);
-    super::render_horizontal_scrollbar(frame, area, content_width, scroll_x);
+    if !scoped.is_empty() {
+        sections.push((
+            format!(" Role global mounts · {role} "),
+            scoped,
+            MountScrollFocus::RoleGlobal,
+            role_scroll_x,
+        ));
+    }
+    let constraints: Vec<Constraint> = sections
+        .iter()
+        .map(|(_, rows, _, _)| Constraint::Length(global_mount_rows_height(rows.len())))
+        .collect();
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+    for ((title, rows, section_focus, scroll_x), chunk) in sections.into_iter().zip(chunks.iter()) {
+        render_global_mount_rows_section(
+            frame,
+            *chunk,
+            &title,
+            &rows,
+            scroll_x,
+            focused == Some(section_focus),
+        );
+    }
 }
 
 fn render_global_mount_rows_section(

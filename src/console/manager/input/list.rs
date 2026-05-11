@@ -8,7 +8,7 @@ use super::super::super::widgets::{
 };
 use super::super::state::{
     EditorState, FileBrowserTarget, GlobalMountsState, ManagerListRow, ManagerStage, ManagerState,
-    Modal, MountScrollFocus, Toast, ToastKind,
+    Modal, Toast, ToastKind,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
@@ -297,27 +297,20 @@ pub(super) fn handle_inline_agent_picker(
     }
 }
 
-fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
-    let apply = |value: &mut u16| {
-        if delta.is_negative() {
-            *value = value.saturating_sub(delta.unsigned_abs());
-        } else {
-            *value = value.saturating_add(delta as u16);
-        }
+const fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
+    let Some(focus) = state.list_scroll_focus else {
+        return;
     };
-    match state.list_scroll_focus {
-        Some(MountScrollFocus::Workspace) => apply(&mut state.list_mounts_scroll_x),
-        Some(MountScrollFocus::Global) => apply(&mut state.list_global_mounts_scroll_x),
-        Some(MountScrollFocus::RoleGlobal) => apply(&mut state.list_role_global_mounts_scroll_x),
-        None => {}
+    let value = state.list_scroll_x_mut(focus);
+    if delta.is_negative() {
+        *value = value.saturating_sub(delta.unsigned_abs());
+    } else {
+        *value = value.saturating_add(delta as u16);
     }
 }
 
-const fn reset_list_mount_scroll(state: &mut ManagerState<'_>) {
-    state.list_mounts_scroll_x = 0;
-    state.list_global_mounts_scroll_x = 0;
-    state.list_role_global_mounts_scroll_x = 0;
-    state.list_scroll_focus = None;
+pub(super) const fn reset_list_mount_scroll(state: &mut ManagerState<'_>) {
+    state.reset_list_scroll();
 }
 
 #[cfg(test)]

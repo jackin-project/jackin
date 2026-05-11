@@ -71,7 +71,7 @@ pub fn render_editor(
 
     match state.active_tab {
         EditorTab::General => render_general_tab(frame, chunks[2], state),
-        EditorTab::Mounts => render_mounts_tab(frame, chunks[2], state, config),
+        EditorTab::Mounts => render_mounts_tab(frame, chunks[2], state),
         EditorTab::Roles => render_roles_tab(frame, chunks[2], state, config),
         EditorTab::Secrets => render_secrets_tab(frame, chunks[2], state, config),
         EditorTab::Auth => render_auth_tab(frame, chunks[2], state, config),
@@ -339,16 +339,20 @@ pub(in crate::console::manager) fn auth_row_count(
     auth_flat_rows(state, config).len()
 }
 
+/// Order and labels of editor tabs. Shared with mouse hit-testing
+/// (`input::mouse::editor_tab_at`) so the strip the renderer draws is
+/// the same one the click code measures against.
+pub(in crate::console::manager) const EDITOR_TAB_LABELS: &[(EditorTab, &str)] = &[
+    (EditorTab::General, "General"),
+    (EditorTab::Mounts, "Mounts"),
+    (EditorTab::Roles, "Roles"),
+    (EditorTab::Secrets, "Environments"),
+    (EditorTab::Auth, "Auth"),
+];
+
 fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
-    let labels = [
-        (EditorTab::General, "General"),
-        (EditorTab::Mounts, "Mounts"),
-        (EditorTab::Roles, "Roles"),
-        (EditorTab::Secrets, "Environments"),
-        (EditorTab::Auth, "Auth"),
-    ];
     let mut spans = Vec::new();
-    for (tab, label) in labels {
+    for &(tab, label) in EDITOR_TAB_LABELS {
         let style = if tab == active {
             Style::default()
                 .bg(PHOSPHOR_GREEN)
@@ -448,7 +452,7 @@ fn render_editor_row(row: usize, cursor: usize, label: &str, value: &str) -> Lin
     Line::from(spans)
 }
 
-fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, _config: &AppConfig) {
+fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     let FieldFocus::Row(cursor) = state.active_field;
 
     // Build aligned table rows for all mounts.

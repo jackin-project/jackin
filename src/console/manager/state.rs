@@ -643,6 +643,24 @@ impl WorkspaceSummary {
 }
 
 impl ManagerState<'_> {
+    /// Mutable scroll-offset slot for the named focus. Centralizes the
+    /// "which list-stage scroll field to mutate" switch so handlers
+    /// don't reimplement the match.
+    pub const fn list_scroll_x_mut(&mut self, focus: MountScrollFocus) -> &mut u16 {
+        match focus {
+            MountScrollFocus::Workspace => &mut self.list_mounts_scroll_x,
+            MountScrollFocus::Global => &mut self.list_global_mounts_scroll_x,
+            MountScrollFocus::RoleGlobal => &mut self.list_role_global_mounts_scroll_x,
+        }
+    }
+
+    pub const fn reset_list_scroll(&mut self) {
+        self.list_mounts_scroll_x = 0;
+        self.list_global_mounts_scroll_x = 0;
+        self.list_role_global_mounts_scroll_x = 0;
+        self.list_scroll_focus = None;
+    }
+
     /// Allocates a fresh empty cache and assumes `op` unavailable —
     /// production reset paths use the `_with_cache_and_op` variant to
     /// preserve the `ConsoleState`-owned cache.
