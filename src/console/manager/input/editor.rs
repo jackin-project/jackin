@@ -91,14 +91,12 @@ pub(super) fn handle_editor_key(
     };
 
     match key.code {
-        KeyCode::Char('h' | 'H')
-            if editor.active_tab == EditorTab::Mounts && editor.workspace_mounts_scroll_focused =>
-        {
+        KeyCode::Char('h' | 'H') if editor.active_tab == EditorTab::Mounts => {
+            editor.workspace_mounts_scroll_focused = true;
             editor.workspace_mounts_scroll_x = editor.workspace_mounts_scroll_x.saturating_sub(8);
         }
-        KeyCode::Char('l' | 'L')
-            if editor.active_tab == EditorTab::Mounts && editor.workspace_mounts_scroll_focused =>
-        {
+        KeyCode::Char('l' | 'L') if editor.active_tab == EditorTab::Mounts => {
+            editor.workspace_mounts_scroll_focused = true;
             editor.workspace_mounts_scroll_x = editor.workspace_mounts_scroll_x.saturating_add(8);
         }
         KeyCode::Tab | KeyCode::Right => {

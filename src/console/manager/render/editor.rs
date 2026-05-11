@@ -182,11 +182,9 @@ fn contextual_row_items(
                     items.push(FooterItem::Sep);
                     items.push(FooterItem::Key("I"));
                     items.push(FooterItem::Text("cycle isolation"));
-                    if state.workspace_mounts_scroll_focused {
-                        items.push(FooterItem::Sep);
-                        items.push(FooterItem::Key("H/L"));
-                        items.push(FooterItem::Text("scroll focused block"));
-                    }
+                    items.push(FooterItem::Sep);
+                    items.push(FooterItem::Key("H/L"));
+                    items.push(FooterItem::Text("scroll"));
                     items
                 }
                 Ordering::Equal => vec![FooterItem::Key("Enter/A"), FooterItem::Text("add")],

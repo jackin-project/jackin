@@ -321,14 +321,23 @@ fn render_details_pane(
         .inline_role_picker
         .as_ref()
         .and_then(selected_picker_role);
-    let global_display = ws_config.map(|w| {
-        picker_role.as_ref().map_or_else(
-            || config.workspace_applicable_mount_rows(w),
-            |role| crate::config::WorkspaceGlobalMountRows::Applicable {
-                role: role.key(),
-                rows: config.resolve_mount_rows(role),
+    let global_display = ws_config.and_then(|_| {
+        let rows = picker_role.as_ref().map_or_else(
+            || {
+                config
+                    .list_mount_rows()
+                    .into_iter()
+                    .filter(|row| row.scope.is_none())
+                    .collect()
             },
-        )
+            |role| config.resolve_mount_rows(role),
+        );
+        (!rows.is_empty()).then(|| crate::config::WorkspaceGlobalMountRows::Applicable {
+            role: picker_role
+                .as_ref()
+                .map_or_else(String::new, crate::selector::RoleSelector::key),
+            rows,
+        })
     });
     let agent_count = if state.inline_role_picker.is_some() {
         0
@@ -340,8 +349,12 @@ fn render_details_pane(
     let mut constraints = vec![
         Constraint::Length(3),
         Constraint::Length(mount_block_height(mounts)),
-        Constraint::Length(global_mount_block_height(global_display.as_ref())),
     ];
+    if global_display.is_some() {
+        constraints.push(Constraint::Length(global_mount_block_height(
+            global_display.as_ref(),
+        )));
+    }
     if show_envs {
         constraints.push(Constraint::Length(env_block_height(ws_config)));
     }
@@ -365,15 +378,17 @@ fn render_details_pane(
         state.list_scroll_focus == Some(MountScrollFocus::Workspace),
     );
     idx += 1;
-    render_global_mounts_subpanel(
-        frame,
-        rows[idx],
-        global_display.as_ref(),
-        state.list_global_mounts_scroll_x,
-        state.list_role_global_mounts_scroll_x,
-        state.list_scroll_focus,
-    );
-    idx += 1;
+    if global_display.is_some() {
+        render_global_mounts_subpanel(
+            frame,
+            rows[idx],
+            global_display.as_ref(),
+            state.list_global_mounts_scroll_x,
+            state.list_role_global_mounts_scroll_x,
+            state.list_scroll_focus,
+        );
+        idx += 1;
+    }
     if show_envs {
         render_environments_subpanel(frame, rows[idx], ws_config);
         idx += 1;
@@ -421,7 +436,8 @@ fn global_mount_block_height(display: Option<&crate::config::WorkspaceGlobalMoun
             }
             h
         }
-        Some(crate::config::WorkspaceGlobalMountRows::Ambiguous { .. }) | None => 4,
+        Some(crate::config::WorkspaceGlobalMountRows::Ambiguous { .. }) => 4,
+        None => 0,
     }
 }
 
@@ -1034,6 +1050,19 @@ fn render_agents_subpanel(
         if is_default {
             spans.push(Span::styled(" \u{2605}", star_style));
         }
+        if let Ok(selector) = crate::selector::RoleSelector::parse(role) {
+            let scoped_count = config
+                .resolve_mount_rows(&selector)
+                .into_iter()
+                .filter(|row| row.scope.is_some())
+                .count();
+            if scoped_count > 0 {
+                spans.push(Span::styled(
+                    format!("    +{scoped_count} role mounts"),
+                    Style::default().fg(PHOSPHOR_DIM),
+                ));
+            }
+        }
         lines.push(Line::from(spans));
     }
 
@@ -1314,6 +1343,7 @@ mod subpanel_padding_tests {
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
 
     /// Scan the first content row inside a sub-panel block (y = 1, skipping
@@ -1338,6 +1368,18 @@ mod subpanel_padding_tests {
             return Some((x - border_x - 1) as usize);
         }
         None
+    }
+
+    fn buffer_text(buf: &Buffer) -> String {
+        let area = buf.area;
+        let mut joined = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                joined.push_str(buf[(x, y)].symbol());
+            }
+            joined.push('\n');
+        }
+        joined
     }
 
     fn summary() -> WorkspaceSummary {
@@ -2269,6 +2311,55 @@ mod subpanel_padding_tests {
             !joined.contains("(no environment variables)"),
             "the placeholder line must NOT appear (block is omitted entirely); got {joined}"
         );
+    }
+
+    #[test]
+    fn preview_shows_unscoped_global_mounts_without_role_ambiguity_text() {
+        let ws = ws_config_with_allowed(&["alpha", "beta"], None);
+        let mut cfg = AppConfig::default();
+        cfg.workspaces.insert("demo".into(), ws);
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
+        cfg.roles
+            .insert("beta".into(), crate::config::RoleSource::default());
+        cfg.add_mount(
+            "cargo",
+            crate::workspace::MountConfig {
+                src: "/tmp/cargo".into(),
+                dst: "/home/agent/.cargo".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            None,
+        );
+        cfg.add_mount(
+            "beta-only",
+            crate::workspace::MountConfig {
+                src: "/tmp/beta".into(),
+                dst: "/beta".into(),
+                readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            Some("beta"),
+        );
+
+        let backend = TestBackend::new(72, 24);
+        let mut term = Terminal::new(backend).unwrap();
+        let state = crate::console::manager::state::ManagerState::from_config(
+            &cfg,
+            std::path::Path::new("/tmp"),
+        );
+        term.draw(|f| {
+            super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary(), &cfg, &state);
+        })
+        .unwrap();
+
+        let joined = buffer_text(term.backend().buffer());
+        assert!(joined.contains("Global mounts"), "{joined}");
+        assert!(joined.contains(".cargo"), "{joined}");
+        assert!(!joined.contains("selected role affects"), "{joined}");
+        assert!(!joined.contains("/beta"), "{joined}");
+        assert!(joined.contains("+1 role mounts"), "{joined}");
     }
 
     /// The Environments block appears as soon as ANY env entry exists
