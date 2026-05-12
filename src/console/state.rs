@@ -203,7 +203,8 @@ mod tests {
                 amp: None,
                 github: None,
                 git_pull_on_entry: false,
-            },
+                            kimi: None,
+                },
         );
 
         let choice = build_workspace_choice(
@@ -243,6 +244,7 @@ mod tests {
             claude: None,
             codex: None,
             amp: None,
+            kimi: None,
             github: None,
             git_pull_on_entry: false,
         }

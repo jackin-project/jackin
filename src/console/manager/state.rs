@@ -1535,7 +1535,8 @@ mod tests {
                 codex: None,
                 amp: None,
                 github: None,
-            },
+                            kimi: None,
+                },
         );
         let mut e = EditorState::new_edit("a".into(), ws);
         assert_eq!(e.change_count(), 0);
@@ -1587,7 +1588,8 @@ mod tests {
                 codex: None,
                 amp: None,
                 github: None,
-            },
+                            kimi: None,
+                },
         );
         assert!(e2.is_dirty(), "role env set must make state dirty");
     }
@@ -1800,7 +1802,8 @@ mod tests {
             amp: None,
             github: None,
             git_pull_on_entry: false,
-        };
+                    kimi: None,
+            };
         let mut e = EditorState::new_edit("ws".into(), ws);
         e.active_tab = EditorTab::Mounts;
         e.active_field = FieldFocus::Row(0);

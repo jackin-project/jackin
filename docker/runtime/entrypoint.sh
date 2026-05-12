@@ -146,6 +146,15 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     # doesn't write to the operator's XDG_CONFIG.
     LAUNCH=(amp --dangerously-allow-all)
     ;;
+  kimi)
+    seed_home_dir /jackin/default-home/.kimi /home/agent/.kimi
+    if [ -n "${KIMI_API_KEY:-}" ]; then
+        echo "[entrypoint] kimi: KIMI_API_KEY present in env; agent will use api-key auth" >&2
+    else
+        echo "[entrypoint] kimi: KIMI_API_KEY unset — agent will require interactive login or config" >&2
+    fi
+    LAUNCH=(kimi --yolo)
+    ;;
   *)
     echo "[entrypoint] unknown JACKIN_AGENT: $JACKIN_AGENT" >&2
     exit 2

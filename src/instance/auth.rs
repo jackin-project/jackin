@@ -599,6 +599,108 @@ fn wipe_amp_state(secrets_json: &Path) -> anyhow::Result<()> {
     })
 }
 
+impl RoleState {
+    /// Provision Kimi's host-side `~/.kimi` directory per the chosen mode.
+    ///
+    /// Sync copies the host directory recursively into the role-state
+    /// directory so it can be bind-mounted into the container.
+    /// ApiKey / Ignore wipe any prior role-state directory.
+    ///
+    /// Returns `(outcome, forward_auth)` where `forward_auth` controls
+    /// whether the launcher bind-mounts the directory.
+    pub(super) fn provision_kimi_auth(
+        kimi_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
+        let host_kimi = host_home.join(".kimi");
+
+        let outcome = match mode {
+            AuthForwardMode::OAuthToken => {
+                eprintln!(
+                    "[jackin] internal: provision_kimi_auth received unsupported \
+                     OAuthToken mode for Kimi — parser invariant bypassed; \
+                     wiping role state and falling back to token-mode."
+                );
+                wipe_kimi_state(kimi_dir)?;
+                AuthProvisionOutcome::TokenMode
+            }
+            AuthForwardMode::ApiKey => {
+                wipe_kimi_state(kimi_dir)?;
+                AuthProvisionOutcome::TokenMode
+            }
+            AuthForwardMode::Ignore => {
+                wipe_kimi_state(kimi_dir)?;
+                AuthProvisionOutcome::Skipped
+            }
+            AuthForwardMode::Sync => {
+                if host_kimi.exists() {
+                    std::fs::create_dir_all(kimi_dir)?;
+
+                    // Selectively copy only auth-essential files.
+                    // Skip logs/, sessions/, telemetry/, user-history/,
+                    // plans/, kimi.json (host-specific paths), and
+                    // latest_version.txt to avoid bloating role state
+                    // and leaking session data between containers.
+
+                    // config.toml — OAuth references and model settings
+                    let host_config = host_kimi.join("config.toml");
+                    if host_config.exists() {
+                        let content = std::fs::read_to_string(&host_config)?;
+                        write_private_file(&kimi_dir.join("config.toml"), &content)?;
+                    }
+
+                    // credentials/ — OAuth tokens (e.g. kimi-code.json)
+                    let host_creds = host_kimi.join("credentials");
+                    if host_creds.exists() {
+                        let dest_creds = kimi_dir.join("credentials");
+                        std::fs::create_dir_all(&dest_creds)?;
+                        for entry in std::fs::read_dir(&host_creds)? {
+                            let entry = entry?;
+                            if entry.file_type()?.is_file() {
+                                let content = std::fs::read_to_string(&entry.path())?;
+                                write_private_file(
+                                    &dest_creds.join(entry.file_name()),
+                                    &content,
+                                )?;
+                            }
+                        }
+                    }
+
+                    // device_id — linked to OAuth tokens
+                    let host_device_id = host_kimi.join("device_id");
+                    if host_device_id.exists() {
+                        let content = std::fs::read_to_string(&host_device_id)?;
+                        write_private_file(&kimi_dir.join("device_id"), &content)?;
+                    }
+
+                    AuthProvisionOutcome::Synced
+                } else {
+                    if !kimi_dir.exists() {
+                        std::fs::create_dir_all(kimi_dir)?;
+                    }
+                    AuthProvisionOutcome::HostMissing
+                }
+            }
+        };
+
+        let forward_auth = matches!(
+            outcome,
+            AuthProvisionOutcome::Synced | AuthProvisionOutcome::HostMissing
+        );
+        Ok((outcome, forward_auth))
+    }
+}
+
+/// Remove the role-state Kimi directory so a prior Sync run cannot leak
+/// credentials under env-driven modes (`Ignore`, `ApiKey`).
+fn wipe_kimi_state(kimi_dir: &Path) -> anyhow::Result<()> {
+    if kimi_dir.exists() {
+        std::fs::remove_dir_all(kimi_dir)?;
+    }
+    Ok(())
+}
+
 /// Copy the host's `.claude.json` into the container state, or write `{}`
 /// if the host file doesn't exist.
 fn copy_host_claude_json(host_path: &Path, dest_path: &Path) -> anyhow::Result<()> {
@@ -838,7 +940,7 @@ mod tests {
     fn simple_manifest(temp: &tempfile::TempDir) -> crate::manifest::RoleManifest {
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha2"
+            r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 
 [claude]

@@ -113,6 +113,25 @@ pub fn parse_claude_version(raw: &str) -> Option<&str> {
     Some(token)
 }
 
+/// Extract a bare semver string from `kimi --version` output.
+///
+/// The command returns e.g. `"kimi 1.2.3"` but we only need the `"1.2.3"`
+/// portion.  Returns `None` when the output doesn't look like a version string.
+pub fn parse_kimi_version(raw: &str) -> Option<&str> {
+    let mut tokens = raw.split_whitespace();
+    let first = tokens.next()?;
+    // If the first token is a bare semver, use it directly.
+    if first.split('.').count() >= 2 && first.starts_with(|c: char| c.is_ascii_digit()) {
+        return Some(first);
+    }
+    // Otherwise expect something like "kimi 1.2.3" and take the second token.
+    let second = tokens.next()?;
+    if second.split('.').count() >= 2 && second.starts_with(|c: char| c.is_ascii_digit()) {
+        return Some(second);
+    }
+    None
+}
+
 // ── helpers ────────────────────────────────────────────────────────────
 
 /// Read a cache file only if it was modified within `ttl`.
@@ -253,6 +272,31 @@ mod tests {
     #[test]
     fn parse_claude_version_rejects_empty() {
         assert_eq!(parse_claude_version(""), None);
+    }
+
+    #[test]
+    fn parse_kimi_version_strips_prefix() {
+        assert_eq!(parse_kimi_version("kimi 1.2.3"), Some("1.2.3"));
+    }
+
+    #[test]
+    fn parse_kimi_version_bare_semver() {
+        assert_eq!(parse_kimi_version("1.2.3"), Some("1.2.3"));
+    }
+
+    #[test]
+    fn parse_kimi_version_two_part() {
+        assert_eq!(parse_kimi_version("0.5"), Some("0.5"));
+    }
+
+    #[test]
+    fn parse_kimi_version_rejects_garbage() {
+        assert_eq!(parse_kimi_version("not-a-version"), None);
+    }
+
+    #[test]
+    fn parse_kimi_version_rejects_empty() {
+        assert_eq!(parse_kimi_version(""), None);
     }
 
     /// Minimal [`CommandRunner`] that returns a fixed string for any `capture`.

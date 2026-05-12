@@ -1833,7 +1833,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             repo_dir.join("jackin.role.toml"),
-            r#"version = "v1alpha2"
+            r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -3207,7 +3207,8 @@ plugins = []
                 codex: None,
                 amp: None,
                 github: None,
-            },
+                            kimi: None,
+                },
         );
 
         let mut state = ManagerState::from_config(&config, tmp.path());
@@ -3486,7 +3487,8 @@ plugins = []
                 codex: None,
                 amp: None,
                 github: None,
-            },
+                            kimi: None,
+                },
         );
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
@@ -3553,7 +3555,8 @@ plugins = []
                 codex: None,
                 amp: None,
                 github: None,
-            },
+                            kimi: None,
+                },
         );
 
         let mut state = ManagerState::from_config(&config, tmp.path());

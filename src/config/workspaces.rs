@@ -277,7 +277,8 @@ mod tests {
             amp: None,
             github: None,
             git_pull_on_entry: false,
-        };
+                    kimi: None,
+            };
         config
             .create_workspace("big-monorepo", original.clone())
             .unwrap();

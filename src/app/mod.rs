@@ -652,6 +652,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     claude: None,
                     codex: None,
                     amp: None,
+                    kimi: None,
                     github: None,
                     git_pull_on_entry: git_pull,
                 };
@@ -2506,7 +2507,8 @@ mod auth_set_tests {
             amp: None,
             github: None,
             git_pull_on_entry: false,
-        };
+                    kimi: None,
+            };
         let out = render_workspace_show(&AppConfig::default(), "jackin", &ws);
         assert!(out.contains("Isolation"));
         assert!(out.contains("Type"));

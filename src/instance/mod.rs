@@ -174,6 +174,10 @@ pub enum AgentRuntimeState {
         model: Option<String>,
     },
     Amp,
+    Kimi {
+        /// `[kimi].model`; passed to the CLI as `--model` at launch.
+        model: Option<String>,
+    },
 }
 
 /// Claude's provisioned auth slot.
@@ -203,6 +207,12 @@ pub struct AmpAuth {
     pub secrets_json: Option<PathBuf>,
 }
 
+/// Kimi's provisioned auth slot.
+#[derive(Debug, Clone, Default)]
+pub struct KimiAuth {
+    pub forward_auth: bool,
+}
+
 /// Auth state provisioned for every agent listed in `manifest.supported_agents()`.
 ///
 /// Each per-agent slot is `Some(_)` iff that agent is supported and
@@ -214,6 +224,7 @@ pub struct ProvisionedAuth {
     pub claude: Option<ClaudeAuth>,
     pub codex: Option<CodexAuth>,
     pub amp: Option<AmpAuth>,
+    pub kimi: Option<KimiAuth>,
 }
 
 #[derive(Debug, Clone)]
@@ -245,7 +256,7 @@ impl RoleState {
     pub fn claude_model(&self) -> Option<&str> {
         match &self.agent_runtime {
             AgentRuntimeState::Claude { model } => model.as_deref(),
-            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp => None,
+            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp | AgentRuntimeState::Kimi { .. } => None,
         }
     }
 
@@ -273,7 +284,7 @@ impl RoleState {
     pub fn codex_model(&self) -> Option<&str> {
         match &self.agent_runtime {
             AgentRuntimeState::Codex { model } => model.as_deref(),
-            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp => None,
+            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp | AgentRuntimeState::Kimi { .. } => None,
         }
     }
 
@@ -295,6 +306,21 @@ impl RoleState {
             .amp
             .as_ref()
             .and_then(|c| c.secrets_json.as_deref())
+    }
+
+    /// `Some` only when the selected runtime is Kimi.
+    #[must_use]
+    pub fn kimi_model(&self) -> Option<&str> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Kimi { model } => model.as_deref(),
+            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp => None,
+        }
+    }
+
+    /// Whether Kimi's auth directory flows into the container.
+    #[must_use]
+    pub fn kimi_forward_auth(&self) -> bool {
+        self.auth.kimi.as_ref().is_some_and(|c| c.forward_auth)
     }
 }
 
@@ -378,6 +404,12 @@ impl RoleState {
                     auth.amp = Some(slot);
                     outcome
                 }
+                crate::agent::Agent::Kimi => {
+                    let (slot, outcome) =
+                        Self::provision_kimi_slot(&root, &home_dir, mode, host_home)?;
+                    auth.kimi = Some(slot);
+                    outcome
+                }
             };
             if supported == agent {
                 selected_outcome = outcome;
@@ -392,6 +424,9 @@ impl RoleState {
                 model: manifest.codex.as_ref().and_then(|cfg| cfg.model.clone()),
             },
             crate::agent::Agent::Amp => AgentRuntimeState::Amp,
+            crate::agent::Agent::Kimi => AgentRuntimeState::Kimi {
+                model: manifest.kimi.as_ref().and_then(|cfg| cfg.model.clone()),
+            },
         };
 
         Ok((
@@ -464,6 +499,21 @@ impl RoleState {
             Self::provision_amp_auth(&secrets_json_path, mode, host_home)?;
         Ok((AmpAuth { secrets_json }, outcome))
     }
+
+    fn provision_kimi_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(KimiAuth, AuthProvisionOutcome)> {
+        let kimi_dir = root.join("kimi");
+        let kimi_home_dir = home_dir.join(".kimi");
+        std::fs::create_dir_all(&kimi_dir)?;
+        std::fs::create_dir_all(&kimi_home_dir)?;
+        let (outcome, forward_auth) =
+            Self::provision_kimi_auth(&kimi_dir, mode, host_home)?;
+        Ok((KimiAuth { forward_auth }, outcome))
+    }
 }
 
 #[cfg(test)]
@@ -475,7 +525,7 @@ mod tests {
     fn simple_manifest(temp: &tempfile::TempDir) -> crate::manifest::RoleManifest {
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha2"
+            r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -551,7 +601,7 @@ plugins = []
 
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha2"
+            r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["codex"]
 
@@ -617,7 +667,7 @@ model = "gpt-5"
 
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha2"
+            r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
@@ -642,6 +692,7 @@ plugins = []
             crate::agent::Agent::Claude => AuthForwardMode::Sync,
             crate::agent::Agent::Codex => AuthForwardMode::ApiKey,
             crate::agent::Agent::Amp => AuthForwardMode::Ignore,
+            crate::agent::Agent::Kimi => AuthForwardMode::Ignore,
         };
 
         let (state, selected_outcome) = RoleState::prepare(

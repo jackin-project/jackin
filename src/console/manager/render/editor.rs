@@ -820,12 +820,12 @@ fn resolve_panel_mode(
 ) -> crate::console::manager::auth_kind::AuthMode {
     use crate::console::manager::auth_kind::{AuthKind, AuthMode};
     match kind {
-        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp => {
-            // `kind.agent()` returns `Some` for Claude/Codex/Amp; the
+        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp | AuthKind::Kimi => {
+            // `kind.agent()` returns `Some` for Claude/Codex/Amp/Kimi; the
             // GitHub arm below means the unwrap is unreachable here.
             let agent = kind
                 .agent()
-                .expect("Claude/Codex/Amp kinds map to an Agent");
+                .expect("Claude/Codex/Amp/Kimi kinds map to an Agent");
             let mode = crate::config::resolve_mode(cfg, agent, workspace, role);
             AuthMode::from_auth_forward(mode)
         }
@@ -1325,6 +1325,10 @@ fn explicit_workspace_mode(
             .amp
             .as_ref()
             .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
+        AuthKind::Kimi => ws
+            .kimi
+            .as_ref()
+            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
         AuthKind::Github => ws
             .github
             .as_ref()
@@ -1345,7 +1349,7 @@ fn auth_source_value<'a>(
     use crate::console::manager::auth_kind::AuthKind;
     match kind {
         AuthKind::Github => github_source_value(synthesized, workspace_name, role, env_name),
-        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp => {
+        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp | AuthKind::Kimi => {
             agent_env_source_value(synthesized, workspace_name, role, env_name)
         }
     }
@@ -1886,7 +1890,8 @@ mod secrets_tab_render_tests {
                 codex: None,
                 amp: None,
                 github: None,
-            },
+                            kimi: None,
+                },
         );
         let ws = WorkspaceConfig {
             roles,
@@ -2032,7 +2037,8 @@ mod secrets_tab_render_tests {
                 codex: None,
                 amp: None,
                 github: None,
-            },
+                            kimi: None,
+                },
         );
         roles.insert(
             "agent-b".into(),
@@ -2042,7 +2048,8 @@ mod secrets_tab_render_tests {
                 codex: None,
                 amp: None,
                 github: None,
-            },
+                            kimi: None,
+                },
         );
 
         let ws = WorkspaceConfig {
@@ -2357,7 +2364,8 @@ mod secrets_tab_render_tests {
                 codex: None,
                 amp: None,
                 github: None,
-            },
+                            kimi: None,
+                },
         );
         let ws = WorkspaceConfig {
             env,
@@ -2395,7 +2403,8 @@ mod secrets_tab_render_tests {
                 codex: None,
                 amp: None,
                 github: None,
-            },
+                            kimi: None,
+                },
         );
         roles.insert(
             "agent-smith".into(),
@@ -2405,7 +2414,8 @@ mod secrets_tab_render_tests {
                 codex: None,
                 amp: None,
                 github: None,
-            },
+                            kimi: None,
+                },
         );
         let ws = WorkspaceConfig {
             roles,
@@ -2715,7 +2725,8 @@ mod eligible_agents_for_override_tests {
                     codex: None,
                     amp: None,
                     github: None,
-                },
+                                    kimi: None,
+                    },
             );
         }
         WorkspaceConfig {

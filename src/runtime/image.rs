@@ -153,5 +153,26 @@ pub(super) fn build_agent_image(
         }
     }
 
+    // Extract and store the Kimi CLI version when launching Kimi.
+    if agent == crate::agent::Agent::Kimi
+        && let Ok(version) = runner.capture(
+            "docker",
+            &["run", "--rm", "--entrypoint", "kimi", &image, "--version"],
+            None,
+        )
+    {
+        let version = version.trim();
+        if !version.is_empty() {
+            if debug {
+                eprintln!("        Kimi {version}");
+            }
+            if let Some(semver) = version_check::parse_kimi_version(version) {
+                version_check::store_image_version(paths, &image, semver);
+            } else if debug {
+                eprintln!("warning: unexpected kimi --version output: {version:?}");
+            }
+        }
+    }
+
     Ok(image)
 }

@@ -252,6 +252,46 @@ impl std::ops::Deref for AmpAuthConfig {
     }
 }
 
+/// Newtype around `AgentAuthConfig` that rejects `oauth_token` at parse time.
+///
+/// Kimi does not support `AuthForwardMode::OAuthToken` — rejecting it at
+/// deserialization time keeps the type system honest.
+#[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
+pub struct KimiAuthConfig(pub(crate) AgentAuthConfig);
+
+impl KimiAuthConfig {
+    /// Construct, rejecting `OAuthToken`. See [`CodexAuthConfig::new`].
+    pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
+        if cfg.auth_forward == AuthForwardMode::OAuthToken {
+            return Err("auth_forward 'oauth_token' is not supported for kimi");
+        }
+        Ok(Self(cfg))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for KimiAuthConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let cfg = AgentAuthConfig::deserialize(deserializer)?;
+        if cfg.auth_forward == AuthForwardMode::OAuthToken {
+            return Err(serde::de::Error::custom(
+                "auth_forward 'oauth_token' is not supported for kimi; \
+                 supported modes: sync, api_key, ignore",
+            ));
+        }
+        Ok(Self(cfg))
+    }
+}
+
+impl std::ops::Deref for KimiAuthConfig {
+    type Target = AgentAuthConfig;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoleSource {
@@ -281,6 +321,8 @@ pub struct AppConfig {
     pub codex: Option<CodexAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub amp: Option<AmpAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kimi: Option<KimiAuthConfig>,
     /// Global `[github]` block — bottom layer of the layered resolver
     /// (global → workspace → workspace × role). Operator-only; role
     /// manifests cannot set or override it.
@@ -305,6 +347,7 @@ impl Default for AppConfig {
             claude: None,
             codex: None,
             amp: None,
+            kimi: None,
             github: None,
             env: BTreeMap::new(),
             roles: BTreeMap::new(),

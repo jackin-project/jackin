@@ -8,18 +8,20 @@ pub enum Agent {
     Claude,
     Codex,
     Amp,
+    Kimi,
 }
 
 impl Agent {
     /// Every variant in declaration order. Iteration sites consult
     /// this instead of hand-rolling their own array.
-    pub const ALL: &'static [Self] = &[Self::Claude, Self::Codex, Self::Amp];
+    pub const ALL: &'static [Self] = &[Self::Claude, Self::Codex, Self::Amp, Self::Kimi];
 
     pub const fn slug(self) -> &'static str {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::Amp => "amp",
+            Self::Kimi => "kimi",
         }
     }
 
@@ -28,6 +30,7 @@ impl Agent {
             Self::Claude => CLAUDE_INSTALL_BLOCK,
             Self::Codex => CODEX_INSTALL_BLOCK,
             Self::Amp => AMP_INSTALL_BLOCK,
+            Self::Kimi => KIMI_INSTALL_BLOCK,
         }
     }
 
@@ -45,8 +48,9 @@ impl Agent {
             (Self::Claude, M::OAuthToken) => Some(crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV),
             (Self::Codex, M::ApiKey) => Some("OPENAI_API_KEY"),
             (Self::Amp, M::ApiKey) => Some("AMP_API_KEY"),
+            (Self::Kimi, M::ApiKey) => Some("KIMI_API_KEY"),
             (Self::Claude, M::Sync | M::Ignore)
-            | (Self::Codex | Self::Amp, M::Sync | M::Ignore | M::OAuthToken) => None,
+            | (Self::Codex | Self::Amp | Self::Kimi, M::Sync | M::Ignore | M::OAuthToken) => None,
         }
     }
 
@@ -59,7 +63,7 @@ impl Agent {
         use crate::config::AuthForwardMode as M;
         match self {
             Self::Claude => &[M::Sync, M::ApiKey, M::OAuthToken, M::Ignore],
-            Self::Codex | Self::Amp => &[M::Sync, M::ApiKey, M::Ignore],
+            Self::Codex | Self::Amp | Self::Kimi => &[M::Sync, M::ApiKey, M::Ignore],
         }
     }
 }
@@ -76,6 +80,15 @@ USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN curl -fsSL https://ampcode.com/install.sh | bash
 RUN amp --version
+";
+
+const KIMI_INSTALL_BLOCK: &str = "\
+USER root
+ARG JACKIN_CACHE_BUST=0
+RUN set -euxo pipefail && \\
+    : \"${JACKIN_CACHE_BUST}\" && \\
+    curl -fsSL code.kimi.com/install.sh | bash && \\
+    kimi --version
 ";
 
 const CODEX_INSTALL_BLOCK: &str = "\
@@ -115,7 +128,7 @@ impl fmt::Display for Agent {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("unknown agent: {got:?}; supported: claude, codex, amp")]
+#[error("unknown agent: {got:?}; supported: claude, codex, amp, kimi")]
 pub struct ParseAgentError {
     got: String,
 }
@@ -127,6 +140,7 @@ impl FromStr for Agent {
             "claude" => Ok(Self::Claude),
             "codex" => Ok(Self::Codex),
             "amp" => Ok(Self::Amp),
+            "kimi" => Ok(Self::Kimi),
             other => Err(ParseAgentError {
                 got: other.to_string(),
             }),
@@ -140,7 +154,7 @@ mod tests {
 
     #[test]
     fn slug_round_trip() {
-        for h in [Agent::Claude, Agent::Codex, Agent::Amp] {
+        for h in [Agent::Claude, Agent::Codex, Agent::Amp, Agent::Kimi] {
             assert_eq!(Agent::from_str(h.slug()).unwrap(), h);
         }
     }
@@ -150,6 +164,7 @@ mod tests {
         assert_eq!(format!("{}", Agent::Claude), "claude");
         assert_eq!(format!("{}", Agent::Codex), "codex");
         assert_eq!(format!("{}", Agent::Amp), "amp");
+        assert_eq!(format!("{}", Agent::Kimi), "kimi");
     }
 
     #[test]
@@ -157,6 +172,7 @@ mod tests {
         let err = Agent::from_str("foo").unwrap_err();
         assert!(err.to_string().contains("foo"));
         assert!(err.to_string().contains("claude"));
+        assert!(err.to_string().contains("kimi"));
     }
 
     #[test]
@@ -201,6 +217,14 @@ mod tests {
         assert!(block.starts_with("USER agent\n"));
         assert!(block.contains("ampcode.com/install.sh"));
         assert!(block.contains("amp --version"));
+    }
+
+    #[test]
+    fn kimi_install_block_uses_official_curl_installer() {
+        let block = Agent::Kimi.install_block();
+        assert!(block.starts_with("USER root\n"));
+        assert!(block.contains("curl -fsSL code.kimi.com/install.sh | bash"));
+        assert!(block.contains("kimi --version"));
     }
 }
 
@@ -252,6 +276,19 @@ mod auth_table_tests {
             None
         );
         assert_eq!(Agent::Amp.required_env_var(AuthForwardMode::Ignore), None);
+
+        // Kimi
+        assert_eq!(Agent::Kimi.required_env_var(AuthForwardMode::Sync), None);
+        assert_eq!(
+            Agent::Kimi.required_env_var(AuthForwardMode::ApiKey),
+            Some("KIMI_API_KEY")
+        );
+        // OAuthToken for Kimi is parser-rejected; method-level safety returns None.
+        assert_eq!(
+            Agent::Kimi.required_env_var(AuthForwardMode::OAuthToken),
+            None
+        );
+        assert_eq!(Agent::Kimi.required_env_var(AuthForwardMode::Ignore), None);
     }
 
     #[test]
@@ -283,6 +320,18 @@ mod auth_table_tests {
         assert!(
             !modes.contains(&AuthForwardMode::OAuthToken),
             "amp must not advertise oauth_token"
+        );
+        assert!(modes.contains(&AuthForwardMode::Ignore));
+    }
+
+    #[test]
+    fn supported_modes_kimi_excludes_oauth_token() {
+        let modes = Agent::Kimi.supported_modes();
+        assert!(modes.contains(&AuthForwardMode::Sync));
+        assert!(modes.contains(&AuthForwardMode::ApiKey));
+        assert!(
+            !modes.contains(&AuthForwardMode::OAuthToken),
+            "kimi must not advertise oauth_token"
         );
         assert!(modes.contains(&AuthForwardMode::Ignore));
     }

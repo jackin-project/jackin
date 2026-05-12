@@ -766,7 +766,8 @@ mod tests {
                 amp: None,
                 github: None,
                 git_pull_on_entry: false,
-            },
+                            kimi: None,
+                },
         );
 
         let resolved = resolve_agent_from_context(&config, &nested_dir).unwrap();
@@ -816,7 +817,8 @@ mod tests {
                 amp: None,
                 github: None,
                 git_pull_on_entry: false,
-            },
+                            kimi: None,
+                },
         );
 
         let resolved = resolve_agent_from_context(&config, &workspace_root).unwrap();
@@ -865,7 +867,8 @@ mod tests {
                 amp: None,
                 github: None,
                 git_pull_on_entry: false,
-            },
+                            kimi: None,
+                },
         );
 
         let resolved = resolve_agent_from_context(&config, &nested_dir).unwrap();
@@ -922,7 +925,8 @@ mod tests {
                 amp: None,
                 github: None,
                 git_pull_on_entry: false,
-            },
+                            kimi: None,
+                },
         );
         config
     }
@@ -1357,7 +1361,7 @@ mod tests {
         let selector = crate::selector::RoleSelector::parse("the-architect").unwrap();
         write_role_manifest(
             &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
-            r#"version = "v1alpha2"
+            r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
@@ -1383,7 +1387,7 @@ plugins = []
         let selector = crate::selector::RoleSelector::parse("the-architect").unwrap();
         write_role_manifest(
             &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
-            r#"version = "v1alpha2"
+            r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp"]
 
@@ -1415,7 +1419,7 @@ plugins = []
         let selector = crate::selector::RoleSelector::parse("the-architect").unwrap();
         write_role_manifest(
             &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
-            r#"version = "v1alpha2"
+            r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
@@ -1441,7 +1445,7 @@ plugins = []
         let selector = crate::selector::RoleSelector::parse("solo").unwrap();
         write_role_manifest(
             &crate::repo::CachedRepo::new(&paths, &selector).repo_dir,
-            r#"version = "v1alpha2"
+            r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["codex"]
 

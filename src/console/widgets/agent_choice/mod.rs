@@ -68,6 +68,7 @@ pub const fn agent_picker_label(agent: Agent) -> &'static str {
         Agent::Claude => "Claude",
         Agent::Codex => "Codex",
         Agent::Amp => "Amp",
+        Agent::Kimi => "Kimi",
     }
 }
 
@@ -152,13 +153,17 @@ mod tests {
         let _ = s.handle_key(key(KeyCode::Down));
         assert_eq!(s.focused, Agent::Amp);
         let _ = s.handle_key(key(KeyCode::Down));
-        assert_eq!(s.focused, Agent::Amp);
+        assert_eq!(s.focused, Agent::Kimi);
+        let _ = s.handle_key(key(KeyCode::Down));
+        assert_eq!(s.focused, Agent::Kimi);
     }
 
     #[test]
     fn up_moves_through_agents_then_clamps() {
         let mut s = AgentChoiceState::new();
-        s.focused = Agent::Amp;
+        s.focused = Agent::Kimi;
+        let _ = s.handle_key(key(KeyCode::Up));
+        assert_eq!(s.focused, Agent::Amp);
         let _ = s.handle_key(key(KeyCode::Up));
         assert_eq!(s.focused, Agent::Codex);
         let _ = s.handle_key(key(KeyCode::Up));
