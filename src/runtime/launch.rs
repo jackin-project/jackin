@@ -198,24 +198,15 @@ const STANDARD_TERMS: &[&str] = &[
     "xterm-color",
 ];
 
-/// Returns the per-agent mount strings in jackin's "src:dst" /
-/// "src:dst:ro" idiom, ready to be passed to `docker run -v`.
+/// Returns the per-agent mount strings in jackin's `src:dst[:ro]`
+/// idiom for `docker run -v`.
 ///
-/// The agent variant is read directly off `state.agent_runtime` rather
-/// than passed in — the prior shape took a separate `agent` parameter
-/// plus an `Option<PathBuf>` field on the state, with a runtime
-/// `expect()` enforcing "Some iff agent == Codex" across two
-/// functions. The enum variant on `RoleState` keeps the per-agent
-/// mount surface explicit.
-/// Returns the per-agent mount strings in jackin's "src:dst" idiom,
-/// ready to be passed to `docker run -v`.
-///
-/// All agents in `manifest.supported_agents()` are represented on
+/// Every agent in `manifest.supported_agents()` is represented on
 /// `state.auth`, so the mount block checks `auth.*` flags rather than
-/// matching the selected-agent variant. This lets every provisioned
-/// agent's home state reach the container regardless of which agent
-/// started the initial session — enabling `hardline --new` to switch
-/// agents without re-authentication.
+/// matching the selected-agent variant — every provisioned agent's home
+/// state reaches the container regardless of which agent started the
+/// session, which is what lets `hardline --new` switch agents without
+/// re-authentication.
 fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
     let mut mounts = vec![format!(
         "{}:/jackin/state",
@@ -1603,7 +1594,20 @@ fn load_role_with(
             },
         });
         let mut instance_manifest = if restoring {
-            InstanceManifest::read(&container_state).unwrap_or(new_manifest)
+            match InstanceManifest::read(&container_state) {
+                Ok(existing) => existing,
+                Err(error) => {
+                    let path = container_state.join(".jackin/instance.json");
+                    if path.exists() {
+                        return Err(error.context(format!(
+                            "restoring container `{container_name}`: existing manifest at {} is unreadable; \
+                             repair or remove the file, or run `jackin eject {container_name} --purge` to discard the recorded identity",
+                            path.display()
+                        )));
+                    }
+                    new_manifest
+                }
+            }
         } else {
             new_manifest
         };
@@ -1686,11 +1690,18 @@ fn load_role_with(
             role_key.as_str(),
         )?;
 
+        // Per-supported-agent mode resolution — each agent in
+        // `manifest.supported_agents()` honors its own configured
+        // `auth_forward`. Passing the selected agent's mode would wipe
+        // sibling agents' durable state when modes diverge.
+        let resolve_supported_mode = |a: crate::agent::Agent| {
+            crate::config::resolve_mode(config, a, workspace_name_str, &role_key)
+        };
         let (state, auth_outcome) = RoleState::prepare(
             paths,
             &container_name,
             &validated_repo.manifest,
-            auth_mode,
+            &resolve_supported_mode,
             &github_ctx,
             &paths.home_dir,
             agent,
@@ -2464,7 +2475,15 @@ fn claim_container_name(
 ) -> anyhow::Result<(String, std::fs::File)> {
     std::fs::create_dir_all(&paths.data_dir)?;
 
-    loop {
+    // Cap retries so a filesystem without working flock (NFS without
+    // lockd, exotic mount) surfaces as an actionable error instead of an
+    // unbounded spin. 64 attempts at 40 bits of ID entropy is enough that
+    // a genuine collision space exhaustion is astronomically unlikely;
+    // hitting the cap signals an environmental fault, not bad luck.
+    const MAX_ATTEMPTS: u32 = 64;
+    let mut last_lock_err: Option<std::io::Error> = None;
+
+    for attempt in 0..MAX_ATTEMPTS {
         let name = crate::instance::new_container_name(workspace_name, selector);
 
         let slot_free = match inspect_container_state(runner, &name) {
@@ -2472,8 +2491,19 @@ fn claim_container_name(
                 exit_code: 0,
                 oom_killed: false,
             } => {
-                let _ = runner.run("docker", &["rm", &name], None, &RunOptions::default());
-                true
+                match runner.capture("docker", &["rm", &name], None) {
+                    Ok(_) => true,
+                    Err(error) => {
+                        let msg = error.to_string();
+                        if msg.contains("No such container") || msg.contains("no such container") {
+                            true
+                        } else {
+                            return Err(error.context(format!(
+                                "removing stale container `{name}` before reclaiming its name"
+                            )));
+                        }
+                    }
+                }
             }
             ContainerState::Running | ContainerState::Stopped { .. } => false,
             ContainerState::NotFound => true,
@@ -2487,11 +2517,23 @@ fn claim_container_name(
         if slot_free {
             let lock_path = paths.data_dir.join(format!("{name}.lock"));
             let lock_file = std::fs::File::create(&lock_path)?;
-            if lock_file.try_lock_exclusive().is_ok() {
-                return Ok((name, lock_file));
+            match lock_file.try_lock_exclusive() {
+                Ok(()) => return Ok((name, lock_file)),
+                Err(error) => {
+                    crate::debug_log!(
+                        "runtime",
+                        "claim_container_name: lock contention on {name} (attempt {attempt}): {error}",
+                    );
+                    last_lock_err = Some(error);
+                }
             }
         }
     }
+
+    anyhow::bail!(
+        "exhausted {MAX_ATTEMPTS} attempts to claim a unique container name (last lock error: {})",
+        last_lock_err.map_or_else(|| "no lock attempted".to_string(), |e| e.to_string())
+    );
 }
 
 fn claim_known_container_name(
@@ -3335,7 +3377,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            crate::config::AuthForwardMode::Ignore,
+            &|_| crate::config::AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
             temp.path(),
             Agent::Claude,
@@ -3409,7 +3451,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            crate::config::AuthForwardMode::Sync,
+            &|_| crate::config::AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
             &host_home,
             Agent::Claude,
@@ -3465,7 +3507,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            crate::config::AuthForwardMode::OAuthToken,
+            &|_| crate::config::AuthForwardMode::OAuthToken,
             &crate::instance::GithubAuthContext::default(),
             temp.path(),
             Agent::Claude,
@@ -3517,7 +3559,7 @@ agents = ["codex"]
             &paths,
             "jackin-agent-smith",
             &manifest,
-            crate::config::AuthForwardMode::Ignore,
+            &|_| crate::config::AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
             temp.path(),
             Agent::Codex,
@@ -3577,7 +3619,7 @@ agents = ["codex"]
             &paths,
             "jackin-agent-smith",
             &manifest,
-            crate::config::AuthForwardMode::Sync,
+            &|_| crate::config::AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
             &host_home,
             Agent::Codex,
@@ -3626,7 +3668,7 @@ agents = ["codex"]
             &paths,
             "jackin-agent-smith",
             &manifest,
-            crate::config::AuthForwardMode::Sync,
+            &|_| crate::config::AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
             temp.path().join("empty_host_home").as_path(),
             Agent::Codex,
@@ -3681,7 +3723,7 @@ agents = ["amp"]
             &paths,
             "jackin-the-architect",
             &manifest,
-            crate::config::AuthForwardMode::Sync,
+            &|_| crate::config::AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
             &host_home,
             Agent::Amp,
@@ -3732,7 +3774,7 @@ agents = ["amp"]
             &paths,
             "jackin-the-architect",
             &manifest,
-            crate::config::AuthForwardMode::Ignore,
+            &|_| crate::config::AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
             temp.path(),
             Agent::Amp,
@@ -4625,9 +4667,13 @@ model = "gpt-5"
         assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"));
         assert!(run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"));
         assert!(!run_cmd.contains("/jackin/codex/config.toml"));
-        // Codex container must not receive any Claude-side mounts.
-        assert!(!run_cmd.contains("/jackin/claude/"));
-        assert!(!run_cmd.contains("/home/agent/.claude"));
+        // Multi-agent role `agents = ["claude", "codex"]` provisions
+        // every supported agent's home state so `hardline --new --agent
+        // claude` can switch agents without re-authentication. The
+        // selected-agent runtime is still Codex (`JACKIN_AGENT=codex` /
+        // `-m gpt-5`), but Claude's mounts must be present.
+        assert!(run_cmd.contains("/home/agent/.claude"));
+        assert!(run_cmd.contains("/home/agent/.codex"));
         assert!(
             !paths
                 .data_dir

@@ -321,11 +321,19 @@ impl std::fmt::Debug for GithubAuthContext {
 }
 
 impl RoleState {
+    /// Provision per-supported-agent auth state.
+    ///
+    /// `auth_modes` is invoked once per agent in `manifest.supported_agents()`
+    /// — pass `crate::config::resolve_mode(config, a, ws, role)` so each
+    /// agent gets its own configured forward mode. Reusing the *selected*
+    /// agent's mode for sibling agents silently wipes their durable state
+    /// when modes diverge (e.g. `claude.auth_forward = sync` next to
+    /// `codex.auth_forward = api_key`).
     pub fn prepare(
         paths: &JackinPaths,
         container_name: &str,
         manifest: &RoleManifest,
-        auth_forward: AuthForwardMode,
+        auth_modes: &dyn Fn(crate::agent::Agent) -> AuthForwardMode,
         github: &GithubAuthContext,
         host_home: &Path,
         agent: crate::agent::Agent,
@@ -372,7 +380,7 @@ impl RoleState {
                     let (outcome, forward_auth) = Self::provision_claude_auth(
                         &account_json,
                         &credentials_json,
-                        auth_forward,
+                        auth_modes(supported),
                         host_home,
                     )?;
                     auth.claude = true;
@@ -389,8 +397,11 @@ impl RoleState {
                     std::fs::create_dir_all(&codex_dir)?;
                     std::fs::create_dir_all(&codex_home_dir)?;
                     let auth_json_path = codex_dir.join("auth.json");
-                    let (outcome, auth_json) =
-                        Self::provision_codex_auth(&auth_json_path, auth_forward, host_home)?;
+                    let (outcome, auth_json) = Self::provision_codex_auth(
+                        &auth_json_path,
+                        auth_modes(supported),
+                        host_home,
+                    )?;
                     auth.codex = true;
                     auth.codex_auth_json = auth_json;
                     if supported == agent {
@@ -403,8 +414,11 @@ impl RoleState {
                     std::fs::create_dir_all(&amp_dir)?;
                     std::fs::create_dir_all(&amp_home_dir)?;
                     let secrets_json_path = amp_dir.join("secrets.json");
-                    let (outcome, secrets_json) =
-                        Self::provision_amp_auth(&secrets_json_path, auth_forward, host_home)?;
+                    let (outcome, secrets_json) = Self::provision_amp_auth(
+                        &secrets_json_path,
+                        auth_modes(supported),
+                        host_home,
+                    )?;
                     auth.amp = true;
                     auth.amp_secrets_json = secrets_json;
                     if supported == agent {
@@ -472,7 +486,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            AuthForwardMode::Ignore,
+            &|_| AuthForwardMode::Ignore,
             &GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
@@ -543,7 +557,7 @@ model = "gpt-5"
             &paths,
             "jackin-agent-smith",
             &manifest,
-            AuthForwardMode::Ignore,
+            &|_| AuthForwardMode::Ignore,
             &GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Codex,

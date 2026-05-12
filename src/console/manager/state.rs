@@ -86,6 +86,9 @@ pub struct ManagerState<'a> {
     /// state on disk can't change at the 20 Hz render cadence and the
     /// rebuild path walks every container directory.
     instances_last_refresh: Option<std::time::Instant>,
+    /// Last surfaced `refresh_instances` error message. Dedup gate so
+    /// transient errors don't spam toasts every refresh tick.
+    instances_last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -719,6 +722,7 @@ impl ManagerState<'_> {
             op_cache,
             op_available,
             instances_last_refresh: None,
+            instances_last_error: None,
         }
     }
 
@@ -819,8 +823,27 @@ impl ManagerState<'_> {
             return;
         }
         self.instances_last_refresh = Some(now);
-        self.instances = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir)
-            .map_or_else(|_| Vec::new(), |index| index.instances);
+        match crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir) {
+            Ok(index) => {
+                self.instances = index.instances;
+                self.instances_last_error = None;
+            }
+            Err(error) => {
+                // Empty list would look identical to "no instances",
+                // hiding corrupt index / permission errors. Surface
+                // via toast so the operator has a path to investigate.
+                self.instances.clear();
+                let message = format!("instance index error: {error}");
+                if self.instances_last_error.as_deref() != Some(&message) {
+                    self.toast = Some(Toast {
+                        message: message.clone(),
+                        kind: ToastKind::Error,
+                        shown_at: std::time::Instant::now(),
+                    });
+                    self.instances_last_error = Some(message);
+                }
+            }
+        }
     }
 
     /// Test helper: force the next `refresh_instances` call to hit disk

@@ -1,4 +1,5 @@
 use crate::agent::Agent;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
@@ -187,8 +188,26 @@ impl InstanceManifest {
 
     pub fn read(state_dir: &Path) -> anyhow::Result<Self> {
         let path = state_dir.join(".jackin/instance.json");
-        let bytes = std::fs::read(path)?;
-        Ok(serde_json::from_slice(&bytes)?)
+        let bytes = std::fs::read(&path)
+            .with_context(|| format!("reading instance manifest at {}", path.display()))?;
+        serde_json::from_slice(&bytes)
+            .with_context(|| format!("parsing instance manifest at {}", path.display()))
+    }
+
+    /// `Ok(None)` when the manifest file does not exist; `Err(_)` for
+    /// parse or I/O failures. Lets callers distinguish "no recorded
+    /// state" (fall through to the no-restore path) from "state exists
+    /// but unreadable" (must surface, not silently treat as missing).
+    pub fn read_optional(state_dir: &Path) -> anyhow::Result<Option<Self>> {
+        let path = state_dir.join(".jackin/instance.json");
+        match std::fs::read(&path) {
+            Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes).with_context(|| {
+                format!("parsing instance manifest at {}", path.display())
+            })?)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(anyhow::Error::new(error)
+                .context(format!("reading instance manifest at {}", path.display()))),
+        }
     }
 
     pub fn write(&self, state_dir: &Path) -> anyhow::Result<()> {
@@ -244,12 +263,38 @@ impl InstanceIndexEntry {
 
 impl InstanceIndex {
     pub fn read_or_rebuild(data_dir: &Path) -> anyhow::Result<Self> {
-        if let Ok(index) = Self::read(data_dir) {
-            Ok(index)
-        } else {
-            let index = Self::rebuild(data_dir)?;
-            index.write(data_dir)?;
-            Ok(index)
+        if let Some(index) = Self::read_optional(data_dir)? {
+            return Ok(index);
+        }
+        let index = Self::rebuild(data_dir)?;
+        index.write(data_dir)?;
+        Ok(index)
+    }
+
+    /// Distinguish "file missing" (`Ok(None)` → rebuild path) from real
+    /// read errors (parse failure, version mismatch, IO error other
+    /// than `NotFound`). Real errors must propagate — silently
+    /// rebuilding on a corrupted index throws away `Purged` tombstones
+    /// whose state dir is already gone, and masks daemon/permission
+    /// faults.
+    fn read_optional(data_dir: &Path) -> anyhow::Result<Option<Self>> {
+        let path = data_dir.join(INSTANCE_INDEX_FILE);
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                let index: Self = serde_json::from_slice(&bytes).with_context(|| {
+                    format!("parsing instance index at {}", path.display())
+                })?;
+                anyhow::ensure!(
+                    index.version == INSTANCE_INDEX_VERSION,
+                    "unsupported instance index version {} at {}",
+                    index.version,
+                    path.display()
+                );
+                Ok(Some(index))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(anyhow::Error::new(error)
+                .context(format!("reading instance index at {}", path.display()))),
         }
     }
 
@@ -311,11 +356,37 @@ impl InstanceIndex {
         }
 
         let state_dir = data_dir.join(container_base);
-        if let Ok(mut manifest) = InstanceManifest::read(&state_dir) {
-            manifest.mark_status(InstanceStatus::Purged);
-            index
-                .instances
-                .push(InstanceIndexEntry::from_manifest(&manifest));
+        match InstanceManifest::read_optional(&state_dir) {
+            Ok(Some(mut manifest)) => {
+                manifest.mark_status(InstanceStatus::Purged);
+                index
+                    .instances
+                    .push(InstanceIndexEntry::from_manifest(&manifest));
+            }
+            // Manifest absent → state already torn down by
+            // `purge_container_filesystem`; nothing to tombstone.
+            Ok(None) => {}
+            Err(error) => {
+                // Corrupt manifest: synthesize a minimal tombstone so
+                // the operator still sees that this container was
+                // purged. Log the read error so `--debug` surfaces the
+                // underlying file fault for forensics.
+                crate::debug_log!(
+                    "instance",
+                    "mark_purged: manifest for `{container_base}` unreadable: {error}; synthesizing tombstone",
+                );
+                index.instances.push(InstanceIndexEntry {
+                    instance_id: container_base.to_string(),
+                    container_base: container_base.to_string(),
+                    workspace_name: None,
+                    workspace_label: String::new(),
+                    workdir: String::new(),
+                    role_key: String::new(),
+                    agent_runtime: String::new(),
+                    status: InstanceStatus::Purged,
+                    updated_at: now_rfc3339(),
+                });
+            }
         }
     }
 
@@ -342,15 +413,14 @@ impl InstanceIndex {
         Ok(manifests)
     }
 
-    fn read(data_dir: &Path) -> anyhow::Result<Self> {
-        let bytes = std::fs::read(data_dir.join(INSTANCE_INDEX_FILE))?;
-        let index: Self = serde_json::from_slice(&bytes)?;
-        anyhow::ensure!(
-            index.version == INSTANCE_INDEX_VERSION,
-            "unsupported instance index version {}",
-            index.version
-        );
-        Ok(index)
+    /// Test-only accessor: error if the file is missing or unreadable.
+    /// Production code uses [`Self::read_or_rebuild`] /
+    /// [`Self::read_optional`].
+    #[cfg(test)]
+    pub(crate) fn read(data_dir: &Path) -> anyhow::Result<Self> {
+        Self::read_optional(data_dir)?.ok_or_else(|| {
+            anyhow::anyhow!("instance index missing at {}", data_dir.display())
+        })
     }
 
     fn rebuild(data_dir: &Path) -> anyhow::Result<Self> {
@@ -367,14 +437,21 @@ impl InstanceIndex {
             if !entry.file_type()?.is_dir() {
                 continue;
             }
-            let manifest = if let Ok(manifest) = InstanceManifest::read(&entry.path()) {
-                manifest
-            } else {
-                let Some(manifest) = legacy_manifest_from_isolation(&entry.path())? else {
-                    continue;
-                };
-                manifest.write(&entry.path())?;
-                manifest
+            // Distinguish "no manifest file" (fall through to the
+            // legacy-isolation backfill path) from "manifest file
+            // exists but is corrupt". A corrupt `instance.json` must
+            // not silently overwrite itself with a synthesized legacy
+            // manifest; surface the parse error so the operator can
+            // repair or eject it.
+            let manifest = match InstanceManifest::read_optional(&entry.path())? {
+                Some(manifest) => manifest,
+                None => {
+                    let Some(manifest) = legacy_manifest_from_isolation(&entry.path())? else {
+                        continue;
+                    };
+                    manifest.write(&entry.path())?;
+                    manifest
+                }
             };
             index
                 .instances

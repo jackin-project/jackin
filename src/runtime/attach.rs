@@ -561,7 +561,7 @@ fn missing_restore_message(
     container_name: &str,
 ) -> anyhow::Result<Option<String>> {
     let state_dir = paths.data_dir.join(container_name);
-    let Ok(mut manifest) = InstanceManifest::read(&state_dir) else {
+    let Some(mut manifest) = InstanceManifest::read_optional(&state_dir)? else {
         return Ok(None);
     };
     if !manifest.is_restore_candidate() {

@@ -1605,7 +1605,7 @@ fn restore_candidate_for_hardline(
     runner: &mut impl crate::docker::CommandRunner,
 ) -> Result<Option<instance::InstanceManifest>> {
     let state_dir = paths.data_dir.join(container);
-    let Ok(mut manifest) = instance::InstanceManifest::read(&state_dir) else {
+    let Some(mut manifest) = instance::InstanceManifest::read_optional(&state_dir)? else {
         return Ok(None);
     };
     if !manifest.is_restore_candidate() {

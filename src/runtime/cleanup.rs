@@ -16,17 +16,33 @@ pub fn purge_class_data(
         return Ok(());
     }
 
+    // Drive each filesystem teardown to completion, then batch the
+    // index update for whichever containers succeeded. Returning early
+    // on the first failure without recording the prior successes would
+    // leave the index claiming the already-deleted state dirs still
+    // hold their pre-purge status.
     let mut matched = Vec::new();
+    let mut first_error: Option<anyhow::Error> = None;
     for entry in std::fs::read_dir(&paths.data_dir)? {
         let entry = entry?;
         let file_name = entry.file_name().to_string_lossy().to_string();
-        if crate::instance::class_family_matches(selector, &file_name) {
-            purge_container_filesystem(paths, &file_name, runner)?;
-            matched.push(file_name);
+        if !crate::instance::class_family_matches(selector, &file_name) {
+            continue;
+        }
+        match purge_container_filesystem(paths, &file_name, runner) {
+            Ok(()) => matched.push(file_name),
+            Err(error) => {
+                first_error = Some(error);
+                break;
+            }
         }
     }
     let refs: Vec<&str> = matched.iter().map(String::as_str).collect();
-    InstanceIndex::mark_many_purged(&paths.data_dir, &refs)
+    let mark_err = InstanceIndex::mark_many_purged(&paths.data_dir, &refs);
+    if let Some(err) = first_error {
+        return Err(err);
+    }
+    mark_err
 }
 
 pub fn purge_container_state(
