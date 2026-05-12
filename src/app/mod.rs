@@ -226,16 +226,31 @@ pub fn run(cli: Cli) -> Result<()> {
                             "cannot start a new agent session in `{container}` because its instance manifest is missing"
                         )
                     })?;
+                let class = RoleSelector::parse(&manifest.role_key)?;
+                let workspace_default_agent = manifest
+                    .workspace_name
+                    .as_deref()
+                    .and_then(|name| config.workspaces.get(name))
+                    .and_then(|ws| ws.default_agent);
                 let selected_agent = if let Some(agent) = agent {
                     agent
                 } else {
-                    manifest.agent_runtime.parse().map_err(|_| {
-                        anyhow::anyhow!(
-                            "instance `{}` has unknown agent runtime {:?}",
-                            manifest.container_base,
-                            manifest.agent_runtime
-                        )
-                    })?
+                    match prompt_agent_choice_if_needed(&paths, &class, workspace_default_agent)? {
+                        Some(a) => a,
+                        // prompt returned None: workspace default covers it,
+                        // or single-agent role, or non-TTY fallback.
+                        None => workspace_default_agent
+                            .map(Ok)
+                            .unwrap_or_else(|| {
+                                manifest.agent_runtime.parse().map_err(|_| {
+                                    anyhow::anyhow!(
+                                        "instance `{}` has unknown agent runtime {:?}",
+                                        manifest.container_base,
+                                        manifest.agent_runtime
+                                    )
+                                })
+                            })?,
+                    }
                 };
                 runtime::reconcile_keep_awake(&paths, &mut runner);
                 let result = runtime::spawn_agent_session(
