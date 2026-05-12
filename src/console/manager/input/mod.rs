@@ -145,11 +145,31 @@ pub fn handle_key(
         }
         return Ok(InputOutcome::Continue);
     }
-    if let ManagerStage::GlobalMounts(global) = &mut state.stage
-        && global.modal.is_some()
+    if let ManagerStage::Settings(settings) = &mut state.stage
+        && settings.mounts.modal.is_some()
     {
-        global_mounts::handle_global_mounts_modal(global, config, paths, key);
-        global_mounts::after_global_mounts_event(state);
+        global_mounts::handle_settings_confirm_modal(settings, config, paths, key);
+        global_mounts::after_settings_event(state);
+        return Ok(InputOutcome::Continue);
+    }
+    if let ManagerStage::Settings(settings) = &mut state.stage
+        && settings.env.modal.is_some()
+    {
+        global_mounts::handle_settings_env_modal(&mut settings.env, key, op_cache);
+        global_mounts::after_settings_event(state);
+        return Ok(InputOutcome::Continue);
+    }
+    if let ManagerStage::Settings(settings) = &mut state.stage
+        && settings.auth.modal.is_some()
+    {
+        global_mounts::handle_settings_auth_modal(
+            &mut settings.auth,
+            &mut settings.env,
+            key,
+            op_available,
+            op_cache,
+        );
+        global_mounts::after_settings_event(state);
         return Ok(InputOutcome::Continue);
     }
     if matches!(state.stage, ManagerStage::CreatePrelude(_)) {
@@ -224,14 +244,14 @@ pub fn handle_key(
     enum StageDis {
         List,
         Editor,
-        GlobalMounts,
+        Settings,
         CreatePrelude,
         ConfirmDelete,
     }
     let dis = match &state.stage {
         ManagerStage::List => StageDis::List,
         ManagerStage::Editor(_) => StageDis::Editor,
-        ManagerStage::GlobalMounts(_) => StageDis::GlobalMounts,
+        ManagerStage::Settings(_) => StageDis::Settings,
         ManagerStage::CreatePrelude(_) => StageDis::CreatePrelude,
         ManagerStage::ConfirmDelete { .. } => StageDis::ConfirmDelete,
     };
@@ -239,9 +259,9 @@ pub fn handle_key(
     match dis {
         StageDis::List => list::handle_list_key(state, config, paths, cwd, key),
         StageDis::Editor => editor::handle_editor_key(state, config, paths, cwd, key),
-        StageDis::GlobalMounts => {
-            global_mounts::handle_global_mounts_key(state, key);
-            global_mounts::after_global_mounts_event(state);
+        StageDis::Settings => {
+            global_mounts::handle_settings_key(state, key);
+            global_mounts::after_settings_event(state);
             Ok(InputOutcome::Continue)
         }
         StageDis::CreatePrelude => Ok(prelude::handle_prelude_key(state, config, paths, cwd, key)),

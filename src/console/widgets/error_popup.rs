@@ -17,9 +17,7 @@ use ratatui::{
 
 use super::ModalOutcome;
 
-const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
-const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
-const WHITE: Color = Color::Rgb(255, 255, 255);
+use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 const DANGER_RED: Color = Color::Rgb(255, 94, 122);
 
 #[derive(Debug, Clone)]

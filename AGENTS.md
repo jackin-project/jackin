@@ -211,6 +211,12 @@ This does not apply to:
 - Inspection commands the operator runs (`pgrep`, `pmset`, `cat`, `ls`) — those aren't jackin invocations.
 - Production recommendations or scripted automation (debug output is too noisy for those).
 
+## TUI design decisions (agent-only)
+
+All TUI design rules — navigation conventions, W3C ARIA Tabs pattern, focusability, component reuse, color palette, modal sizing, scroll semantics, hint/footer rules, and more — live in [`docs/src/content/docs/reference/tui-design-decisions.mdx`](docs/src/content/docs/reference/tui-design-decisions.mdx).
+
+**Read that document before implementing any TUI change.** When a new decision is made (operator explains what should change and why), add it there immediately, not here.
+
 ## Shared conventions
 
 Rules in the files below apply to everyone working in the repo — human and agent:

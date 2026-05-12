@@ -14,5 +14,5 @@ pub mod render;
 pub mod state;
 
 pub use form::{AuthForm, AuthFormOutcome, CredentialInput};
-pub(crate) use render::{DANGER_RED, PHOSPHOR_DARK, WHITE, mode_str};
+pub(crate) use render::{DANGER_RED, mode_str};
 pub use render::{render_form, required_height};

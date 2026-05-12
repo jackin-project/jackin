@@ -131,9 +131,7 @@ use ratatui::{
     widgets::{Block, Borders},
 };
 
-const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
-const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
-const WHITE: Color = Color::Rgb(255, 255, 255);
+use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 const DANGER_RED: Color = Color::Rgb(255, 94, 122);
 /// Almost-invisible dim background so the input region is visible
 /// even when empty.
@@ -141,7 +139,7 @@ const INPUT_BG_DIM: Color = Color::Rgb(20, 24, 22);
 
 pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
     use ratatui::{
-        layout::{Alignment, Constraint, Direction, Layout},
+        layout::{Constraint, Direction, Layout},
         widgets::Paragraph,
     };
 
@@ -168,7 +166,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
         .constraints([
             Constraint::Length(1),
             Constraint::Min(1),
-            Constraint::Length(1),
             Constraint::Length(1),
         ])
         .split(inner);
@@ -214,35 +211,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &TextInputState) {
         );
         frame.render_widget(warn, rows[2]);
     }
-
-    // Hide `Enter confirm` whenever Enter wouldn't commit — telling
-    // the operator a key works that doesn't is worse than a shorter
-    // hint.
-    let hint_spans: Vec<Span> = if state.is_valid() {
-        vec![
-            Span::styled(
-                "Enter",
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" confirm", Style::default().fg(PHOSPHOR_GREEN)),
-            Span::styled(" \u{b7} ", Style::default().fg(PHOSPHOR_DARK)),
-            Span::styled(
-                "Esc",
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" cancel", Style::default().fg(PHOSPHOR_GREEN)),
-        ]
-    } else {
-        vec![
-            Span::styled(
-                "Esc",
-                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" cancel", Style::default().fg(PHOSPHOR_GREEN)),
-        ]
-    };
-    let hint = ratatui::text::Line::from(hint_spans);
-    frame.render_widget(Paragraph::new(hint).alignment(Alignment::Center), rows[3]);
 }
 
 #[cfg(test)]

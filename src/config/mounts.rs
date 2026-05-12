@@ -271,6 +271,16 @@ impl AppConfig {
                 let scope = row.scope.as_deref().unwrap_or("global");
                 anyhow::bail!("duplicate global mount entry: {} [{}]", row.name, scope);
             }
+            if !matches!(
+                row.mount.isolation,
+                crate::isolation::MountIsolation::Shared
+            ) {
+                anyhow::bail!(
+                    "global mount {} cannot use isolation {}; global mounts are always shared",
+                    row.name,
+                    row.mount.isolation.as_str()
+                );
+            }
             let expanded = MountConfig {
                 src: expand_tilde(&row.mount.src),
                 dst: row.mount.dst.clone(),
@@ -742,6 +752,26 @@ gradle-cache = { src = "/tmp/x", dst = "/workspace/x", isolation = "worktree" }
         assert!(
             msg.contains("did not match any variant of untagged enum MountEntry"),
             "expected untagged-enum mismatch error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_global_mount_rows_rejects_non_shared_isolation() {
+        let rows = vec![GlobalMountRow {
+            scope: None,
+            name: "repo".into(),
+            mount: MountConfig {
+                src: "/tmp/repo".into(),
+                dst: "/workspace/repo".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Worktree,
+            },
+        }];
+
+        let err = AppConfig::validate_global_mount_rows(&rows).unwrap_err();
+        assert!(
+            err.to_string().contains("global mounts are always shared"),
+            "unexpected error: {err}"
         );
     }
 }

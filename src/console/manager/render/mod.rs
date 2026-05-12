@@ -3,16 +3,16 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 
 use super::state::{ManagerListRow, ManagerStage, ManagerState};
 use crate::config::AppConfig;
 
 pub mod editor;
-mod global_mounts;
+pub(super) mod global_mounts;
 pub(super) mod list;
 pub(super) mod modal;
 
@@ -23,10 +23,7 @@ pub(super) use modal::modal_outer_rect;
 // while a modal is being dismissed (see `input::mod`).
 pub use editor::render_editor;
 
-pub(super) const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
-pub(super) const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
-pub(super) const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
-pub(super) const WHITE: Color = Color::Rgb(255, 255, 255);
+pub(super) use crate::console::widgets::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 // ── Footer item model ──────────────────────────────────────────────
 //
@@ -50,39 +47,131 @@ pub(super) enum FooterItem {
     GroupSep,
 }
 
-pub(super) fn footer_spans(items: &[FooterItem]) -> Vec<Span<'static>> {
+/// How many rows the footer needs to display all `items` within `width` columns.
+/// Minimum 1. Callers use this to size the footer area before running layout.
+#[must_use]
+pub(super) fn footer_height(items: &[FooterItem], width: u16) -> u16 {
+    footer_lines(items, width).len().max(1) as u16
+}
+
+pub(super) fn render_footer(frame: &mut Frame, area: Rect, items: &[FooterItem]) {
+    let lines = footer_lines(items, area.width);
+    let p = Paragraph::new(lines).alignment(Alignment::Center);
+    frame.render_widget(p, area);
+}
+
+/// Pack footer items into wrapped lines that fit within `width` columns.
+///
+/// Items are first split into "chunks" at every `Sep` and `GroupSep` boundary.
+/// Chunks are then greedily packed onto lines: if the next chunk (plus a
+/// separator) would overflow the line, it starts a new line. A `GroupSep`
+/// between two adjacent chunks on the same line renders as three spaces;
+/// a `Sep` renders as ` · `. Both separators take 3 columns.
+fn footer_lines(items: &[FooterItem], width: u16) -> Vec<Line<'static>> {
+    // A chunk = one logical hint unit (key + optional label), with the separator
+    // flavor that should precede it when it follows another chunk on the same line.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum SepKind {
+        Group,
+        Dot,
+    }
+
+    struct Chunk {
+        spans: Vec<Span<'static>>,
+        width: usize,
+        sep: SepKind,
+    }
+
     let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
     let text_style = Style::default().fg(PHOSPHOR_GREEN);
     let sep_style = Style::default().fg(PHOSPHOR_DARK);
     let dyn_style = Style::default().fg(PHOSPHOR_DIM);
 
-    let mut spans: Vec<Span<'static>> = Vec::with_capacity(items.len() * 2);
+    // Build chunks by accumulating spans until a Sep or GroupSep is hit.
+    let mut chunks: Vec<Chunk> = Vec::new();
+    let mut cur_spans: Vec<Span<'static>> = Vec::new();
+    let mut cur_w: usize = 0;
+    let mut next_sep = SepKind::Group;
+
+    let flush =
+        |chunks: &mut Vec<Chunk>, spans: &mut Vec<Span<'static>>, w: &mut usize, sep: SepKind| {
+            if !spans.is_empty() {
+                chunks.push(Chunk {
+                    spans: std::mem::take(spans),
+                    width: *w,
+                    sep,
+                });
+                *w = 0;
+            }
+        };
+
     for item in items {
         match item {
             FooterItem::Key(k) => {
-                spans.push(Span::styled((*k).to_string(), key_style));
+                cur_w += k.chars().count();
+                cur_spans.push(Span::styled((*k).to_string(), key_style));
             }
             FooterItem::Text(t) => {
-                spans.push(Span::styled(format!(" {t}"), text_style));
+                cur_w += 1 + t.chars().count();
+                cur_spans.push(Span::styled(format!(" {t}"), text_style));
             }
             FooterItem::Dyn(t) => {
-                spans.push(Span::styled(format!(" {t}"), dyn_style));
+                cur_w += 1 + t.chars().count();
+                cur_spans.push(Span::styled(format!(" {t}"), dyn_style));
             }
             FooterItem::Sep => {
-                spans.push(Span::styled(" \u{b7} ".to_string(), sep_style));
+                flush(&mut chunks, &mut cur_spans, &mut cur_w, next_sep);
+                next_sep = SepKind::Dot;
             }
             FooterItem::GroupSep => {
-                spans.push(Span::raw("   "));
+                flush(&mut chunks, &mut cur_spans, &mut cur_w, next_sep);
+                next_sep = SepKind::Group;
             }
         }
     }
-    spans
-}
+    flush(&mut chunks, &mut cur_spans, &mut cur_w, next_sep);
 
-pub(super) fn render_footer(frame: &mut Frame, area: Rect, items: &[FooterItem]) {
-    let line = Line::from(footer_spans(items));
-    let p = Paragraph::new(line).alignment(Alignment::Center);
-    frame.render_widget(p, area);
+    // Greedy line-packing: chunks go on the current line if they fit;
+    // otherwise start a new line. Separator costs 3 columns on same line.
+    let max_w = width as usize;
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let mut line_spans: Vec<Span<'static>> = Vec::new();
+    let mut line_w: usize = 0;
+
+    for chunk in &chunks {
+        let needed = if line_spans.is_empty() {
+            chunk.width
+        } else {
+            3 + chunk.width
+        };
+
+        if !line_spans.is_empty() && line_w + needed > max_w {
+            lines.push(Line::from(std::mem::take(&mut line_spans)));
+            line_w = 0;
+        }
+
+        if !line_spans.is_empty() {
+            match chunk.sep {
+                SepKind::Dot => line_spans.push(Span::styled(" \u{b7} ".to_string(), sep_style)),
+                SepKind::Group => line_spans.push(Span::raw("   ")),
+            }
+            line_w += 3;
+        }
+
+        line_spans.extend(chunk.spans.iter().cloned());
+        line_w += chunk.width;
+    }
+
+    if !line_spans.is_empty() {
+        lines.push(Line::from(line_spans));
+    }
+
+    if lines.is_empty() {
+        lines.push(Line::raw(""));
+    }
+
+    lines
 }
 
 pub(super) fn line_width(line: &Line<'_>) -> usize {
@@ -90,6 +179,87 @@ pub(super) fn line_width(line: &Line<'_>) -> usize {
         .iter()
         .map(|span| span.content.chars().count())
         .sum()
+}
+
+#[cfg(test)]
+mod footer_wrap_tests {
+    use super::*;
+
+    fn text_content(lines: &[Line<'_>]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn short_footer_fits_on_one_line() {
+        let items = vec![
+            FooterItem::Key("S"),
+            FooterItem::Text("save"),
+            FooterItem::GroupSep,
+            FooterItem::Key("Esc"),
+            FooterItem::Text("back"),
+        ];
+        let lines = footer_lines(&items, 80);
+        assert_eq!(lines.len(), 1, "should fit on one line at 80 cols");
+    }
+
+    #[test]
+    fn long_footer_wraps_to_two_lines() {
+        // Construct items that definitely exceed a narrow terminal.
+        let items = vec![
+            FooterItem::Key("↑↓"),
+            FooterItem::Text("navigate"),
+            FooterItem::GroupSep,
+            FooterItem::Key("D"),
+            FooterItem::Text("remove"),
+            FooterItem::Sep,
+            FooterItem::Key("A"),
+            FooterItem::Text("add"),
+            FooterItem::Sep,
+            FooterItem::Key("R"),
+            FooterItem::Text("toggle ro/rw"),
+            FooterItem::Sep,
+            FooterItem::Key("N"),
+            FooterItem::Text("rename"),
+            FooterItem::GroupSep,
+            FooterItem::Key("Tab"),
+            FooterItem::Text("switch tab"),
+            FooterItem::GroupSep,
+            FooterItem::Key("S"),
+            FooterItem::Text("save settings"),
+            FooterItem::GroupSep,
+            FooterItem::Key("Esc"),
+            FooterItem::Text("back"),
+        ];
+        let lines = footer_lines(&items, 60);
+        assert!(lines.len() > 1, "should wrap at 60 cols; lines={lines:?}");
+        // Every line should fit within 60 chars.
+        for line in &lines {
+            let w = line_width(line);
+            assert!(w <= 60, "line width {w} exceeds 60 cols: {line:?}");
+        }
+    }
+
+    #[test]
+    fn footer_height_matches_line_count() {
+        let items = vec![FooterItem::Key("S"), FooterItem::Text("save")];
+        assert_eq!(footer_height(&items, 80), 1);
+    }
+
+    #[test]
+    fn empty_items_produce_one_blank_line() {
+        let lines = footer_lines(&[], 80);
+        assert_eq!(lines.len(), 1);
+        let content = text_content(&lines);
+        assert_eq!(content[0], "");
+    }
 }
 
 pub(super) fn max_line_width(lines: &[Line<'_>]) -> usize {
@@ -138,10 +308,138 @@ pub(super) fn effective_scroll_x(content_width: usize, viewport: usize, scroll_x
     }
 }
 
+pub(super) fn effective_scroll_y(content_height: usize, viewport_h: usize, scroll_y: u16) -> u16 {
+    if viewport_h == 0 || content_height <= viewport_h {
+        0
+    } else {
+        scroll_y.min(
+            content_height
+                .saturating_sub(viewport_h)
+                .min(usize::from(u16::MAX)) as u16,
+        )
+    }
+}
+
 pub(super) fn clamp_scroll_x(content_width: usize, viewport: usize, scroll_x: &mut u16) -> u16 {
     let effective = effective_scroll_x(content_width, viewport, *scroll_x);
     *scroll_x = effective;
     effective
+}
+
+/// Adjust stored `scroll_y` so the cursor row stays inside the viewport.
+/// Returns the effective (clamped, cursor-following) `scroll_y` to use for rendering.
+pub(super) fn follow_cursor_y(
+    cursor: usize,
+    content_height: usize,
+    viewport_h: usize,
+    stored_scroll_y: u16,
+) -> u16 {
+    if viewport_h == 0 {
+        return 0;
+    }
+    let max_scroll = content_height.saturating_sub(viewport_h);
+    let raw = if cursor < stored_scroll_y as usize {
+        cursor as u16
+    } else if content_height > viewport_h && cursor >= stored_scroll_y as usize + viewport_h {
+        (cursor + 1 - viewport_h) as u16
+    } else {
+        stored_scroll_y
+    };
+    raw.min(max_scroll as u16)
+}
+
+/// Adjust `scroll_y` so `cursor` stays in the editor/settings content viewport.
+///
+/// The chrome constant 9 = header 3 + tab strip 2 + footer 2 + block borders 2.
+/// `usize::MAX` is passed as `content_height` because the rendered line count is
+/// not known at input-dispatch time; it is large enough that `follow_cursor_y`'s
+/// upper clamp (`raw.min(max_scroll)`) never fires — the `as u16` truncation in
+/// the caller means the effective ceiling is 65 535, well above any real viewport.
+pub(super) fn cursor_scroll_for_panel(
+    cursor: usize,
+    scroll_y: u16,
+    term: ratatui::layout::Rect,
+) -> u16 {
+    let viewport_h = (term.height.saturating_sub(9) as usize).max(1);
+    follow_cursor_y(cursor, usize::MAX, viewport_h, scroll_y)
+}
+
+pub(super) fn render_vertical_scrollbar(
+    frame: &mut Frame,
+    block_area: Rect,
+    content_height: usize,
+    scroll_y: u16,
+) {
+    let viewport = block_area.height.saturating_sub(2) as usize;
+    if viewport == 0 || content_height <= viewport {
+        return;
+    }
+    let position = scrollbar_position(content_height, viewport, scroll_y);
+    let mut state = ScrollbarState::new(content_height)
+        .position(position)
+        .viewport_content_length(viewport);
+    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(None)
+        .end_symbol(None)
+        .track_symbol(Some("·"))
+        .thumb_symbol("█")
+        .track_style(Style::default().fg(PHOSPHOR_DARK))
+        .thumb_style(Style::default().fg(PHOSPHOR_DIM));
+    let area = Rect {
+        x: block_area.x + block_area.width.saturating_sub(1),
+        y: block_area.y + 1,
+        width: 1,
+        height: block_area.height.saturating_sub(2),
+    };
+    frame.render_stateful_widget(scrollbar, area, &mut state);
+}
+
+/// Render lines inside a bordered scrollable block.
+///
+/// Border is `PHOSPHOR_GREEN` when `focused`, `PHOSPHOR_DARK` otherwise.
+/// Optional `title` renders `WHITE + BOLD` in the top border.
+/// Clamps `*scroll_x` and `*scroll_y` to their effective maximums in-place
+/// so callers never accumulate stale overshoot from past scroll events.
+pub(super) fn render_scrollable_block(
+    frame: &mut Frame,
+    area: Rect,
+    lines: Vec<Line<'_>>,
+    scroll_x: &mut u16,
+    scroll_y: &mut u16,
+    focused: bool,
+    title: Option<&str>,
+) {
+    let border_color = if focused {
+        PHOSPHOR_GREEN
+    } else {
+        PHOSPHOR_DARK
+    };
+    let mut block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+    if let Some(t) = title {
+        block = block.title(Span::styled(
+            t,
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    }
+    let content_width = max_line_width(&lines);
+    let content_height = lines.len();
+    let viewport_w = area.width.saturating_sub(2) as usize;
+    let viewport_h = area.height.saturating_sub(2) as usize;
+    let eff_x = effective_scroll_x(content_width, viewport_w, *scroll_x);
+    let eff_y = effective_scroll_y(content_height, viewport_h, *scroll_y);
+    *scroll_x = eff_x;
+    *scroll_y = eff_y;
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .style(Style::default().fg(PHOSPHOR_GREEN))
+            .scroll((eff_y, eff_x)),
+        area,
+    );
+    render_horizontal_scrollbar(frame, area, content_width, eff_x);
+    render_vertical_scrollbar(frame, area, content_height, eff_y);
 }
 
 fn scrollbar_position(content_width: usize, viewport: usize, scroll_x: u16) -> usize {
@@ -160,14 +458,15 @@ pub fn render(
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
+    let area = frame.area();
+    state.cached_term_size = area;
     if let ManagerStage::Editor(editor) = &mut state.stage {
-        clamp_editor_scroll_for_frame(frame.area(), editor);
+        clamp_editor_scroll_for_frame(area, editor);
         editor::render_editor(frame, editor, config, state.op_available);
-    } else if let ManagerStage::GlobalMounts(global) = &mut state.stage {
-        clamp_global_mounts_scroll_for_frame(frame.area(), global);
-        global_mounts::render_global_mounts(frame, global);
+    } else if let ManagerStage::Settings(settings) = &mut state.stage {
+        clamp_global_mounts_scroll_for_frame(area, &mut settings.mounts);
+        global_mounts::render_settings(frame, settings, state.op_available);
     } else {
-        let area = frame.area();
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -199,7 +498,7 @@ pub fn render(
                     if state.list_scroll_focus.is_some() {
                         items.push(FooterItem::GroupSep);
                         items.push(FooterItem::Key("←/→"));
-                        items.push(FooterItem::Text("scroll focused block"));
+                        items.push(FooterItem::Text("scroll block"));
                     }
                     items
                 } else if state.inline_role_picker.is_some() {
@@ -215,7 +514,7 @@ pub fn render(
                     if state.list_scroll_focus.is_some() {
                         items.push(FooterItem::GroupSep);
                         items.push(FooterItem::Key("←/→"));
-                        items.push(FooterItem::Text("scroll focused block"));
+                        items.push(FooterItem::Text("scroll block"));
                     }
                     items.push(FooterItem::GroupSep);
                     items.push(FooterItem::Key("Q"));
@@ -233,33 +532,54 @@ pub fn render(
                                     !super::github_mounts::resolve_for_workspace(ws).is_empty()
                                 });
 
-                    let mut items = vec![
-                        FooterItem::Key("\u{2191}\u{2193}"),
+                    let is_saved =
+                        matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_));
+                    let scroll_focused = state.list_scroll_focus.is_some();
+
+                    // When a scrollable block is active, ↑↓/←→ scroll it.
+                    // When no block is focused, ↑↓ navigate the workspace list.
+                    let mut items: Vec<FooterItem> = if scroll_focused {
+                        vec![
+                            FooterItem::Key("\u{2191}\u{2193}/\u{2190}\u{2192}"),
+                            FooterItem::Text("scroll block"),
+                            FooterItem::GroupSep,
+                            FooterItem::Key("Enter"),
+                            FooterItem::Text("launch"),
+                            FooterItem::GroupSep,
+                        ]
+                    } else {
+                        vec![
+                            FooterItem::Key("\u{2191}\u{2193}"),
+                            FooterItem::Sep,
+                            FooterItem::Key("Enter"),
+                            FooterItem::Text("launch"),
+                            FooterItem::GroupSep,
+                        ]
+                    };
+                    if is_saved {
+                        items.extend([
+                            FooterItem::Key("E"),
+                            FooterItem::Text("edit"),
+                            FooterItem::Sep,
+                        ]);
+                    }
+                    items.extend([FooterItem::Key("N"), FooterItem::Text("new")]);
+                    if is_saved {
+                        items.extend([
+                            FooterItem::Sep,
+                            FooterItem::Key("D"),
+                            FooterItem::Text("delete"),
+                        ]);
+                    }
+                    items.extend([
                         FooterItem::Sep,
-                        FooterItem::Key("Enter"),
-                        FooterItem::Text("launch"),
-                        FooterItem::GroupSep,
-                        FooterItem::Key("E"),
-                        FooterItem::Text("edit"),
-                        FooterItem::Sep,
-                        FooterItem::Key("N"),
-                        FooterItem::Text("new"),
-                        FooterItem::Sep,
-                        FooterItem::Key("D"),
-                        FooterItem::Text("delete"),
-                        FooterItem::Sep,
-                        FooterItem::Key("G"),
-                        FooterItem::Text("global config"),
-                    ];
+                        FooterItem::Key("S"),
+                        FooterItem::Text("settings"),
+                    ]);
                     if show_open_hint {
                         items.push(FooterItem::Sep);
                         items.push(FooterItem::Key("O"));
                         items.push(FooterItem::Text("open in GitHub"));
-                    }
-                    if state.list_scroll_focus.is_some() {
-                        items.push(FooterItem::GroupSep);
-                        items.push(FooterItem::Key("←/→"));
-                        items.push(FooterItem::Text("scroll focused block"));
                     }
                     items.push(FooterItem::GroupSep);
                     items.push(FooterItem::Key("Q"));
@@ -284,7 +604,7 @@ pub fn render(
                 FooterItem::Text("cancel"),
             ],
             ManagerStage::Editor(_) => unreachable!("Editor has its own render path"),
-            ManagerStage::GlobalMounts(_) => unreachable!("Global mounts has its own render path"),
+            ManagerStage::Settings(_) => unreachable!("Settings has its own render path"),
         };
         render_footer(frame, chunks[2], &footer_items);
     }
@@ -315,16 +635,19 @@ pub fn render(
             } => {
                 // ConfirmState is a top-level field on the variant, not wrapped
                 // in Modal::Confirm, so render it directly.
-                let area = frame.area();
                 let modal_area = centered_rect_fixed(area, 60, 7);
                 super::super::widgets::confirm::render(frame, modal_area, confirm_state);
             }
             ManagerStage::List => {
                 // Handled above via the `is_list_stage` early branch.
             }
-            ManagerStage::GlobalMounts(global) => {
-                if let Some(modal) = &mut global.modal {
+            ManagerStage::Settings(settings) => {
+                if let Some(modal) = &mut settings.mounts.modal {
                     global_mounts::render_global_mount_modal(frame, modal);
+                } else if let Some(modal) = &mut settings.env.modal {
+                    global_mounts::render_settings_env_modal(frame, modal);
+                } else if let Some(modal) = &mut settings.auth.modal {
+                    global_mounts::render_settings_auth_modal(frame, modal);
                 }
             }
         }
@@ -359,13 +682,14 @@ fn clamp_global_mounts_scroll_for_frame(
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
+            Constraint::Length(2),
             Constraint::Min(10),
             Constraint::Length(2),
         ])
         .split(area);
     clamp_scroll_x(
         global_mounts::global_mounts_content_width(&global.pending),
-        chunks[1].width.saturating_sub(2) as usize,
+        chunks[2].width.saturating_sub(2) as usize,
         &mut global.scroll_x,
     );
 }
@@ -403,7 +727,6 @@ fn clamp_list_scroll_for_area(
             );
             state.list_global_mounts_scroll_x = 0;
             state.list_role_global_mounts_scroll_x = 0;
-            state.list_scroll_focus = None;
         }
         ManagerListRow::SavedWorkspace(i) => {
             let Some(summary) = state.workspaces.get(i) else {
@@ -440,6 +763,121 @@ fn clamp_list_scroll_for_area(
             state.list_mounts_scroll_x = 0;
             state.list_global_mounts_scroll_x = 0;
             state.list_role_global_mounts_scroll_x = 0;
+        }
+    }
+
+    // Fix 1: Clear stale scroll focus when the focused block no longer
+    // overflows after a terminal resize. Checked every render frame so the
+    // green border disappears as soon as the content fits in the viewport.
+    if state
+        .list_scroll_focus
+        .is_some_and(|f| !focused_block_still_scrollable(f, columns[1], state, config, cwd))
+    {
+        state.list_scroll_focus = None;
+    }
+
+    // Clamp left-pane name scroll to valid range.
+    let left_viewport_w = columns[0].width.saturating_sub(2) as usize;
+    if left_viewport_w == 0 {
+        state.list_names_scroll_x = 0;
+    } else {
+        let name_content_w = list_names_content_width(state);
+        if name_content_w <= left_viewport_w {
+            state.list_names_scroll_x = 0;
+            state.list_names_focused = false;
+        } else {
+            let max = (name_content_w - left_viewport_w) as u16;
+            if state.list_names_scroll_x > max {
+                state.list_names_scroll_x = max;
+            }
+        }
+    }
+}
+
+/// Compute the maximum content width of the left-pane workspace name list.
+fn list_names_content_width(state: &ManagerState<'_>) -> usize {
+    // Each row: "▸ " (2) + name. "Current directory" = 17, "+ New workspace" = 15.
+    let cwd_w = 2 + "Current directory".len();
+    let sentinel_w = 2 + "+ New workspace".len();
+    let max_ws = state
+        .workspaces
+        .iter()
+        .map(|w| 2 + w.name.len())
+        .max()
+        .unwrap_or(0);
+    cwd_w.max(sentinel_w).max(max_ws)
+}
+
+fn workspace_mounts_scrollable(
+    mounts: &[crate::workspace::MountConfig],
+    viewport_w: usize,
+) -> bool {
+    let w = list::workspace_mounts_content_width(mounts);
+    let data_rows: usize = mounts
+        .iter()
+        .map(|m| if m.src == m.dst { 1 } else { 2 })
+        .sum();
+    let content_h = 1 + data_rows.max(1);
+    let viewport_h = list::mount_block_height(mounts) as usize - 2;
+    w > viewport_w || content_h > viewport_h
+}
+
+/// Returns `true` when the focused block still overflows the right pane
+/// (either horizontally or vertically) after a resize. Used to clear
+/// `list_scroll_focus` when the terminal grows large enough that the
+/// content fits without scrolling.
+fn focused_block_still_scrollable(
+    focus: super::state::MountScrollFocus,
+    right_pane: Rect,
+    state: &ManagerState<'_>,
+    config: &AppConfig,
+    cwd: &std::path::Path,
+) -> bool {
+    use super::state::{ManagerListRow, MountScrollFocus};
+    let viewport_w = right_pane.width.saturating_sub(2) as usize;
+
+    match focus {
+        MountScrollFocus::Workspace => match state.selected_row() {
+            ManagerListRow::CurrentDirectory => {
+                let cwd_str = cwd.display().to_string();
+                let m = crate::workspace::MountConfig {
+                    src: cwd_str.clone(),
+                    dst: cwd_str,
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                };
+                workspace_mounts_scrollable(std::slice::from_ref(&m), viewport_w)
+            }
+            ManagerListRow::SavedWorkspace(i) => {
+                let Some(s) = state.workspaces.get(i) else {
+                    return false;
+                };
+                let Some(ws) = config.workspaces.get(&s.name) else {
+                    return false;
+                };
+                workspace_mounts_scrollable(ws.mounts.as_slice(), viewport_w)
+            }
+            ManagerListRow::NewWorkspace => false,
+        },
+        MountScrollFocus::Global | MountScrollFocus::RoleGlobal => {
+            // Global mounts change rarely; treat as always scrollable when focused
+            // to avoid computing the full mount list width here.
+            true
+        }
+        MountScrollFocus::Roles => {
+            let ws_config = match state.selected_row() {
+                ManagerListRow::SavedWorkspace(i) => state
+                    .workspaces
+                    .get(i)
+                    .and_then(|s| config.workspaces.get(&s.name)),
+                ManagerListRow::CurrentDirectory | ManagerListRow::NewWorkspace => None,
+            };
+            let agent_count = list::agents_block_agent_count(ws_config, config);
+            let roles_w = list::agents_block_content_width(ws_config, config);
+            let roles_h = 2 + agent_count;
+            let block_h = list::agents_block_height(agent_count) as usize;
+            let viewport_h = block_h.saturating_sub(2);
+            roles_w > viewport_w || roles_h > viewport_h
         }
     }
 }
@@ -537,7 +975,10 @@ mod horizontal_scrollbar_tests {
 
 #[cfg(test)]
 mod footer_tests {
-    use super::{FOOTER_KEY, FOOTER_SEP, FOOTER_TEXT, FooterItem, footer_spans};
+    use super::{FOOTER_KEY, FOOTER_SEP, FOOTER_TEXT, FooterItem, footer_lines};
+
+    // Use a wide terminal width so items stay on one line in these unit tests.
+    const WIDE: u16 = 200;
 
     // Sanity — the exported style colors match the palette.
     #[test]
@@ -553,7 +994,8 @@ mod footer_tests {
     #[test]
     fn key_and_text_render_with_distinct_styles() {
         let items = vec![FooterItem::Key("Enter"), FooterItem::Text("launch")];
-        let spans = footer_spans(&items);
+        let lines = footer_lines(&items, WIDE);
+        let spans = &lines[0].spans;
         assert_eq!(spans.len(), 2);
         assert_eq!(spans[0].content.as_ref(), "Enter");
         assert_eq!(spans[0].style.fg, Some(super::WHITE));
@@ -570,8 +1012,9 @@ mod footer_tests {
             FooterItem::Key("N"),
             FooterItem::Text("new"),
         ];
-        let spans = footer_spans(&items);
-        // third item is the Sep
+        let lines = footer_lines(&items, WIDE);
+        let spans = &lines[0].spans;
+        // spans: [E, edit, " · ", N, new]
         assert_eq!(spans[2].content.as_ref(), " \u{b7} ");
         assert_eq!(spans[2].style.fg, Some(super::PHOSPHOR_DARK));
     }
@@ -585,16 +1028,18 @@ mod footer_tests {
             FooterItem::Key("Q"),
             FooterItem::Text("quit"),
         ];
-        let spans = footer_spans(&items);
+        let lines = footer_lines(&items, WIDE);
+        let spans = &lines[0].spans;
+        // spans: [Enter, launch, "   ", Q, quit]
         assert_eq!(spans[2].content.as_ref(), "   ");
-        // GroupSep is styled with a plain ratatui::Style::default() — no fg set.
         assert_eq!(spans[2].style.fg, None);
     }
 
     #[test]
     fn dyn_item_uses_phosphor_dim() {
         let items = vec![FooterItem::Dyn("3 changes".to_string())];
-        let spans = footer_spans(&items);
+        let lines = footer_lines(&items, WIDE);
+        let spans = &lines[0].spans;
         assert_eq!(spans[0].content.as_ref(), " 3 changes");
         assert_eq!(spans[0].style.fg, Some(super::PHOSPHOR_DIM));
     }
@@ -621,7 +1066,8 @@ mod footer_tests {
             FooterItem::Key("Q"),
             FooterItem::Text("quit"),
         ];
-        let spans = footer_spans(&items);
+        let lines = footer_lines(&items, WIDE);
+        let spans: Vec<_> = lines.iter().flat_map(|l| l.spans.iter()).collect();
         // Every Key should be styled WHITE + BOLD; count them.
         let key_count = spans
             .iter()
@@ -654,7 +1100,8 @@ mod footer_tests {
             FooterItem::Key("Esc"),
             FooterItem::Text("cancel"),
         ];
-        let spans = footer_spans(&items);
+        let lines = footer_lines(&items, WIDE);
+        let spans: Vec<_> = lines.iter().flat_map(|l| l.spans.iter()).collect();
         let keys: Vec<&str> = spans
             .iter()
             .filter(|s| s.style.fg == Some(super::WHITE))

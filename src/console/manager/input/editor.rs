@@ -54,6 +54,7 @@ pub(super) fn handle_editor_key(
                     if let ManagerStage::Editor(editor) = &mut state.stage {
                         editor.auth_selected_kind = None;
                         editor.active_field = FieldFocus::Row(0);
+                        editor.tab_scroll_y = 0;
                     }
                     return Ok(InputOutcome::Continue);
                 }
@@ -99,13 +100,75 @@ pub(super) fn handle_editor_key(
             editor.workspace_mounts_scroll_focused = true;
             editor.workspace_mounts_scroll_x = editor.workspace_mounts_scroll_x.saturating_add(8);
         }
-        KeyCode::Tab | KeyCode::Right => {
-            // Secrets tab `AgentHeader` absorbs `→` in both states
-            // (expand or no-op) — falling through to tab-cycle on an
-            // expanded header would surprise the operator. See
-            // RULES.md "TUI Keybindings → Contextual key absorption".
-            // `Tab` never absorbs.
-            if key.code == KeyCode::Right && editor.active_tab == EditorTab::Secrets {
+        // W3C ARIA Tabs: Left/BackTab cycle backward, Right cycles forward when
+        // the tab bar has focus. Tab and Down enter the content area.
+        KeyCode::Left | KeyCode::BackTab if editor.tab_bar_focused => {
+            let was_secrets = editor.active_tab == EditorTab::Secrets;
+            editor.active_tab = match editor.active_tab {
+                EditorTab::General => EditorTab::Auth,
+                EditorTab::Mounts => EditorTab::General,
+                EditorTab::Roles => EditorTab::Mounts,
+                EditorTab::Secrets => EditorTab::Roles,
+                EditorTab::Auth => EditorTab::Secrets,
+            };
+            editor.active_field = FieldFocus::Row(0);
+            editor.tab_scroll_y = 0;
+            if editor.active_tab != EditorTab::Auth {
+                editor.auth_selected_kind = None;
+            }
+            if was_secrets {
+                reset_secrets_view(editor);
+            }
+        }
+        KeyCode::Right if editor.tab_bar_focused => {
+            let was_secrets = editor.active_tab == EditorTab::Secrets;
+            editor.active_tab = match editor.active_tab {
+                EditorTab::General => EditorTab::Mounts,
+                EditorTab::Mounts => EditorTab::Roles,
+                EditorTab::Roles => EditorTab::Secrets,
+                EditorTab::Secrets => EditorTab::Auth,
+                EditorTab::Auth => EditorTab::General,
+            };
+            editor.active_field = FieldFocus::Row(0);
+            editor.tab_scroll_y = 0;
+            if editor.active_tab != EditorTab::Auth {
+                editor.auth_selected_kind = None;
+            }
+            if was_secrets {
+                reset_secrets_view(editor);
+            }
+        }
+        KeyCode::Tab | KeyCode::Down | KeyCode::Char('j' | 'J') if editor.tab_bar_focused => {
+            editor.tab_bar_focused = false;
+        }
+        // Tab from content returns focus to tab bar and advances to next tab.
+        KeyCode::Tab => {
+            let was_secrets = editor.active_tab == EditorTab::Secrets;
+            editor.active_tab = match editor.active_tab {
+                EditorTab::General => EditorTab::Mounts,
+                EditorTab::Mounts => EditorTab::Roles,
+                EditorTab::Roles => EditorTab::Secrets,
+                EditorTab::Secrets => EditorTab::Auth,
+                EditorTab::Auth => EditorTab::General,
+            };
+            editor.tab_bar_focused = true;
+            editor.active_field = FieldFocus::Row(0);
+            editor.tab_scroll_y = 0;
+            if editor.active_tab != EditorTab::Auth {
+                editor.auth_selected_kind = None;
+            }
+            if was_secrets {
+                reset_secrets_view(editor);
+            }
+        }
+        // BackTab from content returns focus to tab bar without changing tab.
+        KeyCode::BackTab => {
+            editor.tab_bar_focused = true;
+        }
+        // Right expands role headers in Secrets/Auth tabs; no-op everywhere else.
+        // Left/Right are intra-area horizontal keys and must not cycle tabs.
+        KeyCode::Right => {
+            if editor.active_tab == EditorTab::Secrets {
                 let FieldFocus::Row(n) = editor.active_field;
                 let rows = secrets_flat_rows(editor);
                 if let Some(SecretsRow::RoleHeader { role, expanded }) = rows.get(n).cloned() {
@@ -115,7 +178,7 @@ pub(super) fn handle_editor_key(
                     return Ok(InputOutcome::Continue);
                 }
             }
-            if key.code == KeyCode::Right && editor.active_tab == EditorTab::Auth {
+            if editor.active_tab == EditorTab::Auth {
                 let FieldFocus::Row(n) = editor.active_field;
                 let rows = super::super::render::editor::auth_flat_rows(editor, config);
                 if let Some(super::super::render::editor::AuthRow::RoleHeader { role, expanded }) =
@@ -127,25 +190,9 @@ pub(super) fn handle_editor_key(
                     return Ok(InputOutcome::Continue);
                 }
             }
-            let was_secrets = editor.active_tab == EditorTab::Secrets;
-            editor.active_tab = match editor.active_tab {
-                EditorTab::General => EditorTab::Mounts,
-                EditorTab::Mounts => EditorTab::Roles,
-                EditorTab::Roles => EditorTab::Secrets,
-                EditorTab::Secrets => EditorTab::Auth,
-                EditorTab::Auth => EditorTab::General,
-            };
-            editor.active_field = FieldFocus::Row(0);
-            if editor.active_tab != EditorTab::Auth {
-                editor.auth_selected_kind = None;
-            }
-            if was_secrets {
-                reset_secrets_view(editor);
-            }
         }
+        // Left collapses role headers in Secrets/Auth tabs; no-op everywhere else.
         KeyCode::Left => {
-            // Mirror of Tab/Right above — `AgentHeader` absorbs `←`
-            // in both states (collapse or no-op).
             if editor.active_tab == EditorTab::Secrets {
                 let FieldFocus::Row(n) = editor.active_field;
                 let rows = secrets_flat_rows(editor);
@@ -168,21 +215,6 @@ pub(super) fn handle_editor_key(
                     return Ok(InputOutcome::Continue);
                 }
             }
-            let was_secrets = editor.active_tab == EditorTab::Secrets;
-            editor.active_tab = match editor.active_tab {
-                EditorTab::General => EditorTab::Auth,
-                EditorTab::Mounts => EditorTab::General,
-                EditorTab::Roles => EditorTab::Mounts,
-                EditorTab::Secrets => EditorTab::Roles,
-                EditorTab::Auth => EditorTab::Secrets,
-            };
-            editor.active_field = FieldFocus::Row(0);
-            if editor.active_tab != EditorTab::Auth {
-                editor.auth_selected_kind = None;
-            }
-            if was_secrets {
-                reset_secrets_view(editor);
-            }
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             let FieldFocus::Row(n) = editor.active_field;
@@ -199,6 +231,11 @@ pub(super) fn handle_editor_key(
                 candidate
             };
             editor.active_field = FieldFocus::Row(next);
+            editor.tab_scroll_y = super::super::render::cursor_scroll_for_panel(
+                next,
+                editor.tab_scroll_y,
+                state.cached_term_size,
+            );
         }
         KeyCode::Down | KeyCode::Char('j' | 'J') => {
             let FieldFocus::Row(n) = editor.active_field;
@@ -219,20 +256,44 @@ pub(super) fn handle_editor_key(
                     editor.active_field = FieldFocus::Row(candidate);
                 }
             }
+            let FieldFocus::Row(new_cursor) = editor.active_field;
+            editor.tab_scroll_y = super::super::render::cursor_scroll_for_panel(
+                new_cursor,
+                editor.tab_scroll_y,
+                state.cached_term_size,
+            );
         }
         KeyCode::Enter => match editor.active_tab {
             EditorTab::General => open_editor_field_modal(editor),
             EditorTab::Mounts => {
                 let FieldFocus::Row(n) = editor.active_field;
                 if n == editor.pending.mounts.len() {
-                    editor.modal = Some(Modal::FileBrowser {
-                        target: FileBrowserTarget::EditAddMountSrc,
-                        state: FileBrowserState::new_from_home()?,
-                    });
+                    open_add_mount_file_browser(editor);
                 }
             }
             EditorTab::Secrets => {
-                open_secrets_enter_modal(editor);
+                // For op-ref rows Enter re-opens the 1Password picker (same as P).
+                let FieldFocus::Row(n) = editor.active_field;
+                let rows = secrets_flat_rows(editor);
+                let is_op_ref = match rows.get(n) {
+                    Some(SecretsRow::WorkspaceKeyRow(key)) => editor
+                        .pending
+                        .env
+                        .get(key)
+                        .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_))),
+                    Some(SecretsRow::RoleKeyRow { role, key }) => editor
+                        .pending
+                        .roles
+                        .get(role)
+                        .and_then(|o| o.env.get(key))
+                        .is_some_and(|v| matches!(v, crate::operator_env::EnvValue::OpRef(_))),
+                    _ => false,
+                };
+                if is_op_ref && op_available {
+                    open_secrets_picker_modal(editor, op_cache);
+                } else {
+                    open_secrets_enter_modal(editor);
+                }
             }
             EditorTab::Roles => {
                 let FieldFocus::Row(n) = editor.active_field;
@@ -247,6 +308,7 @@ pub(super) fn handle_editor_key(
                     Some(super::super::render::editor::AuthRow::AuthKindRow { kind }) => {
                         editor.auth_selected_kind = Some(*kind);
                         editor.active_field = FieldFocus::Row(0);
+                        editor.tab_scroll_y = 0;
                     }
                     Some(super::super::render::editor::AuthRow::AddSentinel { .. }) => {
                         super::auth::open_auth_role_picker(editor, config);
@@ -291,10 +353,7 @@ pub(super) fn handle_editor_key(
             toggle_default_agent_at_cursor(editor, config);
         }
         KeyCode::Char('a' | 'A') if editor.active_tab == EditorTab::Mounts => {
-            editor.modal = Some(Modal::FileBrowser {
-                target: FileBrowserTarget::EditAddMountSrc,
-                state: FileBrowserState::new_from_home()?,
-            });
+            open_add_mount_file_browser(editor);
         }
         KeyCode::Char('d' | 'D') if editor.active_tab == EditorTab::Mounts => {
             remove_mount_at_cursor(editor);
@@ -1610,6 +1669,20 @@ fn add_role_to_workspace_editor(editor: &mut EditorState<'_>, config: &AppConfig
     }
 }
 
+fn open_add_mount_file_browser(editor: &mut EditorState<'_>) {
+    match FileBrowserState::new_from_home() {
+        Ok(state) => {
+            editor.modal = Some(Modal::FileBrowser {
+                target: FileBrowserTarget::EditAddMountSrc,
+                state,
+            });
+        }
+        Err(e) => {
+            open_editor_action_error(editor, &e);
+        }
+    }
+}
+
 fn persist_trusted_role_add(
     editor: &mut EditorState<'_>,
     config: &mut AppConfig,
@@ -1867,6 +1940,7 @@ plugins = []
         let mut state = ManagerState::from_config(&AppConfig::default(), std::path::Path::new("/"));
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Roles;
+        editor.tab_bar_focused = false;
         editor.active_field = FieldFocus::Row(row);
         state.stage = ManagerStage::Editor(editor);
         state
@@ -1876,6 +1950,7 @@ plugins = []
         let mut state = ManagerState::from_config(&AppConfig::default(), std::path::Path::new("/"));
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Mounts;
+        editor.tab_bar_focused = false;
         editor.active_field = FieldFocus::Row(row);
         state.stage = ManagerStage::Editor(editor);
         state
@@ -1919,6 +1994,7 @@ plugins = []
     fn editor_with_browser_committed(src: &str) -> EditorState<'static> {
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.active_tab = EditorTab::Mounts;
+        editor.tab_bar_focused = false;
         editor.active_field = FieldFocus::Row(0);
         apply_file_browser_to_editor(
             FileBrowserTarget::EditAddMountSrc,
@@ -1941,6 +2017,7 @@ plugins = []
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.active_tab = start_tab;
+        editor.tab_bar_focused = false;
         state.stage = ManagerStage::Editor(editor);
         (state, config, paths, tmp)
     }
@@ -1967,6 +2044,7 @@ plugins = []
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_create();
         editor.pending_name = Some("typo-name".into());
+        editor.tab_bar_focused = false;
         editor.active_field = FieldFocus::Row(0);
         state.stage = ManagerStage::Editor(editor);
 
@@ -2022,6 +2100,7 @@ plugins = []
         let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("keep-me".into(), ws);
+        editor.tab_bar_focused = false;
         editor.active_field = FieldFocus::Row(0);
         state.stage = ManagerStage::Editor(editor);
 
@@ -2056,6 +2135,43 @@ plugins = []
             editor.pending.mounts.len(),
             0,
             "no mount must be pushed until the operator commits in the choice modal"
+        );
+    }
+
+    #[test]
+    fn mounts_add_opens_file_browser_directly() {
+        let ws = WorkspaceConfig::default();
+        let mut state = editor_on_mounts_tab(ws, 0);
+        let mut config = AppConfig::default();
+
+        press(&mut state, &mut config, KeyCode::Char('a')).unwrap();
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("expected editor stage");
+        };
+        assert!(
+            matches!(editor.modal, Some(Modal::FileBrowser { .. })),
+            "expected FileBrowser modal; got {:?}",
+            editor.modal
+        );
+    }
+
+    #[test]
+    fn added_mount_defaults_to_shared_isolation() {
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Mounts;
+
+        apply_file_browser_to_editor(
+            FileBrowserTarget::EditAddMountSrc,
+            &mut editor,
+            std::path::PathBuf::from("/host/path"),
+        );
+        handle_modal(&mut editor, key(KeyCode::Char('m')));
+
+        assert_eq!(editor.pending.mounts.len(), 1);
+        assert_eq!(
+            editor.pending.mounts[0].isolation,
+            crate::isolation::MountIsolation::Shared
         );
     }
 
@@ -2121,11 +2237,11 @@ plugins = []
         assert_eq!(editor.pending.mounts.len(), 0, "`c` must not push a mount");
     }
 
-    // ── Editor Left/Right = prev/next tab ──────────────────────────────
+    // ── Editor tab navigation: Tab = forward, Left/Right = no-op on non-header rows ─────
 
     #[test]
-    fn editor_right_arrow_advances_tab() {
-        // Right should match Tab's forward cycle: General → Mounts.
+    fn editor_right_arrow_is_noop_on_non_header_row() {
+        // Right must not cycle tabs — it is an intra-area horizontal key.
         let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
         handle_key(
             &mut state,
@@ -2138,12 +2254,16 @@ plugins = []
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
         };
-        assert_eq!(e.active_tab, EditorTab::Mounts);
+        assert_eq!(
+            e.active_tab,
+            EditorTab::General,
+            "Right must not advance tab"
+        );
     }
 
     #[test]
-    fn editor_left_arrow_rewinds_tab() {
-        // Left implements the reverse tab cycle: Mounts → General.
+    fn editor_left_arrow_is_noop_on_non_header_row() {
+        // Left must not cycle tabs — it is an intra-area horizontal key.
         let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::Mounts);
         handle_key(
             &mut state,
@@ -2156,43 +2276,7 @@ plugins = []
         let ManagerStage::Editor(e) = &state.stage else {
             panic!("editor stage expected");
         };
-        assert_eq!(e.active_tab, EditorTab::General);
-    }
-
-    #[test]
-    fn editor_left_wraps_to_last_tab_from_first() {
-        // Match Tab's wrap contract: Left from General → Auth (last tab).
-        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::General);
-        handle_key(
-            &mut state,
-            &mut config,
-            &paths,
-            tmp.path(),
-            key(KeyCode::Left),
-        )
-        .unwrap();
-        let ManagerStage::Editor(e) = &state.stage else {
-            panic!("editor stage expected");
-        };
-        assert_eq!(e.active_tab, EditorTab::Auth);
-    }
-
-    #[test]
-    fn editor_right_wraps_to_first_tab_from_last() {
-        // Match Tab's wrap contract: Right from Auth (last tab) → General.
-        let (mut state, mut config, paths, tmp) = editor_state_on_tab(EditorTab::Auth);
-        handle_key(
-            &mut state,
-            &mut config,
-            &paths,
-            tmp.path(),
-            key(KeyCode::Right),
-        )
-        .unwrap();
-        let ManagerStage::Editor(e) = &state.stage else {
-            panic!("editor stage expected");
-        };
-        assert_eq!(e.active_tab, EditorTab::General);
+        assert_eq!(e.active_tab, EditorTab::Mounts, "Left must not rewind tab");
     }
 
     // ── Roles tab: `*` default-toggle binding ───────────────────────
@@ -3108,7 +3192,7 @@ plugins = []
 
         press(&mut state, &mut config, KeyCode::Char('R')).unwrap();
 
-        let ManagerStage::Editor(editor) = &state.stage else {
+        let ManagerStage::Editor(editor) = &mut state.stage else {
             panic!("editor stage expected");
         };
         let backend = TestBackend::new(80, 10);
@@ -3160,6 +3244,7 @@ plugins = []
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
+        editor.tab_bar_focused = false;
         editor.active_field = FieldFocus::Row(0); // the only key row
         state.stage = ManagerStage::Editor(editor);
 
@@ -3213,6 +3298,7 @@ plugins = []
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
+        editor.tab_bar_focused = false;
         editor.secrets_expanded.insert("smith".into());
         // Rows: WorkspaceAddSentinel(0), SectionSpacer(1), AgentHeader(2),
         //       AgentKeyRow(3), AgentAddSentinel(4). Focus the key row.
@@ -3255,6 +3341,7 @@ plugins = []
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
+        editor.tab_bar_focused = false;
         editor.active_field = FieldFocus::Row(0); // the only key row
         state.stage = ManagerStage::Editor(editor);
 
@@ -3293,6 +3380,7 @@ plugins = []
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
+        editor.tab_bar_focused = false;
         // Rows are alphabetically ordered: ALPHA(0), BETA(1), Sentinel(2).
         editor.active_field = FieldFocus::Row(0);
         state.stage = ManagerStage::Editor(editor);
@@ -3334,6 +3422,7 @@ plugins = []
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
+        editor.tab_bar_focused = false;
         editor.active_field = FieldFocus::Row(0);
         state.stage = ManagerStage::Editor(editor);
 
@@ -3384,6 +3473,7 @@ plugins = []
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
+        editor.tab_bar_focused = false;
         editor.active_field = FieldFocus::Row(0);
         state.stage = ManagerStage::Editor(editor);
 
@@ -3419,6 +3509,7 @@ plugins = []
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
+        editor.tab_bar_focused = false;
         editor.active_field = FieldFocus::Row(0);
         state.stage = ManagerStage::Editor(editor);
 
@@ -3431,7 +3522,7 @@ plugins = []
             key(KeyCode::Char('m')),
         )
         .unwrap();
-        // Tab to Auth → leaves Secrets.
+        // Tab from content → tab bar + advances tab to Auth (leaves Secrets).
         handle_key(
             &mut state,
             &mut config,
@@ -3440,15 +3531,14 @@ plugins = []
             key(KeyCode::Tab),
         )
         .unwrap();
-        // Tab around the wheel back to Secrets (Auth → General → Mounts →
-        // Roles → Secrets is 4 more presses).
+        // Now on tab bar (Auth). Right × 4: General → Mounts → Roles → Secrets.
         for _ in 0..4 {
             handle_key(
                 &mut state,
                 &mut config,
                 &paths,
                 tmp.path(),
-                key(KeyCode::Tab),
+                key(KeyCode::Right),
             )
             .unwrap();
         }
@@ -3491,6 +3581,7 @@ plugins = []
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
+        editor.tab_bar_focused = false;
         editor.secrets_expanded.insert("smith".into());
         let role_key_row = super::super::super::render::editor::secrets_flat_rows(&editor)
             .iter()
@@ -3559,6 +3650,7 @@ plugins = []
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
         editor.active_tab = EditorTab::Secrets;
+        editor.tab_bar_focused = false;
         // Rows with no workspace env keys + one collapsed role section:
         //   0 WorkspaceAddSentinel
         //   1 SectionSpacer

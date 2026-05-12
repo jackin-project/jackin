@@ -91,6 +91,7 @@ fn manager_on_secrets_tab<'a>(config: &AppConfig, cwd: &std::path::Path) -> Mana
         .clone();
     let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
     editor.active_tab = EditorTab::Secrets;
+    editor.tab_bar_focused = false;
     editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
     state
@@ -2978,6 +2979,7 @@ fn auth_role_header_left_right_toggles_expansion() -> Result<()> {
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
+    ed.tab_bar_focused = false;
     ed.auth_selected_kind = Some(AuthKind::Claude);
     let header_idx = auth_row_idx(&ed, &config, |r| matches!(r, AuthRow::RoleHeader { .. }));
     ed.active_field = FieldFocus::Row(header_idx);
@@ -3195,9 +3197,11 @@ fn auth_tab_cycle_off_auth_clears_selected_agent() -> Result<()> {
     let ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
+    ed.tab_bar_focused = false;
     ed.auth_selected_kind = Some(AuthKind::Claude);
     state.stage = ManagerStage::Editor(ed);
 
+    // Tab from content returns to tab bar and advances to next tab (General).
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     let ed = editor(&state);
     assert_ne!(ed.active_tab, EditorTab::Auth);

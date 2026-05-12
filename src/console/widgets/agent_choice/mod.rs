@@ -7,13 +7,11 @@ use crate::console::widgets::ModalOutcome;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
-const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
-const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
-const WHITE: Color = Color::Rgb(255, 255, 255);
+use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone)]
 pub struct AgentChoiceState {

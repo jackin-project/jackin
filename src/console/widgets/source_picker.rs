@@ -98,8 +98,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
         ])
         .split(inner);
 
@@ -142,24 +140,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SourcePickerState) {
             chunks[2],
         );
     }
-
-    let key_style = Style::default().fg(white).add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(phosphor);
-    let sep_style = Style::default().fg(phosphor_dark);
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("\u{2190}/\u{2192}", key_style),
-            Span::styled(" navigate", text_style),
-            Span::styled(" \u{b7} ", sep_style),
-            Span::styled("Enter", key_style),
-            Span::styled(" select", text_style),
-            Span::styled(" \u{b7} ", sep_style),
-            Span::styled("Esc", key_style),
-            Span::styled(" cancel", text_style),
-        ]))
-        .alignment(Alignment::Center),
-        chunks[4],
-    );
 }
 
 #[cfg(test)]
