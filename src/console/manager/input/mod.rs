@@ -42,6 +42,11 @@ pub enum InputOutcome {
     LaunchWithAgent(crate::selector::RoleSelector),
     /// Operator committed a runtime agent after choosing a role.
     LaunchWithRuntimeAgent(crate::agent::Agent),
+    /// Run an instance recovery action selected from the console.
+    InstanceAction {
+        container: String,
+        action: crate::console::ConsoleInstanceAction,
+    },
 }
 
 #[allow(clippy::too_many_lines)]

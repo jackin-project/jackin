@@ -43,9 +43,7 @@ pub use workspace::{WorkspaceClaudeTokenCommand, WorkspaceCommand, WorkspaceEnvC
 ///
 /// Running `jackin` with no subcommand opens the operator console when
 /// stdout is attached to a reasonably-sized interactive terminal, and
-/// otherwise prints this help page (exit 0, silent). The flattened
-/// [`ConsoleArgs`] make `jackin --debug` equivalent to
-/// `jackin console --debug`.
+/// otherwise prints this help page (exit 0, silent).
 #[derive(Debug, Parser)]
 #[command(
     name = "jackin",
@@ -62,6 +60,21 @@ pub struct Cli {
     /// no subcommand is given (i.e. bare `jackin`).
     #[command(flatten)]
     pub console_args: ConsoleArgs,
+    /// Print raw container output for troubleshooting.
+    ///
+    /// Global flag: accepted before or after any subcommand.
+    /// Also enabled by setting `JACKIN_DEBUG=1` in the environment.
+    //
+    // `SetTrue` + `FalseyValueParser` lets `JACKIN_DEBUG=1` parse as
+    // true while the absence of `--debug` defaults to false.
+    #[arg(
+        long,
+        global = true,
+        env = "JACKIN_DEBUG",
+        action = clap::ArgAction::SetTrue,
+        value_parser = clap::builder::FalseyValueParser::new(),
+    )]
+    pub debug: bool,
 }
 
 /// Top-level `jackin` subcommand dispatch.

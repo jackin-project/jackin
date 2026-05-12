@@ -12,6 +12,7 @@ use super::super::state::{
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
+use crate::console::ConsoleInstanceAction;
 use crate::paths::JackinPaths;
 
 #[allow(clippy::too_many_lines)]
@@ -137,11 +138,109 @@ pub(super) fn handle_list_key(
             handle_list_open_in_github(state, config);
             Ok(InputOutcome::Continue)
         }
+        KeyCode::Char('r' | 'R') => Ok(instance_action_outcome(
+            state,
+            ConsoleInstanceAction::Reconnect,
+            "No recoverable instance for this row",
+        )),
+        KeyCode::Char('s' | 'S') => Ok(instance_action_outcome(
+            state,
+            ConsoleInstanceAction::NewSession,
+            "No running instance for this row",
+        )),
+        KeyCode::Char('i' | 'I') => Ok(instance_action_outcome(
+            state,
+            ConsoleInstanceAction::Inspect,
+            "No instance state for this row",
+        )),
+        KeyCode::Char('p' | 'P') => Ok(instance_action_outcome(
+            state,
+            ConsoleInstanceAction::Purge,
+            "No purgeable instance state for this row",
+        )),
         KeyCode::Char('g' | 'G') => {
             state.stage = ManagerStage::GlobalMounts(GlobalMountsState::from_config(config));
             Ok(InputOutcome::Continue)
         }
         _ => Ok(InputOutcome::Continue),
+    }
+}
+
+fn instance_action_outcome(
+    state: &mut ManagerState<'_>,
+    action: ConsoleInstanceAction,
+    empty_message: &str,
+) -> InputOutcome {
+    let Some(container) = selected_instance_container(state, action) else {
+        state.toast = Some(Toast {
+            message: empty_message.into(),
+            kind: ToastKind::Error,
+            shown_at: std::time::Instant::now(),
+        });
+        return InputOutcome::Continue;
+    };
+    InputOutcome::InstanceAction { container, action }
+}
+
+fn selected_instance_container(
+    state: &ManagerState<'_>,
+    action: ConsoleInstanceAction,
+) -> Option<String> {
+    let (workspace_name, workspace_label, workdir) = selected_instance_scope(state)?;
+    let query = crate::instance::InstanceQuery {
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key: None,
+        agent_runtime: None,
+    };
+    state
+        .instances
+        .iter()
+        .filter(|entry| {
+            entry.matches(query) && instance_action_accepts_status(action, entry.status)
+        })
+        .map(|entry| entry.container_base.clone())
+        .next()
+}
+
+fn selected_instance_scope<'a>(
+    state: &'a ManagerState<'_>,
+) -> Option<(Option<&'a str>, &'a str, &'a str)> {
+    match state.selected_row() {
+        ManagerListRow::CurrentDirectory => {
+            let current_dir = state.current_dir.as_str();
+            Some((None, current_dir, current_dir))
+        }
+        ManagerListRow::SavedWorkspace(i) => state.workspaces.get(i).map(|summary| {
+            (
+                Some(summary.name.as_str()),
+                summary.name.as_str(),
+                summary.workdir.as_str(),
+            )
+        }),
+        ManagerListRow::NewWorkspace => None,
+    }
+}
+
+const fn instance_action_accepts_status(
+    action: ConsoleInstanceAction,
+    status: crate::instance::InstanceStatus,
+) -> bool {
+    match action {
+        ConsoleInstanceAction::Reconnect | ConsoleInstanceAction::Inspect => {
+            !matches!(status, crate::instance::InstanceStatus::Purged)
+        }
+        ConsoleInstanceAction::NewSession => matches!(
+            status,
+            crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
+        ),
+        ConsoleInstanceAction::Purge => !matches!(
+            status,
+            crate::instance::InstanceStatus::Active
+                | crate::instance::InstanceStatus::Running
+                | crate::instance::InstanceStatus::Purged
+        ),
     }
 }
 
@@ -320,6 +419,7 @@ mod tests {
     use super::InputOutcome;
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
+    use crate::instance::{InstanceIndexEntry, InstanceStatus};
     use crate::paths::JackinPaths;
     use crate::workspace::WorkspaceConfig;
     use crossterm::event::KeyCode;
@@ -353,6 +453,24 @@ mod tests {
         let mut state = ManagerState::from_config(&config, tmp.path());
         state.selected = 1; // force selection onto the saved workspace row
         (state, config, paths, tmp)
+    }
+
+    fn instance_entry(
+        container: &str,
+        status: InstanceStatus,
+        workdir: &str,
+    ) -> InstanceIndexEntry {
+        InstanceIndexEntry {
+            instance_id: format!("{container}-id"),
+            container_base: container.into(),
+            workspace_name: Some("demo".into()),
+            workspace_label: "demo".into(),
+            workdir: workdir.into(),
+            role_key: "the-architect".into(),
+            agent_runtime: "codex".into(),
+            status,
+            updated_at: "2026-05-11T00:00:00Z".into(),
+        }
     }
 
     /// Current-directory row (index 0) must reject the `e` edit shortcut and
@@ -468,6 +586,122 @@ mod tests {
         match outcome {
             InputOutcome::LaunchNamed(name) => assert_eq!(name, "alpha"),
             other => panic!("row 1 Enter must produce LaunchNamed(\"alpha\"); got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn instance_shortcuts_return_selected_workspace_actions() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-123456",
+            InstanceStatus::RestoreAvailable,
+            workdir,
+        )];
+
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('r')),
+        )
+        .unwrap();
+        match outcome {
+            InputOutcome::InstanceAction { container, action } => {
+                assert_eq!(container, "jackin-demo-architect-123456");
+                assert_eq!(action, crate::console::ConsoleInstanceAction::Reconnect);
+            }
+            other => panic!("expected reconnect instance action; got {other:?}"),
+        }
+
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('i')),
+        )
+        .unwrap();
+        match outcome {
+            InputOutcome::InstanceAction { container, action } => {
+                assert_eq!(container, "jackin-demo-architect-123456");
+                assert_eq!(action, crate::console::ConsoleInstanceAction::Inspect);
+            }
+            other => panic!("expected inspect instance action; got {other:?}"),
+        }
+
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('p')),
+        )
+        .unwrap();
+        match outcome {
+            InputOutcome::InstanceAction { container, action } => {
+                assert_eq!(container, "jackin-demo-architect-123456");
+                assert_eq!(action, crate::console::ConsoleInstanceAction::Purge);
+            }
+            other => panic!("expected purge instance action; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn new_session_shortcut_requires_running_instance() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-123456",
+            InstanceStatus::RestoreAvailable,
+            workdir,
+        )];
+
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('s')),
+        )
+        .unwrap();
+        assert!(matches!(outcome, InputOutcome::Continue));
+        assert!(
+            state
+                .toast
+                .as_ref()
+                .is_some_and(|toast| toast.message.contains("No running instance")),
+            "non-running `s` shortcut should toast; got {:?}",
+            state.toast
+        );
+
+        state.toast = None;
+        state.instances[0].status = InstanceStatus::Running;
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('s')),
+        )
+        .unwrap();
+        match outcome {
+            InputOutcome::InstanceAction { container, action } => {
+                assert_eq!(container, "jackin-demo-architect-123456");
+                assert_eq!(action, crate::console::ConsoleInstanceAction::NewSession);
+            }
+            other => panic!("expected new-session instance action; got {other:?}"),
         }
     }
 

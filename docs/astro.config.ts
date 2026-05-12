@@ -162,7 +162,6 @@ export default defineConfig({
                       items: [
                         { label: 'Workspace description', slug: 'reference/roadmap/workspace-description' },
                         { label: 'Operator handler system', slug: 'reference/roadmap/operator-handler-system' },
-                        { label: 'Workspace archive', slug: 'reference/roadmap/workspace-archive' },
                         { label: 'Declarative resource limits', slug: 'reference/roadmap/declarative-resource-limits' },
                         { label: 'Ephemeral mount modes', slug: 'reference/roadmap/ephemeral-mount-modes' },
                       ],
@@ -320,7 +319,6 @@ export default defineConfig({
                   items: [
                     { label: 'Bollard migration', slug: 'reference/roadmap/bollard-migration' },
                     { label: 'Construct user creation', slug: 'reference/roadmap/construct-user-creation' },
-                    { label: 'Unique container identity and restore', slug: 'reference/roadmap/unique-container-identity-restore' },
                   ],
                 },
                 {
@@ -354,6 +352,7 @@ export default defineConfig({
                     { label: 'Per-mount isolation', slug: 'reference/roadmap/per-mount-isolation' },
                     { label: 'Sensitive mount warnings', slug: 'reference/roadmap/sensitive-mount-warnings' },
                     { label: 'Split config.toml into per-workspace files', slug: 'reference/roadmap/split-workspace-config-files' },
+                    { label: 'Unique container identity and restore', slug: 'reference/roadmap/unique-container-identity-restore' },
                     { label: 'Worktree cleanup assessment', slug: 'reference/roadmap/worktree-cleanup-assessment' },
                   ],
                 },

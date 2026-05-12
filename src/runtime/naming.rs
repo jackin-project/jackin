@@ -29,24 +29,26 @@ pub(super) const LABEL_KEEP_AWAKE: &str = "jackin.keep_awake=true";
 /// Format a human-friendly role name from a container name and its display label.
 ///
 /// Examples:
-///   - `("jackin-the-architect", "The Architect")` → `"The Architect"`
-///   - `("jackin-the-architect-clone-2", "The Architect")` → `"The Architect (Clone 2)"`
-///   - `("jackin-the-architect", "")` → `"jackin-the-architect"`
+///   - `("jackin-thearchitect-k7p9m2xq", "The Architect")` → `"The Architect (k7p9m2xq)"`
+///   - `("jackin-thearchitect-k7p9m2xq", "")` → `"jackin-thearchitect-k7p9m2xq"`
+///
+/// The instance-ID suffix is appended so two concurrent sessions of the
+/// same role render as distinct rows in operator output.
 pub(super) fn format_role_display(container_name: &str, display_name: &str) -> String {
     if display_name.is_empty() {
         return container_name.to_string();
     }
-
-    container_name.rsplit_once("-clone-").map_or_else(
+    crate::instance::naming::instance_id_from_container_base(container_name).map_or_else(
         || display_name.to_string(),
-        |suffix| format!("{display_name} (Clone {})", suffix.1),
+        |instance_id| format!("{display_name} ({instance_id})"),
     )
 }
 
 pub fn matching_family(selector: &RoleSelector, names: &[String]) -> Vec<String> {
+    let role_slug = crate::instance::naming::compact_component(&selector.name, "role");
     names
         .iter()
-        .filter(|name| crate::instance::class_family_matches(selector, name))
+        .filter(|name| crate::instance::naming::class_family_matches_with_slug(&role_slug, name))
         .cloned()
         .collect()
 }
@@ -94,26 +96,18 @@ mod tests {
     }
 
     #[test]
-    fn format_agent_display_uses_display_name_for_primary() {
+    fn format_agent_display_appends_instance_id() {
         assert_eq!(
-            format_role_display("jackin-the-architect", "The Architect"),
-            "The Architect"
-        );
-    }
-
-    #[test]
-    fn format_agent_display_appends_clone_index() {
-        assert_eq!(
-            format_role_display("jackin-the-architect-clone-2", "The Architect"),
-            "The Architect (Clone 2)"
+            format_role_display("jackin-thearchitect-k7p9m2xq", "The Architect"),
+            "The Architect (k7p9m2xq)"
         );
     }
 
     #[test]
     fn format_agent_display_falls_back_to_container_name() {
         assert_eq!(
-            format_role_display("jackin-the-architect", ""),
-            "jackin-the-architect"
+            format_role_display("jackin-thearchitect-k7p9m2xq", ""),
+            "jackin-thearchitect-k7p9m2xq"
         );
     }
 }

@@ -44,22 +44,6 @@ pub struct LoadArgs {
     /// Skip the animated intro sequence
     #[arg(long, default_value_t = false)]
     pub no_intro: bool,
-    /// Print raw container output for troubleshooting
-    //
-    // The `action`/`value_parser` overrides are deliberate. clap
-    // derive's default for a `bool` field is `Set` + `BoolValueParser`
-    // — fine for CLI but rejects env values like `JACKIN_DEBUG=1` (only
-    // literal `"true"` / `"false"` parse). Forcing `SetTrue` makes
-    // `--debug` a presence flag again, and `FalseyValueParser` makes
-    // env truthy/falsy strings (`1`/`0`/`yes`/`no`/empty) parse the
-    // way an operator would expect.
-    #[arg(
-        long,
-        env = "JACKIN_DEBUG",
-        action = clap::ArgAction::SetTrue,
-        value_parser = clap::builder::FalseyValueParser::new(),
-    )]
-    pub debug: bool,
     /// Acknowledge a dirty host working tree for isolated mounts.
     #[arg(long)]
     pub force: bool,
@@ -92,35 +76,37 @@ fn parse_agent(s: &str) -> Result<crate::agent::Agent, String> {
     after_long_help = "\
 Examples:
   jackin hardline                              # auto-detect workspace + running role for cwd
+  jackin hardline --inspect                    # inspect detected instance state without attaching
+  jackin hardline --new                        # start another agent session in the detected instance
+  jackin hardline --new --agent codex          # start a specific runtime in the selected instance
   jackin hardline agent-smith
+  jackin hardline --inspect k7p9m2xq
   jackin hardline chainargos/the-architect
+  jackin hardline k7p9m2xq
   jackin hardline jackin-agent-smith-clone-1"
 )]
 pub struct HardlineArgs {
-    /// Role class selector or container name to reconnect to.
+    /// Role class selector, instance ID, or container name to reconnect to.
     /// When omitted, uses the running role in the workspace for the current directory.
     pub selector: Option<String>,
+    /// Print manifest, Docker, `DinD`, and mount state without attaching or restarting.
+    #[arg(long)]
+    pub inspect: bool,
+    /// Start a new foreground agent process inside the selected running instance.
+    #[arg(long, conflicts_with = "inspect")]
+    pub new: bool,
+    /// Agent runtime for `--new` (claude, codex, or amp). Defaults to the instance manifest.
+    #[arg(long, value_parser = parse_agent, requires = "new")]
+    pub agent: Option<crate::agent::Agent>,
 }
 
 /// Open the operator console to manage workspaces, launch roles, and more
 ///
 /// Running `jackin` with no subcommand on an interactive terminal opens the
-/// same console. This struct also flattens into the top-level `Cli` so
-/// `jackin --debug` is equivalent to `jackin console --debug`.
+/// same console.
 #[derive(Debug, Args, PartialEq, Eq, Default, Clone)]
 #[command(before_help = BANNER, styles = HELP_STYLES)]
-pub struct ConsoleArgs {
-    /// Print raw container output for troubleshooting
-    //
-    // See `LoadArgs.debug` for why action/value_parser are explicit.
-    #[arg(
-        long,
-        env = "JACKIN_DEBUG",
-        action = clap::ArgAction::SetTrue,
-        value_parser = clap::builder::FalseyValueParser::new(),
-    )]
-    pub debug: bool,
-}
+pub struct ConsoleArgs {}
 
 #[cfg(test)]
 mod tests {
@@ -337,16 +323,16 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "console", "--debug"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Console(super::ConsoleArgs { debug: true }))
+            Some(Command::Console(super::ConsoleArgs { .. }))
         ));
+        // --debug is global on Cli, not on ConsoleArgs.
+        assert!(cli.debug);
     }
 
     #[test]
     fn parses_bare_jackin_as_no_subcommand() {
         let cli = Cli::try_parse_from(["jackin"]).unwrap();
         assert!(cli.command.is_none());
-        // `console_args.debug` not asserted here: env-backed (see
-        // `LoadArgs.debug` / `parses_load_command`).
     }
 
     #[test]
@@ -355,7 +341,7 @@ mod tests {
         assert!(cli.command.is_none());
         // CLI flag wins over env, so this assertion holds even when
         // `JACKIN_DEBUG=0` is set in the runner's env.
-        assert!(cli.console_args.debug);
+        assert!(cli.debug);
     }
 
     // ── Load help ───────────────────────────────────────────────────────
@@ -396,7 +382,12 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "hardline"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Hardline(super::HardlineArgs { selector: None }))
+            Some(Command::Hardline(super::HardlineArgs {
+                selector: None,
+                inspect: false,
+                new: false,
+                agent: None,
+            }))
         ));
     }
 
@@ -405,7 +396,54 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "hardline", "agent-smith"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Hardline(super::HardlineArgs { selector: Some(ref s) })) if s == "agent-smith"
+            Some(Command::Hardline(super::HardlineArgs {
+                selector: Some(ref s),
+                inspect: false,
+                new: false,
+                agent: None,
+            })) if s == "agent-smith"
         ));
+    }
+
+    #[test]
+    fn parses_hardline_inspect_flag() {
+        let cli = Cli::try_parse_from(["jackin", "hardline", "--inspect", "k7p9m2xq"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Hardline(super::HardlineArgs {
+                selector: Some(ref s),
+                inspect: true,
+                new: false,
+                agent: None,
+            })) if s == "k7p9m2xq"
+        ));
+    }
+
+    #[test]
+    fn parses_hardline_new_agent_flags() {
+        let cli = Cli::try_parse_from(["jackin", "hardline", "--new", "--agent", "codex"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Hardline(super::HardlineArgs {
+                selector: None,
+                inspect: false,
+                new: true,
+                agent: Some(crate::agent::Agent::Codex),
+            }))
+        ));
+    }
+
+    #[test]
+    fn rejects_hardline_agent_without_new() {
+        let res = Cli::try_parse_from(["jackin", "hardline", "--agent", "codex"]);
+
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn rejects_hardline_inspect_with_new() {
+        let res = Cli::try_parse_from(["jackin", "hardline", "--inspect", "--new"]);
+
+        assert!(res.is_err());
     }
 }

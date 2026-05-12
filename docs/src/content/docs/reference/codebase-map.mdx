@@ -73,6 +73,13 @@ The container lifecycle lives in `src/runtime/`:
 - <RepoFile path="src/runtime/caffeinate.rs" /> — the macOS keep-awake
   reconciler.
 
+Instance-local state helpers live in `src/instance/`:
+
+- <RepoFile path="src/instance/mod.rs" /> — role state preparation and auth materialization re-exports.
+- <RepoFile path="src/instance/auth.rs" /> — Claude, Codex, Amp, and GitHub auth file provisioning.
+- <RepoFile path="src/instance/naming.rs" /> — role image names, legacy name matching, and DNS-safe unique container names.
+- <RepoFile path="src/instance/manifest.rs" /> — per-instance `instance.json` identity records, lifecycle status, and the rebuildable `instances.json` lookup index.
+
 The end-to-end shape of "what happens when you run `jackin load`" is
 described in [Architecture → Container lifecycle](/reference/architecture/#container-lifecycle).
 

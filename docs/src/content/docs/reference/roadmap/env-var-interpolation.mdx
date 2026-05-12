@@ -75,7 +75,7 @@ Env vars declared in the agent manifest need to be overridable at multiple level
    ```
 
 <Aside type="caution" title="Reserved names cannot be overridden">
-A small set of names — `JACKIN`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH` — are owned by the jackin runtime and set internally on every launch. They cannot be declared at any layer (workspace, global, or role manifest); attempting to do so is rejected at config load. There is no way to override these values. See [Reserved names](/guides/environment-variables/#reserved-names) for the full list and rationale.
+A small set of names — `JACKIN`, `JACKIN_DIND_HOSTNAME`, `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`, `TESTCONTAINERS_HOST_OVERRIDE` — are owned by the jackin runtime and set internally on every launch. They cannot be declared at any layer (workspace, global, or role manifest); attempting to do so is rejected at config load. There is no way to override these values. See [Reserved names](/guides/environment-variables/#reserved-names) for the full list and rationale.
 </Aside>
 
 Host env passthrough syntax is TBD — could use `${host.VAR}` to stay consistent with the `${env.VAR}` namespace convention.

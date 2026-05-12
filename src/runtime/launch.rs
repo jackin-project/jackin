@@ -1,15 +1,19 @@
 use crate::config::AppConfig;
 use crate::docker::{CommandRunner, RunOptions};
-use crate::instance::{RoleState, primary_container_name};
+use crate::instance::{
+    DockerResources, InstanceIndex, InstanceManifest, InstanceQuery, InstanceStatus,
+    NewInstanceManifest, RoleState,
+};
 use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 use crate::tui;
 use crate::version_check;
+use anyhow::Context;
 use fs2::FileExt;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 
-use super::attach::{ContainerState, inspect_container_state, wait_for_dind};
+use super::attach::{ContainerState, hardline_agent, inspect_container_state, wait_for_dind};
 use super::cleanup::{gc_orphaned_resources, run_cleanup_command};
 use super::discovery::list_running_agent_display_names;
 use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_host_identity};
@@ -56,6 +60,12 @@ pub struct LoadOptions {
     /// any `published_image`), and tag it with a branch-specific name so the
     /// stable image is not overwritten.
     pub role_branch: Option<String>,
+
+    /// Exact missing instance to restore instead of scanning for candidates.
+    pub restore_container_base: Option<String>,
+
+    /// Role source URL captured in the instance manifest for restore paths.
+    pub restore_role_source_git: Option<String>,
 }
 
 impl LoadOptions {
@@ -65,11 +75,7 @@ impl LoadOptions {
             no_intro: no_intro || debug,
             debug,
             rebuild,
-            force: false,
-            op_runner: None,
-            host_env: None,
-            agent: None,
-            role_branch: None,
+            ..Self::default()
         }
     }
 
@@ -79,12 +85,7 @@ impl LoadOptions {
         Self {
             no_intro: debug,
             debug,
-            rebuild: false,
-            force: false,
-            op_runner: None,
-            host_env: None,
-            agent: None,
-            role_branch: None,
+            ..Self::default()
         }
     }
 }
@@ -100,6 +101,8 @@ impl Default for LoadOptions {
             host_env: None,
             agent: None,
             role_branch: None,
+            restore_container_base: None,
+            restore_role_source_git: None,
         }
     }
 }
@@ -196,72 +199,81 @@ const STANDARD_TERMS: &[&str] = &[
     "xterm-color",
 ];
 
-/// Returns the per-agent mount strings in jackin's "src:dst" /
-/// "src:dst:ro" idiom, ready to be passed to `docker run -v`.
+/// Returns the per-agent mount strings in jackin's `src:dst[:ro]`
+/// idiom for `docker run -v`.
 ///
-/// The agent variant is read directly off `state.agent_runtime` rather
-/// than passed in — the prior shape took a separate `agent` parameter
-/// plus an `Option<PathBuf>` field on the state, with a runtime
-/// `expect()` enforcing "Some iff agent == Codex" across two
-/// functions. The enum variant on `RoleState` keeps the per-agent
-/// mount surface explicit.
+/// Every agent in `manifest.supported_agents()` is represented on
+/// `state.auth`, so the mount block checks `auth.*` flags rather than
+/// matching the selected-agent variant — every provisioned agent's home
+/// state reaches the container regardless of which agent started the
+/// session, which is what lets `hardline --new` switch agents without
+/// re-authentication.
 fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
-    use crate::instance::AgentRuntimeState;
+    let mut mounts = vec![format!(
+        "{}:/jackin/state",
+        state.root.join("state").display()
+    )];
 
-    match &state.agent_runtime {
-        AgentRuntimeState::Claude {
-            account_json,
-            credentials_json,
-            forward_auth,
-            ..
-        } => {
-            let mut mounts = Vec::new();
-            // `forward_auth = true` for Sync (host-derived credentials)
-            // and OAuthToken (the onboarding skeleton). ApiKey and
-            // Ignore set it to false so a `{}` placeholder left behind
-            // by `wipe_claude_state` never reaches the container.
-            // The per-file `exists()` guard keeps the OAuthToken arm
-            // from mounting a stale `credentials.json` if the
-            // provision-step removal failed silently.
-            if *forward_auth {
-                if account_json.exists() {
-                    mounts.push(format!(
-                        "{}:/jackin/claude/account.json",
-                        account_json.display()
-                    ));
-                }
-                if credentials_json.exists() {
-                    mounts.push(format!(
-                        "{}:/jackin/claude/credentials.json",
-                        credentials_json.display()
-                    ));
-                }
-            }
-            mounts
-        }
-        AgentRuntimeState::Codex { auth_json, .. } => {
-            let mut mounts = Vec::new();
-            if let Some(auth_json) = auth_json {
-                mounts.push(format!("{}:/jackin/codex/auth.json", auth_json.display()));
-            }
-            mounts
-        }
-        AgentRuntimeState::Amp { secrets_json } => {
-            let mut mounts = Vec::new();
-            // Bound RW at the docker level so future plumbing (symlink
-            // / bind re-mount) for live bidirectional sync — see
-            // `roadmap/live-auth-sync.mdx` — can rely on a writable
-            // target. The entrypoint currently `cp`s the file, so
-            // in-container rotation does not flow back today.
-            if let Some(secrets_json) = secrets_json {
+    if let Some(claude) = &state.auth.claude {
+        mounts.push(format!(
+            "{}:/home/agent/.claude",
+            state.root.join("home/.claude").display()
+        ));
+        mounts.push(format!(
+            "{}:/home/agent/.claude.json",
+            state.root.join("home/.claude.json").display()
+        ));
+        // `forward_auth = true` for Sync (host-derived credentials) and
+        // OAuthToken (the onboarding skeleton). ApiKey and Ignore set it
+        // to false so a `{}` placeholder left behind by `wipe_claude_state`
+        // never reaches the container. The per-file `exists()` guard keeps
+        // the OAuthToken arm from mounting a stale `credentials.json` if
+        // the provision-step removal failed silently.
+        if claude.forward_auth {
+            if claude.account_json.exists() {
                 mounts.push(format!(
-                    "{}:/jackin/amp/secrets.json",
-                    secrets_json.display()
+                    "{}:/jackin/claude/account.json",
+                    claude.account_json.display()
                 ));
             }
-            mounts
+            if claude.credentials_json.exists() {
+                mounts.push(format!(
+                    "{}:/jackin/claude/credentials.json",
+                    claude.credentials_json.display()
+                ));
+            }
         }
     }
+
+    if let Some(codex) = &state.auth.codex {
+        mounts.push(format!(
+            "{}:/home/agent/.codex",
+            state.root.join("home/.codex").display()
+        ));
+        if let Some(auth_json) = &codex.auth_json {
+            mounts.push(format!("{}:/jackin/codex/auth.json", auth_json.display()));
+        }
+    }
+
+    if let Some(amp) = &state.auth.amp {
+        mounts.push(format!(
+            "{}:/home/agent/.local/share/amp",
+            state.root.join("home/.local/share/amp").display()
+        ));
+        // Bound RW at the docker level so future plumbing (symlink / bind
+        // re-mount) for live bidirectional sync — see
+        // `roadmap/live-auth-sync.mdx` — can rely on a writable target.
+        // The entrypoint currently `cp`s the file, so in-container rotation
+        // does not flow back today.
+        if let Some(secrets_json) = &amp.secrets_json {
+            mounts.push(format!(
+                "{}:/jackin/amp/secrets.json",
+                secrets_json.display()
+            ));
+        }
+    }
+
+    mounts
 }
 
 /// Translate a [`MaterializedWorkspace`] into the `-v` argument values
@@ -740,9 +752,7 @@ fn launch_role_runtime(
     // appended to the auto-generated server cert's Subject Alternative Names.
     // Without it, the cert only covers the short container ID, `docker`, and
     // `localhost` — so roles connecting via `tcp://{dind}:2376` get a TLS
-    // hostname-mismatch error. We can't set `--hostname` to the same value
-    // because namespaced class keys contain `__`, which is invalid in
-    // RFC-1123 hostnames.
+    // hostname-mismatch error.
     //
     // The entrypoint concatenates `DOCKER_TLS_SAN` into the openssl config
     // verbatim (no type prefix added), so the value must already be in the
@@ -787,6 +797,10 @@ fn launch_role_runtime(
     let display_label = format!("jackin.display_name={agent_display_name}");
     let docker_host = format!("DOCKER_HOST=tcp://{dind}:2376");
     let dind_hostname = format!("{}={dind}", crate::env_model::JACKIN_DIND_HOSTNAME_ENV_NAME);
+    let testcontainers_host_override = format!(
+        "{}={dind}",
+        crate::env_model::TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME
+    );
     let git_author_name = format!("GIT_AUTHOR_NAME={}", git.user_name);
     let git_author_email = format!("GIT_AUTHOR_EMAIL={}", git.user_email);
     let agent_specific_mounts = agent_mounts(state);
@@ -871,6 +885,8 @@ fn launch_role_runtime(
         "DOCKER_CERT_PATH=/certs/client",
         "-e",
         &dind_hostname,
+        "-e",
+        &testcontainers_host_override,
         "-e",
         &git_author_name,
         "-e",
@@ -1082,7 +1098,9 @@ fn diagnose_premature_exit(
         // (`No such container`) is just as actionable as anything we
         // could synthesize, and a transient inspect hiccup must not
         // hijack an otherwise-healthy launch.
-        ContainerState::Running | ContainerState::NotFound => None,
+        ContainerState::Running
+        | ContainerState::NotFound
+        | ContainerState::InspectUnavailable(_) => None,
         ContainerState::Stopped {
             exit_code,
             oom_killed,
@@ -1320,7 +1338,8 @@ fn load_role_with(
         pull_workspace_repos(workspace, opts.debug);
     }
 
-    let (source, is_new) = config.resolve_role_source(selector)?;
+    let (source, is_new, restore_source_override) =
+        resolve_launch_role_source(config, selector, opts.restore_role_source_git.as_deref())?;
 
     let mut steps = StepCounter::new(opts.no_intro, &selector.name);
 
@@ -1349,7 +1368,7 @@ fn load_role_with(
         true
     };
 
-    if is_new || newly_trusted {
+    if !restore_source_override && (is_new || newly_trusted) {
         let mut editor = crate::config::ConfigEditor::open(paths)?;
         if let Some(role_source) = config.roles.get(&selector.key()) {
             editor.upsert_agent_source(&selector.key(), role_source);
@@ -1373,13 +1392,23 @@ fn load_role_with(
     // Logo (if present in role repo)
     tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
 
-    // Show a preliminary config summary (container name will be
-    // confirmed after the image build, right before launch).
+    // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
+    // not a name. Recover the name by matching workdir, mirroring the
+    // identification rule used by `jackin workspace show`.
+    let workspace_name = config
+        .workspaces
+        .iter()
+        .find(|(_, w)| w.workdir == workspace.workdir)
+        .map(|(name, _)| name.clone());
+
+    // Show a preliminary config summary. The real launch ID is generated
+    // after the image build, but the preview follows the same DNS-safe shape.
     let image_tag = opts.role_branch.as_deref().map_or_else(
         || image_name(selector),
         |b| image_name_for_branch(selector, b),
     );
-    let preliminary_name = primary_container_name(selector);
+    let preliminary_name =
+        crate::instance::container_name_with_id(workspace_name.as_deref(), selector, "preview");
     let config_rows = build_config_rows(
         &agent_display_name,
         &preliminary_name,
@@ -1404,17 +1433,6 @@ fn load_role_with(
     // workspace × role). op:// refs shell out to `op`; $NAME refs
     // read the host env. Failures are aggregated into a single error.
     //
-    // Workspace name: the launch pipeline does not currently pass a
-    // workspace *name* down into load_role — only a ResolvedWorkspace
-    // (mounts + workdir). Look up the name by scanning config.workspaces
-    // for the entry whose workdir matches; this matches the same
-    // identification rule used by `jackin workspace show`.
-    let workspace_name = config
-        .workspaces
-        .iter()
-        .find(|(_, w)| w.workdir == workspace.workdir)
-        .map(|(name, _)| name.clone());
-
     // The operator env resolver takes two injection seams:
     //   * `op_runner`  — resolves `op://...` references (production:
     //     `OpCli::new()`; tests: a mock `OpRunner` constructed directly).
@@ -1485,6 +1503,34 @@ fn load_role_with(
     }
 
     let load_result = (|| -> anyhow::Result<String> {
+        let role_key = selector.key();
+        let restore_container = if let Some(container) = opts.restore_container_base.as_ref() {
+            Some(container.clone())
+        } else {
+            match resolve_restore_candidate(
+                paths,
+                workspace_name.as_deref(),
+                workspace.label.as_str(),
+                &workspace.workdir,
+                &role_key,
+                agent,
+                runner,
+            )? {
+                RestoreResolution::StartFresh => None,
+                RestoreResolution::RestoreCurrentRole(container) => Some(container),
+                RestoreResolution::RecoverRelatedRole(container) => {
+                    hardline_agent(paths, &container, runner)?;
+                    return Ok(container);
+                }
+                RestoreResolution::RebuildRelatedRole(manifest) => {
+                    let selector = RoleSelector::parse(&manifest.role_key)?;
+                    let opts = related_restore_load_options(opts, &manifest)?;
+                    load_role(paths, config, &selector, workspace, runner, &opts)?;
+                    return Ok(manifest.container_base);
+                }
+            }
+        };
+
         // Step 2: Build Docker image
         let rebuild = opts.rebuild;
         let agent_update = !rebuild && {
@@ -1512,19 +1558,64 @@ fn load_role_with(
             repo_lock,
         )?;
 
-        // Claim a unique container name using an exclusive lock file.
-        // Each candidate name gets a lock file at `~/.jackin/data/<name>.lock`.
-        // If `try_lock_exclusive` succeeds, we own the name for this
-        // session.  If it fails (another instance holds it), we skip to
-        // the next clone name.  The lock is held for the entire run and
-        // released on exit (or process crash).
-        let (container_name, _name_lock) = claim_container_name(paths, selector, runner)?;
+        let restoring = restore_container.is_some();
+        let (container_name, _name_lock) = if let Some(container_name) = restore_container {
+            claim_known_container_name(paths, &container_name, runner)?
+        } else {
+            claim_container_name(paths, workspace_name.as_deref(), selector, runner)?
+        };
+        let container_state = paths.data_dir.join(&container_name);
+        let network = format!("{container_name}-net");
+        let dind = format!("{container_name}-dind");
+        let certs_volume = dind_certs_volume(&container_name);
+        let host_workdir_fingerprint = manifest_host_workdir_fingerprint(workspace);
+        let new_manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: &container_name,
+            workspace_name: workspace_name.as_deref(),
+            workspace_label: workspace.label.as_str(),
+            workdir: &workspace.workdir,
+            host_workdir_fingerprint: &host_workdir_fingerprint,
+            role_key: &role_key,
+            role_display_name: &agent_display_name,
+            agent_runtime: agent,
+            role_source_git: &source.git,
+            role_source_ref: opts.role_branch.as_deref(),
+            image_tag: &image,
+            docker: DockerResources {
+                role_container: container_name.clone(),
+                dind_container: dind.clone(),
+                network: network.clone(),
+                certs_volume: certs_volume.clone(),
+            },
+        });
+        // `read_optional` already separates "manifest absent" (fall back
+        // to `new_manifest` and re-record the recovered identity) from
+        // "manifest unreadable" (must surface — the operator either
+        // repairs the file or purges the recorded state).
+        let mut instance_manifest = if restoring {
+            InstanceManifest::read_optional(&container_state)
+                .with_context(|| {
+                    format!(
+                        "restoring container `{container_name}`: existing manifest is unreadable; \
+                         repair or remove the file, or run `jackin eject {container_name} --purge` to discard the recorded identity"
+                    )
+                })?
+                .unwrap_or(new_manifest)
+        } else {
+            new_manifest
+        };
+        write_instance_status(
+            paths,
+            &container_state,
+            &mut instance_manifest,
+            InstanceStatus::Active,
+        )?;
 
         let auth_mode = crate::config::resolve_mode(
             config,
             agent,
             workspace_name.as_deref().unwrap_or(""),
-            &selector.key(),
+            &role_key,
         );
 
         // Modes that inject a credential require the well-known env
@@ -1539,7 +1630,6 @@ fn load_role_with(
         // `crate::config::resolve_mode` and
         // `operator_env::build_attributed_layers` respectively.
         let workspace_name_str = workspace_name.as_deref().unwrap_or("");
-        let role_key = selector.key();
         let mode_resolution = build_mode_resolution(config, agent, workspace_name_str, &role_key);
         let env_layers = agent
             .required_env_var(auth_mode)
@@ -1593,11 +1683,18 @@ fn load_role_with(
             role_key.as_str(),
         )?;
 
+        // Per-supported-agent mode resolution — each agent in
+        // `manifest.supported_agents()` honors its own configured
+        // `auth_forward`. Passing the selected agent's mode would wipe
+        // sibling agents' durable state when modes diverge.
+        let resolve_supported_mode = |a: crate::agent::Agent| {
+            crate::config::resolve_mode(config, a, workspace_name_str, &role_key)
+        };
         let (state, auth_outcome) = RoleState::prepare(
             paths,
             &container_name,
             &validated_repo.manifest,
-            auth_mode,
+            &resolve_supported_mode,
             &github_ctx,
             &paths.home_dir,
             agent,
@@ -1684,7 +1781,6 @@ fn load_role_with(
         // per-mount bind sources).
         let interactive = std::io::stdin().is_terminal();
         let workspace_label = workspace.label.as_str();
-        let container_state = paths.data_dir.join(&container_name);
         crate::debug_log!(
             "isolation",
             "load_role: invoking materialize_workspace for container {container_name} (interactive={interactive}, force={force})",
@@ -1703,9 +1799,6 @@ fn load_role_with(
             },
             runner,
         )?;
-
-        let network = format!("{container_name}-net");
-        let dind = format!("{container_name}-dind");
 
         // Step 3: Create network and start Docker-in-Docker
         steps.next("Starting Docker-in-Docker");
@@ -1727,7 +1820,6 @@ fn load_role_with(
             cache_dir: &paths.cache_dir,
             paths,
         };
-        let certs_volume = dind_certs_volume(&container_name);
         let mut cleanup = LoadCleanup::new(
             container_name.clone(),
             dind.clone(),
@@ -1736,9 +1828,28 @@ fn load_role_with(
         );
         let launch_result = launch_role_runtime(&ctx, &mut steps, runner);
         if launch_result.is_err() {
+            // FailedSetup write error must not abort cleanup; surface via debug.
+            if let Err(status_err) = write_instance_status(
+                paths,
+                &container_state,
+                &mut instance_manifest,
+                InstanceStatus::FailedSetup,
+            ) {
+                crate::debug_log!(
+                    "instance",
+                    "failed to mark FailedSetup for {} after launch error: {status_err}",
+                    container_name,
+                );
+            }
             cleanup.run(runner);
         }
         launch_result?;
+        write_instance_status(
+            paths,
+            &container_state,
+            &mut instance_manifest,
+            InstanceStatus::Running,
+        )?;
 
         // Finalize per-mount isolation worktrees BEFORE the container teardown
         // decision below: clean exits without dirty/unpushed state get their
@@ -1749,6 +1860,7 @@ fn load_role_with(
         let interactive_finalize = std::io::stdin().is_terminal();
         let mut prompt = crate::isolation::finalize::StdinPrompt;
         let outcome = inspect_attach_outcome(runner, &container_name)?;
+        write_instance_attach_outcome(paths, &container_state, &mut instance_manifest, outcome)?;
         let decision = crate::isolation::finalize::finalize_foreground_session(
             &container_name,
             &paths.data_dir.join(&container_name),
@@ -1757,6 +1869,13 @@ fn load_role_with(
             &mut prompt,
             runner,
         )?;
+        if matches!(
+            decision,
+            crate::isolation::finalize::FinalizeDecision::Preserved
+        ) {
+            let status = preserved_instance_status(&container_state)?;
+            write_instance_status(paths, &container_state, &mut instance_manifest, status)?;
+        }
         if matches!(
             decision,
             crate::isolation::finalize::FinalizeDecision::ReturnToAgent
@@ -1780,6 +1899,12 @@ fn load_role_with(
                 &RunOptions::default(),
             )?;
             let outcome2 = inspect_attach_outcome(runner, &container_name)?;
+            write_instance_attach_outcome(
+                paths,
+                &container_state,
+                &mut instance_manifest,
+                outcome2,
+            )?;
             let _ = crate::isolation::finalize::finalize_foreground_session(
                 &container_name,
                 &paths.data_dir.join(&container_name),
@@ -1803,15 +1928,63 @@ fn load_role_with(
             ContainerState::Stopped {
                 exit_code: 0,
                 oom_killed: false,
-            } => cleanup.run(runner),
-            ContainerState::Stopped { .. } => cleanup.disarm(),
-            ContainerState::NotFound => cleanup.run(runner),
+            } if matches!(
+                decision,
+                crate::isolation::finalize::FinalizeDecision::Preserved
+            ) =>
+            {
+                cleanup.run(runner);
+            }
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            } => {
+                write_instance_status(
+                    paths,
+                    &container_state,
+                    &mut instance_manifest,
+                    InstanceStatus::CleanExited,
+                )?;
+                cleanup.run(runner);
+            }
+            ContainerState::Stopped { .. } => {
+                write_instance_status(
+                    paths,
+                    &container_state,
+                    &mut instance_manifest,
+                    InstanceStatus::Crashed,
+                )?;
+                cleanup.disarm();
+            }
+            ContainerState::InspectUnavailable(reason) => {
+                cleanup.disarm();
+                anyhow::bail!(
+                    "{}",
+                    super::attach::docker_unavailable_msg(
+                        &format!("inspect container `{container_name}` after the session"),
+                        &reason,
+                    )
+                );
+            }
+            ContainerState::NotFound
+                if matches!(
+                    decision,
+                    crate::isolation::finalize::FinalizeDecision::Preserved
+                ) => {}
+            ContainerState::NotFound => {
+                write_instance_status(
+                    paths,
+                    &container_state,
+                    &mut instance_manifest,
+                    InstanceStatus::CleanExited,
+                )?;
+                cleanup.run(runner);
+            }
         }
 
         Ok(container_name)
     })();
 
-    // Update display name to include clone index (e.g. "The Architect (Clone 2)")
     let agent_display_name = match &load_result {
         Ok(container_name) => format_role_display(container_name, &agent_display_name),
         Err(_) => agent_display_name,
@@ -1829,6 +2002,25 @@ fn load_role_with(
     }
 }
 
+fn resolve_launch_role_source(
+    config: &mut AppConfig,
+    selector: &RoleSelector,
+    restore_role_source_git: Option<&str>,
+) -> anyhow::Result<(crate::config::RoleSource, bool, bool)> {
+    if let Some(git) = restore_role_source_git {
+        let mut source = config
+            .roles
+            .get(&selector.key())
+            .cloned()
+            .unwrap_or_default();
+        source.git = git.to_string();
+        source.trusted = true;
+        return Ok((source, false, true));
+    }
+    let (source, is_new) = config.resolve_role_source(selector)?;
+    Ok((source, is_new, false))
+}
+
 fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: &LoadOptions) {
     if opts.no_intro {
         return;
@@ -1839,74 +2031,602 @@ fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: 
     );
 }
 
-/// Claim a unique container name for this role class by acquiring an
-/// exclusive lock file.
-///
-/// Tries the primary name first, then clone-1, clone-2, etc.  For each
-/// candidate the container state is inspected individually:
-///
-/// - `Running`                    → skip (active session owns this slot).
-/// - `Stopped` / exit 0, no OOM  → remove the stopped container (best-effort)
-///   and reclaim the slot.  The state directory on disk is untouched, so
-///   credentials in `~/.jackin/data/<name>/.config/gh/` survive.
-/// - `Stopped` / non-zero exit or OOM-killed → skip (`jackin hardline` needs
-///   to restart the crashed container in place).
-/// - `NotFound`                   → try to claim the slot as usual.
-///
-/// For the two "free" cases (clean-exit and not-found) the slot is claimed by
-/// acquiring an exclusive lock file at `~/.jackin/data/<name>.lock`.  If the
-/// lock is already held by a concurrent `jackin load`, the loop advances to
-/// the next clone index.
-///
-/// The returned `File` holds the lock — it must be kept alive for the
-/// duration of the role session.  The lock is automatically released
-/// when the file is dropped (normal exit or crash).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RestoreResolution {
+    StartFresh,
+    RestoreCurrentRole(String),
+    RecoverRelatedRole(String),
+    RebuildRelatedRole(Box<InstanceManifest>),
+}
+
+#[allow(clippy::too_many_lines)]
+fn resolve_restore_candidate(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    agent: crate::agent::Agent,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<RestoreResolution> {
+    let mut candidates = Vec::new();
+    for manifest in matching_instance_manifests(
+        paths,
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key,
+        agent,
+    )? {
+        match inspect_container_state(runner, &manifest.container_base) {
+            ContainerState::NotFound if manifest.is_restore_candidate() => {
+                candidates.push(manifest);
+            }
+            ContainerState::Running | ContainerState::Stopped { .. } => {
+                anyhow::bail!(
+                    "matching jackin instance `{}` already has a Docker container; use `jackin hardline {}` or `jackin eject {}` before starting a fresh load",
+                    manifest.container_base,
+                    manifest.container_base,
+                    manifest.container_base
+                );
+            }
+            ContainerState::InspectUnavailable(reason) => {
+                anyhow::bail!(
+                    "{}",
+                    super::attach::docker_unavailable_msg(
+                        &format!(
+                            "inspect matching jackin instance `{}`",
+                            manifest.container_base
+                        ),
+                        &reason,
+                    )
+                );
+            }
+            ContainerState::NotFound => {}
+        }
+    }
+
+    let related = related_restore_candidates(
+        paths,
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key,
+        agent,
+        runner,
+    )?;
+
+    match candidates.as_slice() {
+        [] if related.is_empty() => Ok(RestoreResolution::StartFresh),
+        [] => prompt_related_restore_candidate(workspace_label, &related),
+        [only] if !std::io::stdin().is_terminal() => anyhow::bail!(
+            "restore is available for `{}` but stdin is not interactive; run `jackin hardline {}` to inspect it or `jackin load` interactively from the matching workspace to rebuild jackin-managed local state. Run `jackin eject {} --purge` to discard it before starting a fresh load. Anything written only to the deleted container's writable layer is gone and will not be restored, including ad-hoc package installs, global files outside mounted paths, and DinD images.",
+            only.container_base,
+            only.container_base,
+            only.container_base
+        ),
+        [only] => {
+            let mut options = vec![format!("Restore {}", restore_candidate_label(paths, only))];
+            options.extend(related.iter().map(|candidate| {
+                format!(
+                    "Recover other role with hardline {}",
+                    related_restore_candidate_label(paths, candidate)
+                )
+            }));
+            options.push("Start fresh instead".to_string());
+            let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
+            let choice = tui::prompt_choice(
+                &format!("Unfinished jackin state exists for workspace `{workspace_label}`."),
+                &option_refs,
+            )?;
+            if choice == 0 {
+                Ok(RestoreResolution::RestoreCurrentRole(
+                    only.container_base.clone(),
+                ))
+            } else if let Some(candidate) = related.get(choice.saturating_sub(1)) {
+                recover_related_restore_candidate(candidate)
+            } else {
+                supersede_restore_candidates(paths, candidates)?;
+                Ok(RestoreResolution::StartFresh)
+            }
+        }
+        _ if !std::io::stdin().is_terminal() => anyhow::bail!(
+            "multiple restore candidates exist for role `{role_key}` in workspace `{workspace_label}`; run `jackin hardline <container>` for the instance to recover or purge stale instances before starting a fresh load"
+        ),
+        _ => {
+            let mut options: Vec<String> = candidates
+                .iter()
+                .map(|manifest| format!("Restore {}", restore_candidate_label(paths, manifest)))
+                .collect();
+            options.extend(related.iter().map(|candidate| {
+                format!(
+                    "Recover other role with hardline {}",
+                    related_restore_candidate_label(paths, candidate)
+                )
+            }));
+            options.push("Start fresh instead".to_string());
+            let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
+            let choice = tui::prompt_choice(
+                &format!(
+                    "Multiple unfinished jackin instances exist for workspace `{workspace_label}`."
+                ),
+                &option_refs,
+            )?;
+            if choice < candidates.len() {
+                Ok(RestoreResolution::RestoreCurrentRole(
+                    candidates[choice].container_base.clone(),
+                ))
+            } else if let Some(candidate) = related.get(choice - candidates.len()) {
+                recover_related_restore_candidate(candidate)
+            } else {
+                supersede_restore_candidates(paths, candidates)?;
+                Ok(RestoreResolution::StartFresh)
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct RelatedRestoreCandidate {
+    manifest: InstanceManifest,
+    docker_state: ContainerState,
+}
+
+fn related_restore_candidates(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    agent: crate::agent::Agent,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<Vec<RelatedRestoreCandidate>> {
+    let mut candidates = Vec::new();
+    for manifest in InstanceIndex::matching_manifests(
+        &paths.data_dir,
+        InstanceQuery {
+            workspace_name,
+            workspace_label,
+            workdir,
+            role_key: None,
+            agent_runtime: None,
+        },
+    )? {
+        if manifest.role_key == role_key && manifest.agent_runtime == agent.slug() {
+            continue;
+        }
+        if matches!(
+            manifest.status,
+            InstanceStatus::CleanExited | InstanceStatus::Superseded | InstanceStatus::Purged
+        ) {
+            continue;
+        }
+        let docker_state = inspect_container_state(runner, &manifest.container_base);
+        match docker_state {
+            ContainerState::Running
+            | ContainerState::Stopped { .. }
+            | ContainerState::InspectUnavailable(_) => {
+                candidates.push(RelatedRestoreCandidate {
+                    manifest,
+                    docker_state,
+                });
+            }
+            ContainerState::NotFound if manifest.is_restore_candidate() => {
+                candidates.push(RelatedRestoreCandidate {
+                    manifest,
+                    docker_state,
+                });
+            }
+            ContainerState::NotFound => {}
+        }
+    }
+    Ok(candidates)
+}
+
+fn prompt_related_restore_candidate(
+    workspace_label: &str,
+    candidates: &[RelatedRestoreCandidate],
+) -> anyhow::Result<RestoreResolution> {
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!(
+            "unfinished jackin instances exist for workspace `{workspace_label}` under a different role or agent; run `jackin hardline <instance>` to inspect or recover them before starting a fresh load"
+        );
+    }
+
+    let mut options: Vec<String> = candidates
+        .iter()
+        .map(related_restore_candidate_action_label)
+        .collect();
+    options.push("Start fresh instead".to_string());
+    let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
+    let choice = tui::prompt_choice(
+        &format!("Unfinished jackin instances exist for workspace `{workspace_label}`."),
+        &option_refs,
+    )?;
+    if let Some(candidate) = candidates.get(choice) {
+        return recover_related_restore_candidate(candidate);
+    }
+    Ok(RestoreResolution::StartFresh)
+}
+
+fn recover_related_restore_candidate(
+    candidate: &RelatedRestoreCandidate,
+) -> anyhow::Result<RestoreResolution> {
+    match candidate.docker_state {
+        ContainerState::Running | ContainerState::Stopped { .. } => Ok(
+            RestoreResolution::RecoverRelatedRole(candidate.manifest.container_base.clone()),
+        ),
+        ContainerState::NotFound => Ok(RestoreResolution::RebuildRelatedRole(Box::new(
+            candidate.manifest.clone(),
+        ))),
+        ContainerState::InspectUnavailable(ref reason) => {
+            anyhow::bail!(
+                "{}",
+                super::attach::docker_unavailable_msg(
+                    &format!(
+                        "inspect related jackin instance `{}`",
+                        candidate.manifest.container_base
+                    ),
+                    reason,
+                )
+            );
+        }
+    }
+}
+
+fn related_restore_load_options(
+    current: &LoadOptions,
+    manifest: &InstanceManifest,
+) -> anyhow::Result<LoadOptions> {
+    Ok(LoadOptions {
+        no_intro: current.no_intro,
+        debug: current.debug,
+        rebuild: current.rebuild,
+        force: current.force,
+        host_env: current.host_env.clone(),
+        agent: Some(manifest.agent()?),
+        role_branch: manifest.role_source_ref.clone(),
+        restore_container_base: Some(manifest.container_base.clone()),
+        restore_role_source_git: Some(manifest.role_source_git.clone()),
+        ..LoadOptions::default()
+    })
+}
+
+fn related_restore_candidate_action_label(candidate: &RelatedRestoreCandidate) -> String {
+    match candidate.docker_state {
+        ContainerState::Running | ContainerState::Stopped { .. } => {
+            format!(
+                "Recover now {}",
+                related_restore_candidate_label_for_prompt(candidate)
+            )
+        }
+        ContainerState::NotFound => {
+            format!(
+                "Rebuild now {}",
+                related_restore_candidate_label_for_prompt(candidate)
+            )
+        }
+        ContainerState::InspectUnavailable(_) => {
+            format!(
+                "Recover with hardline {}",
+                related_restore_candidate_label_for_prompt(candidate)
+            )
+        }
+    }
+}
+
+fn related_restore_candidate_label(
+    paths: &JackinPaths,
+    candidate: &RelatedRestoreCandidate,
+) -> String {
+    format!(
+        "{} docker:{}",
+        restore_candidate_label(paths, &candidate.manifest),
+        candidate.docker_state.short_label()
+    )
+}
+
+fn related_restore_candidate_label_for_prompt(candidate: &RelatedRestoreCandidate) -> String {
+    format!(
+        "{} role:{} agent:{} status:{} docker:{} updated:{}",
+        candidate.manifest.instance_id,
+        candidate.manifest.role_key,
+        candidate.manifest.agent_runtime,
+        candidate.manifest.status.label(),
+        candidate.docker_state.short_label(),
+        candidate.manifest.updated_at
+    )
+}
+
+fn restore_candidate_label(paths: &JackinPaths, manifest: &InstanceManifest) -> String {
+    let state_dir = paths.data_dir.join(&manifest.container_base);
+    let isolation = crate::isolation::state::MountSummary::prompt_label_for_state_dir(&state_dir);
+    let attach = manifest
+        .last_attach_outcome
+        .as_deref()
+        .map_or_else(String::new, |outcome| format!(" attach:{outcome}"));
+    format!(
+        "{} status:{} agent:{} role:{} updated:{} {}{}",
+        manifest.instance_id,
+        manifest.status.label(),
+        manifest.agent_runtime,
+        manifest.role_key,
+        manifest.updated_at,
+        isolation,
+        attach
+    )
+}
+
+fn supersede_restore_candidates(
+    paths: &JackinPaths,
+    candidates: Vec<InstanceManifest>,
+) -> anyhow::Result<()> {
+    for mut manifest in candidates {
+        let state_dir = paths.data_dir.join(&manifest.container_base);
+        write_instance_status(paths, &state_dir, &mut manifest, InstanceStatus::Superseded)?;
+    }
+    Ok(())
+}
+
+fn matching_instance_manifests(
+    paths: &JackinPaths,
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+    role_key: &str,
+    agent: crate::agent::Agent,
+) -> anyhow::Result<Vec<InstanceManifest>> {
+    InstanceIndex::matching_manifests(
+        &paths.data_dir,
+        InstanceQuery {
+            workspace_name,
+            workspace_label,
+            workdir,
+            role_key: Some(role_key),
+            agent_runtime: Some(agent),
+        },
+    )
+}
+
+fn write_instance_status(
+    paths: &JackinPaths,
+    state_dir: &std::path::Path,
+    manifest: &mut InstanceManifest,
+    status: InstanceStatus,
+) -> anyhow::Result<()> {
+    manifest.mark_status(status);
+    manifest.write(state_dir)?;
+    InstanceIndex::update_manifest(&paths.data_dir, manifest)?;
+    Ok(())
+}
+
+fn write_instance_attach_outcome(
+    paths: &JackinPaths,
+    state_dir: &std::path::Path,
+    manifest: &mut InstanceManifest,
+    outcome: crate::isolation::finalize::AttachOutcome,
+) -> anyhow::Result<()> {
+    manifest.touch();
+    manifest.last_attach_outcome = Some(format_attach_outcome(outcome));
+    manifest.write(state_dir)?;
+    InstanceIndex::update_manifest(&paths.data_dir, manifest)?;
+    Ok(())
+}
+
+pub(super) fn record_instance_attach_outcome(
+    paths: &JackinPaths,
+    container_name: &str,
+    outcome: crate::isolation::finalize::AttachOutcome,
+) -> anyhow::Result<()> {
+    let state_dir = paths.data_dir.join(container_name);
+    // Missing manifest is a legitimate no-op; corrupt manifest is
+    // logged so the attach-outcome record is not silently dropped.
+    let Some(mut manifest) =
+        InstanceManifest::read_or_log(&state_dir, "record_instance_attach_outcome")
+    else {
+        return Ok(());
+    };
+    write_instance_attach_outcome(paths, &state_dir, &mut manifest, outcome)
+}
+
+fn format_attach_outcome(outcome: crate::isolation::finalize::AttachOutcome) -> String {
+    if outcome.oom_killed {
+        return "oom_killed".to_string();
+    }
+    outcome
+        .exit_code
+        .map_or_else(|| "running".to_string(), |code| format!("exit:{code}"))
+}
+
+fn preserved_instance_status(state_dir: &std::path::Path) -> anyhow::Result<InstanceStatus> {
+    use crate::isolation::state::CleanupStatus;
+
+    let records = crate::isolation::state::read_records(state_dir)?;
+    if records
+        .iter()
+        .any(|record| record.cleanup_status == CleanupStatus::PreservedDirty)
+    {
+        return Ok(InstanceStatus::PreservedDirty);
+    }
+    if records
+        .iter()
+        .any(|record| record.cleanup_status == CleanupStatus::PreservedUnpushed)
+    {
+        return Ok(InstanceStatus::PreservedUnpushed);
+    }
+    Ok(InstanceStatus::RestoreAvailable)
+}
+
+fn manifest_host_workdir_fingerprint(workspace: &crate::workspace::ResolvedWorkspace) -> String {
+    workspace
+        .mounts
+        .iter()
+        .filter(|mount| path_covers_workdir(&mount.dst, &workspace.workdir))
+        .max_by_key(|mount| mount.dst.len())
+        .map_or_else(
+            || crate::instance::manifest::host_path_fingerprint(&workspace.workdir),
+            |mount| crate::instance::manifest::host_path_fingerprint(&mount.src),
+        )
+}
+
+fn path_covers_workdir(mount_dst: &str, workdir: &str) -> bool {
+    let mount_dst = mount_dst.trim_end_matches('/');
+    workdir == mount_dst
+        || workdir
+            .strip_prefix(mount_dst)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+/// Cap retries so a filesystem without working flock (NFS without
+/// lockd, exotic mount) surfaces as an actionable error instead of an
+/// unbounded spin. 64 attempts at 40 bits of ID entropy is enough that
+/// a genuine collision-space exhaustion is astronomically unlikely;
+/// hitting the cap signals an environmental fault, not bad luck.
+const CLAIM_MAX_ATTEMPTS: u32 = 64;
+
+/// Claim a unique DNS-safe container name by acquiring an exclusive lock file.
+/// Random IDs avoid deterministic role slots; the lock still protects the
+/// vanishingly small random-collision window and concurrent launch races.
 fn claim_container_name(
     paths: &JackinPaths,
+    workspace_name: Option<&str>,
     selector: &RoleSelector,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<(String, std::fs::File)> {
-    let primary = primary_container_name(selector);
-
     std::fs::create_dir_all(&paths.data_dir)?;
 
-    // Try primary name first, then clone-1, clone-2, ... (unbounded).
-    let mut clone_index = 0_u32;
-    loop {
-        let name = if clone_index == 0 {
-            primary.clone()
-        } else {
-            format!("{primary}-clone-{clone_index}")
-        };
+    let mut last_lock_err: Option<std::io::Error> = None;
+    let mut last_unlink_err: Option<std::io::Error> = None;
+    let mut occupied_attempts = 0u32;
+
+    for attempt in 0..CLAIM_MAX_ATTEMPTS {
+        let name = crate::instance::new_container_name(workspace_name, selector);
 
         let slot_free = match inspect_container_state(runner, &name) {
-            // Clean exit: remove the stopped container so the slot is free.
-            // Best-effort; ignore errors — the state dir on disk is untouched.
             ContainerState::Stopped {
                 exit_code: 0,
                 oom_killed: false,
-            } => {
-                let _ = runner.run("docker", &["rm", &name], None, &RunOptions::default());
-                true
-            }
-            // Active session, or crashed/OOM-killed: do not disturb.
-            // Crashed containers are preserved for `jackin hardline` restart.
+            } => match runner.capture("docker", &["rm", &name], None) {
+                Ok(_) => true,
+                Err(error) if super::cleanup::is_missing_cleanup_error(&error) => true,
+                Err(error) => {
+                    return Err(error.context(format!(
+                        "removing stale container `{name}` before reclaiming its name"
+                    )));
+                }
+            },
             ContainerState::Running | ContainerState::Stopped { .. } => false,
-            // No container exists — slot is free.
             ContainerState::NotFound => true,
+            ContainerState::InspectUnavailable(reason) => {
+                anyhow::bail!(
+                    "{}",
+                    super::attach::docker_unavailable_msg(
+                        &format!("claim container name `{name}`"),
+                        &reason,
+                    )
+                );
+            }
         };
 
         if slot_free {
-            let lock_path = paths.data_dir.join(format!("{name}.lock"));
-            let lock_file = std::fs::File::create(&lock_path)?;
-            if lock_file.try_lock_exclusive().is_ok() {
-                return Ok((name, lock_file));
+            match try_acquire_name_lock(&paths.data_dir, &name) {
+                Ok(lock_file) => return Ok((name, lock_file)),
+                Err(NameLockError { lock, unlink }) => {
+                    crate::debug_log!(
+                        "runtime",
+                        "claim_container_name: lock contention on {name} (attempt {attempt}): {lock}",
+                    );
+                    if let Some(unlink_err) = unlink {
+                        last_unlink_err = Some(unlink_err);
+                    }
+                    last_lock_err = Some(lock);
+                }
             }
-            // Lock held by another process — try next name
+        } else {
+            occupied_attempts += 1;
         }
-
-        clone_index += 1;
     }
+
+    // Pick the failure mode the operator should investigate first.
+    // An unlink error means broken-flock; a lock error means
+    // contention; "every candidate occupied" means Docker's namespace
+    // is full for this slug.
+    let lock_summary = match (last_lock_err, last_unlink_err) {
+        (Some(lock), Some(unlink)) => {
+            format!("lock contention ({lock}); lock unlink also failed ({unlink})")
+        }
+        (Some(lock), None) => format!("lock contention ({lock})"),
+        (None, _) if occupied_attempts == CLAIM_MAX_ATTEMPTS => {
+            "all candidates already exist in Docker".to_string()
+        }
+        (None, _) => "no lock attempted".to_string(),
+    };
+    anyhow::bail!(
+        "exhausted {CLAIM_MAX_ATTEMPTS} attempts to claim a unique container name ({lock_summary})"
+    );
+}
+
+fn claim_known_container_name(
+    paths: &JackinPaths,
+    container_name: &str,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<(String, std::fs::File)> {
+    match inspect_container_state(runner, container_name) {
+        ContainerState::NotFound => {}
+        ContainerState::Running | ContainerState::Stopped { .. } => {
+            anyhow::bail!(
+                "cannot restore `{container_name}` because its Docker container already exists; use `jackin hardline {container_name}`"
+            );
+        }
+        ContainerState::InspectUnavailable(reason) => {
+            anyhow::bail!(
+                "{}",
+                super::attach::docker_unavailable_msg(
+                    &format!("restore `{container_name}`"),
+                    &reason,
+                )
+            );
+        }
+    }
+
+    std::fs::create_dir_all(&paths.data_dir)?;
+    match try_acquire_name_lock(&paths.data_dir, container_name) {
+        Ok(lock_file) => Ok((container_name.to_string(), lock_file)),
+        Err(NameLockError { lock, .. }) => anyhow::bail!(
+            "cannot restore `{container_name}` because another jackin process holds its lock ({lock})"
+        ),
+    }
+}
+
+/// Try to acquire an exclusive flock on `<data_dir>/<name>.lock`.
+/// On contention drops the handle before unlinking — broken-flock
+/// filesystems (NFS without lockd) leak the artefact otherwise.
+struct NameLockError {
+    lock: std::io::Error,
+    unlink: Option<std::io::Error>,
+}
+
+fn try_acquire_name_lock(
+    data_dir: &std::path::Path,
+    name: &str,
+) -> Result<std::fs::File, NameLockError> {
+    let lock_path = data_dir.join(format!("{name}.lock"));
+    let lock_file = match std::fs::File::create(&lock_path) {
+        Ok(f) => f,
+        Err(lock) => return Err(NameLockError { lock, unlink: None }),
+    };
+    if let Err(lock) = lock_file.try_lock_exclusive() {
+        drop(lock_file);
+        let unlink = std::fs::remove_file(&lock_path).err().inspect(|err| {
+            crate::debug_log!(
+                "runtime",
+                "try_acquire_name_lock: failed to unlink {} after lock contention: {err}",
+                lock_path.display(),
+            );
+        });
+        return Err(NameLockError { lock, unlink });
+    }
+    Ok(lock_file)
 }
 
 /// What we found in a single env layer when looking up the credential
@@ -2690,10 +3410,10 @@ mod tests {
     }
 
     #[test]
-    fn agent_mounts_for_claude_ignore_mode_has_no_agent_mounts() {
-        // Ignore mode is env-driven (no env var, just no auth) — auth
-        // files must NOT flow into the container, and Claude plugins are
-        // installed at image-build time rather than mounted at runtime.
+    fn agent_mounts_for_claude_ignore_mode_mounts_state_but_no_auth_handoff() {
+        // Ignore mode must still mount durable Claude home state so
+        // conversations/plugins survive a Docker delete, but auth handoff
+        // files under /jackin/claude/ must not flow into the container.
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -2721,7 +3441,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            crate::config::AuthForwardMode::Ignore,
+            &|_| crate::config::AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
             temp.path(),
             Agent::Claude,
@@ -2729,16 +3449,23 @@ plugins = []
         .unwrap();
 
         let mounts = agent_mounts(&state);
-        assert_eq!(
-            mounts.len(),
-            0,
-            "ignore mode should not mount Claude runtime state: {mounts:?}"
-        );
-        // No legacy `/home/agent/.claude*` mounts should leak through —
-        // the agent home is image-baked, not bind-mounted.
         assert!(
-            !mounts.iter().any(|m| m.contains("/home/agent/.claude")),
-            "legacy ~/.claude mount must not survive: {mounts:?}"
+            mounts.iter().any(|m| m.contains(":/jackin/state")),
+            "jackin state mount missing: {mounts:?}"
+        );
+        assert!(
+            mounts.iter().any(|m| m.contains(":/home/agent/.claude")),
+            "durable Claude home mount missing: {mounts:?}"
+        );
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains(":/home/agent/.claude.json")),
+            "durable Claude account file mount missing: {mounts:?}"
+        );
+        assert!(
+            !mounts.iter().any(|m| m.contains("/jackin/claude/")),
+            "ignore mode must not mount Claude auth handoff files: {mounts:?}"
         );
     }
 
@@ -2788,7 +3515,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            crate::config::AuthForwardMode::Sync,
+            &|_| crate::config::AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
             &host_home,
             Agent::Claude,
@@ -2844,7 +3571,7 @@ plugins = []
             &paths,
             "jackin-agent-smith",
             &manifest,
-            crate::config::AuthForwardMode::OAuthToken,
+            &|_| crate::config::AuthForwardMode::OAuthToken,
             &crate::instance::GithubAuthContext::default(),
             temp.path(),
             Agent::Claude,
@@ -2868,7 +3595,7 @@ plugins = []
     }
 
     #[test]
-    fn agent_mounts_for_codex_without_auth_has_no_mounts() {
+    fn agent_mounts_for_codex_without_auth_mounts_state_but_no_auth_handoff() {
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -2896,7 +3623,7 @@ agents = ["codex"]
             &paths,
             "jackin-agent-smith",
             &manifest,
-            crate::config::AuthForwardMode::Ignore,
+            &|_| crate::config::AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
             temp.path(),
             Agent::Codex,
@@ -2905,8 +3632,16 @@ agents = ["codex"]
 
         let mounts = agent_mounts(&state);
         assert!(
-            mounts.is_empty(),
-            "no generated codex config mount: {mounts:?}"
+            mounts.iter().any(|m| m.contains(":/jackin/state")),
+            "jackin state mount missing: {mounts:?}"
+        );
+        assert!(
+            mounts.iter().any(|m| m.contains(":/home/agent/.codex")),
+            "durable Codex home mount missing: {mounts:?}"
+        );
+        assert!(
+            !mounts.iter().any(|m| m.contains("/jackin/codex/auth.json")),
+            "no auth.json handoff when auth is ignored: {mounts:?}"
         );
     }
 
@@ -2948,7 +3683,7 @@ agents = ["codex"]
             &paths,
             "jackin-agent-smith",
             &manifest,
-            crate::config::AuthForwardMode::Sync,
+            &|_| crate::config::AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
             &host_home,
             Agent::Codex,
@@ -2956,9 +3691,16 @@ agents = ["codex"]
         .unwrap();
 
         let mounts = agent_mounts(&state);
-        assert_eq!(mounts.len(), 1);
-        assert!(mounts[0].contains("/jackin/codex/auth.json"));
-        assert!(!mounts[0].ends_with(":ro"));
+        assert!(
+            mounts.iter().any(|m| m.contains(":/home/agent/.codex")),
+            "durable Codex home mount missing: {mounts:?}"
+        );
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains("/jackin/codex/auth.json") && !m.ends_with(":ro")),
+            "auth.json handoff missing: {mounts:?}"
+        );
     }
 
     #[test]
@@ -2990,7 +3732,7 @@ agents = ["codex"]
             &paths,
             "jackin-agent-smith",
             &manifest,
-            crate::config::AuthForwardMode::Sync,
+            &|_| crate::config::AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
             temp.path().join("empty_host_home").as_path(),
             Agent::Codex,
@@ -2998,10 +3740,13 @@ agents = ["codex"]
         .unwrap();
 
         let mounts = agent_mounts(&state);
-        assert_eq!(
-            mounts.len(),
-            0,
-            "no auth.json bind when host has no ~/.codex/auth.json: {mounts:?}"
+        assert!(
+            mounts.iter().any(|m| m.contains(":/home/agent/.codex")),
+            "durable Codex home mount missing: {mounts:?}"
+        );
+        assert!(
+            !mounts.iter().any(|m| m.contains("/jackin/codex/auth.json")),
+            "no auth.json handoff when host has no ~/.codex/auth.json: {mounts:?}"
         );
     }
 
@@ -3042,7 +3787,7 @@ agents = ["amp"]
             &paths,
             "jackin-the-architect",
             &manifest,
-            crate::config::AuthForwardMode::Sync,
+            &|_| crate::config::AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
             &host_home,
             Agent::Amp,
@@ -3050,13 +3795,22 @@ agents = ["amp"]
         .unwrap();
 
         let mounts = agent_mounts(&state);
-        assert_eq!(mounts.len(), 1);
-        assert!(mounts[0].contains("/jackin/amp/secrets.json"));
-        assert!(!mounts[0].ends_with(":ro"));
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains(":/home/agent/.local/share/amp")),
+            "durable Amp data mount missing: {mounts:?}"
+        );
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains("/jackin/amp/secrets.json") && !m.ends_with(":ro")),
+            "secrets.json handoff missing: {mounts:?}"
+        );
     }
 
     #[test]
-    fn agent_mounts_for_amp_ignore_has_no_agent_mounts() {
+    fn agent_mounts_for_amp_ignore_mounts_state_but_no_auth_handoff() {
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -3084,7 +3838,7 @@ agents = ["amp"]
             &paths,
             "jackin-the-architect",
             &manifest,
-            crate::config::AuthForwardMode::Ignore,
+            &|_| crate::config::AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
             temp.path(),
             Agent::Amp,
@@ -3093,8 +3847,20 @@ agents = ["amp"]
 
         let mounts = agent_mounts(&state);
         assert!(
-            mounts.is_empty(),
-            "ignore mode should not mount Amp settings: {mounts:?}"
+            mounts.iter().any(|m| m.contains(":/jackin/state")),
+            "jackin state mount missing: {mounts:?}"
+        );
+        assert!(
+            mounts
+                .iter()
+                .any(|m| m.contains(":/home/agent/.local/share/amp")),
+            "durable Amp data mount missing: {mounts:?}"
+        );
+        assert!(
+            !mounts
+                .iter()
+                .any(|m| m.contains("/jackin/amp/secrets.json")),
+            "ignore mode must not mount Amp auth handoff files: {mounts:?}"
         );
     }
 
@@ -3442,6 +4208,42 @@ echo "pulled $2"
         }
     }
 
+    fn arg_after(command: &str, flag: &str) -> String {
+        let mut args = command.split_whitespace();
+        while let Some(arg) = args.next() {
+            if arg == flag {
+                return args.next().unwrap_or_default().to_string();
+            }
+        }
+        String::new()
+    }
+
+    fn launched_role_container_name(runner: &FakeRunner) -> String {
+        let command = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d -it --name "))
+            .expect("expected role docker run command");
+        arg_after(command, "--name")
+    }
+
+    fn launched_dind_container_name(runner: &FakeRunner) -> String {
+        let command = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d --name "))
+            .expect("expected DinD docker run command");
+        arg_after(command, "--name")
+    }
+
+    fn dind_env_from_run_cmd(run_cmd: &str) -> String {
+        run_cmd
+            .split_whitespace()
+            .find_map(|arg| arg.strip_prefix("JACKIN_DIND_HOSTNAME="))
+            .expect("expected JACKIN_DIND_HOSTNAME env")
+            .to_string()
+    }
+
     #[test]
     fn resolve_agent_cli_override_wins() {
         assert_eq!(
@@ -3516,6 +4318,36 @@ plugins = []
         );
     }
 
+    #[test]
+    fn restore_role_source_override_uses_manifest_source_without_mutating_config() {
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut config = AppConfig::default();
+        config.roles.insert(
+            "agent-smith".to_string(),
+            crate::config::RoleSource {
+                git: "https://example.invalid/current.git".to_string(),
+                trusted: true,
+                env: std::collections::BTreeMap::new(),
+            },
+        );
+
+        let (source, is_new, restore_override) = resolve_launch_role_source(
+            &mut config,
+            &selector,
+            Some("https://example.invalid/recorded.git"),
+        )
+        .unwrap();
+
+        assert_eq!(source.git, "https://example.invalid/recorded.git");
+        assert!(source.trusted);
+        assert!(!is_new);
+        assert!(restore_override);
+        assert_eq!(
+            config.roles.get("agent-smith").unwrap().git,
+            "https://example.invalid/current.git"
+        );
+    }
+
     /// Helper: trust callback that always accepts.
     ///
     /// Signature matches `deny_trust` so both can be passed as the same
@@ -3537,7 +4369,8 @@ plugins = []
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = RoleSelector::new(Some("chainargos"), "the-architect");
-        let mut runner = FakeRunner::for_load_agent([String::new()]);
+        let mut runner =
+            FakeRunner::for_load_agent(["false 0 false".to_string(), "false 0 false".to_string()]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
@@ -3585,16 +4418,18 @@ plugins = ["code-review@claude-plugins-official"]
             call.contains("docker build ") && call.contains("-t jackin-chainargos__the-architect")
         }));
         assert!(runner.recorded.iter().any(|call| {
-            call.contains(
-                "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-chainargos__the-architect",
-            )
+            call.contains("docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-thearchitect-")
         }));
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it --name jackin-chainargos__the-architect"))
+            .find(|call| call.contains("docker run -d -it --name jackin-thearchitect-"))
             .unwrap();
         assert!(run_cmd.contains(" --model sonnet"));
+        let container_name = launched_role_container_name(&runner);
+        assert!(crate::instance::naming::is_dns_label(&container_name));
+        assert!(!container_name.contains("__"));
+        assert!(!container_name.contains("clone"));
         assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"));
         assert!(
             !runner
@@ -3603,20 +4438,17 @@ plugins = ["code-review@claude-plugins-official"]
                 .any(|call| call.contains("claude plugin install"))
         );
 
-        // Regression guard: namespaced class keys contain `__`, which is invalid
-        // in RFC-1123 hostnames. The DinD SAN must still carry the full
-        // container name so roles can connect via
-        // tcp://jackin-chainargos__the-architect-dind:2376 without TLS errors.
+        let dind = launched_dind_container_name(&runner);
+        assert!(crate::instance::naming::is_dns_label(&dind));
+        assert!(!dind.contains("__"));
         let dind_cmd = runner
             .recorded
             .iter()
-            .find(|call| {
-                call.contains("docker run -d --name jackin-chainargos__the-architect-dind")
-            })
+            .find(|call| call.contains(&format!("docker run -d --name {dind}")))
             .expect("expected DinD startup command");
         assert!(
-            dind_cmd.contains("DOCKER_TLS_SAN=DNS:jackin-chainargos__the-architect-dind"),
-            "DinD SAN must include the namespaced container name with a DNS: prefix"
+            dind_cmd.contains(&format!("DOCKER_TLS_SAN=DNS:{dind}")),
+            "DinD SAN must include the DNS-safe DinD name with a DNS: prefix"
         );
     }
 
@@ -3679,7 +4511,8 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(Some("chainargos"), "agent-brown");
-        let mut runner = FakeRunner::for_load_agent([String::new()]);
+        let mut runner =
+            FakeRunner::for_load_agent(["false 0 false".to_string(), "false 0 false".to_string()]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
@@ -3756,7 +4589,12 @@ trusted = true
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::for_load_agent([String::new()]);
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            "false 0 false".to_string(),
+            "false 0 false".to_string(),
+        ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
@@ -3799,15 +4637,13 @@ plugins = ["code-review@claude-plugins-official"]
                 .any(|call| call.contains("docker build "))
         );
         assert!(runner.recorded.iter().any(|call| {
-            call.contains(
-                "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-agent-smith",
-            )
+            call.contains("docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-agentsmith-")
         }));
         assert!(
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("docker run -d -it --name jackin-agent-smith"))
+                .any(|call| call.contains("docker run -d -it --name jackin-agentsmith-"))
         );
         assert!(
             !runner
@@ -3895,9 +4731,13 @@ model = "gpt-5"
         assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"));
         assert!(run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"));
         assert!(!run_cmd.contains("/jackin/codex/config.toml"));
-        // Codex container must not receive any Claude-side mounts.
-        assert!(!run_cmd.contains("/jackin/claude/"));
-        assert!(!run_cmd.contains("/home/agent/.claude"));
+        // Multi-agent role `agents = ["claude", "codex"]` provisions
+        // every supported agent's home state so `hardline --new --agent
+        // claude` can switch agents without re-authentication. The
+        // selected-agent runtime is still Codex (`JACKIN_AGENT=codex` /
+        // `-m gpt-5`), but Claude's mounts must be present.
+        assert!(run_cmd.contains("/home/agent/.claude"));
+        assert!(run_cmd.contains("/home/agent/.codex"));
         assert!(
             !paths
                 .data_dir
@@ -4315,7 +5155,7 @@ plugins = []
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner {
-            fail_on: vec!["docker run -d -it --name jackin-agent-smith".to_string()],
+            fail_on: vec!["docker run -d -it --name jackin-agentsmith-".to_string()],
             capture_queue: VecDeque::from(vec![
                 String::new(),
                 String::new(),
@@ -4358,31 +5198,35 @@ plugins = ["code-review@claude-plugins-official"]
         assert!(
             error
                 .to_string()
-                .contains("docker run -d -it --name jackin-agent-smith")
+                .contains("docker run -d -it --name jackin-agentsmith-")
+        );
+        let container_name = launched_role_container_name(&runner);
+        let dind = format!("{container_name}-dind");
+        let certs_volume = format!("{container_name}-dind-certs");
+        let network = format!("{container_name}-net");
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call == &format!("docker rm -f {container_name}"))
         );
         assert!(
             runner
                 .recorded
                 .iter()
-                .any(|call| call == "docker rm -f jackin-agent-smith")
+                .any(|call| call == &format!("docker rm -f {dind}"))
         );
         assert!(
             runner
                 .recorded
                 .iter()
-                .any(|call| call == "docker rm -f jackin-agent-smith-dind")
+                .any(|call| call == &format!("docker volume rm {certs_volume}"))
         );
         assert!(
             runner
                 .recorded
                 .iter()
-                .any(|call| call == "docker volume rm jackin-agent-smith-dind-certs")
-        );
-        assert!(
-            runner
-                .recorded
-                .iter()
-                .any(|call| call == "docker network rm jackin-agent-smith-net")
+                .any(|call| call == &format!("docker network rm {network}"))
         );
     }
 
@@ -4429,30 +5273,31 @@ plugins = []
         )
         .unwrap();
 
+        let dind = launched_dind_container_name(&runner);
         // DinD readiness check polls via docker exec
         assert!(
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("docker exec jackin-agent-smith-dind docker info"))
+                .any(|call| call.contains(&format!("docker exec {dind} docker info")))
         );
 
         // DinD container is started before the readiness check
         let dind_start = runner
             .recorded
             .iter()
-            .position(|call| call.contains("docker run -d --name jackin-agent-smith-dind"))
+            .position(|call| call.contains(&format!("docker run -d --name {dind}")))
             .unwrap();
         let dind_check = runner
             .recorded
             .iter()
-            .position(|call| call.contains("docker exec jackin-agent-smith-dind docker info"))
+            .position(|call| call.contains(&format!("docker exec {dind} docker info")))
             .unwrap();
         assert!(dind_start < dind_check);
 
         // TLS cert verification runs after docker info check
         assert!(runner.recorded.iter().any(|call| {
-            call.contains("docker exec jackin-agent-smith-dind test -f /certs/client/ca.pem")
+            call.contains(&format!("docker exec {dind} test -f /certs/client/ca.pem"))
         }));
     }
 
@@ -4499,23 +5344,27 @@ plugins = []
         )
         .unwrap();
 
+        let dind = launched_dind_container_name(&runner);
+        let certs_volume = dind.strip_suffix("-dind").unwrap().to_string() + "-dind-certs";
+        assert!(crate::instance::naming::is_dns_label(&dind), "{dind}");
+
         // DinD sidecar: TLS enabled with cert volume
         let dind_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d --name jackin-agent-smith-dind"))
+            .find(|call| call.contains(&format!("docker run -d --name {dind}")))
             .unwrap();
         assert!(
             dind_cmd.contains("DOCKER_TLS_CERTDIR=/certs"),
             "DinD must enable TLS cert generation"
         );
         assert!(
-            dind_cmd.contains("jackin-agent-smith-dind-certs:/certs/client"),
+            dind_cmd.contains(&format!("{certs_volume}:/certs/client")),
             "DinD must mount cert volume"
         );
         // DinD's auto-generated server cert must include the container name as a
         // Subject Alternative Name, because the role connects via
-        // DOCKER_HOST=tcp://jackin-agent-smith-dind:2376. Without this, the TLS
+        // DOCKER_HOST=tcp://{dind}:2376. Without this, the TLS
         // handshake fails because the default SANs only cover the short
         // container ID, `docker`, and `localhost`.
         //
@@ -4524,7 +5373,7 @@ plugins = []
         // prefix), and openssl rejects SAN entries that lack a type tag with
         // `v2i_GENERAL_NAME_ex: missing value`.
         assert!(
-            dind_cmd.contains("DOCKER_TLS_SAN=DNS:jackin-agent-smith-dind"),
+            dind_cmd.contains(&format!("DOCKER_TLS_SAN=DNS:{dind}")),
             "DinD SAN value must be prefixed with `DNS:` so openssl accepts it"
         );
 
@@ -4535,8 +5384,12 @@ plugins = []
             .find(|call| call.contains("docker run -d -it"))
             .unwrap();
         assert!(
-            run_cmd.contains("DOCKER_HOST=tcp://jackin-agent-smith-dind:2376"),
+            run_cmd.contains(&format!("DOCKER_HOST=tcp://{dind}:2376")),
             "role must use TLS port 2376"
+        );
+        assert!(
+            run_cmd.contains(&format!("TESTCONTAINERS_HOST_OVERRIDE={dind}")),
+            "Testcontainers must receive the same DNS-safe DinD hostname"
         );
         assert!(
             run_cmd.contains("DOCKER_TLS_VERIFY=1"),
@@ -4547,7 +5400,7 @@ plugins = []
             "role must know cert path"
         );
         assert!(
-            run_cmd.contains("jackin-agent-smith-dind-certs:/certs/client:ro"),
+            run_cmd.contains(&format!("{certs_volume}:/certs/client:ro")),
             "role must mount cert volume read-only"
         );
     }
@@ -4608,19 +5461,21 @@ plugins = []
             .iter()
             .find(|call| call.contains("docker run -d -it"))
             .unwrap();
+        let dind = dind_env_from_run_cmd(run_cmd);
         assert!(run_cmd.contains("HTTPS_PROXY=http://proxy.internal:8305"));
         // Both casings carry the merged list — operator's localhost,127.0.0.1
         // must survive into the lowercase synthesized variant for tools that
         // only read `no_proxy`.
-        assert!(run_cmd.contains("NO_PROXY=localhost,127.0.0.1,jackin-agent-smith-dind"));
-        assert!(run_cmd.contains("no_proxy=localhost,127.0.0.1,jackin-agent-smith-dind"));
+        assert!(run_cmd.contains(&format!("NO_PROXY=localhost,127.0.0.1,{dind}")));
+        assert!(run_cmd.contains(&format!("no_proxy=localhost,127.0.0.1,{dind}")));
     }
 
     #[test]
     fn load_agent_synthesizes_both_no_proxy_casings_when_only_proxy_set() {
         let (run_cmd, _temp) = run_load_with_env(&[("HTTPS_PROXY", "http://proxy.internal:8305")]);
-        assert!(run_cmd.contains("NO_PROXY=jackin-agent-smith-dind"));
-        assert!(run_cmd.contains("no_proxy=jackin-agent-smith-dind"));
+        let dind = dind_env_from_run_cmd(&run_cmd);
+        assert!(run_cmd.contains(&format!("NO_PROXY={dind}")));
+        assert!(run_cmd.contains(&format!("no_proxy={dind}")));
     }
 
     #[test]
@@ -4629,8 +5484,9 @@ plugins = []
             ("HTTPS_PROXY", "http://proxy.internal:8305"),
             ("NO_PROXY", "internal.corp"),
         ]);
-        assert!(run_cmd.contains("NO_PROXY=internal.corp,jackin-agent-smith-dind"));
-        assert!(run_cmd.contains("no_proxy=internal.corp,jackin-agent-smith-dind"));
+        let dind = dind_env_from_run_cmd(&run_cmd);
+        assert!(run_cmd.contains(&format!("NO_PROXY=internal.corp,{dind}")));
+        assert!(run_cmd.contains(&format!("no_proxy=internal.corp,{dind}")));
     }
 
     #[test]
@@ -4639,8 +5495,9 @@ plugins = []
             ("https_proxy", "http://proxy.internal:8305"),
             ("no_proxy", "internal.corp"),
         ]);
-        assert!(run_cmd.contains("NO_PROXY=internal.corp,jackin-agent-smith-dind"));
-        assert!(run_cmd.contains("no_proxy=internal.corp,jackin-agent-smith-dind"));
+        let dind = dind_env_from_run_cmd(&run_cmd);
+        assert!(run_cmd.contains(&format!("NO_PROXY=internal.corp,{dind}")));
+        assert!(run_cmd.contains(&format!("no_proxy=internal.corp,{dind}")));
     }
 
     #[test]
@@ -4649,8 +5506,9 @@ plugins = []
         // proxy, or container-injected vars; jackin only sees NO_PROXY.
         // Both casings must still receive the DinD bypass.
         let (run_cmd, _temp) = run_load_with_env(&[("NO_PROXY", "internal.corp")]);
-        assert!(run_cmd.contains("NO_PROXY=internal.corp,jackin-agent-smith-dind"));
-        assert!(run_cmd.contains("no_proxy=internal.corp,jackin-agent-smith-dind"));
+        let dind = dind_env_from_run_cmd(&run_cmd);
+        assert!(run_cmd.contains(&format!("NO_PROXY=internal.corp,{dind}")));
+        assert!(run_cmd.contains(&format!("no_proxy=internal.corp,{dind}")));
     }
 
     #[test]
@@ -4953,9 +5811,71 @@ plugins = []
             .iter()
             .find(|call| call.contains("docker run -d -it"))
             .unwrap();
+        let dind = dind_env_from_run_cmd(run_cmd);
         assert!(run_cmd.contains("-e JACKIN=1"));
-        assert!(run_cmd.contains("-e JACKIN_DIND_HOSTNAME=jackin-agent-smith-dind"));
+        assert!(run_cmd.contains(&format!("-e JACKIN_DIND_HOSTNAME={dind}")));
+        assert!(run_cmd.contains(&format!("-e TESTCONTAINERS_HOST_OVERRIDE={dind}")));
         assert!(!run_cmd.contains("JACKIN_DEBUG"));
+    }
+
+    #[test]
+    fn load_agent_writes_instance_manifest() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([
+            String::new(),
+            String::new(),
+            String::new(),
+            "true 0 false".to_string(),
+            "false 0 false".to_string(),
+            "false 0 false".to_string(),
+        ]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha2"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let container_name = launched_role_container_name(&runner);
+        let manifest_path = paths
+            .data_dir
+            .join(&container_name)
+            .join(".jackin/instance.json");
+        let body = std::fs::read_to_string(manifest_path).unwrap();
+        assert!(body.contains(r#""version": 1"#));
+        assert!(body.contains(&format!(r#""container_base": "{container_name}""#)));
+        assert!(body.contains(r#""role_key": "agent-smith""#));
+        assert!(body.contains(r#""agent_runtime": "claude""#));
+        assert!(body.contains(r#""host_workdir_fingerprint": "sha256:"#));
+        assert!(body.contains(r#""status": "restore_available""#));
+        let index_body = std::fs::read_to_string(paths.data_dir.join("instances.json")).unwrap();
+        assert!(index_body.contains(&format!(r#""container_base": "{container_name}""#)));
     }
 
     #[test]
@@ -5483,22 +6403,26 @@ plugins = []
 
     // ── claim_container_name tests ────────────────────────────────────────────
 
-    /// `NotFound` → claim the primary slot directly (no docker rm issued).
+    /// `NotFound` → claim a unique ad-hoc name directly (no docker rm issued).
     #[test]
-    fn claim_container_name_not_found_claims_primary() {
+    fn claim_container_name_not_found_claims_unique_ad_hoc_name() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
         // inspect returns "" → NotFound
         let mut runner = FakeRunner::with_capture_queue([String::new()]);
 
-        let (name, _lock) = claim_container_name(&paths, &selector, &mut runner).unwrap();
+        let (name, _lock) = claim_container_name(&paths, None, &selector, &mut runner).unwrap();
 
-        assert_eq!(name, "jackin-agent-smith");
+        assert!(name.starts_with("jackin-agentsmith-"), "{name}");
+        assert!(!name.contains("clone"), "{name}");
+        assert!(crate::instance::naming::is_dns_label(&name), "{name}");
+        assert!(
+            crate::instance::naming::is_dns_label(&format!("{name}-dind")),
+            "{name}"
+        );
         assert!(runner.recorded.iter().any(|call| {
-            call.contains(
-                "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-agent-smith",
-            )
+            call.contains("docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-agentsmith-")
         }));
         assert!(
             !runner
@@ -5508,19 +6432,44 @@ plugins = []
         );
     }
 
-    /// Running → skip primary, claim clone-1.
     #[test]
-    fn claim_container_name_running_skips_to_clone() {
+    fn claim_container_name_docker_unavailable_errors() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        // primary inspect → Running; clone-1 inspect → NotFound
+        let mut runner = FakeRunner::default();
+        runner.fail_with.push((
+            "docker inspect".to_string(),
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+        ));
+
+        let err = claim_container_name(&paths, None, &selector, &mut runner).unwrap_err();
+
+        assert!(err.to_string().contains("cannot claim container name"));
+        assert!(err.to_string().contains("Docker is unavailable"));
+    }
+
+    /// Running collision → skip that random name and claim another one.
+    #[test]
+    fn claim_container_name_running_collision_tries_another_unique_name() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let selector = RoleSelector::new(None, "agent-smith");
         let mut runner =
             FakeRunner::with_capture_queue(["true 0 false".to_string(), String::new()]);
 
-        let (name, _lock) = claim_container_name(&paths, &selector, &mut runner).unwrap();
+        let (name, _lock) = claim_container_name(&paths, None, &selector, &mut runner).unwrap();
 
-        assert_eq!(name, "jackin-agent-smith-clone-1");
+        assert!(name.starts_with("jackin-agentsmith-"), "{name}");
+        assert!(!name.contains("clone"), "{name}");
+        assert_eq!(
+            runner
+                .recorded
+                .iter()
+                .filter(|call| call.contains("docker inspect --format"))
+                .count(),
+            2
+        );
         assert!(
             !runner
                 .recorded
@@ -5529,39 +6478,38 @@ plugins = []
         );
     }
 
-    /// Stopped / exit 0 → docker rm issued, same slot reclaimed.
+    /// Stopped / exit 0 collision → docker rm issued, same random slot reclaimed.
     #[test]
     fn claim_container_name_clean_exit_removes_and_reclaims() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        // primary inspect → Stopped / exit 0 / no OOM
         let mut runner = FakeRunner::with_capture_queue(["false 0 false".to_string()]);
 
-        let (name, _lock) = claim_container_name(&paths, &selector, &mut runner).unwrap();
+        let (name, _lock) = claim_container_name(&paths, None, &selector, &mut runner).unwrap();
 
-        assert_eq!(name, "jackin-agent-smith");
+        assert!(name.starts_with("jackin-agentsmith-"), "{name}");
         assert!(
             runner
                 .recorded
                 .iter()
-                .any(|call| call == "docker rm jackin-agent-smith")
+                .any(|call| call.starts_with("docker rm jackin-agentsmith-"))
         );
     }
 
-    /// Stopped / non-zero exit → skip primary, claim clone-1 (hardline territory).
+    /// Stopped / non-zero collision → skip it and claim another random name.
     #[test]
-    fn claim_container_name_crashed_skips_to_clone() {
+    fn claim_container_name_crashed_collision_tries_another_unique_name() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        // primary inspect → Stopped / exit 1; clone-1 → NotFound
         let mut runner =
             FakeRunner::with_capture_queue(["false 1 false".to_string(), String::new()]);
 
-        let (name, _lock) = claim_container_name(&paths, &selector, &mut runner).unwrap();
+        let (name, _lock) = claim_container_name(&paths, None, &selector, &mut runner).unwrap();
 
-        assert_eq!(name, "jackin-agent-smith-clone-1");
+        assert!(name.starts_with("jackin-agentsmith-"), "{name}");
+        assert!(!name.contains("clone"), "{name}");
         assert!(
             !runner
                 .recorded
@@ -5570,28 +6518,420 @@ plugins = []
         );
     }
 
-    /// slot 0 crashed, slot 1 clean-exit → slot 1 reclaimed after rm, not slot 2.
     #[test]
-    fn claim_container_name_crashed_then_clean_exit_reclaims_slot_1() {
+    fn claim_container_name_saved_workspace_includes_workspace_component() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        // primary → crashed; clone-1 → clean exit
-        let mut runner = FakeRunner::with_capture_queue([
-            "false 1 false".to_string(),
-            "false 0 false".to_string(),
-        ]);
+        let mut runner = FakeRunner::with_capture_queue([String::new()]);
 
-        let (name, _lock) = claim_container_name(&paths, &selector, &mut runner).unwrap();
+        let (name, _lock) =
+            claim_container_name(&paths, Some("my-workspace"), &selector, &mut runner).unwrap();
 
-        assert_eq!(name, "jackin-agent-smith-clone-1");
+        assert!(name.starts_with("jackin-myworkspace-agentsmith-"), "{name}");
+        assert!(name.len() <= 58, "{name}");
+    }
+
+    #[test]
+    fn restore_candidate_blocks_noninteractive_fresh_load() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest
+            .write(&paths.data_dir.join(container_name))
+            .unwrap();
+        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+
+        let error = resolve_restore_candidate(
+            &paths,
+            Some("workspace"),
+            "workspace",
+            "/workspace",
+            "agent-smith",
+            crate::agent::Agent::Claude,
+            &mut runner,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("restore is available"));
+        assert!(error.to_string().contains(container_name));
+    }
+
+    #[test]
+    fn related_restore_candidate_blocks_noninteractive_fresh_load() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
+        let manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "the-architect",
+            role_display_name: "The Architect",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/the-architect.git",
+            role_source_ref: None,
+            image_tag: "jackin-the-architect",
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest
+            .write(&paths.data_dir.join(container_name))
+            .unwrap();
+        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+
+        let error = resolve_restore_candidate(
+            &paths,
+            Some("workspace"),
+            "workspace",
+            "/workspace",
+            "agent-smith",
+            crate::agent::Agent::Claude,
+            &mut runner,
+        )
+        .unwrap_err();
+
+        let message = error.to_string();
         assert!(
-            runner
-                .recorded
-                .iter()
-                .any(|call| call == "docker rm jackin-agent-smith-clone-1")
+            message.contains("different role or agent"),
+            "unexpected error: {message}"
         );
-        assert!(!runner.recorded.iter().any(|call| call.contains("clone-2")));
+        assert!(message.contains("jackin hardline <instance>"), "{message}");
+    }
+
+    #[test]
+    fn related_restore_candidates_ignore_finished_instances() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
+        let mut manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "the-architect",
+            role_display_name: "The Architect",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/the-architect.git",
+            role_source_ref: None,
+            image_tag: "jackin-the-architect",
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest.mark_status(InstanceStatus::CleanExited);
+        manifest
+            .write(&paths.data_dir.join(container_name))
+            .unwrap();
+        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let mut runner = FakeRunner::default();
+
+        let candidate = resolve_restore_candidate(
+            &paths,
+            Some("workspace"),
+            "workspace",
+            "/workspace",
+            "agent-smith",
+            crate::agent::Agent::Claude,
+            &mut runner,
+        )
+        .unwrap();
+
+        assert_eq!(candidate, RestoreResolution::StartFresh);
+        assert!(runner.recorded.is_empty());
+    }
+
+    #[test]
+    fn related_restore_candidate_with_container_recovers_in_place() {
+        let candidate = RelatedRestoreCandidate {
+            manifest: InstanceManifest::new(NewInstanceManifest {
+                container_base: "jackin-workspace-thearchitect-k7p9m2xq",
+                workspace_name: Some("workspace"),
+                workspace_label: "workspace",
+                workdir: "/workspace",
+                host_workdir_fingerprint: "sha256:test",
+                role_key: "the-architect",
+                role_display_name: "The Architect",
+                agent_runtime: crate::agent::Agent::Claude,
+                role_source_git: "https://example.invalid/the-architect.git",
+                role_source_ref: None,
+                image_tag: "jackin-the-architect",
+                docker: DockerResources {
+                    role_container: "jackin-workspace-thearchitect-k7p9m2xq".to_string(),
+                    dind_container: "jackin-workspace-thearchitect-k7p9m2xq-dind".to_string(),
+                    network: "jackin-workspace-thearchitect-k7p9m2xq-net".to_string(),
+                    certs_volume: "jackin-workspace-thearchitect-k7p9m2xq-dind-certs".to_string(),
+                },
+            }),
+            docker_state: ContainerState::Running,
+        };
+
+        let resolution = recover_related_restore_candidate(&candidate).unwrap();
+
+        assert_eq!(
+            resolution,
+            RestoreResolution::RecoverRelatedRole(
+                "jackin-workspace-thearchitect-k7p9m2xq".to_string()
+            )
+        );
+        assert!(related_restore_candidate_action_label(&candidate).starts_with("Recover now"));
+    }
+
+    #[test]
+    fn missing_related_restore_candidate_rebuilds_in_place() {
+        let candidate = RelatedRestoreCandidate {
+            manifest: InstanceManifest::new(NewInstanceManifest {
+                container_base: "jackin-workspace-thearchitect-k7p9m2xq",
+                workspace_name: Some("workspace"),
+                workspace_label: "workspace",
+                workdir: "/workspace",
+                host_workdir_fingerprint: "sha256:test",
+                role_key: "the-architect",
+                role_display_name: "The Architect",
+                agent_runtime: crate::agent::Agent::Claude,
+                role_source_git: "https://example.invalid/the-architect.git",
+                role_source_ref: None,
+                image_tag: "jackin-the-architect",
+                docker: DockerResources {
+                    role_container: "jackin-workspace-thearchitect-k7p9m2xq".to_string(),
+                    dind_container: "jackin-workspace-thearchitect-k7p9m2xq-dind".to_string(),
+                    network: "jackin-workspace-thearchitect-k7p9m2xq-net".to_string(),
+                    certs_volume: "jackin-workspace-thearchitect-k7p9m2xq-dind-certs".to_string(),
+                },
+            }),
+            docker_state: ContainerState::NotFound,
+        };
+
+        let resolution = recover_related_restore_candidate(&candidate).unwrap();
+
+        assert!(matches!(
+            resolution,
+            RestoreResolution::RebuildRelatedRole(ref manifest)
+                if manifest.container_base == "jackin-workspace-thearchitect-k7p9m2xq"
+        ));
+        assert!(related_restore_candidate_action_label(&candidate).starts_with("Rebuild now"));
+    }
+
+    #[test]
+    fn related_restore_load_options_use_manifest_source_ref_and_agent() {
+        let mut manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: "jackin-workspace-thearchitect-k7p9m2xq",
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "the-architect",
+            role_display_name: "The Architect",
+            agent_runtime: crate::agent::Agent::Codex,
+            role_source_git: "https://example.invalid/the-architect.git",
+            role_source_ref: Some("restore-ref"),
+            image_tag: "jackin-the-architect",
+            docker: DockerResources {
+                role_container: "jackin-workspace-thearchitect-k7p9m2xq".to_string(),
+                dind_container: "jackin-workspace-thearchitect-k7p9m2xq-dind".to_string(),
+                network: "jackin-workspace-thearchitect-k7p9m2xq-net".to_string(),
+                certs_volume: "jackin-workspace-thearchitect-k7p9m2xq-dind-certs".to_string(),
+            },
+        });
+        manifest.agent_runtime = "codex".to_string();
+        let current = LoadOptions::for_load(false, true, false);
+
+        let opts = related_restore_load_options(&current, &manifest).unwrap();
+
+        assert!(opts.no_intro);
+        assert!(opts.debug);
+        assert_eq!(opts.agent, Some(crate::agent::Agent::Codex));
+        assert_eq!(opts.role_branch.as_deref(), Some("restore-ref"));
+        assert_eq!(
+            opts.restore_container_base.as_deref(),
+            Some("jackin-workspace-thearchitect-k7p9m2xq")
+        );
+        assert_eq!(
+            opts.restore_role_source_git.as_deref(),
+            Some("https://example.invalid/the-architect.git")
+        );
+        assert!(
+            related_restore_candidate_action_label(&RelatedRestoreCandidate {
+                manifest,
+                docker_state: ContainerState::NotFound,
+            })
+            .starts_with("Rebuild now")
+        );
+    }
+
+    #[test]
+    fn supersede_restore_candidates_updates_manifest_and_index() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest
+            .write(&paths.data_dir.join(container_name))
+            .unwrap();
+        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+
+        supersede_restore_candidates(&paths, vec![manifest]).unwrap();
+
+        let manifest = InstanceManifest::read(&paths.data_dir.join(container_name)).unwrap();
+        assert_eq!(manifest.status, InstanceStatus::Superseded);
+        let index = InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
+        assert_eq!(index.instances[0].status, InstanceStatus::Superseded);
+    }
+
+    #[test]
+    fn restore_candidate_label_includes_manifest_and_mount_state() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let mut manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Codex,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest.mark_status(InstanceStatus::PreservedDirty);
+        manifest.last_attach_outcome = Some("exit:137".into());
+        crate::isolation::state::write_records(
+            &paths.data_dir.join(container_name),
+            &[crate::isolation::state::IsolationRecord {
+                workspace: "workspace".into(),
+                mount_dst: "/workspace".into(),
+                original_src: "/host/workspace".into(),
+                isolation: crate::isolation::MountIsolation::Worktree,
+                worktree_path: "/tmp/worktree".into(),
+                scratch_branch: "jackin/test".into(),
+                base_commit: "abc123".into(),
+                selector_key: "agent-smith".into(),
+                container_name: container_name.into(),
+                cleanup_status: crate::isolation::state::CleanupStatus::PreservedDirty,
+            }],
+        )
+        .unwrap();
+
+        let label = restore_candidate_label(&paths, &manifest);
+
+        assert!(label.contains("k7p9m2xq"), "{label}");
+        assert!(label.contains("status:preserved_dirty"), "{label}");
+        assert!(label.contains("agent:codex"), "{label}");
+        assert!(label.contains("role:agent-smith"), "{label}");
+        assert!(label.contains("mounts:1 dirty:1 unpushed:0"), "{label}");
+        assert!(label.contains("attach:exit:137"), "{label}");
+        assert!(!label.contains(container_name), "{label}");
+    }
+
+    #[test]
+    fn record_instance_attach_outcome_updates_manifest() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest
+            .write(&paths.data_dir.join(container_name))
+            .unwrap();
+
+        record_instance_attach_outcome(
+            &paths,
+            container_name,
+            crate::isolation::finalize::AttachOutcome::stopped(137),
+        )
+        .unwrap();
+
+        let manifest = InstanceManifest::read(&paths.data_dir.join(container_name)).unwrap();
+        assert_eq!(manifest.last_attach_outcome.as_deref(), Some("exit:137"));
+    }
+
+    #[test]
+    fn format_attach_outcome_names_running_exit_and_oom() {
+        use crate::isolation::finalize::AttachOutcome;
+
+        assert_eq!(
+            format_attach_outcome(AttachOutcome::still_running()),
+            "running"
+        );
+        assert_eq!(format_attach_outcome(AttachOutcome::stopped(0)), "exit:0");
+        assert_eq!(
+            format_attach_outcome(AttachOutcome::oom_killed()),
+            "oom_killed"
+        );
     }
 
     #[test]

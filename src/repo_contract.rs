@@ -7,6 +7,10 @@ use crate::repo::RoleRepoValidationError;
 
 pub const CONSTRUCT_IMAGE: &str = "projectjackin/construct:trixie";
 
+pub fn construct_image() -> String {
+    std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_else(|_| CONSTRUCT_IMAGE.to_owned())
+}
+
 #[derive(Debug, Clone)]
 pub struct ValidatedDockerfile {
     pub dockerfile_path: PathBuf,
@@ -43,10 +47,9 @@ pub fn validate_agent_dockerfile(
         return Err(RoleRepoValidationError::DockerfileMissingFrom);
     };
 
-    if platform.is_some() || image != CONSTRUCT_IMAGE {
-        return Err(RoleRepoValidationError::DockerfileNonConstruct {
-            expected: CONSTRUCT_IMAGE,
-        });
+    let expected = construct_image();
+    if platform.is_some() || image.as_str() != expected {
+        return Err(RoleRepoValidationError::DockerfileNonConstruct { expected });
     }
 
     Ok(ValidatedDockerfile {

@@ -57,12 +57,10 @@ The mode vocabulary is `shared | worktree | clone`. `shared` is the canonical sp
 
 Branch naming (Model B — full container name verbatim):
 
-- Primary instance: `jackin/scratch/jackin-the-architect`
-- Clone instance: `jackin/scratch/jackin-the-architect-clone-1`
-- Namespaced instance: `jackin/scratch/jackin-chainargos__the-architect`
-- Namespaced clone instance: `jackin/scratch/jackin-chainargos__the-architect-clone-1`
+- Instance: `jackin/scratch/jackin-thearchitect-k7p9m2xq`
+- Workspace-scoped instance: `jackin/scratch/jackin-myproject-thearchitect-a1b2c3d4`
 
-The branch leaf is the **full container name verbatim**. Container names are workspace-unique by construction in <RepoFile path="src/instance/naming.rs" />, so the branch ref inherits that uniqueness without a separate derivation step — clone suffixes (`-clone-1`, `-clone-2`, etc.) and namespace handling are already baked into the container name; the branch leaf simply mirrors it. The trade-off is **trivial 1:1 mapping** (container → branch, no derivation logic, no instance-suffix stripping) at the cost of a mildly redundant `jackin-` prefix under the `jackin/scratch/` namespace. The branch intentionally says `scratch`: it is jackin-managed, disposable, and stable enough for recovery until the agent or operator renames it.
+The branch leaf is the **full container name verbatim**. Container names are workspace-unique by construction in <RepoFile path="src/instance/naming.rs" /> (random 8-char instance ID per launch), so the branch ref inherits that uniqueness without a separate derivation step. The trade-off is **trivial 1:1 mapping** (container → branch, no derivation logic, no instance-suffix stripping) at the cost of a mildly redundant `jackin-` prefix under the `jackin/scratch/` namespace. The branch intentionally says `scratch`: it is jackin-managed, disposable, and stable enough for recovery until the agent or operator renames it.
 
 ## CLI Surface
 
@@ -151,7 +149,7 @@ Worktrees live inside the existing per-container state tree, matching the flat `
       gitdir              # bind-mount source for the admin's back-pointer
 ```
 
-At `load` time, materialization happens **after** the real container name is claimed and the per-container state directory exists. `resolve_load_workspace` should stay a config/path resolver; it does not know whether this launch will become the primary container or a `-clone-N` instance. The runtime should introduce a narrow post-resolution step:
+At `load` time, materialization happens **after** the real container name is claimed and the per-container state directory exists. `resolve_load_workspace` should stay a config/path resolver; it does not know which random instance ID this launch will be assigned. The runtime should introduce a narrow post-resolution step:
 
 1. Resolve workspace mounts normally.
 2. Claim the final container name.
@@ -211,12 +209,11 @@ Host-side worktree files (`<wt>/.git` and `<host_repo>/.git/worktrees/<container
 For parallel containers loading isolation against the same host repo:
 
 ```text
-Container jackin-the-architect          → admin: <host>/.git/worktrees/jackin-the-architect/
-Container jackin-the-architect-clone-1  → admin: <host>/.git/worktrees/jackin-the-architect-clone-1/
-Container jackin-the-architect-clone-2  → admin: <host>/.git/worktrees/jackin-the-architect-clone-2/
+Container jackin-thearchitect-k7p9m2xq → admin: <host>/.git/worktrees/jackin-thearchitect-k7p9m2xq/
+Container jackin-thearchitect-a1b2c3d4 → admin: <host>/.git/worktrees/jackin-thearchitect-a1b2c3d4/
 ```
 
-**Branch naming uses the full container name.** Branch ref = `jackin/scratch/<container>` (e.g. `jackin/scratch/jackin-the-architect-clone-1`). Container name is the disambiguator because branch refs live in the host repo's shared `<host>/.git/refs/heads/` namespace and `git worktree add -b` fails hard on branch collisions (no auto-suffix like admin entries get). Includes the `jackin-` prefix because the container name is used verbatim — the prefix is mildly redundant under the `jackin/scratch/` namespace but the trade is **trivial 1:1 mapping** (container name → branch leaf, no derivation logic, no instance-suffix stripping).
+**Branch naming uses the full container name.** Branch ref = `jackin/scratch/<container>` (e.g. `jackin/scratch/jackin-thearchitect-k7p9m2xq`). Container name is the disambiguator because branch refs live in the host repo's shared `<host>/.git/refs/heads/` namespace and `git worktree add -b` fails hard on branch collisions (no auto-suffix like admin entries get). Includes the `jackin-` prefix because the container name is used verbatim — the prefix is mildly redundant under the `jackin/scratch/` namespace but the trade is **trivial 1:1 mapping** (container name → branch leaf, no derivation logic).
 
 **Mount permissions, summarized.** The host `.git/` mount is read-write (refs, objects, HEAD/index/logs are all written under it on every commit/branch/fetch). Both override files are mounted **read-only** as defensive hardening: git only reads them during normal agent work, and a misbehaving agent could otherwise rewrite the worktree's `.git` pointer to redirect operations at a different gitdir entirely. The only legitimate writes to those files (`git worktree repair`, `git worktree move`, `git init` inside the worktree) are maintenance commands that have no place in normal agent workflows.
 
@@ -368,7 +365,7 @@ Ship:
 - `extensions.worktreeConfig` enabled on the host repo on first worktree creation.
 - For each isolated worktree, **four** bind mounts wired up at Docker run time so git works inside the container: the worktree at `<dst>` (rw), host's `.git/` at `/jackin/host/<dst-stripped>/.git` (rw, includes the per-worktree admin dir natively), plus two jackin-owned `:ro` override files (replacement `.git` pointer at `<dst>/.git`, replacement back-pointer at the admin's `gitdir`). The override files live at `<data_dir>/jackin-<container>/git/overrides/<dst-stripped>/{.git,gitdir}` with filenames matching their docker mount destinations. The materialized worktree lives at `<data_dir>/jackin-<container>/git/worktree/repo/<dst-stripped>/<container>/` — `repo/` marks the subtree as git-managed, `<container>` basename ensures globally unique admin entries in the host repo's `.git/worktrees/`. See [Container-side mount layout](#host-side-materialization) and [Design Decision: Worktree Materialization Layout](#design-decision-worktree-materialization-layout).
 - For each isolated clone, one bind mount is enough: the materialized clone at `<data_dir>/jackin-<container>/git/clone/repo/<dst-stripped>/<container>/` is mounted at `<dst>` (rw). The clone carries its own `.git/`, so no host `.git/` auxiliary mounts or override files are needed.
-- Branch naming uses the full container name verbatim: `jackin/scratch/<container>` (e.g. `jackin/scratch/jackin-the-architect-clone-1`). Globally unique by construction; trivial container → branch mapping; no instance-suffix derivation logic.
+- Branch naming uses the full container name verbatim: `jackin/scratch/<container>` (e.g. `jackin/scratch/jackin-thearchitect-k7p9m2xq`). Globally unique by construction; trivial container → branch mapping; no instance-suffix derivation logic.
 - `validate_isolation_layout` rejects two worktree mounts that resolve to the same host repository within one workspace. Clone mounts can share the same host repository because each has an independent `.git/`.
 - `load` materializes, foreground session finalization safely removes throwaway isolated worktrees when no work would be lost, unsafe clean-exit cleanup asks interactive operators whether to return to the agent, preserve recovery state, or force-delete, `eject` leaves worktrees alone, and `purge` force-deletes everything (container, DinD sidecar, the per-container `git/` tree, worktree, local branch).
 - `purge` refuses on running agents (also closes the pre-existing gap for `shared` mode).
@@ -380,8 +377,6 @@ Known limitations for v1 (document, don't invest):
 
 - **Submodules and git-LFS.** Worktrees handle submodules the way the parent repo does; no extra jackin'-side orchestration. If a team hits an edge case, they'll tell us.
 - **Shared `.git/config` for remotes, credentials, and non-`--worktree` writes.** `extensions.worktreeConfig` closes the accidental-leak path for tools that use `git config --worktree`, but config written without that flag, plus `remote.*` and `credential.*`, still lands in shared `.git/config`. An agent that deliberately writes shared config can still affect the host — this is a trust question, not a boundary.
-- **Naming collision with existing `-clone-N` suffix.** <RepoFile path="src/instance/naming.rs" /> already uses `-clone-N` for collision-avoidance in container names (e.g. `jackin-the-architect-clone-1`). With `isolation = "clone"`, the word "clone" has two meanings in logs and paths: an instance suffix and a git-isolation mode. The mode's on-disk discriminator is explicit (`git/clone/repo/...`) so this is cosmetic.
-
 Defer:
 
 - Configurable `branch_template` / `base_branch`. The V1 branch name is ephemeral scratch; no user-facing use case has surfaced that a hardcoded name doesn't cover.

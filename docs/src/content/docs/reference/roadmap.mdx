@@ -40,6 +40,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 - [Per-mount isolation for parallel agents](/reference/roadmap/per-mount-isolation/) — `shared | worktree | clone` modes implemented in V1
 - [Split `config.toml` into per-workspace files](/reference/roadmap/split-workspace-config-files/) — `~/.config/jackin/workspaces/<name>.toml` layout shipped; per-file `version` stamps and migration land via the config-versioning item below
 - [Global mount visibility and editing](/reference/roadmap/global-mount-visibility/) — workspace views show applicable global mounts separately, and the console has a dedicated global mounts editor for `~/.config/jackin/config.toml`
+- [Unique container identity and restore](/reference/roadmap/unique-container-identity-restore/) — DNS-safe unique container identities, per-instance manifests and rebuildable index, hardline/load/console recovery flows, durable per-instance agent home restore, related-instance recovery/rebuild, moved ad-hoc path recovery, guarded purge, and Java Testcontainers DinD smoke coverage have shipped; reconnectable named sessions and persistent lifecycle history are tracked separately
 
 ## Partially implemented
 
@@ -48,6 +49,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 - [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/) — shipped GitHub auth forwarding is documented in standard docs; roadmap tracks the CLI subcommand, scope pre-flight, and deeper GHE coverage
 - [Workspace Claude token setup](/reference/roadmap/workspace-claude-token-setup/) — shipped token commands are documented in standard docs; roadmap tracks the canonical auth slot, TUI generate action, Apple Keychain backend, validity probe, and bulk migration
 - [Config versioning and migration framework](/reference/roadmap/config-versioning-migration/) — shipped per-file schema gates for config, workspace files, and role manifests, plus automatic config/workspace migration and explicit role manifest `--migrate`; roadmap tracks deferred `--pr` automation and the Renovate-style auto-migration GitHub Action
+- [Console agent session control](/reference/roadmap/console-agent-session-control/) — instance discovery and the console Instances panel (with recover/reconnect, new session, inspect, and guarded purge actions) shipped with unique container identity and restore; shell entry, reconnectable tmux-backed primary session, and stop-one-without-stopping-all secondary sessions remain in Phase 2+
 
 ## Planned
 
@@ -78,7 +80,6 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 
 - **[Docker API migration](/reference/roadmap/bollard-migration/)** — incremental migration from CLI string-matching to the Bollard typed API client for more robust error handling (status: deferred — incremental migration is the pragmatic path)
 - **[Construct user creation optimization](/reference/roadmap/construct-user-creation/)** — move user creation to the derived layer to eliminate UID/GID remapping (status: deferred — needs design work)
-- **[Unique container identity and restore](/reference/roadmap/unique-container-identity-restore/)** — replace clone-derived Docker names with DNS-safe unique instance names, add per-instance restore metadata, and make deleted-Docker recovery explicit before fresh launches (status: open — design proposal)
 
 ### Operator surface and fleet operations
 

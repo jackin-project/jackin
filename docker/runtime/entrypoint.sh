@@ -14,6 +14,14 @@ run_maybe_quiet() {
     fi
 }
 
+seed_home_dir() {
+    local src="$1" dst="$2"
+    mkdir -p "$dst"
+    if [ -d "$src" ]; then
+        cp -an "$src"/. "$dst"/ 2>/dev/null || true
+    fi
+}
+
 # Run a child-process hook with a `[entrypoint]` log prefix and an
 # explicit failure-attributed exit. `$3` (optional) is appended after
 # `; ` to the failure line — used by setup-once to surface its retry
@@ -71,17 +79,16 @@ fi
 
 # ── agent-specific setup ───────────────────────────────────────────
 #
-# Auth/config files arrive under /jackin/<agent>/... rather than being
-# bind-mounted directly over the agent's home. The image bakes
-# ~/.claude/{settings.json,hooks,memory} (and the codex equivalents);
-# bind-mounting on top would mask those, so we copy from /jackin/ into
-# the agent home here at startup. Copies — not symlinks — to avoid
-# tools that resolve realpath and refuse paths outside $HOME, and so
-# in-session writes (token rotation, etc.) stay in the container's
-# writable layer instead of leaking back to the host.
+# The agent home is bind-mounted from jackin's per-instance data dir so
+# conversation history and runtime-local plugins survive Docker container
+# loss. The derived image stores its baked defaults under
+# /jackin/default-home; seed_home_dir copies only missing files so the first
+# launch gets the image defaults without clobbering state from prior runs.
+# Auth handoff files still arrive under /jackin/<agent>/... and are copied
+# into the durable home on every launch so the current auth mode wins.
 case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
   claude)
-    mkdir -p /home/agent/.claude
+    seed_home_dir /jackin/default-home/.claude /home/agent/.claude
     if [ -f /jackin/claude/account.json ]; then
         cp /jackin/claude/account.json /home/agent/.claude.json
         chmod 600 /home/agent/.claude.json
@@ -89,6 +96,8 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     if [ -f /jackin/claude/credentials.json ]; then
         cp /jackin/claude/credentials.json /home/agent/.claude/.credentials.json
         chmod 600 /home/agent/.claude/.credentials.json
+    else
+        rm -f /home/agent/.claude/.credentials.json
     fi
 
     # Register security tool MCP servers (ignore "already exists" on subsequent runs)
@@ -109,10 +118,12 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     fi
     ;;
   codex)
-    mkdir -p /home/agent/.codex
+    seed_home_dir /jackin/default-home/.codex /home/agent/.codex
     if [ -f /jackin/codex/auth.json ]; then
         cp /jackin/codex/auth.json /home/agent/.codex/auth.json
         chmod 600 /home/agent/.codex/auth.json
+    else
+        rm -f /home/agent/.codex/auth.json
     fi
     LAUNCH=(codex --enable goals --dangerously-bypass-approvals-and-sandbox)
     if [ "$#" -gt 0 ]; then
@@ -120,7 +131,7 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     fi
     ;;
   amp)
-    mkdir -p /home/agent/.local/share/amp
+    seed_home_dir /jackin/default-home/.local/share/amp /home/agent/.local/share/amp
     if [ -f /jackin/amp/secrets.json ]; then
         echo "[entrypoint] amp: forwarding host secrets.json into ~/.local/share/amp/" >&2
         cp /jackin/amp/secrets.json /home/agent/.local/share/amp/secrets.json
@@ -128,6 +139,7 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     elif [ -n "${AMP_API_KEY:-}" ]; then
         echo "[entrypoint] amp: AMP_API_KEY present in env; agent will use api-key auth" >&2
     else
+        rm -f /home/agent/.local/share/amp/secrets.json
         echo "[entrypoint] amp: no secrets.json mounted and AMP_API_KEY unset — agent will require interactive login" >&2
     fi
     # CLI flag chosen over `amp.dangerouslyAllowAll: true` so jackin
