@@ -12,7 +12,7 @@ fn validate_passes_for_valid_agent_repo() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+        r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -41,7 +41,7 @@ fn validate_fails_for_wrong_base_image() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+        r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -70,7 +70,7 @@ fn validate_allows_missing_dockerignore() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+        r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -98,7 +98,7 @@ fn validate_fails_for_invalid_manifest() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+        r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 unknown_field = true
 
@@ -129,7 +129,7 @@ fn validate_passes_when_manifest_uses_dockerfile_in_subdirectory() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+        r#"version = "v1alpha2"
 dockerfile = "docker/role.Dockerfile"
 
 [claude]
@@ -156,7 +156,7 @@ fn validate_fails_for_invalid_preflight_hook() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+        r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [hooks]
@@ -206,7 +206,7 @@ fn validate_migrate_accepts_flag_after_path() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "Migrated manifest legacy -> v1alpha3",
+            "Migrated manifest legacy -> v1alpha2",
         ));
 }
 
@@ -220,7 +220,7 @@ fn validate_migrate_is_noop_for_current_manifest() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        "version = \"v1alpha3\"\ndockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        "version = \"v1alpha2\"\ndockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
     )
     .unwrap();
 
@@ -253,7 +253,7 @@ fn validate_migrate_rejects_newer_manifest_version() {
         .args(["--migrate", temp.path().to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("only understands up to v1alpha3"));
+        .stderr(predicate::str::contains("only understands up to v1alpha2"));
 }
 
 #[test]
@@ -323,10 +323,10 @@ fn validate_migrate_updates_legacy_manifest() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "Migrated manifest legacy -> v1alpha3",
+            "Migrated manifest legacy -> v1alpha2",
         ))
         .stdout(predicate::str::contains("All checks passed"));
 
     let out = std::fs::read_to_string(temp.path().join("jackin.role.toml")).unwrap();
-    assert!(out.contains(r#"version = "v1alpha3""#), "{out}");
+    assert!(out.contains(r#"version = "v1alpha2""#), "{out}");
 }

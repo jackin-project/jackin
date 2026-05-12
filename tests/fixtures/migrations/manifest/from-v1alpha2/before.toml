@@ -1,5 +1,0 @@
-dockerfile = "Dockerfile"
-version = "v1alpha2"
-
-[claude]
-plugins = []

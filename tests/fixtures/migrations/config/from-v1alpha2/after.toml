@@ -1,6 +1,0 @@
-version = "v1alpha3"
-data_dir = "/tmp/jackin"
-
-[roles.agent-smith]
-git = "https://github.com/jackin-project/jackin-agent-smith.git"
-trusted = true

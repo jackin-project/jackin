@@ -182,7 +182,7 @@ fn seed_agent_smith_role_repo(path: &Path) {
     std::fs::write(path.join("fake-curl"), fake_curl()).unwrap();
     std::fs::write(
         path.join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+        r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 agents = ["claude"]
 
