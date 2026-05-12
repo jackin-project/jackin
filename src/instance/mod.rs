@@ -587,4 +587,78 @@ model = "gpt-5"
         assert!(state.claude_credentials_json().is_none());
         assert!(!state.claude_forwards_auth());
     }
+
+    /// Regression: a multi-agent role must apply each supported
+    /// agent's *own* configured `auth_forward` mode, not the selected
+    /// agent's mode. Before the fix, selecting Codex with
+    /// `codex.auth_forward = ApiKey` would call `provision_claude_auth`
+    /// with `ApiKey` and silently `wipe_claude_state`, destroying the
+    /// operator's durable Claude credentials and breaking the next
+    /// `hardline --new --agent claude` switch.
+    #[test]
+    fn prepare_resolves_auth_mode_per_supported_agent() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"version = "v1alpha2"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+
+        let manifest = RoleManifest::load(temp.path()).unwrap();
+
+        // Claude → Sync (host missing → HostMissing, forward_auth = true)
+        // Codex → ApiKey (would wipe Claude state if applied cross-agent)
+        let auth_modes = |agent: crate::agent::Agent| match agent {
+            crate::agent::Agent::Claude => AuthForwardMode::Sync,
+            crate::agent::Agent::Codex => AuthForwardMode::ApiKey,
+            crate::agent::Agent::Amp => AuthForwardMode::Ignore,
+        };
+
+        let (state, selected_outcome) = RoleState::prepare(
+            &paths,
+            "jackin-agent-smith",
+            &manifest,
+            &auth_modes,
+            &GithubAuthContext::default(),
+            temp.path(),
+            crate::agent::Agent::Codex,
+        )
+        .unwrap();
+
+        // Selected agent is Codex with ApiKey → TokenMode (env-driven).
+        // The selected-outcome attribution must follow the *selected*
+        // agent, not the last-iterated one.
+        assert_eq!(selected_outcome, AuthProvisionOutcome::TokenMode);
+
+        // Both agents provisioned.
+        assert!(state.auth.claude, "claude home dirs should be provisioned");
+        assert!(state.auth.codex, "codex home dirs should be provisioned");
+
+        // Critical assertion: Claude's mode (Sync) is honored, not
+        // Codex's (ApiKey). A regression to applying Codex's mode to
+        // Claude would wipe state and set forward_auth = false.
+        assert!(
+            state.claude_forwards_auth(),
+            "claude.auth_forward = Sync must produce forward_auth = true even when Codex is the selected agent",
+        );
+        assert!(
+            state.claude_account_json().unwrap().exists(),
+            "Sync mode must leave an account.json placeholder on disk",
+        );
+    }
 }

@@ -680,6 +680,71 @@ mod tests {
     }
 
     #[test]
+    fn mark_many_purged_empty_slice_is_noop() {
+        let data_dir = tempdir().unwrap();
+        // No index file on disk yet.
+        InstanceIndex::mark_many_purged(data_dir.path(), &[]).unwrap();
+        // Empty slice must not even create an index file —
+        // short-circuits before any read or write.
+        assert!(!data_dir.path().join(INSTANCE_INDEX_FILE).exists());
+    }
+
+    #[test]
+    fn mark_many_purged_tombstones_absent_and_present_in_one_pass() {
+        let data_dir = tempdir().unwrap();
+        let manifest_a = sample_manifest();
+        let state_a = data_dir.path().join(manifest_a.container_base.as_str());
+        manifest_a.write(&state_a).unwrap();
+        InstanceIndex::update_manifest(data_dir.path(), &manifest_a).unwrap();
+
+        // Container B has a manifest on disk but no index entry —
+        // simulates a manifest written before an index update.
+        let manifest_b_base = "jackin-workspace-agent-orphan01";
+        let manifest_b = InstanceManifest {
+            container_base: manifest_b_base.to_string(),
+            ..manifest_a.clone()
+        };
+        let state_b = data_dir.path().join(manifest_b_base);
+        manifest_b.write(&state_b).unwrap();
+
+        InstanceIndex::mark_many_purged(
+            data_dir.path(),
+            &[manifest_a.container_base.as_str(), manifest_b_base],
+        )
+        .unwrap();
+
+        let index = InstanceIndex::read(data_dir.path()).unwrap();
+        assert_eq!(index.instances.len(), 2);
+        assert!(
+            index
+                .instances
+                .iter()
+                .all(|e| e.status == InstanceStatus::Purged)
+        );
+    }
+
+    #[test]
+    fn mark_many_purged_is_idempotent() {
+        let data_dir = tempdir().unwrap();
+        let manifest = sample_manifest();
+        let state_dir = data_dir.path().join(manifest.container_base.as_str());
+        manifest.write(&state_dir).unwrap();
+        InstanceIndex::update_manifest(data_dir.path(), &manifest).unwrap();
+
+        InstanceIndex::mark_many_purged(data_dir.path(), &[manifest.container_base.as_str()])
+            .unwrap();
+        // Second call must not duplicate the entry or change the
+        // status. Operator running `purge` twice (e.g. retry after a
+        // partial failure) sees a stable tombstone.
+        InstanceIndex::mark_many_purged(data_dir.path(), &[manifest.container_base.as_str()])
+            .unwrap();
+
+        let index = InstanceIndex::read(data_dir.path()).unwrap();
+        assert_eq!(index.instances.len(), 1);
+        assert_eq!(index.instances[0].status, InstanceStatus::Purged);
+    }
+
+    #[test]
     fn index_mark_purged_retains_tombstone_after_state_removal() {
         let data_dir = tempdir().unwrap();
         let manifest = sample_manifest();

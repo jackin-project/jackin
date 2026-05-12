@@ -1205,6 +1205,113 @@ mod tests {
     }
 
     #[test]
+    fn refresh_instances_throttles_within_interval() {
+        // 20 Hz render loop must not reparse instances.json on every
+        // tick. After the first refresh, a follow-up call inside the
+        // throttle window keeps the cached `instances` snapshot even
+        // when the on-disk index changes; `force_refresh_instances_for_test`
+        // bypasses the gate.
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let mut manifest =
+            crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+                container_base: "jackin-demo-alpha-k7p9m2xq",
+                workspace_name: Some("demo"),
+                workspace_label: "demo",
+                workdir: "/workspace/demo",
+                host_workdir_fingerprint: "sha256:test",
+                role_key: "alpha",
+                role_display_name: "Alpha",
+                agent_runtime: crate::agent::Agent::Claude,
+                role_source_git: "https://example.invalid/alpha.git",
+                role_source_ref: None,
+                image_tag: "jackin-alpha",
+                docker: crate::instance::DockerResources {
+                    role_container: "jackin-demo-alpha-k7p9m2xq".into(),
+                    dind_container: "jackin-demo-alpha-k7p9m2xq-dind".into(),
+                    network: "jackin-demo-alpha-k7p9m2xq-net".into(),
+                    certs_volume: "jackin-demo-alpha-k7p9m2xq-dind-certs".into(),
+                },
+            });
+        manifest.mark_status(crate::instance::InstanceStatus::Active);
+        manifest
+            .write(&paths.data_dir.join("jackin-demo-alpha-k7p9m2xq"))
+            .unwrap();
+
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.refresh_instances(&paths);
+        assert_eq!(state.instances.len(), 1);
+        assert_eq!(
+            state.instances[0].status,
+            crate::instance::InstanceStatus::Active
+        );
+
+        // Mutate the manifest on disk; without the bypass, an
+        // immediate refresh must observe the cached value.
+        manifest.mark_status(crate::instance::InstanceStatus::Crashed);
+        manifest
+            .write(&paths.data_dir.join("jackin-demo-alpha-k7p9m2xq"))
+            .unwrap();
+        crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+
+        state.refresh_instances(&paths);
+        assert_eq!(
+            state.instances[0].status,
+            crate::instance::InstanceStatus::Active,
+            "throttle window must keep the cached snapshot",
+        );
+
+        // Bypass the throttle — disk state is now observable.
+        state.force_refresh_instances_for_test();
+        state.refresh_instances(&paths);
+        assert_eq!(
+            state.instances[0].status,
+            crate::instance::InstanceStatus::Crashed,
+        );
+    }
+
+    #[test]
+    fn refresh_instances_surfaces_index_error_via_toast() {
+        // Corrupt the index file; the read path must surface the parse
+        // error as a toast and dedup so subsequent identical errors
+        // don't pin a new toast every refresh tick.
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        std::fs::create_dir_all(&paths.data_dir).unwrap();
+        std::fs::write(paths.data_dir.join("instances.json"), b"not json").unwrap();
+        // Also drop a directory that looks like a state dir so
+        // `rebuild()` doesn't silently regenerate a fresh empty index.
+        let bogus = paths.data_dir.join("jackin-bogus-k7p9m2xq");
+        std::fs::create_dir_all(bogus.join(".jackin")).unwrap();
+        std::fs::write(bogus.join(".jackin/instance.json"), b"not json").unwrap();
+
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.refresh_instances(&paths);
+
+        assert!(state.instances.is_empty());
+        let toast = state.toast.as_ref().expect("error toast must be emitted");
+        assert_eq!(toast.kind, ToastKind::Error);
+        assert!(
+            toast.message.contains("instance index error"),
+            "toast message: {}",
+            toast.message
+        );
+
+        let first_shown_at = toast.shown_at;
+        // Second refresh: stash + dedup must not overwrite the first
+        // toast when the error message is unchanged.
+        state.force_refresh_instances_for_test();
+        state.refresh_instances(&paths);
+        let toast2 = state.toast.as_ref().unwrap();
+        assert_eq!(
+            toast2.shown_at, first_shown_at,
+            "identical error must not re-emit the toast",
+        );
+    }
+
+    #[test]
     fn manager_preselects_saved_workspace_matching_cwd() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().canonicalize().unwrap();

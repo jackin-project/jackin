@@ -204,6 +204,53 @@ mod tests {
     }
 
     #[test]
+    fn class_family_matches_legacy_clone_names() {
+        // Legacy `<primary>-clone-N` shape must still match its
+        // selector — `purge_class_data` walks data_dir and needs this
+        // branch to recognize pre-rename containers.
+        let selector = RoleSelector::new(Some("chainargos"), "agent-brown");
+        assert!(class_family_matches(
+            &selector,
+            "jackin-chainargos__agent-brown",
+        ));
+        assert!(class_family_matches(
+            &selector,
+            "jackin-chainargos__agent-brown-clone-1",
+        ));
+        assert!(class_family_matches(
+            &selector,
+            "jackin-chainargos__agent-brown-clone-42",
+        ));
+        assert!(!class_family_matches(
+            &selector,
+            "jackin-chainargos__agent-blue-clone-1",
+        ));
+    }
+
+    #[test]
+    fn class_family_matches_distinguishes_role_substrings() {
+        // A role named `brown` must not match a container whose role
+        // component is `agentbrown` (the longer name happens to end
+        // in `brown`). Important for `purge_class_data` blast radius.
+        let brown = RoleSelector::new(None, "brown");
+        assert!(!class_family_matches(
+            &brown,
+            "jackin-agentbrown-k7p9m2xq",
+        ));
+        // Inverse: role `agentbrown` must not match a container with
+        // role component `brown`.
+        let agentbrown = RoleSelector::new(None, "agentbrown");
+        assert!(!class_family_matches(
+            &agentbrown,
+            "jackin-brown-k7p9m2xq",
+        ));
+        assert!(class_family_matches(
+            &agentbrown,
+            "jackin-agentbrown-k7p9m2xq",
+        ));
+    }
+
+    #[test]
     fn distinguishes_namespaced_and_flat_class_container_names() {
         let namespaced = RoleSelector::new(Some("chainargos"), "the-architect");
         let flat = RoleSelector::new(None, "chainargos-the-architect");
