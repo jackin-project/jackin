@@ -65,11 +65,8 @@ pub struct Cli {
     /// Global flag: accepted before or after any subcommand.
     /// Also enabled by setting `JACKIN_DEBUG=1` in the environment.
     //
-    // `global = true` propagates this flag to all subcommands so
-    // `jackin hardline --debug`, `jackin purge --debug`, etc. all work.
-    // `SetTrue` + `FalseyValueParser` match the semantics documented on
-    // `LoadArgs.debug` (now removed) — env values like `JACKIN_DEBUG=1`
-    // parse as true while the absence of `--debug` defaults to false.
+    // `SetTrue` + `FalseyValueParser` lets `JACKIN_DEBUG=1` parse as
+    // true while the absence of `--debug` defaults to false.
     #[arg(
         long,
         global = true,

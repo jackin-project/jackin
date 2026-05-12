@@ -49,6 +49,70 @@ pub fn isolation_file_path(container_state_dir: &Path) -> PathBuf {
     container_state_dir.join(STATE_DIR).join(ISOLATION_FILE)
 }
 
+/// Snapshot counts of a container's mount records. Shared formatter
+/// across the launch-prompt, hardline-prompt, and inspect surfaces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MountSummary {
+    pub total: usize,
+    pub dirty: usize,
+    pub unpushed: usize,
+}
+
+impl MountSummary {
+    #[must_use]
+    pub fn from_records(records: &[IsolationRecord]) -> Self {
+        Self {
+            total: records.len(),
+            dirty: records
+                .iter()
+                .filter(|r| r.cleanup_status == CleanupStatus::PreservedDirty)
+                .count(),
+            unpushed: records
+                .iter()
+                .filter(|r| r.cleanup_status == CleanupStatus::PreservedUnpushed)
+                .count(),
+        }
+    }
+
+    /// `Err` propagates the `isolation.json` read/parse error; callers
+    /// that want the "unknown" rendering should map it themselves.
+    pub fn for_state_dir(container_state_dir: &Path) -> anyhow::Result<Self> {
+        Ok(Self::from_records(&read_records(container_state_dir)?))
+    }
+
+    /// `"mounts:N dirty:N unpushed:N"` (the launch/hardline prompt
+    /// format). Returns `"mounts:none"` and `"mounts:N"` for the empty
+    /// and dirty-free cases respectively.
+    #[must_use]
+    pub fn prompt_label(self) -> String {
+        if self.total == 0 {
+            return "mounts:none".to_string();
+        }
+        if self.dirty > 0 || self.unpushed > 0 {
+            return format!(
+                "mounts:{} dirty:{} unpushed:{}",
+                self.total, self.dirty, self.unpushed
+            );
+        }
+        format!("mounts:{}", self.total)
+    }
+
+    /// `"N total, N dirty, N unpushed"` (the inspect-output format).
+    #[must_use]
+    pub fn inspect_label(self) -> String {
+        if self.total == 0 {
+            return "none".to_string();
+        }
+        if self.dirty > 0 || self.unpushed > 0 {
+            return format!(
+                "{} total, {} dirty, {} unpushed",
+                self.total, self.dirty, self.unpushed
+            );
+        }
+        format!("{} total", self.total)
+    }
+}
+
 /// Read every record for a container. Returns empty Vec when the file is
 /// missing (a fresh container has no isolated mounts yet).
 pub fn read_records(container_state_dir: &Path) -> anyhow::Result<Vec<IsolationRecord>> {

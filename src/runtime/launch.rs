@@ -74,13 +74,7 @@ impl LoadOptions {
             no_intro: no_intro || debug,
             debug,
             rebuild,
-            force: false,
-            op_runner: None,
-            host_env: None,
-            agent: None,
-            role_branch: None,
-            restore_container_base: None,
-            restore_role_source_git: None,
+            ..Self::default()
         }
     }
 
@@ -90,14 +84,7 @@ impl LoadOptions {
         Self {
             no_intro: debug,
             debug,
-            rebuild: false,
-            force: false,
-            op_runner: None,
-            host_env: None,
-            agent: None,
-            role_branch: None,
-            restore_container_base: None,
-            restore_role_source_git: None,
+            ..Self::default()
         }
     }
 }
@@ -2269,18 +2256,12 @@ fn related_restore_load_options(
         debug: current.debug,
         rebuild: current.rebuild,
         force: current.force,
-        op_runner: None,
         host_env: current.host_env.clone(),
-        agent: Some(manifest.agent_runtime.parse().map_err(|_| {
-            anyhow::anyhow!(
-                "instance `{}` has unknown agent runtime {:?}",
-                manifest.container_base,
-                manifest.agent_runtime
-            )
-        })?),
+        agent: Some(manifest.agent()?),
         role_branch: manifest.role_source_ref.clone(),
         restore_container_base: Some(manifest.container_base.clone()),
         restore_role_source_git: Some(manifest.role_source_git.clone()),
+        ..LoadOptions::default()
     })
 }
 
@@ -2314,7 +2295,7 @@ fn related_restore_candidate_label(
     format!(
         "{} docker:{}",
         restore_candidate_label(paths, &candidate.manifest),
-        restore_candidate_docker_state_label(&candidate.docker_state)
+        candidate.docker_state.short_label()
     )
 }
 
@@ -2324,25 +2305,10 @@ fn related_restore_candidate_label_for_prompt(candidate: &RelatedRestoreCandidat
         candidate.manifest.instance_id,
         candidate.manifest.role_key,
         candidate.manifest.agent_runtime,
-        instance_status_label(candidate.manifest.status),
-        restore_candidate_docker_state_label(&candidate.docker_state),
+        candidate.manifest.status.label(),
+        candidate.docker_state.short_label(),
         candidate.manifest.updated_at
     )
-}
-
-fn restore_candidate_docker_state_label(state: &ContainerState) -> String {
-    match state {
-        ContainerState::Running => "running".to_string(),
-        ContainerState::Stopped {
-            exit_code,
-            oom_killed: false,
-        } => format!("stopped exit:{exit_code}"),
-        ContainerState::Stopped {
-            oom_killed: true, ..
-        } => "stopped oom_killed".to_string(),
-        ContainerState::NotFound => "missing".to_string(),
-        ContainerState::InspectUnavailable(_) => "unavailable".to_string(),
-    }
 }
 
 fn restore_candidate_label(paths: &JackinPaths, manifest: &InstanceManifest) -> String {
@@ -2355,7 +2321,7 @@ fn restore_candidate_label(paths: &JackinPaths, manifest: &InstanceManifest) -> 
     format!(
         "{} status:{} agent:{} role:{} updated:{} {}{}",
         manifest.instance_id,
-        instance_status_label(manifest.status),
+        manifest.status.label(),
         manifest.agent_runtime,
         manifest.role_key,
         manifest.updated_at,
@@ -2365,46 +2331,10 @@ fn restore_candidate_label(paths: &JackinPaths, manifest: &InstanceManifest) -> 
 }
 
 fn restore_candidate_isolation_summary(state_dir: &std::path::Path) -> String {
-    use crate::isolation::state::CleanupStatus;
-
-    let Ok(records) = crate::isolation::state::read_records(state_dir) else {
-        return "mounts:unknown".to_string();
-    };
-    if records.is_empty() {
-        return "mounts:none".to_string();
-    }
-    let dirty = records
-        .iter()
-        .filter(|record| record.cleanup_status == CleanupStatus::PreservedDirty)
-        .count();
-    let unpushed = records
-        .iter()
-        .filter(|record| record.cleanup_status == CleanupStatus::PreservedUnpushed)
-        .count();
-    if dirty > 0 || unpushed > 0 {
-        return format!(
-            "mounts:{} dirty:{} unpushed:{}",
-            records.len(),
-            dirty,
-            unpushed
-        );
-    }
-    format!("mounts:{}", records.len())
-}
-
-const fn instance_status_label(status: InstanceStatus) -> &'static str {
-    match status {
-        InstanceStatus::Active => "active",
-        InstanceStatus::Running => "running",
-        InstanceStatus::CleanExited => "clean_exited",
-        InstanceStatus::Crashed => "crashed",
-        InstanceStatus::PreservedDirty => "preserved_dirty",
-        InstanceStatus::PreservedUnpushed => "preserved_unpushed",
-        InstanceStatus::RestoreAvailable => "restore_available",
-        InstanceStatus::Superseded => "superseded",
-        InstanceStatus::Purged => "purged",
-        InstanceStatus::FailedSetup => "failed_setup",
-    }
+    crate::isolation::state::MountSummary::for_state_dir(state_dir).map_or_else(
+        |_| "mounts:unknown".to_string(),
+        crate::isolation::state::MountSummary::prompt_label,
+    )
 }
 
 fn supersede_restore_candidates(
@@ -2456,7 +2386,7 @@ fn write_instance_attach_outcome(
     manifest: &mut InstanceManifest,
     outcome: crate::isolation::finalize::AttachOutcome,
 ) -> anyhow::Result<()> {
-    manifest.mark_status(manifest.status);
+    manifest.touch();
     manifest.last_attach_outcome = Some(format_attach_outcome(outcome));
     manifest.write(state_dir)?;
     InstanceIndex::update_manifest(&paths.data_dir, manifest)?;

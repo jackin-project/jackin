@@ -22,6 +22,26 @@ pub enum InstanceStatus {
     FailedSetup,
 }
 
+impl InstanceStatus {
+    /// Snake-case label matching the serde representation. Stable
+    /// across renders, prompt UIs, and manifest inspect output.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Running => "running",
+            Self::CleanExited => "clean_exited",
+            Self::Crashed => "crashed",
+            Self::PreservedDirty => "preserved_dirty",
+            Self::PreservedUnpushed => "preserved_unpushed",
+            Self::RestoreAvailable => "restore_available",
+            Self::Superseded => "superseded",
+            Self::Purged => "purged",
+            Self::FailedSetup => "failed_setup",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DockerResources {
     pub role_container: String,
@@ -132,6 +152,26 @@ impl InstanceManifest {
         self.updated_at = now_rfc3339();
     }
 
+    /// Bump `updated_at` without changing status. Use when a non-status
+    /// field (`last_attach_outcome`) changes and the index still needs
+    /// to reflect the most recent activity.
+    pub fn touch(&mut self) {
+        self.updated_at = now_rfc3339();
+    }
+
+    /// Parse `agent_runtime` into the typed enum. Errors when the on-disk
+    /// slug is unknown (corrupt manifest or new agent added to the
+    /// codebase but not migrated).
+    pub fn agent(&self) -> anyhow::Result<Agent> {
+        self.agent_runtime.parse().map_err(|_| {
+            anyhow::anyhow!(
+                "instance `{}` has unknown agent runtime {:?}",
+                self.container_base,
+                self.agent_runtime
+            )
+        })
+    }
+
     pub const fn is_restore_candidate(&self) -> bool {
         matches!(
             self.status,
@@ -166,17 +206,7 @@ pub fn host_path_fingerprint(path: &str) -> String {
         .ok()
         .map_or_else(|| path.to_string(), |path| path.display().to_string());
     let digest = Sha256::digest(canonical.as_bytes());
-    let hex: String = digest
-        .iter()
-        .flat_map(|byte| {
-            const HEX: &[u8; 16] = b"0123456789abcdef";
-            [
-                HEX[(byte >> 4) as usize] as char,
-                HEX[(byte & 0x0f) as usize] as char,
-            ]
-        })
-        .collect();
-    format!("sha256:{hex}")
+    format!("sha256:{}", crate::instance::naming::hex_lower(&digest))
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -245,6 +275,31 @@ impl InstanceIndex {
 
     pub fn mark_purged(data_dir: &Path, container_base: &str) -> anyhow::Result<()> {
         let mut index = Self::read_or_rebuild(data_dir)?;
+        Self::mark_purged_in_memory(&mut index, data_dir, container_base);
+        index.sort();
+        index.write(data_dir)
+    }
+
+    /// Batch-mark a set of containers as purged with a single index
+    /// read/write. Skips containers already absent from the index when
+    /// no manifest file exists on disk; otherwise backfills like
+    /// [`Self::mark_purged`].
+    pub fn mark_many_purged(
+        data_dir: &Path,
+        container_bases: &[&str],
+    ) -> anyhow::Result<()> {
+        if container_bases.is_empty() {
+            return Ok(());
+        }
+        let mut index = Self::read_or_rebuild(data_dir)?;
+        for container_base in container_bases {
+            Self::mark_purged_in_memory(&mut index, data_dir, container_base);
+        }
+        index.sort();
+        index.write(data_dir)
+    }
+
+    fn mark_purged_in_memory(index: &mut Self, data_dir: &Path, container_base: &str) {
         if let Some(entry) = index
             .instances
             .iter_mut()
@@ -252,8 +307,7 @@ impl InstanceIndex {
         {
             entry.status = InstanceStatus::Purged;
             entry.updated_at = now_rfc3339();
-            index.sort();
-            return index.write(data_dir);
+            return;
         }
 
         let state_dir = data_dir.join(container_base);
@@ -262,10 +316,7 @@ impl InstanceIndex {
             index
                 .instances
                 .push(InstanceIndexEntry::from_manifest(&manifest));
-            index.sort();
-            index.write(data_dir)?;
         }
-        Ok(())
     }
 
     pub fn matching_manifests(

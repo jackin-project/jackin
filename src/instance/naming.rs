@@ -54,22 +54,6 @@ pub fn container_name_with_id(
     name
 }
 
-pub fn next_container_name(selector: &RoleSelector, existing: &[String]) -> String {
-    let primary = primary_container_name(selector);
-    if !existing.iter().any(|name| name == &primary) {
-        return primary;
-    }
-
-    let mut clone_index = 1;
-    loop {
-        let candidate = format!("{primary}-clone-{clone_index}");
-        if !existing.iter().any(|name| name == &candidate) {
-            return candidate;
-        }
-        clone_index += 1;
-    }
-}
-
 pub fn class_family_matches(selector: &RoleSelector, container_name: &str) -> bool {
     let primary = primary_container_name(selector);
     if container_name == primary || container_name.starts_with(&format!("{primary}-clone-")) {
@@ -136,17 +120,22 @@ fn truncate_component(component: &str, max_len: usize) -> String {
 
 fn short_hash(input: &str, len: usize) -> String {
     let digest = Sha256::digest(input.as_bytes());
-    digest
-        .iter()
-        .flat_map(|byte| {
-            const HEX: &[u8; 16] = b"0123456789abcdef";
-            [
-                HEX[(byte >> 4) as usize] as char,
-                HEX[(byte & 0x0f) as usize] as char,
-            ]
-        })
-        .take(len)
-        .collect()
+    let mut hex = hex_lower(&digest);
+    hex.truncate(len);
+    hex
+}
+
+/// Lowercase hex encoding of arbitrary bytes. Shared with
+/// `instance::manifest::host_path_fingerprint` so both call sites use one
+/// table.
+pub(crate) fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
 }
 
 fn random_instance_id() -> String {
@@ -164,19 +153,6 @@ fn random_instance_id() -> String {
 mod tests {
     use super::*;
     use crate::selector::RoleSelector;
-
-    #[test]
-    fn picks_next_clone_name() {
-        let selector = RoleSelector::new(None, "agent-smith");
-        let existing = vec![
-            "jackin-agent-smith".to_string(),
-            "jackin-agent-smith-clone-1".to_string(),
-        ];
-
-        let name = next_container_name(&selector, &existing);
-
-        assert_eq!(name, "jackin-agent-smith-clone-2");
-    }
 
     #[test]
     fn new_workspace_container_name_is_compact_dns_safe() {

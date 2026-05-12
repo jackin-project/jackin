@@ -276,17 +276,22 @@ pub(crate) fn resolve_running_container_from_context(
         candidates = allowed_classes
             .iter()
             .flat_map(|class| runtime::matching_family(class, &running))
+            .map(|name| HardlineCandidate {
+                name,
+                state: runtime::ContainerState::Running,
+            })
             .collect();
     }
-    candidates.sort();
-    candidates.dedup();
+    candidates.sort_by(|a, b| a.name.cmp(&b.name));
+    candidates.dedup_by(|a, b| a.name == b.name);
+    let names: Vec<String> = candidates.iter().map(|c| c.name.clone()).collect();
 
     if let Some(last) = ws.last_role.as_deref()
-        && let Some(preferred) = preferred_indexed_container(paths, name, ws, last, &candidates)
+        && let Some(preferred) = preferred_indexed_container(paths, name, ws, last, &names)
             .or_else(|| {
                 RoleSelector::parse(last).ok().and_then(|last_class| {
                     let primary = instance::primary_container_name(&last_class);
-                    candidates.contains(&primary).then_some(primary)
+                    names.contains(&primary).then_some(primary)
                 })
             })
     {
@@ -298,7 +303,7 @@ pub(crate) fn resolve_running_container_from_context(
             "no running roles found for workspace {name:?}.\n\
              Start one with jackin load, or run jackin hardline <role> to target explicitly."
         ),
-        [only] => Ok(only.clone()),
+        [only] => Ok(only.name.clone()),
         _ => {
             let options = hardline_candidate_prompt_options(paths, &candidates, runner);
             let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
@@ -306,7 +311,7 @@ pub(crate) fn resolve_running_container_from_context(
                 &format!("Workspace {name:?} has multiple matching instances. Select one:"),
                 &option_refs,
             )?;
-            Ok(candidates.swap_remove(choice))
+            Ok(candidates.swap_remove(choice).name)
         }
     }
 }
@@ -317,12 +322,12 @@ fn resolve_ad_hoc_container_from_context(
     runner: &mut impl docker::CommandRunner,
 ) -> Result<String> {
     let mut candidates = ad_hoc_hardline_candidates(paths, cwd, runner)?;
-    candidates.sort();
-    candidates.dedup();
+    candidates.sort_by(|a, b| a.name.cmp(&b.name));
+    candidates.dedup_by(|a, b| a.name == b.name);
 
     match candidates.as_slice() {
         [] => anyhow::bail!("no matching ad-hoc instances found"),
-        [only] => Ok(only.clone()),
+        [only] => Ok(only.name.clone()),
         _ => {
             let options = hardline_candidate_prompt_options(paths, &candidates, runner);
             let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
@@ -330,41 +335,39 @@ fn resolve_ad_hoc_container_from_context(
                 "Current directory has multiple ad-hoc instances. Select one:",
                 &option_refs,
             )?;
-            Ok(candidates.swap_remove(choice))
+            Ok(candidates.swap_remove(choice).name)
         }
     }
 }
 
+/// Hardline-prompt row: container name plus the docker-inspect state
+/// captured during candidate collection. Carrying state through avoids
+/// re-running `docker inspect` for every prompt row.
+#[derive(Debug, Clone)]
+struct HardlineCandidate {
+    name: String,
+    state: runtime::ContainerState,
+}
+
 fn hardline_candidate_prompt_options(
     paths: &JackinPaths,
-    candidates: &[String],
+    candidates: &[HardlineCandidate],
     runner: &mut impl docker::CommandRunner,
 ) -> Vec<String> {
     candidates
         .iter()
-        .map(|container| hardline_candidate_prompt_label(paths, container, runner))
+        .map(|candidate| hardline_candidate_prompt_label(paths, candidate, runner))
         .collect()
 }
 
 fn hardline_candidate_prompt_label(
     paths: &JackinPaths,
-    container: &str,
+    candidate: &HardlineCandidate,
     runner: &mut impl docker::CommandRunner,
 ) -> String {
-    let container_state = runtime::inspect_container_state(runner, container);
-    let sessions = runtime::inspect_agent_sessions(runner, container, &container_state);
-    let docker_state = match container_state {
-        runtime::ContainerState::Running => "docker:running".to_string(),
-        runtime::ContainerState::Stopped {
-            exit_code,
-            oom_killed: false,
-        } => format!("docker:stopped exit:{exit_code}"),
-        runtime::ContainerState::Stopped {
-            oom_killed: true, ..
-        } => "docker:stopped oom_killed".to_string(),
-        runtime::ContainerState::NotFound => "docker:missing".to_string(),
-        runtime::ContainerState::InspectUnavailable(_) => "docker:unavailable".to_string(),
-    };
+    let container = candidate.name.as_str();
+    let sessions = runtime::inspect_agent_sessions(runner, container, &candidate.state);
+    let docker_state = format!("docker:{}", candidate.state.short_label());
     let session_summary = runtime::describe_agent_session_count(&sessions);
 
     let state_dir = paths.data_dir.join(container);
@@ -378,7 +381,7 @@ fn hardline_candidate_prompt_label(
         manifest.workspace_label,
         manifest.role_key,
         manifest.agent_runtime,
-        instance_status_label(manifest.status),
+        manifest.status.label(),
         docker_state,
         session_summary,
         isolation
@@ -386,59 +389,21 @@ fn hardline_candidate_prompt_label(
 }
 
 fn hardline_candidate_isolation_summary(state_dir: &Path) -> String {
-    let Ok(records) = crate::isolation::state::read_records(state_dir) else {
-        return "mounts:unknown".to_string();
-    };
-    if records.is_empty() {
-        return "mounts:none".to_string();
-    }
-    let dirty = records
-        .iter()
-        .filter(|record| {
-            record.cleanup_status == crate::isolation::state::CleanupStatus::PreservedDirty
-        })
-        .count();
-    let unpushed = records
-        .iter()
-        .filter(|record| {
-            record.cleanup_status == crate::isolation::state::CleanupStatus::PreservedUnpushed
-        })
-        .count();
-    if dirty > 0 || unpushed > 0 {
-        return format!(
-            "mounts:{} dirty:{} unpushed:{}",
-            records.len(),
-            dirty,
-            unpushed
-        );
-    }
-    format!("mounts:{}", records.len())
-}
-
-const fn instance_status_label(status: instance::InstanceStatus) -> &'static str {
-    match status {
-        instance::InstanceStatus::Active => "active",
-        instance::InstanceStatus::Running => "running",
-        instance::InstanceStatus::CleanExited => "clean_exited",
-        instance::InstanceStatus::Crashed => "crashed",
-        instance::InstanceStatus::PreservedDirty => "preserved_dirty",
-        instance::InstanceStatus::PreservedUnpushed => "preserved_unpushed",
-        instance::InstanceStatus::RestoreAvailable => "restore_available",
-        instance::InstanceStatus::Superseded => "superseded",
-        instance::InstanceStatus::Purged => "purged",
-        instance::InstanceStatus::FailedSetup => "failed_setup",
-    }
+    crate::isolation::state::MountSummary::for_state_dir(state_dir).map_or_else(
+        |_| "mounts:unknown".to_string(),
+        crate::isolation::state::MountSummary::prompt_label,
+    )
 }
 
 fn ad_hoc_hardline_candidates(
     paths: &JackinPaths,
     cwd: &Path,
     runner: &mut impl docker::CommandRunner,
-) -> Result<Vec<String>> {
+) -> Result<Vec<HardlineCandidate>> {
     let index = instance::InstanceIndex::read_or_rebuild(&paths.data_dir)?;
-    let cwd_fingerprint =
-        instance::manifest::host_path_fingerprint(&cwd.canonicalize()?.display().to_string());
     let canonical_cwd = cwd.canonicalize()?;
+    let cwd_fingerprint =
+        instance::manifest::host_path_fingerprint(&canonical_cwd.display().to_string());
     let mut candidates = Vec::new();
 
     for entry in index.instances {
@@ -449,14 +414,18 @@ fn ad_hoc_hardline_candidates(
         if !ad_hoc_manifest_matches_cwd(&manifest, &canonical_cwd, &cwd_fingerprint) {
             continue;
         }
-        if matches!(
-            runtime::inspect_container_state(runner, &manifest.container_base),
+        let state = runtime::inspect_container_state(runner, &manifest.container_base);
+        let docker_live = matches!(
+            state,
             runtime::ContainerState::Running
                 | runtime::ContainerState::Stopped { .. }
                 | runtime::ContainerState::InspectUnavailable(_)
-        ) || manifest.is_restore_candidate()
-        {
-            candidates.push(manifest.container_base);
+        );
+        if docker_live || manifest.is_restore_candidate() {
+            candidates.push(HardlineCandidate {
+                name: manifest.container_base,
+                state,
+            });
         }
     }
 
@@ -490,7 +459,7 @@ fn indexed_hardline_candidates(
     workspace: &WorkspaceConfig,
     allowed_classes: &[RoleSelector],
     runner: &mut impl docker::CommandRunner,
-) -> Result<Vec<String>> {
+) -> Result<Vec<HardlineCandidate>> {
     let manifests = instance::InstanceIndex::matching_manifests(
         &paths.data_dir,
         instance::InstanceQuery {
@@ -508,15 +477,19 @@ fn indexed_hardline_candidates(
                 .iter()
                 .any(|class| class.key() == manifest.role_key)
         })
-        .filter(|manifest| {
-            matches!(
-                runtime::inspect_container_state(runner, &manifest.container_base),
+        .filter_map(|manifest| {
+            let state = runtime::inspect_container_state(runner, &manifest.container_base);
+            let docker_live = matches!(
+                state,
                 runtime::ContainerState::Running
                     | runtime::ContainerState::Stopped { .. }
                     | runtime::ContainerState::InspectUnavailable(_)
-            ) || manifest.is_restore_candidate()
+            );
+            (docker_live || manifest.is_restore_candidate()).then_some(HardlineCandidate {
+                name: manifest.container_base,
+                state,
+            })
         })
-        .map(|manifest| manifest.container_base)
         .collect())
 }
 
@@ -1111,11 +1084,15 @@ mod tests {
         manifest.mark_status(instance::InstanceStatus::RestoreAvailable);
         manifest.write(&paths.data_dir.join(container)).unwrap();
         let mut runner = runtime::FakeRunner::default();
-        runner
-            .capture_queue
-            .push_back("false 137 false".to_string());
+        let candidate = HardlineCandidate {
+            name: container.to_string(),
+            state: runtime::ContainerState::Stopped {
+                exit_code: 137,
+                oom_killed: false,
+            },
+        };
 
-        let label = hardline_candidate_prompt_label(&paths, container, &mut runner);
+        let label = hardline_candidate_prompt_label(&paths, &candidate, &mut runner);
 
         assert!(label.contains(container), "{label}");
         assert!(label.contains("my-app"), "{label}");
@@ -1152,12 +1129,15 @@ mod tests {
         });
         manifest.write(&paths.data_dir.join(container)).unwrap();
         let mut runner = runtime::FakeRunner::default();
-        runner.capture_queue.push_back("true 0 false".to_string());
         runner
             .capture_queue
             .push_back("PID COMMAND\n1 /jackin/runtime/entrypoint.sh\n42 codex exec".to_string());
+        let candidate = HardlineCandidate {
+            name: container.to_string(),
+            state: runtime::ContainerState::Running,
+        };
 
-        let label = hardline_candidate_prompt_label(&paths, container, &mut runner);
+        let label = hardline_candidate_prompt_label(&paths, &candidate, &mut runner);
 
         assert!(label.contains("docker:running"), "{label}");
         assert!(label.contains("sessions:2"), "{label}");

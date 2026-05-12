@@ -5,7 +5,7 @@ use crate::tui;
 
 use super::naming::{LABEL_KIND_DIND, LABEL_MANAGED, dind_certs_volume};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainerState {
     /// `docker inspect` confirmed the named container does not exist.
     NotFound,
@@ -16,6 +16,36 @@ pub enum ContainerState {
         exit_code: i32,
         oom_killed: bool,
     },
+}
+
+impl ContainerState {
+    /// Short label without the `InspectUnavailable` reason. Used in
+    /// prompt rows where horizontal space is tight.
+    #[must_use]
+    pub fn short_label(&self) -> String {
+        match self {
+            Self::Running => "running".to_string(),
+            Self::Stopped {
+                exit_code,
+                oom_killed: false,
+            } => format!("stopped exit:{exit_code}"),
+            Self::Stopped {
+                oom_killed: true, ..
+            } => "stopped oom_killed".to_string(),
+            Self::NotFound => "missing".to_string(),
+            Self::InspectUnavailable(_) => "unavailable".to_string(),
+        }
+    }
+
+    /// Verbose label that surfaces the inspect-failure reason. Used in
+    /// the `jackin hardline --inspect` block where every detail matters.
+    #[must_use]
+    pub fn inspect_label(&self) -> String {
+        match self {
+            Self::InspectUnavailable(reason) => format!("unavailable: {reason}"),
+            _ => self.short_label(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +79,7 @@ pub fn inspect_container_state(runner: &mut impl CommandRunner, name: &str) -> C
         Ok(output) => output,
         Err(error) => {
             let error = error.to_string();
-            if docker_inspect_reports_missing_container(&error) {
+            if docker_inspect_reports_missing_resource(&error) {
                 return ContainerState::NotFound;
             }
             return ContainerState::InspectUnavailable(error);
@@ -128,10 +158,6 @@ fn is_agent_session_command(command: &str) -> bool {
             .next()
             .is_some_and(|program| program.ends_with(agent.slug()))
     })
-}
-
-fn docker_inspect_reports_missing_container(error: &str) -> bool {
-    docker_inspect_reports_missing_resource(error)
 }
 
 fn docker_inspect_reports_missing_resource(error: &str) -> bool {
@@ -283,7 +309,7 @@ pub fn hardline_agent(
                 ContainerState::Stopped { .. } => {
                     eprintln!("Restarting stopped DinD sidecar '{dind}'...");
                     runner.run("docker", &["start", &dind], None, &RunOptions::default())?;
-                    let certs_volume = format!("{container_name}-dind-certs");
+                    let certs_volume = dind_certs_volume(container_name);
                     wait_for_dind(&dind, &certs_volume, runner, false)?;
                 }
             }
@@ -345,8 +371,8 @@ pub fn inspect_hardline_instance(
 
     let role_container_state = inspect_container_state(runner, container_name);
     let sessions = inspect_agent_sessions(runner, container_name, &role_container_state);
-    let role_state = describe_container_state(role_container_state);
-    let dind_state = describe_container_state(inspect_container_state(runner, &dind_name));
+    let role_state = role_container_state.inspect_label();
+    let dind_state = inspect_container_state(runner, &dind_name).inspect_label();
     let network_state = describe_network_state(inspect_docker_network(runner, &network_name));
     let mounts = describe_mount_state(&state_dir);
 
@@ -360,7 +386,7 @@ pub fn inspect_hardline_instance(
             format!("Workspace: {}", manifest.workspace_label),
             format!("Role: {}", manifest.role_key),
             format!("Agent: {}", manifest.agent_runtime),
-            format!("Status: {}", describe_instance_status(manifest.status)),
+            format!("Status: {}", manifest.status.label()),
             format!("Updated: {}", manifest.updated_at),
         ]);
         if let Some(outcome) = manifest.last_attach_outcome {
@@ -412,21 +438,6 @@ fn describe_agent_sessions(sessions: &AgentSessionInventory) -> String {
     }
 }
 
-fn describe_container_state(state: ContainerState) -> String {
-    match state {
-        ContainerState::Running => "running".to_string(),
-        ContainerState::Stopped {
-            exit_code,
-            oom_killed: false,
-        } => format!("stopped exit:{exit_code}"),
-        ContainerState::Stopped {
-            oom_killed: true, ..
-        } => "stopped oom_killed".to_string(),
-        ContainerState::NotFound => "missing".to_string(),
-        ContainerState::InspectUnavailable(reason) => format!("unavailable: {reason}"),
-    }
-}
-
 fn describe_network_state(state: DockerNetworkState) -> String {
     match state {
         DockerNetworkState::Present => "present".to_string(),
@@ -435,47 +446,11 @@ fn describe_network_state(state: DockerNetworkState) -> String {
     }
 }
 
-const fn describe_instance_status(status: InstanceStatus) -> &'static str {
-    match status {
-        InstanceStatus::Active => "active",
-        InstanceStatus::Running => "running",
-        InstanceStatus::CleanExited => "clean_exited",
-        InstanceStatus::Crashed => "crashed",
-        InstanceStatus::PreservedDirty => "preserved_dirty",
-        InstanceStatus::PreservedUnpushed => "preserved_unpushed",
-        InstanceStatus::RestoreAvailable => "restore_available",
-        InstanceStatus::Superseded => "superseded",
-        InstanceStatus::Purged => "purged",
-        InstanceStatus::FailedSetup => "failed_setup",
-    }
-}
-
 fn describe_mount_state(state_dir: &std::path::Path) -> String {
-    let Ok(records) = crate::isolation::state::read_records(state_dir) else {
-        return "unknown".to_string();
-    };
-    if records.is_empty() {
-        return "none".to_string();
-    }
-    let dirty = records
-        .iter()
-        .filter(|record| {
-            record.cleanup_status == crate::isolation::state::CleanupStatus::PreservedDirty
-        })
-        .count();
-    let unpushed = records
-        .iter()
-        .filter(|record| {
-            record.cleanup_status == crate::isolation::state::CleanupStatus::PreservedUnpushed
-        })
-        .count();
-    if dirty > 0 || unpushed > 0 {
-        return format!(
-            "{} total, {dirty} dirty, {unpushed} unpushed",
-            records.len()
-        );
-    }
-    format!("{} total", records.len())
+    crate::isolation::state::MountSummary::for_state_dir(state_dir).map_or_else(
+        |_| "unknown".to_string(),
+        crate::isolation::state::MountSummary::inspect_label,
+    )
 }
 
 fn restore_missing_dind_sidecar(

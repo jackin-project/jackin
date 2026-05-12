@@ -11,8 +11,8 @@ pub use manifest::{
     InstanceStatus, NewInstanceManifest,
 };
 pub use naming::{
-    class_family_matches, container_name_with_id, new_container_name, next_container_name,
-    primary_container_name, runtime_slug,
+    class_family_matches, container_name_with_id, new_container_name, primary_container_name,
+    runtime_slug,
 };
 
 /// Outcome of the `.claude.json` provisioning step, so callers can surface

@@ -10,6 +10,7 @@ use std::path::Path;
 use std::process::Command;
 
 use jackin::derived_image::shell_quote;
+use jackin::instance::naming::is_dns_label;
 use tempfile::tempdir;
 
 const ROLE_KEY: &str = "jackin-e2e/agent-smith";
@@ -137,21 +138,6 @@ fn docker_available() -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
-fn is_dns_label(input: &str) -> bool {
-    !input.is_empty()
-        && input.len() <= 63
-        && input
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-        && input
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_alphanumeric)
-        && input
-            .as_bytes()
-            .last()
-            .is_some_and(u8::is_ascii_alphanumeric)
-}
 
 /// Probe `script(1)` via the canonical PATH lookup. The previous
 /// `script --help` / `script -q /dev/null` fallback chain was unsound:

@@ -82,6 +82,10 @@ pub struct ManagerState<'a> {
     /// startup) so the Secrets-tab editor can disable the
     /// source-picker's 1Password choice without re-probing.
     pub op_available: bool,
+    /// Throttle the per-tick `InstanceIndex::read_or_rebuild` poll —
+    /// state on disk can't change at the 20 Hz render cadence and the
+    /// rebuild path walks every container directory.
+    instances_last_refresh: Option<std::time::Instant>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -714,6 +718,7 @@ impl ManagerState<'_> {
             drag_state: None,
             op_cache,
             op_available,
+            instances_last_refresh: None,
         }
     }
 
@@ -806,8 +811,23 @@ impl ManagerState<'_> {
     }
 
     pub fn refresh_instances(&mut self, paths: &crate::paths::JackinPaths) {
+        const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+        let now = std::time::Instant::now();
+        if let Some(last) = self.instances_last_refresh
+            && now.duration_since(last) < REFRESH_INTERVAL
+        {
+            return;
+        }
+        self.instances_last_refresh = Some(now);
         self.instances = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir)
             .map_or_else(|_| Vec::new(), |index| index.instances);
+    }
+
+    /// Test helper: force the next `refresh_instances` call to hit disk
+    /// regardless of the throttle interval.
+    #[cfg(test)]
+    pub const fn force_refresh_instances_for_test(&mut self) {
+        self.instances_last_refresh = None;
     }
 
     /// Drained from the outer event loop every tick so picker results

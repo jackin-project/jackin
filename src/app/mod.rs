@@ -240,16 +240,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         // prompt returned None: workspace default covers it,
                         // or single-agent role, or non-TTY fallback.
                         None => workspace_default_agent
-                            .map(Ok)
-                            .unwrap_or_else(|| {
-                                manifest.agent_runtime.parse().map_err(|_| {
-                                    anyhow::anyhow!(
-                                        "instance `{}` has unknown agent runtime {:?}",
-                                        manifest.container_base,
-                                        manifest.agent_runtime
-                                    )
-                                })
-                            })?,
+                            .map_or_else(|| manifest.agent(), Ok)?,
                     }
                 };
                 runtime::reconcile_keep_awake(&paths, &mut runner);
@@ -1543,13 +1534,7 @@ fn handle_console_instance_action(
                         "cannot start a new agent session in `{container}` because its instance manifest is missing"
                     )
                 })?;
-            let selected_agent = manifest.agent_runtime.parse().map_err(|_| {
-                anyhow::anyhow!(
-                    "instance `{}` has unknown agent runtime {:?}",
-                    manifest.container_base,
-                    manifest.agent_runtime
-                )
-            })?;
+            let selected_agent = manifest.agent()?;
             runtime::reconcile_keep_awake(paths, runner);
             let result = runtime::spawn_agent_session(
                 paths,
@@ -1598,16 +1583,8 @@ fn resolve_instance_reference(paths: &JackinPaths, input: &str) -> Result<Option
         if entry.status == instance::InstanceStatus::Purged {
             continue;
         }
-        if entry.container_base == input {
+        if entry.container_base == input || entry.instance_id == input {
             matches.push(entry.container_base);
-            continue;
-        }
-        let state_dir = paths.data_dir.join(&entry.container_base);
-        let Ok(manifest) = instance::InstanceManifest::read(&state_dir) else {
-            continue;
-        };
-        if manifest.instance_id == input {
-            matches.push(manifest.container_base);
         }
     }
     matches.sort();
@@ -1678,13 +1655,7 @@ fn restore_hardline_instance(
     }
 
     let opts = runtime::LoadOptions {
-        agent: Some(manifest.agent_runtime.parse().map_err(|_| {
-            anyhow::anyhow!(
-                "instance `{}` has unknown agent runtime {:?}",
-                manifest.container_base,
-                manifest.agent_runtime
-            )
-        })?),
+        agent: Some(manifest.agent()?),
         role_branch: manifest.role_source_ref.clone(),
         restore_container_base: Some(manifest.container_base.clone()),
         restore_role_source_git: Some(manifest.role_source_git.clone()),

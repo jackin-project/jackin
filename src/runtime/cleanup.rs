@@ -16,18 +16,32 @@ pub fn purge_class_data(
         return Ok(());
     }
 
+    let mut matched = Vec::new();
     for entry in std::fs::read_dir(&paths.data_dir)? {
         let entry = entry?;
         let file_name = entry.file_name().to_string_lossy().to_string();
         if crate::instance::class_family_matches(selector, &file_name) {
-            purge_container_state(paths, &file_name, runner)?;
+            purge_container_filesystem(paths, &file_name, runner)?;
+            matched.push(file_name);
         }
     }
-
-    Ok(())
+    let refs: Vec<&str> = matched.iter().map(String::as_str).collect();
+    InstanceIndex::mark_many_purged(&paths.data_dir, &refs)
 }
 
 pub fn purge_container_state(
+    paths: &JackinPaths,
+    container_name: &str,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    purge_container_filesystem(paths, container_name, runner)?;
+    InstanceIndex::mark_purged(&paths.data_dir, container_name)
+}
+
+/// Per-container filesystem teardown (docker-state guard + isolation
+/// cleanup + state directory removal). Index updates are batched by the
+/// caller so multi-container purges avoid an O(M²) read-rewrite cycle.
+fn purge_container_filesystem(
     paths: &JackinPaths,
     container_name: &str,
     runner: &mut impl CommandRunner,
@@ -37,12 +51,12 @@ pub fn purge_container_state(
         &paths.data_dir.join(container_name),
         runner,
     )?;
-    InstanceIndex::mark_purged(&paths.data_dir, container_name)?;
     let state_dir = paths.data_dir.join(container_name);
-    if state_dir.exists() {
-        std::fs::remove_dir_all(state_dir)?;
+    match std::fs::remove_dir_all(state_dir) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
     }
-    Ok(())
 }
 
 pub fn eject_role(container_name: &str, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
