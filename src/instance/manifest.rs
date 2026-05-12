@@ -3,7 +3,6 @@ use anyhow::Context;
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::io::Write;
 use std::path::Path;
 
 pub const INSTANCE_MANIFEST_VERSION: u32 = 1;
@@ -226,35 +225,31 @@ impl InstanceManifest {
         }
     }
 
-    /// Atomic write: tempfile + fsync + rename so a mid-write crash never
-    /// produces a half-written JSON that breaks every subsequent reader.
-    pub fn write(&self, state_dir: &Path) -> anyhow::Result<()> {
-        let manifest_dir = state_dir.join(".jackin");
-        std::fs::create_dir_all(&manifest_dir)
-            .with_context(|| format!("create state dir {}", manifest_dir.display()))?;
-        let path = manifest_dir.join("instance.json");
-        let bytes = serde_json::to_vec_pretty(self)?;
-        atomic_write(&path, &bytes)
-            .with_context(|| format!("writing instance manifest at {}", path.display()))
+    /// Collapses [`Self::read_optional`]'s three outcomes into the two
+    /// the discovery surfaces care about — `Some` (use the manifest)
+    /// vs `None` (skip the candidate). Logs parse/IO failures via
+    /// `debug_log!` so an unreadable manifest still surfaces under
+    /// `--debug` rather than silently disappearing from `--inspect`,
+    /// hardline candidate scans, or attach-outcome recording.
+    pub fn read_or_log(state_dir: &Path, site: &str) -> Option<Self> {
+        match Self::read_optional(state_dir) {
+            Ok(value) => value,
+            Err(error) => {
+                crate::debug_log!(
+                    "instance",
+                    "{site}: skipping {} due to unreadable manifest: {error}",
+                    state_dir.display(),
+                );
+                None
+            }
+        }
     }
-}
 
-/// Tempfile + fsync + rename. Used for both the per-instance manifest
-/// and the instance index — partial writes on either turn the next
-/// launch into "instance reference not found" or a parse error with no
-/// recovery path.
-fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let parent = path.parent().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("no parent directory for {}", path.display()),
-        )
-    })?;
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    tmp.write_all(bytes)?;
-    tmp.as_file_mut().sync_all()?;
-    tmp.persist(path).map_err(|e| e.error)?;
-    Ok(())
+    pub fn write(&self, state_dir: &Path) -> anyhow::Result<()> {
+        let path = state_dir.join(".jackin/instance.json");
+        let body = serde_json::to_string_pretty(self)?;
+        crate::config::persist::atomic_write(&path, &body)
+    }
 }
 
 /// SHA-256 of the canonical host path.
@@ -415,21 +410,21 @@ impl InstanceIndex {
         if container_bases.is_empty() {
             return Ok(());
         }
-        let mut index = Self::read_or_rebuild(data_dir)?;
-        let mut pending: std::collections::HashSet<&str> =
-            container_bases.iter().copied().collect();
-        let now = now_rfc3339();
-        for entry in &mut index.instances {
-            if pending.remove(entry.container_base.as_str()) {
-                entry.status = InstanceStatus::Purged;
-                entry.updated_at.clone_from(&now);
+        Self::with_lock(data_dir, |index| {
+            let mut pending: std::collections::HashSet<&str> =
+                container_bases.iter().copied().collect();
+            let now = now_rfc3339();
+            for entry in &mut index.instances {
+                if pending.remove(entry.container_base.as_str()) {
+                    entry.status = InstanceStatus::Purged;
+                    entry.updated_at.clone_from(&now);
+                }
             }
-        }
-        for container_base in pending {
-            Self::backfill_purge_tombstone(&mut index, data_dir, container_base);
-        }
-        index.sort();
-        index.write(data_dir)
+            for container_base in pending {
+                Self::backfill_purge_tombstone(index, data_dir, container_base);
+            }
+            Ok(())
+        })
     }
 
     /// Container is not in the index but a manifest may still exist on
@@ -483,22 +478,9 @@ impl InstanceIndex {
             .filter(|entry| entry.matches(query))
         {
             let state_dir = data_dir.join(&entry.container_base);
-            // Distinguish "manifest missing" (state torn down out of
-            // band — silently skip is correct) from parse / IO errors
-            // (corrupt or unreadable manifest — surface via debug_log
-            // so the operator can recover the underlying file fault
-            // rather than seeing the instance vanish from discovery).
-            let manifest = match InstanceManifest::read_optional(&state_dir) {
-                Ok(Some(m)) => m,
-                Ok(None) => continue,
-                Err(error) => {
-                    crate::debug_log!(
-                        "instance",
-                        "matching_manifests: skipping {} due to unreadable manifest: {error}",
-                        state_dir.display(),
-                    );
-                    continue;
-                }
+            let Some(manifest) = InstanceManifest::read_or_log(&state_dir, "matching_manifests")
+            else {
+                continue;
             };
             if InstanceIndexEntry::from_manifest(&manifest).matches(query) {
                 manifests.push(manifest);
@@ -543,10 +525,8 @@ impl InstanceIndex {
     }
 
     fn write(&self, data_dir: &Path) -> anyhow::Result<()> {
-        std::fs::create_dir_all(data_dir)?;
-        let bytes = serde_json::to_vec_pretty(self)?;
-        std::fs::write(data_dir.join(INSTANCE_INDEX_FILE), bytes)?;
-        Ok(())
+        let body = serde_json::to_string_pretty(self)?;
+        crate::config::persist::atomic_write(&data_dir.join(INSTANCE_INDEX_FILE), &body)
     }
 
     fn sort(&mut self) {

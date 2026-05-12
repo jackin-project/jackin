@@ -8,14 +8,9 @@ use super::naming::{LABEL_KIND_DIND, LABEL_MANAGED, dind_certs_volume};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainerState {
     NotFound,
-    /// `docker inspect` could not determine container state — daemon
-    /// down, exotic error string, or unparseable output.
     InspectUnavailable(String),
     Running,
-    Stopped {
-        exit_code: i32,
-        oom_killed: bool,
-    },
+    Stopped { exit_code: i32, oom_killed: bool },
 }
 
 impl ContainerState {
@@ -353,16 +348,13 @@ pub fn inspect_hardline_instance(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<String> {
     let state_dir = paths.data_dir.join(container_name);
-    // Distinguish "no manifest yet" (legitimate — pre-restore state)
-    // from "manifest unreadable" (the inspect surface is the operator's
-    // recovery tool, must not silently render `Manifest: missing` for
-    // a torn JSON the operator urgently needs to know about).
-    let (manifest, manifest_error) = match InstanceManifest::read_optional(&state_dir) {
-        Ok(Some(m)) => (Some(m), None),
-        Ok(None) => (None, None),
-        Err(error) => (None, Some(error.to_string())),
-    };
-    let dind_name = manifest.as_ref().map_or_else(
+    // `--inspect` is the operator's recovery tool. Distinguish "no
+    // manifest yet" (pre-restore) from "manifest unreadable" (torn
+    // JSON) so the render below does not lie about the latter.
+    let manifest_result: Result<Option<InstanceManifest>, String> =
+        InstanceManifest::read_optional(&state_dir).map_err(|e| e.to_string());
+    let manifest = manifest_result.as_ref().ok().and_then(Option::as_ref);
+    let dind_name = manifest.map_or_else(
         || format!("{container_name}-dind"),
         |manifest| manifest.docker.dind_container.clone(),
     );
@@ -386,30 +378,30 @@ pub fn inspect_hardline_instance(
         format!("Instance: {container_name}"),
         format!("State directory: {}", state_dir.display()),
     ];
-    if let Some(manifest) = manifest {
-        lines.extend([
-            format!("Instance ID: {}", manifest.instance_id),
-            format!("Workspace: {}", manifest.workspace_label),
-            format!("Role: {}", manifest.role_key),
-            format!("Agent: {}", manifest.agent_runtime),
-            format!("Status: {}", manifest.status.label()),
-            format!("Updated: {}", manifest.updated_at),
-        ]);
-        if let Some(outcome) = manifest.last_attach_outcome {
-            lines.push(format!("Last attach outcome: {outcome}"));
+    match &manifest_result {
+        Ok(Some(manifest)) => {
+            lines.extend([
+                format!("Instance ID: {}", manifest.instance_id),
+                format!("Workspace: {}", manifest.workspace_label),
+                format!("Role: {}", manifest.role_key),
+                format!("Agent: {}", manifest.agent_runtime),
+                format!("Status: {}", manifest.status.label()),
+                format!("Updated: {}", manifest.updated_at),
+            ]);
+            if let Some(outcome) = &manifest.last_attach_outcome {
+                lines.push(format!("Last attach outcome: {outcome}"));
+            }
+            if let Some(source_ref) = &manifest.role_source_ref {
+                lines.push(format!(
+                    "Role source: {} ({source_ref})",
+                    manifest.role_source_git
+                ));
+            } else if !manifest.role_source_git.is_empty() {
+                lines.push(format!("Role source: {}", manifest.role_source_git));
+            }
         }
-        if let Some(source_ref) = manifest.role_source_ref {
-            lines.push(format!(
-                "Role source: {} ({source_ref})",
-                manifest.role_source_git
-            ));
-        } else if !manifest.role_source_git.is_empty() {
-            lines.push(format!("Role source: {}", manifest.role_source_git));
-        }
-    } else if let Some(error) = manifest_error {
-        lines.push(format!("Manifest: unreadable ({error})"));
-    } else {
-        lines.push("Manifest: missing".to_string());
+        Ok(None) => lines.push("Manifest: missing".to_string()),
+        Err(error) => lines.push(format!("Manifest: unreadable ({error})")),
     }
 
     lines.extend([

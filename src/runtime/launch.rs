@@ -1829,12 +1829,7 @@ fn load_role_with(
         );
         let launch_result = launch_role_runtime(&ctx, &mut steps, runner);
         if launch_result.is_err() {
-            // Surface the cascading-failure: if recording `FailedSetup`
-            // itself errors (disk full, permission flip) we still want
-            // to run cleanup, but the operator deserves the diagnostic
-            // chain through `--debug`. Swallowing here lies about the
-            // manifest state and hides exactly the failure that the
-            // FailedSetup status is meant to record.
+            // FailedSetup write error must not abort cleanup; surface via debug.
             if let Err(status_err) = write_instance_status(
                 paths,
                 &container_state,
@@ -2416,21 +2411,12 @@ pub(super) fn record_instance_attach_outcome(
     outcome: crate::isolation::finalize::AttachOutcome,
 ) -> anyhow::Result<()> {
     let state_dir = paths.data_dir.join(container_name);
-    // Missing manifest is a legitimate no-op (state torn down by purge
-    // / eject mid-session). Parse / IO errors are NOT — surface via
-    // `debug_log` so a torn-write or permission flip on the manifest
-    // file does not silently drop the attach-outcome record forever.
-    let mut manifest = match InstanceManifest::read_optional(&state_dir) {
-        Ok(Some(m)) => m,
-        Ok(None) => return Ok(()),
-        Err(error) => {
-            crate::debug_log!(
-                "instance",
-                "record_instance_attach_outcome: manifest at {} unreadable, skipping: {error}",
-                state_dir.display(),
-            );
-            return Ok(());
-        }
+    // Missing manifest is a legitimate no-op; corrupt manifest is
+    // logged so the attach-outcome record is not silently dropped.
+    let Some(mut manifest) =
+        InstanceManifest::read_or_log(&state_dir, "record_instance_attach_outcome")
+    else {
+        return Ok(());
     };
     write_instance_attach_outcome(paths, &state_dir, &mut manifest, outcome)
 }
@@ -2531,29 +2517,17 @@ fn claim_container_name(
         };
 
         if slot_free {
-            let lock_path = paths.data_dir.join(format!("{name}.lock"));
-            let lock_file = std::fs::File::create(&lock_path)?;
-            match lock_file.try_lock_exclusive() {
-                Ok(()) => return Ok((name, lock_file)),
-                Err(error) => {
+            match try_acquire_name_lock(&paths.data_dir, &name) {
+                Ok(lock_file) => return Ok((name, lock_file)),
+                Err(NameLockError { lock, unlink }) => {
                     crate::debug_log!(
                         "runtime",
-                        "claim_container_name: lock contention on {name} (attempt {attempt}): {error}",
+                        "claim_container_name: lock contention on {name} (attempt {attempt}): {lock}",
                     );
-                    // Filesystems where flock is advisory (NFS without
-                    // lockd) leak the artefact unless the open handle
-                    // is dropped before unlink; otherwise `data_dir`
-                    // accumulates zero-byte files across retries.
-                    drop(lock_file);
-                    if let Err(unlink_err) = std::fs::remove_file(&lock_path) {
-                        crate::debug_log!(
-                            "runtime",
-                            "claim_container_name: failed to unlink {} after lock contention: {unlink_err}",
-                            lock_path.display(),
-                        );
+                    if let Some(unlink_err) = unlink {
                         last_unlink_err = Some(unlink_err);
                     }
-                    last_lock_err = Some(error);
+                    last_lock_err = Some(lock);
                 }
             }
         } else {
@@ -2561,25 +2535,20 @@ fn claim_container_name(
         }
     }
 
-    // Differentiate "every candidate name was occupied" (Docker side)
-    // from "lockfile contention" (flock side) so the operator's first
-    // diagnostic step matches the actual failure mode. An unlink error,
-    // when present, is the smoking gun for broken-flock filesystems.
-    let lock_summary = last_lock_err.map_or_else(
-        || {
-            if occupied_attempts == CLAIM_MAX_ATTEMPTS {
-                "all candidates already exist in Docker".to_string()
-            } else {
-                "no lock attempted".to_string()
-            }
-        },
-        |error| {
-            last_unlink_err.map_or_else(
-                || format!("lock contention ({error})"),
-                |unlink| format!("lock contention ({error}); lock unlink also failed ({unlink})"),
-            )
-        },
-    );
+    // Pick the failure mode the operator should investigate first.
+    // An unlink error means broken-flock; a lock error means
+    // contention; "every candidate occupied" means Docker's namespace
+    // is full for this slug.
+    let lock_summary = match (last_lock_err, last_unlink_err) {
+        (Some(lock), Some(unlink)) => {
+            format!("lock contention ({lock}); lock unlink also failed ({unlink})")
+        }
+        (Some(lock), None) => format!("lock contention ({lock})"),
+        (None, _) if occupied_attempts == CLAIM_MAX_ATTEMPTS => {
+            "all candidates already exist in Docker".to_string()
+        }
+        (None, _) => "no lock attempted".to_string(),
+    };
     anyhow::bail!(
         "exhausted {CLAIM_MAX_ATTEMPTS} attempts to claim a unique container name ({lock_summary})"
     );
@@ -2605,24 +2574,43 @@ fn claim_known_container_name(
     }
 
     std::fs::create_dir_all(&paths.data_dir)?;
-    let lock_path = paths.data_dir.join(format!("{container_name}.lock"));
-    let lock_file = std::fs::File::create(&lock_path)?;
-    if let Err(lock_err) = lock_file.try_lock_exclusive() {
-        // Broken-flock filesystems leak the lock file unless the
-        // handle drops before unlink.
+    match try_acquire_name_lock(&paths.data_dir, container_name) {
+        Ok(lock_file) => Ok((container_name.to_string(), lock_file)),
+        Err(NameLockError { lock, .. }) => anyhow::bail!(
+            "cannot restore `{container_name}` because another jackin process holds its lock ({lock})"
+        ),
+    }
+}
+
+/// Try to acquire an exclusive flock on `<data_dir>/<name>.lock`.
+/// On contention drops the handle before unlinking — broken-flock
+/// filesystems (NFS without lockd) leak the artefact otherwise.
+struct NameLockError {
+    lock: std::io::Error,
+    unlink: Option<std::io::Error>,
+}
+
+fn try_acquire_name_lock(
+    data_dir: &std::path::Path,
+    name: &str,
+) -> Result<std::fs::File, NameLockError> {
+    let lock_path = data_dir.join(format!("{name}.lock"));
+    let lock_file = match std::fs::File::create(&lock_path) {
+        Ok(f) => f,
+        Err(lock) => return Err(NameLockError { lock, unlink: None }),
+    };
+    if let Err(lock) = lock_file.try_lock_exclusive() {
         drop(lock_file);
-        if let Err(unlink_err) = std::fs::remove_file(&lock_path) {
+        let unlink = std::fs::remove_file(&lock_path).err().inspect(|err| {
             crate::debug_log!(
                 "runtime",
-                "claim_known_container_name: failed to unlink {} after lock contention: {unlink_err}",
+                "try_acquire_name_lock: failed to unlink {} after lock contention: {err}",
                 lock_path.display(),
             );
-        }
-        anyhow::bail!(
-            "cannot restore `{container_name}` because another jackin process holds its lock ({lock_err})"
-        );
+        });
+        return Err(NameLockError { lock, unlink });
     }
-    Ok((container_name.to_string(), lock_file))
+    Ok(lock_file)
 }
 
 /// What we found in a single env layer when looking up the credential
