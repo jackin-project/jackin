@@ -226,21 +226,10 @@ pub fn run(cli: Cli) -> Result<()> {
                             "cannot start a new agent session in `{container}` because its instance manifest is missing"
                         )
                     })?;
-                let class = RoleSelector::parse(&manifest.role_key)?;
-                let workspace_default_agent = manifest
-                    .workspace_name
-                    .as_deref()
-                    .and_then(|name| config.workspaces.get(name))
-                    .and_then(|ws| ws.default_agent);
                 let selected_agent = if let Some(agent) = agent {
                     agent
                 } else {
-                    match prompt_agent_choice_if_needed(&paths, &class, workspace_default_agent)? {
-                        Some(a) => a,
-                        // prompt returned None: workspace default covers it,
-                        // or single-agent role, or non-TTY fallback.
-                        None => workspace_default_agent.map_or_else(|| manifest.agent(), Ok)?,
-                    }
+                    resolve_new_session_agent(&paths, &config, &manifest)?
                 };
                 runtime::reconcile_keep_awake(&paths, &mut runner);
                 let result = runtime::spawn_agent_session(
@@ -1504,6 +1493,32 @@ fn prompt_hardline_action_with_prompt(prompt: &str) -> Result<HardlineAction> {
     Ok(options[choice].1)
 }
 
+/// Pick the agent for a new foreground session inside an existing
+/// instance, mirroring the `load` / `hardline --new` resolution order:
+/// workspace `default_agent` short-circuits the prompt; otherwise
+/// `prompt_agent_choice_if_needed` offers the manifest's supported
+/// agents; on non-TTY or single-agent roles, fall back to the
+/// workspace default or the manifest's recorded agent.
+fn resolve_new_session_agent(
+    paths: &JackinPaths,
+    config: &AppConfig,
+    manifest: &instance::InstanceManifest,
+) -> Result<crate::agent::Agent> {
+    let class = RoleSelector::parse(&manifest.role_key)?;
+    let workspace_default_agent = manifest
+        .workspace_name
+        .as_deref()
+        .and_then(|name| config.workspaces.get(name))
+        .and_then(|ws| ws.default_agent);
+    // Prompt declined to ask → workspace default covers it, role is
+    // single-agent, or non-TTY context. Prefer the workspace default;
+    // fall back to the manifest's recorded agent.
+    prompt_agent_choice_if_needed(paths, &class, workspace_default_agent)?.map_or_else(
+        || workspace_default_agent.map_or_else(|| manifest.agent(), Ok),
+        Ok,
+    )
+}
+
 fn handle_console_instance_action(
     paths: &JackinPaths,
     config: &mut AppConfig,
@@ -1533,7 +1548,7 @@ fn handle_console_instance_action(
                         "cannot start a new agent session in `{container}` because its instance manifest is missing"
                     )
                 })?;
-            let selected_agent = manifest.agent()?;
+            let selected_agent = resolve_new_session_agent(paths, config, &manifest)?;
             runtime::reconcile_keep_awake(paths, runner);
             let result = runtime::spawn_agent_session(
                 paths,
