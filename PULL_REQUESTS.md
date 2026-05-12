@@ -166,12 +166,14 @@ Three env vars let the operator test a PR without touching their live config or 
 - Roadmap updates, CI changes (except construct image CI), dependency bumps
 - Pure refactors, tests, or rule changes that do not alter any on-disk or in-memory shape that has already been stored
 
-The Isolation section must appear immediately after the Checkout section and before Static Checks. Paste it as two separate blocks so `TIRITH=0` (already set in Checkout) does not need repeating:
+The Isolation section must appear immediately after the Checkout section and before Static Checks. Use the PR number as the suffix so two PRs can be tested in parallel on the same machine without their state directories colliding:
 
 ```sh
-export JACKIN_CONFIG_DIR="$HOME/.config/jackin-test"
-export JACKIN_HOME_DIR="$HOME/.jackin-test"
+export JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"
+export JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"
 ```
+
+Replace `<PR_NUMBER>` with the actual PR number (e.g. `326`). After verification the directories can be deleted with `rm -rf "$JACKIN_CONFIG_DIR" "$JACKIN_HOME_DIR"`.
 
 For construct image PRs, add the build step and the override export:
 

@@ -69,8 +69,8 @@ git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
 <Include when the PR touches config/state layout, path resolution, versioned schemas, runtime state under ~/.jackin/, or the construct image. Drop this section entirely for docs-only, roadmap, CI, or pure-refactor PRs. See PULL_REQUESTS.md § "Isolation env vars" for the full decision rule.>
 
 ```sh
-export JACKIN_CONFIG_DIR="$HOME/.config/jackin-test"
-export JACKIN_HOME_DIR="$HOME/.jackin-test"
+export JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"
+export JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"
 ```
 
 <For construct image PRs only, also add:>
