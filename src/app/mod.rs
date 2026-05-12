@@ -182,10 +182,8 @@ pub fn run(cli: Cli) -> Result<()> {
             new,
             agent,
         }) => {
-            anyhow::ensure!(
-                !(inspect && new),
-                "`jackin hardline --inspect --new` is invalid; inspect is read-only"
-            );
+            // `--inspect` / `--new` mutual exclusion is enforced by clap
+            // `conflicts_with` on `HardlineArgs::new`; no runtime guard needed.
             let explicit_selector = selector.is_some();
             let container = if let Some(sel) = selector {
                 if let Some(container) = resolve_instance_reference(&paths, &sel)? {

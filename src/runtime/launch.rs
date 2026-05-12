@@ -2325,7 +2325,8 @@ fn related_restore_candidate_label_for_prompt(candidate: &RelatedRestoreCandidat
 
 fn restore_candidate_label(paths: &JackinPaths, manifest: &InstanceManifest) -> String {
     let state_dir = paths.data_dir.join(&manifest.container_base);
-    let isolation = restore_candidate_isolation_summary(&state_dir);
+    let isolation =
+        crate::isolation::state::MountSummary::prompt_label_for_state_dir(&state_dir);
     let attach = manifest
         .last_attach_outcome
         .as_deref()
@@ -2339,13 +2340,6 @@ fn restore_candidate_label(paths: &JackinPaths, manifest: &InstanceManifest) -> 
         manifest.updated_at,
         isolation,
         attach
-    )
-}
-
-fn restore_candidate_isolation_summary(state_dir: &std::path::Path) -> String {
-    crate::isolation::state::MountSummary::for_state_dir(state_dir).map_or_else(
-        |_| "mounts:unknown".to_string(),
-        crate::isolation::state::MountSummary::prompt_label,
     )
 }
 

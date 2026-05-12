@@ -83,9 +83,7 @@ pub fn class_family_matches_with_slug(role_slug: &str, container_name: &str) -> 
         return false;
     };
     let mut parts = rest.rsplitn(2, '-');
-    let Some(_instance_id) = parts.next() else {
-        return false;
-    };
+    parts.next(); // discard the trailing instance id
     let Some(prefix) = parts.next() else {
         return false;
     };

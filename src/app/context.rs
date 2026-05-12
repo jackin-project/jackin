@@ -384,7 +384,8 @@ fn hardline_candidate_prompt_label(
     let Ok(manifest) = instance::InstanceManifest::read(&state_dir) else {
         return format!("{container} - {docker_state} - {session_summary}");
     };
-    let isolation = hardline_candidate_isolation_summary(&state_dir);
+    let isolation =
+        crate::isolation::state::MountSummary::prompt_label_for_state_dir(&state_dir);
     format!(
         "{} - {} - {} - agent:{} - status:{} - {} - {} - {}",
         manifest.container_base,
@@ -395,13 +396,6 @@ fn hardline_candidate_prompt_label(
         docker_state,
         session_summary,
         isolation
-    )
-}
-
-fn hardline_candidate_isolation_summary(state_dir: &Path) -> String {
-    crate::isolation::state::MountSummary::for_state_dir(state_dir).map_or_else(
-        |_| "mounts:unknown".to_string(),
-        crate::isolation::state::MountSummary::prompt_label,
     )
 }
 

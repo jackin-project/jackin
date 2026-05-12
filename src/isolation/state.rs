@@ -79,6 +79,14 @@ impl MountSummary {
         Ok(Self::from_records(&read_records(container_state_dir)?))
     }
 
+    /// Prompt-style mount summary for a container's state dir. Returns
+    /// `"mounts:unknown"` when the isolation manifest can't be read.
+    #[must_use]
+    pub fn prompt_label_for_state_dir(state_dir: &Path) -> String {
+        Self::for_state_dir(state_dir)
+            .map_or_else(|_| "mounts:unknown".to_string(), Self::prompt_label)
+    }
+
     /// `"mounts:N dirty:N unpushed:N"`. Returns `"mounts:none"` for the
     /// empty case and `"mounts:N"` when no records are dirty/unpushed.
     #[must_use]
