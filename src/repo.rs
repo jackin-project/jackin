@@ -77,7 +77,7 @@ pub enum RoleRepoValidationError {
     #[error("Dockerfile must contain at least one FROM instruction")]
     DockerfileMissingFrom,
     #[error("final Dockerfile stage must use literal FROM {expected}")]
-    DockerfileNonConstruct { expected: &'static str },
+    DockerfileNonConstruct { expected: String },
     /// Catch-all for non-structural failures (TOML parse, IO, manifest
     /// semantic validation). The friendly translator renders these as
     /// the generic "not a valid Jackin role" message.

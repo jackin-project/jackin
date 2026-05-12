@@ -17,14 +17,21 @@ impl JackinPaths {
         let base =
             BaseDirs::new().ok_or_else(|| anyhow::anyhow!("Cannot resolve home directory"))?;
         let home_dir = base.home_dir().to_path_buf();
-        let config_dir = home_dir.join(".config/jackin");
+
+        let config_dir = std::env::var_os("JACKIN_CONFIG_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home_dir.join(".config/jackin"));
+
+        let jackin_home = std::env::var_os("JACKIN_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home_dir.join(".jackin"));
 
         Ok(Self {
             config_file: config_dir.join("config.toml"),
             workspaces_dir: config_dir.join("workspaces"),
-            roles_dir: home_dir.join(".jackin/roles"),
-            data_dir: home_dir.join(".jackin/data"),
-            cache_dir: home_dir.join(".jackin/cache"),
+            roles_dir: jackin_home.join("roles"),
+            data_dir: jackin_home.join("data"),
+            cache_dir: jackin_home.join("cache"),
             home_dir,
             config_dir,
         })
