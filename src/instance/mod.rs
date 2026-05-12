@@ -696,8 +696,7 @@ plugins = []
         let auth_modes = |agent: crate::agent::Agent| match agent {
             crate::agent::Agent::Claude => AuthForwardMode::Sync,
             crate::agent::Agent::Codex => AuthForwardMode::ApiKey,
-            crate::agent::Agent::Amp => AuthForwardMode::Ignore,
-            crate::agent::Agent::Kimi => AuthForwardMode::Ignore,
+            crate::agent::Agent::Amp | crate::agent::Agent::Kimi => AuthForwardMode::Ignore,
         };
 
         let (state, selected_outcome) = RoleState::prepare(

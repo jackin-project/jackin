@@ -604,7 +604,7 @@ impl RoleState {
     ///
     /// Sync copies the host directory recursively into the role-state
     /// directory so it can be bind-mounted into the container.
-    /// ApiKey / Ignore wipe any prior role-state directory.
+    /// `ApiKey` / `Ignore` wipe any prior role-state directory.
     ///
     /// Returns `(outcome, forward_auth)` where `forward_auth` controls
     /// whether the launcher bind-mounts the directory.
@@ -658,7 +658,7 @@ impl RoleState {
                         for entry in std::fs::read_dir(&host_creds)? {
                             let entry = entry?;
                             if entry.file_type()?.is_file() {
-                                let content = std::fs::read_to_string(&entry.path())?;
+                                let content = std::fs::read_to_string(entry.path())?;
                                 write_private_file(&dest_creds.join(entry.file_name()), &content)?;
                             }
                         }
