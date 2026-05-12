@@ -1320,15 +1320,15 @@ fn explicit_workspace_mode(
         AuthKind::Codex => ws
             .codex
             .as_ref()
-            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
+            .map(|c| AuthMode::from_auth_forward(c.auth_forward)),
         AuthKind::Amp => ws
             .amp
             .as_ref()
-            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
+            .map(|c| AuthMode::from_auth_forward(c.auth_forward)),
         AuthKind::Kimi => ws
             .kimi
             .as_ref()
-            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
+            .map(|c| AuthMode::from_auth_forward(c.auth_forward)),
         AuthKind::Github => ws
             .github
             .as_ref()

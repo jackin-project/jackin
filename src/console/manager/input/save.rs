@@ -830,13 +830,13 @@ fn apply_auth_forward_diff(
     if original_claude != pending_claude {
         ce.set_workspace_auth_forward(workspace_name, Agent::Claude, pending_claude);
     }
-    let original_codex = original.codex.as_ref().map(|c| c.0.auth_forward);
-    let pending_codex = pending.codex.as_ref().map(|c| c.0.auth_forward);
+    let original_codex = original.codex.as_ref().map(|c| c.auth_forward);
+    let pending_codex = pending.codex.as_ref().map(|c| c.auth_forward);
     if original_codex != pending_codex {
         ce.set_workspace_auth_forward(workspace_name, Agent::Codex, pending_codex);
     }
-    let original_amp = original.amp.as_ref().map(|c| c.0.auth_forward);
-    let pending_amp = pending.amp.as_ref().map(|c| c.0.auth_forward);
+    let original_amp = original.amp.as_ref().map(|c| c.auth_forward);
+    let pending_amp = pending.amp.as_ref().map(|c| c.auth_forward);
     if original_amp != pending_amp {
         ce.set_workspace_auth_forward(workspace_name, Agent::Amp, pending_amp);
     }
@@ -865,19 +865,19 @@ fn apply_auth_forward_diff(
         }
         let orig_codex = orig_override
             .and_then(|o| o.codex.as_ref())
-            .map(|c| c.0.auth_forward);
+            .map(|c| c.auth_forward);
         let pend_codex = pend_override
             .and_then(|p| p.codex.as_ref())
-            .map(|c| c.0.auth_forward);
+            .map(|c| c.auth_forward);
         if orig_codex != pend_codex {
             ce.set_workspace_role_auth_forward(workspace_name, role, Agent::Codex, pend_codex);
         }
         let orig_amp = orig_override
             .and_then(|o| o.amp.as_ref())
-            .map(|c| c.0.auth_forward);
+            .map(|c| c.auth_forward);
         let pend_amp = pend_override
             .and_then(|p| p.amp.as_ref())
-            .map(|c| c.0.auth_forward);
+            .map(|c| c.auth_forward);
         if orig_amp != pend_amp {
             ce.set_workspace_role_auth_forward(workspace_name, role, Agent::Amp, pend_amp);
         }

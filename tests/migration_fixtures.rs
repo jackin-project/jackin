@@ -99,7 +99,8 @@ fn walk_fixtures(file_kind: &str, migrate: MigrateFn) {
         let actual_doc: toml::Value = toml::from_str(&actual_after).unwrap();
         let actual_version = actual_doc["version"].as_str().unwrap_or("");
         assert_eq!(
-            actual_version, meta.target_version,
+            actual_version,
+            meta.target_version,
             "fixture {name}: migrated file has version {actual_version}, expected {target}",
             target = meta.target_version
         );
@@ -108,7 +109,8 @@ fn walk_fixtures(file_kind: &str, migrate: MigrateFn) {
         let expected_doc: toml::Value = toml::from_str(&expected_after).unwrap();
         let expected_version = expected_doc["version"].as_str().unwrap_or("");
         assert_eq!(
-            expected_version, meta.target_version,
+            expected_version,
+            meta.target_version,
             "fixture {name}: after.toml has version {expected_version}, expected {target}",
             target = meta.target_version
         );
@@ -118,25 +120,21 @@ fn walk_fixtures(file_kind: &str, migrate: MigrateFn) {
 fn parse_fixture(file_kind: &str, contents: &str, name: &str, side: &str) {
     match file_kind {
         "config" => {
-            let _parsed: jackin::config::AppConfig =
-                toml::from_str(contents).unwrap_or_else(|e| {
-                    panic!("{side} {name} failed to parse as AppConfig: {e}")
-                });
+            let _parsed: jackin::config::AppConfig = toml::from_str(contents)
+                .unwrap_or_else(|e| panic!("{side} {name} failed to parse as AppConfig: {e}"));
         }
         "workspace" => {
-            let _parsed: jackin::workspace::WorkspaceConfig =
-                toml::from_str(contents).unwrap_or_else(|e| {
+            let _parsed: jackin::workspace::WorkspaceConfig = toml::from_str(contents)
+                .unwrap_or_else(|e| {
                     panic!("{side} {name} failed to parse as WorkspaceConfig: {e}")
                 });
         }
         "manifest" => {
-            let _parsed: jackin::manifest::RoleManifest =
-                toml::from_str(contents).unwrap_or_else(|e| {
-                    panic!("{side} {name} failed to parse as RoleManifest: {e}")
-                });
+            let _parsed: jackin::manifest::RoleManifest = toml::from_str(contents)
+                .unwrap_or_else(|e| panic!("{side} {name} failed to parse as RoleManifest: {e}"));
         }
         other => panic!("unknown file_kind {other:?}"),
-    };
+    }
 }
 
 fn filename_for(file_kind: &str) -> &'static str {
