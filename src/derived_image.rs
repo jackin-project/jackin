@@ -601,9 +601,9 @@ mod tests {
         assert!(
             ENTRYPOINT_SH.contains("seed_home_dir /jackin/default-home/.codex /home/agent/.codex")
         );
-        assert!(ENTRYPOINT_SH.contains(
-            "seed_home_dir /jackin/default-home/.kimi /home/agent/.kimi"
-        ));
+        assert!(
+            ENTRYPOINT_SH.contains("seed_home_dir /jackin/default-home/.kimi /home/agent/.kimi")
+        );
         assert!(ENTRYPOINT_SH.contains(
             "seed_home_dir /jackin/default-home/.local/share/amp /home/agent/.local/share/amp"
         ));

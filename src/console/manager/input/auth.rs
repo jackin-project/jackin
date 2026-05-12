@@ -22,7 +22,9 @@ use super::super::state::{
     TextInputTarget,
 };
 use crate::config::AppConfig;
-use crate::config::{AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, KimiAuthConfig};
+use crate::config::{
+    AgentAuthConfig, AmpAuthConfig, CodexAuthConfig, GithubAuthConfig, KimiAuthConfig,
+};
 use crate::console::op_cache::OpCache;
 use crate::console::widgets::text_input::TextInputState;
 use crate::operator_env::EnvValue;

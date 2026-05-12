@@ -3207,8 +3207,8 @@ plugins = []
                 codex: None,
                 amp: None,
                 github: None,
-                            kimi: None,
-                },
+                kimi: None,
+            },
         );
 
         let mut state = ManagerState::from_config(&config, tmp.path());
@@ -3487,8 +3487,8 @@ plugins = []
                 codex: None,
                 amp: None,
                 github: None,
-                            kimi: None,
-                },
+                kimi: None,
+            },
         );
         let mut state = ManagerState::from_config(&config, tmp.path());
         let mut editor = EditorState::new_edit("ws".into(), ws);
@@ -3555,8 +3555,8 @@ plugins = []
                 codex: None,
                 amp: None,
                 github: None,
-                            kimi: None,
-                },
+                kimi: None,
+            },
         );
 
         let mut state = ManagerState::from_config(&config, tmp.path());

@@ -424,8 +424,8 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
             codex: None,
             amp: None,
             github: None,
-                    kimi: None,
-            },
+            kimi: None,
+        },
     );
     let ws = WorkspaceConfig {
         workdir: host_path.clone(),
@@ -1638,8 +1638,8 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
             codex: None,
             amp: None,
             github: None,
-                    kimi: None,
-            },
+            kimi: None,
+        },
     );
     let ws = WorkspaceConfig {
         workdir: host_path.clone(),
@@ -1798,8 +1798,8 @@ fn seed_override_picker_workspace(
                 codex: None,
                 amp: None,
                 github: None,
-                            kimi: None,
-                },
+                kimi: None,
+            },
         );
     }
 

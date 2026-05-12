@@ -817,8 +817,8 @@ isolation = "clone"
             amp: None,
             github: None,
             git_pull_on_entry: false,
-                    kimi: None,
-            };
+            kimi: None,
+        };
         let err = validate_workspace_config("ws", &workspace).unwrap_err();
         let msg = err.to_string();
         assert!(

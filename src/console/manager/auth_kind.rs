@@ -60,7 +60,9 @@ impl AuthKind {
                 AuthMode::OAuthToken,
                 AuthMode::Ignore,
             ],
-            Self::Codex | Self::Amp | Self::Kimi => &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore],
+            Self::Codex | Self::Amp | Self::Kimi => {
+                &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore]
+            }
             Self::Github => &[AuthMode::Sync, AuthMode::Token, AuthMode::Ignore],
         }
     }
@@ -387,7 +389,7 @@ mod tests {
                 },
             )),
             ..crate::config::WorkspaceRoleOverride::default()
-            };
+        };
         assert!(!AuthKind::Claude.role_override_present(&ro));
         assert!(AuthKind::Codex.role_override_present(&ro));
         assert!(!AuthKind::Amp.role_override_present(&ro));
@@ -401,7 +403,7 @@ mod tests {
                 },
             )),
             ..crate::config::WorkspaceRoleOverride::default()
-            };
+        };
         assert!(!AuthKind::Claude.role_override_present(&ro));
         assert!(!AuthKind::Codex.role_override_present(&ro));
         assert!(AuthKind::Amp.role_override_present(&ro));

@@ -659,10 +659,7 @@ impl RoleState {
                             let entry = entry?;
                             if entry.file_type()?.is_file() {
                                 let content = std::fs::read_to_string(&entry.path())?;
-                                write_private_file(
-                                    &dest_creds.join(entry.file_name()),
-                                    &content,
-                                )?;
+                                write_private_file(&dest_creds.join(entry.file_name()), &content)?;
                             }
                         }
                     }

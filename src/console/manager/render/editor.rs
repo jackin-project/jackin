@@ -1890,8 +1890,8 @@ mod secrets_tab_render_tests {
                 codex: None,
                 amp: None,
                 github: None,
-                            kimi: None,
-                },
+                kimi: None,
+            },
         );
         let ws = WorkspaceConfig {
             roles,
@@ -2037,8 +2037,8 @@ mod secrets_tab_render_tests {
                 codex: None,
                 amp: None,
                 github: None,
-                            kimi: None,
-                },
+                kimi: None,
+            },
         );
         roles.insert(
             "agent-b".into(),
@@ -2048,8 +2048,8 @@ mod secrets_tab_render_tests {
                 codex: None,
                 amp: None,
                 github: None,
-                            kimi: None,
-                },
+                kimi: None,
+            },
         );
 
         let ws = WorkspaceConfig {
@@ -2364,8 +2364,8 @@ mod secrets_tab_render_tests {
                 codex: None,
                 amp: None,
                 github: None,
-                            kimi: None,
-                },
+                kimi: None,
+            },
         );
         let ws = WorkspaceConfig {
             env,
@@ -2403,8 +2403,8 @@ mod secrets_tab_render_tests {
                 codex: None,
                 amp: None,
                 github: None,
-                            kimi: None,
-                },
+                kimi: None,
+            },
         );
         roles.insert(
             "agent-smith".into(),
@@ -2414,8 +2414,8 @@ mod secrets_tab_render_tests {
                 codex: None,
                 amp: None,
                 github: None,
-                            kimi: None,
-                },
+                kimi: None,
+            },
         );
         let ws = WorkspaceConfig {
             roles,
@@ -2725,8 +2725,8 @@ mod eligible_agents_for_override_tests {
                     codex: None,
                     amp: None,
                     github: None,
-                                    kimi: None,
-                    },
+                    kimi: None,
+                },
             );
         }
         WorkspaceConfig {

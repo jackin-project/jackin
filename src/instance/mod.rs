@@ -256,7 +256,9 @@ impl RoleState {
     pub fn claude_model(&self) -> Option<&str> {
         match &self.agent_runtime {
             AgentRuntimeState::Claude { model } => model.as_deref(),
-            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp | AgentRuntimeState::Kimi { .. } => None,
+            AgentRuntimeState::Codex { .. }
+            | AgentRuntimeState::Amp
+            | AgentRuntimeState::Kimi { .. } => None,
         }
     }
 
@@ -284,7 +286,9 @@ impl RoleState {
     pub fn codex_model(&self) -> Option<&str> {
         match &self.agent_runtime {
             AgentRuntimeState::Codex { model } => model.as_deref(),
-            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp | AgentRuntimeState::Kimi { .. } => None,
+            AgentRuntimeState::Claude { .. }
+            | AgentRuntimeState::Amp
+            | AgentRuntimeState::Kimi { .. } => None,
         }
     }
 
@@ -313,7 +317,9 @@ impl RoleState {
     pub fn kimi_model(&self) -> Option<&str> {
         match &self.agent_runtime {
             AgentRuntimeState::Kimi { model } => model.as_deref(),
-            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp => None,
+            AgentRuntimeState::Claude { .. }
+            | AgentRuntimeState::Codex { .. }
+            | AgentRuntimeState::Amp => None,
         }
     }
 
@@ -510,8 +516,7 @@ impl RoleState {
         let kimi_home_dir = home_dir.join(".kimi");
         std::fs::create_dir_all(&kimi_dir)?;
         std::fs::create_dir_all(&kimi_home_dir)?;
-        let (outcome, forward_auth) =
-            Self::provision_kimi_auth(&kimi_dir, mode, host_home)?;
+        let (outcome, forward_auth) = Self::provision_kimi_auth(&kimi_dir, mode, host_home)?;
         Ok((KimiAuth { forward_auth }, outcome))
     }
 }

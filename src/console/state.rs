@@ -203,8 +203,8 @@ mod tests {
                 amp: None,
                 github: None,
                 git_pull_on_entry: false,
-                            kimi: None,
-                },
+                kimi: None,
+            },
         );
 
         let choice = build_workspace_choice(
