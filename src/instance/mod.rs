@@ -525,7 +525,7 @@ mod tests {
     fn simple_manifest(temp: &tempfile::TempDir) -> crate::manifest::RoleManifest {
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha2"
+            r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -601,7 +601,7 @@ plugins = []
 
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha2"
+            r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["codex"]
 
@@ -667,7 +667,7 @@ model = "gpt-5"
 
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha2"
+            r#"version = "v1alpha3"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 

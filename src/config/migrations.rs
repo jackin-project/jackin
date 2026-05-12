@@ -4,8 +4,8 @@ use std::path::Path;
 use anyhow::{Context, bail};
 use toml_edit::DocumentMut;
 
-pub const CURRENT_CONFIG_VERSION: &str = "v1alpha2";
-pub const CURRENT_WORKSPACE_VERSION: &str = "v1alpha2";
+pub const CURRENT_CONFIG_VERSION: &str = "v1alpha3";
+pub const CURRENT_WORKSPACE_VERSION: &str = "v1alpha3";
 pub const LEGACY_VERSION: &str = "legacy";
 
 pub type Migration = fn(&mut DocumentMut) -> anyhow::Result<()>;
@@ -28,6 +28,11 @@ const CONFIG_MIGRATIONS: &[MigrationStep] = &[
         to: "v1alpha2",
         migrate: noop_migration,
     },
+    MigrationStep {
+        from: "v1alpha2",
+        to: CURRENT_CONFIG_VERSION,
+        migrate: noop_migration,
+    },
 ];
 const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
@@ -38,6 +43,11 @@ const WORKSPACE_MIGRATIONS: &[MigrationStep] = &[
     MigrationStep {
         from: "v1alpha1",
         to: "v1alpha2",
+        migrate: noop_migration,
+    },
+    MigrationStep {
+        from: "v1alpha2",
+        to: CURRENT_WORKSPACE_VERSION,
         migrate: noop_migration,
     },
 ];
@@ -373,7 +383,7 @@ mod tests {
         assert!(migrate_config_file_if_needed(&path).unwrap());
         let out = std::fs::read_to_string(&path).unwrap();
         let parsed: toml::Value = toml::from_str(&out).unwrap();
-        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha2");
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha3");
         assert!(out.contains("# keep me"), "{out}");
     }
 
@@ -386,7 +396,7 @@ mod tests {
         assert!(migrate_workspace_file_if_needed(&path).unwrap());
         let out = std::fs::read_to_string(&path).unwrap();
         let parsed: toml::Value = toml::from_str(&out).unwrap();
-        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha2");
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha3");
         assert!(out.contains("# keep me"), "{out}");
     }
 
@@ -396,7 +406,7 @@ mod tests {
         let path = temp.path().join("prod.toml");
         std::fs::write(
             &path,
-            "version = \"v1alpha2\"\nworkdir = \"/workspace/prod\"\n",
+            "version = \"v1alpha3\"\nworkdir = \"/workspace/prod\"\n",
         )
         .unwrap();
 
@@ -410,7 +420,7 @@ mod tests {
         std::fs::write(&path, r#"version = "v2alpha1""#).unwrap();
 
         let err = migrate_config_file_if_needed(&path).unwrap_err();
-        assert!(err.to_string().contains("only understands up to v1alpha2"));
+        assert!(err.to_string().contains("only understands up to v1alpha3"));
     }
 
     #[test]
@@ -619,11 +629,11 @@ mod tests {
     #[test]
     fn rejects_when_middle_migration_path_was_removed() {
         let old = parse_version("v1alpha1").unwrap();
-        let current = parse_version("v1alpha2").unwrap();
+        let current = parse_version("v1alpha3").unwrap();
         // No content mutation: framework stamps `step.to` after each step.
         let migrations = [MigrationStep {
             from: "v1alpha2",
-            to: "v1alpha2",
+            to: "v1alpha3",
             migrate: noop_migration,
         }];
         let mut doc = DocumentMut::new();
@@ -684,8 +694,8 @@ mod tests {
         Ok(())
     }
     #[allow(clippy::unnecessary_wraps)]
-    fn legacy_to_alpha1(doc: &mut DocumentMut) -> anyhow::Result<()> {
-        doc["legacy_to_alpha1"] = toml_edit::value(true);
+    fn alpha2_to_alpha3(doc: &mut DocumentMut) -> anyhow::Result<()> {
+        doc["alpha2_to_alpha3"] = toml_edit::value(true);
         Ok(())
     }
 
@@ -695,27 +705,27 @@ mod tests {
         // execution order — a regression that double-applies, skips, or
         // reorders steps changes the marker.
 
-        let old = SchemaVersion::Legacy;
-        let current = parse_version("v1alpha2").unwrap();
+        let old = parse_version("v1alpha1").unwrap();
+        let current = parse_version("v1alpha3").unwrap();
         let migrations = [
-            MigrationStep {
-                from: LEGACY_VERSION,
-                to: "v1alpha1",
-                migrate: legacy_to_alpha1,
-            },
             MigrationStep {
                 from: "v1alpha1",
                 to: "v1alpha2",
                 migrate: alpha1_to_alpha2,
+            },
+            MigrationStep {
+                from: "v1alpha2",
+                to: "v1alpha3",
+                migrate: alpha2_to_alpha3,
             },
         ];
         let mut doc = DocumentMut::new();
 
         apply_migrations(&mut doc, &old, &current, &migrations, "config").unwrap();
 
-        assert_eq!(doc["legacy_to_alpha1"].as_bool(), Some(true));
         assert_eq!(doc["alpha1_to_alpha2"].as_bool(), Some(true));
-        assert_eq!(doc["version"].as_str(), Some("v1alpha2"));
+        assert_eq!(doc["alpha2_to_alpha3"].as_bool(), Some(true));
+        assert_eq!(doc["version"].as_str(), Some("v1alpha3"));
     }
 
     #[test]
@@ -726,7 +736,7 @@ mod tests {
 
         assert!(migrate_workspace_file_if_needed(&path).unwrap());
         let out = std::fs::read_to_string(&path).unwrap();
-        assert!(out.starts_with("version = \"v1alpha2\""), "{out}");
+        assert!(out.starts_with("version = \"v1alpha3\""), "{out}");
         assert!(out.contains("workdir = \"/workspace/prod\""), "{out}");
         assert!(out.contains("# trailing comment"), "{out}");
     }

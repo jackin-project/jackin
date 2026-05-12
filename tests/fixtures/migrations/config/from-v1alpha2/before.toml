@@ -1,5 +1,5 @@
-version = "v1alpha3"
 data_dir = "/tmp/jackin"
+version = "v1alpha2"
 
 [roles.agent-smith]
 git = "https://github.com/jackin-project/jackin-agent-smith.git"
