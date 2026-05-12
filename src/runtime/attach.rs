@@ -7,9 +7,9 @@ use super::naming::{LABEL_KIND_DIND, LABEL_MANAGED, dind_certs_volume};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainerState {
-    /// `docker inspect` confirmed the named container does not exist.
     NotFound,
-    /// `docker inspect` could not determine container state.
+    /// `docker inspect` could not determine container state — daemon
+    /// down, exotic error string, or unparseable output.
     InspectUnavailable(String),
     Running,
     Stopped {
@@ -19,8 +19,7 @@ pub enum ContainerState {
 }
 
 impl ContainerState {
-    /// Short label without the `InspectUnavailable` reason. Used in
-    /// prompt rows where horizontal space is tight.
+    /// Short label that elides the `InspectUnavailable` reason.
     #[must_use]
     pub fn short_label(&self) -> String {
         match self {
@@ -37,8 +36,7 @@ impl ContainerState {
         }
     }
 
-    /// Verbose label that surfaces the inspect-failure reason. Used in
-    /// the `jackin hardline --inspect` block where every detail matters.
+    /// Verbose label that surfaces the inspect-failure reason.
     #[must_use]
     pub fn inspect_label(&self) -> String {
         match self {
@@ -355,7 +353,15 @@ pub fn inspect_hardline_instance(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<String> {
     let state_dir = paths.data_dir.join(container_name);
-    let manifest = InstanceManifest::read(&state_dir).ok();
+    // Distinguish "no manifest yet" (legitimate — pre-restore state)
+    // from "manifest unreadable" (the inspect surface is the operator's
+    // recovery tool, must not silently render `Manifest: missing` for
+    // a torn JSON the operator urgently needs to know about).
+    let (manifest, manifest_error) = match InstanceManifest::read_optional(&state_dir) {
+        Ok(Some(m)) => (Some(m), None),
+        Ok(None) => (None, None),
+        Err(error) => (None, Some(error.to_string())),
+    };
     let dind_name = manifest.as_ref().map_or_else(
         || format!("{container_name}-dind"),
         |manifest| manifest.docker.dind_container.clone(),
@@ -400,6 +406,8 @@ pub fn inspect_hardline_instance(
         } else if !manifest.role_source_git.is_empty() {
             lines.push(format!("Role source: {}", manifest.role_source_git));
         }
+    } else if let Some(error) = manifest_error {
+        lines.push(format!("Manifest: unreadable ({error})"));
     } else {
         lines.push("Manifest: missing".to_string());
     }

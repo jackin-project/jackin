@@ -1391,10 +1391,8 @@ fn load_role_with(
     // Logo (if present in role repo)
     tui::print_logo(&cached_repo.repo_dir.join("logo.txt"));
 
-    // Workspace name: the launch pipeline does not currently pass a
-    // workspace *name* down into load_role — only a ResolvedWorkspace
-    // (mounts + workdir). Look up the name by scanning config.workspaces
-    // for the entry whose workdir matches; this matches the same
+    // `load_role` receives a `ResolvedWorkspace` (mounts + workdir),
+    // not a name. Recover the name by matching workdir, mirroring the
     // identification rule used by `jackin workspace show`.
     let workspace_name = config
         .workspaces
@@ -1831,12 +1829,24 @@ fn load_role_with(
         );
         let launch_result = launch_role_runtime(&ctx, &mut steps, runner);
         if launch_result.is_err() {
-            let _ = write_instance_status(
+            // Surface the cascading-failure: if recording `FailedSetup`
+            // itself errors (disk full, permission flip) we still want
+            // to run cleanup, but the operator deserves the diagnostic
+            // chain through `--debug`. Swallowing here lies about the
+            // manifest state and hides exactly the failure that the
+            // FailedSetup status is meant to record.
+            if let Err(status_err) = write_instance_status(
                 paths,
                 &container_state,
                 &mut instance_manifest,
                 InstanceStatus::FailedSetup,
-            );
+            ) {
+                crate::debug_log!(
+                    "instance",
+                    "failed to mark FailedSetup for {} after launch error: {status_err}",
+                    container_name,
+                );
+            }
             cleanup.run(runner);
         }
         launch_result?;
@@ -2406,8 +2416,21 @@ pub(super) fn record_instance_attach_outcome(
     outcome: crate::isolation::finalize::AttachOutcome,
 ) -> anyhow::Result<()> {
     let state_dir = paths.data_dir.join(container_name);
-    let Ok(mut manifest) = InstanceManifest::read(&state_dir) else {
-        return Ok(());
+    // Missing manifest is a legitimate no-op (state torn down by purge
+    // / eject mid-session). Parse / IO errors are NOT — surface via
+    // `debug_log` so a torn-write or permission flip on the manifest
+    // file does not silently drop the attach-outcome record forever.
+    let mut manifest = match InstanceManifest::read_optional(&state_dir) {
+        Ok(Some(m)) => m,
+        Ok(None) => return Ok(()),
+        Err(error) => {
+            crate::debug_log!(
+                "instance",
+                "record_instance_attach_outcome: manifest at {} unreadable, skipping: {error}",
+                state_dir.display(),
+            );
+            return Ok(());
+        }
     };
     write_instance_attach_outcome(paths, &state_dir, &mut manifest, outcome)
 }
@@ -2479,6 +2502,8 @@ fn claim_container_name(
     std::fs::create_dir_all(&paths.data_dir)?;
 
     let mut last_lock_err: Option<std::io::Error> = None;
+    let mut last_unlink_err: Option<std::io::Error> = None;
+    let mut occupied_attempts = 0u32;
 
     for attempt in 0..CLAIM_MAX_ATTEMPTS {
         let name = crate::instance::new_container_name(workspace_name, selector);
@@ -2520,16 +2545,43 @@ fn claim_container_name(
                     // is dropped before unlink; otherwise `data_dir`
                     // accumulates zero-byte files across retries.
                     drop(lock_file);
-                    let _ = std::fs::remove_file(&lock_path);
+                    if let Err(unlink_err) = std::fs::remove_file(&lock_path) {
+                        crate::debug_log!(
+                            "runtime",
+                            "claim_container_name: failed to unlink {} after lock contention: {unlink_err}",
+                            lock_path.display(),
+                        );
+                        last_unlink_err = Some(unlink_err);
+                    }
                     last_lock_err = Some(error);
                 }
             }
+        } else {
+            occupied_attempts += 1;
         }
     }
 
+    // Differentiate "every candidate name was occupied" (Docker side)
+    // from "lockfile contention" (flock side) so the operator's first
+    // diagnostic step matches the actual failure mode. An unlink error,
+    // when present, is the smoking gun for broken-flock filesystems.
+    let lock_summary = last_lock_err.map_or_else(
+        || {
+            if occupied_attempts == CLAIM_MAX_ATTEMPTS {
+                "all candidates already exist in Docker".to_string()
+            } else {
+                "no lock attempted".to_string()
+            }
+        },
+        |error| {
+            last_unlink_err.map_or_else(
+                || format!("lock contention ({error})"),
+                |unlink| format!("lock contention ({error}); lock unlink also failed ({unlink})"),
+            )
+        },
+    );
     anyhow::bail!(
-        "exhausted {CLAIM_MAX_ATTEMPTS} attempts to claim a unique container name (last lock error: {})",
-        last_lock_err.map_or_else(|| "no lock attempted".to_string(), |e| e.to_string())
+        "exhausted {CLAIM_MAX_ATTEMPTS} attempts to claim a unique container name ({lock_summary})"
     );
 }
 
@@ -2555,13 +2607,19 @@ fn claim_known_container_name(
     std::fs::create_dir_all(&paths.data_dir)?;
     let lock_path = paths.data_dir.join(format!("{container_name}.lock"));
     let lock_file = std::fs::File::create(&lock_path)?;
-    if lock_file.try_lock_exclusive().is_err() {
-        // Mirror `claim_container_name`: drop the handle before
-        // unlink so broken-flock filesystems do not leak the artefact.
+    if let Err(lock_err) = lock_file.try_lock_exclusive() {
+        // Broken-flock filesystems leak the lock file unless the
+        // handle drops before unlink.
         drop(lock_file);
-        let _ = std::fs::remove_file(&lock_path);
+        if let Err(unlink_err) = std::fs::remove_file(&lock_path) {
+            crate::debug_log!(
+                "runtime",
+                "claim_known_container_name: failed to unlink {} after lock contention: {unlink_err}",
+                lock_path.display(),
+            );
+        }
         anyhow::bail!(
-            "cannot restore `{container_name}` because another jackin process holds its lock"
+            "cannot restore `{container_name}` because another jackin process holds its lock ({lock_err})"
         );
     }
     Ok((container_name.to_string(), lock_file))

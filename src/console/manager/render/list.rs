@@ -667,7 +667,7 @@ fn workspace_instance_rows(
             id: entry.instance_id.clone(),
             role: entry.role_key.clone(),
             agent: entry.agent_runtime.clone(),
-            status: instance_status_label(entry.status).to_string(),
+            status: entry.status.short_label().to_string(),
         })
         .collect()
 }
@@ -679,21 +679,6 @@ const fn instance_status_is_operator_relevant(status: crate::instance::InstanceS
             | crate::instance::InstanceStatus::Superseded
             | crate::instance::InstanceStatus::Purged
     )
-}
-
-const fn instance_status_label(status: crate::instance::InstanceStatus) -> &'static str {
-    match status {
-        crate::instance::InstanceStatus::Active => "active",
-        crate::instance::InstanceStatus::Running => "running",
-        crate::instance::InstanceStatus::CleanExited => "clean",
-        crate::instance::InstanceStatus::Crashed => "crashed",
-        crate::instance::InstanceStatus::PreservedDirty => "dirty",
-        crate::instance::InstanceStatus::PreservedUnpushed => "unpushed",
-        crate::instance::InstanceStatus::RestoreAvailable => "restore",
-        crate::instance::InstanceStatus::Superseded => "superseded",
-        crate::instance::InstanceStatus::Purged => "purged",
-        crate::instance::InstanceStatus::FailedSetup => "failed",
-    }
 }
 
 fn render_instances_subpanel(frame: &mut Frame, area: Rect, rows: &[InstanceDisplayRow]) {

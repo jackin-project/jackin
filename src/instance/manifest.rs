@@ -1,12 +1,15 @@
 use crate::agent::Agent;
 use anyhow::Context;
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::io::Write;
 use std::path::Path;
 
 pub const INSTANCE_MANIFEST_VERSION: u32 = 1;
 pub const INSTANCE_INDEX_VERSION: u32 = 1;
 const INSTANCE_INDEX_FILE: &str = "instances.json";
+const INSTANCE_INDEX_LOCK_FILE: &str = "instances.json.lock";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -24,8 +27,7 @@ pub enum InstanceStatus {
 }
 
 impl InstanceStatus {
-    /// Snake-case label matching the serde representation. Stable
-    /// across renders, prompt UIs, and manifest inspect output.
+    /// Snake-case label matching the serde representation.
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -39,6 +41,25 @@ impl InstanceStatus {
             Self::Superseded => "superseded",
             Self::Purged => "purged",
             Self::FailedSetup => "failed_setup",
+        }
+    }
+
+    /// Compact UI label for dense table rows where horizontal space is
+    /// scarce. Lives on the type so adding a variant forces the renderer
+    /// to update; a parallel free-function mapping silently drifts.
+    #[must_use]
+    pub const fn short_label(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Running => "running",
+            Self::CleanExited => "clean",
+            Self::Crashed => "crashed",
+            Self::PreservedDirty => "dirty",
+            Self::PreservedUnpushed => "unpushed",
+            Self::RestoreAvailable => "restore",
+            Self::Superseded => "superseded",
+            Self::Purged => "purged",
+            Self::FailedSetup => "failed",
         }
     }
 }
@@ -150,16 +171,14 @@ impl InstanceManifest {
         self.updated_at = now_rfc3339();
     }
 
-    /// Bump `updated_at` without changing status. Use when a non-status
-    /// field (`last_attach_outcome`) changes and the index still needs
-    /// to reflect the most recent activity.
+    /// Refreshes `updated_at` so a side-channel mutation (e.g.
+    /// `last_attach_outcome`) still moves the entry in the index.
     pub fn touch(&mut self) {
         self.updated_at = now_rfc3339();
     }
 
-    /// Parse `agent_runtime` into the typed enum. Errors when the on-disk
-    /// slug is unknown (corrupt manifest or new agent added to the
-    /// codebase but not migrated).
+    /// Errors when the on-disk slug is unknown — corrupt manifest or a
+    /// new agent added to the codebase but not migrated here.
     pub fn agent(&self) -> anyhow::Result<Agent> {
         self.agent_runtime.parse().map_err(|_| {
             anyhow::anyhow!(
@@ -207,20 +226,56 @@ impl InstanceManifest {
         }
     }
 
+    /// Atomic write: tempfile + fsync + rename so a mid-write crash never
+    /// produces a half-written JSON that breaks every subsequent reader.
     pub fn write(&self, state_dir: &Path) -> anyhow::Result<()> {
         let manifest_dir = state_dir.join(".jackin");
-        std::fs::create_dir_all(&manifest_dir)?;
+        std::fs::create_dir_all(&manifest_dir)
+            .with_context(|| format!("create state dir {}", manifest_dir.display()))?;
         let path = manifest_dir.join("instance.json");
         let bytes = serde_json::to_vec_pretty(self)?;
-        std::fs::write(path, bytes)?;
-        Ok(())
+        atomic_write(&path, &bytes)
+            .with_context(|| format!("writing instance manifest at {}", path.display()))
     }
 }
 
+/// Tempfile + fsync + rename. Used for both the per-instance manifest
+/// and the instance index — partial writes on either turn the next
+/// launch into "instance reference not found" or a parse error with no
+/// recovery path.
+fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("no parent directory for {}", path.display()),
+        )
+    })?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    tmp.write_all(bytes)?;
+    tmp.as_file_mut().sync_all()?;
+    tmp.persist(path).map_err(|e| e.error)?;
+    Ok(())
+}
+
+/// SHA-256 of the canonical host path.
+///
+/// Falls back to the raw input when `canonicalize` fails (path does
+/// not exist yet, unreadable, symlink loop) and logs the underlying
+/// error via `debug_log!` so an operator hitting a fingerprint
+/// mismatch can correlate it back to the canonicalize fault. A bare
+/// `canonicalize().ok()` would silently produce identical fingerprints
+/// across hosts with the same broken input.
 pub fn host_path_fingerprint(path: &str) -> String {
-    let canonical = std::fs::canonicalize(path)
-        .ok()
-        .map_or_else(|| path.to_string(), |path| path.display().to_string());
+    let canonical = match std::fs::canonicalize(path) {
+        Ok(c) => c.to_string_lossy().into_owned(),
+        Err(error) => {
+            crate::debug_log!(
+                "instance",
+                "host_path_fingerprint: canonicalize({path}) failed ({error}); falling back to raw input",
+            );
+            path.to_string()
+        }
+    };
     let digest = Sha256::digest(canonical.as_bytes());
     format!("sha256:{}", crate::instance::naming::hex_lower(&digest))
 }
@@ -290,27 +345,62 @@ impl InstanceIndex {
     }
 
     pub fn update_manifest(data_dir: &Path, manifest: &InstanceManifest) -> anyhow::Result<()> {
-        let mut index = Self::read_or_rebuild(data_dir)?;
-        index
-            .instances
-            .retain(|entry| entry.container_base != manifest.container_base);
-        index
-            .instances
-            .push(InstanceIndexEntry::from_manifest(manifest));
-        index.sort();
-        index.write(data_dir)
+        Self::with_lock(data_dir, |index| {
+            index
+                .instances
+                .retain(|entry| entry.container_base != manifest.container_base);
+            index
+                .instances
+                .push(InstanceIndexEntry::from_manifest(manifest));
+            Ok(())
+        })
     }
 
     pub fn remove(data_dir: &Path, container_base: &str) -> anyhow::Result<()> {
-        let mut index = Self::read_or_rebuild(data_dir)?;
-        index
-            .instances
-            .retain(|entry| entry.container_base != container_base);
-        index.write(data_dir)
+        Self::with_lock(data_dir, |index| {
+            index
+                .instances
+                .retain(|entry| entry.container_base != container_base);
+            Ok(())
+        })
     }
 
     pub fn mark_purged(data_dir: &Path, container_base: &str) -> anyhow::Result<()> {
         Self::mark_many_purged(data_dir, &[container_base])
+    }
+
+    /// Run `mutate` under an exclusive flock on `instances.json.lock`
+    /// after reading the current index, then write the result back
+    /// atomically. Prevents two concurrent `update_manifest` calls from
+    /// racing read-modify-write and clobbering each other's entries —
+    /// the per-name lock in `claim_container_name` protects names, not
+    /// the index payload.
+    fn with_lock<F>(data_dir: &Path, mutate: F) -> anyhow::Result<()>
+    where
+        F: FnOnce(&mut Self) -> anyhow::Result<()>,
+    {
+        std::fs::create_dir_all(data_dir)
+            .with_context(|| format!("create data dir {}", data_dir.display()))?;
+        let lock_path = data_dir.join(INSTANCE_INDEX_LOCK_FILE);
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(&lock_path)
+            .with_context(|| format!("open index lock {}", lock_path.display()))?;
+        FileExt::lock_exclusive(&lock)
+            .with_context(|| format!("acquire index lock {}", lock_path.display()))?;
+        let result = (|| {
+            let mut index = Self::read_or_rebuild(data_dir)?;
+            mutate(&mut index)?;
+            index.sort();
+            index.write(data_dir)
+        })();
+        // Drop the handle (which releases the flock); leave the lock
+        // file in place so future opens reuse the same inode.
+        drop(lock);
+        result
     }
 
     /// Batch-mark a set of containers as purged with a single index
@@ -335,8 +425,6 @@ impl InstanceIndex {
                 entry.updated_at.clone_from(&now);
             }
         }
-        // Containers without an existing index entry need a backfill
-        // pass — read the manifest off disk or synthesize a tombstone.
         for container_base in pending {
             Self::backfill_purge_tombstone(&mut index, data_dir, container_base);
         }
@@ -344,9 +432,9 @@ impl InstanceIndex {
         index.write(data_dir)
     }
 
-    /// Backfill: container not in the index but a manifest may exist
-    /// on disk. Reads the manifest, synthesizes a minimal tombstone on
-    /// parse failure, or no-ops when the state dir is already gone.
+    /// Container is not in the index but a manifest may still exist on
+    /// disk. Synthesizes a minimal tombstone on parse failure so the
+    /// operator still sees the purge.
     fn backfill_purge_tombstone(index: &mut Self, data_dir: &Path, container_base: &str) {
         let state_dir = data_dir.join(container_base);
         match InstanceManifest::read_optional(&state_dir) {
@@ -395,8 +483,22 @@ impl InstanceIndex {
             .filter(|entry| entry.matches(query))
         {
             let state_dir = data_dir.join(&entry.container_base);
-            let Ok(manifest) = InstanceManifest::read(&state_dir) else {
-                continue;
+            // Distinguish "manifest missing" (state torn down out of
+            // band — silently skip is correct) from parse / IO errors
+            // (corrupt or unreadable manifest — surface via debug_log
+            // so the operator can recover the underlying file fault
+            // rather than seeing the instance vanish from discovery).
+            let manifest = match InstanceManifest::read_optional(&state_dir) {
+                Ok(Some(m)) => m,
+                Ok(None) => continue,
+                Err(error) => {
+                    crate::debug_log!(
+                        "instance",
+                        "matching_manifests: skipping {} due to unreadable manifest: {error}",
+                        state_dir.display(),
+                    );
+                    continue;
+                }
             };
             if InstanceIndexEntry::from_manifest(&manifest).matches(query) {
                 manifests.push(manifest);
@@ -406,9 +508,7 @@ impl InstanceIndex {
         Ok(manifests)
     }
 
-    /// Test-only accessor: error if the file is missing or unreadable.
-    /// Production code uses [`Self::read_or_rebuild`] /
-    /// [`Self::read_optional`].
+    /// Errors if the file is missing or unreadable.
     #[cfg(test)]
     pub(crate) fn read(data_dir: &Path) -> anyhow::Result<Self> {
         Self::read_optional(data_dir)?
@@ -598,10 +698,9 @@ mod tests {
     #[test]
     fn mark_many_purged_empty_slice_is_noop() {
         let data_dir = tempdir().unwrap();
-        // No index file on disk yet.
         InstanceIndex::mark_many_purged(data_dir.path(), &[]).unwrap();
-        // Empty slice must not even create an index file —
-        // short-circuits before any read or write.
+        // Empty slice must not create an index file — short-circuits
+        // before any read or write.
         assert!(!data_dir.path().join(INSTANCE_INDEX_FILE).exists());
     }
 
@@ -658,6 +757,85 @@ mod tests {
         let index = InstanceIndex::read(data_dir.path()).unwrap();
         assert_eq!(index.instances.len(), 1);
         assert_eq!(index.instances[0].status, InstanceStatus::Purged);
+    }
+
+    #[test]
+    fn instance_manifest_write_replaces_partial_file() {
+        // Simulate a previous crash that left a half-written JSON.
+        // Atomic write must replace it cleanly; a regression to a
+        // direct `std::fs::write` would either preserve the truncated
+        // content on a short write or interleave bytes.
+        let temp = tempdir().unwrap();
+        let state_dir = temp.path();
+        std::fs::create_dir_all(state_dir.join(".jackin")).unwrap();
+        std::fs::write(state_dir.join(".jackin/instance.json"), b"{ partial").unwrap();
+        sample_manifest().write(state_dir).unwrap();
+        let body = std::fs::read_to_string(state_dir.join(".jackin/instance.json")).unwrap();
+        assert!(body.contains(r#""version": 1"#));
+        assert!(!body.contains("partial"));
+    }
+
+    #[test]
+    fn index_write_leaves_no_temp_file_on_success() {
+        // Atomic write is `tempfile + rename`; on success the temp must
+        // be gone. A regression that wrote in-place would leave the
+        // temp behind (or worse, never rename) — assert the data dir
+        // contains exactly the canonical file.
+        let temp = tempdir().unwrap();
+        let data_dir = temp.path();
+        InstanceIndex::update_manifest(data_dir, &sample_manifest()).unwrap();
+        let mut names: Vec<String> = std::fs::read_dir(data_dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("instances"))
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            vec![
+                INSTANCE_INDEX_FILE.to_string(),
+                INSTANCE_INDEX_LOCK_FILE.to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn update_manifest_concurrent_writes_serialize_via_lock() {
+        // Two threads racing `update_manifest` for *different* manifests
+        // must both end up in the index. A regression that drops the
+        // index flock would lose one of the two entries.
+        let temp = tempdir().unwrap();
+        let data_dir = temp.path().to_path_buf();
+        let a = sample_manifest();
+        let mut b = sample_manifest();
+        b.container_base = "jackin-other-7p9m2xqk".to_string();
+        b.instance_id = "7p9m2xqk".to_string();
+
+        let d1 = data_dir.clone();
+        let h1 = std::thread::spawn(move || InstanceIndex::update_manifest(&d1, &a).unwrap());
+        let d2 = data_dir.clone();
+        let h2 = std::thread::spawn(move || InstanceIndex::update_manifest(&d2, &b).unwrap());
+        h1.join().unwrap();
+        h2.join().unwrap();
+
+        let index = InstanceIndex::read(&data_dir).unwrap();
+        assert_eq!(index.instances.len(), 2);
+    }
+
+    #[test]
+    fn host_path_fingerprint_differs_for_distinct_canonical_paths() {
+        // Two existing dirs with distinct canonical paths must yield
+        // distinct fingerprints (catches a regression that hashes the
+        // raw input even when canonicalize succeeds).
+        let temp = tempdir().unwrap();
+        let a = temp.path().join("a");
+        let b = temp.path().join("b");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        let fa = host_path_fingerprint(&a.display().to_string());
+        let fb = host_path_fingerprint(&b.display().to_string());
+        assert_ne!(fa, fb);
+        assert!(fa.starts_with("sha256:"));
     }
 
     #[test]

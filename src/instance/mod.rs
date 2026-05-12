@@ -165,19 +165,14 @@ pub enum GithubProvisionKind {
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum AgentRuntimeState {
-    /// Selected agent is Claude.
     Claude {
-        /// Optional model override from `[claude].model`. Passed to the
-        /// interactive CLI with `--model` at launch time.
+        /// `[claude].model`; passed to the CLI as `--model` at launch.
         model: Option<String>,
     },
-    /// Selected agent is Codex.
     Codex {
-        /// Optional model override from `[codex].model`. Passed to the
-        /// interactive CLI with `-m` at launch time.
+        /// `[codex].model`; passed to the CLI as `-m` at launch.
         model: Option<String>,
     },
-    /// Selected agent is Amp.
     Amp,
 }
 
@@ -231,10 +226,7 @@ pub struct RoleState {
     /// `GITHUB_TOKEN` via [`GithubProvisionOutcome::token`] without a
     /// parallel `Option<String>` field.
     pub gh_provision_outcome: GithubProvisionOutcome,
-    /// Runtime state for the selected agent (model override only). Auth
-    /// paths for all supported agents live on `auth`.
     pub agent_runtime: AgentRuntimeState,
-    /// Provisioned auth for every agent in `manifest.supported_agents()`.
     pub auth: ProvisionedAuth,
 }
 
@@ -247,8 +239,8 @@ impl RoleState {
         self.auth.claude.as_ref().map(|c| c.account_json.as_path())
     }
 
-    /// Claude model override, if the role manifest declared one and the
-    /// selected agent is Claude.
+    /// `Some` only when the selected runtime is Claude; the field on
+    /// `AgentRuntimeState::Claude` carries the manifest override.
     #[must_use]
     pub fn claude_model(&self) -> Option<&str> {
         match &self.agent_runtime {
@@ -276,8 +268,7 @@ impl RoleState {
         self.auth.claude.as_ref().is_some_and(|c| c.forward_auth)
     }
 
-    /// Codex model override, if the role manifest declared one and the
-    /// selected agent is Codex.
+    /// `Some` only when the selected runtime is Codex.
     #[must_use]
     pub fn codex_model(&self) -> Option<&str> {
         match &self.agent_runtime {
@@ -363,8 +354,6 @@ impl RoleState {
         let hosts_yml = gh_config_dir.join("hosts.yml");
         let gh_provision_outcome = Self::provision_github_auth(&hosts_yml, github, host_home)?;
 
-        // Provision auth for every agent in supported_agents() so
-        // `hardline --new` can switch agents without re-authentication.
         let mut auth = ProvisionedAuth::default();
         let mut selected_outcome = AuthProvisionOutcome::Skipped;
 

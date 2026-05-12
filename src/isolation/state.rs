@@ -49,8 +49,7 @@ pub fn isolation_file_path(container_state_dir: &Path) -> PathBuf {
     container_state_dir.join(STATE_DIR).join(ISOLATION_FILE)
 }
 
-/// Snapshot counts of a container's mount records. Shared formatter
-/// across the launch-prompt, hardline-prompt, and inspect surfaces.
+/// Snapshot counts of a container's mount records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MountSummary {
     pub total: usize,
@@ -80,9 +79,8 @@ impl MountSummary {
         Ok(Self::from_records(&read_records(container_state_dir)?))
     }
 
-    /// `"mounts:N dirty:N unpushed:N"` (the launch/hardline prompt
-    /// format). Returns `"mounts:none"` and `"mounts:N"` for the empty
-    /// and dirty-free cases respectively.
+    /// `"mounts:N dirty:N unpushed:N"`. Returns `"mounts:none"` for the
+    /// empty case and `"mounts:N"` when no records are dirty/unpushed.
     #[must_use]
     pub fn prompt_label(self) -> String {
         if self.total == 0 {
@@ -97,7 +95,7 @@ impl MountSummary {
         format!("mounts:{}", self.total)
     }
 
-    /// `"N total, N dirty, N unpushed"` (the inspect-output format).
+    /// `"N total, N dirty, N unpushed"`.
     #[must_use]
     pub fn inspect_label(self) -> String {
         if self.total == 0 {

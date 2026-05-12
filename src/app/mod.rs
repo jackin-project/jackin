@@ -1837,30 +1837,48 @@ fn moved_path_browser_child_dirs(cwd: &std::path::Path) -> Vec<std::path::PathBu
     dirs
 }
 
+/// One step of the moved-path entry loop, factored out of the
+/// `dialoguer::Input::interact_text()` call so the four cases (blank /
+/// valid dir / not-a-dir / canonicalize-fail) can be unit-tested
+/// without an interactive prompt.
+enum MovedPathEntryStep {
+    /// Empty input → operator cancelled.
+    Cancel,
+    /// Canonical absolute path; entry loop returns this.
+    Accepted(std::path::PathBuf),
+    /// Operator must retry; carries the message to print before the
+    /// next prompt iteration.
+    Retry(String),
+}
+
+fn classify_moved_path_entry(raw: &str) -> MovedPathEntryStep {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return MovedPathEntryStep::Cancel;
+    }
+    let path = std::path::PathBuf::from(resolve_path(trimmed));
+    match path.canonicalize() {
+        Ok(canonical) if canonical.is_dir() => MovedPathEntryStep::Accepted(canonical),
+        Ok(canonical) => MovedPathEntryStep::Retry(format!(
+            "path `{}` exists but is not a directory; enter a project directory or leave blank to cancel",
+            canonical.display(),
+        )),
+        Err(err) => MovedPathEntryStep::Retry(format!(
+            "cannot use `{}`: {err}; enter an existing project directory or leave blank to cancel",
+            path.display(),
+        )),
+    }
+}
+
 fn prompt_ad_hoc_moved_path_entry() -> Result<Option<std::path::PathBuf>> {
     loop {
         let raw: String = dialoguer::Input::new()
             .with_prompt("Moved project path")
             .interact_text()?;
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
-            return Ok(None);
-        }
-        let path = std::path::PathBuf::from(resolve_path(trimmed));
-        match path.canonicalize() {
-            Ok(canonical) if canonical.is_dir() => return Ok(Some(canonical)),
-            Ok(canonical) => {
-                eprintln!(
-                    "path `{}` exists but is not a directory; enter a project directory or leave blank to cancel",
-                    canonical.display()
-                );
-            }
-            Err(err) => {
-                eprintln!(
-                    "cannot use `{}`: {err}; enter an existing project directory or leave blank to cancel",
-                    path.display()
-                );
-            }
+        match classify_moved_path_entry(&raw) {
+            MovedPathEntryStep::Cancel => return Ok(None),
+            MovedPathEntryStep::Accepted(path) => return Ok(Some(path)),
+            MovedPathEntryStep::Retry(msg) => eprintln!("{msg}"),
         }
     }
 }
@@ -2248,6 +2266,62 @@ mod auth_set_tests {
         let input = ad_hoc_restore_input_for_moved_path(&manifest, &temp.path().join("missing"));
 
         assert!(input.is_none());
+    }
+
+    #[test]
+    fn classify_moved_path_entry_empty_input_cancels() {
+        assert!(matches!(
+            classify_moved_path_entry(""),
+            MovedPathEntryStep::Cancel
+        ));
+        assert!(matches!(
+            classify_moved_path_entry("   \t  "),
+            MovedPathEntryStep::Cancel
+        ));
+    }
+
+    #[test]
+    fn classify_moved_path_entry_accepts_existing_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("project");
+        std::fs::create_dir_all(&dir).unwrap();
+        match classify_moved_path_entry(&dir.display().to_string()) {
+            MovedPathEntryStep::Accepted(p) => {
+                assert_eq!(p, dir.canonicalize().unwrap());
+            }
+            other => panic!("expected Accepted, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_moved_path_entry_rejects_regular_file_with_retry() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("not-a-dir");
+        std::fs::write(&file, "").unwrap();
+        match classify_moved_path_entry(&file.display().to_string()) {
+            MovedPathEntryStep::Retry(msg) => assert!(msg.contains("not a directory"), "{msg}"),
+            other => panic!("expected Retry, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_moved_path_entry_rejects_missing_path_with_retry() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("does-not-exist");
+        match classify_moved_path_entry(&missing.display().to_string()) {
+            MovedPathEntryStep::Retry(msg) => assert!(msg.contains("cannot use"), "{msg}"),
+            other => panic!("expected Retry, got {other:?}"),
+        }
+    }
+
+    impl std::fmt::Debug for MovedPathEntryStep {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::Cancel => write!(f, "Cancel"),
+                Self::Accepted(p) => write!(f, "Accepted({})", p.display()),
+                Self::Retry(s) => write!(f, "Retry({s})"),
+            }
+        }
     }
 
     #[test]

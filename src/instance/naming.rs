@@ -143,9 +143,7 @@ fn short_hash(input: &str, len: usize) -> String {
     hex
 }
 
-/// Lowercase hex encoding of arbitrary bytes. Shared with
-/// `instance::manifest::host_path_fingerprint` so both call sites use one
-/// table.
+/// Lowercase hex encoding of arbitrary bytes.
 pub(crate) fn hex_lower(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -228,8 +226,6 @@ mod tests {
         // in `brown`). Important for `purge_class_data` blast radius.
         let brown = RoleSelector::new(None, "brown");
         assert!(!class_family_matches(&brown, "jackin-agentbrown-k7p9m2xq",));
-        // Inverse: role `agentbrown` must not match a container with
-        // role component `brown`.
         let agentbrown = RoleSelector::new(None, "agentbrown");
         assert!(!class_family_matches(&agentbrown, "jackin-brown-k7p9m2xq",));
         assert!(class_family_matches(
