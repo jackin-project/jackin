@@ -46,7 +46,7 @@ secrecy = "0.10"
 portable-pty = "0.9"
 sha2 = "0.11"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-rand = "0.9"
+rand = "0.10"
 
 [dev-dependencies]
 assert_cmd = "2.0"
