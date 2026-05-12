@@ -3,11 +3,11 @@ title: "Console Agent Session Control"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open — design proposal (Phase 2, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
+**Status**: Partially implemented — Phase 1 instance discovery and console Instances panel shipped with unique container identity and restore; shell entry and reconnectable tmux-backed session substrate are Phase 2 (open — design proposal, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
 
 ## Problem
 
-Jackin's current operator escape hatches still leak Docker details. When the operator wants a shell in a running environment, the practical path is a raw command such as:
+Jackin's operator escape hatches still leak Docker details. When the operator wants a shell in a running environment, the practical path is a raw command such as:
 
 ```sh
 docker exec -ti jackin-chainargos__agent-brown zsh
@@ -28,25 +28,49 @@ The most useful review workflow often needs multiple agents against one branch a
 
 Jackin already builds containers with multiple agent runtimes available. The console should turn that into an intentional workflow rather than requiring manual `docker exec` commands. One isolated container can hold the feature branch, dependencies, DIND state, credentials, and tool caches while multiple agent processes collaborate over the same state.
 
+## Root Cause — Container Lifecycle Is Tied to Agent PID 1
+
+Direct testing of `hardline --new` (which already ships) surfaced the critical failure mode. The entrypoint script ends with `exec "${LAUNCH[@]}"` — replacing itself with the agent process, making the agent PID 1 inside the container. When the operator exits a Claude or Codex session with `/exit`, PID 1 exits, Docker stops the container, and every other concurrent `docker exec` session (Codex, Amp, shells) is killed immediately. This is unavoidable with the current process model.
+
+The fix requires decoupling container lifetime from any individual agent session. The container must have a long-lived supervisor as PID 1, and every agent session — primary or secondary — must run as a child process that the operator can attach to and detach from independently.
+
 ## Relationship To Unique Container Identity
 
-[Unique container identity and restore](/reference/roadmap/unique-container-identity-restore/) makes Docker names compact, DNS-safe, unique, and less meaningful as an operator API. This item is the operator-facing counterpart: once names are no longer stable human handles like `jackin-the-architect-clone-2`, `jackin console` and CLI commands must provide the actions people used raw Docker names for.
+[Unique container identity and restore](/reference/roadmap/unique-container-identity-restore/) makes Docker names compact, DNS-safe, unique, and less meaningful as an operator API. This item is the operator-facing counterpart: once names are no longer stable human handles, `jackin console` and CLI commands must provide the actions people used raw Docker names for.
 
 The identity roadmap owns the container base name and restore metadata. This roadmap owns how the operator sees and controls active containers and agent sessions.
+
+## Session Substrate — tmux
+
+Raw `docker exec -it <container> <agent>` processes are not reconnectable by themselves. If jackin wants reliable reconnect for secondary agents, it needs a reconnectable session substrate inside the container.
+
+**Recommendation: tmux.** Research across candidate session backends confirms tmux is the right choice for V1:
+
+| Criterion | tmux | screen | dtach / abduco | zellij |
+|---|---|---|---|---|
+| Named sessions | `new-session -s name`, `attach -t name` ✓ | Yes but older API | No session listing ✗ | JSON API, heavier |
+| Programmatic list | `list-sessions -F '#{session_name}:...'` ✓ | Yes | Cannot list ✗ | Parseable |
+| TTY inheritance via docker exec | Clean ✓ | Yes | Yes | Yes |
+| Debian trixie package | `tmux` 3.4, ~479 KiB ✓ | Available | Available | 3.6 MB binary |
+| Maintenance | Active, widely deployed ✓ | Slower cadence | Minimal | Active but niche |
+
+tmux is already the explicitly named substrate in this design document's original session state model. It is the most widely understood terminal multiplexer in CI and cloud-shell environments, making manual debugging (`tmux ls`, `tmux attach`) discoverable without jackin infrastructure. dtach and abduco lack programmatic session listing. zellij is three to eight times larger and less battle-tested in containerised environments. GNU screen is a functional alternative but offers no benefit over tmux for this use case.
+
+One caveat: the `TMUX` environment variable must not be forwarded from the host into the container; `docker exec` chains need to reach tmux with a clean environment so attach does not fail with "sessions should be nested with care".
 
 ## Recommended Shape
 
 Model four levels explicitly:
 
 1. **Workspace or ad-hoc directory** — the configured workspace name or the concrete directory path the operator launched from.
-2. **Agent role** — the role used to build/run the environment, such as `agentbrown` for display and `chainargos/agent-brown` in metadata.
+2. **Agent role** — the role used to build and run the environment, such as `agentbrown` for display and `chainargos/agent-brown` in metadata.
 3. **Runtime instance** — one jackin-managed isolated container, with DIND/network/state attached.
 4. **Agent session** — one interactive process inside that container, such as Claude Code, Codex, Amp, or a plain shell.
 
 The console should render this as a nested view: workspace/directory rows expand to agent roles, roles expand to runtime instances, and each instance expands to active sessions. Configured workspaces and arbitrary directories belong in the same active-instances surface so the operator does not need two mental models for reconnecting.
 
 | Scope | Role | Runtime instance | Sessions | Actions |
-|---|---|---|---|
+|---|---|---|---|---|
 | `workspace: chainargos` | `agentbrown` | `k7p9m2xq · running` | `Claude · running`, `Codex review · idle`, `shell · attached` | attach, new agent, shell, hardline, stop |
 | `dir: ~/Projects/tmp/spike` | `architect` | `m4d8q2xz · preserved` | `Claude · stopped` | attach, shell, purge |
 
@@ -54,17 +78,38 @@ The visible runtime row should use scope, role, short unique ID, and status. The
 
 ## Session Management
 
-Raw `docker exec -it <container> <agent>` processes are not reconnectable by themselves. If jackin wants reliable reconnect for secondary agents, it needs a reconnectable session substrate inside the container.
+Recommended V1: use `tmux` installed in the construct runtime image.
 
-Recommended V1: use `tmux` or an equivalent terminal multiplexer installed in the runtime image.
+- Container starts with a supervisor as PID 1. The supervisor runs a minimal shell or `tini`-wrapped wait loop — it does not start an agent and does not use a TTY itself. `docker run -d -it ... <image>` brings the container up silently.
+- The primary agent session is started immediately after container start via `docker exec -it <container> tmux new-session -s jackin-primary /jackin/runtime/entrypoint.sh [agent-args]`. This replaces the current pattern where the agent runs as the `docker run` main process.
+- `jackin hardline` reconnect uses `docker exec -it <container> tmux attach-session -t <session-name>` instead of `docker attach`.
+- `hardline --new` starts a secondary session: `docker exec -it <container> tmux new-session -s jackin-<agent>-<id> /jackin/runtime/entrypoint.sh [agent-args]`.
+- Session inventory uses `docker exec <container> tmux list-sessions -F '#{session_name}:#{session_activity}'` and reconciles against the instance manifest.
+- Session naming convention: `jackin-primary` for the first session on a fresh instance, `jackin-<agent>-<short-id>` for subsequent sessions. The short-id avoids collisions when the same agent runtime is started more than once in one instance.
 
-- The primary launch agent runs in a named session such as `jackin-primary`.
-- A secondary Codex/Claude/Amp launch runs in a named session such as `jackin-codex-review-1`.
-- A shell entry runs in a named session such as `jackin-shell-1` when the operator wants reconnect, or as a one-shot exec when reconnect does not matter.
-- The host attaches by running `docker exec -it <container> tmux attach -t <session>`.
-- Session metadata is written into the instance manifest or future persistent store so the console can list sessions even after the operator's terminal disconnects.
+When the operator exits an agent (e.g. `/exit` in Claude), the tmux session for that agent ends. The container stays alive because PID 1 is the supervisor, not the agent. Other concurrent sessions are unaffected. The operator can re-enter `jackin hardline` and start a new session or reattach an existing one.
 
-If `tmux` is not acceptable long term, replace it with a tiny in-container session supervisor. The important invariant is the same: jackin starts named, reconnectable sessions and records them. It should not pretend a raw exec process can be reattached after the terminal is gone.
+If the operator wants to stop the container entirely, `jackin eject` remains the explicit path.
+
+Session metadata written to the instance manifest:
+
+```json
+{
+  "sessions": [
+    {
+      "session_id": "s1",
+      "name": "primary",
+      "agent_runtime": "claude",
+      "tmux_name": "jackin-primary",
+      "created_at": "2026-05-12T00:00:00Z",
+      "status": "running",
+      "last_attached_at": "2026-05-12T00:00:00Z"
+    }
+  ]
+}
+```
+
+Session status is reconciled by querying `tmux list-sessions` inside the container on each `hardline` or console Instances panel refresh. If the container is stopped, all sessions become `container_missing`. If a tmux session is absent but the manifest record exists, mark it `exited`.
 
 ## Hardline CLI Surface
 
@@ -75,7 +120,7 @@ The command should work from the current directory, similar to `jackin load`:
 - If the current directory maps to one configured workspace or ad-hoc launch root with one running/preserved instance, `jackin hardline` selects it.
 - If multiple matching containers exist for that folder, `jackin hardline` prompts for the target runtime instance.
 - If the selected container has multiple agent sessions, `jackin hardline` prompts for the exact session to attach.
-- If the operator asks for another agent runtime, `jackin hardline --agent codex --new` or an equivalent flag starts a new Codex session inside the selected container instead of creating a fresh container.
+- If the operator asks for another agent runtime, `jackin hardline --new --agent codex` starts a new Codex session inside the selected container instead of creating a fresh container.
 - If no matching instance exists, `jackin hardline` reports that there is nothing to reconnect to and points the operator at `jackin load`.
 
 Illustrative shape:
@@ -83,7 +128,7 @@ Illustrative shape:
 ```sh
 jackin hardline
 jackin hardline --agent claude
-jackin hardline --agent codex --new --name review
+jackin hardline --new --agent codex
 jackin hardline --shell
 ```
 
@@ -97,77 +142,67 @@ The console should support these actions from the active-instance view:
 
 - **Filter by scope** — show active/preserved instances for all configured workspaces, for the current directory, or for a chosen arbitrary directory.
 - **Attach** — reconnect to an existing agent session.
-- **Hardline** — reconnect to the original foreground agent/session when the container is still recoverable.
+- **Hardline** — reconnect to the primary foreground session when the container is still recoverable.
 - **New agent** — start another runtime inside the same container, sharing the same workspace state.
 - **Shell** — open a zsh shell inside the container without typing `docker exec`.
 - **Stop session** — stop a secondary agent process without stopping the whole container.
 - **Stop instance** — stop the whole isolated container after confirmation.
 - **Inspect** — show raw Docker names, labels, mount summary, DIND endpoint, and state paths for debugging.
 
-The UI should make it visually clear which scope owns the container, which agent role produced it, and which exact agent sessions are running inside it. When several sessions share the same container, the UI should say so plainly. That is the point of the feature: one isolated feature environment can host multiple cooperating agents.
+The UI should make it visually clear which scope owns the container, which agent role produced it, and which exact agent sessions are running inside it. When several sessions share the same container, the UI should say so plainly.
 
 ## State Model
 
-Extend the instance manifest from [Unique container identity and restore](/reference/roadmap/unique-container-identity-restore/) with session records, or store them in the future persistent storage layer:
+Extend the instance manifest from [Unique container identity and restore](/reference/roadmap/unique-container-identity-restore/) with session records, or store them in the future persistent storage layer. The manifest already carries `instance_id`, `container_base`, `workspace_name`, `workdir`, `role_key`, `agent_runtime`, and `status`. Session records add a `sessions` array alongside the existing top-level fields.
 
-```json
-{
-  "sessions": [
-    {
-      "session_id": "s1",
-      "name": "primary",
-      "agent_runtime": "claude",
-      "command": "claude",
-      "session_backend": "tmux",
-      "backend_name": "jackin-primary",
-      "created_at": "2026-05-11T00:00:00Z",
-      "status": "running",
-      "last_attached_at": "2026-05-11T00:00:00Z"
-    }
-  ]
-}
-```
-
-Session status should be reconciled from the backend. For `tmux`, list sessions inside the container and match known names. If the container is missing, sessions become `container_missing`. If the tmux session is gone but the manifest record remains, mark it `exited` or `unknown` and keep logs/history if available.
+Session status reconciliation on every console refresh:
+1. If container is not running → all sessions become `container_missing`.
+2. Run `docker exec <container> tmux list-sessions -F '#{session_name}'` → parse the output.
+3. For each manifest session record: if tmux name is present in output → `running`; if absent → `exited`.
+4. For tmux sessions not in the manifest → add as `unknown` (can happen after a crash or manual `tmux new-session`).
 
 ## Corner Cases
 
-- **Secondary agent exits**: keep the session record with exit status/log pointer when possible. The console should offer "restart" and "discard" instead of silently removing it.
+- **Secondary agent exits**: keep the session record with exit status. The console should offer "restart" and "discard" instead of silently removing it.
 - **Operator disconnects**: the tmux session keeps running. Reopening `jackin console` should list and reattach it.
 - **Container exits while sessions exist**: all sessions become stopped/unreachable, and restore follows the instance-level rules.
-- **Ad-hoc directory moves**: directory-backed instances should remain visible through stored metadata, but hardline from the old path should explain that the original directory no longer matches and offer inspect/purge rather than silently creating a wrong association.
+- **Ad-hoc directory moves**: directory-backed instances remain visible through stored metadata; hardline from the old path should explain that the original directory no longer matches and offer inspect/purge.
 - **DIND reset**: secondary sessions may still run, but Docker commands inside them may fail until the instance restore path rebuilds DIND/network/certs. Surface this at the instance row, not per session only.
-- **Two agents write the same files**: this feature intentionally allows it because the operator asked for one shared feature branch. The UI should label the sessions as sharing one filesystem and should not imply per-agent isolation inside the same container.
-- **Credential mode differs by agent runtime**: starting a secondary runtime must run the same auth provisioning rules used for primary launch. Do not leak a credential for an agent runtime whose current workspace/role mode says `ignore`.
+- **Two agents write the same files**: intentional — the operator asked for one shared feature branch. The UI should label the sessions as sharing one filesystem and not imply per-agent isolation inside the same container.
+- **Credential mode differs by agent runtime**: starting a secondary runtime must run the same auth provisioning rules used for primary launch. Do not leak a credential for an agent runtime whose current workspace/role mode says `ignore`. With the auth-for-all-supported-agents provisioning that ships as part of the unique container identity restore work, credentials are already available inside the container for all supported agents; the secondary session launch just needs to confirm it is not starting an agent the role manifest does not support.
 - **Role does not support requested runtime**: the new-agent action must block with the same support check as launch.
-- **TTY resize and terminal capabilities**: attach paths must preserve current terminal size and TERM behavior, matching the primary launch path as closely as possible.
-- **Session naming collisions**: if the operator asks for `review` twice, suffix the session display name or prompt. The backend session name should include the instance ID and a short session ID.
-- **Logs and transcript capture**: do not promise transcript persistence in V1 unless the runtime already writes it. Future persistent storage can track log pointers.
+- **TTY resize and terminal capabilities**: attach paths must preserve current terminal size and TERM behavior. Test `docker exec -it ... tmux attach-session -t <name>` with varying terminal sizes to confirm tmux correctly propagates SIGWINCH.
+- **TMUX environment variable forwarding**: do not forward the host's `TMUX` variable into the container via `docker run -e`. The `docker exec` path into a container tmux session must not inherit a pre-existing `TMUX` value from the operator's host terminal; tmux's own attach handles the session context.
+- **Session naming collisions**: if the operator starts the same agent twice, suffix the session display name or prompt. The backend session name must include the instance ID and a short session ID to be globally unique.
 - **Non-interactive usage**: CLI commands should support scripting, but starting or attaching interactive sessions still requires a terminal.
 
 ## Implementation Plan
 
-### Phase 1 — Discovery and shell entry
+### Phase 1 — Discovery and shell entry *(partially shipped)*
 
-- Add instance discovery that lists running jackin-managed containers by manifest/labels instead of clone-family parsing.
-- Add a console active-instances view that includes configured workspaces and ad-hoc directory launches in one list.
-- Add `jackin hardline --shell` or equivalent to open zsh in a selected running container.
-- Add a console action that opens the same shell path.
-- Keep the first version one-shot if needed, but design the command name and UI around the future reconnectable session model.
+Instance discovery that lists running jackin-managed containers by manifest/labels has shipped as part of the unique container identity and restore work. The console Instances panel showing matching instances per workspace/directory and recovery actions (`r`, `s`, `i`, `p`) has also shipped. The following Phase 1 items remain:
 
-### Phase 2 — Reconnectable primary session
+- Add `jackin hardline --shell` or equivalent to open a one-shot zsh session in a selected running container without needing a named tmux session for reconnect.
+- Add a console action that triggers the same shell path.
 
-- Start the primary agent inside a named session backend.
-- Teach `hardline` to attach to the named primary session instead of only `docker attach` when the backend is present.
-- Preserve current behavior for legacy containers.
+### Phase 2 — Reconnectable primary session via tmux *(open)*
 
-### Phase 3 — Secondary agent sessions
+- Add `tmux` to the construct image (`docker/construct/Dockerfile`, `apt-get install tmux`).
+- Add a container supervisor entry point: a minimal script or `tini`-wrapped wait loop that becomes PID 1 on `docker run`. The supervisor does not start an agent; it keeps the container alive and provides a stable PID 1 that outlives any agent session.
+- Change `load_role_with` in <RepoFile path="src/runtime/launch.rs" /> to start the container detached (`-d`) with the supervisor as CMD, then immediately run `docker exec -it <container> tmux new-session -s jackin-primary /jackin/runtime/entrypoint.sh [agent-args]` to give the operator the agent TTY.
+- Change `hardline_agent` in <RepoFile path="src/runtime/attach.rs" /> to attach via `docker exec -it <container> tmux attach-session -t <session-name>` instead of `docker attach`.
+- Write the session record (`session_id`, `tmux_name`, `agent_runtime`, `created_at`, `status`) into the instance manifest after the primary session starts. Reconcile on `hardline` and console refresh.
+- Preserve current `docker attach` behavior for legacy containers (those without a `sessions` array in their manifest) to avoid breaking instances started before this change lands.
 
-- Expand `jackin hardline` flags/prompts so it can list, attach, start, and stop secondary sessions without a separate command family.
+### Phase 3 — Secondary agent sessions *(open)*
+
+- Expand `hardline --new` to create a named tmux session inside the running container for the chosen agent. The current `hardline --new` already prompts for agent choice (from the unique container identity restore work) and calls `spawn_agent_session`; Phase 3 replaces the `docker exec` call inside `spawn_agent_session` with a tmux session creation.
+- Update `inspect_agent_sessions` in <RepoFile path="src/runtime/attach.rs" /> to query `tmux list-sessions` inside the container instead of parsing `docker top` output.
 - Add console actions for starting Claude/Codex/Amp sessions inside an existing instance.
+- Extend the Instances panel stop-session action to kill a named tmux session without stopping the container.
 - Persist session records and reconcile them on console startup.
 
-### Phase 4 — Rich operator coordination
+### Phase 4 — Rich operator coordination *(open)*
 
 - Combine session rows with [Agent runtime status](/reference/roadmap/agent-runtime-status/) so each session can show idle/busy/question.
 - Combine instance rows with [Console resource panel](/reference/roadmap/console-resource-panel/) so the operator can see shared container CPU/RAM pressure.
@@ -181,6 +216,7 @@ Session status should be reconciled from the backend. For `tmux`, list sessions 
 - Operators can see the exact agent sessions running inside each role/container.
 - Operators can reconnect to the primary session through the console.
 - Operators can start and reconnect to a secondary agent session inside the same container.
+- Exiting one agent session does not stop the container or other concurrent sessions.
 - The UI clearly communicates when multiple agents share one container, one branch, and one filesystem.
 - Raw Docker container names are no longer required for normal shell, hardline, or session attach flows.
 - Legacy `hardline <container-name>` remains usable until the replacement selectors ship.
@@ -197,6 +233,8 @@ This feature does not introduce new host repository mutations. It runs additiona
 - <RepoFile path="src/console/manager/state.rs" /> — console state for expanded runtime/session rows.
 - <RepoFile path="src/console/manager/render/list.rs" /> — workspace list rendering that would grow active instance/session rows.
 - <RepoFile path="src/agent/mod.rs" /> — agent runtime identities for secondary sessions.
+- <RepoFile path="docker/construct/Dockerfile" /> — construct base image where tmux will be added.
+- <RepoFile path="docker/runtime/entrypoint.sh" /> — current entrypoint that will be split into supervisor and session-launch modes.
 - [Unique container identity and restore](/reference/roadmap/unique-container-identity-restore/) — instance IDs, manifests, and restore lookup.
 - [Agent runtime status](/reference/roadmap/agent-runtime-status/) — future per-session idle/busy/question status.
 - [Console resource panel](/reference/roadmap/console-resource-panel/) — future per-instance resource visibility.
