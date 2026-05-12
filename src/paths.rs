@@ -22,7 +22,7 @@ impl JackinPaths {
             .map(PathBuf::from)
             .unwrap_or_else(|| home_dir.join(".config/jackin"));
 
-        let jackin_home = std::env::var_os("JACKIN_HOME")
+        let jackin_home = std::env::var_os("JACKIN_HOME_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| home_dir.join(".jackin"));
 

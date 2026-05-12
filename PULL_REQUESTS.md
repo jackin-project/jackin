@@ -128,6 +128,7 @@ If the PR needs a different validation flow, replace the final example commands 
 For non-trivial code changes, structure the PR's "Verify locally" section by intent:
 
 - **Checkout** — copy-pasteable commands to fetch and check out the PR.
+- **Isolation** — env vars that redirect state/config away from the operator's live data, when the PR touches code that reads or writes those paths.
 - **Static Checks** — only checks that are relevant and expected to be run locally.
 - **Tests** — focused or full test commands that validate the changed behavior.
 - **User Smoke** — manual validation steps when behavior is visible in the CLI/TUI/runtime.
@@ -139,6 +140,49 @@ For console/TUI changes that can be manually verified in jackin itself, prefer:
 ```sh
 cargo run --bin jackin -- console --debug
 ```
+
+#### Isolation env vars
+
+Three env vars let the operator test a PR without touching their live config or state:
+
+| Var | Default | Overrides |
+|-----|---------|-----------|
+| `JACKIN_CONFIG_DIR` | `~/.config/jackin` | config.toml, workspaces/ |
+| `JACKIN_HOME_DIR` | `~/.jackin` | data/, roles/, cache/ |
+| `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | construct image used for role validation and launch |
+
+**Include an `### Isolation` section in the PR body when the PR touches any of:**
+
+- `src/paths.rs` — path resolution itself
+- `src/config/` — config schema, migrations, or on-disk layout
+- `src/manifest/` — role-manifest schema or migrations
+- Any versioned schema type (`AppConfig`, `WorkspaceConfig`, `RoleManifest`, `HooksConfig`)
+- Runtime state layout under `~/.jackin/` — instance manifests, index, agent home structure, cache layout
+- `docker/construct/` or `docker-bake.hcl` — construct image changes (include `JACKIN_CONSTRUCT_IMAGE` then)
+
+**Do not add an Isolation section when the PR is:**
+
+- Docs-only (`.mdx`, `astro.config.ts`, `docs/**`)
+- Roadmap updates, CI changes (except construct image CI), dependency bumps
+- Pure refactors, tests, or rule changes that do not alter any on-disk or in-memory shape that has already been stored
+
+The Isolation section must appear immediately after the Checkout section and before Static Checks. Paste it as two separate blocks so `TIRITH=0` (already set in Checkout) does not need repeating:
+
+```sh
+export JACKIN_CONFIG_DIR="$HOME/.config/jackin-test"
+export JACKIN_HOME_DIR="$HOME/.jackin-test"
+```
+
+For construct image PRs, add the build step and the override export:
+
+```sh
+just construct-build-local
+export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
+```
+
+`just construct-build-local` builds a single-platform image tagged `jackin-local/construct:trixie` and loads it into the local Docker daemon. `JACKIN_CONSTRUCT_IMAGE` then makes jackin use that image for Dockerfile validation and role container launch instead of the published one.
+
+Do not include `JACKIN_CONSTRUCT_IMAGE` in PRs that do not touch the construct image — the isolation pattern is about scoping test risk, not about exhaustively listing every available env var.
 
 ## Author the PR body so it renders correctly on GitHub
 
