@@ -44,22 +44,6 @@ pub struct LoadArgs {
     /// Skip the animated intro sequence
     #[arg(long, default_value_t = false)]
     pub no_intro: bool,
-    /// Print raw container output for troubleshooting
-    //
-    // The `action`/`value_parser` overrides are deliberate. clap
-    // derive's default for a `bool` field is `Set` + `BoolValueParser`
-    // — fine for CLI but rejects env values like `JACKIN_DEBUG=1` (only
-    // literal `"true"` / `"false"` parse). Forcing `SetTrue` makes
-    // `--debug` a presence flag again, and `FalseyValueParser` makes
-    // env truthy/falsy strings (`1`/`0`/`yes`/`no`/empty) parse the
-    // way an operator would expect.
-    #[arg(
-        long,
-        env = "JACKIN_DEBUG",
-        action = clap::ArgAction::SetTrue,
-        value_parser = clap::builder::FalseyValueParser::new(),
-    )]
-    pub debug: bool,
     /// Acknowledge a dirty host working tree for isolated mounts.
     #[arg(long)]
     pub force: bool,
@@ -119,22 +103,10 @@ pub struct HardlineArgs {
 /// Open the operator console to manage workspaces, launch roles, and more
 ///
 /// Running `jackin` with no subcommand on an interactive terminal opens the
-/// same console. This struct also flattens into the top-level `Cli` so
-/// `jackin --debug` is equivalent to `jackin console --debug`.
+/// same console.
 #[derive(Debug, Args, PartialEq, Eq, Default, Clone)]
 #[command(before_help = BANNER, styles = HELP_STYLES)]
-pub struct ConsoleArgs {
-    /// Print raw container output for troubleshooting
-    //
-    // See `LoadArgs.debug` for why action/value_parser are explicit.
-    #[arg(
-        long,
-        env = "JACKIN_DEBUG",
-        action = clap::ArgAction::SetTrue,
-        value_parser = clap::builder::FalseyValueParser::new(),
-    )]
-    pub debug: bool,
-}
+pub struct ConsoleArgs {}
 
 #[cfg(test)]
 mod tests {
@@ -351,16 +323,16 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "console", "--debug"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Console(super::ConsoleArgs { debug: true }))
+            Some(Command::Console(super::ConsoleArgs { .. }))
         ));
+        // --debug is global on Cli, not on ConsoleArgs.
+        assert!(cli.debug);
     }
 
     #[test]
     fn parses_bare_jackin_as_no_subcommand() {
         let cli = Cli::try_parse_from(["jackin"]).unwrap();
         assert!(cli.command.is_none());
-        // `console_args.debug` not asserted here: env-backed (see
-        // `LoadArgs.debug` / `parses_load_command`).
     }
 
     #[test]
@@ -369,7 +341,7 @@ mod tests {
         assert!(cli.command.is_none());
         // CLI flag wins over env, so this assertion holds even when
         // `JACKIN_DEBUG=0` is set in the runner's env.
-        assert!(cli.console_args.debug);
+        assert!(cli.debug);
     }
 
     // ── Load help ───────────────────────────────────────────────────────

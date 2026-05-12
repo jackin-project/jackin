@@ -5,12 +5,14 @@ use jackin::cli::role::ConsoleArgs;
 
 fn main() {
     let cli = Cli::parse();
+    let debug = cli.debug;
 
     match dispatch::classify(cli, dispatch::is_tui_capable()) {
         Action::RunConsole { args, explicit: _ } => {
             let cli = Cli {
                 command: Some(jackin::cli::Command::Console(args)),
                 console_args: ConsoleArgs::default(),
+                debug,
             };
             if let Err(error) = jackin::run(cli) {
                 jackin::tui::fatal(&format!("{error:#}"));
@@ -21,6 +23,7 @@ fn main() {
             let cli = Cli {
                 command: Some(command),
                 console_args: ConsoleArgs::default(),
+                debug,
             };
             if let Err(error) = jackin::run(cli) {
                 jackin::tui::fatal(&format!("{error:#}"));

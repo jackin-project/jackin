@@ -39,6 +39,9 @@ pub fn run(cli: Cli) -> Result<()> {
     let paths = JackinPaths::detect()?;
     let mut config = AppConfig::load_or_init(&paths)?;
     let mut runner = ShellRunner::default();
+    let debug = cli.debug;
+    runner.debug = debug;
+    tui::set_debug_mode(debug);
 
     // Resolve the subcommand. Bare `jackin` currently routes to the same
     // console handler as `jackin console`; the TTY-capability fallback and
@@ -55,13 +58,10 @@ pub fn run(cli: Cli) -> Result<()> {
             mounts,
             rebuild,
             no_intro,
-            debug,
             force,
             agent,
             role_branch,
         }) => {
-            runner.debug = debug;
-            tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
 
             let (class, workspace_input) = if let Some(sel) = selector {
@@ -136,9 +136,7 @@ pub fn run(cli: Cli) -> Result<()> {
             runtime::reconcile_keep_awake(&paths, &mut runner);
             result
         }
-        Command::Console(ConsoleArgs { debug }) => {
-            runner.debug = debug;
-            tui::set_debug_mode(debug);
+        Command::Console(ConsoleArgs {}) => {
             let cwd = std::env::current_dir()?;
             let Some(outcome) = console::run_console(config, &paths, &cwd)? else {
                 return Ok(());
