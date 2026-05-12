@@ -430,12 +430,19 @@ impl RoleState {
         // `create_new` instead of `exists()` + `write`: race-free against
         // a concurrent writer between the check and the write. The
         // AlreadyExists case is the steady-state path on repeated launches.
+        // Skeleton lands at 0o600 to match the sibling auth files
+        // written via `write_private_file` — the file is bind-mounted
+        // RW into the container and the Claude CLI may later persist
+        // OAuth state into it.
         let claude_account_home = home_dir.join(".claude.json");
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&claude_account_home)
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
         {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        match opts.open(&claude_account_home) {
             Ok(mut file) => {
                 use std::io::Write;
                 file.write_all(b"{}")?;

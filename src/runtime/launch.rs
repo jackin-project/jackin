@@ -244,22 +244,17 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         }
     }
 
-    if state.auth.codex.is_some() {
+    if let Some(codex) = &state.auth.codex {
         mounts.push(format!(
             "{}:/home/agent/.codex",
             state.root.join("home/.codex").display()
         ));
-        if let Some(auth_json) = state
-            .auth
-            .codex
-            .as_ref()
-            .and_then(|c| c.auth_json.as_deref())
-        {
+        if let Some(auth_json) = &codex.auth_json {
             mounts.push(format!("{}:/jackin/codex/auth.json", auth_json.display()));
         }
     }
 
-    if state.auth.amp.is_some() {
+    if let Some(amp) = &state.auth.amp {
         mounts.push(format!(
             "{}:/home/agent/.local/share/amp",
             state.root.join("home/.local/share/amp").display()
@@ -269,12 +264,7 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         // `roadmap/live-auth-sync.mdx` — can rely on a writable target.
         // The entrypoint currently `cp`s the file, so in-container rotation
         // does not flow back today.
-        if let Some(secrets_json) = state
-            .auth
-            .amp
-            .as_ref()
-            .and_then(|c| c.secrets_json.as_deref())
-        {
+        if let Some(secrets_json) = &amp.secrets_json {
             mounts.push(format!(
                 "{}:/jackin/amp/secrets.json",
                 secrets_json.display()
@@ -2525,11 +2515,8 @@ fn claim_container_name(
                         "runtime",
                         "claim_container_name: lock contention on {name} (attempt {attempt}): {error}",
                     );
-                    // Drop the handle first so the open-file refcount
-                    // hits zero on broken-flock filesystems where the
-                    // lock is advisory; then remove the artefact so
-                    // `data_dir` does not accumulate zero-byte files
-                    // across retries.
+                    // Drop the handle before unlink so `data_dir` does
+                    // not accumulate zero-byte files across retries.
                     drop(lock_file);
                     let _ = std::fs::remove_file(&lock_path);
                     last_lock_err = Some(error);

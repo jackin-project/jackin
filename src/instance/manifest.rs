@@ -121,11 +121,11 @@ impl InstanceManifest {
         let now = now_rfc3339();
         Self {
             version: INSTANCE_MANIFEST_VERSION,
-            instance_id: input
-                .container_base
-                .rsplit_once('-')
-                .map_or(input.container_base, |(_, id)| id)
-                .to_string(),
+            instance_id: crate::instance::naming::instance_id_from_container_base(
+                input.container_base,
+            )
+            .unwrap_or(input.container_base)
+            .to_string(),
             container_base: input.container_base.to_string(),
             created_at: now.clone(),
             updated_at: now,
@@ -310,17 +310,13 @@ impl InstanceIndex {
     }
 
     pub fn mark_purged(data_dir: &Path, container_base: &str) -> anyhow::Result<()> {
-        let mut index = Self::read_or_rebuild(data_dir)?;
-        Self::mark_purged_in_memory(&mut index, data_dir, container_base);
-        index.sort();
-        index.write(data_dir)
+        Self::mark_many_purged(data_dir, &[container_base])
     }
 
     /// Batch-mark a set of containers as purged with a single index
-    /// read/write. Skips containers already absent from the index when
-    /// no manifest file exists on disk; otherwise backfills like
-    /// [`Self::mark_purged`]. O(N + M): one pass over the index using
-    /// `HashSet` membership instead of `find()` per container.
+    /// read/write. Containers already absent from the index get a
+    /// backfilled tombstone read from disk (or a synthesized minimal
+    /// row when the manifest is corrupt).
     pub fn mark_many_purged(data_dir: &Path, container_bases: &[&str]) -> anyhow::Result<()> {
         if container_bases.is_empty() {
             return Ok(());
@@ -342,20 +338,6 @@ impl InstanceIndex {
         }
         index.sort();
         index.write(data_dir)
-    }
-
-    fn mark_purged_in_memory(index: &mut Self, data_dir: &Path, container_base: &str) {
-        if let Some(entry) = index
-            .instances
-            .iter_mut()
-            .find(|entry| entry.container_base == container_base)
-        {
-            entry.status = InstanceStatus::Purged;
-            entry.updated_at = now_rfc3339();
-            return;
-        }
-
-        Self::backfill_purge_tombstone(index, data_dir, container_base);
     }
 
     /// Backfill: container not in the index but a manifest may exist

@@ -54,6 +54,17 @@ pub fn container_name_with_id(
     name
 }
 
+/// Extract the trailing instance-ID component from a container name.
+///
+/// Returns `None` when the name has no `-` separator. Used by both
+/// manifest construction (the stored `instance_id` field) and operator
+/// display rendering — one parser owns the shape
+/// `jackin-[<workspace>-]<role>-<id>` produced by [`new_container_name`].
+#[must_use]
+pub fn instance_id_from_container_base(container_base: &str) -> Option<&str> {
+    container_base.rsplit_once('-').map(|(_, id)| id)
+}
+
 /// Recognize names of the shape `jackin-[<workspace>-]<role>-<id>`
 /// produced by `new_container_name`. Scoping hook for `purge_class_data`.
 pub fn class_family_matches(selector: &RoleSelector, container_name: &str) -> bool {

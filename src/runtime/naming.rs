@@ -38,9 +38,9 @@ pub(super) fn format_role_display(container_name: &str, display_name: &str) -> S
     if display_name.is_empty() {
         return container_name.to_string();
     }
-    container_name.rsplit_once('-').map_or_else(
+    crate::instance::naming::instance_id_from_container_base(container_name).map_or_else(
         || display_name.to_string(),
-        |(_, instance_id)| format!("{display_name} ({instance_id})"),
+        |instance_id| format!("{display_name} ({instance_id})"),
     )
 }
 

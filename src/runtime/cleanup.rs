@@ -525,12 +525,9 @@ mod tests {
 
     #[test]
     fn exile_all_ejects_all_managed_agents() {
-        let mut runner = FakeRunner::with_capture_queue([
-            r"jackin-agent-smith
-jackin-agent-smith-clone-1"
-                .to_string(),
-            String::new(),
-        ]);
+        let mut runner = FakeRunner::with_capture_queue([r"jackin-agentsmith-k7p9m2xq
+jackin-myworkspace-agentsmith-a1b2c3d4"
+            .to_string()]);
 
         exile_all(&mut runner).unwrap();
 
@@ -538,15 +535,14 @@ jackin-agent-smith-clone-1"
             runner.recorded,
             vec![
                 "docker ps -a --filter label=jackin.kind=role --format {{.Names}}",
-                "docker ps -a --filter label=jackin.managed=true --format {{.Names}}\t{{.Label \"jackin.role\"}}\t{{.Label \"jackin.kind\"}}",
-                "docker rm -f jackin-agent-smith",
-                "docker rm -f jackin-agent-smith-dind",
-                "docker volume rm jackin-agent-smith-dind-certs",
-                "docker network rm jackin-agent-smith-net",
-                "docker rm -f jackin-agent-smith-clone-1",
-                "docker rm -f jackin-agent-smith-clone-1-dind",
-                "docker volume rm jackin-agent-smith-clone-1-dind-certs",
-                "docker network rm jackin-agent-smith-clone-1-net",
+                "docker rm -f jackin-agentsmith-k7p9m2xq",
+                "docker rm -f jackin-agentsmith-k7p9m2xq-dind",
+                "docker volume rm jackin-agentsmith-k7p9m2xq-dind-certs",
+                "docker network rm jackin-agentsmith-k7p9m2xq-net",
+                "docker rm -f jackin-myworkspace-agentsmith-a1b2c3d4",
+                "docker rm -f jackin-myworkspace-agentsmith-a1b2c3d4-dind",
+                "docker volume rm jackin-myworkspace-agentsmith-a1b2c3d4-dind-certs",
+                "docker network rm jackin-myworkspace-agentsmith-a1b2c3d4-net",
             ]
         );
     }
@@ -556,20 +552,20 @@ jackin-agent-smith-clone-1"
         let mut runner = FakeRunner {
             fail_with: vec![
                 (
-                    "docker rm -f jackin-agent-smith".to_string(),
-                    "Error response from daemon: No such container: jackin-agent-smith".to_string(),
+                    "docker rm -f jackin-agentsmith-k7p9m2xq".to_string(),
+                    "Error response from daemon: No such container: jackin-agentsmith-k7p9m2xq"
+                        .to_string(),
                 ),
                 (
-                    "docker network rm jackin-agent-smith-net".to_string(),
-                    "Error response from daemon: No such network: jackin-agent-smith-net"
+                    "docker network rm jackin-agentsmith-k7p9m2xq-net".to_string(),
+                    "Error response from daemon: No such network: jackin-agentsmith-k7p9m2xq-net"
                         .to_string(),
                 ),
             ],
             capture_queue: VecDeque::from(vec![
-                r"jackin-agent-smith
-jackin-agent-smith-clone-1"
+                r"jackin-agentsmith-k7p9m2xq
+jackin-myworkspace-agentsmith-a1b2c3d4"
                     .to_string(),
-                String::new(),
             ]),
             ..Default::default()
         };
@@ -580,15 +576,14 @@ jackin-agent-smith-clone-1"
             runner.recorded,
             vec![
                 "docker ps -a --filter label=jackin.kind=role --format {{.Names}}",
-                "docker ps -a --filter label=jackin.managed=true --format {{.Names}}\t{{.Label \"jackin.role\"}}\t{{.Label \"jackin.kind\"}}",
-                "docker rm -f jackin-agent-smith",
-                "docker rm -f jackin-agent-smith-dind",
-                "docker volume rm jackin-agent-smith-dind-certs",
-                "docker network rm jackin-agent-smith-net",
-                "docker rm -f jackin-agent-smith-clone-1",
-                "docker rm -f jackin-agent-smith-clone-1-dind",
-                "docker volume rm jackin-agent-smith-clone-1-dind-certs",
-                "docker network rm jackin-agent-smith-clone-1-net",
+                "docker rm -f jackin-agentsmith-k7p9m2xq",
+                "docker rm -f jackin-agentsmith-k7p9m2xq-dind",
+                "docker volume rm jackin-agentsmith-k7p9m2xq-dind-certs",
+                "docker network rm jackin-agentsmith-k7p9m2xq-net",
+                "docker rm -f jackin-myworkspace-agentsmith-a1b2c3d4",
+                "docker rm -f jackin-myworkspace-agentsmith-a1b2c3d4-dind",
+                "docker volume rm jackin-myworkspace-agentsmith-a1b2c3d4-dind-certs",
+                "docker network rm jackin-myworkspace-agentsmith-a1b2c3d4-net",
             ]
         );
     }
