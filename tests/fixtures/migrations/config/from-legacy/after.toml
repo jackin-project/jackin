@@ -10,3 +10,6 @@ auth_forward = "sync"
 
 [env]
 OPERATOR_ORG = "acme"
+
+[kimi]
+auth_forward = "sync"

@@ -4,3 +4,6 @@ workdir = "/workspace/prod"
 [[mounts]]
 src = "/tmp/proj"
 dst = "/workspace/prod"
+
+[kimi]
+auth_forward = "sync"
