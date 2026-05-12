@@ -138,7 +138,6 @@ fn docker_available() -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
-
 /// Probe `script(1)` via the canonical PATH lookup. The previous
 /// `script --help` / `script -q /dev/null` fallback chain was unsound:
 /// the fallback only fired on spawn failure, and on the only platforms

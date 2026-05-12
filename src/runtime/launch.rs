@@ -229,21 +229,21 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         // `exists()` guard keeps the OAuthToken arm from mounting a stale
         // `credentials.json` if the provision-step removal failed silently.
         if state.auth.claude_forward_auth {
-            if let Some(account_json) = &state.auth.claude_account_json {
-                if account_json.exists() {
-                    mounts.push(format!(
-                        "{}:/jackin/claude/account.json",
-                        account_json.display()
-                    ));
-                }
+            if let Some(account_json) = &state.auth.claude_account_json
+                && account_json.exists()
+            {
+                mounts.push(format!(
+                    "{}:/jackin/claude/account.json",
+                    account_json.display()
+                ));
             }
-            if let Some(credentials_json) = &state.auth.claude_credentials_json {
-                if credentials_json.exists() {
-                    mounts.push(format!(
-                        "{}:/jackin/claude/credentials.json",
-                        credentials_json.display()
-                    ));
-                }
+            if let Some(credentials_json) = &state.auth.claude_credentials_json
+                && credentials_json.exists()
+            {
+                mounts.push(format!(
+                    "{}:/jackin/claude/credentials.json",
+                    credentials_json.display()
+                ));
             }
         }
     }
@@ -2467,6 +2467,13 @@ fn path_covers_workdir(mount_dst: &str, workdir: &str) -> bool {
 /// Claim a unique DNS-safe container name by acquiring an exclusive lock file.
 /// Random IDs avoid deterministic role slots; the lock still protects the
 /// vanishingly small random-collision window and concurrent launch races.
+/// Cap retries so a filesystem without working flock (NFS without
+/// lockd, exotic mount) surfaces as an actionable error instead of an
+/// unbounded spin. 64 attempts at 40 bits of ID entropy is enough that
+/// a genuine collision-space exhaustion is astronomically unlikely;
+/// hitting the cap signals an environmental fault, not bad luck.
+const CLAIM_MAX_ATTEMPTS: u32 = 64;
+
 fn claim_container_name(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -2475,36 +2482,28 @@ fn claim_container_name(
 ) -> anyhow::Result<(String, std::fs::File)> {
     std::fs::create_dir_all(&paths.data_dir)?;
 
-    // Cap retries so a filesystem without working flock (NFS without
-    // lockd, exotic mount) surfaces as an actionable error instead of an
-    // unbounded spin. 64 attempts at 40 bits of ID entropy is enough that
-    // a genuine collision space exhaustion is astronomically unlikely;
-    // hitting the cap signals an environmental fault, not bad luck.
-    const MAX_ATTEMPTS: u32 = 64;
     let mut last_lock_err: Option<std::io::Error> = None;
 
-    for attempt in 0..MAX_ATTEMPTS {
+    for attempt in 0..CLAIM_MAX_ATTEMPTS {
         let name = crate::instance::new_container_name(workspace_name, selector);
 
         let slot_free = match inspect_container_state(runner, &name) {
             ContainerState::Stopped {
                 exit_code: 0,
                 oom_killed: false,
-            } => {
-                match runner.capture("docker", &["rm", &name], None) {
-                    Ok(_) => true,
-                    Err(error) => {
-                        let msg = error.to_string();
-                        if msg.contains("No such container") || msg.contains("no such container") {
-                            true
-                        } else {
-                            return Err(error.context(format!(
-                                "removing stale container `{name}` before reclaiming its name"
-                            )));
-                        }
+            } => match runner.capture("docker", &["rm", &name], None) {
+                Ok(_) => true,
+                Err(error) => {
+                    let msg = error.to_string();
+                    if msg.contains("No such container") || msg.contains("no such container") {
+                        true
+                    } else {
+                        return Err(error.context(format!(
+                            "removing stale container `{name}` before reclaiming its name"
+                        )));
                     }
                 }
-            }
+            },
             ContainerState::Running | ContainerState::Stopped { .. } => false,
             ContainerState::NotFound => true,
             ContainerState::InspectUnavailable(reason) => {
@@ -2531,7 +2530,7 @@ fn claim_container_name(
     }
 
     anyhow::bail!(
-        "exhausted {MAX_ATTEMPTS} attempts to claim a unique container name (last lock error: {})",
+        "exhausted {CLAIM_MAX_ATTEMPTS} attempts to claim a unique container name (last lock error: {})",
         last_lock_err.map_or_else(|| "no lock attempted".to_string(), |e| e.to_string())
     );
 }

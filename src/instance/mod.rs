@@ -189,6 +189,10 @@ pub enum AgentRuntimeState {
 /// consults this struct so every supported agent has its credentials available
 /// inside the container regardless of which agent started the initial session —
 /// enabling `hardline --new` to switch agents without re-authentication.
+// Three agent presence flags + one forward-auth flag is over the
+// pedantic 3-bool threshold. Replacing with `BTreeMap<Agent, AgentAuth>`
+// is tracked as a type-design follow-up (see PR review notes).
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
 pub struct ProvisionedAuth {
     /// Whether Claude's home directories were provisioned.
@@ -265,7 +269,7 @@ impl RoleState {
     /// env-driven modes (`ignore` / `api_key` / `oauth_token`) and when
     /// Claude is not in `supported_agents()`.
     #[must_use]
-    pub fn claude_forwards_auth(&self) -> bool {
+    pub const fn claude_forwards_auth(&self) -> bool {
         self.auth.claude_forward_auth
     }
 
@@ -365,66 +369,20 @@ impl RoleState {
         let mut selected_outcome = AuthProvisionOutcome::Skipped;
 
         for supported in manifest.supported_agents() {
-            match supported {
-                crate::agent::Agent::Claude => {
-                    let claude_dir = root.join("claude");
-                    let claude_home_dir = home_dir.join(".claude");
-                    std::fs::create_dir_all(&claude_dir)?;
-                    std::fs::create_dir_all(&claude_home_dir)?;
-                    let claude_account_home = home_dir.join(".claude.json");
-                    if !claude_account_home.exists() {
-                        std::fs::write(&claude_account_home, "{}")?;
-                    }
-                    let account_json = claude_dir.join("account.json");
-                    let credentials_json = claude_dir.join("credentials.json");
-                    let (outcome, forward_auth) = Self::provision_claude_auth(
-                        &account_json,
-                        &credentials_json,
-                        auth_modes(supported),
-                        host_home,
-                    )?;
-                    auth.claude = true;
-                    auth.claude_forward_auth = forward_auth;
-                    auth.claude_account_json = Some(account_json);
-                    auth.claude_credentials_json = Some(credentials_json);
-                    if supported == agent {
-                        selected_outcome = outcome;
-                    }
-                }
-                crate::agent::Agent::Codex => {
-                    let codex_dir = root.join("codex");
-                    let codex_home_dir = home_dir.join(".codex");
-                    std::fs::create_dir_all(&codex_dir)?;
-                    std::fs::create_dir_all(&codex_home_dir)?;
-                    let auth_json_path = codex_dir.join("auth.json");
-                    let (outcome, auth_json) = Self::provision_codex_auth(
-                        &auth_json_path,
-                        auth_modes(supported),
-                        host_home,
-                    )?;
-                    auth.codex = true;
-                    auth.codex_auth_json = auth_json;
-                    if supported == agent {
-                        selected_outcome = outcome;
-                    }
-                }
+            let mode = auth_modes(supported);
+            let outcome = match supported {
+                crate::agent::Agent::Claude => Self::provision_claude_for_supported(
+                    &root, &home_dir, mode, host_home, &mut auth,
+                )?,
+                crate::agent::Agent::Codex => Self::provision_codex_for_supported(
+                    &root, &home_dir, mode, host_home, &mut auth,
+                )?,
                 crate::agent::Agent::Amp => {
-                    let amp_dir = root.join("amp");
-                    let amp_home_dir = home_dir.join(".local/share/amp");
-                    std::fs::create_dir_all(&amp_dir)?;
-                    std::fs::create_dir_all(&amp_home_dir)?;
-                    let secrets_json_path = amp_dir.join("secrets.json");
-                    let (outcome, secrets_json) = Self::provision_amp_auth(
-                        &secrets_json_path,
-                        auth_modes(supported),
-                        host_home,
-                    )?;
-                    auth.amp = true;
-                    auth.amp_secrets_json = secrets_json;
-                    if supported == agent {
-                        selected_outcome = outcome;
-                    }
+                    Self::provision_amp_for_supported(&root, &home_dir, mode, host_home, &mut auth)?
                 }
+            };
+            if supported == agent {
+                selected_outcome = outcome;
             }
         }
 
@@ -448,6 +406,69 @@ impl RoleState {
             },
             selected_outcome,
         ))
+    }
+
+    fn provision_claude_for_supported(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        auth: &mut ProvisionedAuth,
+    ) -> anyhow::Result<AuthProvisionOutcome> {
+        let claude_dir = root.join("claude");
+        let claude_home_dir = home_dir.join(".claude");
+        std::fs::create_dir_all(&claude_dir)?;
+        std::fs::create_dir_all(&claude_home_dir)?;
+        let claude_account_home = home_dir.join(".claude.json");
+        if !claude_account_home.exists() {
+            std::fs::write(&claude_account_home, "{}")?;
+        }
+        let account_json = claude_dir.join("account.json");
+        let credentials_json = claude_dir.join("credentials.json");
+        let (outcome, forward_auth) =
+            Self::provision_claude_auth(&account_json, &credentials_json, mode, host_home)?;
+        auth.claude = true;
+        auth.claude_forward_auth = forward_auth;
+        auth.claude_account_json = Some(account_json);
+        auth.claude_credentials_json = Some(credentials_json);
+        Ok(outcome)
+    }
+
+    fn provision_codex_for_supported(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        auth: &mut ProvisionedAuth,
+    ) -> anyhow::Result<AuthProvisionOutcome> {
+        let codex_dir = root.join("codex");
+        let codex_home_dir = home_dir.join(".codex");
+        std::fs::create_dir_all(&codex_dir)?;
+        std::fs::create_dir_all(&codex_home_dir)?;
+        let auth_json_path = codex_dir.join("auth.json");
+        let (outcome, auth_json) = Self::provision_codex_auth(&auth_json_path, mode, host_home)?;
+        auth.codex = true;
+        auth.codex_auth_json = auth_json;
+        Ok(outcome)
+    }
+
+    fn provision_amp_for_supported(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+        auth: &mut ProvisionedAuth,
+    ) -> anyhow::Result<AuthProvisionOutcome> {
+        let amp_dir = root.join("amp");
+        let amp_home_dir = home_dir.join(".local/share/amp");
+        std::fs::create_dir_all(&amp_dir)?;
+        std::fs::create_dir_all(&amp_home_dir)?;
+        let secrets_json_path = amp_dir.join("secrets.json");
+        let (outcome, secrets_json) =
+            Self::provision_amp_auth(&secrets_json_path, mode, host_home)?;
+        auth.amp = true;
+        auth.amp_secrets_json = secrets_json;
+        Ok(outcome)
     }
 }
 

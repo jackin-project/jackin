@@ -287,12 +287,25 @@ pub(crate) fn resolve_running_container_from_context(
     let names: Vec<String> = candidates.iter().map(|c| c.name.clone()).collect();
 
     if let Some(last) = ws.last_role.as_deref()
-        && let Some(preferred) = preferred_indexed_container(paths, name, ws, last, &names)
-            .or_else(|| {
-                RoleSelector::parse(last).ok().and_then(|last_class| {
-                    let primary = instance::primary_container_name(&last_class);
-                    names.contains(&primary).then_some(primary)
-                })
+        && let Some(preferred) =
+            preferred_indexed_container(paths, name, ws, last, &names).or_else(|| {
+                // No indexed manifest matches `last_role`; fall back
+                // to candidate filtering by class family. With random
+                // instance IDs there is no deterministic primary name
+                // to match against — the role-component substring
+                // inside `container_base` is the only structural hook.
+                let last_class = RoleSelector::parse(last).ok()?;
+                let mut family = names
+                    .iter()
+                    .filter(|n| instance::class_family_matches(&last_class, n));
+                let first = family.next()?.clone();
+                // Only commit to the fallback when it's unambiguous —
+                // multiple candidates in the same family should still
+                // hit the prompt branch below.
+                if family.next().is_some() {
+                    return None;
+                }
+                Some(first)
             })
     {
         return Ok(preferred);
@@ -944,14 +957,15 @@ mod tests {
         std::fs::create_dir_all(&nested_dir).unwrap();
 
         let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
-        let mut runner = fake_runner_with_running_agents(&["jackin-agent-smith"]);
+        let running = "jackin-agentsmith-k7p9m2xq";
+        let mut runner = fake_runner_with_running_agents(&[running]);
 
         let paths = paths::JackinPaths::for_tests(temp.path());
         let container =
             resolve_running_container_from_context(&paths, &config, &nested_dir, &mut runner)
                 .unwrap();
 
-        assert_eq!(container, "jackin-agent-smith");
+        assert_eq!(container, running);
     }
 
     #[test]
@@ -965,15 +979,16 @@ mod tests {
             vec!["agent-smith".to_string(), "the-architect".to_string()],
             Some("the-architect".to_string()),
         );
-        let mut runner =
-            fake_runner_with_running_agents(&["jackin-agent-smith", "jackin-the-architect"]);
+        let smith = "jackin-agentsmith-k7p9m2xq";
+        let architect = "jackin-thearchitect-a1b2c3d4";
+        let mut runner = fake_runner_with_running_agents(&[smith, architect]);
 
         let paths = paths::JackinPaths::for_tests(temp.path());
         let container =
             resolve_running_container_from_context(&paths, &config, &project_dir, &mut runner)
                 .unwrap();
 
-        assert_eq!(container, "jackin-the-architect");
+        assert_eq!(container, architect);
     }
 
     #[test]

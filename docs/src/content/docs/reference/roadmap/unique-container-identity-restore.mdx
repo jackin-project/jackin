@@ -3,7 +3,7 @@ title: "Unique Container Identity and Restore"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Resolved — DNS-safe unique names, per-instance manifests with last attach outcomes, the rebuildable instance index, missing-container detection, Docker-unavailable diagnostics, explicit deleted-container writable-layer loss reporting, metadata-rich load/hardline recovery prompts, cross-role load blocking/guidance plus in-place recovery/rebuild for related instances using saved manifest source/ref, instance-ID targeting for hardline/eject/purge, purged lifecycle tombstones, plain-purge refusal while matching Docker resources still exist, exact `hardline` rebuild for missing recoverable instances using the recorded role source/ref and per-instance durable agent home, stopped/missing-DinD hardline recovery for existing crashed role containers, interactive moved-directory recovery for exact ad-hoc hardline restores with current-directory, browser, or manual path selection, read-only `hardline --inspect` state reports with live agent-session inventory, `hardline --new` foreground agent spawning inside running instances, a directory-aware hardline action picker with live session counts, exact-selector action prompts when multiple live agent processes are detected, console active-instance recovery controls backed by local state, Java Testcontainers DinD smoke coverage, and legacy isolation-state manifest backfill have shipped. Container writable-layer recovery is explicitly out of scope. Reconnectable named agent sessions belong to [Console agent session control](/reference/roadmap/console-agent-session-control/), and lifecycle history beyond the manifest/index belongs to [Persistent storage layer](/reference/roadmap/persistent-storage-layer/). (Infrastructure)
+**Status**: Resolved — DNS-safe unique names, per-instance manifests with last attach outcomes, the rebuildable instance index, missing-container detection, Docker-unavailable diagnostics, explicit deleted-container writable-layer loss reporting, metadata-rich load/hardline recovery prompts, cross-role load blocking/guidance plus in-place recovery/rebuild for related instances using saved manifest source/ref, instance-ID targeting for hardline/eject/purge, purged lifecycle tombstones, plain-purge refusal while matching Docker resources still exist, exact `hardline` rebuild for missing recoverable instances using the recorded role source/ref and per-instance durable agent home, stopped/missing-DinD hardline recovery for existing crashed role containers, interactive moved-directory recovery for exact ad-hoc hardline restores with current-directory, browser, or manual path selection, read-only `hardline --inspect` state reports with live agent-session inventory, `hardline --new` foreground agent spawning inside running instances, a directory-aware hardline action picker with live session counts, exact-selector action prompts when multiple live agent processes are detected, console active-instance recovery controls backed by local state, and Java Testcontainers DinD smoke coverage have shipped. Container writable-layer recovery is explicitly out of scope. Reconnectable named agent sessions belong to [Console agent session control](/reference/roadmap/console-agent-session-control/), and lifecycle history beyond the manifest/index belongs to [Persistent storage layer](/reference/roadmap/persistent-storage-layer/). (Infrastructure)
 
 ## Problem
 
@@ -161,18 +161,6 @@ Use an explicit lifecycle enum in the instance manifest:
 
 The launch path should write `active` before materializing mounts, update to `running` after the role container starts, and update the final state after `finalize_foreground_session`. Crash and OOM paths should be recorded before returning errors. If the process dies mid-launch, the stale `active` state becomes a restore candidate and the next launch reconciles it against Docker.
 
-## Migration From Clone Names
-
-No long compatibility shim is required for unreleased internal state, but operator data may already exist. The first implementation should include a one-time scanner:
-
-- Treat existing `jackin-*-clone-N` and namespaced `__` containers as legacy instances.
-- Keep legacy containers attachable by exact name through `hardline` and `eject`.
-- When launching a new instance, always use the new naming builder.
-- When a legacy state directory contains `isolation.json`, write an instance manifest next to it with `legacy_name = true` and a best-effort parsed role key. Do not rename live Docker containers or existing worktree directories during migration.
-- Once a legacy instance is cleanly exited and no preserved work remains, normal cleanup can remove it.
-
-This avoids mutating live operator work while stopping new launches from creating more clone-based names.
-
 ## Corner Cases
 
 - **Long workspace and role names**: truncate inside the builder, not at call sites. Tests should cover max-length workspace, max-length role, both long together, empty-after-slugging Unicode names, and collision-prone truncation.
@@ -198,17 +186,15 @@ This avoids mutating live operator work while stopping new launches from creatin
 
 ### Phase 1 — DNS-safe unique names
 
-Status: implemented for new launches. Legacy exact-name operations still understand deterministic role names while new `jackin load` invocations claim DNS-safe random instance bases, and the DinD e2e smoke now runs Java Testcontainers from inside the launched role.
+Status: implemented. Every `jackin load` invocation claims a DNS-safe random instance base (`jackin-[<workspace>-]<agent-role>-<id>`), and the DinD e2e smoke runs Java Testcontainers from inside the launched role.
 
-- Add `src/runtime/instance_identity.rs` or equivalent for slugging, truncation, ID generation, and validation.
-- Replace `primary_container_name`, `next_container_name`, and clone-family matching in launch paths with generated instance names for new launches.
-- Keep exact-name operations for `hardline`, `eject`, and cleanup.
-- Update DIND, network, cert volume, `DOCKER_HOST`, `JACKIN_DIND_HOSTNAME`, `DOCKER_TLS_SAN`, `NO_PROXY`, and `TESTCONTAINERS_HOST_OVERRIDE` wiring.
-- Update tests that assert `__` and `clone-N` names. Add DNS-label and max-length tests.
+- Slugging, truncation, ID generation, and DNS-label validation live in <RepoFile path="src/instance/naming.rs" />.
+- `hardline`, `eject`, and `purge` resolve operands by instance ID or container base; class-family scans use `class_family_matches` against the random-instance-id shape.
+- DIND, network, cert volume, `DOCKER_HOST`, `JACKIN_DIND_HOSTNAME`, `DOCKER_TLS_SAN`, `NO_PROXY`, and `TESTCONTAINERS_HOST_OVERRIDE` are all derived from the instance base.
 
 ### Phase 2 — Instance manifest and restore detection
 
-Status: implemented. New launches write `.jackin/instance.json` with lifecycle status, last attach outcome, and Docker resource names, maintain a rebuildable `~/.jackin/data/instances.json` lookup index, backfill legacy isolation-only state directories during index rebuild, retain `purged` tombstones when state is intentionally discarded, `jackin load` detects matching unfinished state whose Docker container is missing before allocating a fresh name, distinguishes missing containers from Docker-unavailable inspect failures, reports that deleted container writable-layer changes are unrecoverable and will not be restored, shows restore choices with instance ID/status/agent/role/mount state, blocks non-interactive fresh loads when unfinished instances for other roles or agents exist in the same workspace/directory, can recover or rebuild a related role directly from the interactive `load` prompt using the saved manifest source/ref, and `jackin hardline`/`eject`/`purge` can resolve indexed instances by ID.
+Status: implemented. New launches write `.jackin/instance.json` with lifecycle status, last attach outcome, and Docker resource names, maintain a rebuildable `~/.jackin/data/instances.json` lookup index, retain `purged` tombstones when state is intentionally discarded, `jackin load` detects matching unfinished state whose Docker container is missing before allocating a fresh name, distinguishes missing containers from Docker-unavailable inspect failures, reports that deleted container writable-layer changes are unrecoverable and will not be restored, shows restore choices with instance ID/status/agent/role/mount state, blocks non-interactive fresh loads when unfinished instances for other roles or agents exist in the same workspace/directory, can recover or rebuild a related role directly from the interactive `load` prompt using the saved manifest source/ref, and `jackin hardline`/`eject`/`purge` can resolve indexed instances by ID.
 
 - Write `.jackin/instance.json` before workspace materialization and update lifecycle fields throughout launch/finalize/error paths.
 - Add the rebuildable global index for lookup by workspace/directory/role.

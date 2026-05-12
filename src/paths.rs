@@ -33,12 +33,10 @@ impl JackinPaths {
         jackin_home_override: Option<&std::ffi::OsStr>,
         jackin_config_override: Option<&std::ffi::OsStr>,
     ) -> Self {
-        let config_dir = jackin_config_override
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home_dir.join(".config/jackin"));
-        let jackin_home = jackin_home_override
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home_dir.join(".jackin"));
+        let config_dir =
+            jackin_config_override.map_or_else(|| home_dir.join(".config/jackin"), PathBuf::from);
+        let jackin_home =
+            jackin_home_override.map_or_else(|| home_dir.join(".jackin"), PathBuf::from);
         Self {
             config_file: config_dir.join("config.toml"),
             workspaces_dir: config_dir.join("workspaces"),

@@ -239,8 +239,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         Some(a) => a,
                         // prompt returned None: workspace default covers it,
                         // or single-agent role, or non-TTY fallback.
-                        None => workspace_default_agent
-                            .map_or_else(|| manifest.agent(), Ok)?,
+                        None => workspace_default_agent.map_or_else(|| manifest.agent(), Ok)?,
                     }
                 };
                 runtime::reconcile_keep_awake(&paths, &mut runner);

@@ -54,12 +54,12 @@ pub fn container_name_with_id(
     name
 }
 
+/// Match a container name against a role-selector family.
+///
+/// Recognizes the random-instance-id shape `jackin-[<workspace>-]<role>-<id>`
+/// produced by `new_container_name`. Used by `purge_class_data` to
+/// scope teardown to one role's containers.
 pub fn class_family_matches(selector: &RoleSelector, container_name: &str) -> bool {
-    let primary = primary_container_name(selector);
-    if container_name == primary || container_name.starts_with(&format!("{primary}-clone-")) {
-        return true;
-    }
-
     let Some(rest) = container_name.strip_prefix("jackin-") else {
         return false;
     };
@@ -204,46 +204,16 @@ mod tests {
     }
 
     #[test]
-    fn class_family_matches_legacy_clone_names() {
-        // Legacy `<primary>-clone-N` shape must still match its
-        // selector — `purge_class_data` walks data_dir and needs this
-        // branch to recognize pre-rename containers.
-        let selector = RoleSelector::new(Some("chainargos"), "agent-brown");
-        assert!(class_family_matches(
-            &selector,
-            "jackin-chainargos__agent-brown",
-        ));
-        assert!(class_family_matches(
-            &selector,
-            "jackin-chainargos__agent-brown-clone-1",
-        ));
-        assert!(class_family_matches(
-            &selector,
-            "jackin-chainargos__agent-brown-clone-42",
-        ));
-        assert!(!class_family_matches(
-            &selector,
-            "jackin-chainargos__agent-blue-clone-1",
-        ));
-    }
-
-    #[test]
     fn class_family_matches_distinguishes_role_substrings() {
         // A role named `brown` must not match a container whose role
         // component is `agentbrown` (the longer name happens to end
         // in `brown`). Important for `purge_class_data` blast radius.
         let brown = RoleSelector::new(None, "brown");
-        assert!(!class_family_matches(
-            &brown,
-            "jackin-agentbrown-k7p9m2xq",
-        ));
+        assert!(!class_family_matches(&brown, "jackin-agentbrown-k7p9m2xq",));
         // Inverse: role `agentbrown` must not match a container with
         // role component `brown`.
         let agentbrown = RoleSelector::new(None, "agentbrown");
-        assert!(!class_family_matches(
-            &agentbrown,
-            "jackin-brown-k7p9m2xq",
-        ));
+        assert!(!class_family_matches(&agentbrown, "jackin-brown-k7p9m2xq",));
         assert!(class_family_matches(
             &agentbrown,
             "jackin-agentbrown-k7p9m2xq",

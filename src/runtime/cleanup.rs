@@ -4,7 +4,7 @@ use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 use owo_colors::OwoColorize;
 
-use super::discovery::{capture_managed_container_rows, list_managed_role_names, list_role_names};
+use super::discovery::{list_managed_role_names, list_role_names};
 use super::naming::{FILTER_KIND_DIND, FILTER_MANAGED, dind_certs_volume};
 
 pub fn purge_class_data(
@@ -144,38 +144,11 @@ fn collect_labeled_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<D
         .collect())
 }
 
-fn collect_legacy_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<DindInfo>> {
-    let output = capture_managed_container_rows(
-        runner,
-        true,
-        "{{.Names}}\t{{.Label \"jackin.role\"}}\t{{.Label \"jackin.kind\"}}",
-    )?;
-
-    Ok(output
-        .lines()
-        .filter(|line| !line.is_empty())
-        .filter_map(|line| {
-            let mut parts = line.splitn(3, '\t');
-            let name = parts.next()?;
-            let role = parts.next().unwrap_or("");
-            let kind = parts.next().unwrap_or("");
-            if name.is_empty() || role.is_empty() || !kind.is_empty() {
-                return None;
-            }
-            Some(DindInfo {
-                name: name.to_string(),
-                role: role.to_string(),
-            })
-        })
-        .collect())
-}
-
 /// Return `DinD` sidecar containers whose corresponding role container is no
 /// longer running.  These are leftovers from hard kills, terminal closures,
 /// or startup failures.
 fn collect_orphaned_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<DindInfo>> {
-    let mut sidecars = collect_labeled_dind(runner)?;
-    sidecars.extend(collect_legacy_dind(runner)?);
+    let sidecars = collect_labeled_dind(runner)?;
 
     if sidecars.is_empty() {
         return Ok(vec![]);
@@ -368,16 +341,19 @@ mod tests {
     fn eject_all_targets_only_requested_class_family() {
         let selector = RoleSelector::new(None, "agent-smith");
         let names = vec![
-            "jackin-agent-smith".to_string(),
-            "jackin-agent-smith-clone-1".to_string(),
-            "jackin-chainargos-the-architect".to_string(),
+            "jackin-agentsmith-k7p9m2xq".to_string(),
+            "jackin-myproject-agentsmith-a1b2c3d4".to_string(),
+            "jackin-chainargos-thearchitect-w9x8y7z6".to_string(),
         ];
 
         let matched = matching_family(&selector, &names);
 
         assert_eq!(
             matched,
-            vec!["jackin-agent-smith", "jackin-agent-smith-clone-1"]
+            vec![
+                "jackin-agentsmith-k7p9m2xq",
+                "jackin-myproject-agentsmith-a1b2c3d4",
+            ]
         );
     }
 
@@ -385,11 +361,11 @@ mod tests {
     fn purge_all_removes_matching_state_directories() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let container = "jackin-agent-smith";
-        let clone = "jackin-agent-smith-clone-1";
+        let primary = "jackin-agentsmith-k7p9m2xq";
+        let second = "jackin-workspace-agentsmith-a1b2c3d4";
         let manifest =
             crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
-                container_base: container,
+                container_base: primary,
                 workspace_name: Some("workspace"),
                 workspace_label: "workspace",
                 workdir: "/workspace",
@@ -401,17 +377,17 @@ mod tests {
                 role_source_ref: None,
                 image_tag: "jackin-agent-smith",
                 docker: crate::instance::DockerResources {
-                    role_container: container.into(),
-                    dind_container: format!("{container}-dind"),
-                    network: format!("{container}-net"),
-                    certs_volume: format!("{container}-dind-certs"),
+                    role_container: primary.into(),
+                    dind_container: format!("{primary}-dind"),
+                    network: format!("{primary}-net"),
+                    certs_volume: format!("{primary}-dind-certs"),
                 },
             });
-        manifest.write(&paths.data_dir.join(container)).unwrap();
+        manifest.write(&paths.data_dir.join(primary)).unwrap();
         crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
-        let clone_manifest =
+        let second_manifest =
             crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
-                container_base: clone,
+                container_base: second,
                 workspace_name: Some("workspace"),
                 workspace_label: "workspace",
                 workdir: "/workspace",
@@ -423,28 +399,24 @@ mod tests {
                 role_source_ref: None,
                 image_tag: "jackin-agent-smith",
                 docker: crate::instance::DockerResources {
-                    role_container: clone.into(),
-                    dind_container: format!("{clone}-dind"),
-                    network: format!("{clone}-net"),
-                    certs_volume: format!("{clone}-dind-certs"),
+                    role_container: second.into(),
+                    dind_container: format!("{second}-dind"),
+                    network: format!("{second}-net"),
+                    certs_volume: format!("{second}-dind-certs"),
                 },
             });
-        clone_manifest.write(&paths.data_dir.join(clone)).unwrap();
-        crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &clone_manifest).unwrap();
-        std::fs::create_dir_all(paths.data_dir.join("jackin-chainargos-the-architect")).unwrap();
+        second_manifest.write(&paths.data_dir.join(second)).unwrap();
+        crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &second_manifest).unwrap();
+        let unrelated = "jackin-chainargos-thearchitect-w9x8y7z6";
+        std::fs::create_dir_all(paths.data_dir.join(unrelated)).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
 
         let mut runner = FakeRunner::default();
         purge_class_data(&paths, &selector, &mut runner).unwrap();
 
-        assert!(!paths.data_dir.join("jackin-agent-smith").exists());
-        assert!(!paths.data_dir.join("jackin-agent-smith-clone-1").exists());
-        assert!(
-            paths
-                .data_dir
-                .join("jackin-chainargos-the-architect")
-                .exists()
-        );
+        assert!(!paths.data_dir.join(primary).exists());
+        assert!(!paths.data_dir.join(second).exists());
+        assert!(paths.data_dir.join(unrelated).exists());
         let index = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
         assert_eq!(
             index
@@ -681,12 +653,8 @@ jackin-agent-smith-clone-1"
         let mut runner = FakeRunner::with_capture_queue([
             // collect_orphaned_dind: docker ps -a --filter label=jackin.kind=dind
             "jackin-agent-smith-dind\tjackin-agent-smith".to_string(),
-            // collect_orphaned_dind: legacy managed sidecars without role labels
-            String::new(),
             // collect_orphaned_dind: running agent-labeled roles — role IS running
             "jackin-agent-smith".to_string(),
-            // collect_orphaned_dind: running legacy roles without role labels
-            String::new(),
             // gc_orphaned_networks: docker network ls
             String::new(),
         ]);
@@ -778,37 +746,6 @@ jackin-agent-smith-clone-1"
                 .recorded
                 .iter()
                 .any(|c| c.contains("docker network rm jackin-neo-net"))
-        );
-    }
-
-    #[test]
-    fn gc_removes_legacy_orphaned_dind_without_role_label() {
-        let mut runner = FakeRunner::with_capture_queue([
-            // collect_orphaned_dind: agent-labeled DinD sidecars
-            String::new(),
-            // collect_orphaned_dind: legacy managed sidecars without role labels
-            "jackin-agent-smith-dind\tjackin-agent-smith\t".to_string(),
-            // collect_orphaned_dind: running agent-labeled roles
-            String::new(),
-            // collect_orphaned_dind: running legacy roles without role labels
-            String::new(),
-            // gc_orphaned_networks: no additional networks
-            String::new(),
-        ]);
-
-        gc_orphaned_resources(&mut runner);
-
-        assert!(
-            runner
-                .recorded
-                .iter()
-                .any(|c| c.contains("docker rm -f jackin-agent-smith-dind"))
-        );
-        assert!(
-            runner
-                .recorded
-                .iter()
-                .any(|c| c.contains("docker rm -f jackin-agent-smith"))
         );
     }
 }
