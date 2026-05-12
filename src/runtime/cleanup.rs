@@ -243,28 +243,6 @@ pub fn exile_all(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Refuse to proceed if any container in the named role's class
-/// family is currently running. Used by purge to close a pre-existing
-/// gap (also relevant to shared mode).
-pub fn ensure_role_not_running(
-    runner: &mut impl CommandRunner,
-    short_name: &str,
-) -> anyhow::Result<()> {
-    let running = list_role_names(runner, false)?;
-    let selector = RoleSelector::parse(short_name)?;
-    let role_slug = crate::instance::naming::compact_component(&selector.name, "role");
-    if running
-        .iter()
-        .any(|n| crate::instance::naming::class_family_matches_with_slug(&role_slug, n))
-    {
-        anyhow::bail!(
-            "role `{short_name}` is currently running; run `jackin eject {short_name}` first \
-             (or `jackin eject {short_name} --purge` to combine eject and purge)"
-        );
-    }
-    Ok(())
-}
-
 fn ensure_role_resources_absent_for_purge(
     runner: &mut impl CommandRunner,
     container_name: &str,
@@ -295,38 +273,6 @@ fn ensure_container_absent_for_purge(
                 "cannot purge local state for `{container_name}` because Docker resource state could not be inspected: {reason}"
             )
         }
-    }
-}
-
-#[cfg(test)]
-mod purge_guard_tests {
-    use super::*;
-    use crate::runtime::test_support::FakeRunner;
-
-    #[test]
-    fn purge_refuses_when_container_running() {
-        let mut runner = FakeRunner::default();
-        // list_role_names issues one `docker ps` capture; the
-        // response includes the running container.
-        runner
-            .capture_queue
-            .push_back("jackin-thearchitect-k7p9m2xq\n".into());
-        let err = ensure_role_not_running(&mut runner, "the-architect").unwrap_err();
-        assert!(
-            err.to_string().contains("running"),
-            "error did not mention 'running': {err}"
-        );
-        assert!(
-            err.to_string().contains("jackin eject"),
-            "error did not mention 'jackin eject': {err}"
-        );
-    }
-
-    #[test]
-    fn purge_proceeds_when_container_not_running() {
-        let mut runner = FakeRunner::default();
-        runner.capture_queue.push_back(String::new());
-        ensure_role_not_running(&mut runner, "the-architect").unwrap();
     }
 }
 

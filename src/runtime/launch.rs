@@ -2555,10 +2555,15 @@ fn claim_known_container_name(
     std::fs::create_dir_all(&paths.data_dir)?;
     let lock_path = paths.data_dir.join(format!("{container_name}.lock"));
     let lock_file = std::fs::File::create(&lock_path)?;
-    anyhow::ensure!(
-        lock_file.try_lock_exclusive().is_ok(),
-        "cannot restore `{container_name}` because another jackin process holds its lock"
-    );
+    if lock_file.try_lock_exclusive().is_err() {
+        // Mirror `claim_container_name`: drop the handle before
+        // unlink so broken-flock filesystems do not leak the artefact.
+        drop(lock_file);
+        let _ = std::fs::remove_file(&lock_path);
+        anyhow::bail!(
+            "cannot restore `{container_name}` because another jackin process holds its lock"
+        );
+    }
     Ok((container_name.to_string(), lock_file))
 }
 
