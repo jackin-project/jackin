@@ -10,6 +10,11 @@ pub fn list_managed_role_names(runner: &mut impl CommandRunner) -> anyhow::Resul
     list_role_names(runner, true)
 }
 
+// `pub(crate)` so workspace-edit drift detection in
+// `config::workspaces` can read the raw running-list before
+// `ensure_role_not_running` wraps it; clippy's nursery flags
+// `pub(crate)` inside private modules even when the wider
+// visibility is intentional.
 #[allow(clippy::redundant_pub_crate)]
 pub(crate) fn list_role_names(
     runner: &mut impl CommandRunner,

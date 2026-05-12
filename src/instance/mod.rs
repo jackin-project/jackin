@@ -427,34 +427,10 @@ impl RoleState {
         let claude_home_dir = home_dir.join(".claude");
         std::fs::create_dir_all(&claude_dir)?;
         std::fs::create_dir_all(&claude_home_dir)?;
-        // `create_new` instead of `exists()` + `write`: race-free against
-        // a concurrent writer between the check and the write. The
-        // AlreadyExists case is the steady-state path on repeated launches.
-        // Skeleton lands at 0o600 to match the sibling auth files
-        // written via `write_private_file` — the file is bind-mounted
-        // RW into the container and the Claude CLI may later persist
-        // OAuth state into it.
+        // 0o600 because the Claude CLI may later persist OAuth state
+        // into this file once the container runs.
         let claude_account_home = home_dir.join(".claude.json");
-        let mut opts = std::fs::OpenOptions::new();
-        opts.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            opts.mode(0o600);
-        }
-        match opts.open(&claude_account_home) {
-            Ok(mut file) => {
-                use std::io::Write;
-                file.write_all(b"{}")?;
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(error) => {
-                return Err(anyhow::Error::new(error).context(format!(
-                    "creating Claude account skeleton at {}",
-                    claude_account_home.display()
-                )));
-            }
-        }
+        auth::create_private_file_if_absent(&claude_account_home, b"{}")?;
         let account_json = claude_dir.join("account.json");
         let credentials_json = claude_dir.join("credentials.json");
         let (outcome, forward_auth) =

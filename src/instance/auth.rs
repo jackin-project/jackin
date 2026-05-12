@@ -745,6 +745,34 @@ fn write_private_file(path: &Path, content: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Create `path` with `content` at `0o600` only when it does not yet exist.
+///
+/// Race-free via `O_CREAT|O_EXCL`; on `EEXIST` (file already present)
+/// the function returns `Ok(())` and leaves the existing content
+/// untouched. Use when a process-private skeleton must be seeded
+/// before a downstream consumer (e.g. the Claude CLI) may persist
+/// real state into the same path.
+pub(super) fn create_private_file_if_absent(path: &Path, content: &[u8]) -> anyhow::Result<()> {
+    use anyhow::Context;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    match opts.open(path) {
+        Ok(mut file) => {
+            use std::io::Write;
+            file.write_all(content)
+                .with_context(|| format!("writing private skeleton at {}", path.display()))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(anyhow::Error::new(error)
+            .context(format!("creating private skeleton at {}", path.display()))),
+    }
+}
+
 /// Tighten permissions on an existing file to `0o600`. No-op on
 /// symlinks, non-Unix, or missing files. Errors are logged rather
 /// than returned: callers are mid-Sync and must not abort the launch,

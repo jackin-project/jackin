@@ -317,6 +317,10 @@ impl InstanceIndex {
     /// read/write. Containers already absent from the index get a
     /// backfilled tombstone read from disk (or a synthesized minimal
     /// row when the manifest is corrupt).
+    ///
+    /// One pass over the index using `HashSet` membership avoids the
+    /// O(N×M) cost of `find()`-per-container when a class-wide purge
+    /// touches many entries.
     pub fn mark_many_purged(data_dir: &Path, container_bases: &[&str]) -> anyhow::Result<()> {
         if container_bases.is_empty() {
             return Ok(());

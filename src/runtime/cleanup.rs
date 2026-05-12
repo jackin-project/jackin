@@ -243,15 +243,20 @@ pub fn exile_all(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Refuse to proceed if the named role's container is currently running.
-/// Used by purge to close a pre-existing gap (also relevant to shared mode).
+/// Refuse to proceed if any container in the named role's class
+/// family is currently running. Used by purge to close a pre-existing
+/// gap (also relevant to shared mode).
 pub fn ensure_role_not_running(
     runner: &mut impl CommandRunner,
     short_name: &str,
 ) -> anyhow::Result<()> {
     let running = list_role_names(runner, false)?;
-    let container = format!("jackin-{short_name}");
-    if running.iter().any(|n| n == &container || n == short_name) {
+    let selector = RoleSelector::parse(short_name)?;
+    let role_slug = crate::instance::naming::compact_component(&selector.name, "role");
+    if running
+        .iter()
+        .any(|n| crate::instance::naming::class_family_matches_with_slug(&role_slug, n))
+    {
         anyhow::bail!(
             "role `{short_name}` is currently running; run `jackin eject {short_name}` first \
              (or `jackin eject {short_name} --purge` to combine eject and purge)"
@@ -301,13 +306,11 @@ mod purge_guard_tests {
     #[test]
     fn purge_refuses_when_container_running() {
         let mut runner = FakeRunner::default();
-        // list_role_names performs two `docker ps` queries (agent-labeled
-        // first, then a legacy fallback).  The first response includes the
-        // running container; the second can stay empty.
+        // list_role_names issues one `docker ps` capture; the
+        // response includes the running container.
         runner
             .capture_queue
-            .push_back("jackin-the-architect\n".into());
-        runner.capture_queue.push_back(String::new());
+            .push_back("jackin-thearchitect-k7p9m2xq\n".into());
         let err = ensure_role_not_running(&mut runner, "the-architect").unwrap_err();
         assert!(
             err.to_string().contains("running"),
@@ -322,7 +325,6 @@ mod purge_guard_tests {
     #[test]
     fn purge_proceeds_when_container_not_running() {
         let mut runner = FakeRunner::default();
-        runner.capture_queue.push_back(String::new());
         runner.capture_queue.push_back(String::new());
         ensure_role_not_running(&mut runner, "the-architect").unwrap();
     }

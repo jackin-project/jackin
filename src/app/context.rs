@@ -936,13 +936,11 @@ mod tests {
         config
     }
 
-    /// `list_running_agent_names` issues two docker captures (role filter +
-    /// legacy filter); supply running-role output on the first, nothing on
-    /// the second.
+    /// `list_running_agent_names` issues one `docker ps` capture; queue
+    /// the running-role list as its response.
     fn fake_runner_with_running_agents(names: &[&str]) -> runtime::FakeRunner {
         let mut runner = runtime::FakeRunner::default();
         runner.capture_queue.push_back(names.join("\n"));
-        runner.capture_queue.push_back(String::new());
         runner
     }
 

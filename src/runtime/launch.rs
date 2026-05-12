@@ -2515,8 +2515,10 @@ fn claim_container_name(
                         "runtime",
                         "claim_container_name: lock contention on {name} (attempt {attempt}): {error}",
                     );
-                    // Drop the handle before unlink so `data_dir` does
-                    // not accumulate zero-byte files across retries.
+                    // Filesystems where flock is advisory (NFS without
+                    // lockd) leak the artefact unless the open handle
+                    // is dropped before unlink; otherwise `data_dir`
+                    // accumulates zero-byte files across retries.
                     drop(lock_file);
                     let _ = std::fs::remove_file(&lock_path);
                     last_lock_err = Some(error);
