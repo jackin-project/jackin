@@ -9,6 +9,3 @@ plugins = []
 
 [identity]
 name = "the-architect"
-
-[kimi]
-model = "kimi-for-coding"

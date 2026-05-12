@@ -9,6 +9,3 @@ dst = "/workspace/prod"
 
 [env]
 LOCAL_ENV = "only-prod"
-
-[kimi]
-auth_forward = "sync"

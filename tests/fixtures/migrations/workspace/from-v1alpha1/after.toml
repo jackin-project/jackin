@@ -6,6 +6,3 @@ last_role = "the-architect"
 [[mounts]]
 src = "/home/operator/projects/prod"
 dst = "/workspace/prod"
-
-[kimi]
-auth_forward = "sync"

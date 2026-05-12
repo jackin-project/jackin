@@ -4,6 +4,3 @@ agents = ["claude"]
 
 [claude]
 plugins = []
-
-[kimi]
-model = "kimi-for-coding"
