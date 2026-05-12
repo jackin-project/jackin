@@ -1,3 +1,4 @@
+use anyhow::Context;
 use crate::config::AppConfig;
 use crate::docker::{CommandRunner, RunOptions};
 use crate::instance::{
@@ -1587,21 +1588,19 @@ fn load_role_with(
                 certs_volume: certs_volume.clone(),
             },
         });
+        // `read_optional` already separates "manifest absent" (fall back
+        // to `new_manifest` and re-record the recovered identity) from
+        // "manifest unreadable" (must surface — the operator either
+        // repairs the file or purges the recorded state).
         let mut instance_manifest = if restoring {
-            match InstanceManifest::read(&container_state) {
-                Ok(existing) => existing,
-                Err(error) => {
-                    let path = container_state.join(".jackin/instance.json");
-                    if path.exists() {
-                        return Err(error.context(format!(
-                            "restoring container `{container_name}`: existing manifest at {} is unreadable; \
-                             repair or remove the file, or run `jackin eject {container_name} --purge` to discard the recorded identity",
-                            path.display()
-                        )));
-                    }
-                    new_manifest
-                }
-            }
+            InstanceManifest::read_optional(&container_state)
+                .with_context(|| {
+                    format!(
+                        "restoring container `{container_name}`: existing manifest is unreadable; \
+                         repair or remove the file, or run `jackin eject {container_name} --purge` to discard the recorded identity"
+                    )
+                })?
+                .unwrap_or(new_manifest)
         } else {
             new_manifest
         };
@@ -1960,7 +1959,11 @@ fn load_role_with(
             ContainerState::InspectUnavailable(reason) => {
                 cleanup.disarm();
                 anyhow::bail!(
-                    "cannot inspect container `{container_name}` after the session because Docker is unavailable or returned an unexpected response: {reason}"
+                    "{}",
+                    super::attach::docker_unavailable_msg(
+                        &format!("inspect container `{container_name}` after the session"),
+                        &reason,
+                    )
                 );
             }
             ContainerState::NotFound
@@ -2069,8 +2072,11 @@ fn resolve_restore_candidate(
             }
             ContainerState::InspectUnavailable(reason) => {
                 anyhow::bail!(
-                    "cannot inspect matching jackin instance `{}` because Docker is unavailable or returned an unexpected response: {reason}",
-                    manifest.container_base
+                    "{}",
+                    super::attach::docker_unavailable_msg(
+                        &format!("inspect matching jackin instance `{}`", manifest.container_base),
+                        &reason,
+                    )
                 );
             }
             ContainerState::NotFound => {}
@@ -2252,8 +2258,14 @@ fn recover_related_restore_candidate(
         ))),
         ContainerState::InspectUnavailable(ref reason) => {
             anyhow::bail!(
-                "cannot inspect related jackin instance `{}` because Docker is unavailable or returned an unexpected response: {reason}",
-                candidate.manifest.container_base
+                "{}",
+                super::attach::docker_unavailable_msg(
+                    &format!(
+                        "inspect related jackin instance `{}`",
+                        candidate.manifest.container_base
+                    ),
+                    reason,
+                )
             );
         }
     }
@@ -2505,7 +2517,11 @@ fn claim_container_name(
             ContainerState::NotFound => true,
             ContainerState::InspectUnavailable(reason) => {
                 anyhow::bail!(
-                    "cannot claim container name `{name}` because Docker is unavailable or returned an unexpected response: {reason}"
+                    "{}",
+                    super::attach::docker_unavailable_msg(
+                        &format!("claim container name `{name}`"),
+                        &reason,
+                    )
                 );
             }
         };
@@ -2562,7 +2578,11 @@ fn claim_known_container_name(
         }
         ContainerState::InspectUnavailable(reason) => {
             anyhow::bail!(
-                "cannot restore `{container_name}` because Docker is unavailable or returned an unexpected response: {reason}"
+                "{}",
+                super::attach::docker_unavailable_msg(
+                    &format!("restore `{container_name}`"),
+                    &reason,
+                )
             );
         }
     }

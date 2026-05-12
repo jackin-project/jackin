@@ -19,6 +19,7 @@ pub use self::attach::{
     hardline_agent, inspect_agent_sessions, inspect_container_state, inspect_hardline_instance,
     spawn_agent_session,
 };
+pub(crate) use self::attach::docker_unavailable_msg;
 pub use self::caffeinate::reconcile as reconcile_keep_awake;
 pub use self::cleanup::{eject_role, exile_all, purge_class_data, purge_container_state};
 pub(crate) use self::discovery::list_role_names;

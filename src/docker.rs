@@ -1,6 +1,20 @@
 use std::io::Read;
 use std::path::Path;
 
+/// `True` when a Docker CLI error message reports an absent resource.
+///
+/// Matches `inspect`'s `No such object`, or `rm`/`network rm`/`volume rm`'s
+/// `No such container`/`network`/`volume`. Match is case-insensitive
+/// because different daemon versions vary the casing.
+#[must_use]
+pub fn is_missing_resource_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("no such object")
+        || lower.contains("no such container")
+        || lower.contains("no such network")
+        || lower.contains("no such volume")
+}
+
 /// Options that control how a command is executed.
 #[derive(Clone, Debug, Default)]
 pub struct RunOptions {

@@ -1,5 +1,7 @@
 use crate::docker::{CommandRunner, RunOptions};
-use crate::instance::{InstanceIndex, InstanceManifest, InstanceStatus};
+use crate::instance::InstanceManifest;
+#[cfg(test)]
+use crate::instance::{InstanceIndex, InstanceStatus};
 use crate::paths::JackinPaths;
 use crate::tui;
 
@@ -72,7 +74,7 @@ pub fn inspect_container_state(runner: &mut impl CommandRunner, name: &str) -> C
         Ok(output) => output,
         Err(error) => {
             let error = error.to_string();
-            if docker_inspect_reports_missing_resource(&error) {
+            if crate::docker::is_missing_resource_error(&error) {
                 return ContainerState::NotFound;
             }
             return ContainerState::InspectUnavailable(error);
@@ -153,17 +155,17 @@ fn is_agent_session_command(command: &str) -> bool {
     })
 }
 
-fn docker_inspect_reports_missing_resource(error: &str) -> bool {
-    let error = error.to_ascii_lowercase();
-    error.contains("no such object")
-        || error.contains("no such container")
-        || error.contains("no such network")
+
+/// Builder for `docker inspect`-failure operator messages. `clause`
+/// is the verb + target phrase (e.g. ``"inspect container `foo`"``,
+/// ``"claim container name `foo`"``); the tail is the shared
+/// reason-suffix every call site needs.
+pub fn docker_unavailable_msg(clause: &str, reason: &str) -> String {
+    format!("cannot {clause} because Docker is unavailable or returned an unexpected response: {reason}")
 }
 
 fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
-    format!(
-        "cannot inspect container '{container_name}' because Docker is unavailable or returned an unexpected response: {reason}"
-    )
+    docker_unavailable_msg(&format!("inspect container `{container_name}`"), reason)
 }
 
 /// Re-attach to a running role, or restart a crashed one in place.
@@ -547,7 +549,7 @@ fn inspect_docker_network(runner: &mut impl CommandRunner, network: &str) -> Doc
         Ok(_) => DockerNetworkState::Present,
         Err(error) => {
             let error = error.to_string();
-            if docker_inspect_reports_missing_resource(&error) {
+            if crate::docker::is_missing_resource_error(&error) {
                 DockerNetworkState::NotFound
             } else {
                 DockerNetworkState::InspectUnavailable(error)
@@ -568,9 +570,7 @@ fn missing_restore_message(
         return Ok(None);
     }
 
-    manifest.mark_status(InstanceStatus::RestoreAvailable);
-    manifest.write(&state_dir)?;
-    InstanceIndex::update_manifest(&paths.data_dir, &manifest)?;
+    manifest.mark_restore_available(paths)?;
     Ok(Some(format!(
         "container '{container_name}' is missing, but jackin-managed local state remains recoverable at {}. \
          Run `jackin load` from the matching workspace to rebuild it, or `jackin eject {container_name} --purge` \

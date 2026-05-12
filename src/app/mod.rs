@@ -1626,14 +1626,16 @@ fn restore_candidate_for_hardline(
 
     match runtime::inspect_container_state(runner, container) {
         runtime::ContainerState::NotFound => {
-            manifest.mark_status(instance::InstanceStatus::RestoreAvailable);
-            manifest.write(&state_dir)?;
-            instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest)?;
+            manifest.mark_restore_available(paths)?;
             Ok(Some(manifest))
         }
         runtime::ContainerState::InspectUnavailable(reason) => {
             anyhow::bail!(
-                "cannot inspect container `{container}` because Docker is unavailable or returned an unexpected response: {reason}"
+                "{}",
+                runtime::docker_unavailable_msg(
+                    &format!("inspect container `{container}`"),
+                    &reason,
+                )
             );
         }
         runtime::ContainerState::Running | runtime::ContainerState::Stopped { .. } => Ok(None),

@@ -655,13 +655,17 @@ fn workspace_instance_rows(
     workspace_label: &str,
     workdir: &str,
 ) -> Vec<InstanceDisplayRow> {
+    let query = crate::instance::InstanceQuery {
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key: None,
+        agent_runtime: None,
+    };
     instances
         .iter()
         .filter(|entry| {
-            entry.workspace_name.as_deref() == workspace_name
-                && entry.workspace_label == workspace_label
-                && entry.workdir == workdir
-                && instance_status_is_operator_relevant(entry.status)
+            entry.matches(query) && instance_status_is_operator_relevant(entry.status)
         })
         .map(|entry| InstanceDisplayRow {
             id: entry.instance_id.clone(),

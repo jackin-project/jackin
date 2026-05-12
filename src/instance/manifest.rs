@@ -188,6 +188,20 @@ impl InstanceManifest {
         })
     }
 
+    /// Promote the manifest to `RestoreAvailable` and persist the change
+    /// to both `instance.json` and the workspace index. Used by every
+    /// restore-discovery surface (hardline prompt, attach-time `DinD`
+    /// loss, console "found restorable" path).
+    pub fn mark_restore_available(
+        &mut self,
+        paths: &crate::paths::JackinPaths,
+    ) -> anyhow::Result<()> {
+        self.mark_status(InstanceStatus::RestoreAvailable);
+        let state_dir = paths.data_dir.join(&self.container_base);
+        self.write(&state_dir)?;
+        InstanceIndex::update_manifest(&paths.data_dir, self)
+    }
+
     pub const fn is_restore_candidate(&self) -> bool {
         matches!(
             self.status,
@@ -290,7 +304,7 @@ impl InstanceIndexEntry {
         }
     }
 
-    fn matches(&self, query: InstanceQuery<'_>) -> bool {
+    pub fn matches(&self, query: InstanceQuery<'_>) -> bool {
         self.workspace_name.as_deref() == query.workspace_name
             && self.workspace_label == query.workspace_label
             && self.workdir == query.workdir

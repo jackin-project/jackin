@@ -187,15 +187,17 @@ fn selected_instance_container(
     action: ConsoleInstanceAction,
 ) -> Option<String> {
     let (workspace_name, workspace_label, workdir) = selected_instance_scope(state)?;
+    let query = crate::instance::InstanceQuery {
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key: None,
+        agent_runtime: None,
+    };
     state
         .instances
         .iter()
-        .filter(|entry| {
-            entry.workspace_name.as_deref() == workspace_name
-                && entry.workspace_label == workspace_label
-                && entry.workdir == workdir
-                && instance_action_accepts_status(action, entry.status)
-        })
+        .filter(|entry| entry.matches(query) && instance_action_accepts_status(action, entry.status))
         .map(|entry| entry.container_base.clone())
         .next()
 }

@@ -101,10 +101,7 @@ pub(super) fn run_cleanup_command(
 }
 
 pub(super) fn is_missing_cleanup_error(error: &anyhow::Error) -> bool {
-    let message = error.to_string();
-    message.contains("No such container")
-        || message.contains("No such volume")
-        || message.contains("No such network")
+    crate::docker::is_missing_resource_error(&error.to_string())
 }
 
 // ── Orphaned resource garbage collection ─────────────────────────────────
@@ -256,24 +253,19 @@ fn ensure_container_absent_for_purge(
     container_name: &str,
     resource_label: &str,
 ) -> anyhow::Result<()> {
-    match super::attach::inspect_container_state(runner, container_name) {
-        super::attach::ContainerState::NotFound => Ok(()),
-        super::attach::ContainerState::Running => {
-            anyhow::bail!(
-                "cannot purge local state because {resource_label} `{container_name}` still exists and is running; run `jackin eject {container_name} --purge` to remove Docker resources and local state together"
-            )
-        }
-        super::attach::ContainerState::Stopped { .. } => {
-            anyhow::bail!(
-                "cannot purge local state because {resource_label} `{container_name}` still exists but is stopped; run `jackin eject {container_name} --purge` to remove Docker resources and local state together"
-            )
-        }
+    let state_phrase = match super::attach::inspect_container_state(runner, container_name) {
+        super::attach::ContainerState::NotFound => return Ok(()),
+        super::attach::ContainerState::Running => "and is running",
+        super::attach::ContainerState::Stopped { .. } => "but is stopped",
         super::attach::ContainerState::InspectUnavailable(reason) => {
             anyhow::bail!(
                 "cannot purge local state for `{container_name}` because Docker resource state could not be inspected: {reason}"
             )
         }
-    }
+    };
+    anyhow::bail!(
+        "cannot purge local state because {resource_label} `{container_name}` still exists {state_phrase}; run `jackin eject {container_name} --purge` to remove Docker resources and local state together"
+    )
 }
 
 #[cfg(test)]
