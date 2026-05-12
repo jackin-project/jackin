@@ -306,6 +306,7 @@ export default defineConfig({
                   label: 'Isolation & security',
                   collapsed: true,
                   items: [
+                    { label: 'Process-level sandboxing', slug: 'reference/roadmap/process-level-sandboxing' },
                     { label: 'Rootless DinD', slug: 'reference/roadmap/rootless-dind' },
                     { label: 'Selectable sandbox backends', slug: 'reference/roadmap/selectable-sandbox-backends' },
                     { label: 'Reproducibility & provenance pinning', slug: 'reference/roadmap/reproducibility-pinning' },
