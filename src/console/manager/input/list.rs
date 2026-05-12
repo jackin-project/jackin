@@ -197,7 +197,9 @@ fn selected_instance_container(
     state
         .instances
         .iter()
-        .filter(|entry| entry.matches(query) && instance_action_accepts_status(action, entry.status))
+        .filter(|entry| {
+            entry.matches(query) && instance_action_accepts_status(action, entry.status)
+        })
         .map(|entry| entry.container_base.clone())
         .next()
 }

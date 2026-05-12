@@ -187,7 +187,7 @@ Instance discovery that lists running jackin-managed containers by manifest/labe
 
 ### Phase 2 — Reconnectable primary session via tmux *(open)*
 
-- Add `tmux` to the construct image (`docker/construct/Dockerfile`, `apt-get install tmux`).
+- Add `tmux` to the construct image (<RepoFile path="docker/construct/Dockerfile" />, `apt-get install tmux`).
 - Add a container supervisor entry point: a minimal script or `tini`-wrapped wait loop that becomes PID 1 on `docker run`. The supervisor does not start an agent; it keeps the container alive and provides a stable PID 1 that outlives any agent session.
 - Change `load_role_with` in <RepoFile path="src/runtime/launch.rs" /> to start the container detached (`-d`) with the supervisor as CMD, then immediately run `docker exec -it <container> tmux new-session -s jackin-primary /jackin/runtime/entrypoint.sh [agent-args]` to give the operator the agent TTY.
 - Change `hardline_agent` in <RepoFile path="src/runtime/attach.rs" /> to attach via `docker exec -it <container> tmux attach-session -t <session-name>` instead of `docker attach`.

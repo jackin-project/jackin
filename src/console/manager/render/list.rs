@@ -664,9 +664,7 @@ fn workspace_instance_rows(
     };
     instances
         .iter()
-        .filter(|entry| {
-            entry.matches(query) && instance_status_is_operator_relevant(entry.status)
-        })
+        .filter(|entry| entry.matches(query) && instance_status_is_operator_relevant(entry.status))
         .map(|entry| InstanceDisplayRow {
             id: entry.instance_id.clone(),
             role: entry.role_key.clone(),

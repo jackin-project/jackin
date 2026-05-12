@@ -1,4 +1,3 @@
-use anyhow::Context;
 use crate::config::AppConfig;
 use crate::docker::{CommandRunner, RunOptions};
 use crate::instance::{
@@ -9,6 +8,7 @@ use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 use crate::tui;
 use crate::version_check;
+use anyhow::Context;
 use fs2::FileExt;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
@@ -2074,7 +2074,10 @@ fn resolve_restore_candidate(
                 anyhow::bail!(
                     "{}",
                     super::attach::docker_unavailable_msg(
-                        &format!("inspect matching jackin instance `{}`", manifest.container_base),
+                        &format!(
+                            "inspect matching jackin instance `{}`",
+                            manifest.container_base
+                        ),
                         &reason,
                     )
                 );
@@ -2337,8 +2340,7 @@ fn related_restore_candidate_label_for_prompt(candidate: &RelatedRestoreCandidat
 
 fn restore_candidate_label(paths: &JackinPaths, manifest: &InstanceManifest) -> String {
     let state_dir = paths.data_dir.join(&manifest.container_base);
-    let isolation =
-        crate::isolation::state::MountSummary::prompt_label_for_state_dir(&state_dir);
+    let isolation = crate::isolation::state::MountSummary::prompt_label_for_state_dir(&state_dir);
     let attach = manifest
         .last_attach_outcome
         .as_deref()

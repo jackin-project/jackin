@@ -155,13 +155,14 @@ fn is_agent_session_command(command: &str) -> bool {
     })
 }
 
-
 /// Builder for `docker inspect`-failure operator messages. `clause`
 /// is the verb + target phrase (e.g. ``"inspect container `foo`"``,
 /// ``"claim container name `foo`"``); the tail is the shared
 /// reason-suffix every call site needs.
 pub fn docker_unavailable_msg(clause: &str, reason: &str) -> String {
-    format!("cannot {clause} because Docker is unavailable or returned an unexpected response: {reason}")
+    format!(
+        "cannot {clause} because Docker is unavailable or returned an unexpected response: {reason}"
+    )
 }
 
 fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
