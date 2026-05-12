@@ -14,10 +14,11 @@ use super::super::state::{ManagerListRow, ManagerState, MountScrollFocus, Worksp
 use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::config::AppConfig;
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn render_list_body(
     frame: &mut Frame,
     area: Rect,
-    state: &ManagerState<'_>,
+    state: &mut ManagerState<'_>,
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
@@ -49,8 +50,8 @@ pub(super) fn render_list_body(
             render_sentinel_description_pane(frame, columns[1]);
         }
         ManagerListRow::SavedWorkspace(i) => {
-            if let Some(ws) = state.workspaces.get(i) {
-                render_details_pane(frame, columns[1], ws, config, state);
+            if let Some(ws) = state.workspaces.get(i).cloned() {
+                render_details_pane(frame, columns[1], &ws, config, state);
             }
         }
     }
@@ -64,44 +65,98 @@ pub(super) fn render_list_body(
         render_role_picker_sidebar(frame, list_area, title, picker);
     } else {
         // Left: [Current directory] + saved workspaces + blank spacer +
-        // [+ New workspace]. The spacer is visual-only; state keeps logical row
-        // indices without it.
-        // The cwd path itself is shown on the right-pane `workdir` line; keep the
-        // list row label short to avoid duplicate visual load.
+        // [+ New workspace]. Rendered as a Paragraph so horizontal scroll
+        // works for long workspace names.
+        let visual_selected = state.visual_selected();
         let has_saved_workspaces = saved_count > 0;
-        let mut items: Vec<ListItem> =
+        // Initialise max_w at the inner viewport width so the selected-row
+        // background always fills the full block width, even when all names
+        // are shorter than the visible area.
+        let inner_w = list_area.width.saturating_sub(2) as usize;
+        let mut max_w: usize = inner_w;
+
+        let mut list_lines: Vec<Line> =
             Vec::with_capacity(saved_count + 2 + usize::from(has_saved_workspaces));
-        items.push(ListItem::new(Line::from(Span::styled(
-            "Current directory",
-            Style::default().fg(WHITE),
-        ))));
-        items.extend(
-            state
-                .workspaces
-                .iter()
-                .map(|w| ListItem::new(Line::from(w.name.as_str()))),
-        );
-        if has_saved_workspaces {
-            items.push(ListItem::new(Line::from("")));
+
+        // Row 0 — "Current directory"
+        {
+            let selected = visual_selected == 0;
+            let prefix = if selected { "▸ " } else { "  " };
+            let style = if selected {
+                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)
+            } else {
+                Style::default().fg(WHITE)
+            };
+            max_w = max_w.max(2 + "Current directory".len());
+            list_lines.push(Line::from(Span::styled(
+                format!("{prefix}Current directory"),
+                style,
+            )));
         }
-        items.push(ListItem::new(Line::from(Span::styled(
-            "+ New workspace",
-            Style::default().fg(WHITE),
-        ))));
+        // Saved workspace rows
+        for (i, ws) in state.workspaces.iter().enumerate() {
+            let visual_idx = i + 1;
+            let selected = visual_selected == visual_idx;
+            let prefix = if selected { "▸ " } else { "  " };
+            let style = if selected {
+                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)
+            } else {
+                Style::default().fg(PHOSPHOR_GREEN)
+            };
+            max_w = max_w.max(2 + ws.name.chars().count());
+            list_lines.push(Line::from(Span::styled(
+                format!("{prefix}{}", ws.name),
+                style,
+            )));
+        }
+        // Blank spacer before sentinel when there are saved workspaces
+        if has_saved_workspaces {
+            list_lines.push(Line::from(""));
+        }
+        // Sentinel — WHITE when unselected to signal it's an action, not a workspace.
+        {
+            let selected = visual_selected
+                == if has_saved_workspaces {
+                    saved_count + 2
+                } else {
+                    1
+                };
+            let prefix = if selected { "▸ " } else { "  " };
+            let style = if selected {
+                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)
+            } else {
+                Style::default().fg(WHITE)
+            };
+            max_w = max_w.max(2 + "+ New workspace".len());
+            list_lines.push(Line::from(Span::styled(
+                format!("{prefix}+ New workspace"),
+                style,
+            )));
+        }
 
-        let list = List::new(items)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(PHOSPHOR_DARK)),
-            )
-            .style(Style::default().fg(PHOSPHOR_GREEN))
-            .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
-            .highlight_symbol("▸ ");
+        // visual_selected maps 1-to-1 to list_lines indices: cwd=0,
+        // workspaces=1..=saved_count, sentinel=last. Pad the selected line
+        // with a bg-colored trailing span so the highlight fills max_w.
+        if let Some(line) = list_lines.get_mut(visual_selected) {
+            let current_w = super::line_width(line);
+            if current_w < max_w {
+                line.spans.push(Span::styled(
+                    " ".repeat(max_w - current_w),
+                    Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
+                ));
+            }
+        }
 
-        let mut ls = ListState::default();
-        ls.select(Some(state.visual_selected()));
-        frame.render_stateful_widget(list, list_area, &mut ls);
+        let mut scroll_y = 0u16;
+        super::render_scrollable_block(
+            frame,
+            list_area,
+            list_lines,
+            &mut state.list_names_scroll_x,
+            &mut scroll_y,
+            state.list_names_focused,
+            None,
+        );
     }
 
     // Toast overlay — rendered last so it appears on top.
@@ -361,12 +416,13 @@ pub(in crate::console::manager) fn global_mounts_content_width(
     super::max_line_width(&lines)
 }
 
+#[allow(clippy::too_many_lines)]
 fn render_details_pane(
     frame: &mut Frame,
     area: Rect,
     ws: &WorkspaceSummary,
     config: &AppConfig,
-    state: &ManagerState<'_>,
+    state: &mut ManagerState<'_>,
 ) {
     let ws_config = config.workspaces.get(&ws.name);
     let mounts = ws_config.map_or(&[][..], |w| w.mounts.as_slice());
@@ -428,26 +484,31 @@ fn render_details_pane(
     let mut idx = 0;
     render_general_subpanel(frame, rows[idx], ws);
     idx += 1;
+    let ws_focused = state.list_scroll_focus == Some(MountScrollFocus::Workspace);
     render_mounts_subpanel(
         frame,
         rows[idx],
         mounts,
-        state.list_mounts_scroll_x,
-        state.list_scroll_focus == Some(MountScrollFocus::Workspace),
+        &mut state.list_mounts_scroll_x,
+        &mut state.list_mounts_scroll_y,
+        ws_focused,
     );
     idx += 1;
     if has_global {
         let role_label = picker_role
             .as_ref()
             .map_or_else(String::new, crate::selector::RoleSelector::key);
+        let global_focused = state.list_scroll_focus;
         render_global_mounts_subpanel(
             frame,
             rows[idx],
             &role_label,
             &global_rows,
-            state.list_global_mounts_scroll_x,
-            state.list_role_global_mounts_scroll_x,
-            state.list_scroll_focus,
+            &mut state.list_global_mounts_scroll_x,
+            &mut state.list_global_mounts_scroll_y,
+            &mut state.list_role_global_mounts_scroll_x,
+            &mut state.list_role_global_mounts_scroll_y,
+            global_focused,
         );
         idx += 1;
     }
@@ -460,7 +521,16 @@ fn render_details_pane(
         idx += 1;
     }
     if !inline_picker_active {
-        render_agents_subpanel(frame, rows[idx], ws_config, config);
+        let roles_focused = state.list_scroll_focus == Some(MountScrollFocus::Roles);
+        render_agents_subpanel_scrollable(
+            frame,
+            rows[idx],
+            ws_config,
+            config,
+            &mut state.list_roles_scroll_x,
+            &mut state.list_roles_scroll_y,
+            roles_focused,
+        );
     }
 }
 
@@ -530,7 +600,7 @@ fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceConfig>) -> u1
     (total_rows + 2).min(20) as u16
 }
 
-fn agents_block_agent_count(
+pub(in crate::console::manager) fn agents_block_agent_count(
     ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
 ) -> usize {
@@ -542,11 +612,20 @@ fn agents_block_agent_count(
     }
 }
 
-fn agents_block_height(agent_count: usize) -> u16 {
+pub(in crate::console::manager) fn agents_block_height(agent_count: usize) -> u16 {
     // Reserve at least one row even when empty so the block doesn't
     // read as broken.
     let agent_rows = agent_count.max(1);
     (2 + 1 + 1 + agent_rows).min(14) as u16
+}
+
+pub(in crate::console::manager) fn agents_block_content_width(
+    _ws_config: Option<&crate::workspace::WorkspaceConfig>,
+    config: &AppConfig,
+) -> usize {
+    // 4 chars prefix + longest role name gives a good enough estimate for
+    // scroll range — avoids duplicating the full line-building logic here.
+    config.roles.keys().map(|k| k.len() + 4).max().unwrap_or(0)
 }
 
 fn instance_block_height(instance_count: usize) -> u16 {
@@ -560,7 +639,7 @@ fn render_current_dir_details_pane(
     area: Rect,
     cwd: &std::path::Path,
     config: &AppConfig,
-    state: &ManagerState<'_>,
+    state: &mut ManagerState<'_>,
 ) {
     let cwd_str = cwd.display().to_string();
     let workdir_short = crate::tui::shorten_home(&cwd_str);
@@ -620,12 +699,14 @@ fn render_current_dir_details_pane(
         rows[0],
     );
 
+    let ws_focused = state.list_scroll_focus == Some(MountScrollFocus::Workspace);
     render_mounts_subpanel(
         frame,
         rows[1],
         &mounts,
-        state.list_mounts_scroll_x,
-        state.list_scroll_focus == Some(MountScrollFocus::Workspace),
+        &mut state.list_mounts_scroll_x,
+        &mut state.list_mounts_scroll_y,
+        ws_focused,
     );
 
     let agents_row = if instance_rows.is_empty() {
@@ -638,7 +719,16 @@ fn render_current_dir_details_pane(
     // Roles block — reuse the no-`ws_config` branch of the shared renderer,
     // which lists every globally-configured role (without per-role
     // overrides since the cwd workspace has none).
-    render_agents_subpanel(frame, rows[agents_row], None, config);
+    let roles_focused = state.list_scroll_focus == Some(MountScrollFocus::Roles);
+    render_agents_subpanel_scrollable(
+        frame,
+        rows[agents_row],
+        None,
+        config,
+        &mut state.list_roles_scroll_x,
+        &mut state.list_roles_scroll_y,
+        roles_focused,
+    );
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -726,7 +816,7 @@ fn render_instances_subpanel(frame: &mut Frame, area: Rect, rows: &[InstanceDisp
         ])
     }));
     lines.push(Line::from(Span::styled(
-        "  r recover  s session  i inspect  p purge",
+        "  r recover  i inspect  p purge",
         Style::default().fg(PHOSPHOR_DIM),
     )));
 
@@ -847,103 +937,89 @@ fn render_mounts_subpanel(
     frame: &mut Frame,
     area: Rect,
     mounts: &[crate::workspace::MountConfig],
-    scroll_x: u16,
+    scroll_x: &mut u16,
+    scroll_y: &mut u16,
     focused: bool,
 ) {
-    let border = if focused {
-        PHOSPHOR_GREEN
-    } else {
-        PHOSPHOR_DARK
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(border))
-        .title(Span::styled(
-            " Mounts ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
-
     let mut lines: Vec<Line> = Vec::new();
-
     if mounts.is_empty() {
-        // No data rows — fall back to the minimum column width so the header
-        // still shows sensible column boundaries.
         lines.push(render_mount_header(mount_path_width(&[])));
         lines.push(Line::from(Span::styled(
             "  (none)",
             Style::default().fg(PHOSPHOR_DIM),
         )));
     } else {
-        // Plain-text labels — the operator uses the `o` key on a selected
-        // mount row to open the GitHub URL in a real browser instead.
         let rows = format_mount_rows(mounts);
         let path_w = mount_path_width(&rows);
         lines.push(render_mount_header(path_w));
         lines.extend(render_mount_lines(&rows, path_w));
     }
-
-    let content_width = super::max_line_width(&lines);
-    let scroll_x = super::effective_scroll_x(
-        content_width,
-        area.width.saturating_sub(2) as usize,
+    super::render_scrollable_block(
+        frame,
+        area,
+        lines,
         scroll_x,
+        scroll_y,
+        focused,
+        Some(" Mounts "),
     );
-    let p = Paragraph::new(lines)
-        .block(block)
-        .scroll((0, scroll_x))
-        .style(Style::default().fg(PHOSPHOR_GREEN));
-    frame.render_widget(p, area);
-    super::render_horizontal_scrollbar(frame, area, content_width, scroll_x);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_global_mounts_subpanel(
     frame: &mut Frame,
     area: Rect,
     role: &str,
     rows: &[crate::config::GlobalMountRow],
-    global_scroll_x: u16,
-    role_scroll_x: u16,
+    global_scroll_x: &mut u16,
+    global_scroll_y: &mut u16,
+    role_scroll_x: &mut u16,
+    role_scroll_y: &mut u16,
     focused: Option<MountScrollFocus>,
 ) {
     let (global, scoped) = split_global_mount_rows(rows);
-    let mut sections: Vec<(
-        String,
-        Vec<&crate::config::GlobalMountRow>,
-        MountScrollFocus,
-        u16,
-    )> = Vec::new();
-    if !global.is_empty() || scoped.is_empty() {
-        sections.push((
-            " Global mounts ".to_string(),
-            global,
-            MountScrollFocus::Global,
+    let chunks = {
+        let constraints: Vec<Constraint> = {
+            let mut c = Vec::new();
+            if !global.is_empty() || scoped.is_empty() {
+                c.push(Constraint::Length(global_mount_rows_height(global.len())));
+            }
+            if !scoped.is_empty() {
+                c.push(Constraint::Length(global_mount_rows_height(scoped.len())));
+            }
+            c
+        };
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(constraints)
+            .split(area)
+    };
+    let mut chunk_iter = chunks.iter();
+    if (!global.is_empty() || scoped.is_empty())
+        && let Some(chunk) = chunk_iter.next()
+    {
+        render_global_mount_rows_section(
+            frame,
+            *chunk,
+            " Global mounts ",
+            &global,
             global_scroll_x,
-        ));
+            global_scroll_y,
+            focused == Some(MountScrollFocus::Global),
+        );
     }
-    if !scoped.is_empty() {
-        sections.push((
-            format!(" Role global mounts · {role} "),
-            scoped,
-            MountScrollFocus::RoleGlobal,
-            role_scroll_x,
-        ));
-    }
-    let constraints: Vec<Constraint> = sections
-        .iter()
-        .map(|(_, rows, _, _)| Constraint::Length(global_mount_rows_height(rows.len())))
-        .collect();
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(area);
-    for ((title, rows, section_focus, scroll_x), chunk) in sections.into_iter().zip(chunks.iter()) {
+    if !scoped.is_empty()
+        && let Some(chunk) = chunk_iter.next()
+    {
+        let title = format!(" Role global mounts · {role} ");
         render_global_mount_rows_section(
             frame,
             *chunk,
             &title,
-            &rows,
-            scroll_x,
-            focused == Some(section_focus),
+            &scoped,
+            role_scroll_x,
+            role_scroll_y,
+            focused == Some(MountScrollFocus::RoleGlobal),
         );
     }
 }
@@ -953,20 +1029,10 @@ fn render_global_mount_rows_section(
     area: Rect,
     title: &str,
     rows: &[&crate::config::GlobalMountRow],
-    scroll_x: u16,
+    scroll_x: &mut u16,
+    scroll_y: &mut u16,
     focused: bool,
 ) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(if focused {
-            PHOSPHOR_GREEN
-        } else {
-            PHOSPHOR_DARK
-        }))
-        .title(Span::styled(
-            title.to_string(),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
     let mut lines = Vec::new();
     if rows.is_empty() {
         lines.push(Line::from(Span::styled(
@@ -981,18 +1047,7 @@ fn render_global_mount_rows_section(
         lines.push(render_global_mount_header(path_w));
         lines.extend(render_global_mount_lines(&display_rows, path_w));
     }
-    let content_width = super::max_line_width(&lines);
-    let scroll_x = super::effective_scroll_x(
-        content_width,
-        area.width.saturating_sub(2) as usize,
-        scroll_x,
-    );
-    let p = Paragraph::new(lines)
-        .block(block)
-        .scroll((0, scroll_x))
-        .style(Style::default().fg(PHOSPHOR_GREEN));
-    frame.render_widget(p, area);
-    super::render_horizontal_scrollbar(frame, area, content_width, scroll_x);
+    super::render_scrollable_block(frame, area, lines, scroll_x, scroll_y, focused, Some(title));
 }
 
 /// One row in the flat Environments preview list.
@@ -1136,26 +1191,30 @@ fn env_row_line(row: &EnvRow, inner_width: usize) -> Line<'static> {
     Line::from(spans)
 }
 
+#[cfg(test)]
 fn render_agents_subpanel(
     frame: &mut Frame,
     area: Rect,
     ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
 ) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            " Roles ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    render_agents_subpanel_scrollable(frame, area, ws_config, config, &mut 0, &mut 0, false);
+}
 
+fn render_agents_subpanel_scrollable(
+    frame: &mut Frame,
+    area: Rect,
+    ws_config: Option<&crate::workspace::WorkspaceConfig>,
+    config: &AppConfig,
+    scroll_x: &mut u16,
+    scroll_y: &mut u16,
+    focused: bool,
+) {
     let allowed = ws_config.map_or(&[][..], |w| w.allowed_roles.as_slice());
     let all_allowed = ws_config.is_none_or(super::super::agent_allow::allows_all_agents);
+    let default = ws_config.and_then(|w| w.default_role.as_deref());
 
     let mut lines: Vec<Line> = Vec::new();
-
-    let default = ws_config.and_then(|w| w.default_role.as_deref());
     let (value_text, value_style): (String, Style) = default.map_or_else(
         || ("(none)".to_string(), Style::default().fg(PHOSPHOR_DIM)),
         |name| (name.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
@@ -1172,7 +1231,6 @@ fn render_agents_subpanel(
     } else {
         allowed.iter().map(String::as_str).collect()
     };
-
     let name_style = |role: &str| {
         if config.roles.contains_key(role) {
             Style::default().fg(PHOSPHOR_GREEN)
@@ -1180,13 +1238,11 @@ fn render_agents_subpanel(
             Style::default().fg(PHOSPHOR_DIM)
         }
     };
-    let star_style = Style::default().fg(PHOSPHOR_DIM);
-
     for role in &agent_names {
         let is_default = Some(*role) == default;
         let mut spans = vec![Span::styled(format!("  {role}"), name_style(role))];
         if is_default {
-            spans.push(Span::styled(" \u{2605}", star_style));
+            spans.push(Span::styled(" \u{2605}", Style::default().fg(PHOSPHOR_DIM)));
         }
         if let Ok(selector) = crate::selector::RoleSelector::parse(role) {
             let scoped_count = config
@@ -1203,11 +1259,15 @@ fn render_agents_subpanel(
         }
         lines.push(Line::from(spans));
     }
-
-    let p = Paragraph::new(lines)
-        .block(block)
-        .style(Style::default().fg(PHOSPHOR_GREEN));
-    frame.render_widget(p, area);
+    super::render_scrollable_block(
+        frame,
+        area,
+        lines,
+        scroll_x,
+        scroll_y,
+        focused,
+        Some(" Roles "),
+    );
 }
 
 #[cfg(test)]
@@ -1572,7 +1632,7 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(40, 4);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_mounts_subpanel(f, Rect::new(0, 0, 40, 4), &[], 0, false);
+            render_mounts_subpanel(f, Rect::new(0, 0, 40, 4), &[], &mut 0, &mut 0, false);
         })
         .unwrap();
         let mounts_col = first_content_indent(&term).expect("mounts has content");
@@ -2423,12 +2483,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::manager::state::ManagerState::from_config(
+        let mut state = crate::console::manager::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
         })
         .unwrap();
 
@@ -2483,12 +2543,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(72, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::manager::state::ManagerState::from_config(
+        let mut state = crate::console::manager::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary(), &cfg, &state);
+            super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary(), &cfg, &mut state);
         })
         .unwrap();
 
@@ -2524,12 +2584,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::manager::state::ManagerState::from_config(
+        let mut state = crate::console::manager::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
         })
         .unwrap();
 
@@ -2602,7 +2662,7 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(72, 24);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary, &cfg, &state);
+            super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary, &cfg, &mut state);
         })
         .unwrap();
 
@@ -2645,12 +2705,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::manager::state::ManagerState::from_config(
+        let mut state = crate::console::manager::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
         })
         .unwrap();
 
@@ -2708,12 +2768,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
-        let state = crate::console::manager::state::ManagerState::from_config(
+        let mut state = crate::console::manager::state::ManagerState::from_config(
             &cfg,
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
         })
         .unwrap();
 

@@ -340,8 +340,9 @@ pub(super) fn handle_auth_form_key(
 /// Keystroke router for the `CredentialSource` row.
 ///
 /// - `Enter` → open the shared source picker (literal vs. 1Password).
-/// - `Down/j`/`Tab` → focus `Save` (forward through the cycle).
-/// - `Up/k`/`BackTab` → focus `Mode` (backward through the cycle).
+/// - `Down/j` → no-op (bottom of the field area; Tab crosses to the button area).
+/// - `Tab` → focus `Save` (cross-area jump to the button row).
+/// - `Up/k`/`BackTab` → focus `Mode` (intra-area up / reverse cross-area).
 fn handle_credential_source_key(
     editor: &mut EditorState<'_>,
     key: KeyEvent,
@@ -353,7 +354,7 @@ fn handle_credential_source_key(
 
     match key.code {
         KeyCode::Enter => open_auth_source_picker_from_form(editor, op_available),
-        KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
+        KeyCode::Tab => {
             *focus = AuthFormFocus::Save;
             false
         }
@@ -609,10 +610,14 @@ fn apply_op_picker_to_auth_form_with_runner<R: crate::operator_env::OpRunner + ?
 fn handle_mode_key(focus: &mut AuthFormFocus, form: &mut AuthForm, key: KeyEvent) {
     match key.code {
         KeyCode::Char(' ') => cycle_mode(form),
-        KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => *focus = next_focus_after_mode(form),
+        // Down/j moves within the field area; Tab crosses into the button area.
+        // No credential row: Down is a no-op at the bottom of the field area.
+        KeyCode::Down | KeyCode::Char('j') if form.shows_credential_block() => {
+            *focus = AuthFormFocus::CredentialSource;
+        }
+        KeyCode::Tab => *focus = next_focus_after_mode(form),
         // BackTab wraps backward through the cycle to Reset (the last
-        // focusable control). Forward Tab from Reset wraps to Mode in
-        // `handle_reset_key`.
+        // focusable control). Tab from Reset wraps forward to Mode.
         KeyCode::BackTab => *focus = AuthFormFocus::Reset,
         _ => {}
     }
@@ -633,9 +638,8 @@ fn handle_save_key(editor: &mut EditorState<'_>, key: KeyEvent) -> bool {
             *focus = AuthFormFocus::Cancel;
             false
         }
-        // BackTab walks backward through the cycle to the credential
-        // row (when shown) or Mode (otherwise); Up mirrors that.
-        KeyCode::Up | KeyCode::BackTab => {
+        // Up is a no-op at the top of the button area; BackTab crosses back into the field area.
+        KeyCode::BackTab => {
             *focus = if state.shows_credential_block() {
                 AuthFormFocus::CredentialSource
             } else {
@@ -688,8 +692,8 @@ fn handle_reset_key(editor: &mut EditorState<'_>, key: KeyEvent) -> bool {
             *focus = AuthFormFocus::Cancel;
             false
         }
-        // Tab from the last focusable control wraps to Mode (first).
-        KeyCode::Right | KeyCode::Tab => {
+        // Tab wraps the cycle back to the first field; Right stays on the button row.
+        KeyCode::Tab => {
             *focus = AuthFormFocus::Mode;
             false
         }
@@ -1032,9 +1036,9 @@ mod tests {
         });
         open_auth_form_modal(editor, &cfg);
         // Tab through to Reset and Enter.
-        // From Mode → Down → Cred → Down → Save → Tab → Cancel → Tab → Reset.
-        drive_key(editor, key(KeyCode::Down)); // Mode → CredentialSource
-        drive_key(editor, key(KeyCode::Down)); // → Save
+        // From Mode → Down → Cred → Tab → Save → Tab → Cancel → Tab → Reset.
+        drive_key(editor, key(KeyCode::Down)); // Mode → CredentialSource (intra-area)
+        drive_key(editor, key(KeyCode::Tab)); // Cred → Save (Tab crosses to button area)
         drive_key(editor, key(KeyCode::Tab)); // → Cancel
         drive_key(editor, key(KeyCode::Tab)); // → Reset
         let closed = drive_key(editor, key(KeyCode::Enter));
@@ -1134,6 +1138,30 @@ mod tests {
             *focus,
             AuthFormFocus::Reset,
             "BackTab on Mode must wrap to Reset"
+        );
+    }
+
+    #[test]
+    fn auth_form_right_on_reset_stays_on_reset() {
+        let (cfg, mut state) = build_state();
+        let ManagerStage::Editor(editor) = &mut state.stage else {
+            panic!()
+        };
+        open_auth_form_modal(editor, &cfg);
+        // Walk to Reset: Mode → Tab → Save → Tab → Cancel → Tab → Reset.
+        drive_key(editor, key(KeyCode::Tab));
+        drive_key(editor, key(KeyCode::Tab));
+        drive_key(editor, key(KeyCode::Tab));
+
+        // Right must not leave the button row.
+        drive_key(editor, key(KeyCode::Right));
+        let Some(Modal::AuthForm { focus, .. }) = &editor.modal else {
+            panic!("auth form must still be open")
+        };
+        assert_eq!(
+            *focus,
+            AuthFormFocus::Reset,
+            "Right on Reset must not move focus off the button row"
         );
     }
 

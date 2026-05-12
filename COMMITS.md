@@ -76,6 +76,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full DCO v1.1 text.
 
 Agent-specific attribution trailer requirements (e.g., for the Codex agent) are in [AGENTS.md](AGENTS.md).
 
+## Push after every commit (agent rule)
+
+After every `git commit`, immediately run `git push`. Never leave commits in local-only state. This applies to every commit on every branch — feature branches, fix branches, everything. There is no "push later" batching.
+
+```sh
+git commit -s -m "feat(scope): description"
+git push
+```
+
+The only exception is an explicit operator instruction to hold off.
+
 ## Merge-readiness Verification
 
 Do not run the full verification suite before every commit by default. Run it
