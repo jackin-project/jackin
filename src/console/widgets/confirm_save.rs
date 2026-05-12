@@ -17,9 +17,7 @@ use ratatui::{
 
 use super::ModalOutcome;
 
-const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
-const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
-const WHITE: Color = Color::Rgb(255, 255, 255);
+use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveChoice {
@@ -43,14 +41,15 @@ pub enum ConfirmSaveFocus {
 pub struct ConfirmSaveState {
     pub lines: Vec<Line<'static>>,
     pub focus: ConfirmSaveFocus,
+    /// Vertical scroll offset — how many lines are hidden above the visible window.
+    pub scroll_offset: usize,
     /// `plan_edit`'s `effective_removals`, forwarded into
     /// `edit_workspace`. Empty for Create flows.
     pub effective_removals: Vec<String>,
     /// `plan_create`'s collapsed mount set. Empty (meaning "no override
     /// needed") for Edit flows.
     pub final_mounts: Option<Vec<crate::workspace::MountConfig>>,
-    /// `true` when the plan carries mount-collapses — used by the hint
-    /// row to make clear the confirm covers the collapse too.
+    /// `true` when the plan carries mount-collapses.
     pub has_collapses: bool,
 }
 
@@ -62,6 +61,7 @@ impl ConfirmSaveState {
         Self {
             lines,
             focus: ConfirmSaveFocus::Save,
+            scroll_offset: 0,
             effective_removals: Vec::new(),
             final_mounts: None,
             has_collapses: false,
@@ -72,7 +72,17 @@ impl ConfirmSaveState {
         match key.code {
             KeyCode::Char('s' | 'S') => ModalOutcome::Commit(SaveChoice::Save),
             KeyCode::Char('c' | 'C') | KeyCode::Esc => ModalOutcome::Cancel,
-            // Tab / BackTab / Right / l-h / Left — only two buttons,
+            // Up/Down/j/k scroll the content preview.
+            KeyCode::Up | KeyCode::Char('k' | 'K') => {
+                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                ModalOutcome::Continue
+            }
+            KeyCode::Down | KeyCode::Char('j' | 'J') => {
+                self.scroll_offset = self.scroll_offset.saturating_add(1);
+                // Clamped to valid range in render.
+                ModalOutcome::Continue
+            }
+            // Tab / BackTab / Right / Left — only two buttons,
             // so every "move focus" key just toggles between them.
             KeyCode::Tab
             | KeyCode::BackTab
@@ -95,12 +105,11 @@ impl ConfirmSaveState {
 }
 
 /// Total rows the `ConfirmSave` modal wants given its current line count.
-/// Layout: top border + blank + N content lines + blank + buttons + blank
-/// + hint + bottom border = N + 7.
+/// Layout: top border + blank + N content lines + blank + buttons + bottom border = N + 5.
 #[must_use]
 pub fn required_height(state: &ConfirmSaveState) -> u16 {
     let lines = u16::try_from(state.lines.len()).unwrap_or(u16::MAX);
-    lines.saturating_add(7)
+    lines.saturating_add(5)
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
@@ -115,14 +124,21 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
-    // Compute how many content rows we can afford. The widget clips
-    // if the caller hands us more lines than the frame can fit — paired
-    // with the `required_height` hint the manager uses to size the
-    // outer Rect, this should only trigger on tiny terminals.
-    let content_rows = inner.height.saturating_sub(4); // blank, blank, buttons, hint
+    // Compute how many content rows we can afford, then apply the scroll
+    // offset so the operator can page through long diffs.
+    let content_rows = inner.height.saturating_sub(3); // blank, blank, buttons
     let content_rows = content_rows.saturating_sub(1); // bottom-of-content blank
     let visible = content_rows as usize;
-    let clipped: Vec<Line> = state.lines.iter().take(visible).cloned().collect();
+    let total = state.lines.len();
+    let max_offset = total.saturating_sub(visible);
+    let offset = state.scroll_offset.min(max_offset);
+    let clipped: Vec<Line> = state
+        .lines
+        .iter()
+        .skip(offset)
+        .take(visible)
+        .cloned()
+        .collect();
     let visible_u16 = u16::try_from(clipped.len()).unwrap_or(0);
 
     let chunks = Layout::default()
@@ -132,8 +148,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
             Constraint::Length(visible_u16),
             Constraint::Length(1), // blank
             Constraint::Length(1), // buttons
-            Constraint::Length(1), // blank
-            Constraint::Length(1), // hint
         ])
         .split(inner);
 
@@ -179,20 +193,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
         Paragraph::new(button_line).alignment(Alignment::Center),
         chunks[3],
     );
-
-    // Hint — `S save · C/Esc cancel` per batch-22 convention.
-    let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(PHOSPHOR_GREEN);
-    let sep_style = Style::default().fg(PHOSPHOR_DARK);
-    let hint = Paragraph::new(Line::from(vec![
-        Span::styled("S", key_style),
-        Span::styled(" save", text_style),
-        Span::styled(" \u{b7} ", sep_style),
-        Span::styled("C/Esc", key_style),
-        Span::styled(" cancel", text_style),
-    ]))
-    .alignment(Alignment::Center);
-    frame.render_widget(hint, chunks[5]);
 }
 
 #[cfg(test)]
@@ -308,8 +308,7 @@ mod tests {
             Line::from("two"),
             Line::from("three"),
         ]);
-        // 3 content lines + 7 chrome rows (2 borders + top blank + after-content blank
-        // + buttons + after-buttons blank + hint)
-        assert_eq!(required_height(&s), 10);
+        // 3 content lines + 5 chrome rows (2 borders + top blank + after-content blank + buttons)
+        assert_eq!(required_height(&s), 8);
     }
 }

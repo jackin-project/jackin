@@ -16,10 +16,10 @@ use crate::console::manager::auth_kind::AuthMode;
 use crate::console::manager::render::editor::push_op_breadcrumb_spans;
 use crate::console::manager::state::AuthFormFocus;
 
-pub(crate) const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
-pub(crate) const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
-pub(crate) const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
-pub(crate) const WHITE: Color = Color::Rgb(255, 255, 255);
+const OAUTH_TOKEN_TIP: &str =
+    "tip: run jackin workspace claude-token setup <workspace> --vault <vault> from your shell";
+
+use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 pub(crate) const DANGER_RED: Color = Color::Rgb(255, 94, 122);
 // Width chosen so the longest credential env-var name
 // (`CLAUDE_CODE_OAUTH_TOKEN`, 23 chars) fits without overflow and the
@@ -59,7 +59,10 @@ pub fn render_form(frame: &mut Frame, area: Rect, form: &AuthForm, focus: AuthFo
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    for (idx, row) in build_form_lines(form, focus).into_iter().enumerate() {
+    for (idx, row) in build_form_lines(form, focus, inner.width)
+        .into_iter()
+        .enumerate()
+    {
         let y = inner.y.saturating_add(idx as u16);
         if y >= inner.y.saturating_add(inner.height) {
             break;
@@ -106,14 +109,17 @@ impl FormLine {
 /// modal so its vertical layout hugs the content rather than leaving
 /// dead space below the hint line.
 #[must_use]
-pub const fn required_height(form: &AuthForm) -> u16 {
-    // Layout (without credential block):
-    //   blank, Mode, blank, buttons, blank, hint = 6 inner rows
-    // With credential block, +1 (cred row) = 7 inner rows.
-    // With the OAuth-token setup tip, +1 more.
-    let mut inner: u16 = if form.shows_credential_block() { 7 } else { 6 };
+pub fn required_height(form: &AuthForm, outer_modal_width: u16) -> u16 {
+    // Layout (without tip):
+    //   blank, Mode, [cred,] blank, buttons, blank = 5 or 6 inner rows
+    // With the OAuth-token setup tip, the tip moves above the buttons:
+    //   blank, Mode, [cred,] blank, TIP…, blank, buttons, blank
+    // Each wrapped tip line is +1 row; the extra blank after the tip is +1.
+    let mut inner: u16 = if form.shows_credential_block() { 6 } else { 5 };
     if shows_oauth_token_setup_tip(form) {
-        inner += 1;
+        let inner_w = outer_modal_width.saturating_sub(2).max(1);
+        let wrapped_lines = (OAUTH_TOKEN_TIP.len() as u16).div_ceil(inner_w);
+        inner += wrapped_lines + 1; // wrapped tip lines + blank after tip
     }
     inner + 2
 }
@@ -135,7 +141,7 @@ const fn shows_oauth_token_setup_tip(form: &AuthForm) -> bool {
     )
 }
 
-fn build_form_lines(form: &AuthForm, focus: AuthFormFocus) -> Vec<FormLine> {
+fn build_form_lines(form: &AuthForm, focus: AuthFormFocus, inner_width: u16) -> Vec<FormLine> {
     let mut lines: Vec<FormLine> = Vec::new();
 
     lines.push(FormLine::left(Line::from("")));
@@ -163,33 +169,46 @@ fn build_form_lines(form: &AuthForm, focus: AuthFormFocus) -> Vec<FormLine> {
     }
 
     lines.push(FormLine::left(Line::from("")));
+
+    // Tip renders above the buttons when present, wrapping to fit inner_width.
+    if shows_oauth_token_setup_tip(form) {
+        for tip_line in wrap_tip_lines(inner_width) {
+            lines.push(FormLine::centered(tip_line));
+        }
+        lines.push(FormLine::left(Line::from("")));
+    }
+
     lines.push(FormLine::centered(action_buttons_line(
         form.can_save(),
         focus,
     )));
-    if shows_oauth_token_setup_tip(form) {
-        lines.push(FormLine::centered(oauth_token_setup_tip_line()));
-    }
     lines.push(FormLine::left(Line::from("")));
-    lines.push(FormLine::centered(form_hint_line(form, focus)));
     lines
 }
 
-/// Render the inline "wire this slot from the shell" tip shown when
-/// the operator has picked `oauth_token` mode but has not yet
-/// supplied a credential. The CLI command is rendered verbatim so
-/// the operator can copy it directly.
-fn oauth_token_setup_tip_line() -> Line<'static> {
+/// Break the OAuth-token setup tip into word-wrapped lines that each fit
+/// within `inner_width` columns. Falls back to one long line when width=0.
+fn wrap_tip_lines(inner_width: u16) -> Vec<Line<'static>> {
     let dim = Style::default().fg(PHOSPHOR_DIM);
-    let cmd = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    Line::from(vec![
-        Span::styled("tip: run ", dim),
-        Span::styled(
-            "jackin workspace claude-token setup <workspace> --vault <vault>",
-            cmd,
-        ),
-        Span::styled(" from your shell", dim),
-    ])
+    let full = OAUTH_TOKEN_TIP;
+    let w = inner_width.max(20) as usize;
+    let mut result = Vec::new();
+    let mut current = String::new();
+    for word in full.split_whitespace() {
+        if current.is_empty() {
+            current = word.to_string();
+        } else if current.len() + 1 + word.len() <= w {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            result.push(Line::from(Span::styled(current, dim)));
+            current = word.to_string();
+        }
+    }
+    if !current.is_empty() {
+        result.push(Line::from(Span::styled(current, dim)));
+    }
+    result
 }
 
 fn credential_env_line(env_var: &str, cred: &CredentialInput, selected: bool) -> Line<'static> {
@@ -265,35 +284,6 @@ fn action_buttons_line(can_save: bool, focus: AuthFormFocus) -> Line<'static> {
             ),
         ),
     ])
-}
-
-fn form_hint_line(form: &AuthForm, focus: AuthFormFocus) -> Line<'static> {
-    let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(PHOSPHOR_GREEN);
-    let sep_style = Style::default().fg(PHOSPHOR_DARK);
-    let mut spans = match focus {
-        AuthFormFocus::Mode => vec![
-            Span::styled("Space", key_style),
-            Span::styled(" cycle mode", text_style),
-        ],
-        AuthFormFocus::CredentialSource => vec![
-            Span::styled("Enter", key_style),
-            Span::styled(" set credential", text_style),
-        ],
-        AuthFormFocus::Save | AuthFormFocus::Cancel | AuthFormFocus::Reset => vec![
-            Span::styled("Enter", key_style),
-            Span::styled(" select", text_style),
-        ],
-    };
-    if form.shows_credential_block() {
-        spans.push(Span::styled(" · ", sep_style));
-        spans.push(Span::styled("↑/↓", key_style));
-        spans.push(Span::styled(" navigate", text_style));
-    }
-    spans.push(Span::styled(" · ", sep_style));
-    spans.push(Span::styled("Esc", key_style));
-    spans.push(Span::styled(" cancel", text_style));
-    Line::from(spans)
 }
 
 fn cursor_span(selected: bool) -> Span<'static> {

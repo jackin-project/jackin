@@ -13,6 +13,7 @@ pub enum ScopeChoice {
 #[derive(Debug, Clone)]
 pub struct ScopePickerState {
     pub focused: ScopeChoice,
+    pub title: &'static str,
 }
 
 impl Default for ScopePickerState {
@@ -26,6 +27,15 @@ impl ScopePickerState {
     pub const fn new() -> Self {
         Self {
             focused: ScopeChoice::AllAgents,
+            title: " New environment variable ",
+        }
+    }
+
+    #[must_use]
+    pub const fn with_title(title: &'static str) -> Self {
+        Self {
+            focused: ScopeChoice::AllAgents,
+            title,
         }
     }
 
@@ -66,28 +76,16 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ScopePickerState) {
     let phosphor_dark = Color::Rgb(0, 80, 18);
     let white = Color::Rgb(255, 255, 255);
 
-    let title = " New environment variable ".to_string();
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(phosphor_dark))
         .title(Span::styled(
-            title,
+            state.title,
             Style::default().fg(white).add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .split(inner);
 
     let focused_style = Style::default()
         .bg(white)
@@ -111,27 +109,18 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ScopePickerState) {
         Span::raw("    "),
         Span::styled("  Specific role  ", specific_style),
     ]);
+    // inner area is 3 rows (5 outer − 2 border): blank, button, blank.
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // top blank
+            Constraint::Length(1), // button
+            Constraint::Length(1), // bottom blank
+        ])
+        .split(inner);
     frame.render_widget(
         Paragraph::new(button_line).alignment(Alignment::Center),
         chunks[1],
-    );
-
-    let key_style = Style::default().fg(white).add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(phosphor);
-    let sep_style = Style::default().fg(phosphor_dark);
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("\u{2190}/\u{2192}", key_style),
-            Span::styled(" navigate", text_style),
-            Span::styled(" \u{b7} ", sep_style),
-            Span::styled("Enter", key_style),
-            Span::styled(" select", text_style),
-            Span::styled(" \u{b7} ", sep_style),
-            Span::styled("Esc", key_style),
-            Span::styled(" cancel", text_style),
-        ]))
-        .alignment(Alignment::Center),
-        chunks[4],
     );
 }
 

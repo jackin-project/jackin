@@ -1,0 +1,182 @@
+---
+title: TUI Design Decisions
+description: Canonical design rules for the jackin' terminal UI — authoritative reference for all TUI development
+---
+
+import RepoFile from '../../../components/RepoFile.astro';
+
+This document records every binding design decision for the jackin' TUI. It is the authoritative reference when implementing or reviewing any TUI change. If a proposed implementation conflicts with a rule here, fix the implementation, not the rule (or open a discussion to amend the rule first).
+
+Source of truth for navigation rules lives in `AGENTS.md` → **TUI navigation conventions**. This document extends those rules with visual, interaction, and component-reuse decisions.
+
+---
+
+## Focusability
+
+**A block is focusable only when its content overflows the visible area in at least one axis (horizontal or vertical).**
+
+When a block's content fits entirely within its viewport, clicking it must not activate it (green border must not appear) and keyboard scroll keys must not change its scroll offset.
+
+This rule exists because a focused non-scrollable block gives the user false affordance — the green border implies "you can scroll here" but nothing moves. Operators are confused when they click a block, see it highlight, and then H/L/scroll wheel does nothing.
+
+### Implementation
+
+The scrollability check runs in two places and must agree:
+
+1. **`update_scroll_focus` (mouse click)** — `is_scrollable(area, content_width) || is_scrollable_v(area, content_height)` must be `true` before setting focus. If false, click in that block clears focus (sets `list_scroll_focus = None`).
+
+2. **`focused_block_still_scrollable` (resize guard, every render frame)** — returns `false` when content fits after a terminal resize, which clears `list_scroll_focus = None` so the green border disappears.
+
+Both checks must use the **same content height and width values** as `render_scrollable_block` uses for the actual rendered lines. Any mismatch causes the bug where the block looks scrollable (green border, scrollbar visible) but scrolling does nothing, or looks non-scrollable but is still focused.
+
+### Content height formula for each block type
+
+These are the exact formulas that match what each render function passes to `render_scrollable_block`:
+
+| Block | `content_height` |
+|---|---|
+| Workspace mounts | `1 + max(data_rows, 1)` where `data_rows = sum of 1-or-2 per mount (1 if src==dst, 2 otherwise)` |
+| Global mounts / Role global mounts | `1 + n*2 + 1` where n = mount count (assumes src≠dst; +1 for header) |
+| Roles | `2 + agent_count` (1 "Default …" row + 1 blank row + agent rows) |
+| Left sidebar (workspace names) | no vertical scroll — use `clamp_list_scroll_for_area` horizontal-only path |
+
+The workspace mounts formula uses `.max(1)` because an empty mount list renders a "(none)" placeholder row, so even zero mounts produce 1 data row.
+
+---
+
+## Scrollable Blocks — Shared Component
+
+**All bordered scrollable content blocks must use `render_scrollable_block` from `render/mod.rs`.** Never hand-roll block creation, Paragraph scroll, or scrollbar rendering inline.
+
+`render_scrollable_block` guarantees:
+- Border color `PHOSPHOR_GREEN` when focused, `PHOSPHOR_DARK` otherwise.
+- Horizontal scrollbar rendered only when content overflows horizontally.
+- Vertical scrollbar rendered only when content overflows vertically.
+- `*scroll_x` and `*scroll_y` clamped to valid range in-place every frame (eliminates stale overshoot).
+
+Signature:
+```rust
+pub(super) fn render_scrollable_block(
+    frame: &mut Frame,
+    area: Rect,
+    lines: Vec<Line<'_>>,
+    scroll_x: &mut u16,
+    scroll_y: &mut u16,
+    focused: bool,
+    title: Option<&str>,
+)
+```
+
+Pass `None` for `title` to suppress the block title. Pass `Some(" Title ")` (with surrounding spaces) to match the standard label style.
+
+---
+
+## Focus Persistence
+
+**`list_names_focused` (left sidebar) is cleared only when:**
+1. The user clicks in the right pane — `update_scroll_focus` sets it to `false`.
+2. The terminal resizes so the content fits — `clamp_list_scroll_for_area` sets it to `false`.
+
+It must **not** be cleared by `reset_list_scroll`. Workspace selection changes keep the user in the left pane; the focus state should persist.
+
+**`list_scroll_focus` (right-pane blocks) is cleared when:**
+1. Content no longer overflows after resize — `focused_block_still_scrollable` returns `false`.
+2. User clicks left pane — `update_scroll_focus` clears it.
+3. Workspace changes — `reset_list_scroll` sets it to `None`.
+
+---
+
+## Mouse Scroll (Hover-Scroll)
+
+Mouse `ScrollLeft`/`ScrollRight` scroll whichever block the cursor is currently over **without requiring a prior click**. This is hover-scroll semantics, not click-then-scroll.
+
+In `scroll_active_panel`, dispatch order for the list stage:
+1. If `list_names_focused` → scroll `list_names_scroll_x` (left pane).
+2. Otherwise → compute `list_scroll_areas`, route to the block under the pointer.
+
+The left pane scroll uses `apply_horizontal_scroll_unbounded` (no clamping to content width) because `render_scrollable_block` clamps on every frame anyway.
+
+---
+
+## PHOSPHOR Color Palette
+
+Canonical definitions live in <RepoFile path="src/console/widgets/mod.rs" />. All other files use `pub(super) use` re-exports from `render/mod.rs`. Never define local constants.
+
+| Constant | Value | Usage |
+|---|---|---|
+| `PHOSPHOR_GREEN` | `Rgb(0, 255, 65)` | Active/focused elements, selected text |
+| `PHOSPHOR_DIM` | `Rgb(0, 140, 30)` | Inactive text, scrollbar thumbs |
+| `PHOSPHOR_DARK` | `Rgb(0, 80, 18)` | Borders (unfocused), separators |
+| `WHITE` | `Rgb(255, 255, 255)` | Labels, keys, headings |
+
+---
+
+## Block Border Colors
+
+- **Focused block**: `PHOSPHOR_GREEN` border.
+- **Unfocused block**: `PHOSPHOR_DARK` border (or no border where layout dictates).
+- Border color is controlled exclusively through the `focused` parameter to `render_scrollable_block`. Never set border style separately.
+
+---
+
+## Left Sidebar (Workspace Name List)
+
+- Horizontal scroll only — no vertical scroll.
+- Uses `render_scrollable_block` with `scroll_y = 0u16` (a throwaway variable; vertical scrollbar never appears because line count always fits the list height).
+- H/L keys and `ScrollLeft`/`ScrollRight` both update `state.list_names_scroll_x`.
+- Focus set on click via `update_scroll_focus`; persists until user clicks the right pane.
+- Focus cleared by `clamp_list_scroll_for_area` when content width ≤ viewport (content fits horizontally).
+
+---
+
+## Tab Bar
+
+**W3C ARIA Tabs pattern** (see `AGENTS.md` → TUI navigation conventions for full spec). Summary:
+
+- Tab bar has its own focus area (`tab_bar_focused: bool` in state).
+- **Tab bar focused**: active tab shows `fg(WHITE) + BOLD`; underline bar (`━━━━`) beneath the active tab label.
+- **Content focused** (tab bar not focused): active tab shows `bg(PHOSPHOR_GREEN) + fg(Black) + BOLD`; no underline bar.
+- `←`/`→` cycle tabs when tab bar is focused.
+- `Tab`/`↓` moves focus from tab bar into the first content block.
+- `BackTab`/`Esc` returns focus to the tab bar from content.
+
+---
+
+## Modal Sizing Rules
+
+Modals use `centered_rect_fixed(outer, pct_w, rows)`. `rows` is the **total outer height** including both borders. Inner rows = `rows - 2`.
+
+| Modal | `pct_w` | `rows` | Reasoning |
+|---|---|---|---|
+| Scope picker | 50 | 4 | 1 button row + 2 borders + 1 spacer |
+| Text input | 60 | 5 | 1 input row + 2 borders + 2 label/padding |
+| Role picker | auto | `filtered.len() + 6` | filter row + spacer + roles + border overhead |
+
+Never add excess padding rows to modals. The outer rect must be exactly tight enough to render the widget's layout constraints without blank overflow rows.
+
+---
+
+## Hints / Footer Bar
+
+Every keyboard shortcut active on the current screen must appear in the footer. No hidden keys. See `AGENTS.md` → **Navigation hints** for the complete rule.
+
+When a scrollable block is focused, the footer must show scroll direction hints:
+- Horizontal-only block: `←/→ scroll block`
+- Vertical-only block: `↑/↓ scroll block`  
+- Both axes: `↑/↓/←/→ scroll block`
+
+The hints update dynamically based on which block is focused and which axes overflow.
+
+---
+
+## Env / Secrets Sentinel Indentation
+
+`+ Add environment variable` sentinel at workspace level must align with workspace-level content (2-char `cursor_col` indent only). It must **not** pick up the 5-space `marker_col` that role-level rows use.
+
+Role-level sentinels (`RoleAddSentinel`) and role section headers keep their `"     "` (5-space) indentation to visually group them under the role section.
+
+---
+
+## Component Reuse — Strict Rule
+
+See `AGENTS.md` → **Component reuse: single implementation per UX pattern** for the binding rule. Short form: if a pattern appears in two places, extract it. Never fork.

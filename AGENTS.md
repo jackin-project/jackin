@@ -78,6 +78,12 @@ Rationale: Rust's ecosystem is one of the project's leverage points. The communi
 
 When you do hand-roll something this rule covers, leave a comment explaining why (crate unavailable, scope tiny, dependency cost specifically rejected) so a later maintainer can replace it without re-debating the decision.
 
+## Reuse shared TUI components for identical flows (agent-only)
+
+When two TUI surfaces implement the same flow, do not fork modal sizing, rendering, input handling, footer wording, row layout, or picker behavior into a second near-copy. Extract or extend a shared widget, renderer, input helper, or state adapter and have both surfaces call it.
+
+Settings screens that intentionally mirror workspace screens must reuse the workspace widgets and flow helpers wherever behavior is the same; keep separate code only for the different persistence target or config scope. Treat visual drift between duplicated TUI components as a bug. If reuse is blocked, call that out in the PR and keep the duplicate small and temporary.
+
 ## Changelog (agent-only)
 
 **Do not add entries to `CHANGELOG.md` until the first tagged release.**
@@ -210,6 +216,104 @@ This does not apply to:
 
 - Inspection commands the operator runs (`pgrep`, `pmset`, `cat`, `ls`) — those aren't jackin invocations.
 - Production recommendations or scripted automation (debug output is too noisy for those).
+
+## TUI navigation conventions (agent-only)
+
+> **Design decisions reference:** [`docs/src/content/docs/reference/tui-design-decisions.mdx`](docs/src/content/docs/reference/tui-design-decisions.mdx) is the canonical record of every binding TUI design decision — focusability rules, component reuse contracts, color palette, modal sizing, scroll semantics, and more. Read it before implementing any TUI change. When a new decision is made (operator explains what should change and why), add it there immediately.
+
+Jackin's TUI follows the **W3C ARIA Tabs interaction pattern** for all tabbed interfaces and the corresponding area-scoped arrow-key model everywhere else. These are non-negotiable design rules — violations are bugs and must be fixed before a PR lands.
+
+### Key roles
+
+**Tab / BackTab** are the designated cross-area navigation keys. They move focus between logical areas: from the field area to the button row, back from the button row to the field area, and between a tab list and its tab panel (content area). Tab always moves forward in the cycle; BackTab always moves backward.
+
+**Left / Right** are intra-area horizontal keys. They move focus within the current horizontal group (e.g. between buttons in a button row, or between tabs when the tab list has focus). They must never jump between distinct areas.
+
+**Up / Down (and j / k aliases)** are intra-area vertical keys. They move focus within the current vertical field group. They must never cross the boundary from a field area into the button area or vice versa.
+
+### W3C Tabs pattern (required for all tabbed interfaces)
+
+All tabbed surfaces (workspace editor, settings) must implement the W3C tablist/tabpanel pattern:
+
+1. **Tab list** (the row of tab labels) is its own focus area:
+   - `←` / `→` cycle between tabs.
+   - `Tab` or `↓` moves focus into the first block inside the tab panel (content area).
+   - The active tab is visually distinguished even without tab-list focus; when the tab list IS focused, an additional highlight (e.g. bold or underline) makes this clear.
+
+2. **Tab panel** (the content below the tabs) may contain one or more blocks:
+   - `↑` / `↓` navigate within the focused block.
+   - `Tab` advances to the next block within the panel; after the last block `Tab` cycles back to the tab list.
+   - `BackTab` / `Esc` returns focus to the tab list.
+
+3. Entry into a tabbed stage (opening Settings, opening the workspace editor) must start with **tab-list focus** — the operator sees the tab labels highlighted and uses `←` / `→` to pick a tab before `Tab` / `↓` drops them into the content.
+
+This rule applies to every tabbed surface that ships; add a `tab_bar_focused: bool` field to the relevant state struct and update input dispatch and rendering accordingly whenever a new tabbed surface is added.
+
+### Other area-boundary rules
+
+- Down from the last field in a form's field area is a no-op. Tab is the key that crosses into the button area.
+- Up from the first button in the button area is a no-op. BackTab is the key that crosses back into the field area.
+
+**Exception — tree header expand/collapse:** Right = expand and Left = collapse on tree-style header rows (Secrets AgentHeader, Auth RoleHeader, Environments RoleHeader) is a correct intra-area semantic action. This absorption pattern is intentional and must be preserved.
+
+**Exception — flat button-strip widgets:** Self-contained single-row button widgets (`confirm.rs`, `save_discard.rs`, `mount_dst_choice.rs`, `source_picker.rs`, `mount_isolation_choice.rs`, `scope_picker.rs`) may treat Left / Right as BackTab / Tab equivalents. The entire widget is a single flat area with no area boundary to cross, so there is no violation.
+
+### Navigation hints (exhaustive — no hidden keys)
+
+**Every keyboard shortcut that is active on the current screen must appear in the footer hint bar. No key may be silently available — users must never have to guess.** The hint bar updates whenever the focused area or row context changes.
+
+Rules:
+- `↑/↓ navigate` must appear whenever a list, table, or form with multiple rows is active. It is a global footer item, not a conditional one.
+- Every action key (`Enter`, `Space`, `D`, `A`, `R`, `N`, `1`, `2`, `3`, `O`, `P`, `M`, etc.) that is live on the current row must be shown alongside its one-word description.
+- When a key applies only under certain conditions (e.g. `O open in GitHub` only for GitHub-origin mounts), show it only when the condition holds — but never suppress a key that is unconditionally active.
+- `Tab switch tab`, `S save`, and `Esc back/discard` are always shown in the global footer.
+- Keep each hint concise: one symbol or key name, one word label. Use `·` separators between hints.
+
+This rule applies to every TUI surface: list view, workspace editor (all tabs), settings (all tabs), all modals and overlays.
+
+### Space vs Enter — W3C semantic distinction (strict rule)
+
+**`Space`** is the key for **toggle** semantics (on/off, checked/unchecked, trusted/untrusted, allowed/disallowed). It matches the W3C ARIA patterns for checkbox, switch, and radio group. Never bind Enter to the same action as Space on a toggle widget.
+
+**`Enter`** is the key for **action** semantics (activate a button, open a dialog, confirm a choice, navigate into detail, submit a form). It is also the key for shortcut-letter bindings (`Y` yes, `N` no, `S` save, `D` discard, etc.) on confirmation dialogs.
+
+Binding both `Space` and `Enter` to the same toggle action is a W3C violation — Space is sufficient and Enter would collide with its role as the action key. Binding both to a button widget is acceptable (W3C requires both on standard buttons), but jackin's button-strip widgets use letter shortcuts + Enter to avoid this; don't add Space to them.
+
+Summary:
+- Toggle row (keep_awake, git_pull, trusted, allowed role): `Space` only.
+- Action button (Save, Cancel, Discard, Yes, No): `Enter` only (plus letter shortcut if applicable).
+- Open/navigate (expand detail, open picker, rename): `Enter` only.
+- Cycle among options in a slot (auth mode): `Space` (radio-button pattern per W3C).
+- Re-open a picker for an already-set value (1Password op-ref, source): `Enter` (action). `P` is also supported as a shortcut where op_available is true, but `Enter` must always work.
+
+### Hints: footer only, never inside dialogs (strict rule)
+
+All keyboard hint text belongs in the footer bar at the bottom of the screen. Dialogs, modals, and overlays **must not** render their own internal hint line. When a modal is open, the main footer must show the modal's available keys instead of the keys for the content behind it.
+
+Enforcement:
+- Every widget in `src/console/widgets/` must expose a `footer_items` function (or equivalent) and remove its internal hint row.
+- `render_editor` checks `state.modal` first; if a modal is open it calls `modal_footer_items(modal)` and skips the normal contextual items.
+- `render_settings` checks the three settings modal chains (`auth.modal`, `env.modal`, `mounts.modal`) in priority order; if any is `Some`, calls the corresponding `*_modal_footer_items` function.
+- No `Constraint::Length` row for a hint line may remain inside any widget layout.
+
+### Scrollable blocks (strict rule)
+
+Every content block whose natural width can exceed the available terminal width **must** support horizontal scrolling. Add `scroll_x: u16` to the state struct, handle `H`/`L` keys, pass `.scroll((0, scroll_x))` to the `Paragraph`, and call `render_horizontal_scrollbar`. Always draw the scrollbar so the user can tell content exists off-screen.
+
+Mouse scroll events (`ScrollLeft`/`ScrollRight`/`ScrollUp`/`ScrollDown`) scroll whichever block the mouse cursor is currently over (hover-scroll), without requiring a click first. Extend `scroll_active_panel` in `input/mouse.rs` for every new scrollable block. Left-click inside a scrollable block also activates it (updates keyboard focus to that block).
+
+`ScrollUp`/`ScrollDown` are vertical-only events; `ScrollLeft`/`ScrollRight` are horizontal-only. A block that supports only one axis must silently ignore events on the other axis. A block that supports both axes routes each event to the correct axis.
+
+### Component reuse: single implementation per UX pattern (strict rule)
+
+Every visual pattern that appears in more than one place **must** use one shared implementation — a single widget, render function, or helper. Never create a second near-copy of an existing widget or render function. When the existing implementation cannot serve a new call site without modification, extend it (add parameters, generalize) rather than forking it.
+
+When a genuinely new component is needed (no existing implementation fits the UX pattern):
+1. The agent proposes the design with a sketch or description.
+2. The operator explicitly approves the design.
+3. Only then may the agent implement it.
+
+Violations — two functions that render the same kind of content with slightly different styling or behavior — must be fixed before a PR lands by consolidating them into one.
 
 ## Shared conventions
 

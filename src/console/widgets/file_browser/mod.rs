@@ -19,16 +19,9 @@
 
 use ratatui::style::Color;
 
-/// Phosphor green — matches jackin's primary colour.
-pub(super) const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
-/// Dimmed phosphor — used for the ` (git)` suffix and italic metadata.
-pub(super) const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
-/// Bright white — used for cwd titles + focus highlights.
-pub(super) const WHITE: Color = Color::Rgb(255, 255, 255);
+pub(super) use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 /// Sandbox-rejection / error red.
 pub(super) const DANGER_RED: Color = Color::Rgb(255, 94, 122);
-/// Dark phosphor — block borders, separator glyphs.
-pub(super) const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
 
 /// Directories excluded from the listing when browsing $HOME.
 pub(super) const EXCLUDED: &[&str] = &[
