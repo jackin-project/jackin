@@ -93,8 +93,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SaveDiscardState) {
             Constraint::Length(1), // prompt
             Constraint::Length(1), // spacer
             Constraint::Length(1), // buttons
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // hint
         ])
         .split(inner);
 
@@ -142,25 +140,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &SaveDiscardState) {
     frame.render_widget(
         Paragraph::new(button_line).alignment(Alignment::Center),
         chunks[2],
-    );
-
-    // Hint — same key/text/sep scheme as the main TUI footer.
-    let key_style = Style::default().fg(white).add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(phosphor);
-    let sep_style = Style::default().fg(phosphor_dark);
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("S", key_style),
-            Span::styled(" save", text_style),
-            Span::styled(" \u{b7} ", sep_style),
-            Span::styled("D", key_style),
-            Span::styled(" discard", text_style),
-            Span::styled(" \u{b7} ", sep_style),
-            Span::styled("C/Esc", key_style),
-            Span::styled(" cancel", text_style),
-        ]))
-        .alignment(Alignment::Center),
-        chunks[4],
     );
 }
 

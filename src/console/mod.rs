@@ -172,8 +172,8 @@ const fn consumes_letter_input(state: &ConsoleState) -> bool {
     {
         return true;
     }
-    if let ManagerStage::GlobalMounts(global) = &ms.stage
-        && let Some(modal) = &global.modal
+    if let ManagerStage::Settings(settings) = &ms.stage
+        && let Some(modal) = &settings.mounts.modal
         && matches!(modal, GlobalMountModal::Text { .. })
     {
         return true;
@@ -230,11 +230,28 @@ fn console_location_debug(console_state: &ConsoleState) -> String {
         crate::console::manager::state::ManagerStage::ConfirmDelete { .. } => {
             "confirm-delete".to_string()
         }
-        crate::console::manager::state::ManagerStage::GlobalMounts(global) => {
-            let modal = global.modal.as_ref().map_or("none", |modal| match modal {
-                crate::console::manager::state::GlobalMountModal::Text { .. } => "text-input",
-                crate::console::manager::state::GlobalMountModal::Confirm { action, .. } => {
-                    match action {
+        crate::console::manager::state::ManagerStage::Settings(settings) => {
+            let modal = settings
+                .mounts
+                .modal
+                .as_ref()
+                .map_or("none", |modal| match modal {
+                    crate::console::manager::state::GlobalMountModal::Text { .. } => "text-input",
+                    crate::console::manager::state::GlobalMountModal::FileBrowser { .. } => {
+                        "file-browser"
+                    }
+                    crate::console::manager::state::GlobalMountModal::MountDstChoice { .. } => {
+                        "mount-dst-choice"
+                    }
+                    crate::console::manager::state::GlobalMountModal::ScopePicker { .. } => {
+                        "scope-picker"
+                    }
+                    crate::console::manager::state::GlobalMountModal::RolePicker { .. } => {
+                        "role-picker"
+                    }
+                    crate::console::manager::state::GlobalMountModal::Confirm {
+                        action, ..
+                    } => match action {
                         crate::console::manager::state::GlobalMountConfirm::Remove => {
                             "confirm-remove"
                         }
@@ -245,10 +262,15 @@ fn console_location_debug(console_state: &ConsoleState) -> String {
                         crate::console::manager::state::GlobalMountConfirm::Discard => {
                             "confirm-discard"
                         }
+                    },
+                    crate::console::manager::state::GlobalMountModal::PreviewSave { .. } => {
+                        "preview-save"
                     }
-                }
-            });
-            format!("global-mounts selected={} modal={modal}", global.selected)
+                });
+            format!(
+                "settings tab={:?} selected={} modal={modal}",
+                settings.active_tab, settings.mounts.selected
+            )
         }
     };
     format!("{location}{list_modal}")
