@@ -213,7 +213,7 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         state.root.join("state").display()
     )];
 
-    if state.auth.claude {
+    if let Some(claude) = &state.auth.claude {
         mounts.push(format!(
             "{}:/home/agent/.claude",
             state.root.join("home/.claude").display()
@@ -222,43 +222,44 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
             "{}:/home/agent/.claude.json",
             state.root.join("home/.claude.json").display()
         ));
-        // `claude_forward_auth = true` for Sync (host-derived credentials)
-        // and OAuthToken (the onboarding skeleton). ApiKey and Ignore set
-        // it to false so a `{}` placeholder left behind by
-        // `wipe_claude_state` never reaches the container. The per-file
-        // `exists()` guard keeps the OAuthToken arm from mounting a stale
-        // `credentials.json` if the provision-step removal failed silently.
-        if state.auth.claude_forward_auth {
-            if let Some(account_json) = &state.auth.claude_account_json
-                && account_json.exists()
-            {
+        // `forward_auth = true` for Sync (host-derived credentials) and
+        // OAuthToken (the onboarding skeleton). ApiKey and Ignore set it
+        // to false so a `{}` placeholder left behind by `wipe_claude_state`
+        // never reaches the container. The per-file `exists()` guard keeps
+        // the OAuthToken arm from mounting a stale `credentials.json` if
+        // the provision-step removal failed silently.
+        if claude.forward_auth {
+            if claude.account_json.exists() {
                 mounts.push(format!(
                     "{}:/jackin/claude/account.json",
-                    account_json.display()
+                    claude.account_json.display()
                 ));
             }
-            if let Some(credentials_json) = &state.auth.claude_credentials_json
-                && credentials_json.exists()
-            {
+            if claude.credentials_json.exists() {
                 mounts.push(format!(
                     "{}:/jackin/claude/credentials.json",
-                    credentials_json.display()
+                    claude.credentials_json.display()
                 ));
             }
         }
     }
 
-    if state.auth.codex {
+    if state.auth.codex.is_some() {
         mounts.push(format!(
             "{}:/home/agent/.codex",
             state.root.join("home/.codex").display()
         ));
-        if let Some(auth_json) = &state.auth.codex_auth_json {
+        if let Some(auth_json) = state
+            .auth
+            .codex
+            .as_ref()
+            .and_then(|c| c.auth_json.as_deref())
+        {
             mounts.push(format!("{}:/jackin/codex/auth.json", auth_json.display()));
         }
     }
 
-    if state.auth.amp {
+    if state.auth.amp.is_some() {
         mounts.push(format!(
             "{}:/home/agent/.local/share/amp",
             state.root.join("home/.local/share/amp").display()
@@ -268,7 +269,12 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         // `roadmap/live-auth-sync.mdx` — can rely on a writable target.
         // The entrypoint currently `cp`s the file, so in-container rotation
         // does not flow back today.
-        if let Some(secrets_json) = &state.auth.amp_secrets_json {
+        if let Some(secrets_json) = state
+            .auth
+            .amp
+            .as_ref()
+            .and_then(|c| c.secrets_json.as_deref())
+        {
             mounts.push(format!(
                 "{}:/jackin/amp/secrets.json",
                 secrets_json.display()
@@ -2464,9 +2470,6 @@ fn path_covers_workdir(mount_dst: &str, workdir: &str) -> bool {
             .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
-/// Claim a unique DNS-safe container name by acquiring an exclusive lock file.
-/// Random IDs avoid deterministic role slots; the lock still protects the
-/// vanishingly small random-collision window and concurrent launch races.
 /// Cap retries so a filesystem without working flock (NFS without
 /// lockd, exotic mount) surfaces as an actionable error instead of an
 /// unbounded spin. 64 attempts at 40 bits of ID entropy is enough that
@@ -2474,6 +2477,9 @@ fn path_covers_workdir(mount_dst: &str, workdir: &str) -> bool {
 /// hitting the cap signals an environmental fault, not bad luck.
 const CLAIM_MAX_ATTEMPTS: u32 = 64;
 
+/// Claim a unique DNS-safe container name by acquiring an exclusive lock file.
+/// Random IDs avoid deterministic role slots; the lock still protects the
+/// vanishingly small random-collision window and concurrent launch races.
 fn claim_container_name(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
@@ -2493,15 +2499,11 @@ fn claim_container_name(
                 oom_killed: false,
             } => match runner.capture("docker", &["rm", &name], None) {
                 Ok(_) => true,
+                Err(error) if super::cleanup::is_missing_cleanup_error(&error) => true,
                 Err(error) => {
-                    let msg = error.to_string();
-                    if msg.contains("No such container") || msg.contains("no such container") {
-                        true
-                    } else {
-                        return Err(error.context(format!(
-                            "removing stale container `{name}` before reclaiming its name"
-                        )));
-                    }
+                    return Err(error.context(format!(
+                        "removing stale container `{name}` before reclaiming its name"
+                    )));
                 }
             },
             ContainerState::Running | ContainerState::Stopped { .. } => false,
@@ -2523,6 +2525,13 @@ fn claim_container_name(
                         "runtime",
                         "claim_container_name: lock contention on {name} (attempt {attempt}): {error}",
                     );
+                    // Drop the handle first so the open-file refcount
+                    // hits zero on broken-flock filesystems where the
+                    // lock is advisory; then remove the artefact so
+                    // `data_dir` does not accumulate zero-byte files
+                    // across retries.
+                    drop(lock_file);
+                    let _ = std::fs::remove_file(&lock_path);
                     last_lock_err = Some(error);
                 }
             }

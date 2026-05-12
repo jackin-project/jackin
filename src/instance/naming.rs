@@ -54,12 +54,20 @@ pub fn container_name_with_id(
     name
 }
 
-/// Match a container name against a role-selector family.
-///
-/// Recognizes the random-instance-id shape `jackin-[<workspace>-]<role>-<id>`
-/// produced by `new_container_name`. Used by `purge_class_data` to
-/// scope teardown to one role's containers.
+/// Recognize names of the shape `jackin-[<workspace>-]<role>-<id>`
+/// produced by `new_container_name`. Scoping hook for `purge_class_data`.
 pub fn class_family_matches(selector: &RoleSelector, container_name: &str) -> bool {
+    class_family_matches_with_slug(&compact_component(&selector.name, "role"), container_name)
+}
+
+/// Loop-friendly variant of [`class_family_matches`].
+///
+/// Callers iterating over many candidates (e.g. `purge_class_data`,
+/// `last_role` fallback in `app/context.rs`) precompute `role_slug`
+/// once via [`compact_component`] and pass it in — avoids one
+/// `String` allocation per comparison.
+#[must_use]
+pub fn class_family_matches_with_slug(role_slug: &str, container_name: &str) -> bool {
     let Some(rest) = container_name.strip_prefix("jackin-") else {
         return false;
     };
@@ -70,7 +78,6 @@ pub fn class_family_matches(selector: &RoleSelector, container_name: &str) -> bo
     let Some(prefix) = parts.next() else {
         return false;
     };
-    let role_slug = compact_component(&selector.name, "role");
     prefix
         .rsplit_once('-')
         .map_or(prefix, |(_, visible_role)| visible_role)

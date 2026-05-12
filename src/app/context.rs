@@ -289,19 +289,16 @@ pub(crate) fn resolve_running_container_from_context(
     if let Some(last) = ws.last_role.as_deref()
         && let Some(preferred) =
             preferred_indexed_container(paths, name, ws, last, &names).or_else(|| {
-                // No indexed manifest matches `last_role`; fall back
-                // to candidate filtering by class family. With random
-                // instance IDs there is no deterministic primary name
-                // to match against — the role-component substring
-                // inside `container_base` is the only structural hook.
+                // Random instance IDs leave no deterministic primary
+                // name; match by the role component inside container_base.
                 let last_class = RoleSelector::parse(last).ok()?;
+                let role_slug = instance::naming::compact_component(&last_class.name, "role");
                 let mut family = names
                     .iter()
-                    .filter(|n| instance::class_family_matches(&last_class, n));
+                    .filter(|n| instance::naming::class_family_matches_with_slug(&role_slug, n));
                 let first = family.next()?.clone();
-                // Only commit to the fallback when it's unambiguous —
-                // multiple candidates in the same family should still
-                // hit the prompt branch below.
+                // Commit only when unambiguous — multiple matches must
+                // still reach the prompt branch below.
                 if family.next().is_some() {
                     return None;
                 }

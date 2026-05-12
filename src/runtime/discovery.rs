@@ -177,12 +177,14 @@ mod tests {
 
     #[test]
     fn list_running_agent_display_names_excludes_dind_sidecars() {
-        let mut runner =
-            FakeRunner::with_capture_queue(["jackin-agent-smith\tAgent Smith".to_string()]);
+        let mut runner = FakeRunner::with_capture_queue([
+            "jackin-agentsmith-k7p9m2xq\tAgent Smith".to_string(),
+        ]);
 
         let names = list_running_agent_display_names(&mut runner).unwrap();
 
-        assert_eq!(names, vec!["Agent Smith"]);
+        // Instance ID is appended so concurrent sessions render distinctly.
+        assert_eq!(names, vec!["Agent Smith (k7p9m2xq)"]);
         assert!(runner.recorded.iter().any(|call| {
             call == "docker ps --filter label=jackin.kind=role --format {{.Names}}\t{{.Label \"jackin.display_name\"}}"
         }));

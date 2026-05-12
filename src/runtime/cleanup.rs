@@ -21,12 +21,13 @@ pub fn purge_class_data(
     // on the first failure without recording the prior successes would
     // leave the index claiming the already-deleted state dirs still
     // hold their pre-purge status.
+    let role_slug = crate::instance::naming::compact_component(&selector.name, "role");
     let mut matched = Vec::new();
     let mut first_error: Option<anyhow::Error> = None;
     for entry in std::fs::read_dir(&paths.data_dir)? {
         let entry = entry?;
         let file_name = entry.file_name().to_string_lossy().to_string();
-        if !crate::instance::class_family_matches(selector, &file_name) {
+        if !crate::instance::naming::class_family_matches_with_slug(&role_slug, &file_name) {
             continue;
         }
         match purge_container_filesystem(paths, &file_name, runner) {
@@ -99,7 +100,7 @@ pub(super) fn run_cleanup_command(
     }
 }
 
-fn is_missing_cleanup_error(error: &anyhow::Error) -> bool {
+pub(super) fn is_missing_cleanup_error(error: &anyhow::Error) -> bool {
     let message = error.to_string();
     message.contains("No such container")
         || message.contains("No such volume")

@@ -319,14 +319,26 @@ impl InstanceIndex {
     /// Batch-mark a set of containers as purged with a single index
     /// read/write. Skips containers already absent from the index when
     /// no manifest file exists on disk; otherwise backfills like
-    /// [`Self::mark_purged`].
+    /// [`Self::mark_purged`]. O(N + M): one pass over the index using
+    /// `HashSet` membership instead of `find()` per container.
     pub fn mark_many_purged(data_dir: &Path, container_bases: &[&str]) -> anyhow::Result<()> {
         if container_bases.is_empty() {
             return Ok(());
         }
         let mut index = Self::read_or_rebuild(data_dir)?;
-        for container_base in container_bases {
-            Self::mark_purged_in_memory(&mut index, data_dir, container_base);
+        let mut pending: std::collections::HashSet<&str> =
+            container_bases.iter().copied().collect();
+        let now = now_rfc3339();
+        for entry in &mut index.instances {
+            if pending.remove(entry.container_base.as_str()) {
+                entry.status = InstanceStatus::Purged;
+                entry.updated_at.clone_from(&now);
+            }
+        }
+        // Containers without an existing index entry need a backfill
+        // pass — read the manifest off disk or synthesize a tombstone.
+        for container_base in pending {
+            Self::backfill_purge_tombstone(&mut index, data_dir, container_base);
         }
         index.sort();
         index.write(data_dir)
@@ -343,6 +355,13 @@ impl InstanceIndex {
             return;
         }
 
+        Self::backfill_purge_tombstone(index, data_dir, container_base);
+    }
+
+    /// Backfill: container not in the index but a manifest may exist
+    /// on disk. Reads the manifest, synthesizes a minimal tombstone on
+    /// parse failure, or no-ops when the state dir is already gone.
+    fn backfill_purge_tombstone(index: &mut Self, data_dir: &Path, container_base: &str) {
         let state_dir = data_dir.join(container_base);
         match InstanceManifest::read_optional(&state_dir) {
             Ok(Some(mut manifest)) => {
@@ -424,9 +443,8 @@ impl InstanceIndex {
             if !entry.file_type()?.is_dir() {
                 continue;
             }
-            // `read_optional` returns `Ok(None)` only for a missing
-            // file. Parse errors propagate so a corrupt manifest is
-            // not silently dropped from the rebuilt index.
+            // Propagate parse errors; a corrupt manifest must not be
+            // silently dropped from the rebuild.
             let Some(manifest) = InstanceManifest::read_optional(&entry.path())? else {
                 continue;
             };
