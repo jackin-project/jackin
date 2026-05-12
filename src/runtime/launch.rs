@@ -220,42 +220,46 @@ const STANDARD_TERMS: &[&str] = &[
 /// `expect()` enforcing "Some iff agent == Codex" across two
 /// functions. The enum variant on `RoleState` keeps the per-agent
 /// mount surface explicit.
+/// Returns the per-agent mount strings in jackin's "src:dst" idiom,
+/// ready to be passed to `docker run -v`.
+///
+/// All agents in `manifest.supported_agents()` are represented on
+/// `state.auth`, so the mount block checks `auth.*` flags rather than
+/// matching the selected-agent variant. This lets every provisioned
+/// agent's home state reach the container regardless of which agent
+/// started the initial session — enabling `hardline --new` to switch
+/// agents without re-authentication.
 fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
-    use crate::instance::AgentRuntimeState;
-
     let mut mounts = vec![format!(
         "{}:/jackin/state",
         state.root.join("state").display()
     )];
-    match &state.agent_runtime {
-        AgentRuntimeState::Claude {
-            account_json,
-            credentials_json,
-            forward_auth,
-            ..
-        } => {
-            mounts.push(format!(
-                "{}:/home/agent/.claude",
-                state.root.join("home/.claude").display()
-            ));
-            mounts.push(format!(
-                "{}:/home/agent/.claude.json",
-                state.root.join("home/.claude.json").display()
-            ));
-            // `forward_auth = true` for Sync (host-derived credentials)
-            // and OAuthToken (the onboarding skeleton). ApiKey and
-            // Ignore set it to false so a `{}` placeholder left behind
-            // by `wipe_claude_state` never reaches the container.
-            // The per-file `exists()` guard keeps the OAuthToken arm
-            // from mounting a stale `credentials.json` if the
-            // provision-step removal failed silently.
-            if *forward_auth {
+
+    if state.auth.claude {
+        mounts.push(format!(
+            "{}:/home/agent/.claude",
+            state.root.join("home/.claude").display()
+        ));
+        mounts.push(format!(
+            "{}:/home/agent/.claude.json",
+            state.root.join("home/.claude.json").display()
+        ));
+        // `claude_forward_auth = true` for Sync (host-derived credentials)
+        // and OAuthToken (the onboarding skeleton). ApiKey and Ignore set
+        // it to false so a `{}` placeholder left behind by
+        // `wipe_claude_state` never reaches the container. The per-file
+        // `exists()` guard keeps the OAuthToken arm from mounting a stale
+        // `credentials.json` if the provision-step removal failed silently.
+        if state.auth.claude_forward_auth {
+            if let Some(account_json) = &state.auth.claude_account_json {
                 if account_json.exists() {
                     mounts.push(format!(
                         "{}:/jackin/claude/account.json",
                         account_json.display()
                     ));
                 }
+            }
+            if let Some(credentials_json) = &state.auth.claude_credentials_json {
                 if credentials_json.exists() {
                     mounts.push(format!(
                         "{}:/jackin/claude/credentials.json",
@@ -263,37 +267,38 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
                     ));
                 }
             }
-            mounts
-        }
-        AgentRuntimeState::Codex { auth_json, .. } => {
-            mounts.push(format!(
-                "{}:/home/agent/.codex",
-                state.root.join("home/.codex").display()
-            ));
-            if let Some(auth_json) = auth_json {
-                mounts.push(format!("{}:/jackin/codex/auth.json", auth_json.display()));
-            }
-            mounts
-        }
-        AgentRuntimeState::Amp { secrets_json } => {
-            mounts.push(format!(
-                "{}:/home/agent/.local/share/amp",
-                state.root.join("home/.local/share/amp").display()
-            ));
-            // Bound RW at the docker level so future plumbing (symlink
-            // / bind re-mount) for live bidirectional sync — see
-            // `roadmap/live-auth-sync.mdx` — can rely on a writable
-            // target. The entrypoint currently `cp`s the file, so
-            // in-container rotation does not flow back today.
-            if let Some(secrets_json) = secrets_json {
-                mounts.push(format!(
-                    "{}:/jackin/amp/secrets.json",
-                    secrets_json.display()
-                ));
-            }
-            mounts
         }
     }
+
+    if state.auth.codex {
+        mounts.push(format!(
+            "{}:/home/agent/.codex",
+            state.root.join("home/.codex").display()
+        ));
+        if let Some(auth_json) = &state.auth.codex_auth_json {
+            mounts.push(format!("{}:/jackin/codex/auth.json", auth_json.display()));
+        }
+    }
+
+    if state.auth.amp {
+        mounts.push(format!(
+            "{}:/home/agent/.local/share/amp",
+            state.root.join("home/.local/share/amp").display()
+        ));
+        // Bound RW at the docker level so future plumbing (symlink / bind
+        // re-mount) for live bidirectional sync — see
+        // `roadmap/live-auth-sync.mdx` — can rely on a writable target.
+        // The entrypoint currently `cp`s the file, so in-container rotation
+        // does not flow back today.
+        if let Some(secrets_json) = &state.auth.amp_secrets_json {
+            mounts.push(format!(
+                "{}:/jackin/amp/secrets.json",
+                secrets_json.display()
+            ));
+        }
+    }
+
+    mounts
 }
 
 /// Translate a [`MaterializedWorkspace`] into the `-v` argument values

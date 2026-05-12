@@ -157,75 +157,62 @@ pub enum GithubProvisionKind {
     Skipped,
 }
 
-/// Agent-specific paths that belong to one variant.
+/// Runtime state for the selected agent (model override only).
 ///
-/// Encoded as an enum so the agent variant and the actual paths can
-/// never disagree.
-///
-/// All host paths land under `/jackin/<agent>/...` inside the
-/// container. The agent's expected home-relative paths
-/// (`~/.claude.json`, `~/.codex/auth.json`, `~/.local/share/amp/secrets.json`,
-/// …) are NOT bind-mounted directly: jackin's entrypoint copies the
-/// relevant files from `/jackin/` into the agent's home before launch.
-/// This isolates the host→container handoff to a single tree (`/jackin/`)
-/// the operator can audit at a glance, and frees the agent's home tree
-/// (`/home/agent/.claude/`, `/home/agent/.codex/`,
-/// `/home/agent/.local/share/amp/`) to carry image-baked config without
-/// being masked by a runtime mount.
-///
-/// The mount decision is encoded in `forward_auth` (Claude) or in the
-/// optional path fields directly (Codex/Amp). For Claude,
-/// `forward_auth = false` means the agent authenticates via env vars
-/// (`CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`) and the auth files
-/// must not flow into the container even though they exist on the host
-/// (`wipe_claude_state` leaves a `{}` shell behind). For Codex/Amp,
-/// `None` on the optional path field means the same thing — wiped on
-/// disk, no mount, env-driven authentication
-/// (`OPENAI_API_KEY` / `AMP_API_KEY`).
+/// Auth paths for all agents in `manifest.supported_agents()` are tracked
+/// separately on [`ProvisionedAuth`] so `hardline --new` can switch to any
+/// supported agent without re-authentication.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum AgentRuntimeState {
+    /// Selected agent is Claude.
     Claude {
-        /// Optional Claude model override from `[claude].model`. Passed
-        /// to the interactive CLI with `--model` at launch time.
+        /// Optional model override from `[claude].model`. Passed to the
+        /// interactive CLI with `--model` at launch time.
         model: Option<String>,
-        /// Host path to Claude's account-metadata file. Always
-        /// populated by `prepare` (as `{}` for non-sync modes); only
-        /// bind-mounted when `forward_auth` is `true` *and* the file
-        /// exists on disk.
-        account_json: PathBuf,
-        /// Host path to Claude's OAuth credentials file. May not exist
-        /// on disk in env-driven modes (the wipe path removes it).
-        /// Only bind-mounted when `forward_auth` is `true` *and* the
-        /// file exists.
-        credentials_json: PathBuf,
-        /// Whether `account_json` and `credentials_json` should be
-        /// bind-mounted under `/jackin/claude/`. `false` for
-        /// `ignore`/`api_key`/`oauth_token` (env-driven authentication
-        /// — no host filesystem state must reach the container).
-        forward_auth: bool,
     },
+    /// Selected agent is Codex.
     Codex {
-        /// Optional Codex model override from `[codex].model`. Passed
-        /// to the interactive CLI with `-m` at launch time.
+        /// Optional model override from `[codex].model`. Passed to the
+        /// interactive CLI with `-m` at launch time.
         model: Option<String>,
-        /// Host path mounted at `/jackin/codex/auth.json` when the
-        /// file was synced from the host's `~/.codex/auth.json` on a
-        /// previous launch. `None` when the host had no auth.json at
-        /// the most recent launch — the auth handoff mount is skipped.
-        /// Any in-container `codex login` writes into the durable
-        /// per-instance Codex home mounted under `~/.jackin/data/`.
-        auth_json: Option<PathBuf>,
     },
-    Amp {
-        /// Host path mounted at `/jackin/amp/secrets.json`. `None`
-        /// when env-driven modes wiped it or sync had no host file
-        /// to copy and no carry-over to preserve.
-        ///
-        /// `XDG_DATA` path. `~/.config/amp/settings.json` (`XDG_CONFIG`)
-        /// holds preferences only and is intentionally not forwarded.
-        secrets_json: Option<PathBuf>,
-    },
+    /// Selected agent is Amp.
+    Amp,
+}
+
+/// Auth state provisioned for every agent listed in
+/// `manifest.supported_agents()`.
+///
+/// Fields for a given agent are populated only when that agent appears in
+/// `supported_agents()`; otherwise they are `false` / `None`. `agent_mounts`
+/// consults this struct so every supported agent has its credentials available
+/// inside the container regardless of which agent started the initial session —
+/// enabling `hardline --new` to switch agents without re-authentication.
+#[derive(Debug, Clone)]
+pub struct ProvisionedAuth {
+    /// Whether Claude's home directories were provisioned.
+    pub claude: bool,
+    /// Whether Claude's auth files should be bind-mounted under
+    /// `/jackin/claude/`. `false` for env-driven modes
+    /// (`ignore` / `api_key` / `oauth_token`).
+    pub claude_forward_auth: bool,
+    /// Host path to Claude's account-metadata file, or `None` when Claude
+    /// is not in `supported_agents()`.
+    pub claude_account_json: Option<PathBuf>,
+    /// Host path to Claude's OAuth credentials file, or `None` when Claude
+    /// is not in `supported_agents()`.
+    pub claude_credentials_json: Option<PathBuf>,
+    /// Whether Codex's home directories were provisioned.
+    pub codex: bool,
+    /// Host path to Codex's `auth.json` when available, or `None` when
+    /// Codex is not in `supported_agents()` or the host had no auth file.
+    pub codex_auth_json: Option<PathBuf>,
+    /// Whether Amp's home directories were provisioned.
+    pub amp: bool,
+    /// Host path to Amp's `secrets.json` when available, or `None` when
+    /// Amp is not in `supported_agents()` or no secrets file existed.
+    pub amp_secrets_json: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -238,93 +225,72 @@ pub struct RoleState {
     /// `GITHUB_TOKEN` via [`GithubProvisionOutcome::token`] without a
     /// parallel `Option<String>` field.
     pub gh_provision_outcome: GithubProvisionOutcome,
+    /// Runtime state for the selected agent (model override only). Auth
+    /// paths for all supported agents live on `auth`.
     pub agent_runtime: AgentRuntimeState,
+    /// Provisioned auth for every agent in `manifest.supported_agents()`.
+    pub auth: ProvisionedAuth,
 }
 
 impl RoleState {
-    /// Host path to Claude's account-metadata file. `None` when not
-    /// prepared for `Agent::Claude`. The path is returned regardless
-    /// of mount eligibility — call sites that care whether the file
-    /// will reach the container should also consult
-    /// [`Self::claude_forwards_auth`].
+    /// Host path to Claude's account-metadata file. `None` when Claude is
+    /// not in `supported_agents()`. The path is returned regardless of mount
+    /// eligibility — consult [`Self::claude_forwards_auth`] when filtering
+    /// for runtime reachability.
     #[must_use]
     pub fn claude_account_json(&self) -> Option<&Path> {
-        match &self.agent_runtime {
-            AgentRuntimeState::Claude { account_json, .. } => Some(account_json),
-            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp { .. } => None,
-        }
+        self.auth.claude_account_json.as_deref()
     }
 
-    /// Claude model override, if the role manifest declared one.
+    /// Claude model override, if the role manifest declared one and the
+    /// selected agent is Claude.
     #[must_use]
     pub fn claude_model(&self) -> Option<&str> {
         match &self.agent_runtime {
-            AgentRuntimeState::Claude { model, .. } => model.as_deref(),
-            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp { .. } => None,
+            AgentRuntimeState::Claude { model } => model.as_deref(),
+            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp => None,
         }
     }
 
-    /// Host path to Claude's OAuth credentials file. `None` when not
-    /// prepared for `Agent::Claude`. As with [`Self::claude_account_json`],
-    /// the path is returned regardless of whether the file currently
-    /// exists on disk or will be bind-mounted into the container; pair
-    /// with [`Self::claude_forwards_auth`] when filtering for runtime
-    /// reachability.
+    /// Host path to Claude's OAuth credentials file. `None` when Claude is
+    /// not in `supported_agents()`. Pair with [`Self::claude_forwards_auth`]
+    /// when filtering for runtime reachability.
     #[must_use]
     pub fn claude_credentials_json(&self) -> Option<&Path> {
-        match &self.agent_runtime {
-            AgentRuntimeState::Claude {
-                credentials_json, ..
-            } => Some(credentials_json),
-            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp { .. } => None,
-        }
+        self.auth.claude_credentials_json.as_deref()
     }
 
     /// Whether Claude's auth files (`account.json`, `credentials.json`)
-    /// should flow into the container under `/jackin/claude/`. `false`
-    /// for env-driven modes (`ignore`/`api_key`/`oauth_token`) and for
-    /// non-Claude states.
+    /// should flow into the container under `/jackin/claude/`. `false` for
+    /// env-driven modes (`ignore` / `api_key` / `oauth_token`) and when
+    /// Claude is not in `supported_agents()`.
     #[must_use]
-    pub const fn claude_forwards_auth(&self) -> bool {
-        matches!(
-            &self.agent_runtime,
-            AgentRuntimeState::Claude {
-                forward_auth: true,
-                ..
-            }
-        )
+    pub fn claude_forwards_auth(&self) -> bool {
+        self.auth.claude_forward_auth
     }
 
-    /// Codex model override, if the role manifest declared one.
+    /// Codex model override, if the role manifest declared one and the
+    /// selected agent is Codex.
     #[must_use]
     pub fn codex_model(&self) -> Option<&str> {
         match &self.agent_runtime {
-            AgentRuntimeState::Codex { model, .. } => model.as_deref(),
-            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp { .. } => None,
+            AgentRuntimeState::Codex { model } => model.as_deref(),
+            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp => None,
         }
     }
 
-    /// Host path to Codex's `auth.json` (mounted at
-    /// `/jackin/codex/auth.json` in the container). `None` when
-    /// no auth file is available (host had none and no in-container
-    /// login has run yet) or when this state was not prepared for
-    /// `Agent::Codex`.
+    /// Host path to Codex's `auth.json`. `None` when Codex is not in
+    /// `supported_agents()` or when no auth file is available.
     #[must_use]
     pub fn codex_auth_json(&self) -> Option<&Path> {
-        match &self.agent_runtime {
-            AgentRuntimeState::Codex { auth_json, .. } => auth_json.as_deref(),
-            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp { .. } => None,
-        }
+        self.auth.codex_auth_json.as_deref()
     }
 
-    /// Host path to Amp's `secrets.json`. `None` when no file is
-    /// available or when this state was not prepared for `Agent::Amp`.
+    /// Host path to Amp's `secrets.json`. `None` when Amp is not in
+    /// `supported_agents()` or when no file is available.
     #[must_use]
     pub fn amp_secrets_json(&self) -> Option<&Path> {
-        match &self.agent_runtime {
-            AgentRuntimeState::Amp { secrets_json, .. } => secrets_json.as_deref(),
-            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Codex { .. } => None,
-        }
+        self.auth.amp_secrets_json.as_deref()
     }
 }
 
@@ -376,62 +342,86 @@ impl RoleState {
         let hosts_yml = gh_config_dir.join("hosts.yml");
         let gh_provision_outcome = Self::provision_github_auth(&hosts_yml, github, host_home)?;
 
-        let (agent_runtime, outcome) = match agent {
-            crate::agent::Agent::Claude => {
-                let claude_dir = root.join("claude");
-                let claude_home_dir = home_dir.join(".claude");
-                std::fs::create_dir_all(&claude_dir)?;
-                std::fs::create_dir_all(&claude_home_dir)?;
-                let claude_account_home = home_dir.join(".claude.json");
-                if !claude_account_home.exists() {
-                    std::fs::write(&claude_account_home, "{}")?;
+        // Provision auth for every agent in supported_agents() so
+        // `hardline --new` can switch agents without re-authentication.
+        let mut auth = ProvisionedAuth {
+            claude: false,
+            claude_forward_auth: false,
+            claude_account_json: None,
+            claude_credentials_json: None,
+            codex: false,
+            codex_auth_json: None,
+            amp: false,
+            amp_secrets_json: None,
+        };
+        let mut selected_outcome = AuthProvisionOutcome::Skipped;
+
+        for supported in manifest.supported_agents() {
+            match supported {
+                crate::agent::Agent::Claude => {
+                    let claude_dir = root.join("claude");
+                    let claude_home_dir = home_dir.join(".claude");
+                    std::fs::create_dir_all(&claude_dir)?;
+                    std::fs::create_dir_all(&claude_home_dir)?;
+                    let claude_account_home = home_dir.join(".claude.json");
+                    if !claude_account_home.exists() {
+                        std::fs::write(&claude_account_home, "{}")?;
+                    }
+                    let account_json = claude_dir.join("account.json");
+                    let credentials_json = claude_dir.join("credentials.json");
+                    let (outcome, forward_auth) = Self::provision_claude_auth(
+                        &account_json,
+                        &credentials_json,
+                        auth_forward,
+                        host_home,
+                    )?;
+                    auth.claude = true;
+                    auth.claude_forward_auth = forward_auth;
+                    auth.claude_account_json = Some(account_json);
+                    auth.claude_credentials_json = Some(credentials_json);
+                    if supported == agent {
+                        selected_outcome = outcome;
+                    }
                 }
+                crate::agent::Agent::Codex => {
+                    let codex_dir = root.join("codex");
+                    let codex_home_dir = home_dir.join(".codex");
+                    std::fs::create_dir_all(&codex_dir)?;
+                    std::fs::create_dir_all(&codex_home_dir)?;
+                    let auth_json_path = codex_dir.join("auth.json");
+                    let (outcome, auth_json) =
+                        Self::provision_codex_auth(&auth_json_path, auth_forward, host_home)?;
+                    auth.codex = true;
+                    auth.codex_auth_json = auth_json;
+                    if supported == agent {
+                        selected_outcome = outcome;
+                    }
+                }
+                crate::agent::Agent::Amp => {
+                    let amp_dir = root.join("amp");
+                    let amp_home_dir = home_dir.join(".local/share/amp");
+                    std::fs::create_dir_all(&amp_dir)?;
+                    std::fs::create_dir_all(&amp_home_dir)?;
+                    let secrets_json_path = amp_dir.join("secrets.json");
+                    let (outcome, secrets_json) =
+                        Self::provision_amp_auth(&secrets_json_path, auth_forward, host_home)?;
+                    auth.amp = true;
+                    auth.amp_secrets_json = secrets_json;
+                    if supported == agent {
+                        selected_outcome = outcome;
+                    }
+                }
+            }
+        }
 
-                let account_json = claude_dir.join("account.json");
-                let credentials_json = claude_dir.join("credentials.json");
-                let (outcome, forward_auth) = Self::provision_claude_auth(
-                    &account_json,
-                    &credentials_json,
-                    auth_forward,
-                    host_home,
-                )?;
-
-                (
-                    AgentRuntimeState::Claude {
-                        model: manifest.claude.as_ref().and_then(|cfg| cfg.model.clone()),
-                        account_json,
-                        credentials_json,
-                        forward_auth,
-                    },
-                    outcome,
-                )
-            }
-            crate::agent::Agent::Codex => {
-                let codex_dir = root.join("codex");
-                let codex_home_dir = home_dir.join(".codex");
-                std::fs::create_dir_all(&codex_dir)?;
-                std::fs::create_dir_all(&codex_home_dir)?;
-                let auth_json_path = codex_dir.join("auth.json");
-                let (outcome, auth_json) =
-                    Self::provision_codex_auth(&auth_json_path, auth_forward, host_home)?;
-                (
-                    AgentRuntimeState::Codex {
-                        model: manifest.codex.as_ref().and_then(|cfg| cfg.model.clone()),
-                        auth_json,
-                    },
-                    outcome,
-                )
-            }
-            crate::agent::Agent::Amp => {
-                let amp_dir = root.join("amp");
-                let amp_home_dir = home_dir.join(".local/share/amp");
-                std::fs::create_dir_all(&amp_dir)?;
-                std::fs::create_dir_all(&amp_home_dir)?;
-                let secrets_json_path = amp_dir.join("secrets.json");
-                let (outcome, secrets_json) =
-                    Self::provision_amp_auth(&secrets_json_path, auth_forward, host_home)?;
-                (AgentRuntimeState::Amp { secrets_json }, outcome)
-            }
+        let agent_runtime = match agent {
+            crate::agent::Agent::Claude => AgentRuntimeState::Claude {
+                model: manifest.claude.as_ref().and_then(|cfg| cfg.model.clone()),
+            },
+            crate::agent::Agent::Codex => AgentRuntimeState::Codex {
+                model: manifest.codex.as_ref().and_then(|cfg| cfg.model.clone()),
+            },
+            crate::agent::Agent::Amp => AgentRuntimeState::Amp,
         };
 
         Ok((
@@ -440,8 +430,9 @@ impl RoleState {
                 gh_config_dir,
                 gh_provision_outcome,
                 agent_runtime,
+                auth,
             },
-            outcome,
+            selected_outcome,
         ))
     }
 }
