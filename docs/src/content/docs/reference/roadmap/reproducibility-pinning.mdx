@@ -49,7 +49,7 @@ Both fields are optional and additive. A role that has never been resolved omits
 
 ### Config schema migration
 
-Per the project's pre-release schema rule (see <RepoFile path="AGENTS.md" />), any change to a serde-bearing config struct requires a version bump and a migration registry entry, even when the change is purely additive. This work would bump `CURRENT_CONFIG_VERSION` from `v1alpha2` to `v1alpha3`, add a no-op `MigrationStep`, ship a new `from-v1alpha2/` fixture, and re-bake the existing `from-legacy/` and `from-v1alpha1/` fixtures so their migration chains end at `v1alpha3`. Existing operator config files keep parsing without modification because the new fields are `Option<String>` with serde defaults.
+Per the project's pre-release schema rule (see <RepoFile path="AGENTS.md" />), non-additive changes to a serde-bearing config struct require a version bump and a migration registry entry. Purely additive changes — new `Option<T>` fields with `serde(default)` — do not. The `commit` and `version` fields proposed here are additive `Option<String>` with defaults, so no version bump is required. If the implementation later reshapes the change to be non-additive (e.g. making the fields required, renaming them, or restructuring the table), the version bump, migration step, `from-v1alpha2/` fixture, and re-baked existing fixtures become required at that point.
 
 ### Open questions for operator review
 
@@ -72,7 +72,7 @@ Docs:
 
 - This page — convert from brainstorm to design proposal once approved, then to "Resolved" once shipped.
 - A new operator-facing note for `--update` on the `jackin load` page.
-- A new timeline entry on the schema-versions reference page for `v1alpha3`.
+- A timeline entry on the schema-versions reference page only if the change becomes non-additive and requires a version bump.
 
 ## Related files
 
