@@ -18,8 +18,10 @@ struct FakeRunner {
 
 impl FakeRunner {
     fn for_load_agent(outputs: impl IntoIterator<Item = String>) -> Self {
+        // Preamble: 1 orphaned-DinD GC scan (`gc_orphaned_networks`
+        // short-circuits on empty output) + 4 identity lookups.
         let mut capture_queue = VecDeque::new();
-        for _ in 0..6 {
+        for _ in 0..5 {
             capture_queue.push_back(String::new());
         }
         capture_queue.extend(outputs);
@@ -147,19 +149,14 @@ model = "gpt-5"
     assert!(run_cmd.contains(" -m gpt-5"), "{run_cmd}");
     assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"), "{run_cmd}");
     assert!(!run_cmd.contains("/jackin/codex/config.toml"), "{run_cmd}");
-    // Codex container must not receive any Claude-side mounts, and the
-    // legacy ~/.claude / ~/.jackin paths must not surface.
-    assert!(!run_cmd.contains("/jackin/claude/"), "{run_cmd}");
-    assert!(!run_cmd.contains("/home/agent/.claude"), "{run_cmd}");
+    // Multi-agent role (`agents = ["claude", "codex"]`) provisions
+    // every supported agent's home state so `hardline --new --agent
+    // claude` can switch agents without re-authentication. Both
+    // agents' mount blocks must appear; the selected agent is Codex
+    // (`JACKIN_AGENT=codex`, `-m gpt-5` for the model override).
+    assert!(run_cmd.contains("/home/agent/.claude"), "{run_cmd}");
+    assert!(run_cmd.contains("/home/agent/.codex"), "{run_cmd}");
     assert!(!run_cmd.contains("/home/agent/.jackin"), "{run_cmd}");
-    assert!(
-        !paths
-            .data_dir
-            .join("jackin-agent-smith")
-            .join("codex")
-            .join("config.toml")
-            .exists()
-    );
 }
 
 #[test]

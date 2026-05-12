@@ -22,6 +22,23 @@ use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 use crate::workspace::{LoadWorkspaceInput, ResolvedWorkspace};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConsoleOutcome {
+    Launch(RoleSelector, ResolvedWorkspace, Option<crate::agent::Agent>),
+    InstanceAction {
+        container: String,
+        action: ConsoleInstanceAction,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConsoleInstanceAction {
+    Reconnect,
+    NewSession,
+    Inspect,
+    Purge,
+}
+
 impl ConsoleState {
     /// Default role → launch; one eligible → launch; multiple →
     /// open `Modal::RolePicker`. `WorkspaceChoice` is built fresh
@@ -355,7 +372,7 @@ pub fn run_console(
     mut config: AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
-) -> anyhow::Result<Option<(RoleSelector, ResolvedWorkspace, Option<crate::agent::Agent>)>> {
+) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
     use crossterm::ExecutableCommand;
@@ -406,6 +423,7 @@ pub fn run_console(
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {
             ms.poll_picker_loads();
+            ms.refresh_instances(paths);
         }
 
         if let ConsoleStage::Manager(ms) = &mut state.stage {
@@ -496,7 +514,9 @@ pub fn run_console(
                                     {
                                         state.pending_launch = Some(input);
                                     } else {
-                                        break 'main Ok(Some((role, workspace, agent)));
+                                        break 'main Ok(Some(ConsoleOutcome::Launch(
+                                            role, workspace, agent,
+                                        )));
                                     }
                                 }
                                 Ok(None) => {}
@@ -517,7 +537,9 @@ pub fn run_console(
                                     {
                                         state.pending_launch = Some(input);
                                     } else {
-                                        break 'main Ok(Some((role, workspace, agent)));
+                                        break 'main Ok(Some(ConsoleOutcome::Launch(
+                                            role, workspace, agent,
+                                        )));
                                     }
                                 }
                                 Ok(None) => {}
@@ -544,7 +566,9 @@ pub fn run_console(
                                             state.pending_launch = Some(input);
                                         } else {
                                             state.pending_launch_role = None;
-                                            break 'main Ok(Some((role, workspace, None)));
+                                            break 'main Ok(Some(ConsoleOutcome::Launch(
+                                                role, workspace, None,
+                                            )));
                                         }
                                     }
                                     Err(e) => break 'main Err(e),
@@ -561,11 +585,21 @@ pub fn run_console(
                                     &config, cwd, &choice, &role,
                                 ) {
                                     Ok(workspace) => {
-                                        break 'main Ok(Some((role, workspace, Some(agent))));
+                                        break 'main Ok(Some(ConsoleOutcome::Launch(
+                                            role,
+                                            workspace,
+                                            Some(agent),
+                                        )));
                                     }
                                     Err(e) => break 'main Err(e),
                                 }
                             }
+                        }
+                        manager::InputOutcome::InstanceAction { container, action } => {
+                            break 'main Ok(Some(ConsoleOutcome::InstanceAction {
+                                container,
+                                action,
+                            }));
                         }
                     }
                 }

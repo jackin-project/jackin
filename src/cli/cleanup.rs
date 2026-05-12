@@ -12,10 +12,11 @@ Examples:
   jackin eject agent-smith
   jackin eject agent-smith --all
   jackin eject agent-smith --purge
+  jackin eject k7p9m2xq
   jackin eject jackin-agent-smith-clone-1"
 )]
 pub struct EjectArgs {
-    /// Role class selector or container name to stop
+    /// Role class selector, instance ID, or container name to stop
     pub selector: String,
     /// Stop every running instance of this role class
     #[arg(long)]
@@ -34,10 +35,11 @@ pub struct EjectArgs {
 Examples:
   jackin purge agent-smith
   jackin purge agent-smith --all
+  jackin purge k7p9m2xq
   jackin purge chainargos/the-architect"
 )]
 pub struct PurgeArgs {
-    /// Role class selector (e.g. `agent-smith`, `chainargos/agent-brown`)
+    /// Role class selector, instance ID, or container name
     pub selector: String,
     /// Delete state for every instance, not just the default
     #[arg(long)]

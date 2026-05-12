@@ -394,6 +394,12 @@ fn render_details_pane(
         agents_block_agent_count(ws_config, config)
     };
     let show_envs = ws_config.is_some_and(workspace_has_any_env);
+    let instance_rows = workspace_instance_rows(
+        &state.instances,
+        Some(ws.name.as_str()),
+        &ws.name,
+        &ws.workdir,
+    );
 
     let mut constraints = vec![
         Constraint::Length(3),
@@ -404,6 +410,11 @@ fn render_details_pane(
     }
     if show_envs {
         constraints.push(Constraint::Length(env_block_height(ws_config)));
+    }
+    if !instance_rows.is_empty() {
+        constraints.push(Constraint::Length(instance_block_height(
+            instance_rows.len(),
+        )));
     }
     if !inline_picker_active {
         constraints.push(Constraint::Length(agents_block_height(agent_count)));
@@ -442,6 +453,10 @@ fn render_details_pane(
     }
     if show_envs {
         render_environments_subpanel(frame, rows[idx], ws_config);
+        idx += 1;
+    }
+    if !instance_rows.is_empty() {
+        render_instances_subpanel(frame, rows[idx], &instance_rows);
         idx += 1;
     }
     if !inline_picker_active {
@@ -534,6 +549,10 @@ fn agents_block_height(agent_count: usize) -> u16 {
     (2 + 1 + 1 + agent_rows).min(14) as u16
 }
 
+fn instance_block_height(instance_count: usize) -> u16 {
+    (instance_count + 4).min(8) as u16
+}
+
 /// Cursor on the synthetic "Current directory" row — mirrors
 /// `workspace::current_dir_workspace`: src=dst=cwd, rw, any role.
 fn render_current_dir_details_pane(
@@ -548,18 +567,28 @@ fn render_current_dir_details_pane(
 
     let mounts = [crate::workspace::MountConfig {
         src: cwd_str.clone(),
-        dst: cwd_str,
+        dst: cwd_str.clone(),
         readonly: false,
         isolation: crate::isolation::MountIsolation::Shared,
     }];
+    let instance_rows = workspace_instance_rows(&state.instances, None, &cwd_str, &cwd_str);
+
+    let mut constraints = vec![
+        Constraint::Length(3),
+        Constraint::Length(mount_block_height(&mounts)),
+    ];
+    if !instance_rows.is_empty() {
+        constraints.push(Constraint::Length(instance_block_height(
+            instance_rows.len(),
+        )));
+    }
+    constraints.push(Constraint::Length(agents_block_height(
+        agents_block_agent_count(None, config),
+    )));
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(mount_block_height(&mounts)),
-            Constraint::Length(agents_block_height(agents_block_agent_count(None, config))),
-        ])
+        .constraints(constraints)
         .split(area);
 
     // General — titled the same as the saved-workspace pane so the
@@ -599,10 +628,114 @@ fn render_current_dir_details_pane(
         state.list_scroll_focus == Some(MountScrollFocus::Workspace),
     );
 
+    let agents_row = if instance_rows.is_empty() {
+        2
+    } else {
+        render_instances_subpanel(frame, rows[2], &instance_rows);
+        3
+    };
+
     // Roles block — reuse the no-`ws_config` branch of the shared renderer,
     // which lists every globally-configured role (without per-role
     // overrides since the cwd workspace has none).
-    render_agents_subpanel(frame, rows[2], None, config);
+    render_agents_subpanel(frame, rows[agents_row], None, config);
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct InstanceDisplayRow {
+    id: String,
+    role: String,
+    agent: String,
+    status: String,
+}
+
+fn workspace_instance_rows(
+    instances: &[crate::instance::InstanceIndexEntry],
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+) -> Vec<InstanceDisplayRow> {
+    let query = crate::instance::InstanceQuery {
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key: None,
+        agent_runtime: None,
+    };
+    instances
+        .iter()
+        .filter(|entry| entry.matches(query) && instance_status_is_operator_relevant(entry.status))
+        .map(|entry| InstanceDisplayRow {
+            id: entry.instance_id.clone(),
+            role: entry.role_key.clone(),
+            agent: entry.agent_runtime.clone(),
+            status: entry.status.short_label().to_string(),
+        })
+        .collect()
+}
+
+const fn instance_status_is_operator_relevant(status: crate::instance::InstanceStatus) -> bool {
+    !matches!(
+        status,
+        crate::instance::InstanceStatus::CleanExited
+            | crate::instance::InstanceStatus::Superseded
+            | crate::instance::InstanceStatus::Purged
+    )
+}
+
+fn render_instances_subpanel(frame: &mut Frame, area: Rect, rows: &[InstanceDisplayRow]) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            " Instances ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+
+    let id_w = rows
+        .iter()
+        .map(|row| row.id.chars().count())
+        .max()
+        .unwrap_or(8)
+        .max("ID".len());
+    let status_w = rows
+        .iter()
+        .map(|row| row.status.chars().count())
+        .max()
+        .unwrap_or(6)
+        .max("Status".len());
+    let mut lines = vec![Line::from(Span::styled(
+        format!(
+            "  {id:<id_w$}  {status:<status_w$}  Agent  Role",
+            id = "ID",
+            status = "Status"
+        ),
+        Style::default().fg(WHITE),
+    ))];
+    lines.extend(rows.iter().map(|row| {
+        Line::from(vec![
+            Span::raw(format!("  {:<id_w$}  ", row.id)),
+            Span::styled(
+                format!("{:<status_w$}", row.status),
+                Style::default().fg(PHOSPHOR_DIM),
+            ),
+            Span::raw("  "),
+            Span::styled(row.agent.clone(), Style::default().fg(PHOSPHOR_DIM)),
+            Span::raw("  "),
+            Span::raw(row.role.clone()),
+        ])
+    }));
+    lines.push(Line::from(Span::styled(
+        "  r recover  s session  i inspect  p purge",
+        Style::default().fg(PHOSPHOR_DIM),
+    )));
+
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .style(Style::default().fg(PHOSPHOR_GREEN)),
+        area,
+    );
 }
 
 /// Right-pane description shown when the cursor is on the "+ New workspace"
@@ -2416,6 +2549,71 @@ mod subpanel_padding_tests {
         assert!(
             joined.contains("API_KEY"),
             "the workspace env key must render; got {joined}"
+        );
+    }
+
+    #[test]
+    fn preview_includes_recoverable_instances_from_index() {
+        let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
+        let mut cfg = AppConfig::default();
+        cfg.workspaces.insert("demo".into(), ws);
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
+
+        let mut state = crate::console::manager::state::ManagerState::from_config(
+            &cfg,
+            std::path::Path::new("/tmp"),
+        );
+        state.instances = vec![
+            crate::instance::InstanceIndexEntry {
+                instance_id: "k7p9m2xq".into(),
+                container_base: "jackin-demo-alpha-k7p9m2xq".into(),
+                workspace_name: Some("demo".into()),
+                workspace_label: "demo".into(),
+                workdir: "/workspace/demo".into(),
+                role_key: "alpha".into(),
+                agent_runtime: "claude".into(),
+                status: crate::instance::InstanceStatus::RestoreAvailable,
+                updated_at: "2026-05-11T00:00:00Z".into(),
+            },
+            crate::instance::InstanceIndexEntry {
+                instance_id: "done0001".into(),
+                container_base: "jackin-demo-alpha-done0001".into(),
+                workspace_name: Some("demo".into()),
+                workspace_label: "demo".into(),
+                workdir: "/workspace/demo".into(),
+                role_key: "alpha".into(),
+                agent_runtime: "claude".into(),
+                status: crate::instance::InstanceStatus::CleanExited,
+                updated_at: "2026-05-11T00:00:00Z".into(),
+            },
+        ];
+
+        let summary = WorkspaceSummary {
+            name: "demo".into(),
+            workdir: "/workspace/demo".into(),
+            mount_count: 0,
+            readonly_mount_count: 0,
+            allowed_role_count: 1,
+            default_role: Some("alpha".into()),
+            last_role: None,
+        };
+
+        let backend = TestBackend::new(72, 24);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary, &cfg, &state);
+        })
+        .unwrap();
+
+        let joined = buffer_text(term.backend().buffer());
+        assert!(joined.contains("Instances"), "{joined}");
+        assert!(joined.contains("k7p9m2xq"), "{joined}");
+        assert!(joined.contains("restore"), "{joined}");
+        assert!(joined.contains("alpha"), "{joined}");
+        assert!(
+            !joined.contains("done0001"),
+            "cleanly exited instances should not occupy the active panel: {joined}"
         );
     }
 

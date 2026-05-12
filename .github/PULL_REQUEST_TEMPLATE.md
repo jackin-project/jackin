@@ -64,6 +64,22 @@ git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
 git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
 ```
 
+### Isolation
+
+<Include when the PR touches config/state layout, path resolution, versioned schemas, runtime state under ~/.jackin/, or the construct image. Drop this section entirely for docs-only, roadmap, CI, or pure-refactor PRs. See PULL_REQUESTS.md § "Isolation env vars" for the full decision rule.>
+
+```sh
+export JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"
+export JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"
+```
+
+<For construct image PRs only, also add:>
+
+```sh
+just construct-build-local
+export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
+```
+
 ### Static checks
 
 ```sh

@@ -34,6 +34,7 @@ pub const JACKIN_ENV_VALUE: &str = "1";
 /// this hostname.  The value is runtime-generated (derived from the container
 /// name) and manifests may not override it.
 pub const JACKIN_DIND_HOSTNAME_ENV_NAME: &str = "JACKIN_DIND_HOSTNAME";
+pub const TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME: &str = "TESTCONTAINERS_HOST_OVERRIDE";
 
 /// Env var that carries the AI agent slug (`claude` / `codex` / `amp`) into
 /// the role container so the entrypoint and in-container tooling can
@@ -95,6 +96,7 @@ pub(crate) const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     ("DOCKER_HOST", None),
     ("DOCKER_TLS_VERIFY", None),
     ("DOCKER_CERT_PATH", None),
+    (TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME, None),
 ];
 
 /// Returns `true` if `name` appears in [`RESERVED_RUNTIME_ENV_VARS`].
@@ -221,6 +223,7 @@ mod tests {
             "DOCKER_HOST",
             "DOCKER_TLS_VERIFY",
             "DOCKER_CERT_PATH",
+            "TESTCONTAINERS_HOST_OVERRIDE",
         ] {
             assert!(
                 names.contains(sentinel),
@@ -239,6 +242,7 @@ mod tests {
             "DOCKER_HOST",
             "DOCKER_TLS_VERIFY",
             "DOCKER_CERT_PATH",
+            "TESTCONTAINERS_HOST_OVERRIDE",
         ] {
             assert!(
                 is_reserved(sentinel),

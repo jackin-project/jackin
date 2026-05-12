@@ -136,11 +136,12 @@ mod tests {
     #[test]
     fn bare_jackin_with_top_level_debug_forwards_to_console() {
         let cli = Cli::try_parse_from(["jackin", "--debug"]).unwrap();
+        assert!(cli.debug, "--debug must be set on the global Cli flag");
         let action = classify(cli, true);
         assert!(matches!(
             action,
             Action::RunConsole {
-                args: ConsoleArgs { debug: true },
+                args: ConsoleArgs { .. },
                 explicit: false,
             }
         ));
@@ -171,11 +172,12 @@ mod tests {
     #[test]
     fn console_subcommand_with_debug_routes_explicitly() {
         let cli = Cli::try_parse_from(["jackin", "console", "--debug"]).unwrap();
+        assert!(cli.debug, "--debug must be set on the global Cli flag");
         let action = classify(cli, true);
         assert!(matches!(
             action,
             Action::RunConsole {
-                args: ConsoleArgs { debug: true },
+                args: ConsoleArgs { .. },
                 explicit: true,
             }
         ));

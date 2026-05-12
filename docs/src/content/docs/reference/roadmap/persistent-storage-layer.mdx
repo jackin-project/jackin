@@ -36,8 +36,7 @@ the program.
   [token & cost telemetry](/reference/roadmap/token-cost-telemetry/),
   [autonomous task queue](/reference/roadmap/autonomous-task-queue/),
   [agent runtime status](/reference/roadmap/agent-runtime-status/)
-  (status_log table), and the auto-archive integration of
-  [workspace archive](/reference/roadmap/workspace-archive/).
+  (status_log table), and completed-instance retention metadata for queued work.
 - Adding it after the consumers exist is much more painful than adding
   it first — that's the case for landing it early in Phase 3 even
   though no consumer in isolation justifies it.
@@ -54,8 +53,7 @@ the program.
 - Per-workspace SQLite at `.multicode/cache.sqlite` (one DB per
   workspace).
 - Schema is small: primarily `github_link_statuses` (URL-keyed cache),
-  plus a handful of metadata tables for archive format and snapshot
-  state.
+  plus a handful of metadata tables for workspace and task state.
 - Migrations via Diesel's embedded migrations (build-time SQL files
   → embedded into the binary).
 - Concurrency via single-writer SQLite, with a brief upsert-retry
@@ -63,10 +61,10 @@ the program.
   contention case.
 
 multicode also keeps a JSON snapshot file (`~/.multicode/workspaces/<key>.json`)
-*alongside* the SQLite — the JSON holds the persistent operator-facing
-state (description, archive flag, agent-provided links) while the SQLite
-holds the cached / queryable parts. We should not split this way; it
-duplicates state. SQLite alone is the right choice for jackin'.
+*alongside* the SQLite — the JSON holds persistent operator-facing state
+(description and agent-provided links) while the SQLite holds the cached /
+queryable parts. We should not split this way; it duplicates state. SQLite
+alone is the right choice for jackin'.
 
 ## Recommended Shape
 
@@ -149,9 +147,9 @@ Future leaves add more tables; the migration framework handles upgrades.
   the migration suite and set `_meta.schema_version`.
 - **Migrated on subsequent loads.** If `_meta.schema_version` < current,
   run pending migrations.
-- **Archived with the data dir.**
-  [Workspace archive](/reference/roadmap/workspace-archive/) compresses
-  the whole `~/.jackin/data/<container>/` tree, including the DB.
+- **Kept with the data dir.** The DB lives under the same
+  `~/.jackin/data/<container>/` tree as the instance manifest and durable agent
+  home, so normal restore and purge flows treat it as part of the instance.
 - **Deleted with `purge`.** Standard data-dir teardown.
 
 ### Concurrency model
@@ -185,8 +183,8 @@ observing real footprint.
 ## Defer
 
 - Cross-instance shared SQLite (one operator-global DB). Per-instance
-  is the right boundary for V1 — independent lifecycle, archive-
-  friendly, no cross-instance state to leak.
+  is the right boundary for V1 — independent lifecycle, purge-friendly, no
+  cross-instance state to leak.
 - Encrypted-at-rest. SQLite has SEE; not in V1.
 - Replication / sync. Out of scope.
 - Read-only export / dump command (`jackin debug dump-db <name>`).

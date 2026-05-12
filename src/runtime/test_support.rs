@@ -24,10 +24,10 @@ impl FakeRunner {
     }
 
     /// Number of capture calls `load_role` makes before reaching role-
-    /// specific logic: 2 GC queries (orphaned `DinD` scan + orphaned network
-    /// scan) + 4 identity lookups (`git config user.name`, `git config
-    /// user.email`, `id -u`, `id -g`).
-    const LOAD_PREAMBLE_CAPTURES: usize = 6;
+    /// specific logic: 1 GC query (orphaned `DinD` scan; `gc_orphaned_networks`
+    /// short-circuits on empty output) + 4 identity lookups (`git config
+    /// user.name`, `git config user.email`, `id -u`, `id -g`).
+    const LOAD_PREAMBLE_CAPTURES: usize = 5;
 
     /// Prefixes the capture queue with empty responses for the `load_role`
     /// preamble queries so tests can focus on the role-specific output.
