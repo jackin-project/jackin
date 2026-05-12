@@ -6,7 +6,7 @@ description: "Reattach to a running agent's session, or restart a crashed one"
 ## Synopsis
 
 ```bash
-jackin hardline [--inspect | --new [--agent <agent>]] [SELECTOR]
+jackin hardline [--inspect | --new [--agent <agent>]] [--debug] [SELECTOR]
 ```
 
 Reconnect your terminal to an agent container. Use this when you've closed your terminal but the agent is still running in the background, or when an agent crashed and you want to resume the same session without rebuilding the whole stack.
@@ -26,8 +26,9 @@ When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspa
 | Option | Description |
 |---|---|
 | `--inspect` | Resolve the same target but print the instance manifest, live agent-session inventory, role/DinD Docker state, Docker network state, cert volume name, and mount-state summary without attaching or restarting anything. |
-| `--new` | Start another foreground agent process inside the selected running instance instead of attaching to the original container process. |
-| `--agent <agent>` | Agent runtime for `--new` (`claude`, `codex`, or `amp`). Defaults to the runtime recorded in the instance manifest. |
+| `--new` | Start another foreground agent process inside the selected running instance instead of attaching to the original container process. On roles that support multiple agents, omitting `--agent` triggers an interactive prompt so you can choose the runtime; the workspace `default_agent` is used when set and skips the prompt. |
+| `--agent <agent>` | Agent runtime for `--new` (`claude`, `codex`, or `amp`). When omitted on a multi-agent role with no `default_agent` set on the workspace, an interactive prompt asks. |
+| `--debug` | Print every external command jackin issues (`docker`, `git`, etc.) and their captured output. Also enabled by `JACKIN_DEBUG=1`. |
 
 ## Behavior
 

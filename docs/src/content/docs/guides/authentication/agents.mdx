@@ -109,6 +109,14 @@ When the source is a `1Password` reference, the form uses the same picker as the
 
 Per-role overrides for `Claude`, `Codex`, and `Amp` are added through the same tab. The footer of the editor surfaces the resolved mode and its provenance (global / workspace / role override) for whatever you have focused, so you can see what's effective without leaving the screen.
 
+## Multi-agent roles
+
+For roles that support more than one agent runtime (for example, a role that lists Claude, Codex, and Amp in its manifest), jackin provisions credentials for every supported agent at launch time — not just the one you selected for the initial session. The `claude/`, `codex/`, and `amp/` handoff directories and their corresponding durable home directories under `~/.jackin/data/<container>/home/` are all populated before the container starts.
+
+This means you can start a second agent inside the same running container with `jackin hardline --new --agent codex` and it will not ask you to log in: the Codex credentials were already placed in the container when Claude (or whatever agent you selected first) launched.
+
+Each agent's auth mode is evaluated independently. A role can use `sync` for Claude and `ignore` for Codex in the same workspace — jackin provisions each agent's credential directory according to that agent's resolved mode.
+
 ## Launch-time validation
 
 When jackin' resolves `auth_forward` for a launch, it verifies that any mode requiring a credential has one available in your env vars. If the credential is missing, the launch fails with an error that:

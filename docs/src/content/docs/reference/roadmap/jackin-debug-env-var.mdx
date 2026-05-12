@@ -18,14 +18,12 @@ Operators who routinely want raw container output had to pass `--debug` on every
 
 ## Resolution
 
-Added `env = "JACKIN_DEBUG"` to the existing `--debug` `#[arg(...)]` attributes on `LoadArgs.debug` and `ConsoleArgs.debug` in <RepoFile path="src/cli/role.rs" />. clap's `ArgAction::SetTrue` env semantics handle precedence and value parsing without bespoke code:
+`--debug` is a single `#[arg(global = true)]` flag on the top-level `Cli` struct in <RepoFile path="src/cli/mod.rs" /> with `env = "JACKIN_DEBUG"`. `global = true` makes clap accept and propagate the flag to every subcommand, so `jackin hardline --debug`, `jackin eject --debug`, `jackin purge --debug`, etc. all work without per-subcommand wiring. clap's `ArgAction::SetTrue` env semantics handle precedence and value parsing without bespoke code:
 
 1. `--debug` on the command line → `true`
 2. CLI flag absent, env var set to a truthy value (`1`, `true`, `yes`, `on`, …) → `true`
 3. CLI flag absent, env var set to a falsy value (`0`, `false`, `no`, `off`, empty string) → `false`
 4. CLI flag absent, env var unset → `default_value_t = false`
-
-`ConsoleArgs` is `#[command(flatten)]`'d into the top-level `Cli`, so `jackin --debug` (bare, no subcommand) inherits the same env binding as `jackin console --debug` — no separate wiring at the top level.
 
 ## Operator usage
 
@@ -33,19 +31,23 @@ Added `env = "JACKIN_DEBUG"` to the existing `--debug` `#[arg(...)]` attributes 
 # Make debug sticky for a shell or user account
 echo 'export JACKIN_DEBUG=1' >> ~/.zshrc
 
-# Now every invocation defaults to debug-on
+# Now every invocation defaults to debug-on — including all subcommands
 jackin load
 jackin console
+jackin hardline
+jackin eject agent-smith
+jackin purge agent-smith
 jackin                          # bare → console (on a TTY)
 
 # Disable for one invocation when env is sticky
 JACKIN_DEBUG=0 jackin load
 
-# CLI flag still wins
-jackin load --debug             # always debug-on, regardless of env
+# CLI flag still wins; accepted before or after the subcommand
+jackin load --debug
+jackin hardline --inspect k7p9m2xq --debug
 ```
 
-The `--help` output for affected commands automatically advertises the env binding via clap's standard `[env: JACKIN_DEBUG=]` annotation, so the variable is discoverable through normal CLI exploration.
+The `--help` output for every subcommand automatically advertises the env binding via clap's standard `[env: JACKIN_DEBUG=]` annotation, so the variable is discoverable through normal CLI exploration.
 
 ## Test strategy
 
@@ -58,7 +60,6 @@ clap's value-resolution semantics for `ArgAction::SetTrue` env vars (`FalseyValu
 
 ## Related files
 
-- <RepoFile path="src/cli/role.rs" /> — `LoadArgs.debug` and `ConsoleArgs.debug` carry the new `env = "JACKIN_DEBUG"` attribute.
-- <RepoFile path="src/cli/mod.rs" /> — `Cli` flattens `ConsoleArgs`, propagating the env binding to the top-level form.
+- <RepoFile path="src/cli/mod.rs" /> — `Cli.debug` carries the `global = true` and `env = "JACKIN_DEBUG"` attributes; this is the single wiring point for all subcommands.
 - <RepoFile path="tests/cli_debug_env.rs" /> — subprocess integration tests.
 - <RepoFile path="Cargo.toml" /> — clap's `env` feature is enabled.

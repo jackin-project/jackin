@@ -23,6 +23,18 @@ what you're after.
 | `~/.jackin/roles/` | Cached role repository checkouts |
 | `~/.jackin/data/<container-name>/` | Persisted agent state (Claude history, settings, GitHub CLI config, plugins) |
 
+### Environment overrides
+
+Three environment variables redirect these default storage roots without touching any TOML config, useful for testing a PR in isolation or running multiple independent configurations side by side:
+
+| Variable | Default | Overrides |
+|---|---|---|
+| `JACKIN_CONFIG_DIR` | `~/.config/jackin` | Config root — `config.toml`, `workspaces/` |
+| `JACKIN_HOME_DIR` | `~/.jackin` | Jackin home root — `data/`, `roles/`, `cache/` |
+| `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | Construct base image used for Dockerfile validation and role builds; set to a locally built image when developing the construct image |
+
+Setting `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` to fresh directories before running jackin means every command reads and writes only those directories, leaving the live operator state completely untouched. Unset behavior is identical to not setting the variables — jackin falls back to the defaults above.
+
 ### One file per workspace, by design
 
 Saved workspaces live one-per-file under `~/.config/jackin/workspaces/` rather than as `[workspaces.<name>]` tables inside a single `config.toml`. The layout works directly with a **dotfile manager** like [chezmoi](https://www.chezmoi.io/) tracking `~/.config/jackin/`. Operators commonly want to:
@@ -280,6 +292,8 @@ Each running role stores state at `~/.jackin/data/<container-name>/`:
 | `.config/gh/` | GitHub CLI authentication and settings (agent-neutral) |
 
 Host→container auth handoff lives under a single tree (`/jackin/`) the operator can audit at a glance. The agent home directories are bind-mounted from jackin-managed per-instance state, not from the operator's host home. The runtime entrypoint seeds image-baked defaults into that durable home on first launch, then copies the current auth handoff files from `/jackin/` into the durable home before starting the agent. This keeps conversation history and runtime-local plugins recoverable when Docker containers disappear while still letting the current auth mode override stale forwarded credentials.
+
+For roles that list multiple supported agents in their manifest, jackin provisions `claude/`, `codex/`, and `amp/` auth handoff directories and their corresponding `home/.claude/`, `home/.codex/`, and `home/.local/share/amp/` durable home directories for every agent the role supports — not just the agent selected for the initial launch. This means starting a second agent via `jackin hardline --new` does not require re-authentication: the credentials and durable home were already placed in the container when it first launched.
 
 `claude/account.json` is rebuilt as `{}` (empty object) by every non-sync auth mode so it is always present on disk; the bind mount is the gate for whether the file flows into the container, not the file's existence. `claude/credentials.json` is wiped on every non-sync mode and never bind-mounted under `ignore`/`api_key`/`oauth_token`.
 
