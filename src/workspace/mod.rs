@@ -55,7 +55,7 @@ pub struct WorkspaceConfig {
     pub allowed_roles: Vec<String>,
     #[serde(default)]
     pub default_role: Option<String>,
-    /// Workspace-level default agent (claude, codex, or amp). When unset,
+    /// Workspace-level default agent (claude, codex, amp, or opencode). When unset,
     /// `resolved_agent()` falls back to Claude. The field is omitted
     /// from serialized output when `None` so legacy config files stay
     /// byte-for-byte stable.

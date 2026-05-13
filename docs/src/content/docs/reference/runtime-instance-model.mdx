@@ -1,0 +1,194 @@
+---
+title: Runtime Instance Model
+description: Contributor reference for instance identity, state, restore, and parallel session behavior
+---
+import RepoFile from '../../../components/RepoFile.astro'
+import { Aside } from '@astrojs/starlight/components'
+
+<Aside type="note">
+This page is for contributors working on jackin' itself. Operator-facing workflow guidance lives in [Parallel Agents](/guides/parallel-agents/), [load](/commands/load/), [hardline](/commands/hardline/), and [console](/commands/console/).
+</Aside>
+
+The runtime instance model is the source of truth for how jackin names containers, stores per-instance metadata, decides whether a launch should restore or start fresh, and exposes running instances to `hardline`, `eject`, `purge`, and the console.
+
+## Vocabulary
+
+| Term | Meaning |
+|---|---|
+| Role | The reusable tool profile selected by a role key such as `agent-smith` or `chainargos/backend-engineer`. A role repo owns the Dockerfile, manifest, tools, runtime support, and plugins. |
+| Instance | One jackin-managed runtime environment created from a role for a workspace or ad-hoc directory. In the Docker backend, the instance is represented by a role container, a DinD sidecar, a network, a cert volume, and jackin-managed state. |
+| Agent runtime | One supported CLI runtime: `claude`, `codex`, `amp`, or `opencode`. |
+| Agent session | One foreground agent process inside an instance. The initial session is created by `load`; additional sessions are created by `hardline --new`. |
+| Durable agent home | The per-instance home/state tree mounted into the role container so agent history, runtime-local config, and auth handoff survive container recreation. |
+| Recoverable state | Local jackin-managed state that can rebuild or reconnect an instance after Docker resources disappear. Container writable-layer changes are not recoverable. |
+
+## Core Invariants
+
+- Every fresh `jackin load` claims a new DNS-safe instance base name. Running or stopped instances never block a fresh launch.
+- Missing recoverable state can block or prompt before a fresh launch because the operator may need to choose between restoring existing work and superseding it.
+- `hardline` owns reconnecting, restarting, rebuilding, inspecting, and starting additional sessions inside an existing instance.
+- `load` owns creating a fresh runtime instance.
+- The per-instance manifest is canonical for identity and lifecycle state; the global instance index is rebuildable lookup acceleration.
+- Restore is limited to host-backed state: workspace mounts, isolated worktrees/clones, the per-instance durable agent home, and jackin-managed metadata.
+- Docker containers, networks, cert volumes, DinD images, and role-container writable-layer mutations are reconstructible or disposable plumbing.
+- Routine operator flows should not require raw Docker names; instance IDs and console rows are the human-facing handles.
+
+## Naming
+
+Fresh launches use DNS-safe base names:
+
+```text
+jackin-<workspace-name>-<agent-role>-<unique-id>
+jackin-<agent-role>-<unique-id>
+```
+
+The first form is for saved workspaces. The second form is for ad-hoc launches. Workspace and role components are compact lowercase ASCII alphanumeric strings. The unique ID makes concurrent launches distinct and removes the old deterministic `clone-N` slot model.
+
+Derived Docker resources use the base name:
+
+```text
+role container:  <base>
+dind container:  <base>-dind
+network:         <base>-net
+cert volume:     <base>-dind-certs
+```
+
+DNS-sensitive values such as `DOCKER_HOST`, `JACKIN_DIND_HOSTNAME`, `DOCKER_TLS_SAN`, `NO_PROXY`, `no_proxy`, and `TESTCONTAINERS_HOST_OVERRIDE` use the DNS-safe DinD name. The role-container base must fit the DinD label budget because `<base>-dind` is used as a network hostname.
+
+Implementation lives in <RepoFile path="src/instance/naming.rs" /> and <RepoFile path="src/runtime/naming.rs" />.
+
+## State Layout
+
+The important instance state lives under jackin's data directory:
+
+```text
+data/
+├── instances.json
+└── <container-base>/
+    ├── home/
+    ├── state/
+    ├── claude/
+    ├── codex/
+    ├── amp/
+    ├── opencode/
+    ├── .config/gh/
+    └── .jackin/
+        ├── instance.json
+        └── isolation.json
+```
+
+`instance.json` stores instance-level identity and lifecycle data: instance ID, container base, workspace name/label, workdir, host workdir fingerprint, role key, role display name, agent runtime, role source/ref, image tag, lifecycle status, last attach outcome, and Docker resource names.
+
+`instances.json` is a global lookup index. It stores enough data to find candidate instances by workspace/directory/role/agent without walking every state directory. If the index is missing, jackin rebuilds it by scanning manifests. The manifest remains canonical.
+
+`isolation.json` is mount-specific. It records materialized isolated mount state such as original source, mount destination, worktree/clone path, scratch branch, base commit, selector key, container name, and preservation status. It is owned by the isolation subsystem, not the instance manifest.
+
+Implementation lives in <RepoFile path="src/instance/manifest.rs" />, <RepoFile path="src/isolation/state.rs" />, and <RepoFile path="src/instance/mod.rs" />.
+
+## Lifecycle Statuses
+
+The instance manifest uses these lifecycle statuses:
+
+| Status | Meaning |
+|---|---|
+| `active` | Launch started and has not finalized. If the process dies mid-launch, this may become recoverable after Docker reconciliation. |
+| `running` | Role container has been observed running. |
+| `clean_exited` | Foreground session ended cleanly and no preserved isolated state remains. |
+| `crashed` | Role container exited non-zero or was OOM-killed. |
+| `preserved_dirty` | An isolated worktree/clone has uncommitted changes after foreground finalization. |
+| `preserved_unpushed` | An isolated worktree/clone has commits not pushed or not merged back after foreground finalization. |
+| `restore_available` | Docker resources are gone, but local state remains recoverable. |
+| `failed_setup` | Launch setup failed before a usable foreground session. |
+| `superseded` | Operator chose a fresh launch instead of restoring this instance. |
+| `purged` | State was intentionally removed or tombstoned. |
+
+Status writes should update both `instance.json` and `instances.json` through the manifest/index helpers.
+
+## Launch Decision Model
+
+`jackin load` performs restore discovery before claiming a fresh name. The decision separates Docker-present instances from missing recoverable state:
+
+| Candidate Docker state | Candidate manifest state | Fresh load behavior |
+|---|---|---|
+| Running role container | Any non-terminal state | Ignore for fresh-load gating; keep discoverable through hardline and console. |
+| Stopped role container | Any non-terminal state | Ignore for fresh-load gating; hardline owns restart/reconnect decisions. |
+| Docker inspect unavailable | Any relevant state | Surface Docker-specific diagnostics where the current path needs reliable Docker state. |
+| Missing container | `active`, `running`, `crashed`, `preserved_dirty`, `preserved_unpushed`, `restore_available`, `failed_setup` | Treat as a restore candidate. Interactive load prompts; non-interactive load fails with guidance when a choice is needed. |
+| Missing container | `clean_exited`, `superseded`, `purged` | Ignore. |
+
+Matching role/agent restore candidates can be rebuilt through the load prompt. Related role/agent candidates in the same workspace or directory can be recovered or rebuilt in place from the saved manifest source/ref. Running related instances are not blockers; they are active parallel work.
+
+Implementation lives in <RepoFile path="src/runtime/launch.rs" /> (`resolve_restore_candidate`, related restore helpers, name claiming, and launch orchestration).
+
+## Hardline Decision Model
+
+`jackin hardline` targets an existing instance by current directory, role selector, instance ID, or full container base. It inspects the role container and chooses the reconnect path:
+
+| Container state | Hardline behavior |
+|---|---|
+| Running | Attach to the live primary foreground session, or start another foreground session when `--new` is supplied. |
+| Stopped, exit `0` | Treat as a completed session; use `load` for a fresh instance. |
+| Stopped, non-zero or OOM | Restart in place and attach. If DinD is stopped, restart it first. If DinD/network/certs are missing, recreate them around the existing role container before restart. |
+| Missing with indexed state | Rebuild the runtime around jackin-managed local state when the workspace or ad-hoc directory can be resolved. |
+| Missing without indexed state | Fail with a clear "nothing to reconnect to" path. |
+
+`hardline --inspect` is read-only and should report manifest state even when Docker is unavailable. When Docker can inspect a running role container, it also reports live agent-session inventory from `docker top`.
+
+`hardline --new` starts another foreground agent process inside a running indexed instance. Today this is not a reconnectable named secondary session; [Console agent session control](/reference/roadmap/console-agent-session-control/) owns the tmux-backed session substrate that will make secondary sessions independently reconnectable.
+
+Implementation lives in <RepoFile path="src/runtime/attach.rs" /> and the hardline dispatch paths in <RepoFile path="src/app/mod.rs" />.
+
+## Console Instance Surface
+
+The console reads the instance index and shows active/recoverable instances for the selected workspace or current directory. Instance rows expose:
+
+- reconnect/recover
+- new foreground agent session
+- read-only inspect
+- guarded purge
+
+The console should treat the index as a discoverability source, not as proof that Docker resources still exist. Refresh paths reconcile local state with Docker when an action needs live container data.
+
+Implementation lives in <RepoFile path="src/console/manager/state.rs" />, <RepoFile path="src/console/manager/render/list.rs" />, and <RepoFile path="src/console/manager/input/list.rs" />.
+
+## Persistence Boundary
+
+Persisted:
+
+- agent conversation history and runtime-local settings under the per-instance durable home
+- agent auth handoff state for supported runtimes, according to the resolved auth mode
+- GitHub CLI state stored for the instance
+- isolated worktree/clone state and metadata
+- instance manifest, index entry, and last attach outcome
+
+Not persisted:
+
+- packages installed interactively into the role container filesystem
+- files written only to the role container writable layer outside mounted paths
+- DinD images, containers, volumes, and build cache
+- Docker networks and TLS cert volumes after Docker-side deletion
+
+This boundary is deliberate. Durable tools belong in the role Dockerfile. Durable work belongs in mounted paths or jackin-managed per-instance state.
+
+## Cleanup And Purge
+
+`eject` stops/removes Docker resources for an instance while preserving local recovery state unless purge is requested. `purge` deletes local recovery state and is guarded when matching Docker resources still exist. `exile` stops all running jackin-managed role containers.
+
+Plain purge must refuse while the role container or DinD sidecar still exists, whether running or stopped. This prevents deleting local state that an existing Docker resource may still depend on. `eject --purge` is the combined path when the operator wants Docker resources and local recovery state removed together.
+
+Implementation lives in <RepoFile path="src/runtime/cleanup.rs" />.
+
+## Source References
+
+| Area | Source |
+|---|---|
+| DNS-safe names and instance IDs | <RepoFile path="src/instance/naming.rs" /> |
+| Docker labels and derived resource names | <RepoFile path="src/runtime/naming.rs" /> |
+| Instance manifest and rebuildable index | <RepoFile path="src/instance/manifest.rs" /> |
+| Launch, restore discovery, name claiming | <RepoFile path="src/runtime/launch.rs" /> |
+| Attach, inspect, session inventory | <RepoFile path="src/runtime/attach.rs" /> |
+| Eject, purge, orphan cleanup | <RepoFile path="src/runtime/cleanup.rs" /> |
+| Workspace/materialized mount state | <RepoFile path="src/isolation/materialize.rs" /> and <RepoFile path="src/isolation/state.rs" /> |
+| Foreground finalizer | <RepoFile path="src/isolation/finalize.rs" /> |
+| Console instance rendering/actions | <RepoFile path="src/console/manager/render/list.rs" /> and <RepoFile path="src/console/manager/input/list.rs" /> |
+| DinD/Testcontainers smoke coverage | <RepoFile path="tests/dind_e2e.rs" /> |

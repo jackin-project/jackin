@@ -47,7 +47,7 @@ pub struct LoadArgs {
     /// Acknowledge a dirty host working tree for isolated mounts.
     #[arg(long)]
     pub force: bool,
-    /// Agent to launch under (claude, codex, or amp). Overrides the
+    /// Agent to launch under (claude, codex, amp, or opencode). Overrides the
     /// workspace's `default_agent` field for this launch only. When
     /// neither is set, defaults to claude.
     #[arg(long, value_parser = parse_agent)]
@@ -95,7 +95,7 @@ pub struct HardlineArgs {
     /// Start a new foreground agent process inside the selected running instance.
     #[arg(long, conflicts_with = "inspect")]
     pub new: bool,
-    /// Agent runtime for `--new` (claude, codex, or amp). Defaults to the instance manifest.
+    /// Agent runtime for `--new` (claude, codex, amp, or opencode). Defaults to the instance manifest.
     #[arg(long, value_parser = parse_agent, requires = "new")]
     pub agent: Option<crate::agent::Agent>,
 }

@@ -55,7 +55,9 @@ One project may intentionally use several roles. That is not redundancy. It is h
 
 ### Agent instances
 
-A single role can have multiple running **instances**. Each instance is a separate container with its own state. This lets you run the same agent type against different workspaces simultaneously.
+A single role can have multiple running **instances**. Each instance is a separate container with its own state. This lets you run the same agent type against the same workspace or against different workspaces simultaneously.
+
+An instance can also contain more than one **agent session** when the role supports multiple runtimes. For example, you can start `Claude Code` to implement a change, then start `Codex` inside the same running instance to review the same branch and run tests. For day-to-day workflows, see [Parallel Agents](/guides/parallel-agents/).
 
 ## The construct
 
