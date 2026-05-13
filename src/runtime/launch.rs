@@ -3204,6 +3204,42 @@ mod tests {
     use std::collections::VecDeque;
     use tempfile::tempdir;
 
+    fn workspace_manifest(
+        container_name: &str,
+        role_key: &str,
+        role_display_name: &str,
+        agent: crate::agent::Agent,
+    ) -> InstanceManifest {
+        let role_source_git = format!("https://example.invalid/{role_key}.git");
+        let image_tag = format!("jackin-{role_key}");
+        InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key,
+            role_display_name,
+            agent_runtime: agent,
+            role_source_git: &role_source_git,
+            role_source_ref: None,
+            image_tag: &image_tag,
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        })
+    }
+
+    fn write_indexed_manifest(paths: &JackinPaths, manifest: &InstanceManifest) {
+        manifest
+            .write(&paths.data_dir.join(&manifest.container_base))
+            .unwrap();
+        InstanceIndex::update_manifest(&paths.data_dir, manifest).unwrap();
+    }
+
     #[test]
     fn normalize_terminfo_entry_path_copies_macos_hex_dir_to_linux_char_dir() {
         let tmp = tempdir().unwrap();
@@ -6554,25 +6590,12 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
-        let manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: container_name,
-            workspace_name: Some("workspace"),
-            workspace_label: "workspace",
-            workdir: "/workspace",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "agent-smith",
-            role_display_name: "Agent Smith",
-            agent_runtime: crate::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/agent-smith.git",
-            role_source_ref: None,
-            image_tag: "jackin-agent-smith",
-            docker: DockerResources {
-                role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
-                network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
-            },
-        });
+        let manifest = workspace_manifest(
+            container_name,
+            "agent-smith",
+            "Agent Smith",
+            crate::agent::Agent::Claude,
+        );
         manifest
             .write(&paths.data_dir.join(container_name))
             .unwrap();
@@ -6598,29 +6621,13 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
-        let manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: container_name,
-            workspace_name: Some("workspace"),
-            workspace_label: "workspace",
-            workdir: "/workspace",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "agent-smith",
-            role_display_name: "Agent Smith",
-            agent_runtime: crate::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/agent-smith.git",
-            role_source_ref: None,
-            image_tag: "jackin-agent-smith",
-            docker: DockerResources {
-                role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
-                network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
-            },
-        });
-        manifest
-            .write(&paths.data_dir.join(container_name))
-            .unwrap();
-        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let manifest = workspace_manifest(
+            container_name,
+            "agent-smith",
+            "Agent Smith",
+            crate::agent::Agent::Claude,
+        );
+        write_indexed_manifest(&paths, &manifest);
         let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
 
         let candidate = resolve_restore_candidate(
@@ -6642,29 +6649,13 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
-        let manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: container_name,
-            workspace_name: Some("workspace"),
-            workspace_label: "workspace",
-            workdir: "/workspace",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "agent-smith",
-            role_display_name: "Agent Smith",
-            agent_runtime: crate::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/agent-smith.git",
-            role_source_ref: None,
-            image_tag: "jackin-agent-smith",
-            docker: DockerResources {
-                role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
-                network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
-            },
-        });
-        manifest
-            .write(&paths.data_dir.join(container_name))
-            .unwrap();
-        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let manifest = workspace_manifest(
+            container_name,
+            "agent-smith",
+            "Agent Smith",
+            crate::agent::Agent::Claude,
+        );
+        write_indexed_manifest(&paths, &manifest);
         let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
 
         let candidate = resolve_restore_candidate(
@@ -6686,29 +6677,13 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
-        let manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: container_name,
-            workspace_name: Some("workspace"),
-            workspace_label: "workspace",
-            workdir: "/workspace",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "the-architect",
-            role_display_name: "The Architect",
-            agent_runtime: crate::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/the-architect.git",
-            role_source_ref: None,
-            image_tag: "jackin-the-architect",
-            docker: DockerResources {
-                role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
-                network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
-            },
-        });
-        manifest
-            .write(&paths.data_dir.join(container_name))
-            .unwrap();
-        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let manifest = workspace_manifest(
+            container_name,
+            "the-architect",
+            "The Architect",
+            crate::agent::Agent::Claude,
+        );
+        write_indexed_manifest(&paths, &manifest);
         let mut runner = FakeRunner::with_capture_queue([String::new()]);
 
         let error = resolve_restore_candidate(
@@ -6735,29 +6710,13 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
-        let manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: container_name,
-            workspace_name: Some("workspace"),
-            workspace_label: "workspace",
-            workdir: "/workspace",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "the-architect",
-            role_display_name: "The Architect",
-            agent_runtime: crate::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/the-architect.git",
-            role_source_ref: None,
-            image_tag: "jackin-the-architect",
-            docker: DockerResources {
-                role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
-                network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
-            },
-        });
-        manifest
-            .write(&paths.data_dir.join(container_name))
-            .unwrap();
-        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let manifest = workspace_manifest(
+            container_name,
+            "the-architect",
+            "The Architect",
+            crate::agent::Agent::Claude,
+        );
+        write_indexed_manifest(&paths, &manifest);
         let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
 
         let candidate = resolve_restore_candidate(
@@ -6779,29 +6738,13 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
-        let manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: container_name,
-            workspace_name: Some("workspace"),
-            workspace_label: "workspace",
-            workdir: "/workspace",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "the-architect",
-            role_display_name: "The Architect",
-            agent_runtime: crate::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/the-architect.git",
-            role_source_ref: None,
-            image_tag: "jackin-the-architect",
-            docker: DockerResources {
-                role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
-                network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
-            },
-        });
-        manifest
-            .write(&paths.data_dir.join(container_name))
-            .unwrap();
-        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let manifest = workspace_manifest(
+            container_name,
+            "the-architect",
+            "The Architect",
+            crate::agent::Agent::Claude,
+        );
+        write_indexed_manifest(&paths, &manifest);
         let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
 
         let candidate = resolve_restore_candidate(
