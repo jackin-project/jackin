@@ -68,6 +68,33 @@ If `CLAUDE_CODE_OAUTH_TOKEN` is not present in the resolved env when `oauth_toke
 `Codex`, `Amp`, and `OpenCode` have no OAuth-token analog of `Claude`'s `CLAUDE_CODE_OAUTH_TOKEN`. Setting `auth_forward = "oauth_token"` for any of them is rejected. Use `api_key` (with `OPENAI_API_KEY`, `AMP_API_KEY`, or `OPENCODE_API_KEY`) or `sync` instead.
 </Aside>
 
+### OpenCode with Z.AI Coding Plan
+
+OpenCode is a Node.js CLI agent that supports multiple AI providers. The primary provider jackin' targets is the **Z.AI Coding Plan** — a subscription that gives you access to models like GLM-5.1 through the OpenCode CLI. You can subscribe at [z.ai/subscribe](https://z.ai/subscribe).
+
+With a Z.AI Coding Plan subscription, jackin' works out of the box:
+
+1. **Subscribe** to a Z.AI Coding Plan at [z.ai/subscribe](https://z.ai/subscribe).
+
+2. **Log in on the host** — run `opencode` once on your host machine and complete the login flow. This writes your provider credentials to `~/.local/share/opencode/auth.json`.
+
+3. **Load the agent** — jackin' uses `sync` mode by default, so it copies your `auth.json` into the container on every launch:
+
+   ```bash
+   jackin console
+   # Select your workspace, pick a role with OpenCode support, choose "opencode" as the agent
+   ```
+
+   Or from the CLI:
+
+   ```bash
+   jackin load <role> --agent opencode
+   ```
+
+Your Z.AI Coding Plan credentials flow into the container automatically. OpenCode inside the container sees the same provider and model access you have on the host — no separate login needed.
+
+If you prefer to inject an API key instead of forwarding the full `auth.json`, use `api_key` mode with the `OPENCODE_API_KEY` env var (see [api_key](#api_key) above).
+
 ### ignore
 
 `ignore` provisions the container with an empty state — no credential file is written, and any previously forwarded credentials are deleted. The agent must authenticate itself inside the container the next time it runs.
