@@ -141,6 +141,14 @@ Until the listed agents emit their trailers automatically, the trailer must be a
   Co-authored-by: Amp <amp@ampcode.com>
   ```
 
+- **OpenCode** (OpenCode CLI, regardless of underlying GLM model):
+
+  ```text
+  Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>
+  ```
+
+  This matches the GitHub App identity used by OpenCode when it creates commits, as defined in the `anomalyco/opencode` repository. Do not alter the format — match what OpenCode emits.
+
 Amp may additionally emit an `Amp-Thread-ID:` metadata trailer; that is acceptable alongside the single `Co-authored-by: Amp` trailer because the thread ID identifies the conversation, not a second agent.
 
 If you are uncertain which agent is creating the commit, ask — the trailer is how the operator tracks which agent produced which change, and wrong attribution is worse than no attribution.

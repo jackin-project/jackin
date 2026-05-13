@@ -7,7 +7,9 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/runtime/launch.rs" /> is the `jackin load` critical path (~1319L production, ~3047L total, no `//!` doc) and is targeted for a structural split. Without a behavioral spec, there is no oracle to verify that a refactor preserved the launch pipeline, auth checks, workspace materialization, and post-attach cleanup rules.
+<RepoFile path="src/runtime/launch.rs" /> is the `jackin load` critical path — now **7575L** total (was ~5494L at original analysis — 38% growth). It is targeted for a structural split. Without a behavioral spec, there is no oracle to verify that a refactor preserved the launch pipeline, auth checks, workspace materialization, and post-attach cleanup rules.
+
+The file has grown significantly due to: instance identity support, Kimi agent runtime, expanded error reporting with mode traces, and additional test coverage.
 
 ## Verified invariants
 
@@ -39,7 +41,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Why this must come before the split
 
-The spec is the verification oracle. If <RepoFile path="src/runtime/launch.rs" /> is split before the spec exists, there is no contract against which to verify the split preserved all invariants.
+The spec is the verification oracle. If <RepoFile path="src/runtime/launch.rs" /> is split before the spec exists, there is no contract against which to verify the split preserved all invariants. At 7575L, this file is the single most error-prone split in the entire roadmap.
 
 ## Key file
 

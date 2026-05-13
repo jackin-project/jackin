@@ -7,18 +7,23 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-`jackin` does have a real library surface: <RepoFile path="src/lib.rs" /> publicly exports most top-level modules and <RepoFile path="src/bin/validate.rs" /> consumes the library. That means a blanket "binary crate ⇒ convert everything to `pub(crate)`" pass would be wrong. The actual readability problem is narrower: some items are still wider than needed, but `unreachable_pub` only catches the subset that is currently public without being reachable from the crate root.
+`jackin` has a real library surface: <RepoFile path="src/lib.rs" /> publicly exports most top-level modules and <RepoFile path="src/bin/validate.rs" /> consumes the library. That means a blanket "binary crate ⇒ convert everything to `pub(crate)`" pass would be wrong. The actual readability problem is narrower: some items are still wider than needed.
 
-## Verified numbers
+## Verified numbers (May 2026)
 
-- <RepoFile path="src/lib.rs" /> currently exports 21 top-level modules plus `app::run`
-- `RUSTFLAGS='-W unreachable_pub' cargo check` currently reports 10 warnings on `main`
-- the current warnings cluster in <RepoFile path="src/workspace/planner.rs" />, <RepoFile path="src/console/manager/agent_allow.rs" />, <RepoFile path="src/runtime/launch.rs" />, <RepoFile path="src/config/roles.rs" />, and <RepoFile path="src/config/mounts.rs" />
-- 0 `unreachable_pub` enforcement exists in the normal lint configuration today
+| Declaration | `pub` | `pub(crate)` |
+|---|---|---|
+| `fn` | 383 | 42 (9.9%) |
+| `struct` | 124 | 3 |
+| `enum` | 91 | 3 |
+
+- <RepoFile path="src/lib.rs" /> currently exports 22 top-level modules (grew from 21) plus `app::run`
+- There are **zero** `pub(crate) mod` declarations — all 22 modules use bare `pub mod`
+- `RUSTFLAGS='-W unreachable_pub' cargo check` reported 10 warnings at the original analysis; the count may have changed — re-verify before starting
 
 ## Current low-hanging fruit
 
-| File | Warning count / scope | Notes |
+| File | Scope | Notes |
 |---|---|---|
 | <RepoFile path="src/workspace/planner.rs" /> | 5 current warnings | Plan structs/helpers are only consumed inside the crate today |
 | <RepoFile path="src/console/manager/agent_allow.rs" /> | 2 current warnings | Manager helper fns can likely tighten to `pub(super)` |
@@ -28,16 +33,17 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Steps
 
-1. Decide the intended library surface in <RepoFile path="src/lib.rs" /> first: what truly needs to stay `pub` for `main.rs`, `jackin-validate`, and tests?
-2. Add to <RepoFile path="Cargo.toml" /> `[lints.rust]` section:
+1. Re-run `RUSTFLAGS='-W unreachable_pub' cargo check` to get the current warning set.
+2. Decide the intended library surface in <RepoFile path="src/lib.rs" /> first: what truly needs to stay `pub` for `main.rs`, `jackin-validate`, and tests?
+3. Add to <RepoFile path="Cargo.toml" /> `[lints.rust]` section:
    ```toml
    [lints.rust]
    unreachable_pub = "warn"
    ```
-3. Run `cargo check` — compiler lists the items that are public but unreachable from the crate root.
-4. Convert each flagged item to the narrowest workable visibility (`pub(crate)` or `pub(super)` as appropriate).
-5. If a larger pass is still desired, shrink or reorganize the `lib.rs` export surface first, then rerun the lint.
-6. Verify `cargo nextest run` still passes and `cargo check` is warning-free.
+4. Run `cargo check` — compiler lists the items that are public but unreachable from the crate root.
+5. Convert each flagged item to the narrowest workable visibility (`pub(crate)` or `pub(super)` as appropriate).
+6. If a larger pass is still desired, shrink or reorganize the `lib.rs` export surface first, then rerun the lint.
+7. Verify `cargo nextest run` still passes and `cargo check` is warning-free.
 
 ## What stays `pub`
 
