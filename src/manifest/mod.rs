@@ -34,6 +34,8 @@ pub struct RoleManifest {
     #[serde(default)]
     pub amp: Option<AmpConfig>,
     #[serde(default)]
+    pub opencode: Option<OpencodeConfig>,
+    #[serde(default)]
     pub hooks: Option<HooksConfig>,
     #[serde(default)]
     pub env: BTreeMap<String, EnvVarDecl>,
@@ -56,6 +58,15 @@ pub struct CodexConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AmpConfig {}
+
+/// Per-role OpenCode configuration.
+///
+/// Has no fields. Declared so manifests that list
+/// `agents = [..., "opencode"]` can carry an `[opencode]` table that satisfies
+/// the agent/table consistency check.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpencodeConfig {}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

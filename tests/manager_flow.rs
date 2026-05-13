@@ -424,6 +424,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
             claude: None,
             codex: None,
             amp: None,
+            opencode: None,
             github: None,
         },
     );
@@ -1637,6 +1638,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
             claude: None,
             codex: None,
             amp: None,
+            opencode: None,
             github: None,
         },
     );
@@ -1796,6 +1798,7 @@ fn seed_override_picker_workspace(
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );

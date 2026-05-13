@@ -8,18 +8,20 @@ pub enum Agent {
     Claude,
     Codex,
     Amp,
+    Opencode,
 }
 
 impl Agent {
     /// Every variant in declaration order. Iteration sites consult
     /// this instead of hand-rolling their own array.
-    pub const ALL: &'static [Self] = &[Self::Claude, Self::Codex, Self::Amp];
+    pub const ALL: &'static [Self] = &[Self::Claude, Self::Codex, Self::Amp, Self::Opencode];
 
     pub const fn slug(self) -> &'static str {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::Amp => "amp",
+            Self::Opencode => "opencode",
         }
     }
 
@@ -28,6 +30,7 @@ impl Agent {
             Self::Claude => CLAUDE_INSTALL_BLOCK,
             Self::Codex => CODEX_INSTALL_BLOCK,
             Self::Amp => AMP_INSTALL_BLOCK,
+            Self::Opencode => OPENCODE_INSTALL_BLOCK,
         }
     }
 
@@ -45,8 +48,9 @@ impl Agent {
             (Self::Claude, M::OAuthToken) => Some(crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV),
             (Self::Codex, M::ApiKey) => Some("OPENAI_API_KEY"),
             (Self::Amp, M::ApiKey) => Some("AMP_API_KEY"),
+            (Self::Opencode, M::ApiKey) => Some("OPENCODE_API_KEY"),
             (Self::Claude, M::Sync | M::Ignore)
-            | (Self::Codex | Self::Amp, M::Sync | M::Ignore | M::OAuthToken) => None,
+            | (Self::Codex | Self::Amp | Self::Opencode, M::Sync | M::Ignore | M::OAuthToken) => None,
         }
     }
 
@@ -59,7 +63,7 @@ impl Agent {
         use crate::config::AuthForwardMode as M;
         match self {
             Self::Claude => &[M::Sync, M::ApiKey, M::OAuthToken, M::Ignore],
-            Self::Codex | Self::Amp => &[M::Sync, M::ApiKey, M::Ignore],
+            Self::Codex | Self::Amp | Self::Opencode => &[M::Sync, M::ApiKey, M::Ignore],
         }
     }
 }
@@ -76,6 +80,13 @@ USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN curl -fsSL https://ampcode.com/install.sh | bash
 RUN amp --version
+";
+
+const OPENCODE_INSTALL_BLOCK: &str = "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN npm install -g opencode@latest
+RUN opencode --version
 ";
 
 const CODEX_INSTALL_BLOCK: &str = "\
@@ -115,7 +126,7 @@ impl fmt::Display for Agent {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("unknown agent: {got:?}; supported: claude, codex, amp")]
+#[error("unknown agent: {got:?}; supported: claude, codex, amp, opencode")]
 pub struct ParseAgentError {
     got: String,
 }
@@ -127,6 +138,7 @@ impl FromStr for Agent {
             "claude" => Ok(Self::Claude),
             "codex" => Ok(Self::Codex),
             "amp" => Ok(Self::Amp),
+            "opencode" => Ok(Self::Opencode),
             other => Err(ParseAgentError {
                 got: other.to_string(),
             }),
@@ -140,7 +152,7 @@ mod tests {
 
     #[test]
     fn slug_round_trip() {
-        for h in [Agent::Claude, Agent::Codex, Agent::Amp] {
+        for h in [Agent::Claude, Agent::Codex, Agent::Amp, Agent::Opencode] {
             assert_eq!(Agent::from_str(h.slug()).unwrap(), h);
         }
     }
@@ -150,6 +162,7 @@ mod tests {
         assert_eq!(format!("{}", Agent::Claude), "claude");
         assert_eq!(format!("{}", Agent::Codex), "codex");
         assert_eq!(format!("{}", Agent::Amp), "amp");
+        assert_eq!(format!("{}", Agent::Opencode), "opencode");
     }
 
     #[test]
@@ -202,6 +215,14 @@ mod tests {
         assert!(block.contains("ampcode.com/install.sh"));
         assert!(block.contains("amp --version"));
     }
+
+    #[test]
+    fn opencode_install_block_installs_cli_via_npm() {
+        let block = Agent::Opencode.install_block();
+        assert!(block.starts_with("USER agent\n"));
+        assert!(block.contains("npm install -g opencode@latest"));
+        assert!(block.contains("opencode --version"));
+    }
 }
 
 #[cfg(test)]
@@ -252,6 +273,18 @@ mod auth_table_tests {
             None
         );
         assert_eq!(Agent::Amp.required_env_var(AuthForwardMode::Ignore), None);
+
+        // Opencode
+        assert_eq!(Agent::Opencode.required_env_var(AuthForwardMode::Sync), None);
+        assert_eq!(
+            Agent::Opencode.required_env_var(AuthForwardMode::ApiKey),
+            Some("OPENCODE_API_KEY")
+        );
+        assert_eq!(
+            Agent::Opencode.required_env_var(AuthForwardMode::OAuthToken),
+            None
+        );
+        assert_eq!(Agent::Opencode.required_env_var(AuthForwardMode::Ignore), None);
     }
 
     #[test]
@@ -283,6 +316,18 @@ mod auth_table_tests {
         assert!(
             !modes.contains(&AuthForwardMode::OAuthToken),
             "amp must not advertise oauth_token"
+        );
+        assert!(modes.contains(&AuthForwardMode::Ignore));
+    }
+
+    #[test]
+    fn supported_modes_opencode_excludes_oauth_token() {
+        let modes = Agent::Opencode.supported_modes();
+        assert!(modes.contains(&AuthForwardMode::Sync));
+        assert!(modes.contains(&AuthForwardMode::ApiKey));
+        assert!(
+            !modes.contains(&AuthForwardMode::OAuthToken),
+            "opencode must not advertise oauth_token"
         );
         assert!(modes.contains(&AuthForwardMode::Ignore));
     }

@@ -269,6 +269,7 @@ pub fn agent_outcome_notice(
         A::Claude => "Claude Code",
         A::Codex => "Codex",
         A::Amp => "Amp",
+        A::Opencode => "OpenCode",
     };
     match auth_outcome {
         O::Synced => {
@@ -291,6 +292,7 @@ pub fn agent_outcome_notice(
                     A::Claude => "credentials",
                     A::Codex => "auth.json",
                     A::Amp => "secrets.json",
+                    A::Opencode => "config.json",
                 };
                 eprintln!(
                     "[jackin] auth_forward=sync but no host {display} {host_file} found; \

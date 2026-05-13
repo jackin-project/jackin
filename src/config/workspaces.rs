@@ -275,6 +275,7 @@ mod tests {
             claude: None,
             codex: None,
             amp: None,
+            opencode: None,
             github: None,
             git_pull_on_entry: false,
         };

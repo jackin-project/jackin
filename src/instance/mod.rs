@@ -166,14 +166,13 @@ pub enum GithubProvisionKind {
 #[non_exhaustive]
 pub enum AgentRuntimeState {
     Claude {
-        /// `[claude].model`; passed to the CLI as `--model` at launch.
         model: Option<String>,
     },
     Codex {
-        /// `[codex].model`; passed to the CLI as `-m` at launch.
         model: Option<String>,
     },
     Amp,
+    Opencode,
 }
 
 /// Claude's provisioned auth slot.
@@ -203,6 +202,13 @@ pub struct AmpAuth {
     pub secrets_json: Option<PathBuf>,
 }
 
+/// OpenCode's provisioned auth slot. `auth_json` is `None` under
+/// env-driven modes or when no host auth file was present.
+#[derive(Debug, Clone, Default)]
+pub struct OpencodeAuth {
+    pub auth_json: Option<PathBuf>,
+}
+
 /// Auth state provisioned for every agent listed in `manifest.supported_agents()`.
 ///
 /// Each per-agent slot is `Some(_)` iff that agent is supported and
@@ -214,6 +220,7 @@ pub struct ProvisionedAuth {
     pub claude: Option<ClaudeAuth>,
     pub codex: Option<CodexAuth>,
     pub amp: Option<AmpAuth>,
+    pub opencode: Option<OpencodeAuth>,
 }
 
 #[derive(Debug, Clone)]
@@ -245,7 +252,7 @@ impl RoleState {
     pub fn claude_model(&self) -> Option<&str> {
         match &self.agent_runtime {
             AgentRuntimeState::Claude { model } => model.as_deref(),
-            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp => None,
+            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp | AgentRuntimeState::Opencode => None,
         }
     }
 
@@ -273,7 +280,7 @@ impl RoleState {
     pub fn codex_model(&self) -> Option<&str> {
         match &self.agent_runtime {
             AgentRuntimeState::Codex { model } => model.as_deref(),
-            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp => None,
+            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp | AgentRuntimeState::Opencode => None,
         }
     }
 
@@ -295,6 +302,16 @@ impl RoleState {
             .amp
             .as_ref()
             .and_then(|c| c.secrets_json.as_deref())
+    }
+
+    /// Host path to OpenCode's `auth.json`. `None` when OpenCode is not
+    /// in `supported_agents()` or no file is available.
+    #[must_use]
+    pub fn opencode_auth_json(&self) -> Option<&Path> {
+        self.auth
+            .opencode
+            .as_ref()
+            .and_then(|c| c.auth_json.as_deref())
     }
 }
 
@@ -378,6 +395,12 @@ impl RoleState {
                     auth.amp = Some(slot);
                     outcome
                 }
+                crate::agent::Agent::Opencode => {
+                    let (slot, outcome) =
+                        Self::provision_opencode_slot(&root, &home_dir, mode, host_home)?;
+                    auth.opencode = Some(slot);
+                    outcome
+                }
             };
             if supported == agent {
                 selected_outcome = outcome;
@@ -392,6 +415,7 @@ impl RoleState {
                 model: manifest.codex.as_ref().and_then(|cfg| cfg.model.clone()),
             },
             crate::agent::Agent::Amp => AgentRuntimeState::Amp,
+            crate::agent::Agent::Opencode => AgentRuntimeState::Opencode,
         };
 
         Ok((
@@ -463,6 +487,22 @@ impl RoleState {
         let (outcome, secrets_json) =
             Self::provision_amp_auth(&secrets_json_path, mode, host_home)?;
         Ok((AmpAuth { secrets_json }, outcome))
+    }
+
+    fn provision_opencode_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(OpencodeAuth, AuthProvisionOutcome)> {
+        let opencode_dir = root.join("opencode");
+        let opencode_home_dir = home_dir.join(".local/share/opencode");
+        std::fs::create_dir_all(&opencode_dir)?;
+        std::fs::create_dir_all(&opencode_home_dir)?;
+        let auth_json_path = opencode_dir.join("auth.json");
+        let (outcome, auth_json) =
+            Self::provision_opencode_auth(&auth_json_path, mode, host_home)?;
+        Ok((OpencodeAuth { auth_json }, outcome))
     }
 }
 
@@ -642,6 +682,7 @@ plugins = []
             crate::agent::Agent::Claude => AuthForwardMode::Sync,
             crate::agent::Agent::Codex => AuthForwardMode::ApiKey,
             crate::agent::Agent::Amp => AuthForwardMode::Ignore,
+            crate::agent::Agent::Opencode => AuthForwardMode::Ignore,
         };
 
         let (state, selected_outcome) = RoleState::prepare(

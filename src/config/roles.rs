@@ -29,6 +29,7 @@ pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) 
             Agent::Claude => ro.claude.as_ref().map(|c| c.auth_forward),
             Agent::Codex => ro.codex.as_ref().map(|c| c.auth_forward),
             Agent::Amp => ro.amp.as_ref().map(|c| c.auth_forward),
+            Agent::Opencode => ro.opencode.as_ref().map(|c| c.auth_forward),
         })
     {
         return m;
@@ -39,6 +40,7 @@ pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) 
         Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
         Agent::Codex => ws.codex.as_ref().map(|c| c.auth_forward),
         Agent::Amp => ws.amp.as_ref().map(|c| c.auth_forward),
+        Agent::Opencode => ws.opencode.as_ref().map(|c| c.auth_forward),
     }) {
         return m;
     }
@@ -48,6 +50,7 @@ pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) 
         Agent::Claude => cfg.claude.as_ref().map(|c| c.auth_forward),
         Agent::Codex => cfg.codex.as_ref().map(|c| c.auth_forward),
         Agent::Amp => cfg.amp.as_ref().map(|c| c.auth_forward),
+        Agent::Opencode => cfg.opencode.as_ref().map(|c| c.auth_forward),
     }
     .unwrap_or_default()
 }
