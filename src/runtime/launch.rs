@@ -1552,10 +1552,22 @@ fn load_role_with(
         let rebuild = opts.rebuild;
         let agent_update = !rebuild && {
             let img = image_name(selector);
-            let needs_update = agent == crate::agent::Agent::Claude
-                && version_check::needs_claude_update(paths, &img, runner);
+            let needs_update = match agent {
+                crate::agent::Agent::Claude => {
+                    version_check::needs_claude_update(paths, &img, runner)
+                }
+                crate::agent::Agent::Opencode => {
+                    version_check::needs_opencode_update(paths, &img, runner)
+                }
+                _ => false,
+            };
             if needs_update {
-                eprintln!("        Claude update available — refreshing agent layer");
+                let name = match agent {
+                    crate::agent::Agent::Claude => "Claude",
+                    crate::agent::Agent::Opencode => "OpenCode",
+                    _ => unreachable!(),
+                };
+                eprintln!("        {name} update available — refreshing agent layer");
             }
             needs_update
         };

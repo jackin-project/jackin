@@ -89,9 +89,13 @@ USER agent\n\
 ARG JACKIN_CACHE_BUST=0\n\
 RUN set -euo pipefail && \\\n\
     : \"${JACKIN_CACHE_BUST}\" && \\\n\
-    ARCH=$(uname -m | sed 's/aarch64/arm64/') && \\\n\
+    case \"$(uname -m)\" in \\\n\
+      x86_64)  ARCH=x64 ;; \\\n\
+      aarch64) ARCH=arm64 ;; \\\n\
+      *) echo \"unsupported arch $(uname -m)\"; exit 1 ;; \\\n\
+    esac && \\\n\
     mkdir -p \"${HOME}/.opencode/bin\" && \\\n\
-    curl -fsSL \"https://github.com/opencode-ai/opencode/releases/latest/download/opencode-linux-${ARCH}.tar.gz\" \\\n\
+    curl -fsSL \"https://github.com/opencode-ai/opencode/releases/latest/download/opencode-linux-${ARCH}-musl.tar.gz\" \\\n\
       | tar xz -C \"${HOME}/.opencode/bin\" && \\\n\
     \"${HOME}/.opencode/bin/opencode\" --version\n\
 ENV PATH=\"/home/agent/.opencode/bin:${PATH}\"\n\
