@@ -60,7 +60,9 @@ impl AuthKind {
                 AuthMode::OAuthToken,
                 AuthMode::Ignore,
             ],
-            Self::Codex | Self::Amp | Self::Opencode => &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore],
+            Self::Codex | Self::Amp | Self::Opencode => {
+                &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore]
+            }
             Self::Github => &[AuthMode::Sync, AuthMode::Token, AuthMode::Ignore],
         }
     }

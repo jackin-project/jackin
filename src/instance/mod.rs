@@ -165,12 +165,8 @@ pub enum GithubProvisionKind {
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum AgentRuntimeState {
-    Claude {
-        model: Option<String>,
-    },
-    Codex {
-        model: Option<String>,
-    },
+    Claude { model: Option<String> },
+    Codex { model: Option<String> },
     Amp,
     Opencode,
 }
@@ -252,7 +248,9 @@ impl RoleState {
     pub fn claude_model(&self) -> Option<&str> {
         match &self.agent_runtime {
             AgentRuntimeState::Claude { model } => model.as_deref(),
-            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp | AgentRuntimeState::Opencode => None,
+            AgentRuntimeState::Codex { .. }
+            | AgentRuntimeState::Amp
+            | AgentRuntimeState::Opencode => None,
         }
     }
 
@@ -280,7 +278,9 @@ impl RoleState {
     pub fn codex_model(&self) -> Option<&str> {
         match &self.agent_runtime {
             AgentRuntimeState::Codex { model } => model.as_deref(),
-            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp | AgentRuntimeState::Opencode => None,
+            AgentRuntimeState::Claude { .. }
+            | AgentRuntimeState::Amp
+            | AgentRuntimeState::Opencode => None,
         }
     }
 
@@ -500,8 +500,7 @@ impl RoleState {
         std::fs::create_dir_all(&opencode_dir)?;
         std::fs::create_dir_all(&opencode_home_dir)?;
         let auth_json_path = opencode_dir.join("auth.json");
-        let (outcome, auth_json) =
-            Self::provision_opencode_auth(&auth_json_path, mode, host_home)?;
+        let (outcome, auth_json) = Self::provision_opencode_auth(&auth_json_path, mode, host_home)?;
         Ok((OpencodeAuth { auth_json }, outcome))
     }
 }

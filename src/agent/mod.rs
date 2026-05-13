@@ -50,7 +50,9 @@ impl Agent {
             (Self::Amp, M::ApiKey) => Some("AMP_API_KEY"),
             (Self::Opencode, M::ApiKey) => Some("OPENCODE_API_KEY"),
             (Self::Claude, M::Sync | M::Ignore)
-            | (Self::Codex | Self::Amp | Self::Opencode, M::Sync | M::Ignore | M::OAuthToken) => None,
+            | (Self::Codex | Self::Amp | Self::Opencode, M::Sync | M::Ignore | M::OAuthToken) => {
+                None
+            }
         }
     }
 
@@ -275,7 +277,10 @@ mod auth_table_tests {
         assert_eq!(Agent::Amp.required_env_var(AuthForwardMode::Ignore), None);
 
         // Opencode
-        assert_eq!(Agent::Opencode.required_env_var(AuthForwardMode::Sync), None);
+        assert_eq!(
+            Agent::Opencode.required_env_var(AuthForwardMode::Sync),
+            None
+        );
         assert_eq!(
             Agent::Opencode.required_env_var(AuthForwardMode::ApiKey),
             Some("OPENCODE_API_KEY")
@@ -284,7 +289,10 @@ mod auth_table_tests {
             Agent::Opencode.required_env_var(AuthForwardMode::OAuthToken),
             None
         );
-        assert_eq!(Agent::Opencode.required_env_var(AuthForwardMode::Ignore), None);
+        assert_eq!(
+            Agent::Opencode.required_env_var(AuthForwardMode::Ignore),
+            None
+        );
     }
 
     #[test]

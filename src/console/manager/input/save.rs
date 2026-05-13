@@ -894,7 +894,12 @@ fn apply_auth_forward_diff(
             .and_then(|p| p.opencode.as_ref())
             .map(|c| c.0.auth_forward);
         if orig_opencode != pend_opencode {
-            ce.set_workspace_role_auth_forward(workspace_name, role, Agent::Opencode, pend_opencode);
+            ce.set_workspace_role_auth_forward(
+                workspace_name,
+                role,
+                Agent::Opencode,
+                pend_opencode,
+            );
         }
         let orig_github = orig_override
             .and_then(|o| o.github.as_ref())
