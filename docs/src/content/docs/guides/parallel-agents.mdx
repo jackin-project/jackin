@@ -6,29 +6,29 @@ import { Aside } from '@astrojs/starlight/components'
 
 jackin' gives you two different ways to run agents in parallel:
 
-- **Separate instances** — each `jackin load` creates a new isolated container with its own workspace state, Docker-in-Docker sidecar, and agent home.
-- **Multiple sessions in one instance** — `jackin hardline --new` starts another agent process inside an already-running instance, sharing the same branch, mounted files, tools, credentials, and Docker-in-Docker sidecar.
+- **Separate instances** — each `jackin load` creates a new isolated container with its own Docker-in-Docker sidecar and agent home. Mounted project files are shared or isolated according to the workspace mount mode.
+- **Multiple sessions in one instance** — `jackin hardline --new` starts another agent process inside an already-running instance, sharing the same container state: mounted files, branch, tools, credentials, environment, and Docker-in-Docker sidecar.
 
 Think of a role instance as an isolated collaboration room. The role defines the room: toolchain, shell setup, plugins, supported agent runtimes, credentials, and workspace mounts. The agent sessions are the people working inside it. If the role supports `Claude Code`, `Codex`, `Amp`, and `OpenCode`, you can start any of those runtimes inside the same running instance.
 
 ## Two Parallel Shapes
 
-Use a **fresh instance** when you want isolation between agents:
+Use a **fresh instance** when you want a separate container runtime for an agent:
 
 ```bash
 jackin load the-architect
 jackin load the-architect
 ```
 
-Each command creates a separate container. This is the right shape when you want agents to work on different branches, different isolated worktrees, different task contexts, or different copies of the same project.
+Each command creates a separate container. This is the right shape when you want independent agent homes, sidecars, credentials, tool processes, or task lifecycles. If the agents also need separate branches or worktrees, configure the workspace mount as `worktree` or `clone`, launch a different workspace, or point the load at a different checkout.
 
-Use a **new session in the same instance** when you want agents to share context:
+Use a **new session in the same instance** when you want agents to share runtime state:
 
 ```bash
 jackin hardline --new --agent codex
 ```
 
-That starts another foreground agent session inside the selected running instance. The new session sees the same project files, branch, dependency installs that live in mounted paths, Docker-in-Docker daemon, forwarded credentials, and role tooling as the existing session.
+That starts another foreground agent session inside the selected running instance. The new session sees the same project files, branch, dependency installs that live in mounted paths, Docker-in-Docker daemon, forwarded credentials, and role tooling as the existing session. It does not inherit the other agent session's conversation context.
 
 ## Example: Implement With Claude, Review With Codex
 
@@ -65,15 +65,16 @@ Sessions inside the same instance share:
 - the credentials jackin forwarded for every supported runtime in that role
 - the container's in-session environment
 
-Separate instances do not share those runtime surfaces. They may point at the same host project, but each instance has its own container, sidecar, agent home, and isolated mount materialization.
+Separate instances do not share those container runtime surfaces. They may still point at the same host project when a mount uses the default `shared` mode. Use `worktree` or `clone` mount isolation when each container should see its own checkout.
 
 ## Choosing The Right Shape
 
 Choose a **new instance** when:
 
 - the agents should work independently
-- you want separate branches or isolated worktrees
-- one agent might make disruptive filesystem changes
+- you want separate agent homes, sidecars, credentials, or task lifecycles
+- you have configured `worktree` or `clone` mounts and want each agent to get its own checkout
+- one agent might make disruptive container-runtime changes
 - you want to compare two approaches side by side
 
 Choose a **new session in the same instance** when:
@@ -99,6 +100,6 @@ Today, secondary sessions started with `hardline --new` are foreground sessions.
 
 ## Related Commands
 
-- [`jackin load`](/commands/load/) starts a fresh role instance. Running instances do not block a fresh launch.
+- [`jackin load`](/commands/load/) starts a fresh role instance. Running or stopped instances do not block a fresh launch.
 - [`jackin hardline`](/commands/hardline/) reconnects to an existing instance or starts another foreground agent session inside it.
 - [`jackin console`](/commands/console/) shows visible instances and common recovery actions from the workspace view.
