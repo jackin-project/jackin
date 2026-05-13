@@ -136,6 +136,19 @@ jackin workspace create jackin \
 
 The agent sees an isolated checkout at `/workspace/jackin` while `target/` is backed by a shared host cache. jackin' arranges the mounts so the cache mount overlays the corresponding path inside the isolated worktree — the cache then survives across agents even when each agent has its own checkout.
 
+### What happens when the agent exits
+
+When you exit an agent that was using an isolated mount, jackin' looks at the per-container checkout and decides what to do automatically:
+
+- **Everything is wrapped up** — your work is committed and pushed (or merged on the remote and the branch was deleted), with no stray edits left behind. jackin' deletes the per-container checkout for you. There is nothing to remember.
+- **There is still work to deal with** — you have uncommitted edits, or commits that never made it to the remote. jackin' keeps the checkout exactly as it was and asks what to do: go back into the agent, leave it preserved so you can return later with `jackin hardline`, or throw the work away.
+
+If you exited non-interactively (no terminal to ask), jackin' always preserves the checkout and tells you the path on disk plus how to return, inspect it, or discard it.
+
+If a container crashed or was terminated unexpectedly, jackin' also keeps everything in place — `jackin hardline` can restart the container so you continue where the agent left off.
+
+For the exact safety policy (which branches count as safe, how the squash-merged-and-pruned case is detected, what the per-mount state file records), see [Foreground session finalization](/reference/architecture/#foreground-session-finalization) in the internals section.
+
 ### Validation
 
 `worktree` and `clone` mounts have a few preconditions enforced before materialization:
