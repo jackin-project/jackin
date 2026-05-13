@@ -494,13 +494,7 @@ pub(super) fn resolve_agent_repo_with(
             );
             runner.run(
                 "git",
-                &[
-                    "-C",
-                    &repo_path,
-                    "reset",
-                    "--hard",
-                    "FETCH_HEAD",
-                ],
+                &["-C", &repo_path, "reset", "--hard", "FETCH_HEAD"],
                 None,
                 &git_run_opts,
             )?;
