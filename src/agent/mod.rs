@@ -85,10 +85,16 @@ RUN amp --version
 ";
 
 const OPENCODE_INSTALL_BLOCK: &str = "\
-USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN npm install -g opencode@latest
-RUN opencode --version
+USER agent\n\
+ARG JACKIN_CACHE_BUST=0\n\
+RUN set -euo pipefail && \\\n\
+    : \"${JACKIN_CACHE_BUST}\" && \\\n\
+    ARCH=$(uname -m | sed 's/aarch64/arm64/') && \\\n\
+    mkdir -p \"${HOME}/.opencode/bin\" && \\\n\
+    curl -fsSL \"https://github.com/opencode-ai/opencode/releases/latest/download/opencode-linux-${ARCH}.tar.gz\" \\\n\
+      | tar xz -C \"${HOME}/.opencode/bin\" && \\\n\
+    \"${HOME}/.opencode/bin/opencode\" --version\n\
+ENV PATH=\"${HOME}/.opencode/bin:${PATH}\"\n\
 ";
 
 const CODEX_INSTALL_BLOCK: &str = "\
@@ -219,11 +225,12 @@ mod tests {
     }
 
     #[test]
-    fn opencode_install_block_installs_cli_via_npm() {
+    fn opencode_install_block_downloads_binary_from_github() {
         let block = Agent::Opencode.install_block();
         assert!(block.starts_with("USER agent\n"));
-        assert!(block.contains("npm install -g opencode@latest"));
-        assert!(block.contains("opencode --version"));
+        assert!(block.contains("opencode-ai/opencode/releases/latest/download"));
+        assert!(block.contains("/opencode\" --version"));
+        assert!(block.contains("ENV PATH"));
     }
 }
 
