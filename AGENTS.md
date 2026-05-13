@@ -96,6 +96,32 @@ Run the sidebar and overview audits documented in `docs/AGENTS.md` after any roa
 
 Roadmap pages are for planned, researched, designed, deferred, or remaining work. Once behavior ships, move the operator details to normal docs (`guides/`, `commands/`, `reference/`) and replace roadmap detail with a short status plus canonical-doc links. Do not keep long copied implementation walkthroughs in roadmap items after the feature is documented elsewhere.
 
+**Fully-resolved roadmap items must be retired, not left as resolved pages.** Once every feature, sub-phase, and follow-up tracked by a roadmap item has shipped — and there are no load-bearing inbound links from open roadmap items that need it as an internal contract — delete the roadmap `.mdx` file in the same PR that ships the last remaining piece. Replace it with a single bullet in the **Completed** section of `docs/src/content/docs/reference/roadmap.mdx` that names the feature in plain prose and links to the canonical user-facing or contributor-facing doc that describes the shipped behaviour. Before deleting, audit every detail on the page and place it in its rightful long-term home according to the **Documentation as the source of truth** rule below: operator behaviour goes to `guides/` or `commands/`; design decisions, on-disk layout, and architecture go to `reference/architecture.mdx`, `reference/configuration.mdx`, or `reference/codebase-map.mdx`. The git history is the record of design rationale; the roadmap directory is not the long-term archive for resolved work.
+
+A roadmap page that says `**Status**: Resolved` but still sits in the directory is a smell, not a shipping target. The only legitimate reasons to keep one are (a) genuine remaining work tracked on the same page, or (b) load-bearing inbound links from open roadmap items that still treat the page as an internal contract. Anything else gets retired.
+
+## Documentation as the source of truth (agent-only)
+
+**The published docs site is the spec.** Every feature jackin ships must be described from two angles, and both must be kept current in the same PR that lands the change:
+
+- **User-facing docs** (the *Operator* and *Role Authoring* sidebar groups: `getting-started/`, `guides/`, `commands/`, `developing/`) describe **what jackin does from outside the binary**. They answer "if I run this command or set this config, what will happen?" without naming on-disk paths the operator never edits, internal Rust types, or implementation steps. A reader following only the user-facing docs must be able to use the feature successfully.
+- **Contributor-facing docs** (the *Internals* sidebar group: `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, `reference/claude-token-orchestrator.mdx`, `reference/schema-versions.mdx`, `reference/tui-design-decisions.mdx`, plus active items under `reference/roadmap/`) describe **how jackin is built**. On-disk layout, struct/enum/function names, design decisions, trade-offs, file paths under `src/`, and links into the source tree all live here. This surface is what an agent or contributor reads before changing code, and it is what they update when their change makes the description stale.
+
+Both surfaces are load-bearing. If an operator-visible behaviour ships without an update to the user-facing docs, the feature is not actually shipped — operators have no way to learn it exists or how to invoke it. If an internal change ships without an update to the contributor-facing docs, the next agent reading the internals page is debugging against a stale spec.
+
+**Before marking any PR ready to merge — and again whenever the operator asks to merge it — re-verify every change against the published docs and update both surfaces in the same PR.** Concretely:
+
+1. Walk the diff and ask, for each change: does this change what an operator sees, types, or relies on? If yes, the matching `guides/`, `commands/`, `getting-started/`, or `developing/` page must be updated in this PR.
+2. Walk the diff again and ask: does this change a struct, enum, function name, on-disk path, schema version, design decision, or any other detail an internals page describes? If yes, the matching `reference/` page must be updated in this PR.
+3. Apply the **Roadmap freshness** rule above: status updates, sidebar/overview audits, and retire-when-fully-resolved.
+4. Run `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from `docs/`. A docs change that doesn't compile or breaks repo-file references is incomplete.
+
+Do not split a feature PR from its docs PR by default. The docs land with the code that makes them true; landing them later means the docs are wrong for the gap, and the gap is exactly when other agents and operators will read them. The exception is the explicit "docs-only follow-up" pattern named in `PULL_REQUESTS.md`, which the operator authorizes per case.
+
+**Audience-correct placement is not optional.** When you find yourself wanting to put a TOML schema fragment, on-disk path, or struct name on a user-facing page, the placement is wrong — that detail goes on the matching internals page, and the user-facing page links to it. When you find yourself wanting to write `jackin foo --bar` operator instructions on an internals page, that block belongs in the `commands/` page, and the internals page links out. The split is what lets each audience trust their surface; mixing them weakens both.
+
+This rule does not retire when jackin ships its first release; the audience split is permanent. The roadmap-retirement portion of this rule and the **Roadmap freshness** rule retire only when there are no roadmap items left to maintain.
+
 ## Pull requests (agent-only) — see `PULL_REQUESTS.md`
 
 All rules for opening, iterating on, refreshing, reviewing, and merging pull requests live in [`PULL_REQUESTS.md`](PULL_REQUESTS.md). **Read that file before opening any PR.** It covers:
