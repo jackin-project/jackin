@@ -1,5 +1,6 @@
 //! Editor save flow: two-phase commit with planner validation, a
 //! `ConfirmSave` preview modal, and `ConfigEditor`-driven writes.
+#![allow(clippy::items_after_test_module)]
 
 use super::super::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerListRow, ManagerStage, ManagerState, Modal,
@@ -2299,4 +2300,436 @@ mod tests {
             "UUID URI must NOT appear in pre-save diff; got: {joined}"
         );
     }
+}
+
+// ── Settings save preview ─────────────────────────────────────────────────────
+
+/// Build the diff preview lines for the settings save confirmation dialog.
+/// Mirrors the format of `build_confirm_save_lines` for the workspace editor.
+/// Shows a summary section (counts per category) followed by per-category diffs.
+#[must_use]
+#[allow(clippy::too_many_lines)]
+pub(super) fn build_settings_save_lines(
+    settings: &super::super::state::SettingsState<'_>,
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::text::{Line, Span};
+
+    let green = Color::Rgb(0, 255, 65);
+    let dim = Color::Rgb(0, 140, 30);
+    let white = Color::Rgb(255, 255, 255);
+    let heading = Style::default().fg(white).add_modifier(Modifier::BOLD);
+    let add_style = Style::default().fg(green);
+    let remove_style = Style::default().fg(dim);
+    let sep_style = Style::default().fg(Color::Rgb(0, 50, 12));
+
+    let mut out: Vec<Line<'static>> = Vec::new();
+
+    // ── Summary ───────────────────────────────────────────────────────
+    out.push(Line::from(Span::styled("Save settings", heading)));
+    out.push(Line::raw(""));
+
+    let mount_stats = settings_mount_stats(&settings.mounts.original, &settings.mounts.pending);
+    let env_stats = settings_env_stats(&settings.env.original, &settings.env.pending);
+    let auth_stats = settings_auth_stats(
+        &settings.auth.original,
+        &settings.auth.pending,
+        &settings.auth.original_github_env,
+        &settings.auth.github_env,
+    );
+    let trust_stats = settings_trust_stats(&settings.trust.original, &settings.trust.pending);
+
+    if let Some(s) = mount_stats.as_deref() {
+        out.push(Line::from(vec![
+            Span::styled("  Mounts:       ", heading),
+            Span::styled(s.to_owned(), add_style),
+        ]));
+    }
+    if let Some(s) = env_stats.as_deref() {
+        out.push(Line::from(vec![
+            Span::styled("  Environments: ", heading),
+            Span::styled(s.to_owned(), add_style),
+        ]));
+    }
+    if let Some(s) = auth_stats.as_deref() {
+        out.push(Line::from(vec![
+            Span::styled("  Auth:         ", heading),
+            Span::styled(s.to_owned(), add_style),
+        ]));
+    }
+    if let Some(s) = trust_stats.as_deref() {
+        out.push(Line::from(vec![
+            Span::styled("  Trust:        ", heading),
+            Span::styled(s.to_owned(), add_style),
+        ]));
+    }
+
+    // Separator before details
+    out.push(Line::raw(""));
+    out.push(Line::from(Span::styled("  \u{2500}".repeat(30), sep_style)));
+    out.push(Line::raw(""));
+
+    // ── Mount details ─────────────────────────────────────────────────
+    let mount_lines = settings_mount_diff_lines(
+        &settings.mounts.original,
+        &settings.mounts.pending,
+        add_style,
+        remove_style,
+    );
+    if !mount_lines.is_empty() {
+        out.push(Line::from(Span::styled("Mounts:", heading)));
+        out.extend(mount_lines);
+        out.push(Line::raw(""));
+    }
+
+    // ── Environment details ───────────────────────────────────────────
+    let env_lines = settings_env_diff_lines(
+        &settings.env.original,
+        &settings.env.pending,
+        add_style,
+        remove_style,
+    );
+    if !env_lines.is_empty() {
+        out.push(Line::from(Span::styled("Environments:", heading)));
+        out.extend(env_lines);
+        out.push(Line::raw(""));
+    }
+
+    // ── Auth details ──────────────────────────────────────────────────
+    let auth_lines = settings_auth_diff_lines(
+        &settings.auth.original,
+        &settings.auth.pending,
+        &settings.auth.original_github_env,
+        &settings.auth.github_env,
+        add_style,
+        remove_style,
+    );
+    if !auth_lines.is_empty() {
+        out.push(Line::from(Span::styled("Auth:", heading)));
+        out.extend(auth_lines);
+        out.push(Line::raw(""));
+    }
+
+    // ── Trust details ─────────────────────────────────────────────────
+    let trust_lines = settings_trust_diff_lines(
+        &settings.trust.original,
+        &settings.trust.pending,
+        add_style,
+        remove_style,
+    );
+    if !trust_lines.is_empty() {
+        out.push(Line::from(Span::styled("Trust:", heading)));
+        out.extend(trust_lines);
+        out.push(Line::raw(""));
+    }
+
+    // Strip trailing blank lines.
+    while out.last().is_some_and(|l: &Line| {
+        l.spans.is_empty() || l.spans.iter().all(|s| s.content.trim().is_empty())
+    }) {
+        out.pop();
+    }
+
+    out
+}
+
+// ── Summary stats helpers ─────────────────────────────────────────────────────
+
+fn settings_mount_stats(
+    original: &[crate::config::GlobalMountRow],
+    pending: &[crate::config::GlobalMountRow],
+) -> Option<String> {
+    let (added, removed, modified) = mount_diff_counts(original, pending);
+    if added + removed + modified == 0 {
+        return None;
+    }
+    let mut parts: Vec<String> = Vec::new();
+    if added > 0 {
+        parts.push(format!("{added} added"));
+    }
+    if removed > 0 {
+        parts.push(format!("{removed} removed"));
+    }
+    if modified > 0 {
+        parts.push(format!("{modified} modified"));
+    }
+    Some(parts.join(", "))
+}
+
+fn settings_env_stats(
+    original: &super::super::state::SettingsEnvConfig,
+    pending: &super::super::state::SettingsEnvConfig,
+) -> Option<String> {
+    let (added, removed, modified) = env_config_diff_counts(original, pending);
+    if added + removed + modified == 0 {
+        return None;
+    }
+    let mut parts: Vec<String> = Vec::new();
+    if added > 0 {
+        parts.push(format!("{added} added"));
+    }
+    if removed > 0 {
+        parts.push(format!("{removed} removed"));
+    }
+    if modified > 0 {
+        parts.push(format!("{modified} modified"));
+    }
+    Some(parts.join(", "))
+}
+
+fn settings_auth_stats(
+    original: &[super::super::state::SettingsAuthRow],
+    pending: &[super::super::state::SettingsAuthRow],
+    orig_github_env: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    pend_github_env: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+) -> Option<String> {
+    let row_changes = original
+        .iter()
+        .zip(pending.iter())
+        .filter(|(a, b)| a.mode != b.mode)
+        .count();
+    let (env_added, env_removed, env_modified) =
+        env_map_diff_counts(orig_github_env, pend_github_env);
+    let total = row_changes + env_added + env_removed + env_modified;
+    if total == 0 {
+        return None;
+    }
+    Some(format!("{total} changed"))
+}
+
+fn settings_trust_stats(
+    original: &[super::super::state::SettingsTrustRow],
+    pending: &[super::super::state::SettingsTrustRow],
+) -> Option<String> {
+    let changed = original
+        .iter()
+        .zip(pending.iter())
+        .filter(|(a, b)| a.trusted != b.trusted)
+        .count();
+    if changed == 0 {
+        return None;
+    }
+    Some(format!("{changed} changed"))
+}
+
+// ── Count helpers ─────────────────────────────────────────────────────────────
+
+fn mount_diff_counts(
+    original: &[crate::config::GlobalMountRow],
+    pending: &[crate::config::GlobalMountRow],
+) -> (usize, usize, usize) {
+    use std::collections::BTreeMap;
+    let orig_map: BTreeMap<(Option<String>, String), &crate::config::GlobalMountRow> = original
+        .iter()
+        .map(|r| ((r.scope.clone(), r.name.clone()), r))
+        .collect();
+    let pend_map: BTreeMap<(Option<String>, String), &crate::config::GlobalMountRow> = pending
+        .iter()
+        .map(|r| ((r.scope.clone(), r.name.clone()), r))
+        .collect();
+    let added = pend_map
+        .keys()
+        .filter(|k| !orig_map.contains_key(k))
+        .count();
+    let removed = orig_map
+        .keys()
+        .filter(|k| !pend_map.contains_key(k))
+        .count();
+    let modified = pend_map
+        .iter()
+        .filter(|(k, prow)| orig_map.get(k).is_some_and(|orow| orow.mount != prow.mount))
+        .count();
+    (added, removed, modified)
+}
+
+fn env_config_diff_counts(
+    original: &super::super::state::SettingsEnvConfig,
+    pending: &super::super::state::SettingsEnvConfig,
+) -> (usize, usize, usize) {
+    let (ga, gr, gm) = env_map_diff_counts(&original.env, &pending.env);
+    let all_roles: std::collections::BTreeSet<&String> =
+        original.roles.keys().chain(pending.roles.keys()).collect();
+    let empty = std::collections::BTreeMap::default();
+    let (ra, rr, rm) = all_roles.into_iter().fold((0, 0, 0), |(a, r, m), role| {
+        let oe = original.roles.get(role).unwrap_or(&empty);
+        let pe = pending.roles.get(role).unwrap_or(&empty);
+        let (da, dr, dm) = env_map_diff_counts(oe, pe);
+        (a + da, r + dr, m + dm)
+    });
+    (ga + ra, gr + rr, gm + rm)
+}
+
+fn env_map_diff_counts(
+    original: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    pending: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+) -> (usize, usize, usize) {
+    let added = pending
+        .keys()
+        .filter(|k| !original.contains_key(*k))
+        .count();
+    let removed = original
+        .keys()
+        .filter(|k| !pending.contains_key(*k))
+        .count();
+    let modified = pending
+        .iter()
+        .filter(|(k, v)| original.get(*k).is_some_and(|ov| ov != *v))
+        .count();
+    (added, removed, modified)
+}
+
+// ── Detail diff-line helpers ──────────────────────────────────────────────────
+
+fn settings_mount_diff_lines(
+    original: &[crate::config::GlobalMountRow],
+    pending: &[crate::config::GlobalMountRow],
+    add_style: ratatui::style::Style,
+    remove_style: ratatui::style::Style,
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::text::{Line, Span};
+    use std::collections::BTreeMap;
+
+    let orig_map: BTreeMap<(Option<String>, String), &crate::config::GlobalMountRow> = original
+        .iter()
+        .map(|r| ((r.scope.clone(), r.name.clone()), r))
+        .collect();
+    let pend_map: BTreeMap<(Option<String>, String), &crate::config::GlobalMountRow> = pending
+        .iter()
+        .map(|r| ((r.scope.clone(), r.name.clone()), r))
+        .collect();
+
+    let mut out: Vec<Line<'static>> = Vec::new();
+    for (key, row) in &pend_map {
+        if !orig_map.contains_key(key) {
+            out.push(Line::from(Span::styled(
+                format!("  + {}", mount_row_summary(row)),
+                add_style,
+            )));
+        }
+    }
+    for (key, row) in &orig_map {
+        if !pend_map.contains_key(key) {
+            out.push(Line::from(Span::styled(
+                format!("  - {}", mount_row_summary(row)),
+                remove_style,
+            )));
+        }
+    }
+    for (key, prow) in &pend_map {
+        if let Some(orow) = orig_map.get(key)
+            && orow.mount != prow.mount
+        {
+            out.push(Line::from(Span::styled(
+                format!("  ~ {}", mount_row_summary(prow)),
+                add_style,
+            )));
+            out.push(Line::from(Span::styled(
+                format!("      was: {}", mount_row_summary(orow)),
+                remove_style,
+            )));
+        }
+    }
+    out
+}
+
+fn mount_row_summary(row: &crate::config::GlobalMountRow) -> String {
+    let scope = row
+        .scope
+        .as_deref()
+        .map(|s| format!("[{s}] "))
+        .unwrap_or_default();
+    let src = crate::tui::shorten_home(&row.mount.src);
+    let dst = crate::tui::shorten_home(&row.mount.dst);
+    let ro = if row.mount.readonly { " (ro)" } else { "" };
+    format!("{scope}{src} → {dst}{ro}")
+}
+
+fn settings_env_diff_lines(
+    original: &super::super::state::SettingsEnvConfig,
+    pending: &super::super::state::SettingsEnvConfig,
+    add_style: ratatui::style::Style,
+    remove_style: ratatui::style::Style,
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::text::{Line, Span};
+    let mut out: Vec<Line<'static>> = Vec::new();
+    append_env_map_diff_lines(
+        &mut out,
+        None,
+        &original.env,
+        &pending.env,
+        add_style,
+        remove_style,
+    );
+    let all_roles: std::collections::BTreeSet<&String> =
+        original.roles.keys().chain(pending.roles.keys()).collect();
+    let empty = std::collections::BTreeMap::default();
+    for role in all_roles {
+        let oe = original.roles.get(role).unwrap_or(&empty);
+        let pe = pending.roles.get(role).unwrap_or(&empty);
+        let mut probe: Vec<Line<'static>> = Vec::new();
+        append_env_map_diff_lines(&mut probe, None, oe, pe, add_style, remove_style);
+        if !probe.is_empty() {
+            out.push(Line::from(Span::styled(
+                format!("  role {role}:"),
+                add_style,
+            )));
+            append_env_map_diff_lines(&mut out, Some("  "), oe, pe, add_style, remove_style);
+        }
+    }
+    out
+}
+
+fn settings_auth_diff_lines(
+    original: &[super::super::state::SettingsAuthRow],
+    pending: &[super::super::state::SettingsAuthRow],
+    orig_github_env: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    pend_github_env: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    add_style: ratatui::style::Style,
+    remove_style: ratatui::style::Style,
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::text::{Line, Span};
+    let mut out: Vec<Line<'static>> = Vec::new();
+    for (orig_row, pend_row) in original.iter().zip(pending.iter()) {
+        if orig_row.mode != pend_row.mode {
+            out.push(Line::from(Span::styled(
+                format!(
+                    "  ~ {}  {} \u{2192} {}",
+                    pend_row.kind.label(),
+                    orig_row.mode.as_str(),
+                    pend_row.mode.as_str(),
+                ),
+                add_style,
+            )));
+        }
+    }
+    append_env_map_diff_lines(
+        &mut out,
+        None,
+        orig_github_env,
+        pend_github_env,
+        add_style,
+        remove_style,
+    );
+    out
+}
+
+fn settings_trust_diff_lines(
+    original: &[super::super::state::SettingsTrustRow],
+    pending: &[super::super::state::SettingsTrustRow],
+    add_style: ratatui::style::Style,
+    remove_style: ratatui::style::Style,
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::text::{Line, Span};
+    let mut out: Vec<Line<'static>> = Vec::new();
+    for (orig_row, pend_row) in original.iter().zip(pending.iter()) {
+        if orig_row.trusted != pend_row.trusted {
+            let (label, style) = if pend_row.trusted {
+                (format!("  + {}  trusted", pend_row.role), add_style)
+            } else {
+                (format!("  - {}  untrusted", pend_row.role), remove_style)
+            };
+            out.push(Line::from(Span::styled(label, style)));
+        }
+    }
+    out
 }

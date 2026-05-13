@@ -101,16 +101,13 @@ impl RolePickerState {
 
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
 
-const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
-const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
-const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
-const WHITE: Color = Color::Rgb(255, 255, 255);
+use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &RolePickerState) {
     // Filter row stays out of the title — see RULES.md "TUI List
@@ -134,8 +131,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &RolePickerState) {
             Constraint::Length(1), // filter row
             Constraint::Length(1), // spacer
             Constraint::Min(1),    // list
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // footer
         ])
         .split(inner);
 
@@ -180,26 +175,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &RolePickerState) {
         })
         .collect();
     frame.render_widget(Paragraph::new(lines), rows[2]);
-
-    let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(PHOSPHOR_GREEN);
-    let sep_style = Style::default().fg(PHOSPHOR_DARK);
-    let confirm_label = format!(" {}", state.confirm_label);
-    let hint = Paragraph::new(Line::from(vec![
-        Span::styled("\u{2191}\u{2193}", key_style),
-        Span::styled(" navigate", text_style),
-        Span::styled(" \u{b7} ", sep_style),
-        Span::styled("type", key_style),
-        Span::styled(" filter", text_style),
-        Span::styled(" \u{b7} ", sep_style),
-        Span::styled("Enter", key_style),
-        Span::styled(confirm_label, text_style),
-        Span::styled(" \u{b7} ", sep_style),
-        Span::styled("Esc", key_style),
-        Span::styled(" cancel", text_style),
-    ]))
-    .alignment(Alignment::Center);
-    frame.render_widget(hint, rows[4]);
 }
 
 #[cfg(test)]
@@ -378,33 +353,6 @@ mod tests {
         assert!(
             !top.contains("smi"),
             "live filter must NOT bleed into the title; top row:\n{top}"
-        );
-    }
-
-    #[test]
-    fn agent_picker_footer_uses_configured_confirm_label() {
-        let s_launch =
-            RolePickerState::with_confirm_label(roles(&["chainargos/agent-smith"]), "launch");
-        let frame = dump(&s_launch, 60, 12);
-        assert!(
-            frame.contains("Enter") && frame.contains("launch"),
-            "launch-context footer must read `Enter launch`; frame:\n{frame}"
-        );
-        assert!(
-            !frame.contains(" select"),
-            "launch-context footer must not say `select`; frame:\n{frame}"
-        );
-
-        let s_select =
-            RolePickerState::with_confirm_label(roles(&["chainargos/agent-smith"]), "select");
-        let frame = dump(&s_select, 60, 12);
-        assert!(
-            frame.contains("Enter") && frame.contains("select"),
-            "select-context footer must read `Enter select`; frame:\n{frame}"
-        );
-        assert!(
-            !frame.contains(" launch"),
-            "select-context footer must not say `launch`; frame:\n{frame}"
         );
     }
 

@@ -17,6 +17,7 @@ use crate::paths::JackinPaths;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvScope {
     Global,
+    GlobalGithub,
     Role(String),
     Workspace(String),
     WorkspaceRole {
@@ -269,6 +270,24 @@ impl ConfigEditor {
     ) {
         let table = table_path_mut(&mut self.doc, &[agent.slug().to_string()]);
         table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
+    }
+
+    /// Write `[github].auth_forward = <mode>` at the global layer.
+    pub fn set_global_github_auth_forward(&mut self, mode: crate::config::GithubAuthMode) {
+        let table = table_path_mut(&mut self.doc, &["github".to_string()]);
+        table.insert("auth_forward", toml_edit::value(github_mode_str(mode)));
+    }
+
+    pub fn set_global_github_env_var(
+        &mut self,
+        key: &str,
+        value: crate::operator_env::EnvValue,
+    ) -> anyhow::Result<()> {
+        self.set_env_var(&EnvScope::GlobalGithub, key, value)
+    }
+
+    pub fn remove_global_github_env_var(&mut self, key: &str) -> bool {
+        self.remove_env_var(&EnvScope::GlobalGithub, key)
     }
 
     /// Write or clear `[<agent>].auth_forward` inside the workspace file.
@@ -552,7 +571,9 @@ impl ConfigEditor {
 
     fn doc_and_path_for_env_scope(&mut self, scope: &EnvScope) -> (&mut DocumentMut, Vec<String>) {
         match scope {
-            EnvScope::Global | EnvScope::Role(_) => (&mut self.doc, env_scope_path(scope)),
+            EnvScope::Global | EnvScope::GlobalGithub | EnvScope::Role(_) => {
+                (&mut self.doc, env_scope_path(scope))
+            }
             EnvScope::Workspace(w) => {
                 let doc = self.workspace_doc_mut(w);
                 (doc, vec!["env".to_string()])
@@ -606,6 +627,7 @@ const fn github_mode_str(mode: crate::config::GithubAuthMode) -> &'static str {
 fn env_scope_path(scope: &EnvScope) -> Vec<String> {
     match scope {
         EnvScope::Global => vec!["env".to_string()],
+        EnvScope::GlobalGithub => vec!["github".to_string(), "env".to_string()],
         EnvScope::Role(a) => vec!["roles".to_string(), a.clone(), "env".to_string()],
         EnvScope::Workspace(w) => vec!["workspaces".to_string(), w.clone(), "env".to_string()],
         EnvScope::WorkspaceRole { workspace, role } => vec![

@@ -107,16 +107,13 @@ impl WorkdirPickState {
 
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
 
-const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
-const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
-const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
-const WHITE: Color = Color::Rgb(255, 255, 255);
+use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, WHITE};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
     // Block title styled WHITE + BOLD to match the main-screen block titles
@@ -134,15 +131,11 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(block, area);
 
-    // Inner layout: blank / list / blank / hint — matches the canonical
-    // list-modal layout used by GithubPicker.
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // top padding
             Constraint::Min(1),    // list
-            Constraint::Length(1), // spacer
-            Constraint::Length(1), // hint
         ])
         .split(inner);
 
@@ -190,23 +183,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
         .take(visible)
         .collect();
     frame.render_widget(Paragraph::new(lines), rows[1]);
-
-    // Hint line — canonical list-modal hint (↑↓ navigate · Enter confirm · Esc cancel).
-    let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(PHOSPHOR_GREEN);
-    let sep_style = Style::default().fg(PHOSPHOR_DARK);
-    let hint = Paragraph::new(Line::from(vec![
-        Span::styled("\u{2191}\u{2193}", key_style),
-        Span::styled(" navigate", text_style),
-        Span::styled(" \u{b7} ", sep_style),
-        Span::styled("Enter", key_style),
-        Span::styled(" confirm", text_style),
-        Span::styled(" \u{b7} ", sep_style),
-        Span::styled("Esc", key_style),
-        Span::styled(" cancel", text_style),
-    ]))
-    .alignment(Alignment::Center);
-    frame.render_widget(hint, rows[3]);
 }
 
 #[cfg(test)]

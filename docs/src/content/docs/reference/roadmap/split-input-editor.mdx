@@ -7,7 +7,9 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/console/manager/input/editor.rs" /> is still one of the biggest concentrated editor-state files: ~1727L production, 3796L total, with tests starting at line 1728. It handles keyboard dispatch for all 4 editor tabs (General, Mounts, Agents, Secrets). A reviewer auditing "did the AI correctly implement the Secrets tab?" still has to scan well over a thousand lines of mixed-tab production code.
+<RepoFile path="src/console/manager/input/editor.rs" /> is **3955L** total (was ~3796L at original analysis). It handles keyboard dispatch for all editor tabs (General, Mounts, Agents, Secrets) and is one of the biggest concentrated editor-state files.
+
+Its render counterpart <RepoFile path="src/console/manager/render/editor.rs" /> is now **3231L** (was ~1682L — nearly doubled). Both files should be split together as a paired operation.
 
 ## Proposed split
 
@@ -20,6 +22,16 @@ src/console/manager/input/editor/
   secrets.rs  ← Secrets tab key handlers (~500L — the AI-generated section)
 ```
 
+The render counterpart would split similarly:
+```
+src/console/manager/render/editor/
+  mod.rs      ← re-exports, render_editor dispatcher
+  general.rs  ← General tab rendering
+  mounts.rs   ← Mounts tab rendering
+  agents.rs   ← Agents tab rendering
+  secrets.rs  ← Secrets tab rendering
+```
+
 ## Key technical details
 
 - `handle_editor_key` — main dispatcher; stays in `mod.rs`
@@ -27,18 +39,25 @@ src/console/manager/input/editor/
 - Both functions dispatch to tab-specific helpers; the helpers move to per-tab files
 - After split, helper imports such as `super::super::agent_allow::allows_all_agents` should switch to a stable absolute path (`crate::console::manager::agent_allow::allows_all_agents`) because `editor/` becomes one level deeper
 
+## Duplication found within this file
+
+- `config_with_agents` test helper is defined identically 4 times across `render/editor.rs` (3 copies) and `input/editor.rs` (1 copy) — extract to shared test utility
+- Breadcrumb rendering logic at `render/editor.rs:1427-1455` (`push_op_breadcrumb_spans`) is fully duplicated inline at lines 1058–1091 inside `secrets_key_row_spans` — the inline version should call the shared function
+- The file crosses the console/runtime boundary at 2 production-code sites: `crate::runtime::register_agent_repo` (line ~1445) and `crate::runtime::RepoError` (lines ~1536-1547)
+
 ## What needs confirmation
 
 Should `handle_editor_modal` stay in `mod.rs` or move to a `modal.rs` sub-file? This depends on its size post-split and whether it's a "modal concern" or a "dispatch concern".
 
 ## Auditability gain
 
-To audit "did the AI correctly implement the Secrets tab?", a reviewer reads only `secrets.rs` instead of scanning ~1727L of mixed-tab production code.
+To audit "did the AI correctly implement the Secrets tab?", a reviewer reads only `secrets.rs` instead of scanning ~3955L of mixed-tab production code.
 
 ## Steps
 
-1. Complete snapshot tests item first (regression net).
-2. Create `src/console/manager/input/editor/` directory.
-3. Move each tab's handlers to the appropriate file, keeping `mod.rs` as the dispatcher.
-4. Fix import paths (the `super::super::` depth changes).
-5. Verify `cargo nextest run` passes.
+1. Complete Phase 1.5 TUI rendering DRY extractions first (named styles, `titled_block` helper).
+2. Complete snapshot tests item first (regression net).
+3. Create `src/console/manager/input/editor/` and `src/console/manager/render/editor/` directories.
+4. Move each tab's handlers to the appropriate file, keeping `mod.rs` as the dispatcher.
+5. Fix import paths (the `super::super::` depth changes).
+6. Verify `cargo nextest run` passes.

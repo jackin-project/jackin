@@ -7,7 +7,9 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/app/mod.rs" /> is now 1243L total, ~1180L production (tests start at line 1181). Nearly all production code is the `run()` dispatch function with a large match on CLI commands. A reviewer auditing "does `jackin workspace create` correctly validate the workdir?" still has to scan a thousand-plus lines of mixed-command dispatch.
+<RepoFile path="src/app/mod.rs" /> is now **2767L** total — more than **double** the 1243L at the original analysis (+123% growth). It is the second-largest file in the codebase after `runtime/launch.rs`. Nearly all production code is the `run()` dispatch function with a giant match on CLI commands, but the file has accumulated substantial new command handling, error recovery, and test coverage.
+
+<RepoFile path="src/app/context.rs" /> (1466L) has also grown and now contains significant instance management, workspace resolution, and Docker interaction logic.
 
 ## Proposed split
 
@@ -17,21 +19,35 @@ src/app/
   dispatch.rs      ← the giant match on cli::Command (~700L)
   workspace_cmd.rs ← workspace subcommand handlers (~150L)
   config_cmd.rs    ← config subcommand handlers (~100L)
+  load_cmd.rs      ← load/hardline/eject command handlers (new — extracted from dispatch)
+  instance_cmd.rs  ← instance management commands (new — instance recovery/purge flows)
 ```
 
-Note: <RepoFile path="src/app/context.rs" /> already implements the impl-extension pattern and stays as-is.
+Note: <RepoFile path="src/app/context.rs" /> already implements the impl-extension pattern and stays as-is, though it may need its own split analysis if it continues growing.
 
-## Import notes
+## Duplication found
 
-- <RepoFile path="src/main.rs" /> currently calls `jackin::run(...)` through the library crate export; that external call shape stays the same if `app/mod.rs` becomes a thinner internal dispatcher
-- `dispatch.rs` is `mod dispatch` inside `app/`; `run()` calls `dispatch::dispatch_command(args)`
-- `context.rs` already lives in `app/` — no change, just updated import paths within the module tree
+- `app/mod.rs` contains its own `FakeOpWriter` (stripped version) that duplicates the fuller one in <RepoFile path="src/workspace/token_setup.rs" />. Should use a shared test utility.
+- 4 inline `format!("{name}-dind")` / `format!("{name}-net")` derivations that should use a shared naming helper.
+- `fake_runner_with_running` helper is near-identical to one in `console/manager/input/save.rs` but with a subtle trailing-newline difference — potential copy-paste bug.
 
 ## What needs confirmation
 
 - Whether `run()` stays in `mod.rs` or also moves to `dispatch.rs`
 - The exact boundary between `dispatch.rs` and `workspace_cmd.rs` (some workspace handling is interleaved in the dispatch match)
+- Whether `load_cmd.rs` and `instance_cmd.rs` are worth separate files or should stay in `dispatch.rs`
+- Whether `context.rs` (1466L) also needs splitting or is manageable at its current size
 
 ## Auditability gain
 
-To audit "does `jackin workspace create` correctly validate the workdir?", a reviewer reads `workspace_cmd.rs` instead of scanning ~1180L of mixed-command dispatch.
+To audit "does `jackin workspace create` correctly validate the workdir?", a reviewer reads `workspace_cmd.rs` instead of scanning ~2700L of mixed-command dispatch.
+
+## Recommended priority
+
+**Split first among Phase 2 targets** — it has the highest growth rate (+123%), pure dispatch structure (lowest risk), and its split will establish patterns for the remaining file splits.
+
+## Related files
+
+- <RepoFile path="src/app/mod.rs" /> — target file (2767L)
+- <RepoFile path="src/app/context.rs" /> — impl-extension module (1466L)
+- <RepoFile path="src/cli/dispatch.rs" /> — CLI argument types consumed by the dispatch match

@@ -141,6 +141,14 @@ Until the listed agents emit their trailers automatically, the trailer must be a
   Co-authored-by: Amp <amp@ampcode.com>
   ```
 
+- **OpenCode** (OpenCode CLI, regardless of underlying GLM model):
+
+  ```text
+  Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>
+  ```
+
+  This matches the GitHub App identity used by OpenCode when it creates commits, as defined in the `anomalyco/opencode` repository. Do not alter the format — match what OpenCode emits.
+
 Amp may additionally emit an `Amp-Thread-ID:` metadata trailer; that is acceptable alongside the single `Co-authored-by: Amp` trailer because the thread ID identifies the conversation, not a second agent.
 
 If you are uncertain which agent is creating the commit, ask — the trailer is how the operator tracks which agent produced which change, and wrong attribution is worse than no attribution.
@@ -210,6 +218,12 @@ This does not apply to:
 
 - Inspection commands the operator runs (`pgrep`, `pmset`, `cat`, `ls`) — those aren't jackin invocations.
 - Production recommendations or scripted automation (debug output is too noisy for those).
+
+## TUI design decisions (agent-only)
+
+All TUI design rules — navigation conventions, W3C ARIA Tabs pattern, focusability, component reuse, color palette, modal sizing, scroll semantics, hint/footer rules, and more — live in [`docs/src/content/docs/reference/tui-design-decisions.mdx`](docs/src/content/docs/reference/tui-design-decisions.mdx).
+
+**Read that document before implementing any TUI change.** When a new decision is made (operator explains what should change and why), add it there immediately, not here.
 
 ## Shared conventions
 

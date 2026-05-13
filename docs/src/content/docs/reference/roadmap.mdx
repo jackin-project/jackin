@@ -40,6 +40,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 - [Per-mount isolation for parallel agents](/reference/roadmap/per-mount-isolation/) — `shared | worktree | clone` modes implemented in V1
 - [Split `config.toml` into per-workspace files](/reference/roadmap/split-workspace-config-files/) — `~/.config/jackin/workspaces/<name>.toml` layout shipped; per-file `version` stamps and migration land via the config-versioning item below
 - [Global mount visibility and editing](/reference/roadmap/global-mount-visibility/) — workspace views show applicable global mounts separately, and the console has a dedicated global mounts editor for `~/.config/jackin/config.toml`
+- [Settings TUI](/reference/roadmap/settings-tui/) — the console has a tabbed `Settings` shell covering existing `jackin config` surfaces: global mounts, global/per-role env vars, global auth forwarding modes, and role source trust
 - [Unique container identity and restore](/reference/roadmap/unique-container-identity-restore/) — DNS-safe unique container identities, per-instance manifests and rebuildable index, hardline/load/console recovery flows, durable per-instance agent home restore, related-instance recovery/rebuild, moved ad-hoc path recovery, guarded purge, and Java Testcontainers DinD smoke coverage have shipped; reconnectable named sessions and persistent lifecycle history are tracked separately
 
 ## Partially implemented
@@ -87,13 +88,9 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 
 ### Codebase health
 
-- **[Codebase readability program](/reference/roadmap/codebase-readability/)** — multi-phase internal-quality work covering documentation/setup, behavioral specs, module-contract refactors, and test coverage. The full leaf list lives in the program doc and in the sidebar under **Reference → Roadmap → Codebase health**.
+- **[Codebase readability program](/reference/roadmap/codebase-readability/)** — multi-phase internal-quality work covering documentation/setup, behavioral specs, DRY deduplication, module-contract refactors, and test coverage. Re-analyzed May 2026 against the current codebase (~91K lines of production Rust, 13 files over 1000 lines, pervasive TUI/auth/Docker duplication). The full leaf list lives in the program doc and in the sidebar under **Reference → Roadmap → Codebase health**.
 - **[Cargo workspace split](/reference/roadmap/cargo-workspace-split/)** — deferred multi-crate Cargo workspace plan for when LOC, compile time, or external-consumer triggers make crate boundaries worth the overhead (status: deferred to Phase 3 — trigger not yet met, but architecture is ready)
 - **[Open review findings catalog](/reference/roadmap/open-review-findings/)** — living backlog of review findings with accepted-exception annotations. Code review and automated scanning consult this catalog (see <RepoFile path="AGENTS.md" /> → "Code review & automated scanning").
-
-### Configuration ergonomics
-
-- **[Settings TUI](/reference/roadmap/settings-tui/)** — visualize and control existing operator config inside the console as a tabbed Settings surface. Global mounts ship first as a single stage delivered by the global mount visibility goal; an eager tab-shell refactor renames the stage to `Settings`, then per-tab work for Environments, Auth, and Trust follows. Strictly visualization of existing config — no new fields, no behavior changes (status: open — design proposal)
 
 ### Documentation infrastructure
 

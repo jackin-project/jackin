@@ -8,6 +8,28 @@ Never commit directly to `main`.
 - Keep branch names short, lowercase, and hyphen-separated
 - Merge back to `main` via pull request after review
 
+## Syncing with main: always rebase, never merge
+
+When a feature branch needs to incorporate new commits from `main`, always
+use rebase — never a merge commit:
+
+```bash
+git fetch origin
+git rebase origin/main
+git push --force-with-lease origin <branch>   # force-push requires operator approval
+```
+
+A merge commit (`git merge main`) creates a merge commit in the PR history that
+pulls in main's commits as branch commits. This causes DCO, review-history, and
+squash-merge problems: Renovate and other bot commits appear in the PR diff and
+must be signed off separately.
+
+Rebase replays only the branch's unique commits on top of the updated main,
+keeping the PR history clean and the DCO check scoped to work the branch author
+actually produced.
+
+Force-push after rebase still requires operator approval per the rule below.
+
 ## Force pushes
 
 Force pushes rewrite shared review history. Agents must never run
