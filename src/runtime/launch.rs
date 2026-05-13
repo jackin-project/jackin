@@ -2091,7 +2091,6 @@ fn resolve_restore_candidate(
             ContainerState::NotFound if manifest.is_restore_candidate() => {
                 candidates.push(manifest);
             }
-            ContainerState::Running | ContainerState::Stopped { .. } => {}
             ContainerState::InspectUnavailable(reason) => {
                 anyhow::bail!(
                     "{}",
@@ -2104,7 +2103,8 @@ fn resolve_restore_candidate(
                     )
                 );
             }
-            ContainerState::NotFound => {}
+            ContainerState::Running | ContainerState::Stopped { .. } | ContainerState::NotFound => {
+            }
         }
     }
 
@@ -2225,7 +2225,6 @@ fn related_restore_candidates(
         }
         let docker_state = inspect_container_state(runner, &manifest.container_base);
         match docker_state {
-            ContainerState::Running | ContainerState::Stopped { .. } => {}
             ContainerState::InspectUnavailable(_) => {
                 candidates.push(RelatedRestoreCandidate {
                     manifest,
@@ -2238,7 +2237,8 @@ fn related_restore_candidates(
                     docker_state,
                 });
             }
-            ContainerState::NotFound => {}
+            ContainerState::Running | ContainerState::Stopped { .. } | ContainerState::NotFound => {
+            }
         }
     }
     Ok(candidates)
