@@ -160,9 +160,9 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     fi
     mkdir -p /home/agent/.config/opencode
     if [ ! -f /home/agent/.config/opencode/opencode.json ]; then
-        printf '%s\n' '{"permission":{"*":{"*":"allow"}}}' > /home/agent/.config/opencode/opencode.json
+        printf '%s\n' '{"permission":"allow"}' > /home/agent/.config/opencode/opencode.json
     fi
-    LAUNCH=(opencode --dangerously-skip-permissions)
+    LAUNCH=(opencode)
     if [ $# -gt 0 ]; then
         LAUNCH+=("$@")
     fi
