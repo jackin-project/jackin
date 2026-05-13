@@ -70,6 +70,7 @@ export default defineConfig({
           items: [
             { label: 'Workspaces', slug: 'guides/workspaces' },
             { label: 'Mounts', slug: 'guides/mounts' },
+            { label: 'Parallel Agents', slug: 'guides/parallel-agents' },
             { label: 'Environment Variables', slug: 'guides/environment-variables' },
             {
               label: 'Authentication',
@@ -134,6 +135,7 @@ export default defineConfig({
           label: "Behind jackin' — Internals",
           items: [
             { label: 'Architecture', slug: 'reference/architecture' },
+            { label: 'Runtime Instance Model', slug: 'reference/runtime-instance-model' },
             { label: 'Configuration File', slug: 'reference/configuration' },
             { label: 'Schema Versions', slug: 'reference/schema-versions' },
             { label: 'Codebase Map', slug: 'reference/codebase-map' },
@@ -350,7 +352,6 @@ export default defineConfig({
                     { label: 'Env var interpolation', slug: 'reference/roadmap/env-var-interpolation' },
                     { label: 'Per-mount isolation', slug: 'reference/roadmap/per-mount-isolation' },
                     { label: 'Split config.toml into per-workspace files', slug: 'reference/roadmap/split-workspace-config-files' },
-                    { label: 'Unique container identity and restore', slug: 'reference/roadmap/unique-container-identity-restore' },
                   ],
                 },
               ],

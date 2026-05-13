@@ -81,7 +81,7 @@ Instance-local state helpers live in `src/instance/`:
 - <RepoFile path="src/instance/manifest.rs" /> — per-instance `instance.json` identity records, lifecycle status, and the rebuildable `instances.json` lookup index.
 
 The end-to-end shape of "what happens when you run `jackin load`" is
-described in [Architecture → Container lifecycle](/reference/architecture/#container-lifecycle).
+described in [Architecture → Container lifecycle](/reference/architecture/#container-lifecycle). The detailed contract for instance names, manifests, lookup indexes, restore decisions, cleanup guards, and parallel sessions lives in [Runtime Instance Model](/reference/runtime-instance-model/).
 
 ### "I want to change workspace or mount behaviour"
 
@@ -181,7 +181,8 @@ page must change in the same PR. The full table lives at the bottom of
 | `src/cli/**` | [Commands](/commands/load/) |
 | `src/workspace/**` (mount logic) | [Workspaces](/guides/workspaces/), [Mounts](/guides/mounts/) |
 | `src/config/**` | [Configuration File](/reference/configuration/) |
-| `src/runtime/**` | [Architecture](/reference/architecture/) |
+| `src/runtime/**` | [Architecture](/reference/architecture/), [Runtime Instance Model](/reference/runtime-instance-model/) |
+| `src/instance/**` | [Runtime Instance Model](/reference/runtime-instance-model/) |
 | `src/isolation/**` | Workspaces (per-mount isolation), Architecture (materialization + finalizer), [Configuration File](/reference/configuration/) |
 | `src/manifest/**` | [Role Manifest](/developing/role-manifest/) |
 | <RepoFile path="src/instance/auth.rs" /> | [Authentication](/guides/authentication/), [Security Model](/guides/security-model/) |

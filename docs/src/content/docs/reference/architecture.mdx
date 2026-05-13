@@ -67,9 +67,11 @@ The detached-start + attach split decouples the container's lifetime from the fo
 - **stopped with exit 0** → the user exited cleanly; tear down container, DinD, network, and certs volume
 - **stopped with non-zero exit or OOM** → crash; preserve the container and DinD so `jackin hardline` can restart in place
 
+Every fresh launch gets a unique DNS-safe instance identity. Existing running or stopped instances are not fresh-launch blockers; they remain discoverable through `hardline` and the console. Missing recoverable state is the case that can prompt or block before a fresh load. The detailed contributor contract lives in [Runtime Instance Model](/reference/runtime-instance-model/).
+
 ### Reconnecting
 
-`jackin hardline` inspects the target container. If it's running, it attaches. If it's stopped with a non-zero exit (crash / OOM) and the DinD sidecar is still running, it restarts the container and attaches. Clean exits (exit code 0) and missing DinD sidecars are refused — those cases require `jackin load` to start a fresh session.
+`jackin hardline` inspects the target container. If it's running, it attaches. If it's stopped with a non-zero exit (crash / OOM), it restores the required DinD sidecar/network/certs when needed, restarts the role container, and attaches. If the role container itself is missing but indexed recoverable state exists, hardline can rebuild the runtime around jackin-managed local state. Clean exits (exit code 0) are treated as completed sessions — use `jackin load` to start a fresh instance.
 
 ### Stopping
 
@@ -173,7 +175,7 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 │   └── terminfo/
 ├── data/
 │   ├── instances.json             # Rebuildable index of all known instances
-│   └── jackin-agent-smith/        # Persisted state per instance
+│   └── <container-base>/          # Persisted state per instance
 │       ├── claude/                # Claude auth handoff (provisioned when Claude is a supported agent)
 │       │   ├── credentials.json   # Forwarded OAuth credentials under auth_forward=sync
 │       │   └── account.json       # Forwarded Claude Code account metadata under sync/token modes
