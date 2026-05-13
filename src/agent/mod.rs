@@ -95,7 +95,7 @@ RUN set -euo pipefail && \\\n\
       *) echo \"unsupported arch $(uname -m)\"; exit 1 ;; \\\n\
     esac && \\\n\
     mkdir -p \"${HOME}/.opencode/bin\" && \\\n\
-    curl -fsSL \"https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-${ARCH}-musl.tar.gz\" \\\n\
+    curl -fsSL \"https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-${ARCH}.tar.gz\" \\\n\
       | tar xz -C \"${HOME}/.opencode/bin\" && \\\n\
     \"${HOME}/.opencode/bin/opencode\" --version\n\
 ENV PATH=\"/home/agent/.opencode/bin:${PATH}\"\n\
