@@ -2087,6 +2087,9 @@ fn resolve_restore_candidate(
         role_key,
         agent,
     )? {
+        if !manifest.is_restore_candidate() {
+            continue;
+        }
         let docker_state = inspect_container_state(runner, &manifest.container_base);
         if let ContainerState::InspectUnavailable(reason) = docker_state {
             anyhow::bail!(
@@ -2100,7 +2103,7 @@ fn resolve_restore_candidate(
                 )
             );
         }
-        if matches!(docker_state, ContainerState::NotFound) && manifest.is_restore_candidate() {
+        if matches!(docker_state, ContainerState::NotFound) {
             candidates.push(manifest);
         }
     }
@@ -2214,16 +2217,12 @@ fn related_restore_candidates(
         if manifest.role_key == role_key && manifest.agent_runtime == agent.slug() {
             continue;
         }
-        if matches!(
-            manifest.status,
-            InstanceStatus::CleanExited | InstanceStatus::Superseded | InstanceStatus::Purged
-        ) {
+        if !manifest.is_restore_candidate() {
             continue;
         }
         let docker_state = inspect_container_state(runner, &manifest.container_base);
         let should_prompt = match docker_state {
-            ContainerState::InspectUnavailable(_) => true,
-            ContainerState::NotFound => manifest.is_restore_candidate(),
+            ContainerState::InspectUnavailable(_) | ContainerState::NotFound => true,
             ContainerState::Running | ContainerState::Stopped { .. } => false,
         };
         if should_prompt {
