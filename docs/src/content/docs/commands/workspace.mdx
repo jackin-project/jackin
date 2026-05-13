@@ -29,7 +29,7 @@ Create a new workspace definition.
 | `--mount <SPEC>` | Bind-mount spec (repeatable, at least one required) |
 | `--allowed-role <NAME>` | Restrict to these roles (repeatable) |
 | `--default-role <NAME>` | Role to auto-select |
-| `--default-agent <claude\|codex\|amp>` | Default agent for this workspace |
+| `--default-agent <claude\|codex\|amp\|opencode>` | Default agent for this workspace |
 | `--mount-isolation <DST>=<TYPE>` | Set per-mount isolation by container destination. Repeatable. `<TYPE>` is `shared`, `worktree`, or `clone`. The `<DST>` must match a mount destination present in the final mount plan; an unknown `<DST>` is a hard error. |
 | `--keep-awake` | macOS only: opt this workspace into the keep-awake reconciler. While any agent in the workspace is running, jackin keeps a single detached `caffeinate -imsu` alive so the host stays awake. No-op on Linux/Windows. See [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake). |
 | `--git-pull` | Run `git pull` on every mounted git repository from the host before the agent container starts. Failures are non-fatal — the launch continues even when offline or the working tree is dirty. See [Git pull on entry](/guides/workspaces/#git-pull-on-entry). |
@@ -85,7 +85,7 @@ Modify an existing workspace.
 | `--remove-allowed-role <NAME>` | Revoke role access (repeatable) |
 | `--default-role <NAME>` | Set default role |
 | `--clear-default-role` | Clear the default role |
-| `--default-agent <claude\|codex\|amp>` | Set default agent |
+| `--default-agent <claude\|codex\|amp\|opencode>` | Set default agent |
 | `--clear-default-agent` | Clear the explicit default agent and fall back to Claude |
 | `--mount-isolation <DST>=<TYPE>` | Set isolation for a mount destination (repeatable). Can target an existing mount or a mount being upserted in the same command. |
 | `--delete-isolated-state` | Acknowledge deleting preserved isolated state when an edit changes the `src` of a materialized isolated mount. Required for non-interactive source-drift edits; ignored when no preserved state exists. |

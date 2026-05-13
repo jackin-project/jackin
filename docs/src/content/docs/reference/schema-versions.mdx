@@ -164,7 +164,7 @@ Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per
 | `workdir` | string | Yes | `legacy` | Container working directory |
 | `allowed_roles` | string array | No | `legacy` | Roles allowed in this workspace |
 | `default_role` | string | No | `legacy` | Preferred role for new sessions |
-| `default_agent` | string | No | `legacy` | `claude`, `codex`, or `amp`; omitted defaults to Claude |
+| `default_agent` | string | No | `legacy` | `claude`, `codex`, `amp`, or `opencode`; omitted defaults to Claude |
 | `last_role` | string | No | `legacy` | Last role selected by the operator |
 | `op_account` | string | No | `legacy` | 1Password account selector |
 | `git_pull_on_entry` | bool | No | `legacy` | Pull mounted repositories on entry |
@@ -210,7 +210,7 @@ does not auto-write role repositories during normal role loading. Run
 | `version` | string | Yes | `v1alpha1` | Current value: `v1alpha2` |
 | `dockerfile` | string | Yes | `legacy` | Relative path to role Dockerfile |
 | `published_image` | string | No | `legacy` | Pre-built role image override |
-| `agents` | string array | No | `legacy` | `claude`, `codex`, and/or `amp`; omitted means Claude-only |
+| `agents` | string array | No | `legacy` | `claude`, `codex`, `amp`, and/or `opencode`; omitted means Claude-only |
 | `[identity].name` | string | No | `legacy` | Display name |
 | `[claude].model` | string | No | `legacy` | Claude model override |
 | `[claude].plugins` | string array | No | `legacy` | Claude plugin identifiers |
@@ -219,6 +219,7 @@ does not auto-write role repositories during normal role loading. Run
 | `[[claude.marketplaces]].sparse` | string array | No | `legacy` | Sparse checkout paths |
 | `[codex].model` | string | No | `legacy` | Codex model override |
 | `[amp]` | table | No | `legacy` | Empty marker table for Amp support |
+| `[opencode].model` | string | No | `legacy` | `OpenCode` model override in `provider/model` format (e.g. `zai-coding-plan/glm-5.1`) |
 | `[hooks].setup_once` | string | No | `legacy` | Relative path to a one-time install script that runs on first launch only |
 | `[hooks].source` | string | No | `legacy` | Relative path to a script dot-sourced into the entrypoint shell so `export` and `PATH` mutations reach the launched agent |
 | `[hooks].preflight` | string | No | `legacy` | Relative path to a per-start preflight script |
