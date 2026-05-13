@@ -3240,6 +3240,22 @@ mod tests {
         InstanceIndex::update_manifest(&paths.data_dir, manifest).unwrap();
     }
 
+    fn resolve_workspace_restore(
+        paths: &JackinPaths,
+        role_key: &str,
+        runner: &mut impl CommandRunner,
+    ) -> anyhow::Result<RestoreResolution> {
+        resolve_restore_candidate(
+            paths,
+            Some("workspace"),
+            "workspace",
+            "/workspace",
+            role_key,
+            crate::agent::Agent::Claude,
+            runner,
+        )
+    }
+
     #[test]
     fn normalize_terminfo_entry_path_copies_macos_hex_dir_to_linux_char_dir() {
         let tmp = tempdir().unwrap();
@@ -6601,16 +6617,7 @@ plugins = []
             .unwrap();
         let mut runner = FakeRunner::with_capture_queue([String::new()]);
 
-        let error = resolve_restore_candidate(
-            &paths,
-            Some("workspace"),
-            "workspace",
-            "/workspace",
-            "agent-smith",
-            crate::agent::Agent::Claude,
-            &mut runner,
-        )
-        .unwrap_err();
+        let error = resolve_workspace_restore(&paths, "agent-smith", &mut runner).unwrap_err();
 
         assert!(error.to_string().contains("restore is available"));
         assert!(error.to_string().contains(container_name));
@@ -6630,16 +6637,7 @@ plugins = []
         write_indexed_manifest(&paths, &manifest);
         let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
 
-        let candidate = resolve_restore_candidate(
-            &paths,
-            Some("workspace"),
-            "workspace",
-            "/workspace",
-            "agent-smith",
-            crate::agent::Agent::Claude,
-            &mut runner,
-        )
-        .unwrap();
+        let candidate = resolve_workspace_restore(&paths, "agent-smith", &mut runner).unwrap();
 
         assert_eq!(candidate, RestoreResolution::StartFresh);
     }
@@ -6658,16 +6656,7 @@ plugins = []
         write_indexed_manifest(&paths, &manifest);
         let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
 
-        let candidate = resolve_restore_candidate(
-            &paths,
-            Some("workspace"),
-            "workspace",
-            "/workspace",
-            "agent-smith",
-            crate::agent::Agent::Claude,
-            &mut runner,
-        )
-        .unwrap();
+        let candidate = resolve_workspace_restore(&paths, "agent-smith", &mut runner).unwrap();
 
         assert_eq!(candidate, RestoreResolution::StartFresh);
     }
@@ -6686,16 +6675,7 @@ plugins = []
         write_indexed_manifest(&paths, &manifest);
         let mut runner = FakeRunner::with_capture_queue([String::new()]);
 
-        let error = resolve_restore_candidate(
-            &paths,
-            Some("workspace"),
-            "workspace",
-            "/workspace",
-            "agent-smith",
-            crate::agent::Agent::Claude,
-            &mut runner,
-        )
-        .unwrap_err();
+        let error = resolve_workspace_restore(&paths, "agent-smith", &mut runner).unwrap_err();
 
         let message = error.to_string();
         assert!(
@@ -6719,16 +6699,7 @@ plugins = []
         write_indexed_manifest(&paths, &manifest);
         let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
 
-        let candidate = resolve_restore_candidate(
-            &paths,
-            Some("workspace"),
-            "workspace",
-            "/workspace",
-            "agent-smith",
-            crate::agent::Agent::Claude,
-            &mut runner,
-        )
-        .unwrap();
+        let candidate = resolve_workspace_restore(&paths, "agent-smith", &mut runner).unwrap();
 
         assert_eq!(candidate, RestoreResolution::StartFresh);
     }
@@ -6747,16 +6718,7 @@ plugins = []
         write_indexed_manifest(&paths, &manifest);
         let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
 
-        let candidate = resolve_restore_candidate(
-            &paths,
-            Some("workspace"),
-            "workspace",
-            "/workspace",
-            "agent-smith",
-            crate::agent::Agent::Claude,
-            &mut runner,
-        )
-        .unwrap();
+        let candidate = resolve_workspace_restore(&paths, "agent-smith", &mut runner).unwrap();
 
         assert_eq!(candidate, RestoreResolution::StartFresh);
     }
@@ -6766,42 +6728,17 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
-        let mut manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: container_name,
-            workspace_name: Some("workspace"),
-            workspace_label: "workspace",
-            workdir: "/workspace",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "the-architect",
-            role_display_name: "The Architect",
-            agent_runtime: crate::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/the-architect.git",
-            role_source_ref: None,
-            image_tag: "jackin-the-architect",
-            docker: DockerResources {
-                role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
-                network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
-            },
-        });
+        let mut manifest = workspace_manifest(
+            container_name,
+            "the-architect",
+            "The Architect",
+            crate::agent::Agent::Claude,
+        );
         manifest.mark_status(InstanceStatus::CleanExited);
-        manifest
-            .write(&paths.data_dir.join(container_name))
-            .unwrap();
-        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        write_indexed_manifest(&paths, &manifest);
         let mut runner = FakeRunner::default();
 
-        let candidate = resolve_restore_candidate(
-            &paths,
-            Some("workspace"),
-            "workspace",
-            "/workspace",
-            "agent-smith",
-            crate::agent::Agent::Claude,
-            &mut runner,
-        )
-        .unwrap();
+        let candidate = resolve_workspace_restore(&paths, "agent-smith", &mut runner).unwrap();
 
         assert_eq!(candidate, RestoreResolution::StartFresh);
         assert!(runner.recorded.is_empty());
@@ -6809,26 +6746,14 @@ plugins = []
 
     #[test]
     fn related_restore_candidate_with_container_recovers_in_place() {
+        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
         let candidate = RelatedRestoreCandidate {
-            manifest: InstanceManifest::new(NewInstanceManifest {
-                container_base: "jackin-workspace-thearchitect-k7p9m2xq",
-                workspace_name: Some("workspace"),
-                workspace_label: "workspace",
-                workdir: "/workspace",
-                host_workdir_fingerprint: "sha256:test",
-                role_key: "the-architect",
-                role_display_name: "The Architect",
-                agent_runtime: crate::agent::Agent::Claude,
-                role_source_git: "https://example.invalid/the-architect.git",
-                role_source_ref: None,
-                image_tag: "jackin-the-architect",
-                docker: DockerResources {
-                    role_container: "jackin-workspace-thearchitect-k7p9m2xq".to_string(),
-                    dind_container: "jackin-workspace-thearchitect-k7p9m2xq-dind".to_string(),
-                    network: "jackin-workspace-thearchitect-k7p9m2xq-net".to_string(),
-                    certs_volume: "jackin-workspace-thearchitect-k7p9m2xq-dind-certs".to_string(),
-                },
-            }),
+            manifest: workspace_manifest(
+                container_name,
+                "the-architect",
+                "The Architect",
+                crate::agent::Agent::Claude,
+            ),
             docker_state: ContainerState::Running,
         };
 
@@ -6836,35 +6761,21 @@ plugins = []
 
         assert_eq!(
             resolution,
-            RestoreResolution::RecoverRelatedRole(
-                "jackin-workspace-thearchitect-k7p9m2xq".to_string()
-            )
+            RestoreResolution::RecoverRelatedRole(container_name.to_string())
         );
         assert!(related_restore_candidate_action_label(&candidate).starts_with("Recover now"));
     }
 
     #[test]
     fn missing_related_restore_candidate_rebuilds_in_place() {
+        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
         let candidate = RelatedRestoreCandidate {
-            manifest: InstanceManifest::new(NewInstanceManifest {
-                container_base: "jackin-workspace-thearchitect-k7p9m2xq",
-                workspace_name: Some("workspace"),
-                workspace_label: "workspace",
-                workdir: "/workspace",
-                host_workdir_fingerprint: "sha256:test",
-                role_key: "the-architect",
-                role_display_name: "The Architect",
-                agent_runtime: crate::agent::Agent::Claude,
-                role_source_git: "https://example.invalid/the-architect.git",
-                role_source_ref: None,
-                image_tag: "jackin-the-architect",
-                docker: DockerResources {
-                    role_container: "jackin-workspace-thearchitect-k7p9m2xq".to_string(),
-                    dind_container: "jackin-workspace-thearchitect-k7p9m2xq-dind".to_string(),
-                    network: "jackin-workspace-thearchitect-k7p9m2xq-net".to_string(),
-                    certs_volume: "jackin-workspace-thearchitect-k7p9m2xq-dind-certs".to_string(),
-                },
-            }),
+            manifest: workspace_manifest(
+                container_name,
+                "the-architect",
+                "The Architect",
+                crate::agent::Agent::Claude,
+            ),
             docker_state: ContainerState::NotFound,
         };
 
@@ -6873,33 +6784,22 @@ plugins = []
         assert!(matches!(
             resolution,
             RestoreResolution::RebuildRelatedRole(ref manifest)
-                if manifest.container_base == "jackin-workspace-thearchitect-k7p9m2xq"
+                if manifest.container_base == container_name
         ));
         assert!(related_restore_candidate_action_label(&candidate).starts_with("Rebuild now"));
     }
 
     #[test]
     fn related_restore_load_options_use_manifest_source_ref_and_agent() {
-        let mut manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: "jackin-workspace-thearchitect-k7p9m2xq",
-            workspace_name: Some("workspace"),
-            workspace_label: "workspace",
-            workdir: "/workspace",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "the-architect",
-            role_display_name: "The Architect",
-            agent_runtime: crate::agent::Agent::Codex,
-            role_source_git: "https://example.invalid/the-architect.git",
-            role_source_ref: Some("restore-ref"),
-            image_tag: "jackin-the-architect",
-            docker: DockerResources {
-                role_container: "jackin-workspace-thearchitect-k7p9m2xq".to_string(),
-                dind_container: "jackin-workspace-thearchitect-k7p9m2xq-dind".to_string(),
-                network: "jackin-workspace-thearchitect-k7p9m2xq-net".to_string(),
-                certs_volume: "jackin-workspace-thearchitect-k7p9m2xq-dind-certs".to_string(),
-            },
-        });
+        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
+        let mut manifest = workspace_manifest(
+            container_name,
+            "the-architect",
+            "The Architect",
+            crate::agent::Agent::Codex,
+        );
         manifest.agent_runtime = "codex".to_string();
+        manifest.role_source_ref = Some("restore-ref".to_string());
         let current = LoadOptions::for_load(false, true, false);
 
         let opts = related_restore_load_options(&current, &manifest).unwrap();
@@ -6908,10 +6808,7 @@ plugins = []
         assert!(opts.debug);
         assert_eq!(opts.agent, Some(crate::agent::Agent::Codex));
         assert_eq!(opts.role_branch.as_deref(), Some("restore-ref"));
-        assert_eq!(
-            opts.restore_container_base.as_deref(),
-            Some("jackin-workspace-thearchitect-k7p9m2xq")
-        );
+        assert_eq!(opts.restore_container_base.as_deref(), Some(container_name));
         assert_eq!(
             opts.restore_role_source_git.as_deref(),
             Some("https://example.invalid/the-architect.git")
@@ -6930,29 +6827,13 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
-        let manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: container_name,
-            workspace_name: Some("workspace"),
-            workspace_label: "workspace",
-            workdir: "/workspace",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "agent-smith",
-            role_display_name: "Agent Smith",
-            agent_runtime: crate::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/agent-smith.git",
-            role_source_ref: None,
-            image_tag: "jackin-agent-smith",
-            docker: DockerResources {
-                role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
-                network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
-            },
-        });
-        manifest
-            .write(&paths.data_dir.join(container_name))
-            .unwrap();
-        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let manifest = workspace_manifest(
+            container_name,
+            "agent-smith",
+            "Agent Smith",
+            crate::agent::Agent::Claude,
+        );
+        write_indexed_manifest(&paths, &manifest);
 
         supersede_restore_candidates(&paths, vec![manifest]).unwrap();
 
@@ -6967,25 +6848,12 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
-        let mut manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: container_name,
-            workspace_name: Some("workspace"),
-            workspace_label: "workspace",
-            workdir: "/workspace",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "agent-smith",
-            role_display_name: "Agent Smith",
-            agent_runtime: crate::agent::Agent::Codex,
-            role_source_git: "https://example.invalid/agent-smith.git",
-            role_source_ref: None,
-            image_tag: "jackin-agent-smith",
-            docker: DockerResources {
-                role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
-                network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
-            },
-        });
+        let mut manifest = workspace_manifest(
+            container_name,
+            "agent-smith",
+            "Agent Smith",
+            crate::agent::Agent::Codex,
+        );
         manifest.mark_status(InstanceStatus::PreservedDirty);
         manifest.last_attach_outcome = Some("exit:137".into());
         crate::isolation::state::write_records(
@@ -7021,25 +6889,12 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
-        let manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: container_name,
-            workspace_name: Some("workspace"),
-            workspace_label: "workspace",
-            workdir: "/workspace",
-            host_workdir_fingerprint: "sha256:test",
-            role_key: "agent-smith",
-            role_display_name: "Agent Smith",
-            agent_runtime: crate::agent::Agent::Claude,
-            role_source_git: "https://example.invalid/agent-smith.git",
-            role_source_ref: None,
-            image_tag: "jackin-agent-smith",
-            docker: DockerResources {
-                role_container: container_name.to_string(),
-                dind_container: format!("{container_name}-dind"),
-                network: format!("{container_name}-net"),
-                certs_volume: format!("{container_name}-dind-certs"),
-            },
-        });
+        let manifest = workspace_manifest(
+            container_name,
+            "agent-smith",
+            "Agent Smith",
+            crate::agent::Agent::Claude,
+        );
         manifest
             .write(&paths.data_dir.join(container_name))
             .unwrap();
