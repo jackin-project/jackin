@@ -102,7 +102,7 @@ pub struct WorkspaceConfig {
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub amp: Option<crate::config::AmpAuthConfig>,
-    /// Workspace-level OpenCode auth configuration. See `claude` above —
+    /// Workspace-level `OpenCode` auth configuration. See `claude` above —
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opencode: Option<crate::config::OpencodeAuthConfig>,
@@ -201,7 +201,7 @@ pub struct WorkspaceRoleOverride {
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub amp: Option<crate::config::AmpAuthConfig>,
-    /// Per-(workspace × role) OpenCode auth override. See `claude` above —
+    /// Per-(workspace × role) `OpenCode` auth override. See `claude` above —
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opencode: Option<crate::config::OpencodeAuthConfig>,

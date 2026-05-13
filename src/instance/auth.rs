@@ -586,10 +586,10 @@ impl RoleState {
 }
 
 impl RoleState {
-    /// Provision OpenCode's host-side `auth.json` per the chosen mode.
+    /// Provision `OpenCode`'s host-side `auth.json` per the chosen mode.
     ///
     /// Source: `~/.local/share/opencode/auth.json` (`XDG_DATA`).
-    /// OpenCode stores provider credentials (e.g. Z.AI Coding Plan API
+    /// `OpenCode` stores provider credentials (e.g. Z.AI Coding Plan API
     /// keys) in this file.
     ///
     /// Follows the same semantics as `provision_amp_auth`.
@@ -688,7 +688,7 @@ fn wipe_amp_state(secrets_json: &Path) -> anyhow::Result<()> {
     })
 }
 
-/// Remove role-state `auth.json` for OpenCode so a prior Sync run cannot
+/// Remove role-state `auth.json` for `OpenCode` so a prior Sync run cannot
 /// leak credentials under env-driven modes.
 fn wipe_opencode_state(auth_json: &Path) -> anyhow::Result<()> {
     use anyhow::Context;

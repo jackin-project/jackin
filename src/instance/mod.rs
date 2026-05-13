@@ -198,7 +198,7 @@ pub struct AmpAuth {
     pub secrets_json: Option<PathBuf>,
 }
 
-/// OpenCode's provisioned auth slot. `auth_json` is `None` under
+/// `OpenCode`'s provisioned auth slot. `auth_json` is `None` under
 /// env-driven modes or when no host auth file was present.
 #[derive(Debug, Clone, Default)]
 pub struct OpencodeAuth {
@@ -284,7 +284,7 @@ impl RoleState {
         }
     }
 
-    /// `Some` only when the selected runtime is OpenCode.
+    /// `Some` only when the selected runtime is `OpenCode`.
     #[must_use]
     pub fn opencode_model(&self) -> Option<&str> {
         match &self.agent_runtime {
@@ -315,7 +315,7 @@ impl RoleState {
             .and_then(|c| c.secrets_json.as_deref())
     }
 
-    /// Host path to OpenCode's `auth.json`. `None` when OpenCode is not
+    /// Host path to `OpenCode`'s `auth.json`. `None` when `OpenCode` is not
     /// in `supported_agents()` or no file is available.
     #[must_use]
     pub fn opencode_auth_json(&self) -> Option<&Path> {
@@ -693,8 +693,7 @@ plugins = []
         let auth_modes = |agent: crate::agent::Agent| match agent {
             crate::agent::Agent::Claude => AuthForwardMode::Sync,
             crate::agent::Agent::Codex => AuthForwardMode::ApiKey,
-            crate::agent::Agent::Amp => AuthForwardMode::Ignore,
-            crate::agent::Agent::Opencode => AuthForwardMode::Ignore,
+            crate::agent::Agent::Amp | crate::agent::Agent::Opencode => AuthForwardMode::Ignore,
         };
 
         let (state, selected_outcome) = RoleState::prepare(

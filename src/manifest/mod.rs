@@ -59,10 +59,10 @@ pub struct CodexConfig {
 #[serde(deny_unknown_fields)]
 pub struct AmpConfig {}
 
-/// Per-role OpenCode configuration.
+/// Per-role `OpenCode` configuration.
 ///
-/// `model` is passed to OpenCode with `-m` in `provider/model` format
-/// (e.g. `zai-coding-plan/glm-5.1`). When absent, OpenCode uses its
+/// `model` is passed to `OpenCode` with `-m` in `provider/model` format
+/// (e.g. `zai-coding-plan/glm-5.1`). When absent, `OpenCode` uses its
 /// own default model selection.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
