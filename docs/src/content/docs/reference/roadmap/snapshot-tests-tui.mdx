@@ -7,15 +7,30 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-The TUI already has meaningful `TestBackend`-based render tests, but it still has no snapshot-style regression net for the largest composite panes. There are currently 17 `#[allow(clippy::too_many_lines)]` suppressions across the repo, and refactoring <RepoFile path="src/console/manager/render/list.rs" /> (2069L) or <RepoFile path="src/console/manager/render/editor.rs" /> (1682L) can still silently change TUI appearance without a crisp before/after review artifact.
+The TUI has no snapshot-style regression net for the largest composite panes. The render layer has grown significantly since the original analysis:
 
-## Three target functions
+- <RepoFile path="src/console/manager/render/editor.rs" /> is now **3231L** (was ~1682L — nearly doubled)
+- <RepoFile path="src/console/manager/render/list.rs" /> is now **2816L** (was ~2069L)
+- <RepoFile path="src/console/manager/render/mod.rs" /> is now **1165L** (was ~500L)
+- <RepoFile path="src/console/manager/render/global_mounts.rs" /> is now **839L** (new sub-module)
 
-| Function | File | Line | What to snapshot |
-|---|---|---|---|
-| `render_sentinel_description_pane` | <RepoFile path="src/console/manager/render/list.rs" /> | 360 | Static "+ New workspace" panel. Zero state. 80×10 terminal. |
-| `render_tab_strip` | <RepoFile path="src/console/manager/render/editor.rs" /> | 278 | Tab bar with `EditorTab` active. 4 variants × 1 snapshot each. 80×3 terminal. |
-| `render_mounts_subpanel` | <RepoFile path="src/console/manager/render/list.rs" /> | 461 | Mount list subpanel. 3 cases: empty, 1 mount, 3 mounts. 60×20 terminal. |
+No `insta` or other snapshot testing library exists in the dependency tree. All render testing uses manual `TestBackend` + `assert!` assertions against buffer contents.
+
+## Three target functions (updated from original)
+
+| Function | File | What to snapshot |
+|---|---|---|
+| `render_sentinel_description_pane` | <RepoFile path="src/console/manager/render/list.rs" /> | Static "+ New workspace" panel. Zero state. 80×10 terminal. |
+| `render_tab_strip` | <RepoFile path="src/console/manager/render/editor.rs" /> | Tab bar with `EditorTab` active. 4 variants × 1 snapshot each. 80×3 terminal. |
+| `render_mounts_subpanel` | <RepoFile path="src/console/manager/render/list.rs" /> | Mount list subpanel. 3 cases: empty, 1 mount, 3 mounts. 60×20 terminal. |
+
+**Additional high-value targets identified in re-analysis:**
+
+| Function | File | What to snapshot |
+|---|---|---|
+| Global mounts editor rendering | <RepoFile path="src/console/manager/render/global_mounts.rs" /> | Per-subtab renders. New 839L file with no snapshot coverage. |
+| Per-tab editor body renders | <RepoFile path="src/console/manager/render/editor.rs" /> | At minimum: General, Mounts, Agents, Secrets tab body renders. |
+| Workspace list renders | <RepoFile path="src/console/manager/render/list.rs" /> | Active workspace detail panel with various mount configurations. |
 
 ## Implementation
 
@@ -30,10 +45,10 @@ Use `insta` for snapshot storage + review workflow; `ratatui::backend::TestBacke
 ## Steps
 
 1. Add `insta` to `[dev-dependencies]` in <RepoFile path="Cargo.toml" />.
-2. Write 3 test modules (one per target function) using `TestBackend` + `insta::assert_snapshot!()`.
+2. Write test modules using `TestBackend` + `insta::assert_snapshot!()`. Start with the 3 original targets, then add the new targets.
 3. Run `cargo insta review` to accept the initial snapshots.
 4. `cargo nextest run` already runs snapshot comparisons — no additional CI step needed.
 
 ## Why before Phase 2
 
-These snapshot tests are the regression net for the Phase 2 file splits. Existing render assertions still help, but snapshots make layout regressions obvious during review instead of forcing reviewers to infer them from low-level buffer assertions.
+These snapshot tests are the regression net for the Phase 2 file splits AND the Phase 1.5 DRY extractions. The TUI render layer has extreme boilerplate duplication (120 `Style::default()` chains, 18 `Block::default()` constructions, 192 `Span` constructions) — snapshot tests make it safe to extract shared helpers without silently changing TUI appearance.

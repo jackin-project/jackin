@@ -2,16 +2,21 @@
 title: "Cargo Workspace Split"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
+import { Aside } from '@astrojs/starlight/components'
 
 **Status**: Deferred — Phase 3 (trigger not yet met, but architecture is ready)
 
 ## When to do this
 
-`jackin` today is ~49,754L of Rust source — still below the ~150K threshold where a multi-crate Cargo workspace outweighs its overhead. This item is not ready to execute. The trigger conditions are:
+`jackin` today is **~91K lines of production Rust** (116 files in `src/`) — still below the ~150K threshold where a multi-crate Cargo workspace outweighs its overhead, but growing fast (was ~50K at original analysis — 82% growth). This item is not ready to execute. The trigger conditions are:
 
 - LOC exceeds ~150K, **or**
 - A sub-component needs external consumers for third-party agent manifest tooling, **or**
 - Compile times on the CI `check` job exceed 5 minutes cold cache
+
+<Aside type="caution">
+**The original claim "`console/` has zero imports from `runtime/` in production code" is FALSE.** The re-analysis found 2 production-code dependencies: `crate::runtime::register_agent_repo` and `crate::runtime::RepoError` in `console/manager/input/editor.rs`. The Cargo workspace split will need these 2 sites addressed first — either through a trait abstraction or by moving the shared function to a common module.
+</Aside>
 
 ## Target 6-crate structure
 
@@ -31,25 +36,21 @@ jackin/
 └── validate/              ← jackin-validate binary
 ```
 
-## Key structural insight
-
-`console/` has **zero imports from `runtime/` in production code** — this pre-existing clean boundary is the most important structural asset. `jackin-console` and `jackin-runtime` can become separate crates without moving any logic; current coupling is limited to test helpers such as `crate::runtime::FakeRunner`.
-
-Starting point: extract just these two crates first. The Cargo workspace boundary makes the existing clean boundary enforced by the compiler rather than policed by convention.
-
 ## Dependency tiers (verified)
 
 - **Tier 0** (no cross-module deps): `workspace/`, `manifest/`, `docker.rs`, `paths.rs`, `selector.rs`
 - **Tier 1**: `config/`, `tui/`, `instance/`, `env_resolver/`
 - **Tier 2**: `operator_env/`, `runtime/`, `repo/`
-- **Tier 3**: `console/` — no import from `runtime/`
+- **Tier 3**: `console/` — **almost** no import from `runtime/` (2 call sites need fixing first)
 
-## Do Phase 2 file splits first
+## Prerequisites before this phase
 
-The Phase 2 file splits (split-input-editor, split-operator-env, split-app-mod, split-runtime-launch) establish clean internal module boundaries that make the workspace migration easier.
+1. **Phase 2 file splits** — establish clean internal module boundaries
+2. **Phase 1.5 DRY extractions** — reduce duplication that would otherwise be frozen into crate APIs
+3. **Fix the 2 console→runtime dependencies** — `register_agent_repo` and `RepoError` must move to a shared module or through a trait
 
 ## Related files
 
 - <RepoFile path="Cargo.toml" /> — target: convert to virtual workspace manifest
-- <RepoFile path="src/console/mod.rs" /> — zero imports from `runtime/`
-- <RepoFile path="src/runtime/launch.rs" /> — the runtime entry point
+- <RepoFile path="src/console/manager/input/editor.rs" /> — contains the 2 runtime dependencies that must be resolved
+- <RepoFile path="src/runtime/launch.rs" /> — the runtime entry point (7575L)

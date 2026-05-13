@@ -7,7 +7,16 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/runtime/launch.rs" /> is now 5494L total, with tests starting at line 2272. It no longer mixes just 4 concerns: the file now owns the public load API, trust verification, terminal setup, operator-env / auth handling, container slot claiming, workspace materialization, launch orchestration, and attach/finalizer cleanup. It is still the hardest file to split safely because any error here blocks all runtime changes.
+<RepoFile path="src/runtime/launch.rs" /> is **7575L** total (was 5494L at original analysis — 38% growth). It is the single largest file in the codebase and the hardest to review. It owns: the public load API, trust verification, terminal setup, operator-env / auth handling, container slot claiming, workspace materialization, DinD sidecar launch, Docker network management, launch orchestration, attach/finalizer cleanup, env resolution with trace (duplicated from `config/roles.rs`), and extensive test infrastructure.
+
+The file has grown significantly since the original analysis due to new agent runtime support (Kimi), instance identity features, and expanded error reporting.
+
+## Duplication found within this file
+
+- `build_mode_resolution()` at ~line 2977 duplicates the 3-layer × 4-agent match (12 arms) from <RepoFile path="src/config/roles.rs" /> `resolve_mode()` solely to capture the resolution trace for error rendering. Extract `resolve_mode_with_trace()` in `config/roles.rs` instead.
+- DinD sidecar launch args (~line 777) are duplicated identically in <RepoFile path="src/runtime/attach.rs" /> at ~line 472. Extract shared `fn run_dind_sidecar()`.
+- 17 inline `format!("{name}-dind")` / `format!("{name}-net")` derivations that should use a shared `DockerResources` naming helper.
+- The role container `docker run -d -it` argument list (~180 lines starting ~line 865) is a monolithic block interleaving env var injection, mount construction, and label assignment.
 
 ## Proposed split
 
@@ -17,12 +26,15 @@ src/runtime/
   launch_pipeline.rs ← fn load_agent_with, LaunchContext, StepCounter, LoadCleanup, workspace materialization / finalize flow
   terminfo.rs        ← `resolve_terminal_setup`, `export_host_terminfo`
   trust.rs           ← `confirm_agent_trust` — already isolated via FnOnce injection
-  launch_slot.rs     ← claim_container_name + verify_token_env_present (if they still feel like a coherent seam)
+  launch_slot.rs     ← claim_container_name + verify_token_env_present
+  launch_dind.rs     ← DinD sidecar launch, Docker network creation (shared with attach.rs)
 ```
+
+A new `launch_dind.rs` is added to the original proposal because the DinD sidecar + network logic is now duplicated between `launch.rs` and `attach.rs`.
 
 ## Why the split is safe — FnOnce injection pattern
 
-`confirm_agent_trust` is passed to `load_agent_with` as a `FnOnce` argument at line 553–560:
+`confirm_agent_trust` is passed to `load_agent_with` as a `FnOnce` argument:
 
 ```rust
 fn load_agent_with(..., confirm_trust: impl FnOnce(...) -> anyhow::Result<()>)
@@ -35,19 +47,24 @@ fn load_agent_with(..., confirm_trust: impl FnOnce(...) -> anyhow::Result<()>)
 - `terminfo.rs`: only imports from `std` — zero crate dependencies
 - `trust.rs`: imports from `std`, `owo_colors`, `dialoguer`, `crate::config` — no runtime dependency
 - `launch_pipeline.rs`: imports from `crate::config`, `crate::instance`, `crate::tui`, `crate::operator_env`, and isolation helpers
-- `launch.rs` (thin API): imports from `launch_pipeline`, `trust`, `terminfo`, and possibly `launch_slot`
+- `launch_dind.rs`: imports from `crate::runtime::naming` — no dependency on launch_pipeline
+- `launch.rs` (thin API): imports from `launch_pipeline`, `trust`, `terminfo`, `launch_slot`, `launch_dind`
 
 ## What needs confirmation
 
 - Exact placement of `LoadCleanup` (pipeline concern or launch concern?)
-- Whether `claim_container_name` and `verify_token_env_present` stay in the main pipeline file or move into a small helper seam such as `launch_slot.rs`
-- Whether operator-env resolution / auth diagnostic logic should stay in the main pipeline file or split again later if it still dominates the module
+- Whether `claim_container_name` and `verify_token_env_present` stay in the main pipeline file or move into `launch_slot.rs`
+- Whether operator-env resolution / auth diagnostic logic should stay in the main pipeline file or split again later
+- Whether `launch_dind.rs` is the right factoring or if the DinD/network logic belongs in a shared Docker module
 
 ## Ordering note
 
-Do **last** among the Phase 2 splits. The test suite is the most complex and any compilation error here blocks all runtime changes. The behavioral spec must exist first — it is the verification oracle.
+Do **last** among the Phase 2 splits. The test suite is the most complex (tests span ~3500 lines) and any compilation error here blocks all runtime changes. The behavioral spec must exist first — it is the verification oracle. The Phase 1.5 DRY extractions (`resolve_mode_with_trace`, `DockerResources`, `run_dind_sidecar`) should land first to reduce the file's LOC before splitting.
 
 ## Related files
 
-- <RepoFile path="src/runtime/launch.rs" /> — target file
+- <RepoFile path="src/runtime/launch.rs" /> — target file (7575L)
+- <RepoFile path="src/runtime/attach.rs" /> — shares DinD sidecar and network logic (1130L)
 - <RepoFile path="src/runtime/test_support.rs" /> — `FakeRunner` used by the test suite
+- <RepoFile path="src/runtime/cleanup.rs" /> — shares container teardown pattern
+- <RepoFile path="src/config/roles.rs" /> — `resolve_mode()` duplicated for trace in launch.rs
