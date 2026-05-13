@@ -158,7 +158,11 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
         rm -f /home/agent/.local/share/opencode/auth.json
         echo "[entrypoint] opencode: no auth.json mounted and OPENCODE_API_KEY unset — agent will require interactive login" >&2
     fi
-    LAUNCH=(opencode)
+    mkdir -p /home/agent/.config/opencode
+    if [ ! -f /home/agent/.config/opencode/opencode.json ]; then
+        printf '%s\n' '{"permission":{"*":{"*":"allow"}}}' > /home/agent/.config/opencode/opencode.json
+    fi
+    LAUNCH=(opencode --dangerously-skip-permissions)
     if [ $# -gt 0 ]; then
         LAUNCH+=("$@")
     fi
