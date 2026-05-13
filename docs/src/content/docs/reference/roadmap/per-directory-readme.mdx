@@ -15,17 +15,20 @@ AI coding agents (Claude Code, Copilot, Cursor) load `README.md` automatically w
 |---|---|
 | `src/` | Top-level module map + entry points (`load_agent`, `run_console`, `validate`). Link to PROJECT_STRUCTURE.md. |
 | `src/runtime/` | Container bootstrap pipeline. Entry: `load_agent()` in `launch.rs`. 4-step sequence. |
-| `src/console/` | Operator console TUI. Entry: `run_console()`. Two subsystems: `manager/` and `widgets/`. No import from `runtime/`. |
+| `src/console/` | Operator console TUI. Entry: `run_console()`. Two subsystems: `manager/` and `widgets/`. **Note: has 2 production dependencies on `runtime/`** (`register_agent_repo`, `RepoError`). |
 | `src/console/manager/` | Workspace manager TUI. 3-layer: `state.rs` (data), `input/` (dispatch), `render/` (drawing). |
 | `src/console/widgets/` | Reusable TUI widget library. Each widget is a self-contained state machine. |
-| `docs/` | Astro Starlight docs site. Public docs live in `src/content/docs/`; current design/spec material still lives in `docs/superpowers/specs/` until the Developer Reference section exists. |
+| `src/config/` | Configuration loading, persistence, editing. TOML schema, migrations, workspace files. |
+| `src/instance/` | Per-instance state: container identity, auth provisioning, manifests. 5 agent-specific provision functions. |
+| `src/isolation/` | Mount isolation: materialize, finalize, cleanup, state records. |
+| `docs/` | Astro Starlight docs site. Public docs live in `src/content/docs/`. |
 
 ## AGENTS.md per crate (after workspace split)
 
 When the Cargo workspace split creates `crates/jackin-console/`, `crates/jackin-runtime/`, etc., each crate should get its own `AGENTS.md` with crate-specific rules — shorter and more focused than the root `AGENTS.md`. Examples:
 
 - `crates/jackin-core/AGENTS.md` — "this crate has no I/O, no `std::process::Command`; keep it that way"
-- `crates/jackin-console/AGENTS.md` — "no import from `jackin-runtime`; this is enforced by Cargo"
+- `crates/jackin-console/AGENTS.md` — "no import from `jackin-runtime` except through the 2 approved call sites; this is enforced by Cargo"
 - `crates/jackin-runtime/AGENTS.md` — "all Docker operations go through `CommandRunner`; never shell out directly"
 
 ## Steps

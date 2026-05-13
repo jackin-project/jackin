@@ -62,7 +62,7 @@ git push --force-with-lease origin <branch>
 ```
 
 The `Signed-off-by` trailer must match the commit author, not any
-`Co-authored-by` trailer (Claude, Codex, etc.). If `git config user.email`
+`Co-authored-by` trailer (Claude, Codex, Amp, OpenCode, etc.). If `git config user.email`
 is not set to the expected personal address, correct it **before**
 committing — do not paper over a wrong-author commit with an unrelated
 sign-off.

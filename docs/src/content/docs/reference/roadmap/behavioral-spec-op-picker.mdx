@@ -7,7 +7,9 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/console/widgets/op_picker/mod.rs" /> is AI-generated, ~775L production, and has a 7-line `//!` doc but no INV-format invariant contract. The 4-level drill-down state machine has subtle invariants around the `op://` reference format and the absence of secret values in the picker path.
+<RepoFile path="src/console/widgets/op_picker/mod.rs" /> is now **2331L** total (was ~1712L at original analysis — +36% growth). It has a `//!` doc but no INV-format invariant contract. The 4-level drill-down state machine has subtle invariants around the `op://` reference format and the absence of secret values in the picker path.
+
+The render counterpart <RepoFile path="src/console/widgets/op_picker/render.rs" /> is **865L** (separate file).
 
 ## Key invariants
 
@@ -30,5 +32,6 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Related files
 
-- <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — 1712L total, ~775L production
-- <RepoFile path="src/operator_env.rs" /> — uses `RawOpField`; exhaustive destructure test at ~line 2055
+- <RepoFile path="src/console/widgets/op_picker/mod.rs" /> — 2331L total (state machine + loader + key handler)
+- <RepoFile path="src/console/widgets/op_picker/render.rs" /> — 865L (render logic)
+- <RepoFile path="src/operator_env.rs" /> — uses `RawOpField`; exhaustive destructure test
