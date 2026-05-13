@@ -159,6 +159,9 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
         echo "[entrypoint] opencode: no auth.json mounted and OPENCODE_API_KEY unset — agent will require interactive login" >&2
     fi
     LAUNCH=(opencode)
+    if [ $# -gt 0 ]; then
+        LAUNCH+=("$@")
+    fi
     ;;
   *)
     echo "[entrypoint] unknown JACKIN_AGENT: $JACKIN_AGENT" >&2

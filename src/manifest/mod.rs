@@ -61,12 +61,15 @@ pub struct AmpConfig {}
 
 /// Per-role OpenCode configuration.
 ///
-/// Has no fields. Declared so manifests that list
-/// `agents = [..., "opencode"]` can carry an `[opencode]` table that satisfies
-/// the agent/table consistency check.
+/// `model` is passed to OpenCode with `-m` in `provider/model` format
+/// (e.g. `zai-coding-plan/glm-5.1`). When absent, OpenCode uses its
+/// own default model selection.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct OpencodeConfig {}
+pub struct OpencodeConfig {
+    #[serde(default)]
+    pub model: Option<String>,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -297,6 +300,29 @@ model = "gpt-5"
         let m = RoleManifest::load(temp.path()).unwrap();
         assert_eq!(m.supported_agents(), vec![crate::agent::Agent::Codex]);
         assert_eq!(m.codex.as_ref().unwrap().model.as_deref(), Some("gpt-5"));
+    }
+
+    #[test]
+    fn loads_opencode_manifest_with_model() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"version = "v1alpha2"
+dockerfile = "Dockerfile"
+agents = ["opencode"]
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+"#,
+        )
+        .unwrap();
+
+        let m = RoleManifest::load(temp.path()).unwrap();
+        assert_eq!(m.supported_agents(), vec![crate::agent::Agent::Opencode]);
+        assert_eq!(
+            m.opencode.as_ref().unwrap().model.as_deref(),
+            Some("zai-coding-plan/glm-5.1")
+        );
     }
 
     #[test]

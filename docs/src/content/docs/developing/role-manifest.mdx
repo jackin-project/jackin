@@ -165,7 +165,11 @@ agents = ["amp"]
 
 ## `[opencode]`
 
-The `[opencode]` table is required when `"opencode"` appears in `agents`. It is empty today and reserved for future OpenCode-specific settings (such as model selection).
+The `[opencode]` table is required when `"opencode"` appears in `agents`.
+
+| Field | Required | Description |
+|---|---|---|
+| `model` | No | Optional OpenCode model passed to `opencode -m` at launch, in `provider/model` format (e.g. `zai-coding-plan/glm-5.1`) |
 
 OpenCode is a Node.js CLI agent installed via `npm install -g opencode@latest`. It authenticates via `~/.local/share/opencode/auth.json`, which stores provider-level credentials — for example, a Z.AI Coding Plan subscription (see [z.ai/subscribe](https://z.ai/subscribe)). jackin forwards these credentials into the container using the same `sync` / `api_key` / `ignore` auth-forwarding modes as the other agents. The `OPENCODE_API_KEY` env var is used for `api_key` mode.
 
@@ -175,6 +179,7 @@ dockerfile = "Dockerfile"
 agents = ["opencode"]
 
 [opencode]
+model = "zai-coding-plan/glm-5.1"
 ```
 
 ### `[[claude.marketplaces]]`

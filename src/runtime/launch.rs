@@ -1037,6 +1037,10 @@ fn launch_role_runtime(
         run_args.push("-m");
         run_args.push(model);
     }
+    if let Some(model) = state.opencode_model() {
+        run_args.push("-m");
+        run_args.push(model);
+    }
     runner.run("docker", &run_args, None, &docker_run_opts)?;
 
     // Reconcile keep_awake AFTER the role container is running but

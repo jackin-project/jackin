@@ -168,7 +168,7 @@ pub enum AgentRuntimeState {
     Claude { model: Option<String> },
     Codex { model: Option<String> },
     Amp,
-    Opencode,
+    Opencode { model: Option<String> },
 }
 
 /// Claude's provisioned auth slot.
@@ -250,7 +250,7 @@ impl RoleState {
             AgentRuntimeState::Claude { model } => model.as_deref(),
             AgentRuntimeState::Codex { .. }
             | AgentRuntimeState::Amp
-            | AgentRuntimeState::Opencode => None,
+            | AgentRuntimeState::Opencode { .. } => None,
         }
     }
 
@@ -280,7 +280,18 @@ impl RoleState {
             AgentRuntimeState::Codex { model } => model.as_deref(),
             AgentRuntimeState::Claude { .. }
             | AgentRuntimeState::Amp
-            | AgentRuntimeState::Opencode => None,
+            | AgentRuntimeState::Opencode { .. } => None,
+        }
+    }
+
+    /// `Some` only when the selected runtime is OpenCode.
+    #[must_use]
+    pub fn opencode_model(&self) -> Option<&str> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Opencode { model } => model.as_deref(),
+            AgentRuntimeState::Claude { .. }
+            | AgentRuntimeState::Codex { .. }
+            | AgentRuntimeState::Amp => None,
         }
     }
 
@@ -415,7 +426,9 @@ impl RoleState {
                 model: manifest.codex.as_ref().and_then(|cfg| cfg.model.clone()),
             },
             crate::agent::Agent::Amp => AgentRuntimeState::Amp,
-            crate::agent::Agent::Opencode => AgentRuntimeState::Opencode,
+            crate::agent::Agent::Opencode => AgentRuntimeState::Opencode {
+                model: manifest.opencode.as_ref().and_then(|cfg| cfg.model.clone()),
+            },
         };
 
         Ok((
