@@ -327,6 +327,20 @@ Don't ask the operator for permission to bring the metadata into agreement with 
 
 Why this rule exists: the operator relies on PR titles and bodies as the long-term navigable record of what shipped. Drift between description and diff is the single most common cause of "what does this PR actually do?" archaeology after the fact.
 
+## Retire fully-resolved roadmap items in the same PR
+
+When a PR ships the last remaining piece of a roadmap item — every feature, sub-phase, and follow-up tracked by the page is now implemented — delete the roadmap `.mdx` file in that same PR rather than leaving it behind as a `Status: Resolved` page. The retirement steps:
+
+1. **Confirm there is no remaining work.** Re-read the page top to bottom. Any "Remaining Work", "Future Work", "Phase N — open", or open question that is not actually shipped is a remaining-work signal — keep the page and update its status to `Partially implemented` instead.
+2. **Confirm no load-bearing inbound links.** `rg "roadmap/<slug>" docs/` from the repo root. References from the roadmap overview and the sidebar config are expected and get cleaned up below; references from *open* roadmap items mean the page is acting as an internal contract for unfinished work — keep it, or repoint those references first.
+3. **Audit every detail on the page and place it in its long-term home.** Operator behaviour goes to a `guides/` or `commands/` page so users can learn the feature without reading internals; design decisions, on-disk layout, struct/enum/function names, and architecture trade-offs go to `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, or another internals page so the next contributor reads accurate internals. The git history is the long-term archive of design rationale; the roadmap directory is not. Apply the **Documentation as the source of truth** rule in `AGENTS.md` for the audience split — never inline TOML schemas, on-disk paths, or struct names on the user-facing pages, and never put `jackin foo --bar` operator instructions on internals pages.
+4. **Replace the page with a single bullet in the Completed section** of `docs/src/content/docs/reference/roadmap.mdx`. The bullet names the feature in plain prose and links to the canonical user-facing or contributor-facing doc that now describes the shipped behaviour. No link back to a deleted roadmap page.
+5. **Repoint inbound references.** Update any open roadmap item, goal prompt, or contributor doc that linked to the deleted page; point them at the canonical home from step 3 instead.
+6. **Run the sidebar and overview audits** documented in `docs/AGENTS.md`. The sidebar audit must show no diff after deleting the entry from `docs/astro.config.ts`. The overview audit must continue to pass (every roadmap file is reachable from `roadmap.mdx` or covered by a parent program entry).
+7. **Run the docs verification gate.** `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from `docs/`. A retirement that breaks the build or repo-link references is incomplete.
+
+A `Status: Resolved` roadmap page that still sits in the directory is a smell, not a shipping target. The only legitimate reasons to keep one are (a) genuine remaining work tracked on the same page, or (b) load-bearing inbound links from open roadmap items that still treat the page as an internal contract. Anything else gets retired in the PR that ships the last piece — not deferred to a later cleanup PR, because every later contributor reading the resolved page treats it as authoritative until it is gone.
+
 ## Workflow / CI changes (agent-only)
 
 CI workflow files (`.github/workflows/*.yml`, `.github/actions/*/action.yml`) have failure modes that are invisible to PR-time CI because most gated jobs do not run on a `pull_request` event. Two rules apply when an agent modifies these files.

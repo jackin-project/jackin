@@ -29,8 +29,8 @@ editor and the next agent invocation sees the change.
 - It's runtime-agnostic by design — the same skill markdown bind-mounts
   into Claude's, Codex's, or Amp's expected skills directory based on
   the runtime adapter.
-- It complements (doesn't replace) the [custom plugin
-  marketplace](/reference/roadmap/custom-plugin-marketplace/) story:
+- It complements (doesn't replace) the custom plugin marketplace story
+  (now shipped — see the [role manifest reference](/developing/role-manifest/)):
   marketplaces distribute *reusable* skills published broadly; the
   workspace skills mount handles *local* / *team-specific* skills the
   operator doesn't want to publish.
@@ -151,8 +151,9 @@ as opt-in.
 - Skill version pinning. Skills are filesystem paths; pin the path,
   not a version. If versioning becomes important, revisit.
 - Skill marketplace integration (browse/install via TUI). The
-  [custom plugin marketplace](/reference/roadmap/custom-plugin-marketplace/)
-  handles published skills; this mount is for local/team ones.
+  shipped custom plugin marketplace support (see the
+  [role manifest reference](/developing/role-manifest/)) handles
+  published skills; this mount is for local/team ones.
 - Cross-runtime skill format conversion. V1 assumes the markdown
   format is portable (frontmatter + body); if Claude / Codex / Amp
   diverge, the runtime adapter handles per-runtime tweaks. Defer
@@ -197,5 +198,6 @@ as opt-in.
   per-runtime mount destinations
 - [Agent tag protocol](/reference/roadmap/agent-tag-protocol/) —
   primary distribution use case for skill bundles
-- [Custom plugin marketplace](/reference/roadmap/custom-plugin-marketplace/) —
-  published-skill distribution; complementary to this leaf
+- Custom plugin marketplace (shipped) — published-skill distribution;
+  complementary to this leaf. See the
+  [role manifest reference](/developing/role-manifest/)
