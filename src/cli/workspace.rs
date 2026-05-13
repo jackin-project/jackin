@@ -53,7 +53,7 @@ Examples:
         /// Role to select by default when loading this workspace
         #[arg(long = "default-role")]
         default_role: Option<String>,
-        /// Default agent for this workspace (claude, codex, or amp)
+        /// Default agent for this workspace (claude, codex, amp, or opencode)
         #[arg(long, value_parser = parse_agent)]
         default_agent: Option<crate::agent::Agent>,
         /// Set isolation mode for a mount destination. Repeatable.
