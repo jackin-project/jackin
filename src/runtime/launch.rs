@@ -2091,14 +2091,7 @@ fn resolve_restore_candidate(
             ContainerState::NotFound if manifest.is_restore_candidate() => {
                 candidates.push(manifest);
             }
-            ContainerState::Running | ContainerState::Stopped { .. } => {
-                anyhow::bail!(
-                    "matching jackin instance `{}` already has a Docker container; use `jackin hardline {}` or `jackin eject {}` before starting a fresh load",
-                    manifest.container_base,
-                    manifest.container_base,
-                    manifest.container_base
-                );
-            }
+            ContainerState::Running | ContainerState::Stopped { .. } => {}
             ContainerState::InspectUnavailable(reason) => {
                 anyhow::bail!(
                     "{}",
@@ -2232,9 +2225,8 @@ fn related_restore_candidates(
         }
         let docker_state = inspect_container_state(runner, &manifest.container_base);
         match docker_state {
-            ContainerState::Running
-            | ContainerState::Stopped { .. }
-            | ContainerState::InspectUnavailable(_) => {
+            ContainerState::Running | ContainerState::Stopped { .. } => {}
+            ContainerState::InspectUnavailable(_) => {
                 candidates.push(RelatedRestoreCandidate {
                     manifest,
                     docker_state,
@@ -6610,6 +6602,94 @@ plugins = []
     }
 
     #[test]
+    fn running_matching_instance_does_not_block_fresh_load() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest
+            .write(&paths.data_dir.join(container_name))
+            .unwrap();
+        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
+
+        let candidate = resolve_restore_candidate(
+            &paths,
+            Some("workspace"),
+            "workspace",
+            "/workspace",
+            "agent-smith",
+            crate::agent::Agent::Claude,
+            &mut runner,
+        )
+        .unwrap();
+
+        assert_eq!(candidate, RestoreResolution::StartFresh);
+    }
+
+    #[test]
+    fn stopped_matching_instance_does_not_block_fresh_load() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jackin-agent-smith",
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest
+            .write(&paths.data_dir.join(container_name))
+            .unwrap();
+        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
+
+        let candidate = resolve_restore_candidate(
+            &paths,
+            Some("workspace"),
+            "workspace",
+            "/workspace",
+            "agent-smith",
+            crate::agent::Agent::Claude,
+            &mut runner,
+        )
+        .unwrap();
+
+        assert_eq!(candidate, RestoreResolution::StartFresh);
+    }
+
+    #[test]
     fn related_restore_candidate_blocks_noninteractive_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
@@ -6656,6 +6736,50 @@ plugins = []
             "unexpected error: {message}"
         );
         assert!(message.contains("jackin hardline <instance>"), "{message}");
+    }
+
+    #[test]
+    fn running_related_instance_does_not_block_fresh_load() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
+        let manifest = InstanceManifest::new(NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "the-architect",
+            role_display_name: "The Architect",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/the-architect.git",
+            role_source_ref: None,
+            image_tag: "jackin-the-architect",
+            docker: DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        manifest
+            .write(&paths.data_dir.join(container_name))
+            .unwrap();
+        InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
+
+        let candidate = resolve_restore_candidate(
+            &paths,
+            Some("workspace"),
+            "workspace",
+            "/workspace",
+            "agent-smith",
+            crate::agent::Agent::Claude,
+            &mut runner,
+        )
+        .unwrap();
+
+        assert_eq!(candidate, RestoreResolution::StartFresh);
     }
 
     #[test]

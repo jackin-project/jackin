@@ -80,7 +80,7 @@ jackin load the-architect --role-branch feat/my-pr
 5. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
 6. Prompts for interactive environment variables declared in the manifest
 7. Generates and builds a derived Docker image, including declared Claude plugins (cached if unchanged; branch builds ignore `published_image` and always build from source)
-8. Checks the local instance index for unfinished work in the same workspace or directory before creating a fresh runtime; matching-role restore candidates can be rebuilt from the prompt, and related role instances can be recovered or rebuilt in place from the saved manifest source/ref.
+8. Checks the local instance index for missing recoverable work in the same workspace or directory before creating a fresh runtime; matching-role restore candidates can be rebuilt from the prompt, and related role instances whose containers are gone can be recovered or rebuilt in place from the saved manifest source/ref. Running instances do not block a fresh launch.
 9. Creates a per-agent Docker network and DinD sidecar
 10. Launches the agent container with all resolved mounts and environment variables
 11. Runs runtime hooks if declared (`setup_once`, `source`, then `preflight`)
@@ -122,6 +122,8 @@ jackin load the-architect --role-branch feat/caveman-all-install
 The branch image is completely separate from the default-branch image. Running `jackin load the-architect` after a branch build still uses the unchanged default-branch image.
 
 Branch names with slashes (`feat/my-pr`) and dashes (`feat-my-pr`) are kept distinct, so loading both never reuses the same image or cache slot by mistake.
+
+For choosing between a fresh instance and another agent session inside an existing instance, see [Parallel Agents](/guides/parallel-agents/).
 
 ### Branch trust gate
 
