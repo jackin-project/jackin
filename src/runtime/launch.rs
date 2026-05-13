@@ -273,6 +273,19 @@ fn agent_mounts(state: &crate::instance::RoleState) -> Vec<String> {
         }
     }
 
+    if let Some(opencode) = &state.auth.opencode {
+        mounts.push(format!(
+            "{}:/home/agent/.local/share/opencode",
+            state.root.join("home/.local/share/opencode").display()
+        ));
+        if let Some(auth_json) = &opencode.auth_json {
+            mounts.push(format!(
+                "{}:/jackin/opencode/auth.json",
+                auth_json.display()
+            ));
+        }
+    }
+
     mounts
 }
 
@@ -1024,6 +1037,10 @@ fn launch_role_runtime(
         run_args.push("-m");
         run_args.push(model);
     }
+    if let Some(model) = state.opencode_model() {
+        run_args.push("-m");
+        run_args.push(model);
+    }
     runner.run("docker", &run_args, None, &docker_run_opts)?;
 
     // Reconcile keep_awake AFTER the role container is running but
@@ -1535,10 +1552,22 @@ fn load_role_with(
         let rebuild = opts.rebuild;
         let agent_update = !rebuild && {
             let img = image_name(selector);
-            let needs_update = agent == crate::agent::Agent::Claude
-                && version_check::needs_claude_update(paths, &img, runner);
+            let needs_update = match agent {
+                crate::agent::Agent::Claude => {
+                    version_check::needs_claude_update(paths, &img, runner)
+                }
+                crate::agent::Agent::Opencode => {
+                    version_check::needs_opencode_update(paths, &img, runner)
+                }
+                _ => false,
+            };
             if needs_update {
-                eprintln!("        Claude update available — refreshing agent layer");
+                let name = match agent {
+                    crate::agent::Agent::Claude => "Claude",
+                    crate::agent::Agent::Opencode => "OpenCode",
+                    _ => unreachable!(),
+                };
+                eprintln!("        {name} update available — refreshing agent layer");
             }
             needs_update
         };
@@ -2799,6 +2828,7 @@ fn render_auth_credential_missing(
         crate::agent::Agent::Claude => "Claude",
         crate::agent::Agent::Codex => "Codex",
         crate::agent::Agent::Amp => "Amp",
+        crate::agent::Agent::Opencode => "OpenCode",
     };
 
     let _ = writeln!(out);
@@ -2967,11 +2997,13 @@ fn build_mode_resolution(
         Agent::Claude => cfg.claude.as_ref().map(|c| c.auth_forward),
         Agent::Codex => cfg.codex.as_ref().map(|c| c.auth_forward),
         Agent::Amp => cfg.amp.as_ref().map(|c| c.auth_forward),
+        Agent::Opencode => cfg.opencode.as_ref().map(|c| c.auth_forward),
     };
     let agent_at_workspace = cfg.workspaces.get(workspace).and_then(|ws| match agent {
         Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
         Agent::Codex => ws.codex.as_ref().map(|c| c.auth_forward),
         Agent::Amp => ws.amp.as_ref().map(|c| c.auth_forward),
+        Agent::Opencode => ws.opencode.as_ref().map(|c| c.auth_forward),
     });
     let agent_at_ws_role = cfg
         .workspaces
@@ -2981,6 +3013,7 @@ fn build_mode_resolution(
             Agent::Claude => ro.claude.as_ref().map(|c| c.auth_forward),
             Agent::Codex => ro.codex.as_ref().map(|c| c.auth_forward),
             Agent::Amp => ro.amp.as_ref().map(|c| c.auth_forward),
+            Agent::Opencode => ro.opencode.as_ref().map(|c| c.auth_forward),
         });
     vec![
         (format!("workspace × role × {agent}"), agent_at_ws_role),

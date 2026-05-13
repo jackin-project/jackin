@@ -173,7 +173,7 @@ An role can support more than one agent while keeping one shared Dockerfile:
 ```toml title="jackin.role.toml"
 version = "v1alpha2"
 dockerfile = "Dockerfile"
-agents = ["claude", "codex", "amp"]
+agents = ["claude", "codex", "amp", "opencode"]
 
 [claude]
 plugins = ["code-review@claude-plugins-official"]

@@ -63,6 +63,11 @@ pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec
                     anyhow::bail!("[amp] table required when amp is in `agents`");
                 }
             }
+            Agent::Opencode => {
+                if manifest.opencode.is_none() {
+                    anyhow::bail!("[opencode] table required when opencode is in `agents`");
+                }
+            }
         }
     }
 

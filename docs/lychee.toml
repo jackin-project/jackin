@@ -11,6 +11,7 @@ cache = true
 # 429 is accepted to keep CI useful under external rate limits. GitHub requests
 # are also throttled below to make a 429 less likely.
 accept = ["100..=103", "200..=299", "429"]
+exclude = ["https://chatgpt\\.com/"]
 exclude_all_private = true
 exclude_path = ["(^|/)404\\.html$"]
 

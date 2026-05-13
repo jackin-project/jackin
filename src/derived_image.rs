@@ -82,7 +82,7 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
     }
 
     // Concatenate per-agent install blocks in a stable order (Claude
-    // first when present, Codex second, Amp third). Each block declares
+    // first when present, Codex second, Amp third, OpenCode fourth). Each block declares
     // its own `ARG JACKIN_CACHE_BUST=0` (see the per-agent blocks returned
     // by `Agent::install_block`), so layer cache keys advance
     // independently when `--build-arg JACKIN_CACHE_BUST=<ts>` is
@@ -95,6 +95,7 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
         crate::agent::Agent::Claude => 0,
         crate::agent::Agent::Codex => 1,
         crate::agent::Agent::Amp => 2,
+        crate::agent::Agent::Opencode => 3,
     });
     for h in sorted {
         install_blocks.push_str(h.install_block());
@@ -120,10 +121,11 @@ RUN current_gid=\"$(id -g agent)\" \
        fi \
     && chown -R agent:agent /home/agent
 {install_blocks}{hook_section}USER root
-RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/default-home/.local/share/amp \
+RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/default-home/.local/share/amp /jackin/default-home/.local/share/opencode \
     && ( cp -a /home/agent/.claude/. /jackin/default-home/.claude/ 2>/dev/null || true ) \
     && ( cp -a /home/agent/.codex/. /jackin/default-home/.codex/ 2>/dev/null || true ) \
     && ( cp -a /home/agent/.local/share/amp/. /jackin/default-home/.local/share/amp/ 2>/dev/null || true ) \
+    && ( cp -a /home/agent/.local/share/opencode/. /jackin/default-home/.local/share/opencode/ 2>/dev/null || true ) \
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 RUN chmod +x /jackin/runtime/entrypoint.sh
@@ -540,6 +542,7 @@ mod tests {
         assert!(ENTRYPOINT_SH.contains("  claude)"));
         assert!(ENTRYPOINT_SH.contains("  codex)"));
         assert!(ENTRYPOINT_SH.contains("  amp)"));
+        assert!(ENTRYPOINT_SH.contains("  opencode)"));
     }
 
     #[test]
@@ -602,6 +605,9 @@ mod tests {
         assert!(ENTRYPOINT_SH.contains(
             "seed_home_dir /jackin/default-home/.local/share/amp /home/agent/.local/share/amp"
         ));
+        assert!(ENTRYPOINT_SH.contains(
+            "seed_home_dir /jackin/default-home/.local/share/opencode /home/agent/.local/share/opencode"
+        ));
     }
 
     #[test]
@@ -609,13 +615,14 @@ mod tests {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             None,
-            &[Agent::Claude, Agent::Codex, Agent::Amp],
+            &[Agent::Claude, Agent::Codex, Agent::Amp, Agent::Opencode],
             None,
         );
 
         assert!(dockerfile.contains("/jackin/default-home/.claude"));
         assert!(dockerfile.contains("/jackin/default-home/.codex"));
         assert!(dockerfile.contains("/jackin/default-home/.local/share/amp"));
+        assert!(dockerfile.contains("/jackin/default-home/.local/share/opencode"));
         assert!(dockerfile.contains("cp -a /home/agent/.claude/. /jackin/default-home/.claude/"));
     }
 

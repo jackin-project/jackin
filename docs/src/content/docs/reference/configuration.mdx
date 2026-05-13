@@ -56,7 +56,7 @@ Top-level `version` is the config schema version. jackin' writes `version = "v1a
 
 ### Agent auth-forward settings
 
-`auth_forward` is configured per agent (`claude`, `codex`, `amp`) at three
+`auth_forward` is configured per agent (`claude`, `codex`, `amp`, `opencode`) at three
 layers, with most-specific wins:
 
 ```toml
@@ -72,6 +72,9 @@ auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — Codex reje
 [amp]
 auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — Amp rejects "oauth_token"
 
+[opencode]
+auth_forward = "sync"  # "sync" (default), "api_key", or "ignore" — OpenCode rejects "oauth_token"
+
 # Layer 2 — workspace-wide override
 [claude]
 auth_forward = "oauth_token"
@@ -82,6 +85,9 @@ auth_forward = "api_key"
 [amp]
 auth_forward = "api_key"
 
+[opencode]
+auth_forward = "sync"
+
 # Layer 3 — most-specific (workspace × role × agent) override
 [roles.agent-smith.claude]
 auth_forward = "ignore"
@@ -91,6 +97,9 @@ auth_forward = "sync"
 
 [roles.agent-smith.amp]
 auth_forward = "ignore"
+
+[roles.agent-smith.opencode]
+auth_forward = "sync"
 ```
 
 The layer 2 and 3 examples above belong in
@@ -102,8 +111,8 @@ The layer 2 and 3 examples above belong in
 | `auth_forward` | How the host's agent credentials (or env-supplied keys/tokens) are made available to agent containers. See [Authentication Forwarding](/guides/authentication). | `sync` |
 
 Accepted values: `sync` \| `api_key` \| `oauth_token` \| `ignore`.
-`oauth_token` is **Claude only** — setting it under any `[codex]` or
-`[amp]` block is rejected at parse time.
+`oauth_token` is **Claude only** — setting it under any `[codex]`,
+`[amp]`, or `[opencode]` block is rejected at parse time.
 
 Locations the field may appear at, in resolution order
 (most-specific first):
@@ -111,16 +120,20 @@ Locations the field may appear at, in resolution order
 - `[roles.<role>.claude].auth_forward` in `workspaces/<ws>.toml`
 - `[roles.<role>.codex].auth_forward` in `workspaces/<ws>.toml`
 - `[roles.<role>.amp].auth_forward` in `workspaces/<ws>.toml`
+- `[roles.<role>.opencode].auth_forward` in `workspaces/<ws>.toml`
 - `[claude].auth_forward` in `workspaces/<ws>.toml`
 - `[codex].auth_forward` in `workspaces/<ws>.toml`
 - `[amp].auth_forward` in `workspaces/<ws>.toml`
+- `[opencode].auth_forward` in `workspaces/<ws>.toml`
 - `[claude].auth_forward` (global default)
 - `[codex].auth_forward` (global default)
 - `[amp].auth_forward` (global default)
+- `[opencode].auth_forward` (global default)
 
 Credentials referenced by `api_key` and `oauth_token` live in ordinary
 `[*.env]` blocks under the well-known names `ANTHROPIC_API_KEY`,
-`CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, and `AMP_API_KEY`.
+`CLAUDE_CODE_OAUTH_TOKEN`, `OPENAI_API_KEY`, `AMP_API_KEY`, and
+`OPENCODE_API_KEY`.
 
 ### GitHub CLI auth-forward settings
 
@@ -175,7 +188,7 @@ Resolution order, most-specific first:
 - `[github].auth_forward` (global default)
 
 Operator-only — role manifests cannot set or override `[github]`,
-same rule as `[claude]` / `[codex]`. Optional GHE-targeted env vars
+same rule as `[claude]` / `[codex]` / `[opencode]`. Optional GHE-targeted env vars
 `GH_HOST` and `GH_ENTERPRISE_TOKEN` may also be set in the
 `[…github.env]` block; they are forwarded to the container as-is.
 
@@ -256,7 +269,7 @@ This example is the contents of
 | `mounts[].isolation` | Per-mount isolation mode: `shared` (default), `worktree`, or `clone`. Omitting the field deserializes to `shared`, but every save writes the field explicitly so old configs migrate to the new shape on first save. Global mounts (under `[docker.mounts]`) reject this field at parse time. See [Per-mount isolation](/guides/workspaces/#per-mount-isolation). |
 | `allowed_roles` | List of allowed role selectors |
 | `default_role` | Default role selector |
-| `default_agent` | Optional workspace default agent (`"claude"`, `"codex"`, or `"amp"`). Omit to default to Claude. |
+| `default_agent` | Optional workspace default agent (`"claude"`, `"codex"`, `"amp"`, or `"opencode"`). Omit to default to Claude. |
 | `last_role` | Most recently used role selector for this workspace |
 | `keep_awake.enabled` | macOS-only: keep the host awake while any agent in this workspace is running (see [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake)). On Linux/Windows the flag is silently accepted but has no effect — useful when sharing a `config.toml` across machines, but the host will still sleep. |
 | `git_pull_on_entry` | Run `git pull` on every mounted git repository from the host before the agent container starts. Failures are non-fatal — the launch continues even when offline or the working tree is dirty. Omitted from TOML when `false` (the default). See [Git pull on entry](/guides/workspaces/#git-pull-on-entry). |
@@ -285,15 +298,17 @@ Each running role stores state at `~/.jackin/data/<container-name>/`:
 | `claude/credentials.json` | Claude Code OAuth credentials (mounted at `/jackin/claude/credentials.json`; only forwarded under `auth_forward = "sync"`) |
 | `codex/auth.json` | Synced copy of host `~/.codex/auth.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/jackin/codex/auth.json`; absent when host has no auth.json) |
 | `amp/secrets.json` | Synced copy of host `~/.local/share/amp/secrets.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/jackin/amp/secrets.json`; absent when host has no secrets.json). `secrets.json` is the XDG_DATA file the Amp CLI writes the `apiKey@https://ampcode.com/` token into; the XDG_CONFIG path `~/.config/amp/settings.json` is preferences only and is intentionally not forwarded |
+| `opencode/auth.json` | Synced copy of host `~/.local/share/opencode/auth.json` under `auth_forward = "sync"`, `0600` perms (mounted at `/jackin/opencode/auth.json`; absent when host has no auth.json). OpenCode stores provider credentials in this file — for example, a Z.AI Coding Plan API key |
 | `home/.claude/` and `home/.claude.json` | Durable Claude Code home state, including conversation history, runtime-local plugins, account metadata, and settings written during the session |
 | `home/.codex/` | Durable Codex home state, including conversation history, runtime-local config, and login state created inside the session |
 | `home/.local/share/amp/` | Durable Amp data state created inside the session |
+| `home/.local/share/opencode/` | Durable OpenCode data state (auth credentials, model preferences) created inside the session |
 | `state/` | jackin runtime state mounted at `/jackin/state`, including the `setup_once` marker |
 | `.config/gh/` | GitHub CLI authentication and settings (agent-neutral) |
 
 Host→container auth handoff lives under a single tree (`/jackin/`) the operator can audit at a glance. The agent home directories are bind-mounted from jackin-managed per-instance state, not from the operator's host home. The runtime entrypoint seeds image-baked defaults into that durable home on first launch, then copies the current auth handoff files from `/jackin/` into the durable home before starting the agent. This keeps conversation history and runtime-local plugins recoverable when Docker containers disappear while still letting the current auth mode override stale forwarded credentials.
 
-For roles that list multiple supported agents in their manifest, jackin provisions `claude/`, `codex/`, and `amp/` auth handoff directories and their corresponding `home/.claude/`, `home/.codex/`, and `home/.local/share/amp/` durable home directories for every agent the role supports — not just the agent selected for the initial launch. This means starting a second agent via `jackin hardline --new` does not require re-authentication: the credentials and durable home were already placed in the container when it first launched.
+For roles that list multiple supported agents in their manifest, jackin provisions `claude/`, `codex/`, `amp/`, and `opencode/` auth handoff directories and their corresponding `home/.claude/`, `home/.codex/`, `home/.local/share/amp/`, and `home/.local/share/opencode/` durable home directories for every agent the role supports — not just the agent selected for the initial launch. This means starting a second agent via `jackin hardline --new` does not require re-authentication: the credentials and durable home were already placed in the container when it first launched.
 
 `claude/account.json` is rebuilt as `{}` (empty object) by every non-sync auth mode so it is always present on disk; the bind mount is the gate for whether the file flows into the container, not the file's existence. `claude/credentials.json` is wiped on every non-sync mode and never bind-mounted under `ignore`/`api_key`/`oauth_token`.
 

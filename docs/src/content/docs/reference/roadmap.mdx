@@ -8,12 +8,12 @@ import RepoFile from '../../../components/RepoFile.astro'
 
 ## Current status
 
-jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` ship today as built-in agent runtimes**, with namespaced roles, workspace management, per-mount isolation for parallel agents, layered authentication forwarding (including `1Password` references), and an interactive operator console (TUI).
+jackin' is a functional proof of concept. **`Claude Code`, `Codex`, `Amp`, and `OpenCode` ship today as built-in agent runtimes**, with namespaced roles, workspace management, per-mount isolation for parallel agents, layered authentication forwarding (including `1Password` references), and an interactive operator console (TUI).
 
 ## Completed
 
 - `Claude Code` and `Codex` agent runtimes with full-speed mode (`--dangerously-skip-permissions` / YOLO) inside the container boundary
-- Layered authentication forwarding per (workspace × role × agent) — `sync` / `api_key` / `oauth_token` / `ignore` for `Claude Code`, and `sync` / `api_key` / `ignore` for `Codex` and `Amp` (neither supports `oauth_token`)
+- Layered authentication forwarding per (workspace × role × agent) — `sync` / `api_key` / `oauth_token` / `ignore` for `Claude Code`, and `sync` / `api_key` / `ignore` for `Codex`, `Amp`, and `OpenCode` (none supports `oauth_token`)
 - `Docker` container isolation with `Docker-in-Docker`
 - Interactive operator console (TUI) with workspace, role, and agent selection
 - Workspace management (add, edit, remove, list, show) — CLI and TUI

@@ -1,154 +1,70 @@
 ---
 title: Agent Authentication
-description: Forward Claude Code, Codex, and Amp credentials into agent containers
+description: Forward Claude Code, Codex, Amp, and OpenCode credentials into agent containers
 ---
 import { Aside } from '@astrojs/starlight/components'
 
 
-This page covers the operator surface for forwarding `Claude Code`, `Codex`, and `Amp` credentials into agent containers. For the broader pattern jackin' applies across every authentication axis (modes, scopes, defaults), see the [Authentication overview](/guides/authentication/).
-
-`Claude Code`, `Codex`, and `Amp` credentials are configured per agent at three scopes: global default, per workspace, per (workspace × role × agent). `sync` is the default at every scope — your host login is forwarded into the container on each launch.
+jackin' forwards your host login for each supported agent into the container automatically. Log in once on the host; every container launch picks up the same account.
 
 <Aside type="tip">
-Manage modes through `jackin console` → select the workspace → **Auth** tab. That is the canonical surface for every authentication axis jackin' supports — see [Managing auth](/guides/authentication/#managing-auth--always-through-the-operator-console) for the shared story. You should not need to hand-edit any configuration file.
+Manage authentication through `jackin console` → select the workspace → **Auth** tab. That is the canonical surface for every authentication axis jackin' supports. You should not need to hand-edit any configuration file.
 </Aside>
 
 ## Modes
 
+Every agent supports the same set of authentication modes. The default is `sync` — your host login is forwarded as-is.
+
 | Mode | Behavior |
 |---|---|
-| `sync` (default) | When host auth exists, copy it into the container on each launch. When host auth is absent, preserve any existing container auth. |
-| `api_key` | Inject the agent's API-key env var (`ANTHROPIC_API_KEY` for Claude, `OPENAI_API_KEY` for Codex, `AMP_API_KEY` for Amp) from your operator env vars. No credential files are written. |
-| `oauth_token` | **Claude only.** Inject `CLAUDE_CODE_OAUTH_TOKEN` from your operator env vars. Codex and Amp reject this mode. |
-| `ignore` | Never forward host auth. Revoke any previously forwarded credentials. The agent authenticates itself inside the container. |
+| `sync` (default) | Copy host credentials into the container on each launch. When host auth is absent, preserve any existing container auth. |
+| `api_key` | Inject an API-key env var from your operator env vars. No credential files are written. |
+| `oauth_token` | Inject an OAuth token from your operator env vars. **Claude Code only** — other agents reject this mode. |
+| `ignore` | Never forward host auth. Revoke any previously forwarded credentials. |
 
-### sync
+Which modes are available per agent, and which env vars or credential files are involved, is documented on each agent's page:
 
-`sync` re-copies host credentials on every launch. Use this when you want agents to always reflect the host's current account — for example, if you rotate credentials frequently or switch between organizations.
+- [Claude Code](/guides/authentication/agents/claude-code/) — `sync`, `api_key`, `oauth_token`, `ignore`
+- [Codex](/guides/authentication/agents/codex/) — `sync`, `api_key`, `ignore`
+- [Amp](/guides/authentication/agents/amp/) — `sync`, `api_key`, `ignore`
+- [OpenCode](/guides/authentication/agents/opencode/) — `sync`, `api_key`, `ignore`
+
+## How sync works
+
+`sync` is the default for every agent. The flow is the same regardless of which agent you use:
+
+1. **Log in on the host.** Use the agent's own `login` command to establish credentials on your host machine.
+2. **Launch the container.** jackin' copies the host credentials into the container on every launch.
+3. **Agent runs authenticated.** The agent inside the container sees the same account, subscription, and model access you have on the host.
 
 When the host's credentials are missing (e.g. you logged out), `sync` preserves the container's existing auth rather than wiping it. This prevents accidental de-authentication from a missing file.
 
-### api_key
+## Scopes
 
-`api_key` provisions the agent with an empty state and exports the agent's API key into the container's process env. `Claude Code` reads `ANTHROPIC_API_KEY`; `Codex` CLI reads `OPENAI_API_KEY`; `Amp` reads `AMP_API_KEY`. No file-based credentials are written.
+Each agent's mode is resolved at three scopes, most-specific wins:
 
-Setup:
-
-1. Set the API-key env var at the scope you want (see [Environment Variables](/guides/environment-variables/)):
-
-   ```bash
-   jackin workspace env set my-app ANTHROPIC_API_KEY "op://Personal/Anthropic/key"
-   ```
-
-2. Set the `auth_forward` mode for that scope (see below).
-
-### oauth_token (Claude only)
-
-`oauth_token` is designed for long-lived and concurrent jackin' sessions on `Claude`. Instead of bind-mounting a copy of the host's `/login` session state, jackin' injects a long-lived OAuth token (`CLAUDE_CODE_OAUTH_TOKEN`) into the container's process env. `Claude Code` inside the container reads the token directly, bypassing the file-based credential store.
-
-The recommended setup path is the orchestrator:
-
-```bash
-jackin workspace claude-token setup my-app --vault Personal
-```
-
-That single command drives `claude setup-token` interactively, captures the token without ever showing it on stdout or in shell history, stores it in 1Password under a jackin-managed item, and switches the workspace's Claude auth to OAuth-token mode. The launch banner then surfaces an "expires in N days" countdown so rotation timing is never a surprise.
-
-Subsequent operations:
-
-- `jackin workspace claude-token rotate my-app` — capture a fresh token and delete the prior 1P item.
-- `jackin workspace claude-token revoke my-app` — clear the wired token and switch back to `ignore`. Pass `--delete-op-item` to also remove the 1P item.
-- `jackin workspace claude-token doctor my-app` — confirm the wired slot resolves cleanly through `op`.
-
-See the [`workspace claude-token` command reference](/commands/workspace/#workspace-claude-token) for full option coverage.
-
-If `CLAUDE_CODE_OAUTH_TOKEN` is not present in the resolved env when `oauth_token` mode is active, jackin' aborts the launch with a clear error pointing at the missing key. Re-run `jackin workspace claude-token setup` to repair the slot.
-
-<Aside type="caution">
-`Codex` and `Amp` have no OAuth-token analog of `Claude`'s `CLAUDE_CODE_OAUTH_TOKEN`. Setting `auth_forward = "oauth_token"` for either is rejected. Use `api_key` (with `OPENAI_API_KEY` or `AMP_API_KEY`) or `sync` instead.
-</Aside>
-
-### ignore
-
-`ignore` provisions the container with an empty state — no credential file is written, and any previously forwarded credentials are deleted. The agent must authenticate itself inside the container the next time it runs.
-
-Switching an agent from `sync`, `api_key`, or `oauth_token` to `ignore` actively revokes any previously forwarded credentials.
-
-## Setting modes
-
-Resolution order: **per-(workspace × role × agent) > per-workspace > global > `sync`**.
+**per-(workspace × role × agent) > per-workspace > global > `sync`**
 
 ### Global default
 
-Use the CLI:
-
 ```bash
 jackin config auth set sync
-jackin config auth set ignore
-jackin config auth set oauth_token
-jackin config auth set api_key
 jackin config auth set api_key --agent codex
 jackin config auth set sync --agent amp
+jackin config auth set sync --agent opencode
 ```
 
-Without `--agent`, `config auth set` targets `Claude Code`.
-`jackin config auth show` prints the current global modes for Claude
-Code, Codex, and Amp. GitHub CLI auth is managed separately through the
-console today.
+Without `--agent`, `config auth set` targets Claude Code. `jackin config auth show` prints the current global modes for all agents.
 
 ### Per workspace and per (workspace × role × agent)
 
-Open `jackin console`, select the workspace, switch to the **Auth** tab. The tab shows the global defaults (read-only — they reflect your global setting and are configured per "[Global default](#global-default)" above), workspace defaults for each agent, and any per-role overrides.
-
-Editing a row opens the auth-edit form, which presents:
-
-- A **mode picker** — `sync`, `api_key`, `oauth_token` (`Claude` only), `ignore`. `Codex` and `Amp` cells omit `oauth_token`.
-- A **credential picker** — only shown for modes that need a credential. Choose the source: a `1Password` reference, a host-env passthrough, or a literal value. The form refuses to save until the credential resolves to a non-empty value, so an `auth_forward = "api_key"` setting can never sit in the workspace without an actual key behind it.
-
-When the source is a `1Password` reference, the form uses the same picker as the env-vars editor and validates the reference (`op read`) before committing it — broken or unauthorized references never reach disk.
-
-Per-role overrides for `Claude`, `Codex`, and `Amp` are added through the same tab. The footer of the editor surfaces the resolved mode and its provenance (global / workspace / role override) for whatever you have focused, so you can see what's effective without leaving the screen.
+Open `jackin console`, select the workspace, switch to the **Auth** tab. The tab shows global defaults (read-only), workspace defaults for each agent, and any per-role overrides. Editing a row opens the auth-edit form with a mode picker and a credential picker (for modes that need one).
 
 ## Multi-agent roles
 
-For roles that support more than one agent runtime (for example, a role that lists Claude, Codex, and Amp in its manifest), jackin provisions credentials for every supported agent at launch time — not just the one you selected for the initial session. The `claude/`, `codex/`, and `amp/` handoff directories and their corresponding durable home directories under `~/.jackin/data/<container>/home/` are all populated before the container starts.
+For roles that support more than one agent, jackin provisions credentials for every supported agent at launch time — not just the one you selected for the initial session. You can start a second agent inside the same running container with `jackin hardline --new --agent codex` and it will not ask you to log in.
 
-This means you can start a second agent inside the same running container with `jackin hardline --new --agent codex` and it will not ask you to log in: the Codex credentials were already placed in the container when Claude (or whatever agent you selected first) launched.
-
-Each agent's auth mode is evaluated independently. A role can use `sync` for Claude and `ignore` for Codex in the same workspace — jackin provisions each agent's credential directory according to that agent's resolved mode.
-
-## Launch-time validation
-
-When jackin' resolves `auth_forward` for a launch, it verifies that any mode requiring a credential has one available in your env vars. If the credential is missing, the launch fails with an error that:
-
-- shows which scope chose which mode for `Claude`, `Codex`, and `Amp`, and
-- shows which scopes were checked for the missing env var.
-
-That makes it obvious whether the right mode is in effect and whether the credential is missing entirely or just set at the wrong scope.
-
-## Troubleshooting
-
-### Agent shows "Not logged in" after forwarding
-
-If the agent shows "Not logged in" or falls back to a different model tier (e.g. Sonnet instead of Opus), the credentials may not have been forwarded. Check:
-
-1. **What mode is effective?** Open the **Auth** tab in `jackin console` for that workspace, and look at the effective mode for the (role × agent) cell.
-2. **Does the host have credentials?** For `Claude` on macOS, check `security find-generic-password -s "Claude Code-credentials" -w`. On Linux, check `~/.claude/.credentials.json`. For `Codex`, check `~/.codex/auth.json`. For `Amp`, check `~/.local/share/amp/secrets.json` (the file the Amp CLI writes the `apiKey@https://ampcode.com/` token into; the XDG_CONFIG file `~/.config/amp/settings.json` is preferences only and never holds the token).
-3. **Is this a pre-existing container?** In `sync` mode, host credentials are forwarded on every launch — but if the host has no credentials, the container's existing auth is preserved. If the container has stale auth and the host has fresh auth, restart the container (`jackin eject <role> && jackin load <role>`) or purge state (`jackin purge <role>`) to force a fresh sync.
-
-### Revoking forwarded credentials
-
-To stop forwarding and clear existing credentials, set the (workspace × role × agent) cell to `ignore` in the **Auth** tab and reload the agent:
-
-```bash
-jackin load <role>  # next launch will reset to {}
-```
-
-Or purge all state:
-
-```bash
-jackin purge <role>
-```
+Each agent's auth mode is evaluated independently. A role can use `sync` for Claude Code and `ignore` for Codex in the same workspace.
 
 ## See also
 

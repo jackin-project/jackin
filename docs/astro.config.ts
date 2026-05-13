@@ -75,7 +75,16 @@ export default defineConfig({
               label: 'Authentication',
               items: [
                 { label: 'Overview', slug: 'guides/authentication' },
-                { label: 'Agent Authentication', slug: 'guides/authentication/agents' },
+                {
+                  label: 'Agent Authentication',
+                  items: [
+                    { label: 'Overview', slug: 'guides/authentication/agents' },
+                    { label: 'Claude Code', slug: 'guides/authentication/agents/claude-code' },
+                    { label: 'Codex', slug: 'guides/authentication/agents/codex' },
+                    { label: 'Amp', slug: 'guides/authentication/agents/amp' },
+                    { label: 'OpenCode', slug: 'guides/authentication/agents/opencode' },
+                  ],
+                },
                 { label: 'GitHub CLI Authentication', slug: 'guides/authentication/github-cli' },
               ],
             },

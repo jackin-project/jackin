@@ -252,6 +252,41 @@ impl std::ops::Deref for AmpAuthConfig {
     }
 }
 
+#[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
+pub struct OpencodeAuthConfig(pub(crate) AgentAuthConfig);
+
+impl OpencodeAuthConfig {
+    pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
+        if cfg.auth_forward == AuthForwardMode::OAuthToken {
+            return Err("auth_forward 'oauth_token' is not supported for opencode");
+        }
+        Ok(Self(cfg))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for OpencodeAuthConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let cfg = AgentAuthConfig::deserialize(deserializer)?;
+        if cfg.auth_forward == AuthForwardMode::OAuthToken {
+            return Err(serde::de::Error::custom(
+                "auth_forward 'oauth_token' is not supported for opencode; \
+                 supported modes: sync, api_key, ignore",
+            ));
+        }
+        Ok(Self(cfg))
+    }
+}
+
+impl std::ops::Deref for OpencodeAuthConfig {
+    type Target = AgentAuthConfig;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoleSource {
@@ -281,6 +316,8 @@ pub struct AppConfig {
     pub codex: Option<CodexAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub amp: Option<AmpAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opencode: Option<OpencodeAuthConfig>,
     /// Global `[github]` block — bottom layer of the layered resolver
     /// (global → workspace → workspace × role). Operator-only; role
     /// manifests cannot set or override it.
@@ -305,6 +342,7 @@ impl Default for AppConfig {
             claude: None,
             codex: None,
             amp: None,
+            opencode: None,
             github: None,
             env: BTreeMap::new(),
             roles: BTreeMap::new(),
@@ -593,6 +631,10 @@ auth_forward = "ignore"
             "codex must be None when [codex] absent"
         );
         assert!(cfg.amp.is_none(), "amp must be None when [amp] absent");
+        assert!(
+            cfg.opencode.is_none(),
+            "opencode must be None when [opencode] absent"
+        );
     }
 
     #[test]

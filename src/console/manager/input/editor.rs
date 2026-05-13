@@ -3291,6 +3291,7 @@ plugins = []
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -3575,6 +3576,7 @@ plugins = []
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -3643,6 +3645,7 @@ plugins = []
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
