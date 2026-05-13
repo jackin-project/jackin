@@ -359,7 +359,8 @@ fn open_settings_auth_form(
             crate::console::manager::auth_kind::AuthKind::Github => auth.github_env.get(name),
             crate::console::manager::auth_kind::AuthKind::Claude
             | crate::console::manager::auth_kind::AuthKind::Codex
-            | crate::console::manager::auth_kind::AuthKind::Amp => env.pending.env.get(name),
+            | crate::console::manager::auth_kind::AuthKind::Amp
+            | crate::console::manager::auth_kind::AuthKind::Opencode => env.pending.env.get(name),
         })
         .cloned();
     let form = AuthForm::from_existing(kind, row.mode, existing_credential);
@@ -602,7 +603,8 @@ fn persist_settings_auth_form(
             }
             crate::console::manager::auth_kind::AuthKind::Claude
             | crate::console::manager::auth_kind::AuthKind::Codex
-            | crate::console::manager::auth_kind::AuthKind::Amp => {
+            | crate::console::manager::auth_kind::AuthKind::Amp
+            | crate::console::manager::auth_kind::AuthKind::Opencode => {
                 env.pending.env.insert(name.to_string(), value);
             }
         }
@@ -631,7 +633,8 @@ fn clear_settings_auth_kind(
                 }
                 crate::console::manager::auth_kind::AuthKind::Claude
                 | crate::console::manager::auth_kind::AuthKind::Codex
-                | crate::console::manager::auth_kind::AuthKind::Amp => {
+                | crate::console::manager::auth_kind::AuthKind::Amp
+                | crate::console::manager::auth_kind::AuthKind::Opencode => {
                     env.pending.env.remove(env_var);
                 }
             }

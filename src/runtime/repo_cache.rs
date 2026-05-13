@@ -482,12 +482,23 @@ pub(super) fn resolve_agent_repo_with(
             None,
             &git_run_opts,
         )?;
-        runner.run(
+        let ff_result = runner.run(
             "git",
             &["-C", &repo_path, "merge", "--ff-only", "FETCH_HEAD"],
             None,
             &git_run_opts,
-        )?;
+        );
+        if ff_result.is_err() {
+            eprintln!(
+                "        cached role branch diverged (remote may have been force-pushed) — resetting to origin/{branch}"
+            );
+            runner.run(
+                "git",
+                &["-C", &repo_path, "reset", "--hard", "FETCH_HEAD"],
+                None,
+                &git_run_opts,
+            )?;
+        }
     } else {
         let clone_args = clone_args(git_url, &repo_path, branch_override);
         runner

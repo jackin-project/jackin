@@ -76,7 +76,7 @@ The container lifecycle lives in `src/runtime/`:
 Instance-local state helpers live in `src/instance/`:
 
 - <RepoFile path="src/instance/mod.rs" /> — role state preparation and auth materialization re-exports.
-- <RepoFile path="src/instance/auth.rs" /> — Claude, Codex, Amp, and GitHub auth file provisioning.
+- <RepoFile path="src/instance/auth.rs" /> — Claude, Codex, Amp, OpenCode, and GitHub auth file provisioning.
 - <RepoFile path="src/instance/naming.rs" /> — role image names, legacy name matching, and DNS-safe unique container names.
 - <RepoFile path="src/instance/manifest.rs" /> — per-instance `instance.json` identity records, lifecycle status, and the rebuildable `instances.json` lookup index.
 

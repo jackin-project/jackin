@@ -657,7 +657,8 @@ impl SettingsState<'_> {
             match row.kind {
                 crate::console::manager::auth_kind::AuthKind::Claude
                 | crate::console::manager::auth_kind::AuthKind::Codex
-                | crate::console::manager::auth_kind::AuthKind::Amp => {
+                | crate::console::manager::auth_kind::AuthKind::Amp
+                | crate::console::manager::auth_kind::AuthKind::Opencode => {
                     let Some(agent) = row.kind.agent() else {
                         continue;
                     };
@@ -782,6 +783,7 @@ impl SettingsAuthState {
             crate::console::manager::auth_kind::AuthKind::Claude,
             crate::console::manager::auth_kind::AuthKind::Codex,
             crate::console::manager::auth_kind::AuthKind::Amp,
+            crate::console::manager::auth_kind::AuthKind::Opencode,
             crate::console::manager::auth_kind::AuthKind::Github,
         ]
         .into_iter()
@@ -790,7 +792,8 @@ impl SettingsAuthState {
             mode: match kind {
                 crate::console::manager::auth_kind::AuthKind::Claude
                 | crate::console::manager::auth_kind::AuthKind::Codex
-                | crate::console::manager::auth_kind::AuthKind::Amp => kind.agent().map_or(
+                | crate::console::manager::auth_kind::AuthKind::Amp
+                | crate::console::manager::auth_kind::AuthKind::Opencode => kind.agent().map_or(
                     crate::console::manager::auth_kind::AuthMode::Sync,
                     |agent| {
                         crate::console::manager::auth_kind::AuthMode::from_auth_forward(
@@ -2153,6 +2156,7 @@ mod tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -2205,6 +2209,7 @@ mod tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -2417,6 +2422,7 @@ mod tests {
             claude: None,
             codex: None,
             amp: None,
+            opencode: None,
             github: None,
             git_pull_on_entry: false,
         };

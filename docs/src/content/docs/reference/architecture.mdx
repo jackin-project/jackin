@@ -181,11 +181,14 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 │       │   └── auth.json          # ChatGPT OAuth tokens (synced from host ~/.codex/auth.json under auth_forward=sync)
 │       ├── amp/                   # Amp auth handoff (provisioned when Amp is a supported agent)
 │       │   └── secrets.json       # Amp API key or OAuth token (synced from host ~/.local/share/amp/secrets.json under auth_forward=sync)
+│       ├── opencode/              # OpenCode auth handoff (provisioned when OpenCode is a supported agent)
+│       │   └── auth.json          # OpenCode provider credentials (synced from host ~/.local/share/opencode/auth.json under auth_forward=sync)
 │       ├── home/                  # Durable agent home state mounted into the container
 │       │   ├── .claude/           # Claude Code conversation history, runtime-local plugins, settings
 │       │   ├── .claude.json       # Claude Code account metadata inside the durable home
 │       │   ├── .codex/            # Codex conversation history, runtime-local config, login state
-│       │   └── .local/share/amp/  # Amp conversation history, runtime-local config, login state
+│       │   ├── .local/share/amp/  # Amp conversation history, runtime-local config, login state
+│       │   └── .local/share/opencode/  # OpenCode provider credentials, model preferences
 │       ├── state/                 # jackin runtime markers mounted at /jackin/state
 │       ├── .config/gh/            # GitHub CLI authentication (agent-neutral)
 │       └── .jackin/               # jackin runtime metadata (agent-neutral)
@@ -195,7 +198,7 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 
 This is what persists across sessions:
 
-- Claude/Codex/Amp history, runtime-local settings, plugins, and authentication state stored under the per-instance durable home
+- Claude/Codex/Amp/OpenCode history, runtime-local settings, plugins, and authentication state stored under the per-instance durable home
 - jackin' plugin metadata
 - `gh` state acquired inside the agent container
 

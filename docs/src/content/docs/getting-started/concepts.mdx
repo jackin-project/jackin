@@ -18,7 +18,7 @@ The operator never enters the container. You drive jackin' from your host machin
 
 ## Agents
 
-An **agent** is an AI coding runtime (`Claude Code`, `Codex`, and `Amp` today) running inside an isolated `Docker` container. Each agent:
+An **agent** is an AI coding runtime (`Claude Code`, `Codex`, `Amp`, or `OpenCode` today) running inside an isolated `Docker` container. Each agent:
 
 - Has its own filesystem, network, and process space
 - Runs at full speed inside the container — whatever "no permission prompts" mode the runtime ships (`Claude Code`'s `--dangerously-skip-permissions`, `Codex`'s YOLO, etc.) — because the boundary is the container, not the prompts
@@ -131,7 +131,7 @@ When you run `jackin load agent-smith ~/Projects/my-app`, jackin' takes care of 
 2. **Build the agent image** — extending the `construct` with the role's tools and the agent runtime. Subsequent loads reuse `Docker`'s layer cache.
 3. **Mount your project files** — at the path the workspace says.
 4. **Start the container in isolation** — on its own `Docker` network, with its own private `Docker` daemon for any containers the agent itself needs to build.
-5. **Drop you inside** — `Claude Code` (or another supported runtime) starts with full permissions inside that boundary.
+5. **Drop you inside** — `Claude Code` (or another supported runtime — `Codex`, `Amp`, or `OpenCode`) starts with full permissions inside that boundary.
 
 That whole sequence is one command. If you want to read the full,
 under-the-hood account — derived `Dockerfile`s, networking, isolated

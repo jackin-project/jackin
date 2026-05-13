@@ -839,6 +839,9 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
                 kind: AuthKind::Amp,
             },
             AuthRow::AuthKindRow {
+                kind: AuthKind::Opencode,
+            },
+            AuthRow::AuthKindRow {
                 kind: AuthKind::Github,
             },
         ];
@@ -917,12 +920,12 @@ fn resolve_panel_mode(
 ) -> crate::console::manager::auth_kind::AuthMode {
     use crate::console::manager::auth_kind::{AuthKind, AuthMode};
     match kind {
-        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp => {
-            // `kind.agent()` returns `Some` for Claude/Codex/Amp; the
+        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp | AuthKind::Opencode => {
+            // `kind.agent()` returns `Some` for Claude/Codex/Amp/Opencode; the
             // GitHub arm below means the unwrap is unreachable here.
             let agent = kind
                 .agent()
-                .expect("Claude/Codex/Amp kinds map to an Agent");
+                .expect("Claude/Codex/Amp/Opencode kinds map to an Agent");
             let mode = crate::config::resolve_mode(cfg, agent, workspace, role);
             AuthMode::from_auth_forward(mode)
         }
@@ -1424,6 +1427,10 @@ fn explicit_workspace_mode(
             .amp
             .as_ref()
             .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
+        AuthKind::Opencode => ws
+            .opencode
+            .as_ref()
+            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
         AuthKind::Github => ws
             .github
             .as_ref()
@@ -1444,7 +1451,7 @@ fn auth_source_value<'a>(
     use crate::console::manager::auth_kind::AuthKind;
     match kind {
         AuthKind::Github => github_source_value(synthesized, workspace_name, role, env_name),
-        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp => {
+        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp | AuthKind::Opencode => {
             agent_env_source_value(synthesized, workspace_name, role, env_name)
         }
     }
@@ -1559,6 +1566,7 @@ pub(in crate::console::manager) fn synthesize_appconfig_for_auth(
         claude: config.claude.clone(),
         codex: config.codex.clone(),
         amp: config.amp.clone(),
+        opencode: config.opencode.clone(),
         github: config.github.clone(),
         env: config.env.clone(),
         roles: config.roles.clone(),
@@ -1984,6 +1992,7 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -2130,6 +2139,7 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -2140,6 +2150,7 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -2455,6 +2466,7 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -2493,6 +2505,7 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -2503,6 +2516,7 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -2813,6 +2827,7 @@ mod eligible_agents_for_override_tests {
                     claude: None,
                     codex: None,
                     amp: None,
+                    opencode: None,
                     github: None,
                 },
             );
@@ -2975,6 +2990,9 @@ mod auth_flat_rows_tests {
                 },
                 AuthRow::AuthKindRow {
                     kind: AuthKind::Amp,
+                },
+                AuthRow::AuthKindRow {
+                    kind: AuthKind::Opencode,
                 },
                 AuthRow::AuthKindRow {
                     kind: AuthKind::Github,

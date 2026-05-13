@@ -841,6 +841,11 @@ fn apply_auth_forward_diff(
     if original_amp != pending_amp {
         ce.set_workspace_auth_forward(workspace_name, Agent::Amp, pending_amp);
     }
+    let original_opencode = original.opencode.as_ref().map(|c| c.0.auth_forward);
+    let pending_opencode = pending.opencode.as_ref().map(|c| c.0.auth_forward);
+    if original_opencode != pending_opencode {
+        ce.set_workspace_auth_forward(workspace_name, Agent::Opencode, pending_opencode);
+    }
     // Github has no `Agent` peer — its `[github]` block is parallel to
     // `[claude]` / `[codex]` but agent-neutral by design.
     let original_github = original.github.as_ref().map(|g| g.auth_forward);
@@ -881,6 +886,20 @@ fn apply_auth_forward_diff(
             .map(|c| c.0.auth_forward);
         if orig_amp != pend_amp {
             ce.set_workspace_role_auth_forward(workspace_name, role, Agent::Amp, pend_amp);
+        }
+        let orig_opencode = orig_override
+            .and_then(|o| o.opencode.as_ref())
+            .map(|c| c.0.auth_forward);
+        let pend_opencode = pend_override
+            .and_then(|p| p.opencode.as_ref())
+            .map(|c| c.0.auth_forward);
+        if orig_opencode != pend_opencode {
+            ce.set_workspace_role_auth_forward(
+                workspace_name,
+                role,
+                Agent::Opencode,
+                pend_opencode,
+            );
         }
         let orig_github = orig_override
             .and_then(|o| o.github.as_ref())
@@ -2048,6 +2067,7 @@ mod tests {
             claude: None,
             codex: None,
             amp: None,
+            opencode: None,
             github: None,
             git_pull_on_entry: false,
         };

@@ -1,15 +1,15 @@
 ---
-title: "Multi-Runtime Support for Codex and Amp"
+title: "Multi-Runtime Support for Codex, Amp, and OpenCode"
 ---
 
-**Status**: Partially implemented — built-in `claude`, `codex`, and `amp` launch support is shipped; deeper runtime parity remains
+**Status**: Partially implemented — built-in `claude`, `codex`, `amp`, and `opencode` launch support is shipped; deeper runtime parity remains
 
 ## Canonical Docs For Shipped Behavior
 
-- [jackin load](/commands/load/) — `--agent <claude|codex|amp>` and launch behavior.
+- [jackin load](/commands/load/) — `--agent <claude|codex|amp|opencode>` and launch behavior.
 - [Workspaces](/guides/workspaces/) and [Configuration File](/reference/configuration/) — `default_agent`, last-used agent behavior, and persisted state.
 - [Role manifest](/developing/role-manifest/) and [Creating roles](/developing/creating-roles/) — role-author support for multi-agent manifests.
-- [Agent Authentication](/guides/authentication/agents/) — current auth modes for Claude Code, Codex, and Amp.
+- [Agent Authentication](/guides/authentication/agents/) — current auth modes for Claude Code, Codex, Amp, and OpenCode.
 
 This roadmap item no longer repeats shipped runtime selector, state-path, or manifest details. Use the standard docs above for current behavior.
 
@@ -17,10 +17,10 @@ This roadmap item no longer repeats shipped runtime selector, state-path, or man
 
 The project now has basic built-in runtime support. The remaining work is parity depth:
 
-- runtime-native extension surfaces for Codex and Amp;
-- richer Codex/Amp config defaults and documented tuning;
+- runtime-native extension surfaces for Codex, Amp, and OpenCode;
+- richer Codex/Amp/OpenCode config defaults and documented tuning;
 - MCP / skill integration beyond simple config-file injection;
-- runtime-specific auth and state behavior where Codex or Amp need something more than `sync`, `api_key`, and `ignore`;
+- runtime-specific auth and state behavior where Codex, Amp, or OpenCode need something more than `sync`, `api_key`, and `ignore`;
 - clearer version/update behavior for non-Claude runtimes.
 
 ## Non-Goals
@@ -31,7 +31,7 @@ The project now has basic built-in runtime support. The remaining work is parity
 
 ## Open Questions
 
-- Which Codex and Amp settings deserve first-class role-manifest fields rather than generated defaults?
+- Which Codex, Amp, and OpenCode settings deserve first-class role-manifest fields rather than generated defaults?
 - Should runtime-native skills/MCP wiring live in each runtime adapter or in a shared extension model?
-- Do Codex and Amp need additional auth modes beyond `sync`, `api_key`, and `ignore`?
+- Do Codex, Amp, and OpenCode need additional auth modes beyond `sync`, `api_key`, and `ignore`?
 - How much runtime update detection should jackin own for non-Claude CLIs?

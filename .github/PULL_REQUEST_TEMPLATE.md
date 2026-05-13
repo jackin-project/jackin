@@ -11,11 +11,21 @@ Rules in one line each:
 - Verify-locally URLs use http://localhost:4321/... only — never deployed.
 - Each verify-locally docs page: bolded URL on its own line, soft-break (two
   trailing spaces), description on the next line, blank line between blocks.
-- Drop the headings you don't need. "Hard rule" is only when the PR introduces
-  or honours a non-trivial cross-cutting rule. "What's deferred" is only for the
-  first slice of a longer plan. "Migration notes" can read "None" during
-  pre-release.
+- Drop the headings you don't need. "Related pull requests" is only when the PR
+  spans multiple repos. "Hard rule" is only when the PR introduces or honours a
+  non-trivial cross-cutting rule. "What's deferred" is only for the first slice
+  of a longer plan. "Migration notes" can read "None" during pre-release.
 -->
+
+## Related pull requests
+
+<When this PR is part of a coordinated set spanning multiple repos (jackin,
+role repos, construct image, CI actions), list every PR here — just the link,
+no description. The reader follows the link for details. Drop this section
+entirely when the PR stands alone.>
+
+- <https://github.com/org/repo/pull/N>
+- <https://github.com/org/repo/pull/N>
 
 ## Summary
 
