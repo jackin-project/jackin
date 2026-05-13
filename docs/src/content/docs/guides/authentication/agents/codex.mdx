@@ -1,0 +1,51 @@
+---
+title: Codex
+description: How jackin' forwards your Codex CLI login into agent containers
+---
+import { Aside } from '@astrojs/starlight/components'
+
+
+Codex CLI authenticates via `~/.codex/auth.json` on your host. In `sync` mode (the default), jackin' copies this file into the container on every launch — Codex inside the container sees the same account and model access you have locally.
+
+## Logging in on the host
+
+Before sync can forward anything, you need a working Codex login on your host:
+
+```bash
+codex auth login
+```
+
+Follow the prompted flow. Once it completes, Codex is ready on your host and jackin' will forward that login into every container launch.
+
+<Aside type="tip">
+To verify the host login is active, run `codex` briefly on the host — if it starts a session without prompting for credentials, you're good.
+</Aside>
+
+## Subscription
+
+Codex CLI uses your OpenAI account. You can subscribe to ChatGPT Plus, Team, or Enterprise, or use pay-as-you-go API credits.
+
+**[Get an OpenAI subscription](https://chatgpt.com/)**
+
+A ChatGPT Plus or Team subscription includes Codex CLI access with a fixed monthly rate and generous usage — typically more cost-effective than pay-as-you-go API credits if you run agents frequently through jackin'.
+
+The plan you have on the host is the one the container sees.
+
+## Modes available
+
+| Mode | Supported |
+|---|---|
+| `sync` (default) | Yes — forwards `~/.codex/auth.json` |
+| `api_key` | Yes — injects `OPENAI_API_KEY` |
+| `oauth_token` | No — rejected at config time |
+| `ignore` | Yes — no forwarding |
+
+See [Agent Authentication](/guides/authentication/agents/) for what each mode does and how to switch between them.
+
+## Troubleshooting
+
+If Codex inside the container shows "Not logged in":
+
+1. Check that the host login is active — run `codex` briefly on the host.
+2. Open the **Auth** tab in `jackin console` and verify the effective mode for the (workspace × role × Codex) cell.
+3. If the container has stale credentials and the host has fresh ones, restart: `jackin eject <role> && jackin load <role>`.
