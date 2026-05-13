@@ -94,7 +94,7 @@ RUN set -euo pipefail && \\\n\
     curl -fsSL \"https://github.com/opencode-ai/opencode/releases/latest/download/opencode-linux-${ARCH}.tar.gz\" \\\n\
       | tar xz -C \"${HOME}/.opencode/bin\" && \\\n\
     \"${HOME}/.opencode/bin/opencode\" --version\n\
-ENV PATH=\"${HOME}/.opencode/bin:${PATH}\"\n\
+ENV PATH=\"/home/agent/.opencode/bin:${PATH}\"\n\
 ";
 
 const CODEX_INSTALL_BLOCK: &str = "\
