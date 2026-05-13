@@ -125,6 +125,7 @@ The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs a
 | `[claude].auth_forward` | string | No | `legacy` | `sync`, `api_key`, `oauth_token`, or `ignore` |
 | `[codex].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
 | `[amp].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
+| `[opencode].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
 | `[github].auth_forward` | string | No | `legacy` | `sync`, `token`, or `ignore` |
 | `[github.env]` | table | No | `legacy` | Operator env values for GitHub token auth |
 | `[env]` | table | No | `legacy` | Global operator env layer |
@@ -178,12 +179,14 @@ Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per
 | `[claude].auth_forward` | string | No | `legacy` | Workspace Claude auth override |
 | `[codex].auth_forward` | string | No | `legacy` | Workspace Codex auth override |
 | `[amp].auth_forward` | string | No | `legacy` | Workspace Amp auth override |
+| `[opencode].auth_forward` | string | No | `legacy` | Workspace OpenCode auth override |
 | `[github].auth_forward` | string | No | `legacy` | Workspace GitHub auth override |
 | `[github.env]` | table | No | `legacy` | Workspace GitHub token env values |
 | `[roles.<role>.env]` | table | No | `legacy` | Per-workspace, per-role env override |
 | `[roles.<role>.claude].auth_forward` | string | No | `legacy` | Per-workspace, per-role Claude auth override |
 | `[roles.<role>.codex].auth_forward` | string | No | `legacy` | Per-workspace, per-role Codex auth override |
 | `[roles.<role>.amp].auth_forward` | string | No | `legacy` | Per-workspace, per-role Amp auth override |
+| `[roles.<role>.opencode].auth_forward` | string | No | `legacy` | Per-workspace, per-role OpenCode auth override |
 | `[roles.<role>.github].auth_forward` | string | No | `legacy` | Per-workspace, per-role GitHub auth override |
 | `[roles.<role>.github.env]` | table | No | `legacy` | Per-workspace, per-role GitHub token env values |
 
