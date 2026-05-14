@@ -30,7 +30,7 @@ A file with no `version` is ambiguous: it could be a file that was never created
 `config.toml` and every per-workspace file use a top-level Kubernetes-style `version` field:
 
 ```toml
-version = "v1alpha2"
+version = "v1alpha3"
 
 [claude]
 auth_forward = "sync"
@@ -87,8 +87,8 @@ Migration is **always automatic for config files** — operators do not need to 
 
 Role manifests live in role repos that jackin does not own. The policy is:
 
-- **Version matches**: proceed as today.
-- **Version absent or older than expected**: jackin refuses to use the role and emits a human-readable error: `role "the-architect" manifest is at {old}, expected {current}; run "jackin-validate --migrate <role-repo-path>" to upgrade the local copy`.
+- **Version is current or older**: jackin loads the role when the manifest only uses fields and enum values available at that version.
+- **Older-stamped manifest uses a newer feature**: jackin refuses to use the role and emits a feature-specific error with `jackin-validate --migrate <role-repo-path>`. For example, `opencode` requires `v1alpha3`; a `v1alpha2` manifest that declares `agents = ["opencode"]` must be migrated before launch.
 - **Version newer than expected**: jackin refuses and emits: `role manifest is at {new}, this binary only understands up to {current}; upgrade jackin`.
 
 The `jackin-validate --migrate <role-repo-path>` binary applies the manifest migration chain to the local role clone and writes the result back. The operator can then inspect the diff, commit, and push.
@@ -106,8 +106,8 @@ This makes it practical for the jackin maintainer to migrate all first-party rol
 
 | Situation | Config file | Role manifest |
 |---|---|---|
-| `version` absent | Treat as legacy; migrate automatically | Treat as legacy; error + suggest `--migrate` |
-| `version` < current | Migrate automatically on startup | Error + suggest `--migrate` |
+| `version` absent | Treat as legacy; migrate automatically | Treat as legacy; load if no newer feature is used |
+| `version` < current | Migrate automatically on startup | Load if no newer feature is used; otherwise error + suggest `--migrate` |
 | `version` == current | Load normally | Load normally |
 | `version` > current | Error: binary too old | Error: binary too old |
 
