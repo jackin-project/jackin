@@ -1,0 +1,40 @@
+---
+title: role
+description: Validate, migrate, and scaffold role repositories
+---
+
+`jackin role` is the local role-authoring command family. Use it when you are building or maintaining a role repository.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `jackin role validate [<role-repo-path>]` | Checks the role manifest, Dockerfile, hooks, environment declarations, and agent table consistency. Defaults to the current directory. |
+| `jackin role migrate [<role-repo-path>]` | Updates the role manifest to the current schema version, then validates the repository. Defaults to the current directory. |
+| `jackin role create <role-name-or-namespace/name> [<projects-dir>]` | Creates a starter role repository named `jackin-<role-name>`. When `<projects-dir>` is omitted, jackin' uses `JACKIN_PROJECTS_DIR` or `~/Projects`. |
+
+## Create a role
+
+```sh
+jackin role create docs-writer .
+cd jackin-docs-writer
+jackin role validate .
+```
+
+For a namespaced role, pass `namespace/name`:
+
+```sh
+jackin role create chainargos/backend-engineer "$HOME/Projects"
+```
+
+That creates `$HOME/Projects/chainargos/jackin-backend-engineer`. Role selectors are normalized to lowercase, matching how `jackin load` resolves role names.
+
+## Migrate a manifest
+
+When jackin' reports that a role manifest needs a newer schema version, run:
+
+```sh
+jackin role migrate <role-repo-path>
+```
+
+The command rewrites the role manifest in that repository and then validates the result. Inspect the diff, commit it in the role repository, and push it like any other role change.

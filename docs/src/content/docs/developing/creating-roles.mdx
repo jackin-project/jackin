@@ -21,24 +21,18 @@ Creating a custom agent lets you define a specialized environment for a specific
 ## Step by step
 
 <Steps>
-1. **Create a GitHub repository**
+1. **Create the role scaffold**
 
-   Name it `jackin-{your-agent-name}`. For example, `jackin-rustacean` for a Rust-focused agent.
-
-2. **Create the manifest file**
-
-   ```toml
-   version = "v1alpha3"
-   dockerfile = "Dockerfile"
-
-   [claude]
-   plugins = []
-
-   [identity]
-   name = "Rustacean"
+   ```bash
+   jackin role create rustacean .
+   cd jackin-rustacean
    ```
 
-3. **Create the Dockerfile**
+   The generated repository includes a minimal manifest, Dockerfile, README, ignore files, and a validation workflow.
+
+2. **Edit the Dockerfile**
+
+   Start from the generated file and add the tools your role needs:
 
    ```dockerfile
    FROM projectjackin/construct:trixie
@@ -50,7 +44,13 @@ Creating a custom agent lets you define a specialized environment for a specific
    RUN cargo install cargo-nextest cargo-watch
    ```
 
-4. **Push to GitHub**
+3. **Validate locally**
+
+   ```bash
+   jackin role validate .
+   ```
+
+4. **Create a GitHub repository and push**
 
    ```bash
    git add -A && git commit -m "Initial agent setup"

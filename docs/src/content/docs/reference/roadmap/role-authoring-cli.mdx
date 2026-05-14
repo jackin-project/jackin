@@ -3,17 +3,17 @@ title: "Role authoring CLI"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open — design proposal (Configuration ergonomics)
+**Status**: Partially implemented — local validate, migrate, and create commands shipped; bulk cached-role migration and richer scaffolding policy remain open (Configuration ergonomics)
 
 ## Problem
 
-Role maintenance currently splits across surfaces. Jackin itself loads role repos, but local manifest validation and migration live in the separate `jackin-validate` binary, which is shaped for GitHub workflow usage rather than day-to-day operator and role-author usage. Role authors also scaffold new role repos by hand, repeating the same `Dockerfile`, `jackin.role.toml`, README, and GitHub Actions setup each time.
+Role maintenance used to split across surfaces. Jackin itself loaded role repos, but local manifest validation and migration lived in the separate `jackin-validate` binary, which is shaped for GitHub workflow usage rather than day-to-day operator and role-author usage. Role authors also scaffolded new role repos by hand, repeating the same `Dockerfile`, `jackin.role.toml`, README, and GitHub Actions setup each time.
 
-That split makes sense for CI, but it is awkward locally. Jackin should provide the normal local role-management workflow itself: validate a checked-out role repo, migrate a role manifest when its schema needs a restamp or feature unlock, and create a new role repository skeleton in the operator's project area.
+The local workflow now lives under `jackin role`: role authors can validate a checked-out role repo, migrate a role manifest when its schema needs a restamp or feature unlock, and create a starter role repository skeleton. The standalone `jackin-validate` binary remains for GitHub workflows.
 
 ## Proposed CLI shape
 
-Add a `jackin role` command family:
+Shipped `jackin role` command family:
 
 ```sh
 jackin role validate [<role-repo-path>]
@@ -21,15 +21,15 @@ jackin role migrate [<role-repo-path>]
 jackin role create <role-name-or-namespace/name> [<projects-dir>]
 ```
 
-`validate` checks the same role-repo contract as the current validator: manifest parsing, feature-version compatibility, Dockerfile path safety, final construct base image, hook paths, env declarations, and agent/table consistency. It should default `<role-repo-path>` to the current directory.
+`validate` checks the same role-repo contract as the current validator: manifest parsing, feature-version compatibility, Dockerfile path safety, final construct base image, hook paths, env declarations, and agent/table consistency. It defaults `<role-repo-path>` to the current directory.
 
-`migrate` applies the manifest migration registry to the local role repo and writes the updated `jackin.role.toml` back to that repo. It should be the command Jackin points to in local operator errors. The standalone `jackin-validate --migrate <role-repo-path>` path remains useful for GitHub Actions and compatibility, but Jackin's own CLI should advertise `jackin role migrate <role-repo-path>`.
+`migrate` applies the manifest migration registry to the local role repo and writes the updated `jackin.role.toml` back to that repo, then validates the result. Jackin's local operator errors now advertise `jackin role migrate <role-repo-path>`. The standalone `jackin-validate --migrate <role-repo-path>` path remains useful for GitHub Actions and compatibility.
 
-`create` scaffolds a role repo. `jackin role create frontend-engineer .` creates `./jackin-frontend-engineer`; `jackin role create ChainArgos/frontend-engineer "$HOME/Projects"` creates `$HOME/Projects/ChainArgos/jackin-frontend-engineer`. When the projects directory is omitted, Jackin should use `JACKIN_PROJECTS_DIR`, defaulting to `$HOME/Projects`.
+`create` scaffolds a role repo. `jackin role create frontend-engineer .` creates `./jackin-frontend-engineer`; `jackin role create chainargos/frontend-engineer "$HOME/Projects"` creates `$HOME/Projects/chainargos/jackin-frontend-engineer`. When the projects directory is omitted, Jackin uses `JACKIN_PROJECTS_DIR`, defaulting to `$HOME/Projects`.
 
 ## Scaffolding output
 
-The generated role repo should include:
+The generated role repo includes:
 
 - `jackin.role.toml` stamped with the current manifest version.
 - A minimal `Dockerfile` based on `projectjackin/construct:trixie`.
@@ -37,13 +37,12 @@ The generated role repo should include:
 - `.gitignore` and `.dockerignore` defaults suitable for a role repo.
 - A GitHub Actions workflow that runs role validation on pull requests.
 
-The scaffold should be intentionally small. It should create a valid role authors can run immediately, without hiding the fact that they still own the Dockerfile and manifest choices.
+The scaffold is intentionally small. It creates a valid role authors can run immediately, without hiding the fact that they still own the Dockerfile and manifest choices.
 
-## Open questions
+## Remaining work
 
 - Should `jackin role migrate` support bulk mode for every cached role clone under Jackin's role cache, or should that be a separate `jackin role migrate --cached` / `--all` path?
 - Should `jackin role create ChainArgos/frontend-engineer` initialize Git automatically, or only write files and let the operator choose when to commit?
-- Should org/name casing be preserved in the directory path (`ChainArgos`) while role slugs remain lowercase (`jackin-frontend-engineer`), or should Jackin normalize both?
 - Should `JACKIN_PROJECTS_DIR` also affect workspace creation later, or stay scoped to role scaffolding until there is a broader project-location policy?
 
 ## Related files

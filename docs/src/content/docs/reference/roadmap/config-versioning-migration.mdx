@@ -88,10 +88,10 @@ Migration is **always automatic for config files** — operators do not need to 
 Role manifests live in role repos that jackin does not own. The policy is:
 
 - **Version is current or older**: jackin loads the role when the manifest only uses fields and enum values available at that version.
-- **Older-stamped manifest uses a newer feature**: jackin refuses to use the role and emits a feature-specific error with `jackin-validate --migrate <role-repo-path>`. For example, `opencode` requires `v1alpha3`; a `v1alpha2` manifest that declares `agents = ["opencode"]` must be migrated before launch.
+- **Older-stamped manifest uses a newer feature**: jackin refuses to use the role and emits a feature-specific error with `jackin role migrate <role-repo-path>`. For example, `opencode` requires `v1alpha3`; a `v1alpha2` manifest that declares `agents = ["opencode"]` must be migrated before launch.
 - **Version newer than expected**: jackin refuses and emits: `role manifest is at {new}, this binary only understands up to {current}; upgrade jackin`.
 
-The `jackin-validate --migrate <role-repo-path>` binary applies the manifest migration chain to the local role clone and writes the result back. The operator can then inspect the diff, commit, and push.
+The `jackin role migrate <role-repo-path>` command applies the manifest migration chain to the local role clone and writes the result back. The operator can then inspect the diff, commit, and push. The standalone `jackin-validate --migrate <role-repo-path>` binary remains available for GitHub workflows.
 
 The `--pr` path remains future work. When implemented, it will have jackin open a pull request in the role repo automatically via `gh`.
 
@@ -141,7 +141,7 @@ The migration framework carves out an exception for the three file kinds operato
 
 **Phase 4 — Renovate-style auto-migration GitHub Action**
 
-`--pr` runs from an operator's machine, so a role repo whose author has not run `jackin-validate --migrate` stays broken in CI until someone opens a PR by hand. A scheduled action closes that gap by watching role repos and opening migration PRs upstream automatically.
+`--pr` runs from an operator's machine, so a role repo whose author has not run `jackin role migrate` stays broken in CI until someone opens a PR by hand. A scheduled action closes that gap by watching role repos and opening migration PRs upstream automatically.
 
 The action extends [`validate-agent-action`](https://github.com/jackin-project/validate-agent-action) with a `migrate` mode (rather than introducing a new repo — role authors install one action). Two deployment shapes mirror Renovate's:
 
@@ -153,7 +153,7 @@ Per-run flow (both modes):
 
 1. Check out the role repo at the default branch.
 2. Run `jackin-validate <repo>` to detect whether the manifest is already current. If yes, jump to the cleanup step below.
-3. Switch to a deterministic branch name (e.g. `jackin/schema-migration/v1alpha1-to-v1alpha2`) and run `jackin-validate --migrate <repo>`.
+3. Switch to a deterministic branch name (e.g. `jackin/schema-migration/v1alpha1-to-v1alpha2`) and run the manifest migrator.
 4. Commit the migrated manifest with a fixed message shape; push.
 5. Open a PR if none exists for that branch; update the existing PR if one does (Renovate's "branch is the source of truth" model). PR body links to the schema-versions page and names the source jackin tag for traceability.
 

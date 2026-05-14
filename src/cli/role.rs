@@ -1,4 +1,5 @@
-use clap::Args;
+use clap::{Args, Subcommand};
+use std::path::PathBuf;
 
 use super::{BANNER, HELP_STYLES};
 
@@ -107,6 +108,38 @@ pub struct HardlineArgs {
 #[derive(Debug, Args, PartialEq, Eq, Default, Clone)]
 #[command(before_help = BANNER, styles = HELP_STYLES)]
 pub struct ConsoleArgs {}
+
+/// Validate, migrate, and scaffold role repositories
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum RoleCommand {
+    /// Validate a role repository's manifest, Dockerfile, hooks, and env declarations
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Validate(RoleRepoPathArgs),
+    /// Migrate a role manifest to the current schema version, then validate it
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Migrate(RoleRepoPathArgs),
+    /// Create a new role repository scaffold
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Create(RoleCreateArgs),
+}
+
+/// Role repository path argument shared by `validate` and `migrate`.
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct RoleRepoPathArgs {
+    /// Role repository path. Defaults to the current directory.
+    #[arg(value_name = "ROLE_REPO_PATH")]
+    pub path: Option<PathBuf>,
+}
+
+/// Arguments for `jackin role create`.
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct RoleCreateArgs {
+    /// Role name or namespace/name selector, e.g. `docs-writer` or `chainargos/backend-engineer`
+    pub role: String,
+    /// Projects directory where the role repo should be created. Defaults to `JACKIN_PROJECTS_DIR` or ~/Projects.
+    #[arg(value_name = "PROJECTS_DIR")]
+    pub projects_dir: Option<PathBuf>,
+}
 
 #[cfg(test)]
 mod tests {
@@ -445,5 +478,42 @@ mod tests {
         let res = Cli::try_parse_from(["jackin", "hardline", "--inspect", "--new"]);
 
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn parses_role_validate_with_default_path() {
+        let cli = Cli::try_parse_from(["jackin", "role", "validate"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Role(super::RoleCommand::Validate(
+                super::RoleRepoPathArgs { path: None }
+            )))
+        ));
+    }
+
+    #[test]
+    fn parses_role_migrate_with_path() {
+        let cli = Cli::try_parse_from(["jackin", "role", "migrate", "/tmp/my-role"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Role(super::RoleCommand::Migrate(
+                super::RoleRepoPathArgs { path: Some(ref path) }
+            ))) if path == std::path::Path::new("/tmp/my-role")
+        ));
+    }
+
+    #[test]
+    fn parses_role_create_with_projects_dir() {
+        let cli =
+            Cli::try_parse_from(["jackin", "role", "create", "ChainArgos/Backend", "."]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Role(super::RoleCommand::Create(
+                super::RoleCreateArgs {
+                    ref role,
+                    projects_dir: Some(ref path),
+                }
+            ))) if role == "ChainArgos/Backend" && path == std::path::Path::new(".")
+        ));
     }
 }

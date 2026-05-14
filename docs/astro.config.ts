@@ -111,6 +111,7 @@ export default defineConfig({
             { label: 'purge', slug: 'commands/purge' },
             { label: 'workspace', slug: 'commands/workspace' },
             { label: 'config', slug: 'commands/config' },
+            { label: 'role', slug: 'commands/role' },
           ],
         },
         {

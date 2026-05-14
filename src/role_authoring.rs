@@ -1,0 +1,252 @@
+use std::path::{Path, PathBuf};
+
+use anyhow::Context;
+
+use crate::cli::role::{RoleCommand, RoleCreateArgs, RoleRepoPathArgs};
+use crate::manifest::migrations::CURRENT_MANIFEST_VERSION;
+use crate::repo::validate_role_repo;
+use crate::selector::RoleSelector;
+
+pub fn run(command: RoleCommand) -> anyhow::Result<()> {
+    match command {
+        RoleCommand::Validate(args) => validate(args),
+        RoleCommand::Migrate(args) => migrate(args),
+        RoleCommand::Create(args) => create(&args),
+    }
+}
+
+fn validate(args: RoleRepoPathArgs) -> anyhow::Result<()> {
+    let repo_dir = resolve_repo_path(args.path)?;
+    validate_role_repo(&repo_dir)?;
+    println!("Role repository is valid: {}", repo_dir.display());
+    Ok(())
+}
+
+fn migrate(args: RoleRepoPathArgs) -> anyhow::Result<()> {
+    let repo_dir = resolve_repo_path(args.path)?;
+    let manifest_path = repo_dir.join("jackin.role.toml");
+    match crate::manifest::migrations::migrate_manifest_file(&manifest_path)? {
+        Some((old, new)) => println!("Migrated manifest {old} -> {new}"),
+        None => println!("Manifest already at current version"),
+    }
+    validate_role_repo(&repo_dir)?;
+    println!("Role repository is valid: {}", repo_dir.display());
+    Ok(())
+}
+
+fn create(args: &RoleCreateArgs) -> anyhow::Result<()> {
+    let selector = RoleSelector::parse(&args.role)
+        .map_err(|err| anyhow::anyhow!("invalid role name {:?}: {err}", args.role))?;
+    let projects_dir = resolve_projects_dir(args.projects_dir.as_deref())?;
+    let repo_dir = scaffold_path(&projects_dir, &selector);
+
+    if let Some(parent) = repo_dir.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+    std::fs::create_dir(&repo_dir).with_context(|| format!("creating {}", repo_dir.display()))?;
+    write_scaffold(&repo_dir, &selector)?;
+    validate_role_repo(&repo_dir)?;
+
+    println!("Created role repository: {}", repo_dir.display());
+    println!(
+        "Validate it with: jackin role validate {}",
+        repo_dir.display()
+    );
+    Ok(())
+}
+
+fn resolve_repo_path(path: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+    let path = match path {
+        Some(path) => path,
+        None => std::env::current_dir().context("resolving current directory")?,
+    };
+    let repo_dir = resolve_path(&path);
+    match std::fs::metadata(&repo_dir) {
+        Ok(metadata) if metadata.is_dir() => Ok(repo_dir),
+        Ok(_) => anyhow::bail!("{} is not a directory", repo_dir.display()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            anyhow::bail!("{} does not exist", repo_dir.display())
+        }
+        Err(err) => Err(err).with_context(|| format!("inspecting {}", repo_dir.display())),
+    }
+}
+
+fn resolve_projects_dir(projects_dir: Option<&Path>) -> anyhow::Result<PathBuf> {
+    if let Some(path) = projects_dir {
+        return Ok(resolve_path(path));
+    }
+    if let Some(path) = std::env::var_os("JACKIN_PROJECTS_DIR") {
+        return Ok(resolve_path(Path::new(&path)));
+    }
+    let base = directories::BaseDirs::new()
+        .ok_or_else(|| anyhow::anyhow!("cannot resolve home directory"))?;
+    Ok(base.home_dir().join("Projects"))
+}
+
+fn resolve_path(path: &Path) -> PathBuf {
+    PathBuf::from(crate::workspace::resolve_path(&path.to_string_lossy()))
+}
+
+fn scaffold_path(projects_dir: &Path, selector: &RoleSelector) -> PathBuf {
+    let repo_name = format!("jackin-{}", selector.name);
+    selector.namespace.as_ref().map_or_else(
+        || projects_dir.join(&repo_name),
+        |ns| projects_dir.join(ns).join(&repo_name),
+    )
+}
+
+fn write_scaffold(repo_dir: &Path, selector: &RoleSelector) -> anyhow::Result<()> {
+    write_new_file(
+        &repo_dir.join("jackin.role.toml"),
+        &manifest_contents(&selector.name),
+    )?;
+    write_new_file(&repo_dir.join("Dockerfile"), dockerfile_contents())?;
+    write_new_file(&repo_dir.join("README.md"), &readme_contents(selector))?;
+    write_new_file(&repo_dir.join(".gitignore"), gitignore_contents())?;
+    write_new_file(&repo_dir.join(".dockerignore"), dockerignore_contents())?;
+    let workflow_dir = repo_dir.join(".github/workflows");
+    std::fs::create_dir_all(&workflow_dir)
+        .with_context(|| format!("creating {}", workflow_dir.display()))?;
+    write_new_file(&workflow_dir.join("validate.yml"), workflow_contents())?;
+    Ok(())
+}
+
+fn write_new_file(path: &Path, contents: &str) -> anyhow::Result<()> {
+    use std::io::Write;
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .with_context(|| format!("creating {}", path.display()))?;
+    file.write_all(contents.as_bytes())
+        .with_context(|| format!("writing {}", path.display()))?;
+    Ok(())
+}
+
+fn manifest_contents(role_name: &str) -> String {
+    format!(
+        r#"version = "{CURRENT_MANIFEST_VERSION}"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[identity]
+name = "{}"
+"#,
+        display_name(role_name)
+    )
+}
+
+const fn dockerfile_contents() -> &'static str {
+    "FROM projectjackin/construct:trixie\n"
+}
+
+fn readme_contents(selector: &RoleSelector) -> String {
+    let role = selector.to_string();
+    format!(
+        r"# {}
+
+Jackin role repository for `{role}`.
+
+## Validate
+
+```sh
+jackin role validate .
+```
+
+## Try it locally
+
+```sh
+jackin load {role} --rebuild --debug
+```
+",
+        display_name(&selector.name)
+    )
+}
+
+const fn gitignore_contents() -> &'static str {
+    ".DS_Store\n.env\n"
+}
+
+const fn dockerignore_contents() -> &'static str {
+    ".git\n.github\nREADME.md\n"
+}
+
+const fn workflow_contents() -> &'static str {
+    r"name: Validate role
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jackin-project/validate-agent-action@main
+"
+}
+
+fn display_name(role_name: &str) -> String {
+    role_name
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_ascii_uppercase().to_string() + chars.as_str()
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn scaffold_path_uses_jackin_prefix() {
+        let selector = RoleSelector::parse("docs-writer").unwrap();
+        assert_eq!(
+            scaffold_path(Path::new("/projects"), &selector),
+            Path::new("/projects/jackin-docs-writer")
+        );
+    }
+
+    #[test]
+    fn scaffold_path_nests_namespaced_roles() {
+        let selector = RoleSelector::parse("ChainArgos/Backend").unwrap();
+        assert_eq!(
+            scaffold_path(Path::new("/projects"), &selector),
+            Path::new("/projects/chainargos/jackin-backend")
+        );
+    }
+
+    #[test]
+    fn create_writes_a_valid_role_repo() {
+        let temp = tempdir().unwrap();
+        create(&RoleCreateArgs {
+            role: "docs-writer".to_string(),
+            projects_dir: Some(temp.path().to_path_buf()),
+        })
+        .unwrap();
+
+        let repo = temp.path().join("jackin-docs-writer");
+        assert!(repo.join("jackin.role.toml").is_file());
+        assert!(repo.join("Dockerfile").is_file());
+        assert!(repo.join(".github/workflows/validate.yml").is_file());
+        validate_role_repo(&repo).unwrap();
+    }
+
+    #[test]
+    fn display_name_title_cases_slug_words() {
+        assert_eq!(display_name("backend-engineer"), "Backend Engineer");
+    }
+}
