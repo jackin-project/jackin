@@ -1446,8 +1446,7 @@ fn agent_picker_opens_with_default_agent_preselected() -> Result<()> {
     Ok(())
 }
 
-/// Exactly one eligible role still opens the picker so the operator confirms
-/// the role before launch.
+/// Exactly one eligible role skips the picker and returns the role directly.
 #[test]
 fn agent_picker_opens_when_single_eligible_agent() -> Result<()> {
     let temp = tempdir()?;
@@ -1461,17 +1460,15 @@ fn agent_picker_opens_when_single_eligible_agent() -> Result<()> {
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
-    assert!(
-        outcome.is_none(),
-        "single eligible role must open the picker, not direct-launch"
-    );
+    let (role, _workspace, agent) = outcome
+        .expect("single eligible role must auto-select and return directly, not open picker");
+    assert_eq!(role.key(), "chainargos/agent-smith");
+    assert!(agent.is_none(), "agent must not be pre-selected");
     let ConsoleStage::Manager(ms) = &state.stage;
-    let picker = ms
-        .inline_role_picker
-        .as_ref()
-        .expect("single eligible role must open the inline picker");
-    assert_eq!(picker.roles.len(), 1);
-    assert_eq!(picker.filtered[0].key(), "chainargos/agent-smith");
+    assert!(
+        ms.inline_role_picker.is_none(),
+        "picker must not be open after single-role auto-select"
+    );
     Ok(())
 }
 
