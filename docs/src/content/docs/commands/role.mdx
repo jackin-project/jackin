@@ -21,10 +21,10 @@ cd jackin-docs-writer
 jackin role validate .
 ```
 
-For a namespaced role, pass `namespace/name`:
+For a namespaced role, pass `namespace/name`. Jackin lowercases both parts before it creates directories or writes scaffold references:
 
 ```sh
-jackin role create chainargos/backend-engineer "$HOME/Projects"
+jackin role create ChainArgos/Backend-Engineer "$HOME/Projects"
 ```
 
 That creates `$HOME/Projects/chainargos/jackin-backend-engineer`. Role selectors are normalized to lowercase, matching how `jackin load` resolves role names.

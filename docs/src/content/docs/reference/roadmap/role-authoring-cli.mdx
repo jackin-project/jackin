@@ -25,7 +25,7 @@ jackin role create <role-name-or-namespace/name> [<projects-dir>]
 
 `migrate` applies the manifest migration registry to the local role repo and writes the updated `jackin.role.toml` back to that repo, then validates the result. Jackin's local operator errors now advertise `jackin role migrate <role-repo-path>`. The standalone `jackin-validate --migrate <role-repo-path>` path remains useful for GitHub Actions and compatibility.
 
-`create` scaffolds a role repo. `jackin role create frontend-engineer .` creates `./jackin-frontend-engineer`; `jackin role create chainargos/frontend-engineer "$HOME/Projects"` creates `$HOME/Projects/chainargos/jackin-frontend-engineer`. When the projects directory is omitted, Jackin uses `JACKIN_PROJECTS_DIR`, defaulting to `$HOME/Projects`.
+`create` scaffolds a role repo. `jackin role create frontend-engineer .` creates `./jackin-frontend-engineer`; `jackin role create ChainArgos/Frontend-Engineer "$HOME/Projects"` creates `$HOME/Projects/chainargos/jackin-frontend-engineer` and writes scaffold references using `chainargos/frontend-engineer`. When the projects directory is omitted, Jackin uses `JACKIN_PROJECTS_DIR`, defaulting to `$HOME/Projects`.
 
 ## Scaffolding output
 
@@ -42,7 +42,7 @@ The scaffold is intentionally small. It creates a valid role authors can run imm
 ## Remaining work
 
 - Should `jackin role migrate` support bulk mode for every cached role clone under Jackin's role cache, or should that be a separate `jackin role migrate --cached` / `--all` path?
-- Should `jackin role create ChainArgos/frontend-engineer` initialize Git automatically, or only write files and let the operator choose when to commit?
+- Should `jackin role create chainargos/frontend-engineer` initialize Git automatically, or only write files and let the operator choose when to commit?
 - Should `JACKIN_PROJECTS_DIR` also affect workspace creation later, or stay scoped to role scaffolding until there is a broader project-location policy?
 
 ## Related files

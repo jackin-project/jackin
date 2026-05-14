@@ -90,3 +90,37 @@ fn role_create_scaffolds_valid_repo_without_touching_config() {
         .assert()
         .success();
 }
+
+#[test]
+fn role_create_normalizes_namespaced_role_to_lowercase() {
+    let temp = tempfile::tempdir().unwrap();
+    let projects_dir = temp.path().join("projects");
+
+    Command::cargo_bin("jackin")
+        .unwrap()
+        .args([
+            "role",
+            "create",
+            "ChainArgos/Backend",
+            projects_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("chainargos/jackin-backend"));
+
+    let repo = projects_dir.join("chainargos/jackin-backend");
+    assert!(repo.join("jackin.role.toml").is_file());
+    let project_entries: Vec<String> = std::fs::read_dir(&projects_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(project_entries, vec!["chainargos"]);
+    let namespace_entries: Vec<String> = std::fs::read_dir(projects_dir.join("chainargos"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(namespace_entries, vec!["jackin-backend"]);
+
+    let readme = std::fs::read_to_string(repo.join("README.md")).unwrap();
+    assert!(readme.contains("`chainargos/backend`"), "{readme}");
+}
