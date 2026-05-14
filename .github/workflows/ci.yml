@@ -12,9 +12,18 @@ permissions:
 jobs:
   validate:
     runs-on: hetzner-sentry
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
-      - uses: jackin-project/validate-agent-action@f90ae92a08c29e58d918b2722363d57d0332a751 # latest
+      - name: Login to Docker Hub for base image pulls
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4
         with:
-          skip-build: true
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+      - uses: jackin-project/validate-agent-action@15ee7a8d515f76cd2bd1a508e2e6de3cf4572a0d # latest
+        with:
           jackin-version: latest-build
+          build-platforms: linux/amd64
