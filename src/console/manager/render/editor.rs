@@ -686,7 +686,7 @@ fn render_roles_tab(
         let check = if effectively_allowed { "[x]" } else { "[ ]" };
         let star = if is_default { "★" } else { " " };
         let prefix = if selected { "▸ " } else { "  " };
-        let text = format!("{prefix}{check}  {star} {role_name}");
+        let text = format!("{prefix}{check} {star} {role_name}");
         let style = if selected {
             Style::default()
                 .fg(PHOSPHOR_GREEN)
