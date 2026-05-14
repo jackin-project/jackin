@@ -2483,24 +2483,19 @@ fn launch_after_create_workspace_uses_fresh_data() -> Result<()> {
     }
 
     // Dispatch a launch against the freshly-created name. The dispatcher
-    // must build the choice from the current `config` and open the picker
-    // for that workspace even though `ConsoleState` was created earlier.
+    // must build the choice from the current `config` and auto-select the
+    // single role, proving it reads fresh data rather than a startup snapshot.
     let outcome = state.dispatch_launch_for_workspace(
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("freshly-created".into()),
     )?;
-    assert!(
-        outcome.is_none(),
-        "freshly-created workspace must resolve into an inline picker; under the bug, \
-         ConsoleState.workspaces was a startup snapshot and didn't include the new name"
+    let (role, _workspace, agent) = outcome.expect(
+        "freshly-created workspace must auto-select and return directly; under the bug, \
+         ConsoleState.workspaces was a startup snapshot and didn't include the new name",
     );
-    let ConsoleStage::Manager(ms) = &state.stage;
-    let picker = ms
-        .inline_role_picker
-        .as_ref()
-        .expect("freshly-created workspace must open the inline picker");
-    assert_eq!(picker.filtered[0].key(), "chainargos/agent-smith");
+    assert_eq!(role.key(), "chainargos/agent-smith");
+    assert!(agent.is_none());
     Ok(())
 }
 
@@ -2531,23 +2526,17 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
         config = ce.save()?;
     }
 
-    // Dispatch against the new name — must resolve and open the picker
-    // for confirmation (single eligible role + default_role set).
+    // Dispatch against the new name — must resolve and auto-select the
+    // single eligible role, proving the dispatcher uses the new name.
     let outcome = state.dispatch_launch_for_workspace(
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("renamed-ws".into()),
     )?;
-    assert!(
-        outcome.is_none(),
-        "renamed workspace must resolve under the new name and stay in the picker flow"
-    );
-    let ConsoleStage::Manager(ms) = &state.stage;
-    let picker = ms
-        .inline_role_picker
-        .as_ref()
-        .expect("renamed workspace must open the inline picker");
-    assert_eq!(picker.filtered[0].key(), "chainargos/agent-smith");
+    let (role, _workspace, agent) = outcome
+        .expect("renamed workspace must resolve under the new name and auto-select the role");
+    assert_eq!(role.key(), "chainargos/agent-smith");
+    assert!(agent.is_none());
 
     // OLD name must not resolve — under the snapshot bug it did.
     let stale_outcome = state.dispatch_launch_for_workspace(
@@ -2686,22 +2675,16 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
          got {outcome:?}"
     );
 
-    // Sanity: the surviving workspace still resolves into the picker flow.
+    // Sanity: the surviving workspace still resolves and auto-selects its single role.
     let alive = state.dispatch_launch_for_workspace(
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("survivor-ws".into()),
     )?;
-    assert!(
-        alive.is_none(),
-        "survivor-ws must still resolve into the inline picker"
-    );
-    let ConsoleStage::Manager(ms) = &state.stage;
-    let picker = ms
-        .inline_role_picker
-        .as_ref()
-        .expect("survivor-ws must open the inline picker");
-    assert_eq!(picker.filtered[0].key(), "chainargos/agent-smith");
+    let (role, _workspace, agent) =
+        alive.expect("survivor-ws must still resolve and auto-select its role");
+    assert_eq!(role.key(), "chainargos/agent-smith");
+    assert!(agent.is_none());
     Ok(())
 }
 
