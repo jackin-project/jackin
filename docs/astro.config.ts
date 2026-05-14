@@ -111,6 +111,7 @@ export default defineConfig({
             { label: 'purge', slug: 'commands/purge' },
             { label: 'workspace', slug: 'commands/workspace' },
             { label: 'config', slug: 'commands/config' },
+            { label: 'role', slug: 'commands/role' },
           ],
         },
         {
@@ -343,7 +344,6 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Config versioning and migration', slug: 'reference/roadmap/config-versioning-migration' },
-                    { label: 'Role authoring CLI', slug: 'reference/roadmap/role-authoring-cli' },
                   ],
                 },
                 {
