@@ -1,4 +1,4 @@
-version = "v1alpha2"
+version = "v1alpha3"
 # Sample role manifest carried through the legacy migration chain.
 
 dockerfile = "Dockerfile"

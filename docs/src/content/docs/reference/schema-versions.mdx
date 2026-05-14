@@ -16,7 +16,8 @@ Breaking changes to schemas are expected — that is how the project explores id
 - **Each schema file carries its own `version` stamp.** When jackin reads the file, it compares the on-disk version against the binary's `CURRENT_*_VERSION` and applies any pending migration steps before parsing, so operators see a working setup after every upgrade.
 - **Operator-owned files migrate automatically.** `config.toml` and `~/.config/jackin/workspaces/<name>.toml` are rewritten in place on startup; the operator does nothing.
 - **Role-owned files migrate explicitly.** Role authors run `jackin-validate --migrate <role-repo-path>` to rewrite a `jackin.role.toml` against the latest schema, then commit and push the result. Jackin never writes back into a role repo on its own — that would silently mutate someone else's source tree.
-- **Migrations are a hard PR-review rule.** Every change to one of the three versioned files must bump the corresponding `CURRENT_*_VERSION`, add a migration step, and update this page. The full rule lives in <RepoFile path="AGENTS.md" /> and <RepoFile path="PULL_REQUESTS.md" />.
+- **Migrations are a hard PR-review rule.** Every change to one of the three versioned files must bump the corresponding `CURRENT_*_VERSION`, add a migration step, and update this page. Adding a new enum variant counts as a schema-breaking change: old binaries cannot parse manifests that use the new variant. The full rule lives in <RepoFile path="AGENTS.md" /> and <RepoFile path="PULL_REQUESTS.md" />.
+- **Version mismatches produce actionable errors.** The version check runs before full TOML deserialization, so old binaries always surface a clear message rather than a cryptic parse error. When a manifest's `version` is newer than what the binary knows about, jackin rejects it with: `role manifest is at {version}, this binary only understands up to {CURRENT_MANIFEST_VERSION}; upgrade jackin`. When the manifest is older than expected (role author has not yet run `jackin-validate --migrate`), jackin says: `role "{role_name}" manifest is at {version}, expected {CURRENT_MANIFEST_VERSION}; run "jackin-validate --migrate <role-repo-path>" to upgrade the local copy`.
 
 The split-workspace layout described in [Configuration File](/reference/configuration/#one-file-per-workspace-by-design) makes per-file migration tractable: legacy global files and per-workspace files migrate independently, so a dotfile repo that is partially old still upgrades cleanly.
 
@@ -26,11 +27,47 @@ The split-workspace layout described in [Configuration File](/reference/configur
 |---|---|---|---|
 | `~/.config/jackin/config.toml` | `v1alpha2` | jackin | Automatic on startup |
 | `~/.config/jackin/workspaces/<name>.toml` | `v1alpha2` | jackin | Automatic on startup |
-| `jackin.role.toml` | `v1alpha2` | Role repository | Explicit `jackin-validate --migrate <role-repo-path>` |
+| `jackin.role.toml` | `v1alpha3` | Role repository | Explicit `jackin-validate --migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="tests/migration_fixtures.rs" /> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+
+### `v1alpha3` — 2026-05-14
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Manifest (`jackin.role.toml`) | `v1alpha2` | Explicit `jackin-validate --migrate <role-repo-path>` | <RepoFile path="tests/fixtures/migrations/manifest/from-v1alpha2/meta.toml" /> |
+
+**Summary**: formalizes OpenCode agent support. The `opencode` enum variant in `agents` and the `[opencode]` config table were added to the binary in the previous schema version without a corresponding manifest version bump — this version corrects that oversight. The migration is a no-op restamp: no field renames, no data moved.
+
+**Before** (v1alpha2 manifest with OpenCode):
+
+```toml
+version = "v1alpha2"
+dockerfile = "Dockerfile"
+agents = ["claude", "opencode"]
+
+[claude]
+plugins = []
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+```
+
+**After** (v1alpha3):
+
+```toml
+version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["claude", "opencode"]
+
+[claude]
+plugins = []
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+```
 
 ### `v1alpha2` — 2026-05-11
 
@@ -206,14 +243,14 @@ does not auto-write role repositories during normal role loading. Run
 | Removed | None |
 | Renamed | None |
 
-### `v1alpha2`
+### `v1alpha3`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha2` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha3` |
 | `dockerfile` | string | Yes | `legacy` | Relative path to role Dockerfile |
 | `published_image` | string | No | `legacy` | Pre-built role image override |
-| `agents` | string array | No | `legacy` | `claude`, `codex`, `amp`, and/or `opencode`; omitted means Claude-only |
+| `agents` | string array | No | `legacy` | `claude`, `codex`, or `amp`; `opencode` added in `v1alpha3`; omitted means Claude-only |
 | `[identity].name` | string | No | `legacy` | Display name |
 | `[claude].model` | string | No | `legacy` | Claude model override |
 | `[claude].plugins` | string array | No | `legacy` | Claude plugin identifiers |
@@ -222,7 +259,7 @@ does not auto-write role repositories during normal role loading. Run
 | `[[claude.marketplaces]].sparse` | string array | No | `legacy` | Sparse checkout paths |
 | `[codex].model` | string | No | `legacy` | Codex model override |
 | `[amp]` | table | No | `legacy` | Empty marker table for Amp support |
-| `[opencode].model` | string | No | `legacy` | `OpenCode` model override in `provider/model` format (e.g. `zai-coding-plan/glm-5.1`) |
+| `[opencode].model` | string | No | `v1alpha3` | `OpenCode` model override in `provider/model` format (e.g. `zai-coding-plan/glm-5.1`) |
 | `[hooks].setup_once` | string | No | `legacy` | Relative path to a one-time install script that runs on first launch only |
 | `[hooks].source` | string | No | `legacy` | Relative path to a script dot-sourced into the entrypoint shell so `export` and `PATH` mutations reach the launched agent |
 | `[hooks].preflight` | string | No | `legacy` | Relative path to a per-start preflight script |
