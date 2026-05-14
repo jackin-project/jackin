@@ -220,7 +220,7 @@ jackin workspace create secure-api \
 ```
 
 - `--allowed-role` — only these roles can load this workspace (repeatable)
-- `--default-role` — auto-selected role when you open this workspace in the operator console
+- `--default-role` — role highlighted first in the operator console picker, and used automatically by CLI context loading when no role is passed
 - `--default-agent` — default agent used by `jackin load` unless `--agent` is passed for that launch
 
 This is especially useful when one workspace should only be used with a very specific tool profile, such as a production-infra role or a security-review role.

@@ -1409,10 +1409,10 @@ fn agent_picker_opens_when_multiple_agents_available() -> Result<()> {
     Ok(())
 }
 
-/// `default_role` set on the workspace must short-circuit the picker
-/// and produce an `Ok(Some(_))` direct launch outcome — no modal opens.
+/// `default_role` set on the workspace must preselect that role in the
+/// inline picker instead of launching without confirmation.
 #[test]
-fn agent_picker_skipped_when_default_agent_set() -> Result<()> {
+fn agent_picker_opens_with_default_agent_preselected() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let config = seed_config_with_agents(
@@ -1429,21 +1429,27 @@ fn agent_picker_skipped_when_default_agent_set() -> Result<()> {
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
-    let (role, _ws, _agent) = outcome.expect("default_role must short-circuit to a direct launch");
-    assert_eq!(role.key(), "chainargos/agent-smith");
-    let ConsoleStage::Manager(ms) = &state.stage;
     assert!(
-        ms.list_modal.is_none(),
-        "default_role dispatch must NOT open the picker; got {:?}",
-        ms.list_modal
+        outcome.is_none(),
+        "default_role dispatch must stay in the run-loop so the operator confirms"
     );
+    let ConsoleStage::Manager(ms) = &state.stage;
+    let picker = ms
+        .inline_role_picker
+        .as_ref()
+        .expect("default_role dispatch must open the inline picker");
+    let selected = picker
+        .list_state
+        .selected
+        .expect("default role should be selected");
+    assert_eq!(picker.filtered[selected].key(), "chainargos/agent-smith");
     Ok(())
 }
 
-/// Exactly one eligible role must short-circuit the picker — same
-/// direct-launch outcome as the default-role path.
+/// Exactly one eligible role still opens the picker so the operator confirms
+/// the role before launch.
 #[test]
-fn agent_picker_skipped_when_single_eligible_agent() -> Result<()> {
+fn agent_picker_opens_when_single_eligible_agent() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let config = seed_config_with_agents(&paths, temp.path(), &["chainargos/agent-smith"], None)?;
@@ -1455,11 +1461,17 @@ fn agent_picker_skipped_when_single_eligible_agent() -> Result<()> {
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
-    let (role, _ws, _agent) =
-        outcome.expect("single eligible role must short-circuit to a direct launch");
-    assert_eq!(role.key(), "chainargos/agent-smith");
+    assert!(
+        outcome.is_none(),
+        "single eligible role must open the picker, not direct-launch"
+    );
     let ConsoleStage::Manager(ms) = &state.stage;
-    assert!(ms.list_modal.is_none());
+    let picker = ms
+        .inline_role_picker
+        .as_ref()
+        .expect("single eligible role must open the inline picker");
+    assert_eq!(picker.roles.len(), 1);
+    assert_eq!(picker.filtered[0].key(), "chainargos/agent-smith");
     Ok(())
 }
 
@@ -2473,21 +2485,25 @@ fn launch_after_create_workspace_uses_fresh_data() -> Result<()> {
         config = ce.save()?;
     }
 
-    // Dispatch a launch against the freshly-created name. With the bug,
-    // `ConsoleState.workspaces` would not contain "freshly-created" and
-    // the dispatcher would return Ok(None). With the fix, the dispatcher
-    // builds the choice from the current `config` and short-circuits on
-    // the single eligible role.
+    // Dispatch a launch against the freshly-created name. The dispatcher
+    // must build the choice from the current `config` and open the picker
+    // for that workspace even though `ConsoleState` was created earlier.
     let outcome = state.dispatch_launch_for_workspace(
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("freshly-created".into()),
     )?;
-    let (role, _ws, _agent) = outcome.expect(
-        "freshly-created workspace must resolve through the dispatcher; under the bug, \
-         ConsoleState.workspaces was a startup snapshot and didn't include the new name",
+    assert!(
+        outcome.is_none(),
+        "freshly-created workspace must resolve into an inline picker; under the bug, \
+         ConsoleState.workspaces was a startup snapshot and didn't include the new name"
     );
-    assert_eq!(role.key(), "chainargos/agent-smith");
+    let ConsoleStage::Manager(ms) = &state.stage;
+    let picker = ms
+        .inline_role_picker
+        .as_ref()
+        .expect("freshly-created workspace must open the inline picker");
+    assert_eq!(picker.filtered[0].key(), "chainargos/agent-smith");
     Ok(())
 }
 
@@ -2518,15 +2534,23 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
         config = ce.save()?;
     }
 
-    // Dispatch against the new name — must resolve and short-circuit
-    // (single eligible role + default_role set).
+    // Dispatch against the new name — must resolve and open the picker
+    // for confirmation (single eligible role + default_role set).
     let outcome = state.dispatch_launch_for_workspace(
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("renamed-ws".into()),
     )?;
-    let (role, _ws, _agent) = outcome.expect("renamed workspace must resolve under the new name");
-    assert_eq!(role.key(), "chainargos/agent-smith");
+    assert!(
+        outcome.is_none(),
+        "renamed workspace must resolve under the new name and stay in the picker flow"
+    );
+    let ConsoleStage::Manager(ms) = &state.stage;
+    let picker = ms
+        .inline_role_picker
+        .as_ref()
+        .expect("renamed workspace must open the inline picker");
+    assert_eq!(picker.filtered[0].key(), "chainargos/agent-smith");
 
     // OLD name must not resolve — under the snapshot bug it did.
     let stale_outcome = state.dispatch_launch_for_workspace(
@@ -2541,10 +2565,9 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
     Ok(())
 }
 
-/// Post-edit `default_role` must short-circuit dispatch from picker
-/// to direct launch.
+/// Post-edit `default_role` must preselect the new default in the picker.
 #[test]
-fn launch_after_default_agent_change_uses_new_default() -> Result<()> {
+fn launch_after_default_agent_change_preselects_new_default() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config_with_agents(
@@ -2589,23 +2612,26 @@ fn launch_after_default_agent_change_uses_new_default() -> Result<()> {
     }
 
     // Dispatch again — with the new default_role in config, the
-    // dispatcher must short-circuit to a direct launch outcome.
+    // dispatcher must preselect that role in the picker.
     let after = state.dispatch_launch_for_workspace(
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
-    let (role, _ws, _agent) = after.expect(
-        "after default_role is set, dispatch must short-circuit to a direct launch outcome; \
-         under the bug, the snapshot's default_role: None forced the picker open",
-    );
-    assert_eq!(role.key(), "chainargos/agent-smith");
-    let ConsoleStage::Manager(ms) = &state.stage;
     assert!(
-        ms.list_modal.is_none(),
-        "post-default direct-launch must NOT have opened the picker; got {:?}",
-        ms.list_modal
+        after.is_none(),
+        "after default_role is set, dispatch must keep the operator in the picker flow"
     );
+    let ConsoleStage::Manager(ms) = &state.stage;
+    let picker = ms
+        .inline_role_picker
+        .as_ref()
+        .expect("post-default dispatch must open the inline picker");
+    let selected = picker
+        .list_state
+        .selected
+        .expect("default role should be selected");
+    assert_eq!(picker.filtered[selected].key(), "chainargos/agent-smith");
     Ok(())
 }
 
@@ -2663,14 +2689,22 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
          got {outcome:?}"
     );
 
-    // Sanity: the surviving workspace still resolves.
+    // Sanity: the surviving workspace still resolves into the picker flow.
     let alive = state.dispatch_launch_for_workspace(
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("survivor-ws".into()),
     )?;
-    let (role, _ws, _agent) = alive.expect("survivor-ws must still resolve");
-    assert_eq!(role.key(), "chainargos/agent-smith");
+    assert!(
+        alive.is_none(),
+        "survivor-ws must still resolve into the inline picker"
+    );
+    let ConsoleStage::Manager(ms) = &state.stage;
+    let picker = ms
+        .inline_role_picker
+        .as_ref()
+        .expect("survivor-ws must open the inline picker");
+    assert_eq!(picker.filtered[0].key(), "chainargos/agent-smith");
     Ok(())
 }
 

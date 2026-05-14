@@ -17,6 +17,7 @@ pub use state::ConsoleState;
 pub use state::WorkspaceChoice;
 pub use state::build_workspace_choice;
 
+use crate::app::context::preferred_agent_index;
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
@@ -40,9 +41,9 @@ pub enum ConsoleInstanceAction {
 }
 
 impl ConsoleState {
-    /// Default role → launch; one eligible → launch; multiple →
-    /// open `Modal::RolePicker`. `WorkspaceChoice` is built fresh
-    /// each call so manager edits take effect immediately.
+    /// Open the inline role picker for every eligible role count except zero.
+    /// `WorkspaceChoice` is built fresh each call so manager edits take effect
+    /// immediately.
     pub fn dispatch_launch_for_workspace(
         &mut self,
         config: &AppConfig,
@@ -54,56 +55,41 @@ impl ConsoleState {
             // Workspace was deleted between keypress and dispatch.
             return Ok(None);
         };
-        let mut roles = choice.allowed_roles.clone();
-        let default_role = choice.default_role.clone();
+        let roles = choice.allowed_roles.clone();
 
-        if let Some(default_key) = default_role.as_deref()
-            && let Some(role) = roles.iter().find(|a| a.key() == default_key).cloned()
-        {
-            let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
+        if roles.is_empty() {
+            // Toast + stay so the operator can fix `allowed_roles`
+            // — a single Enter shouldn't terminate the TUI.
+            let name = choice.name;
+            if let ConsoleStage::Manager(ms) = &mut self.stage {
+                ms.toast = Some(crate::console::manager::state::Toast {
+                    message: format!("no eligible roles for workspace \"{name}\""),
+                    kind: crate::console::manager::state::ToastKind::Error,
+                    shown_at: std::time::Instant::now(),
+                });
+            }
             self.pending_launch = None;
             self.pending_launch_role = None;
-            return Ok(Some((role, workspace, None)));
-        }
-
-        match roles.len() {
-            0 => {
-                // Toast + stay so the operator can fix `allowed_roles`
-                // — a single Enter shouldn't terminate the TUI.
-                let name = choice.name;
-                if let ConsoleStage::Manager(ms) = &mut self.stage {
-                    ms.toast = Some(crate::console::manager::state::Toast {
-                        message: format!("no eligible roles for workspace \"{name}\""),
-                        kind: crate::console::manager::state::ToastKind::Error,
-                        shown_at: std::time::Instant::now(),
-                    });
-                }
-                self.pending_launch = None;
-                self.pending_launch_role = None;
-                Ok(None)
-            }
-            1 => {
-                let role = roles.swap_remove(0);
-                let workspace = preview::resolve_selected_workspace(config, cwd, &choice, &role)?;
-                self.pending_launch = None;
-                self.pending_launch_role = None;
-                Ok(Some((role, workspace, None)))
-            }
-            _ => {
-                // Multiple eligible: pin `pending_launch` so the
-                // `LaunchWithAgent` arm rebuilds the choice on commit.
-                self.pending_launch = Some(input);
-                self.pending_launch_role = None;
-                if let ConsoleStage::Manager(ms) = &mut self.stage {
-                    ms.inline_role_picker = Some(
-                        crate::console::widgets::role_picker::RolePickerState::with_confirm_label(
-                            roles, "launch",
-                        ),
+        } else {
+            let selected = preferred_agent_index(
+                &roles,
+                choice.last_role.as_deref(),
+                choice.default_role.as_deref(),
+            );
+            self.pending_launch = Some(input);
+            self.pending_launch_role = None;
+            if let ConsoleStage::Manager(ms) = &mut self.stage {
+                let mut picker =
+                    crate::console::widgets::role_picker::RolePickerState::with_confirm_label(
+                        roles, "launch",
                     );
+                if let Some(selected) = selected {
+                    picker.list_state.select(Some(selected));
                 }
-                Ok(None)
+                ms.inline_role_picker = Some(picker);
             }
         }
+        Ok(None)
     }
 }
 
