@@ -9,7 +9,9 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 Role maintenance used to split across surfaces. Jackin itself loaded role repos, but local manifest validation and migration lived in the separate `jackin-validate` binary, which is shaped for GitHub workflow usage rather than day-to-day operator and role-author usage. Role authors also scaffolded new role repos by hand, repeating the same `Dockerfile`, `jackin.role.toml`, README, and GitHub Actions setup each time.
 
-The local workflow now lives under `jackin role`: role authors can validate a checked-out role repo, migrate a role manifest when its schema needs a restamp or feature unlock, and create a starter role repository skeleton. The standalone `jackin-validate` binary remains for GitHub workflows.
+The desktop workflow now lives under `jackin role`: role authors can validate a checked-out role repo, migrate a role manifest when its schema needs a restamp or feature unlock, and create a starter role repository skeleton from their own machine.
+
+The standalone `jackin-validate` binary remains the CI and automation surface. GitHub workflows and future Renovate-style migration jobs should keep using the small role-focused binary instead of the full Jackin operator CLI.
 
 ## Proposed CLI shape
 
@@ -23,7 +25,7 @@ jackin role create <role-name-or-namespace/name> [<projects-dir>]
 
 `validate` checks the same role-repo contract as the current validator: manifest parsing, feature-version compatibility, Dockerfile path safety, final construct base image, hook paths, env declarations, and agent/table consistency. It defaults `<role-repo-path>` to the current directory.
 
-`migrate` applies the manifest migration registry to the local role repo and writes the updated `jackin.role.toml` back to that repo, then validates the result. Jackin's local operator errors now advertise `jackin role migrate <role-repo-path>`. The standalone `jackin-validate --migrate <role-repo-path>` path remains useful for GitHub Actions and compatibility.
+`migrate` applies the manifest migration registry to the local role repo and writes the updated `jackin.role.toml` back to that repo, then validates the result. Jackin's local operator errors now advertise `jackin role migrate <role-repo-path>`. GitHub Actions and Renovate-style migration automation continue to use `jackin-validate --migrate <role-repo-path>` so those jobs stay small and role-focused.
 
 `create` scaffolds a role repo. `jackin role create frontend-engineer .` creates `./jackin-frontend-engineer`; `jackin role create ChainArgos/Frontend-Engineer "$HOME/Projects"` creates `$HOME/Projects/chainargos/jackin-frontend-engineer` and writes scaffold references using `chainargos/frontend-engineer`. When the projects directory is omitted, Jackin uses `JACKIN_PROJECTS_DIR`, defaulting to `$HOME/Projects`.
 

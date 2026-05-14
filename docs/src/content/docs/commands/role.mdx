@@ -5,6 +5,8 @@ description: Validate, migrate, and scaffold role repositories
 
 `jackin role` is the local role-authoring command family. Use it when you are building or maintaining a role repository.
 
+These commands are for desktop/operator workflows. CI, validation workflows, and future Renovate-style migration automation should keep using the small standalone `jackin-validate` binary so role repositories do not need the full Jackin operator CLI just to validate or migrate their manifest.
+
 ## Commands
 
 | Command | What it does |
@@ -38,3 +40,9 @@ jackin role migrate <role-repo-path>
 ```
 
 The command rewrites the role manifest in that repository and then validates the result. Inspect the diff, commit it in the role repository, and push it like any other role change.
+
+In CI or automation, use the standalone equivalent instead:
+
+```sh
+jackin-validate --migrate <role-repo-path>
+```

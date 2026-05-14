@@ -91,7 +91,7 @@ Role manifests live in role repos that jackin does not own. The policy is:
 - **Older-stamped manifest uses a newer feature**: jackin refuses to use the role and emits a feature-specific error with `jackin role migrate <role-repo-path>`. For example, `opencode` requires `v1alpha3`; a `v1alpha2` manifest that declares `agents = ["opencode"]` must be migrated before launch.
 - **Version newer than expected**: jackin refuses and emits: `role manifest is at {new}, this binary only understands up to {current}; upgrade jackin`.
 
-The `jackin role migrate <role-repo-path>` command applies the manifest migration chain to the local role clone and writes the result back. The operator can then inspect the diff, commit, and push. The standalone `jackin-validate --migrate <role-repo-path>` binary remains available for GitHub workflows.
+The `jackin role migrate <role-repo-path>` command applies the manifest migration chain to a desktop local role clone and writes the result back. The operator can then inspect the diff, commit, and push. CI, validation workflows, and Renovate-style automation use the standalone `jackin-validate --migrate <role-repo-path>` binary instead of the full Jackin operator CLI.
 
 The `--pr` path remains future work. When implemented, it will have jackin open a pull request in the role repo automatically via `gh`.
 
@@ -141,7 +141,7 @@ The migration framework carves out an exception for the three file kinds operato
 
 **Phase 4 — Renovate-style auto-migration GitHub Action**
 
-`--pr` runs from an operator's machine, so a role repo whose author has not run `jackin role migrate` stays broken in CI until someone opens a PR by hand. A scheduled action closes that gap by watching role repos and opening migration PRs upstream automatically.
+`--pr` runs from an operator's machine, so a role repo whose author has not run `jackin role migrate` stays broken in CI until someone opens a PR by hand. A scheduled action closes that gap by watching role repos and opening migration PRs upstream automatically. That action should run the small role-focused `jackin-validate --migrate` binary, not the full `jackin` operator binary.
 
 The action extends [`validate-agent-action`](https://github.com/jackin-project/validate-agent-action) with a `migrate` mode (rather than introducing a new repo — role authors install one action). Two deployment shapes mirror Renovate's:
 
