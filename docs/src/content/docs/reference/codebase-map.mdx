@@ -43,6 +43,7 @@ Start at <RepoFile path="src/cli/mod.rs" /> — the top-level `Cli` and
 | Subcommand | Module |
 |---|---|
 | `load` / `hardline` / `console` | <RepoFile path="src/cli/role.rs" /> |
+| `role` | <RepoFile path="src/cli/role.rs" /> and <RepoFile path="src/role_authoring.rs" /> |
 | `eject` / `purge` | <RepoFile path="src/cli/cleanup.rs" /> |
 | `workspace` | <RepoFile path="src/cli/workspace.rs" /> |
 | `config` | <RepoFile path="src/cli/config.rs" /> |
@@ -127,12 +128,16 @@ stays accurate.
 
 ### "I want to change role-manifest behaviour"
 
-The `jackin.role.toml` schema and validator live in `src/manifest/`:
+The `jackin.role.toml` schema, validator, migration chain, and role-authoring entrypoints live across a small set of files:
 
 - <RepoFile path="src/manifest/mod.rs" /> — schema structs, `load`,
   `display_name`.
 - <RepoFile path="src/manifest/validate.rs" /> — `RoleManifest::validate`
   and `validate_agent_consistency`.
+- <RepoFile path="src/manifest/migrations.rs" /> — manifest version registry and file migration.
+- <RepoFile path="src/repo.rs" /> — role-repo contract validation shared by local commands and runtime repo resolution.
+- <RepoFile path="src/role_authoring.rs" /> — desktop role-authoring commands for creating, validating, and migrating local role repositories.
+- <RepoFile path="src/bin/validate.rs" /> — standalone role-focused validation and migration binary used by GitHub Actions and future Renovate-style automation.
 
 Whenever the manifest schema changes, also update
 [Role Manifest](/developing/role-manifest/).

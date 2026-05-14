@@ -3,7 +3,7 @@ title: role
 description: Validate, migrate, and scaffold role repositories
 ---
 
-`jackin role` is the local role-authoring command family. Use it when you are building or maintaining a role repository.
+`jackin role` is the local role-authoring command family. Use it when you are building or maintaining a role repository from your desktop.
 
 These commands are for desktop/operator workflows. CI, validation workflows, and future Renovate-style migration automation should keep using the small standalone `jackin-validate` binary so role repositories do not need the full Jackin operator CLI just to validate or migrate their manifest.
 
@@ -17,23 +17,45 @@ These commands are for desktop/operator workflows. CI, validation workflows, and
 
 ## Create a role
 
-```sh
-jackin role create docs-writer .
-cd jackin-docs-writer
-jackin role validate .
-```
-
-For a namespaced role, pass `namespace/name`. Jackin lowercases both parts before it creates directories or writes scaffold references:
+Create writes a small valid role repository with a manifest, Dockerfile, README, ignore files, and a GitHub Actions validation workflow:
 
 ```sh
 jackin role create ChainArgos/Backend-Engineer "$HOME/Projects"
+cd "$HOME/Projects/chainargos/jackin-backend-engineer"
+jackin role validate .
 ```
 
-That creates `$HOME/Projects/chainargos/jackin-backend-engineer`. Role selectors are normalized to lowercase, matching how `jackin load` resolves role names.
+Jackin lowercases the role selector before it creates directories or writes scaffold references. For example, `ChainArgos/Backend-Engineer` becomes `chainargos/backend-engineer`, and the repository directory is `$HOME/Projects/chainargos/jackin-backend-engineer`.
+
+The scaffold is intentionally small. You still own the Dockerfile, manifest, README, and Git history. After reviewing the generated files, initialize the repository and publish it where the selector points:
+
+```sh
+git init
+git branch -M main
+git add -A
+git commit -m "Initial role setup"
+gh repo create chainargos/jackin-backend-engineer --source=. --remote=origin --push
+```
+
+Then load it like any other namespaced role:
+
+```sh
+jackin load chainargos/backend-engineer . --debug
+```
+
+## Validate a role
+
+Validate before pushing role changes:
+
+```sh
+jackin role validate .
+```
+
+Validation checks the role manifest, Dockerfile, hook paths, environment declarations, and agent table consistency. It uses the same role-repo contract as the standalone validator.
 
 ## Migrate a manifest
 
-When jackin' reports that a role manifest needs a newer schema version, run:
+When jackin' reports that a role manifest needs a newer schema version, run the local migration command from your checkout or pass the role repository path:
 
 ```sh
 jackin role migrate <role-repo-path>
