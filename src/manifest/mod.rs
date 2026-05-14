@@ -243,7 +243,7 @@ fn validate_feature_versions(
             || manifest.opencode.is_some())
     {
         anyhow::bail!(
-            "role \"{role_name}\" manifest is at {manifest_version} but uses opencode, which requires v1alpha3; run \"jackin-validate --migrate <role-repo-path>\" to upgrade the local copy"
+            "role \"{role_name}\" manifest is at {manifest_version} but uses opencode, which requires v1alpha3; run \"jackin role migrate <role-repo-path>\" to upgrade the local copy"
         );
     }
     Ok(())
@@ -428,7 +428,7 @@ agents = ["opencode"]
         let err = RoleManifest::load(temp.path()).unwrap_err();
         let chain = format!("{err:#}");
         assert!(chain.contains("requires v1alpha3"), "{chain}");
-        assert!(chain.contains("jackin-validate --migrate"), "{chain}");
+        assert!(chain.contains("jackin role migrate"), "{chain}");
     }
 
     #[test]

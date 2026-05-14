@@ -2,7 +2,7 @@ use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Parser, Subcommand};
 
 use cleanup::{EjectArgs, PurgeArgs};
-use role::{ConsoleArgs, HardlineArgs, LoadArgs};
+use role::{ConsoleArgs, HardlineArgs, LoadArgs, RoleCommand};
 
 pub(super) const HELP_STYLES: Styles = Styles::styled()
     .header(AnsiColor::BrightGreen.on_default().effects(Effects::BOLD))
@@ -99,6 +99,9 @@ pub enum Command {
     Exile,
     Purge(PurgeArgs),
     Console(ConsoleArgs),
+    /// Validate, migrate, and scaffold role repositories
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    Role(RoleCommand),
     /// Manage saved workspaces
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Workspace(WorkspaceCommand),
@@ -181,6 +184,7 @@ mod tests {
             "exile",
             "purge",
             "console",
+            "role",
             "workspace",
             "config",
         ] {

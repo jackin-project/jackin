@@ -36,11 +36,7 @@ fn parse_agent_from_cli(raw: &str) -> anyhow::Result<crate::agent::Agent> {
 
 #[allow(clippy::too_many_lines)]
 pub fn run(cli: Cli) -> Result<()> {
-    let paths = JackinPaths::detect()?;
-    let mut config = AppConfig::load_or_init(&paths)?;
-    let mut runner = ShellRunner::default();
     let debug = cli.debug;
-    runner.debug = debug;
     tui::set_debug_mode(debug);
 
     // Resolve the subcommand. Bare `jackin` currently routes to the same
@@ -50,6 +46,15 @@ pub fn run(cli: Cli) -> Result<()> {
         Some(cmd) => cmd,
         None => Command::Console(cli.console_args),
     };
+
+    let command = match command {
+        Command::Role(command) => return crate::role_authoring::run(command),
+        command => command,
+    };
+
+    let paths = JackinPaths::detect()?;
+    let mut config = AppConfig::load_or_init(&paths)?;
+    let mut runner = ShellRunner { debug };
 
     match command {
         Command::Load(LoadArgs {
@@ -1175,6 +1180,7 @@ pub fn run(cli: Cli) -> Result<()> {
             // Handled upstream in dispatch before reaching this function.
             unreachable!("Command::Help is dispatched to Action::PrintHelp before run() is called")
         }
+        Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
     }
 }
 

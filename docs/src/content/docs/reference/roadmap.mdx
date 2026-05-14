@@ -42,6 +42,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, `Amp`, and `
 - Global mount visibility and editing — workspace views show applicable global mounts separately, and the console has a dedicated global mounts editor for `~/.config/jackin/config.toml`. See the [Mounts guide](/guides/mounts/)
 - Settings TUI — the console has a tabbed `Settings` shell covering existing `jackin config` surfaces: global mounts, global/per-role env vars, global auth forwarding modes, and role source trust
 - Unique container identity and restore — DNS-safe unique container identities, per-instance manifests and rebuildable index, hardline/load/console recovery flows, durable per-instance agent home restore, related-instance recovery/rebuild, moved ad-hoc path recovery, guarded purge, `hardline --new`, and Java Testcontainers DinD smoke coverage have shipped; operator workflow is documented in [Parallel Agents](/guides/parallel-agents/), contributor details live in [Runtime Instance Model](/reference/runtime-instance-model/), and reconnectable named sessions plus persistent lifecycle history are tracked separately
+- Role authoring CLI — desktop role creation, validation, and migration are documented in the [`role` command reference](/commands/role/) and [Creating a Role](/developing/creating-roles/); the standalone CI/Renovate-style validator split is documented in [Architecture](/reference/architecture/#role-repository-tooling) and [Schema Versions](/reference/schema-versions/)
 
 ## Partially implemented
 
@@ -49,7 +50,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, `Amp`, and `
 - [Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/) — built-in runtime launch is documented in standard docs; roadmap tracks deeper runtime parity
 - [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/) — shipped GitHub auth forwarding is documented in standard docs; roadmap tracks the CLI subcommand, scope pre-flight, and deeper GHE coverage
 - [Workspace Claude token setup](/reference/roadmap/workspace-claude-token-setup/) — shipped token commands are documented in standard docs; roadmap tracks the canonical auth slot, TUI generate action, Apple Keychain backend, validity probe, and bulk migration
-- [Config versioning and migration framework](/reference/roadmap/config-versioning-migration/) — shipped per-file schema gates for config, workspace files, and role manifests, plus automatic config/workspace migration and explicit role manifest `--migrate`; roadmap tracks deferred `--pr` automation and the Renovate-style auto-migration GitHub Action
+- [Config versioning and migration framework](/reference/roadmap/config-versioning-migration/) — shipped per-file schema gates for config, workspace files, and role manifests, plus automatic config/workspace migration, desktop role manifest migration through `jackin role migrate`, and CI migration through `jackin-validate --migrate`; roadmap tracks deferred `--pr` automation and the Renovate-style auto-migration GitHub Action
 - [Console agent session control](/reference/roadmap/console-agent-session-control/) — instance discovery and the console Instances panel (with recover/reconnect, new session, inspect, and guarded purge actions) shipped with unique container identity and restore; shell entry, reconnectable tmux-backed primary session, and stop-one-without-stopping-all secondary sessions remain in Phase 2+
 
 ## Planned
@@ -97,10 +98,6 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, `Amp`, and `
 - **[Markdown linting for docs](/reference/roadmap/docs-markdown-linting/)** — uniform Markdown lint pipeline for the docs site (status: proposed — design captured, no implementation committed)
 - **[Move documentation to a separate repository](/reference/roadmap/docs-separate-repository/)** — promote `docs/` out of the CLI repo into its own `jackin-project/jackin-docs` repo so the ecosystem-level docs have an ecosystem-level home; the load-bearing question is how to keep the docs as fresh as same-repo co-location makes them today (status: deferred — needs design pass on the cross-repo freshness story)
 - **[Rustdoc → Starlight integration](/reference/roadmap/rustdoc-json-starlight/)** — surface rustdoc JSON inside the Starlight docs site (status: deferred — Phase 3)
-
-### Configuration ergonomics
-
-- **[Role authoring CLI](/reference/roadmap/role-authoring-cli/)** — add `jackin role validate`, `jackin role migrate`, and `jackin role create` so local role authors can validate, migrate, and scaffold role repos through Jackin itself while keeping the standalone validator available for GitHub workflows (status: open — design proposal)
 
 <Aside type="tip">
 Detailed design documents for individual TODO items are linked from the sidebar under **Roadmap** (each open category — `Agent Orchestrator Research`, `Codebase health`, `Agent runtimes & authentication`, `Isolation & security`, `Infrastructure`, `Documentation tooling`, `Configuration ergonomics`) and **Roadmap → Resolved** for shipped items. Each page is a self-contained proposal with problem statement, options, and related files.

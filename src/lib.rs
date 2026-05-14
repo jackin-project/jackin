@@ -15,6 +15,7 @@ pub mod operator_env;
 pub mod paths;
 pub mod repo;
 pub mod repo_contract;
+pub mod role_authoring;
 pub mod runtime;
 pub mod selector;
 pub mod terminal_prompter;
