@@ -70,6 +70,11 @@ impl ConsoleState {
             }
             self.pending_launch = None;
             self.pending_launch_role = None;
+        } else if roles.len() == 1 {
+            // Single role — skip picker and proceed directly to agent selection.
+            let role = roles.into_iter().next().unwrap();
+            return preview::resolve_selected_workspace(config, cwd, &choice, &role)
+                .map(|workspace| Some((role, workspace, None)));
         } else {
             let selected = preferred_agent_index(
                 &roles,
