@@ -25,7 +25,7 @@ Jackin has no released version — it is a proof-of-concept. **Breaking changes 
 4. Re-bake of every existing fixture's `after.toml` so it walks through the new step too. The fixture for the oldest supported `from_version` is the load-bearing test for users delayed by months — its diff is the proof the new chain is composable.
 5. A new entry at the top of the **Timeline** section in `docs/src/content/docs/reference/schema-versions.mdx` with date, predecessor, fixture link, summary, and a before/after example.
 
-A non-additive change (renamed field, removed field, type change, restructured table) without these five artifacts is incomplete; reviewers block merge until they appear or the change is reshaped to be additive (new optional field with a serde default). Operator config and per-workspace files migrate automatically during `AppConfig::load_or_init` at startup; role manifests migrate via `jackin-validate --migrate <role-repo-path>`.
+A non-additive change (renamed field, removed field, type change, added enum variant, restructured table) without these five artifacts is incomplete; reviewers block merge until they appear or the change is reshaped to be additive (new optional field with a serde default). Operator config and per-workspace files migrate automatically during `AppConfig::load_or_init` at startup; role manifests migrate via `jackin-validate --migrate <role-repo-path>`.
 
 Do not memorialize old shapes in code comments ("formerly named X", "old location was Y") or in documentation files outside the changelog. The git history is the record of what changed; the code should describe only the current shape.
 
