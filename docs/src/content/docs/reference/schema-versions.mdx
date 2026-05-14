@@ -17,7 +17,7 @@ Breaking changes to schemas are expected — that is how the project explores id
 - **Operator-owned files migrate automatically.** `config.toml` and `~/.config/jackin/workspaces/<name>.toml` are rewritten in place on startup; the operator does nothing.
 - **Role-owned files migrate explicitly.** Role authors run `jackin-validate --migrate <role-repo-path>` to rewrite a `jackin.role.toml` against the latest schema, then commit and push the result. Jackin never writes back into a role repo on its own — that would silently mutate someone else's source tree.
 - **Migrations are a hard PR-review rule.** Every change to one of the three versioned files must bump the corresponding `CURRENT_*_VERSION`, add a migration step, and update this page. Adding a new enum variant counts as a schema-breaking change: old binaries cannot parse manifests that use the new variant. The full rule lives in <RepoFile path="AGENTS.md" /> and <RepoFile path="PULL_REQUESTS.md" />.
-- **Version mismatches produce actionable errors.** The version check runs before full TOML deserialization, so old binaries always surface a clear message rather than a cryptic parse error. When a manifest's `version` is newer than what the binary knows about, jackin rejects it with: `role manifest is at {version}, this binary only understands up to {CURRENT_MANIFEST_VERSION}; upgrade jackin`. When the manifest is older than expected (role author has not yet run `jackin-validate --migrate`), jackin says: `role "{role_name}" manifest is at {version}, expected {CURRENT_MANIFEST_VERSION}; run "jackin-validate --migrate <role-repo-path>" to upgrade the local copy`.
+- **Version mismatches produce actionable errors.** The version check runs before full TOML deserialization, so old binaries always surface a clear message rather than a cryptic parse error. When a manifest's `version` is newer than what the binary knows about, jackin rejects it with: `role manifest is at {version}, this binary only understands up to {CURRENT_MANIFEST_VERSION}; upgrade jackin`. Current binaries accept older role manifests when the file only uses fields and enum values that existed at that older version. If an older-stamped manifest uses a newer feature, jackin rejects it with a feature-specific `jackin-validate --migrate <role-repo-path>` hint.
 
 The split-workspace layout described in [Configuration File](/reference/configuration/#one-file-per-workspace-by-design) makes per-file migration tractable: legacy global files and per-workspace files migrate independently, so a dotfile repo that is partially old still upgrades cleanly.
 
@@ -39,7 +39,7 @@ Each entry is one upgrade path the current binary applies. <RepoFile path="tests
 |---|---|---|---|
 | Manifest (`jackin.role.toml`) | `v1alpha2` | Explicit `jackin-validate --migrate <role-repo-path>` | <RepoFile path="tests/fixtures/migrations/manifest/from-v1alpha2/meta.toml" /> |
 
-**Summary**: formalizes OpenCode agent support. The `opencode` enum variant in `agents` and the `[opencode]` config table were added to the binary in the previous schema version without a corresponding manifest version bump — this version corrects that oversight. The migration is a no-op restamp: no field renames, no data moved.
+**Summary**: formalizes OpenCode agent support. The `opencode` enum variant in `agents` and the `[opencode]` config table require `v1alpha3`; older-stamped manifests still load as long as they do not use OpenCode. The migration is a no-op restamp: no field renames, no data moved.
 
 **Before** (v1alpha2 manifest with OpenCode):
 

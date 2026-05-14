@@ -44,17 +44,16 @@ pub fn migrate_manifest_file(path: &Path) -> anyhow::Result<Option<(String, Stri
     Ok(outcome.map(|old| (old.to_string(), CURRENT_MANIFEST_VERSION.to_string())))
 }
 
-pub(crate) fn validate_manifest_version(doc: &DocumentMut, role_name: &str) -> anyhow::Result<()> {
+pub(crate) fn validate_manifest_version(
+    doc: &DocumentMut,
+) -> anyhow::Result<crate::config::migrations::SchemaVersion> {
     let version = crate::config::migrations::doc_version(doc, "role manifest")?;
     let current = crate::config::migrations::parse_version(CURRENT_MANIFEST_VERSION)?;
     match version.cmp(&current) {
-        std::cmp::Ordering::Less => bail!(
-            "role \"{role_name}\" manifest is at {version}, expected {CURRENT_MANIFEST_VERSION}; run \"jackin-validate --migrate <role-repo-path>\" to upgrade the local copy"
-        ),
         std::cmp::Ordering::Greater => bail!(
             "role manifest is at {version}, this binary only understands up to {CURRENT_MANIFEST_VERSION}; upgrade jackin"
         ),
-        std::cmp::Ordering::Equal => Ok(()),
+        std::cmp::Ordering::Less | std::cmp::Ordering::Equal => Ok(version),
     }
 }
 
@@ -129,23 +128,20 @@ mod tests {
     #[test]
     fn validate_manifest_version_accepts_current() {
         let doc: DocumentMut = "version = \"v1alpha3\"\n".parse().unwrap();
-        validate_manifest_version(&doc, "test-role").unwrap();
+        validate_manifest_version(&doc).unwrap();
     }
 
     #[test]
-    fn validate_manifest_version_rejects_legacy_with_migrate_hint() {
+    fn validate_manifest_version_accepts_legacy() {
         let doc: DocumentMut = "dockerfile = \"Dockerfile\"\n".parse().unwrap();
-        let err = validate_manifest_version(&doc, "the-architect").unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("\"the-architect\""), "{msg}");
-        assert!(msg.contains("at legacy"), "{msg}");
-        assert!(msg.contains("jackin-validate --migrate"), "{msg}");
+        let version = validate_manifest_version(&doc).unwrap();
+        assert_eq!(version.to_string(), "legacy");
     }
 
     #[test]
     fn validate_manifest_version_rejects_newer() {
         let doc: DocumentMut = "version = \"v2alpha1\"\n".parse().unwrap();
-        let err = validate_manifest_version(&doc, "test-role").unwrap_err();
+        let err = validate_manifest_version(&doc).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("only understands up to v1alpha3"), "{msg}");
     }
