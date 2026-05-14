@@ -28,7 +28,7 @@ Create a new workspace definition.
 | `--workdir <PATH>` | Working directory inside the container |
 | `--mount <SPEC>` | Bind-mount spec (repeatable, at least one required) |
 | `--allowed-role <NAME>` | Restrict to these roles (repeatable) |
-| `--default-role <NAME>` | Role to auto-select |
+| `--default-role <NAME>` | Role to preselect in interactive pickers and CLI context loading |
 | `--default-agent <claude\|codex\|amp\|opencode>` | Default agent for this workspace |
 | `--mount-isolation <DST>=<TYPE>` | Set per-mount isolation by container destination. Repeatable. `<TYPE>` is `shared`, `worktree`, or `clone`. The `<DST>` must match a mount destination present in the final mount plan; an unknown `<DST>` is a hard error. |
 | `--keep-awake` | macOS only: opt this workspace into the keep-awake reconciler. While any agent in the workspace is running, jackin keeps a single detached `caffeinate -imsu` alive so the host stays awake. No-op on Linux/Windows. See [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake). |
@@ -83,7 +83,7 @@ Modify an existing workspace.
 | `--remove-destination <PATH>` | Remove a mount by container path (repeatable) |
 | `--allowed-role <NAME>` | Grant role access (repeatable) |
 | `--remove-allowed-role <NAME>` | Revoke role access (repeatable) |
-| `--default-role <NAME>` | Set default role |
+| `--default-role <NAME>` | Set the default role for picker preselection and CLI context loading |
 | `--clear-default-role` | Clear the default role |
 | `--default-agent <claude\|codex\|amp\|opencode>` | Set default agent |
 | `--clear-default-agent` | Clear the explicit default agent and fall back to Claude |
