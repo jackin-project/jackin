@@ -425,10 +425,6 @@ pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> 
         );
     }
 
-    if removed.is_empty() && skipped.is_empty() {
-        println!("No instances pruned.");
-    }
-
     Ok(())
 }
 
