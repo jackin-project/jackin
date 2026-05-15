@@ -49,6 +49,7 @@ jackin eject jk-k7p9m2xq-agentsmith
 When you eject an agent:
 - The agent container is stopped and removed
 - The DinD sidecar container is stopped and removed
+- The TLS certs volume (`{container}-dind-certs`) is removed
 - The per-agent Docker network is removed
 
 When you add `--purge`:

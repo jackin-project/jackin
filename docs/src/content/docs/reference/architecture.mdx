@@ -85,7 +85,8 @@ Every fresh launch gets a unique DNS-safe instance identity. Existing running or
 
 1. the agent container
 2. the DinD sidecar
-3. the per-agent network
+3. the TLS certs volume (`{container}-dind-certs`)
+4. the per-agent network
 
 Persisted state remains unless you also purge it.
 

@@ -43,7 +43,7 @@ Removes the shared cache directory, including compiled terminfo entries and vers
 jackin prune images
 ```
 
-Removes `jk-*` Docker images that have no containers — running or stopped — that depend on them. Images still in use by any container are skipped; the final summary reports the count of images removed and skipped. Because Docker images are rebuilt from the role Dockerfile on the next `jackin load`, removing an unused image does not lose any data.
+Removes `jk_*` Docker images that have no role containers — running or stopped — that depend on them. Images still in use by a role container are skipped; the final summary reports the count of images removed and skipped. Because Docker images are rebuilt from the role Dockerfile on the next `jackin load`, removing an unused image does not lose any data.
 
 ## `jackin prune instances`
 
@@ -59,7 +59,7 @@ Removes on-disk state and index entries for instances in terminal statuses:
 | `superseded` | Yes |
 | `failed_setup` | Yes |
 | `purged` (tombstones) | Yes — cleared from the index |
-| `crashed` | No — has Docker resources present; use `jackin eject <selector> --purge` to remove |
+| `crashed` | No — has recoverable state; use `jackin hardline <selector>` to return or `jackin eject <selector> --purge` to discard |
 | `preserved_dirty` | No — instance has uncommitted changes |
 | `preserved_unpushed` | No — instance has unpushed commits |
 | `restore_available` | No — local state is still recoverable |
