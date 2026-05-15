@@ -59,7 +59,7 @@ Removes on-disk state and index entries for instances in terminal statuses:
 | `superseded` | Yes |
 | `failed_setup` | Yes |
 | `purged` (tombstones) | Yes — cleared from the index |
-| `crashed` | No — use `jackin eject <selector> --purge` |
+| `crashed` | No — not a terminal status; use `jackin eject <selector> --purge` to remove |
 | `preserved_dirty` | No — instance has uncommitted changes |
 | `preserved_unpushed` | No — instance has unpushed commits |
 | `restore_available` | No — local state is still recoverable |

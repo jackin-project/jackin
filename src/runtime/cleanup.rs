@@ -179,6 +179,18 @@ pub(super) fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
             run_cleanup_command(runner, &["volume", "rm", &certs_volume]),
             run_cleanup_command(runner, &["network", "rm", &network]),
         ];
+        for (result, label) in results
+            .iter()
+            .zip(["role container", "dind sidecar", "certs volume", "network"])
+        {
+            if let Err(err) = result {
+                eprintln!(
+                    "  {} GC of {label} for {}: {err}",
+                    "warning:".yellow().bold(),
+                    info.role
+                );
+            }
+        }
         if results.iter().any(|r| r.is_ok()) {
             eprintln!(
                 "        {} orphaned resources for {}",
@@ -230,7 +242,12 @@ fn gc_orphaned_networks(runner: &mut impl CommandRunner) {
         if running.iter().any(|r| r == role) {
             continue;
         }
-        let _ = run_cleanup_command(runner, &["network", "rm", net_name]);
+        if let Err(err) = run_cleanup_command(runner, &["network", "rm", net_name]) {
+            eprintln!(
+                "  {} GC of network {net_name}: {err}",
+                "warning:".yellow().bold()
+            );
+        }
     }
 }
 
@@ -270,8 +287,8 @@ pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
 
 /// Remove jk-* Docker images that have no jackin-managed role containers (running or stopped).
 ///
-/// Best-effort: always returns `Ok(())`. Per-image failures are printed to stderr and
-/// counted in the summary but never propagate as errors.
+/// Per-image `rmi` failures are printed to stderr and counted in the summary but do not
+/// propagate. The initial `docker images` and `docker ps` enumeration calls do propagate.
 pub fn prune_images(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     let images_output = runner.capture(
         "docker",

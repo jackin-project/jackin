@@ -1198,10 +1198,14 @@ pub fn run(cli: Cli) -> Result<()> {
                 // Docker error doesn't leave the role cache and shared cache
                 // untouched.
                 let results = [
-                    runtime::prune_instances(&paths, &mut runner),
-                    runtime::prune_images(&mut runner),
-                    runtime::prune_roles(&paths),
-                    runtime::prune_cache(&paths),
+                    runtime::prune_instances(&paths, &mut runner)
+                        .context("prune instances"),
+                    runtime::prune_images(&mut runner)
+                        .context("prune images"),
+                    runtime::prune_roles(&paths)
+                        .context("prune roles"),
+                    runtime::prune_cache(&paths)
+                        .context("prune cache"),
                 ];
                 let errors: Vec<anyhow::Error> =
                     results.into_iter().filter_map(Result::err).collect();

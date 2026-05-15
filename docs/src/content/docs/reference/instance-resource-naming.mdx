@@ -106,15 +106,17 @@ Set once at launch time, never renamed. The Docker container name and the state 
 The repo cache uses a stable per-role lock file to serialize concurrent git clone/fetch operations for the same role:
 
 ```text
-~/.jackin/data/{namespace}_{role-name}.repo.lock
+~/.jackin/data/{role-name}.repo.lock             ← flat role
+~/.jackin/data/{namespace}_{role-name}.repo.lock ← namespaced role
+~/.jackin/data/{role-name}.locks/
 ~/.jackin/data/{namespace}_{role-name}.locks/
 ```
 
 Example:
 
 ```text
+~/.jackin/data/agent-smith.repo.lock
 ~/.jackin/data/chainargos_agent-brown.repo.lock
-~/.jackin/data/chainargos_agent-brown.locks/
 ```
 
 The same `_` separator as image names makes these stable across sessions and collision-safe between namespaced and flat selectors.
