@@ -137,7 +137,7 @@ On first worktree creation for a host repo, jackin' enables `extensions.worktree
 Materialized isolated mounts are recorded at:
 
 ```
-<data_dir>/jackin-<container>/.jackin/isolation.json
+<data_dir>/jk-<container>/.jackin/isolation.json
 ```
 
 The file lives next to the per-container agent state and `.jackin/` metadata and is the source of truth for `purge` after the operator has changed (or removed) the workspace config. Each record contains at least:
@@ -174,9 +174,9 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 ```
 ~/.jackin/
 ├── roles/                         # Cached role repos
-│   └── github.com/
-│       └── jackin-project/
-│           └── jackin-agent-smith/
+│   ├── agent-smith/               # Flat role (no namespace)
+│   └── chainargos/                # Namespace directory
+│       └── agent-brown/           # Namespaced role
 ├── cache/                         # Shared caches (terminfo, version checks)
 │   └── terminfo/
 ├── data/

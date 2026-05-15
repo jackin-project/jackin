@@ -1791,7 +1791,7 @@ mod tests {
         let paths = crate::paths::JackinPaths::for_tests(tmp.path());
         let mut manifest =
             crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
-                container_base: "jackin-demo-alpha-k7p9m2xq",
+                container_base: "jk-k7p9m2xq-demo-alpha",
                 workspace_name: Some("demo"),
                 workspace_label: "demo",
                 workdir: "/workspace/demo",
@@ -1801,17 +1801,17 @@ mod tests {
                 agent_runtime: crate::agent::Agent::Claude,
                 role_source_git: "https://example.invalid/alpha.git",
                 role_source_ref: None,
-                image_tag: "jackin-alpha",
+                image_tag: "jk-alpha",
                 docker: crate::instance::DockerResources {
-                    role_container: "jackin-demo-alpha-k7p9m2xq".into(),
-                    dind_container: "jackin-demo-alpha-k7p9m2xq-dind".into(),
-                    network: "jackin-demo-alpha-k7p9m2xq-net".into(),
-                    certs_volume: "jackin-demo-alpha-k7p9m2xq-dind-certs".into(),
+                    role_container: "jk-k7p9m2xq-demo-alpha".into(),
+                    dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+                    network: "jk-k7p9m2xq-demo-alpha-net".into(),
+                    certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
                 },
             });
         manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
         manifest
-            .write(&paths.data_dir.join("jackin-demo-alpha-k7p9m2xq"))
+            .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
             .unwrap();
 
         let config = AppConfig::default();
@@ -1837,7 +1837,7 @@ mod tests {
         let paths = crate::paths::JackinPaths::for_tests(tmp.path());
         let mut manifest =
             crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
-                container_base: "jackin-demo-alpha-k7p9m2xq",
+                container_base: "jk-k7p9m2xq-demo-alpha",
                 workspace_name: Some("demo"),
                 workspace_label: "demo",
                 workdir: "/workspace/demo",
@@ -1847,17 +1847,17 @@ mod tests {
                 agent_runtime: crate::agent::Agent::Claude,
                 role_source_git: "https://example.invalid/alpha.git",
                 role_source_ref: None,
-                image_tag: "jackin-alpha",
+                image_tag: "jk-alpha",
                 docker: crate::instance::DockerResources {
-                    role_container: "jackin-demo-alpha-k7p9m2xq".into(),
-                    dind_container: "jackin-demo-alpha-k7p9m2xq-dind".into(),
-                    network: "jackin-demo-alpha-k7p9m2xq-net".into(),
-                    certs_volume: "jackin-demo-alpha-k7p9m2xq-dind-certs".into(),
+                    role_container: "jk-k7p9m2xq-demo-alpha".into(),
+                    dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+                    network: "jk-k7p9m2xq-demo-alpha-net".into(),
+                    certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
                 },
             });
         manifest.mark_status(crate::instance::InstanceStatus::Active);
         manifest
-            .write(&paths.data_dir.join("jackin-demo-alpha-k7p9m2xq"))
+            .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
             .unwrap();
 
         let config = AppConfig::default();

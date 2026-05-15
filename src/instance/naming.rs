@@ -1,19 +1,16 @@
 use crate::selector::RoleSelector;
 use sha2::{Digest, Sha256};
 
-const CONTAINER_PREFIX: &str = "jackin";
+pub const CONTAINER_PREFIX: &str = "jk";
+pub const CONTAINER_PREFIX_DASH: &str = "jk-";
 const INSTANCE_ID_LEN: usize = 8;
 const ROLE_BASE_DNS_BUDGET: usize = 58;
 
 pub fn runtime_slug(selector: &RoleSelector) -> String {
     selector.namespace.as_ref().map_or_else(
         || selector.name.clone(),
-        |namespace| format!("{namespace}__{}", selector.name),
+        |namespace| format!("{namespace}_{}", selector.name),
     )
-}
-
-pub fn primary_container_name(selector: &RoleSelector) -> String {
-    format!("jackin-{}", runtime_slug(selector))
 }
 
 pub fn new_container_name(workspace_name: Option<&str>, selector: &RoleSelector) -> String {
@@ -31,20 +28,28 @@ pub fn container_name_with_id(
     let components = if let Some(workspace_name) = workspace_name {
         let workspace = compact_component(workspace_name, "workspace");
         let budget = ROLE_BASE_DNS_BUDGET - CONTAINER_PREFIX.len() - instance_id.len() - 3;
-        let workspace_budget = budget / 2;
-        let role_budget = budget - workspace_budget;
+        let (ws_part, role_part) = if workspace.len() + role.len() <= budget {
+            (workspace, role)
+        } else {
+            let workspace_budget = budget / 2;
+            let role_budget = budget - workspace_budget;
+            (
+                truncate_component(&workspace, workspace_budget),
+                truncate_component(&role, role_budget),
+            )
+        };
         vec![
             CONTAINER_PREFIX.to_string(),
-            truncate_component(&workspace, workspace_budget),
-            truncate_component(&role, role_budget),
             instance_id,
+            ws_part,
+            role_part,
         ]
     } else {
         let role_budget = ROLE_BASE_DNS_BUDGET - CONTAINER_PREFIX.len() - instance_id.len() - 2;
         vec![
             CONTAINER_PREFIX.to_string(),
-            truncate_component(&role, role_budget),
             instance_id,
+            truncate_component(&role, role_budget),
         ]
     };
 
@@ -54,18 +59,21 @@ pub fn container_name_with_id(
     name
 }
 
-/// Extract the trailing instance-ID component from a container name.
+/// Extract the instance-ID component from a container name.
 ///
-/// Returns `None` when the name has no `-` separator. Used by both
-/// manifest construction (the stored `instance_id` field) and operator
-/// display rendering — one parser owns the shape
-/// `jackin-[<workspace>-]<role>-<id>` produced by [`new_container_name`].
+/// Returns `None` when the name does not start with `jk-` or has no `-` after
+/// the id component. Used by both manifest construction (the stored
+/// `instance_id` field) and operator display rendering — one parser owns the
+/// shape `jk-<id>[-<workspace>]-<role>` produced by [`new_container_name`].
 #[must_use]
 pub fn instance_id_from_container_base(container_base: &str) -> Option<&str> {
-    container_base.rsplit_once('-').map(|(_, id)| id)
+    container_base
+        .strip_prefix(CONTAINER_PREFIX_DASH)?
+        .split_once('-')
+        .map(|(id, _)| id)
 }
 
-/// Recognize names of the shape `jackin-[<workspace>-]<role>-<id>`
+/// Recognize names of the shape `jk-<id>[-<workspace>]-<role>`
 /// produced by `new_container_name`. Scoping hook for `purge_class_data`.
 pub fn class_family_matches(selector: &RoleSelector, container_name: &str) -> bool {
     class_family_matches_with_slug(&compact_component(&selector.name, "role"), container_name)
@@ -73,24 +81,17 @@ pub fn class_family_matches(selector: &RoleSelector, container_name: &str) -> bo
 
 /// Loop-friendly variant of [`class_family_matches`].
 ///
-/// Callers iterating over many candidates (e.g. `purge_class_data`,
-/// `last_role` fallback in `app/context.rs`) precompute `role_slug`
-/// once via [`compact_component`] and pass it in — avoids one
-/// `String` allocation per comparison.
+/// Callers precompute `role_slug` once via [`compact_component`] and pass
+/// it in — avoids one `String` allocation per candidate.
 #[must_use]
 pub fn class_family_matches_with_slug(role_slug: &str, container_name: &str) -> bool {
-    let Some(rest) = container_name.strip_prefix("jackin-") else {
+    let Some(rest) = container_name.strip_prefix(CONTAINER_PREFIX_DASH) else {
         return false;
     };
-    let mut parts = rest.rsplitn(2, '-');
-    parts.next(); // discard the trailing instance id
-    let Some(prefix) = parts.next() else {
+    let Some((_, after_id)) = rest.split_once('-') else {
         return false;
     };
-    prefix
-        .rsplit_once('-')
-        .map_or(prefix, |(_, visible_role)| visible_role)
-        == role_slug
+    after_id.rsplit_once('-').map_or(after_id, |(_, role)| role) == role_slug
 }
 
 pub fn compact_component(input: &str, fallback: &str) -> String {
@@ -174,7 +175,7 @@ mod tests {
 
         let name = container_name_with_id(Some("chainargos-project"), &selector, "k7p9m2xq");
 
-        assert_eq!(name, "jackin-chainargosproject-agentbrown-k7p9m2xq");
+        assert_eq!(name, "jk-k7p9m2xq-chainargosproject-agentbrown");
         assert!(is_dns_label(&name));
         assert!(is_dns_label(&format!("{name}-dind")));
     }
@@ -185,7 +186,7 @@ mod tests {
 
         let name = container_name_with_id(None, &selector, "k7p9m2xq");
 
-        assert_eq!(name, "jackin-agentbrown-k7p9m2xq");
+        assert_eq!(name, "jk-k7p9m2xq-agentbrown");
         assert!(is_dns_label(&name));
     }
 
@@ -209,11 +210,11 @@ mod tests {
 
         assert!(class_family_matches(
             &selector,
-            "jackin-chainargosproject-agentbrown-k7p9m2xq"
+            "jk-k7p9m2xq-chainargosproject-agentbrown"
         ));
         assert!(!class_family_matches(
             &selector,
-            "jackin-chainargosproject-agentblue-k7p9m2xq"
+            "jk-k7p9m2xq-chainargosproject-agentblue"
         ));
     }
 
@@ -223,23 +224,33 @@ mod tests {
         // component is `agentbrown` (the longer name happens to end
         // in `brown`). Important for `purge_class_data` blast radius.
         let brown = RoleSelector::new(None, "brown");
-        assert!(!class_family_matches(&brown, "jackin-agentbrown-k7p9m2xq",));
+        assert!(!class_family_matches(&brown, "jk-k7p9m2xq-agentbrown",));
         let agentbrown = RoleSelector::new(None, "agentbrown");
-        assert!(!class_family_matches(&agentbrown, "jackin-brown-k7p9m2xq",));
-        assert!(class_family_matches(
-            &agentbrown,
-            "jackin-agentbrown-k7p9m2xq",
-        ));
+        assert!(!class_family_matches(&agentbrown, "jk-k7p9m2xq-brown",));
+        assert!(class_family_matches(&agentbrown, "jk-k7p9m2xq-agentbrown",));
     }
 
     #[test]
-    fn distinguishes_namespaced_and_flat_class_container_names() {
-        let namespaced = RoleSelector::new(Some("chainargos"), "the-architect");
-        let flat = RoleSelector::new(None, "chainargos-the-architect");
-
-        assert_ne!(
-            primary_container_name(&namespaced),
-            primary_container_name(&flat)
+    fn instance_id_from_container_base_extracts_second_component() {
+        assert_eq!(
+            instance_id_from_container_base("jk-k7p9m2xq-workspace-agentsmith"),
+            Some("k7p9m2xq")
         );
+        assert_eq!(
+            instance_id_from_container_base("jk-k7p9m2xq-agentsmith"),
+            Some("k7p9m2xq")
+        );
+        assert_eq!(instance_id_from_container_base("nojkprefix-k7p9m2xq"), None);
+        assert_eq!(instance_id_from_container_base("jk-noid"), None);
+    }
+
+    #[test]
+    fn no_workspace_long_role_fits_dns_budget() {
+        let selector = RoleSelector::new(None, "role-name-with-a-very-long-human-friendly-label");
+
+        let name = container_name_with_id(None, &selector, "k7p9m2xq");
+
+        assert!(name.len() <= 58, "{name}");
+        assert!(is_dns_label(&format!("{name}-dind")));
     }
 }

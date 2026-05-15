@@ -3210,7 +3210,7 @@ mod tests {
         agent: crate::agent::Agent,
     ) -> InstanceManifest {
         let role_source_git = format!("https://example.invalid/{role_key}.git");
-        let image_tag = format!("jackin-{role_key}");
+        let image_tag = format!("{}-{role_key}", crate::instance::naming::CONTAINER_PREFIX);
         InstanceManifest::new(NewInstanceManifest {
             container_base: container_name,
             workspace_name: Some("workspace"),
@@ -3414,7 +3414,7 @@ mod tests {
         // proceeds. The function must NOT consume the logs queue entry in
         // this case.
         let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
-        let result = super::diagnose_premature_exit(&mut runner, "jackin-the-architect");
+        let result = super::diagnose_premature_exit(&mut runner, "jk-the-architect");
         assert!(
             result.is_none(),
             "running container must not be diagnosed as a failure"
@@ -3429,7 +3429,7 @@ mod tests {
             "false 127 false".to_string(),
             "/jackin/runtime/entrypoint.sh: line 85: exec: codex: not found".to_string(),
         ]);
-        let err = super::diagnose_premature_exit(&mut runner, "jackin-the-architect")
+        let err = super::diagnose_premature_exit(&mut runner, "jk-the-architect")
             .expect("stopped container must produce a diagnostic error");
         let msg = err.to_string();
         assert!(
@@ -3444,7 +3444,7 @@ mod tests {
             runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker logs --tail 40 jackin-the-architect")),
+                .any(|c| c.contains("docker logs --tail 40 jk-the-architect")),
             "must shell out to `docker logs` to capture the entrypoint output"
         );
     }
@@ -3507,7 +3507,7 @@ plugins = []
 
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| crate::config::AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
@@ -3581,7 +3581,7 @@ plugins = []
 
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| crate::config::AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -3637,7 +3637,7 @@ plugins = []
 
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| crate::config::AuthForwardMode::OAuthToken,
             &crate::instance::GithubAuthContext::default(),
@@ -3689,7 +3689,7 @@ agents = ["codex"]
 
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| crate::config::AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
@@ -3749,7 +3749,7 @@ agents = ["codex"]
 
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| crate::config::AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -3798,7 +3798,7 @@ agents = ["codex"]
 
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| crate::config::AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -3853,7 +3853,7 @@ agents = ["amp"]
 
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-the-architect",
+            "jk-the-architect",
             &manifest,
             &|_| crate::config::AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -3904,7 +3904,7 @@ agents = ["amp"]
 
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-the-architect",
+            "jk-the-architect",
             &manifest,
             &|_| crate::config::AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
@@ -3942,7 +3942,7 @@ agents = ["amp"]
             workdir: "/workspace/jackin".into(),
             mounts: vec![MaterializedMount {
                 bind_src:
-                    "/data/jackin-the-architect/git/worktree/repo/Users/donbeave/Projects/jackin-project/jackin/jackin-the-architect"
+                    "/data/jk-the-architect/git/worktree/repo/Users/donbeave/Projects/jackin-project/jackin/jk-the-architect"
                         .into(),
                 dst: "/Users/donbeave/Projects/jackin-project/jackin".into(),
                 readonly: false,
@@ -3952,14 +3952,14 @@ agents = ["amp"]
                     host_git_target:
                         "/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git".into(),
                     git_file_override:
-                        "/data/jackin-the-architect/git/overrides/Users/donbeave/Projects/jackin-project/jackin/.git"
+                        "/data/jk-the-architect/git/overrides/Users/donbeave/Projects/jackin-project/jackin/.git"
                             .into(),
                     git_file_target: "/Users/donbeave/Projects/jackin-project/jackin/.git".into(),
                     gitdir_back_override:
-                        "/data/jackin-the-architect/git/overrides/Users/donbeave/Projects/jackin-project/jackin/gitdir"
+                        "/data/jk-the-architect/git/overrides/Users/donbeave/Projects/jackin-project/jackin/gitdir"
                             .into(),
                     gitdir_back_target:
-                        "/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git/worktrees/jackin-the-architect/gitdir"
+                        "/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git/worktrees/jk-the-architect/gitdir"
                             .into(),
                 }),
             }],
@@ -3972,7 +3972,7 @@ agents = ["amp"]
         // 1: worktree at <dst>, no :ro (writable).
         assert_eq!(
             strings[0],
-            "/data/jackin-the-architect/git/worktree/repo/Users/donbeave/Projects/jackin-project/jackin/jackin-the-architect:/Users/donbeave/Projects/jackin-project/jackin"
+            "/data/jk-the-architect/git/worktree/repo/Users/donbeave/Projects/jackin-project/jackin/jk-the-architect:/Users/donbeave/Projects/jackin-project/jackin"
         );
         assert!(!strings[0].ends_with(":ro"));
 
@@ -4014,7 +4014,7 @@ agents = ["amp"]
         );
         assert!(
             strings[3].contains(
-                ":/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git/worktrees/jackin-the-architect/gitdir:ro"
+                ":/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git/worktrees/jk-the-architect/gitdir:ro"
             )
         );
     }
@@ -4483,15 +4483,18 @@ plugins = ["code-review@claude-plugins-official"]
                 .any(|call| call.contains("git -C") || call.contains("git clone"))
         );
         assert!(runner.recorded.iter().any(|call| {
-            call.contains("docker build ") && call.contains("-t jackin-chainargos__the-architect")
+            call.contains("docker build ") && call.contains("-t jk-chainargos_the-architect")
         }));
         assert!(runner.recorded.iter().any(|call| {
-            call.contains("docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-thearchitect-")
+            call.contains("docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jk-")
+                && call.contains("thearchitect")
         }));
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it --name jackin-thearchitect-"))
+            .find(|call| {
+                call.contains("docker run -d -it --name jk-") && call.contains("thearchitect")
+            })
             .unwrap();
         assert!(run_cmd.contains(" --model sonnet"));
         let container_name = launched_role_container_name(&runner);
@@ -4694,9 +4697,10 @@ plugins = ["code-review@claude-plugins-official"]
         .unwrap();
 
         assert!(
-            runner.recorded.iter().any(
-                |call| call.contains("docker build ") && call.contains("-t jackin-agent-smith")
-            )
+            runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("docker build ") && call.contains("-t jk-agent-smith"))
         );
         assert!(
             runner
@@ -4705,14 +4709,12 @@ plugins = ["code-review@claude-plugins-official"]
                 .any(|call| call.contains("docker build "))
         );
         assert!(runner.recorded.iter().any(|call| {
-            call.contains("docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-agentsmith-")
+            call.contains("docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jk-")
+                && call.contains("agentsmith")
         }));
-        assert!(
-            runner
-                .recorded
-                .iter()
-                .any(|call| call.contains("docker run -d -it --name jackin-agentsmith-"))
-        );
+        assert!(runner.recorded.iter().any(
+            |call| call.contains("docker run -d -it --name jk-") && call.contains("agentsmith")
+        ));
         assert!(
             !runner
                 .recorded
@@ -4809,7 +4811,7 @@ model = "gpt-5"
         assert!(
             !paths
                 .data_dir
-                .join("jackin-agent-smith")
+                .join("jk-agent-smith")
                 .join("codex")
                 .join("config.toml")
                 .exists()
@@ -4885,7 +4887,7 @@ agents = ["codex"]
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -4957,7 +4959,7 @@ plugins = []
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -5007,7 +5009,7 @@ plugins = []
         let build_call = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker build ") && call.contains("-t jackin-agent-smith"))
+            .find(|call| call.contains("docker build ") && call.contains("-t jk-agent-smith"))
             .unwrap();
         assert!(build_call.contains("--build-arg JACKIN_HOST_UID="));
         assert!(build_call.contains("--build-arg JACKIN_HOST_GID="));
@@ -5223,7 +5225,7 @@ plugins = []
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner {
-            fail_on: vec!["docker run -d -it --name jackin-agentsmith-".to_string()],
+            fail_on: vec!["docker run -d -it --name jk-".to_string()],
             capture_queue: VecDeque::from(vec![
                 String::new(),
                 String::new(),
@@ -5263,11 +5265,7 @@ plugins = ["code-review@claude-plugins-official"]
         )
         .unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("docker run -d -it --name jackin-agentsmith-")
-        );
+        assert!(error.to_string().contains("docker run -d -it --name jk-"));
         let container_name = launched_role_container_name(&runner);
         let dind = format!("{container_name}-dind");
         let certs_volume = format!("{container_name}-dind-certs");
@@ -5309,7 +5307,7 @@ plugins = ["code-review@claude-plugins-official"]
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -5380,7 +5378,7 @@ plugins = []
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -5492,7 +5490,7 @@ plugins = []
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -5602,7 +5600,7 @@ plugins = []
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -5646,15 +5644,12 @@ plugins = []
     #[test]
     fn append_no_proxy_host_is_idempotent() {
         assert_eq!(
-            append_no_proxy_host(
-                "localhost,jackin-agent-smith-dind",
-                "jackin-agent-smith-dind"
-            ),
-            "localhost,jackin-agent-smith-dind"
+            append_no_proxy_host("localhost,jk-agent-smith-dind", "jk-agent-smith-dind"),
+            "localhost,jk-agent-smith-dind"
         );
         assert_eq!(
-            append_no_proxy_host("", "jackin-agent-smith-dind"),
-            "jackin-agent-smith-dind"
+            append_no_proxy_host("", "jk-agent-smith-dind"),
+            "jk-agent-smith-dind"
         );
     }
 
@@ -5669,7 +5664,7 @@ plugins = []
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -5723,7 +5718,7 @@ plugins = []
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -5783,7 +5778,7 @@ plugins = []
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -5842,7 +5837,7 @@ plugins = []
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -5957,7 +5952,7 @@ plugins = []
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -6061,7 +6056,7 @@ trusted = true
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -6133,7 +6128,7 @@ dst = "/workspace"
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -6236,7 +6231,7 @@ trusted = true
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -6316,7 +6311,7 @@ trusted = true
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -6413,7 +6408,7 @@ trusted = true
             String::new(),
             String::new(),
             String::new(),
-            "jackin-agent-smith".to_string(),
+            "jk-agent-smith".to_string(),
         ]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -6482,7 +6477,8 @@ plugins = []
 
         let (name, _lock) = claim_container_name(&paths, None, &selector, &mut runner).unwrap();
 
-        assert!(name.starts_with("jackin-agentsmith-"), "{name}");
+        assert!(name.starts_with("jk-"), "{name}");
+        assert!(name.contains("agentsmith"), "{name}");
         assert!(!name.contains("clone"), "{name}");
         assert!(crate::instance::naming::is_dns_label(&name), "{name}");
         assert!(
@@ -6490,7 +6486,8 @@ plugins = []
             "{name}"
         );
         assert!(runner.recorded.iter().any(|call| {
-            call.contains("docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-agentsmith-")
+            call.contains("docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jk-")
+                && call.contains("agentsmith")
         }));
         assert!(
             !runner
@@ -6528,7 +6525,8 @@ plugins = []
 
         let (name, _lock) = claim_container_name(&paths, None, &selector, &mut runner).unwrap();
 
-        assert!(name.starts_with("jackin-agentsmith-"), "{name}");
+        assert!(name.starts_with("jk-"), "{name}");
+        assert!(name.ends_with("-agentsmith"), "{name}");
         assert!(!name.contains("clone"), "{name}");
         assert_eq!(
             runner
@@ -6556,12 +6554,13 @@ plugins = []
 
         let (name, _lock) = claim_container_name(&paths, None, &selector, &mut runner).unwrap();
 
-        assert!(name.starts_with("jackin-agentsmith-"), "{name}");
+        assert!(name.starts_with("jk-"), "{name}");
+        assert!(name.ends_with("-agentsmith"), "{name}");
         assert!(
             runner
                 .recorded
                 .iter()
-                .any(|call| call.starts_with("docker rm jackin-agentsmith-"))
+                .any(|call| call.starts_with("docker rm jk-") && call.contains("agentsmith"))
         );
     }
 
@@ -6576,7 +6575,8 @@ plugins = []
 
         let (name, _lock) = claim_container_name(&paths, None, &selector, &mut runner).unwrap();
 
-        assert!(name.starts_with("jackin-agentsmith-"), "{name}");
+        assert!(name.starts_with("jk-"), "{name}");
+        assert!(name.ends_with("-agentsmith"), "{name}");
         assert!(!name.contains("clone"), "{name}");
         assert!(
             !runner
@@ -6596,7 +6596,11 @@ plugins = []
         let (name, _lock) =
             claim_container_name(&paths, Some("my-workspace"), &selector, &mut runner).unwrap();
 
-        assert!(name.starts_with("jackin-myworkspace-agentsmith-"), "{name}");
+        assert!(name.starts_with("jk-"), "{name}");
+        assert!(
+            name.contains("myworkspace") && name.ends_with("-agentsmith"),
+            "{name}"
+        );
         assert!(name.len() <= 58, "{name}");
     }
 
@@ -6604,7 +6608,7 @@ plugins = []
     fn restore_candidate_blocks_noninteractive_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let manifest = workspace_manifest(
             container_name,
             "agent-smith",
@@ -6626,7 +6630,7 @@ plugins = []
     fn running_matching_instance_does_not_block_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let manifest = workspace_manifest(
             container_name,
             "agent-smith",
@@ -6645,7 +6649,7 @@ plugins = []
     fn stopped_matching_instance_does_not_block_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let manifest = workspace_manifest(
             container_name,
             "agent-smith",
@@ -6664,7 +6668,7 @@ plugins = []
     fn related_restore_candidate_blocks_noninteractive_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-thearchitect";
         let manifest = workspace_manifest(
             container_name,
             "the-architect",
@@ -6688,7 +6692,7 @@ plugins = []
     fn running_related_instance_does_not_block_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-thearchitect";
         let manifest = workspace_manifest(
             container_name,
             "the-architect",
@@ -6707,7 +6711,7 @@ plugins = []
     fn stopped_related_instance_does_not_block_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-thearchitect";
         let manifest = workspace_manifest(
             container_name,
             "the-architect",
@@ -6726,7 +6730,7 @@ plugins = []
     fn related_restore_candidates_ignore_finished_instances() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-thearchitect";
         let mut manifest = workspace_manifest(
             container_name,
             "the-architect",
@@ -6745,7 +6749,7 @@ plugins = []
 
     #[test]
     fn related_restore_candidate_with_container_recovers_in_place() {
-        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-thearchitect";
         let candidate = RelatedRestoreCandidate {
             manifest: workspace_manifest(
                 container_name,
@@ -6767,7 +6771,7 @@ plugins = []
 
     #[test]
     fn missing_related_restore_candidate_rebuilds_in_place() {
-        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-thearchitect";
         let candidate = RelatedRestoreCandidate {
             manifest: workspace_manifest(
                 container_name,
@@ -6790,7 +6794,7 @@ plugins = []
 
     #[test]
     fn related_restore_load_options_use_manifest_source_ref_and_agent() {
-        let container_name = "jackin-workspace-thearchitect-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-thearchitect";
         let mut manifest = workspace_manifest(
             container_name,
             "the-architect",
@@ -6825,7 +6829,7 @@ plugins = []
     fn supersede_restore_candidates_updates_manifest_and_index() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let manifest = workspace_manifest(
             container_name,
             "agent-smith",
@@ -6846,7 +6850,7 @@ plugins = []
     fn restore_candidate_label_includes_manifest_and_mount_state() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let mut manifest = workspace_manifest(
             container_name,
             "agent-smith",
@@ -6887,7 +6891,7 @@ plugins = []
     fn record_instance_attach_outcome_updates_manifest() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let manifest = workspace_manifest(
             container_name,
             "agent-smith",

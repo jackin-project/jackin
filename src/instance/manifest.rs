@@ -374,6 +374,20 @@ impl InstanceIndex {
         })
     }
 
+    /// Remove multiple entries from the index in a single lock pass.
+    pub fn remove_many(data_dir: &Path, container_bases: &[&str]) -> anyhow::Result<()> {
+        if container_bases.is_empty() {
+            return Ok(());
+        }
+        let set: std::collections::HashSet<&str> = container_bases.iter().copied().collect();
+        Self::with_lock(data_dir, |index| {
+            index
+                .instances
+                .retain(|entry| !set.contains(entry.container_base.as_str()));
+            Ok(())
+        })
+    }
+
     pub fn mark_purged(data_dir: &Path, container_base: &str) -> anyhow::Result<()> {
         Self::mark_many_purged(data_dir, &[container_base])
     }
@@ -560,7 +574,7 @@ mod tests {
 
     fn sample_manifest() -> InstanceManifest {
         InstanceManifest::new(NewInstanceManifest {
-            container_base: "jackin-workspace-agent-k7p9m2xq",
+            container_base: "jk-k7p9m2xq-workspace-agent",
             workspace_name: Some("workspace"),
             workspace_label: "workspace",
             workdir: "/workspace",
@@ -570,12 +584,12 @@ mod tests {
             agent_runtime: Agent::Claude,
             role_source_git: "https://example.invalid/role.git",
             role_source_ref: Some("main"),
-            image_tag: "jackin-org__agent",
+            image_tag: "jk-org_agent",
             docker: DockerResources {
-                role_container: "jackin-workspace-agent-k7p9m2xq".to_string(),
-                dind_container: "jackin-workspace-agent-k7p9m2xq-dind".to_string(),
-                network: "jackin-workspace-agent-k7p9m2xq-net".to_string(),
-                certs_volume: "jackin-workspace-agent-k7p9m2xq-dind-certs".to_string(),
+                role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
+                dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
+                network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
+                certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
             },
         })
     }
@@ -584,7 +598,7 @@ mod tests {
     fn writes_manifest_under_jackin_state_dir() {
         let temp = tempdir().unwrap();
         let mut manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: "jackin-workspace-agent-k7p9m2xq",
+            container_base: "jk-k7p9m2xq-workspace-agent",
             workspace_name: Some("workspace"),
             workspace_label: "workspace",
             workdir: "/workspace",
@@ -594,12 +608,12 @@ mod tests {
             agent_runtime: Agent::Claude,
             role_source_git: "https://example.invalid/role.git",
             role_source_ref: Some("main"),
-            image_tag: "jackin-org__agent",
+            image_tag: "jk-org_agent",
             docker: DockerResources {
-                role_container: "jackin-workspace-agent-k7p9m2xq".to_string(),
-                dind_container: "jackin-workspace-agent-k7p9m2xq-dind".to_string(),
-                network: "jackin-workspace-agent-k7p9m2xq-net".to_string(),
-                certs_volume: "jackin-workspace-agent-k7p9m2xq-dind-certs".to_string(),
+                role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
+                dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
+                network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
+                certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
             },
         });
         manifest.mark_status(InstanceStatus::Running);
@@ -617,7 +631,7 @@ mod tests {
         let temp = tempdir().unwrap();
         let data_dir = temp.path();
         let manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: "jackin-workspace-agent-k7p9m2xq",
+            container_base: "jk-k7p9m2xq-workspace-agent",
             workspace_name: Some("workspace"),
             workspace_label: "workspace",
             workdir: "/workspace",
@@ -627,16 +641,16 @@ mod tests {
             agent_runtime: Agent::Claude,
             role_source_git: "https://example.invalid/role.git",
             role_source_ref: Some("main"),
-            image_tag: "jackin-org__agent",
+            image_tag: "jk-org_agent",
             docker: DockerResources {
-                role_container: "jackin-workspace-agent-k7p9m2xq".to_string(),
-                dind_container: "jackin-workspace-agent-k7p9m2xq-dind".to_string(),
-                network: "jackin-workspace-agent-k7p9m2xq-net".to_string(),
-                certs_volume: "jackin-workspace-agent-k7p9m2xq-dind-certs".to_string(),
+                role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
+                dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
+                network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
+                certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
             },
         });
         manifest
-            .write(&data_dir.join("jackin-workspace-agent-k7p9m2xq"))
+            .write(&data_dir.join("jk-k7p9m2xq-workspace-agent"))
             .unwrap();
 
         let matches = InstanceIndex::matching_manifests(
@@ -652,7 +666,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].container_base, "jackin-workspace-agent-k7p9m2xq");
+        assert_eq!(matches[0].container_base, "jk-k7p9m2xq-workspace-agent");
         assert!(data_dir.join(INSTANCE_INDEX_FILE).exists());
     }
 
@@ -661,7 +675,7 @@ mod tests {
         let temp = tempdir().unwrap();
         let data_dir = temp.path();
         let mut manifest = InstanceManifest::new(NewInstanceManifest {
-            container_base: "jackin-workspace-agent-k7p9m2xq",
+            container_base: "jk-k7p9m2xq-workspace-agent",
             workspace_name: Some("workspace"),
             workspace_label: "workspace",
             workdir: "/workspace",
@@ -671,12 +685,12 @@ mod tests {
             agent_runtime: Agent::Claude,
             role_source_git: "https://example.invalid/role.git",
             role_source_ref: Some("main"),
-            image_tag: "jackin-org__agent",
+            image_tag: "jk-org_agent",
             docker: DockerResources {
-                role_container: "jackin-workspace-agent-k7p9m2xq".to_string(),
-                dind_container: "jackin-workspace-agent-k7p9m2xq-dind".to_string(),
-                network: "jackin-workspace-agent-k7p9m2xq-net".to_string(),
-                certs_volume: "jackin-workspace-agent-k7p9m2xq-dind-certs".to_string(),
+                role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
+                dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
+                network: "jk-k7p9m2xq-workspace-agent-net".to_string(),
+                certs_volume: "jk-k7p9m2xq-workspace-agent-dind-certs".to_string(),
             },
         });
 
@@ -708,7 +722,7 @@ mod tests {
 
         // Container B has a manifest on disk but no index entry —
         // simulates a manifest written before an index update.
-        let manifest_b_base = "jackin-workspace-agent-orphan01";
+        let manifest_b_base = "jk-orphan01-workspace-agent";
         let manifest_b = InstanceManifest {
             container_base: manifest_b_base.to_string(),
             ..manifest_a.clone()
@@ -751,6 +765,62 @@ mod tests {
         let index = InstanceIndex::read(data_dir.path()).unwrap();
         assert_eq!(index.instances.len(), 1);
         assert_eq!(index.instances[0].status, InstanceStatus::Purged);
+    }
+
+    #[test]
+    fn remove_many_empty_slice_is_noop() {
+        let data_dir = tempdir().unwrap();
+        InstanceIndex::remove_many(data_dir.path(), &[]).unwrap();
+        assert!(!data_dir.path().join("instances.json").exists());
+    }
+
+    #[test]
+    fn remove_many_deletes_only_named_entries() {
+        let data_dir = tempdir().unwrap();
+        let manifest = sample_manifest();
+        let other_base = "jk-a1b2c3d4-other-agent";
+        let mut other = manifest.clone();
+        other.container_base = other_base.to_string();
+        InstanceIndex::update_manifest(data_dir.path(), &manifest).unwrap();
+        InstanceIndex::update_manifest(data_dir.path(), &other).unwrap();
+
+        InstanceIndex::remove_many(data_dir.path(), &[manifest.container_base.as_str()]).unwrap();
+
+        let index = InstanceIndex::read_or_rebuild(data_dir.path()).unwrap();
+        assert_eq!(index.instances.len(), 1);
+        assert_eq!(index.instances[0].container_base, other_base);
+    }
+
+    #[test]
+    fn remove_many_with_absent_name_is_noop() {
+        let data_dir = tempdir().unwrap();
+        let manifest = sample_manifest();
+        InstanceIndex::update_manifest(data_dir.path(), &manifest).unwrap();
+
+        InstanceIndex::remove_many(data_dir.path(), &["jk-nothere-agent"]).unwrap();
+
+        let index = InstanceIndex::read_or_rebuild(data_dir.path()).unwrap();
+        assert_eq!(index.instances.len(), 1);
+        assert_eq!(index.instances[0].container_base, manifest.container_base);
+    }
+
+    #[test]
+    fn remove_many_with_duplicate_names_removes_once() {
+        let data_dir = tempdir().unwrap();
+        let manifest = sample_manifest();
+        InstanceIndex::update_manifest(data_dir.path(), &manifest).unwrap();
+
+        InstanceIndex::remove_many(
+            data_dir.path(),
+            &[
+                manifest.container_base.as_str(),
+                manifest.container_base.as_str(),
+            ],
+        )
+        .unwrap();
+
+        let index = InstanceIndex::read_or_rebuild(data_dir.path()).unwrap();
+        assert!(index.instances.is_empty());
     }
 
     #[test]

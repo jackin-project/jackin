@@ -1,0 +1,165 @@
+---
+title: Instance and Resource Naming
+description: Contributor reference for how jackin names containers, images, derived Docker resources, on-disk state, lock files, and role repos.
+---
+
+import RepoFile from '../../../components/RepoFile.astro';
+
+All naming logic lives in <RepoFile path="src/instance/naming.rs" /> (container names, instance IDs, role-family matching) and <RepoFile path="src/runtime/naming.rs" /> (image tags, derived resource names, display formatting).
+
+## Container name
+
+Every fresh launch claims a unique, DNS-safe container name:
+
+```text
+jk-{instance_id}-{workspace_compact}-{role_compact}   ← saved workspace
+jk-{instance_id}-{role_compact}                       ← ad-hoc launch (no workspace)
+```
+
+**Components:**
+
+| Component | Value | Rules |
+|---|---|---|
+| `jk-` | Fixed prefix | Identifies all jackin-managed Docker resources |
+| `instance_id` | 8 chars | Crockford base32, cryptographically random, collision-resistant |
+| `workspace_compact` | Variable | Original workspace name with non-alphanumeric characters stripped, lowercased |
+| `role_compact` | Variable | Role name with non-alphanumeric characters stripped, lowercased |
+
+**Budget:** The total base name must fit within 58 characters so that `{base}-dind` stays within Docker's 63-character DNS label limit. The budget for workspace and role combined is `58 - 2 (jk) - 8 (id) - 3 (separators) = 45 characters`. If the two compact components together exceed 45 characters they are split evenly and each is truncated with a 4-character SHA-256 suffix to keep the result deterministic.
+
+**Examples:**
+
+```text
+jk-1vft0hkh-chainargosblockchainnodes-agentbrown
+  └─ workspace: chainargos-blockchain-nodes
+  └─ role:      agent-brown
+
+jk-1vft0hkh-agentbrown
+  └─ ad-hoc launch, no workspace
+
+jk-1vft0hkh-scentbird-thearchitect
+  └─ workspace: scentbird
+  └─ role:      the-architect
+```
+
+## Derived Docker resources
+
+Every container launch also creates three Docker resources derived by appending a suffix to the base name:
+
+```text
+Role container:  {base}
+DinD sidecar:    {base}-dind
+Docker network:  {base}-net
+TLS certs vol:   {base}-dind-certs
+```
+
+Example:
+
+```text
+jk-1vft0hkh-chainargosblockchainnodes-agentbrown
+jk-1vft0hkh-chainargosblockchainnodes-agentbrown-dind
+jk-1vft0hkh-chainargosblockchainnodes-agentbrown-net
+jk-1vft0hkh-chainargosblockchainnodes-agentbrown-dind-certs
+```
+
+DNS-sensitive environment variables (`DOCKER_HOST`, `JACKIN_DIND_HOSTNAME`, `DOCKER_TLS_SAN`, `NO_PROXY`, `no_proxy`, `TESTCONTAINERS_HOST_OVERRIDE`) use the DinD name as the hostname.
+
+## Docker image name
+
+The Docker image is built once per role and rebuilt only when the role changes. It is stable across sessions.
+
+```text
+Namespaced role:  jk-{namespace}_{role-name}
+Flat role:        jk-{role-name}
+```
+
+The underscore (`_`) separates namespace from role name. This is collision-safe: role segment names are validated to `[a-z0-9-]` only, so `_` can never appear in a role name and unambiguously marks the namespace boundary.
+
+**Examples:**
+
+```text
+jk-chainargos_agent-brown   ← chainargos/agent-brown
+jk-agent-smith              ← agent-smith (no namespace)
+jk-scentbird_the-architect  ← scentbird/the-architect
+```
+
+**Collision safety:** `chainargos/agent-brown` produces `jk-chainargos_agent-brown` while a flat role literally named `chainargos-agent-brown` produces `jk-chainargos-agent-brown`. The underscore vs hyphen difference makes them distinct.
+
+## State directory
+
+The per-instance state directory on the host always has the same name as the container:
+
+```text
+~/.jackin/data/{container_name}/
+```
+
+Example:
+
+```text
+~/.jackin/data/jk-1vft0hkh-chainargosblockchainnodes-agentbrown/
+```
+
+Set once at launch time, never renamed. The Docker container name and the state directory name are always identical — they are derived from the same string in <RepoFile path="src/instance/mod.rs" />.
+
+## Repo lock files
+
+The repo cache uses a stable per-role lock file to serialize concurrent git clone/fetch operations for the same role:
+
+```text
+~/.jackin/data/{namespace}_{role-name}.repo.lock
+~/.jackin/data/{namespace}_{role-name}.locks/
+```
+
+Example:
+
+```text
+~/.jackin/data/chainargos_agent-brown.repo.lock
+~/.jackin/data/chainargos_agent-brown.locks/
+```
+
+The same `_` separator as image names makes these stable across sessions and collision-safe between namespaced and flat selectors.
+
+## Roles cache
+
+Cloned role repos are cached under `~/.jackin/roles/` using the selector's namespace and name directly:
+
+```text
+~/.jackin/roles/{role-name}/           ← flat role
+~/.jackin/roles/{namespace}/{role-name}/ ← namespaced role
+```
+
+Example:
+
+```text
+~/.jackin/roles/agent-smith/
+~/.jackin/roles/chainargos/agent-brown/
+```
+
+## GitHub role repository names
+
+By convention, role repos on GitHub are named `jackin-{role-name}`. This is a GitHub naming convention only — it has no effect on Docker container names or image tags.
+
+```text
+https://github.com/ChainArgos/jackin-agent-brown
+https://github.com/jackin-project/jackin-the-architect
+https://github.com/jackin-project/jackin-agent-smith
+```
+
+When `jackin role new` scaffolds a new role repo, it creates the directory at:
+
+```text
+{projects_dir}/{namespace}/jackin-{role-name}   ← namespaced
+{projects_dir}/jackin-{role-name}               ← flat
+```
+
+## CLI selector formats
+
+`jackin hardline`, `jackin eject`, and `jackin purge` accept three forms:
+
+```text
+chainargos/agent-brown              ← role selector: finds running containers for this role
+jk-1vft0hkh-agentbrown             ← full container name: exact match
+1vft0hkh                           ← instance ID: resolved via the instance index
+```
+
+When a role selector matches exactly one running container, the command proceeds directly. When it matches multiple containers, jackin asks the operator to choose by showing each container's workspace or working directory.

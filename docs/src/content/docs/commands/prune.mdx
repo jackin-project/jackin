@@ -1,0 +1,111 @@
+---
+title: jackin prune
+description: "Delete cached or stale jackin data in bulk"
+---
+
+## Synopsis
+
+```bash
+jackin prune <SUBCOMMAND>
+```
+
+`jackin prune` removes cached or stale data that jackin manages on your host machine. Unlike `jackin purge`, which targets a specific instance by selector, `prune` operates in bulk across a category of data.
+
+## Subcommands
+
+| Subcommand | What it removes |
+|---|---|
+| `roles` | Cached role repositories |
+| `cache` | Shared caches (terminfo, version-check results) |
+| `images` | Unused jackin-managed Docker images |
+| `instances` | On-disk state for terminated instances |
+| `all` | All of the above, in order |
+
+## `jackin prune roles`
+
+```bash
+jackin prune roles
+```
+
+Removes the local role-repo cache. Role repos are re-cloned automatically the next time a role that uses them is launched.
+
+## `jackin prune cache`
+
+```bash
+jackin prune cache
+```
+
+Removes the shared cache directory, including compiled terminfo entries and version-check results. All caches regenerate automatically on the next jackin invocation that needs them.
+
+## `jackin prune images`
+
+```bash
+jackin prune images
+```
+
+Removes `jk-*` Docker images that have no containers — running or stopped — that depend on them. Images still in use by any container are skipped silently. Because Docker images are rebuilt from the role Dockerfile on the next `jackin load`, removing an unused image does not lose any data.
+
+## `jackin prune instances`
+
+```bash
+jackin prune instances
+```
+
+Removes on-disk state and index entries for instances in terminal statuses:
+
+| Status | Pruned? |
+|---|---|
+| `clean_exited` | Yes |
+| `superseded` | Yes |
+| `failed_setup` | Yes |
+| `purged` (tombstones) | Yes — cleared from the index |
+| `crashed` | No — use `jackin eject <selector> --purge` |
+| `preserved_dirty` | No — instance has uncommitted changes |
+| `preserved_unpushed` | No — instance has unpushed commits |
+| `restore_available` | No — local state is still recoverable |
+| `active` / `running` | No — instance is live |
+
+Instances that cannot be pruned because Docker resources are still present are listed with a suggestion to use `jackin eject <selector> --purge` instead.
+
+## `jackin prune all`
+
+```bash
+jackin prune all [--yes]
+```
+
+Runs all four subcommands in order: `instances` → `images` → `roles` → `cache`. Prompts for confirmation before proceeding unless `--yes` is passed.
+
+### Options
+
+| Option | Description |
+|---|---|
+| `--yes`, `-y` | Skip the confirmation prompt |
+
+## Examples
+
+```bash
+# Free up disk space from terminated instances
+jackin prune instances
+
+# Remove Docker images that are no longer used by any container
+jackin prune images
+
+# Remove cloned role repos (will be re-cloned on next launch)
+jackin prune roles
+
+# Full cleanup in one command
+jackin prune all
+
+# Non-interactive full cleanup (for scripts)
+jackin prune all --yes
+```
+
+## What `prune` does not touch
+
+- **Running instances** — containers that are currently attached or running are never stopped or purged by `prune`.
+- **Stopped instances with recovery state** — instances with status `restore_available`, `crashed`, `preserved_dirty`, or `preserved_unpushed` are skipped. Use `jackin hardline` to reconnect or `jackin eject <selector> --purge` to explicitly remove them.
+- **Operator config** — `~/.config/jackin/config.toml` and saved workspaces are never modified by `prune`.
+
+## Relationship to `jackin purge`
+
+`jackin purge` targets a single instance by selector and requires an explicit role, instance ID, or container name. `jackin prune instances` does the same job in bulk for every instance already in a terminal state, without requiring the operator to name each one.

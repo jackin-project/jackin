@@ -15,6 +15,16 @@ pub fn is_missing_resource_error(message: &str) -> bool {
         || lower.contains("no such volume")
 }
 
+/// `True` when a Docker `rmi` error indicates an image is still referenced
+/// by a container. Match is case-insensitive.
+#[must_use]
+pub fn is_image_in_use_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("image is being used by")
+        || lower.contains("cannot be forced")
+        || lower.contains("must be forced")
+}
+
 /// Options that control how a command is executed.
 #[derive(Clone, Debug, Default)]
 pub struct RunOptions {
@@ -388,5 +398,34 @@ mod tests {
         let args = &["run", "-e"];
         let redacted = redact_env_args(args);
         assert_eq!(redacted, vec!["run", "-e"]);
+    }
+
+    #[test]
+    fn is_image_in_use_error_matches_all_three_patterns() {
+        assert!(is_image_in_use_error(
+            "image is being used by stopped container abc123"
+        ));
+        assert!(is_image_in_use_error(
+            "conflict: unable to remove (cannot be forced)"
+        ));
+        assert!(is_image_in_use_error(
+            "conflict: unable to remove (must be forced)"
+        ));
+    }
+
+    #[test]
+    fn is_image_in_use_error_is_case_insensitive() {
+        assert!(is_image_in_use_error(
+            "Image Is Being Used By running container"
+        ));
+        assert!(is_image_in_use_error("CANNOT BE FORCED"));
+    }
+
+    #[test]
+    fn is_image_in_use_error_does_not_match_real_errors() {
+        assert!(!is_image_in_use_error("permission denied"));
+        assert!(!is_image_in_use_error(
+            "Error response from daemon: no such image"
+        ));
     }
 }
