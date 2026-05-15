@@ -89,6 +89,26 @@ mod tests {
     }
 
     #[test]
+    fn image_name_for_branch_substitutes_slashes_and_keeps_prefix() {
+        let namespaced = crate::selector::RoleSelector::new(Some("chainargos"), "agent-brown");
+        let flat = crate::selector::RoleSelector::new(None, "the-architect");
+
+        assert_eq!(
+            image_name_for_branch(&namespaced, "feat/my-pr"),
+            "jk-chainargos_agent-brown-feat-my-pr"
+        );
+        assert_eq!(
+            image_name_for_branch(&flat, "main"),
+            "jk-the-architect-main"
+        );
+        // Branch with multiple slashes — all become dashes.
+        assert_eq!(
+            image_name_for_branch(&flat, "feat/scope/detail"),
+            "jk-the-architect-feat-scope-detail"
+        );
+    }
+
+    #[test]
     fn dind_certs_volume_derives_from_container_name() {
         assert_eq!(
             dind_certs_volume("jk-agent-smith"),

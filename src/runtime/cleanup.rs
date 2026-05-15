@@ -167,8 +167,15 @@ fn collect_orphaned_dind(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<
 /// volumes, and networks.  Errors are logged but do not abort the launch — GC
 /// is best-effort.
 pub(super) fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
-    let Ok(orphaned) = collect_orphaned_dind(runner) else {
-        return;
+    let orphaned = match collect_orphaned_dind(runner) {
+        Ok(v) => v,
+        Err(err) => {
+            eprintln!(
+                "  {} GC: could not list orphaned DinD containers: {err}",
+                "warning:".yellow().bold()
+            );
+            return;
+        }
     };
 
     for info in &orphaned {
@@ -211,7 +218,7 @@ pub(super) fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
 /// Remove jackin-managed Docker networks whose owning role container no
 /// longer exists.
 fn gc_orphaned_networks(runner: &mut impl CommandRunner) {
-    let Ok(net_output) = runner.capture(
+    let net_output = match runner.capture(
         "docker",
         &[
             "network",
@@ -222,8 +229,15 @@ fn gc_orphaned_networks(runner: &mut impl CommandRunner) {
             "{{.Name}}\t{{.Label \"jackin.role\"}}",
         ],
         None,
-    ) else {
-        return;
+    ) {
+        Ok(v) => v,
+        Err(err) => {
+            eprintln!(
+                "  {} GC: could not list orphaned networks: {err}",
+                "warning:".yellow().bold()
+            );
+            return;
+        }
     };
 
     let networks: Vec<(&str, &str)> = net_output
@@ -237,8 +251,15 @@ fn gc_orphaned_networks(runner: &mut impl CommandRunner) {
         return;
     }
 
-    let Ok(running) = list_role_names(runner, false) else {
-        return;
+    let running = match list_role_names(runner, false) {
+        Ok(v) => v,
+        Err(err) => {
+            eprintln!(
+                "  {} GC: could not list running role containers: {err}",
+                "warning:".yellow().bold()
+            );
+            return;
+        }
     };
 
     for (net_name, role) in networks {
@@ -383,8 +404,9 @@ pub fn prune_images(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
 /// Purge on-disk state for terminated instances and clear their index entries.
 ///
 /// Targets `clean_exited`, `superseded`, `failed_setup`, and `purged`
-/// tombstones. Any instance whose Docker resources are still present is
-/// skipped; use `jackin eject <selector> --purge` for those.
+/// tombstones. Any instance whose filesystem teardown fails — typically because
+/// Docker resources are still present — is skipped; use
+/// `jackin eject <selector> --purge` for those.
 pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
 
@@ -1071,7 +1093,9 @@ jk-a1b2c3d4-myworkspace-agentsmith"
 
         assert_eq!(
             runner.recorded,
-            vec!["docker images --filter reference=jk-* --format {{.Repository}}:{{.Tag}}"]
+            vec![format!(
+                "docker images --filter {FILTER_IMAGES} --format {{{{.Repository}}}}:{{{{.Tag}}}}"
+            )]
         );
     }
 
@@ -1180,6 +1204,52 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         assert!(
             paths.data_dir.join(crashed).exists(),
             "crashed should be kept"
+        );
+    }
+
+    #[test]
+    fn prune_instances_prunes_purged_tombstone_with_no_state_directory() {
+        // Purged tombstones are index-only entries — the state dir is already gone.
+        // purge_container_filesystem must tolerate NotFound so the tombstone is
+        // removed from the index without error.
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container = "jk-k7p9m2xq-agentsmith";
+        // Register in the index but do NOT create the state directory.
+        let manifest =
+            crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+                container_base: container,
+                workspace_name: Some("ws"),
+                workspace_label: "ws",
+                workdir: "/ws",
+                host_workdir_fingerprint: "sha256:test",
+                role_key: "agent-smith",
+                role_display_name: "Agent Smith",
+                agent_runtime: crate::agent::Agent::Claude,
+                role_source_git: "https://example.invalid/agent-smith.git",
+                role_source_ref: None,
+                image_tag: "jk-agent-smith",
+                docker: crate::instance::DockerResources {
+                    role_container: container.to_string(),
+                    dind_container: format!("{container}-dind"),
+                    network: format!("{container}-net"),
+                    certs_volume: format!("{container}-dind-certs"),
+                },
+            });
+        let mut manifest = manifest;
+        manifest.mark_status(crate::instance::InstanceStatus::Purged);
+        crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+
+        let mut runner = FakeRunner::default();
+        prune_instances(&paths, &mut runner).unwrap();
+
+        let index = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
+        assert!(
+            index
+                .instances
+                .iter()
+                .all(|e| e.container_base != container),
+            "tombstone should be cleared from the index"
         );
     }
 

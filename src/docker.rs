@@ -19,7 +19,8 @@ pub fn is_missing_resource_error(message: &str) -> bool {
 /// `True` when a Docker `rmi` error indicates an image is still referenced
 /// by a running or stopped container. Match is case-insensitive.
 ///
-/// `"cannot be forced"` guards the running-container case. `"must be forced"`
+/// `"image is being used by"` covers stopped containers. `"cannot be forced"`
+/// covers running containers (Docker refuses `rmi --force`). `"must be forced"`
 /// fires for multi-repo image references (not a container conflict) and is
 /// intentionally excluded — those images should be removable.
 #[must_use]

@@ -164,4 +164,4 @@ jk-1vft0hkh-agentbrown             ← full container name: exact match
 1vft0hkh                           ← instance ID: resolved via the instance index
 ```
 
-When a role selector matches exactly one running container, the command proceeds directly. When it matches multiple containers, jackin asks the operator to choose by showing each container's workspace or working directory.
+When a role selector matches exactly one running container, the command proceeds directly. When it matches multiple containers, the command fails with an error that lists the matching container names and asks the operator to pass a specific container name or instance ID instead.

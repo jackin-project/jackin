@@ -19,8 +19,8 @@ pub enum PruneCommand {
     Cache,
     /// Remove unused jackin-managed Docker images
     ///
-    /// Removes jk-* images that have no containers (running or stopped).
-    /// Images still used by any container are skipped.
+    /// Removes jk-* images that have no role containers (running or stopped).
+    /// Images still used by a role container are skipped.
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Images,
     /// Purge on-disk state for terminated instances
