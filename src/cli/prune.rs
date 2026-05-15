@@ -26,7 +26,7 @@ pub enum PruneCommand {
     /// Purge on-disk state for terminated instances
     ///
     /// Removes state directories and index entries for instances in terminal
-    /// statuses: clean_exited, superseded, failed_setup, and purged
+    /// statuses: `clean_exited`, `superseded`, `failed_setup`, and `purged`
     /// tombstones. Crashed, preserved, and recoverable instances are skipped
     /// — use `jackin eject <selector> --purge` for those.
     #[command(before_help = BANNER, styles = HELP_STYLES)]

@@ -179,9 +179,10 @@ pub(super) fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
             run_cleanup_command(runner, &["volume", "rm", &certs_volume]),
             run_cleanup_command(runner, &["network", "rm", &network]),
         ];
-        for (result, label) in results
-            .iter()
-            .zip(["role container", "dind sidecar", "certs volume", "network"])
+        for (result, label) in
+            results
+                .iter()
+                .zip(["role container", "dind sidecar", "certs volume", "network"])
         {
             if let Err(err) = result {
                 eprintln!(
@@ -191,7 +192,7 @@ pub(super) fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
                 );
             }
         }
-        if results.iter().any(|r| r.is_ok()) {
+        if results.iter().any(Result::is_ok) {
             eprintln!(
                 "        {} orphaned resources for {}",
                 "cleaned up".dimmed(),
@@ -1035,10 +1036,12 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         prune_images(&mut runner).unwrap();
 
         // rmi was attempted (image was not in the pre-filter set)
-        assert!(runner
-            .recorded
-            .iter()
-            .any(|c| c.contains("docker rmi jk-agent-smith:latest")));
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker rmi jk-agent-smith:latest"))
+        );
     }
 
     #[test]
@@ -1107,14 +1110,18 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         prune_images(&mut runner).unwrap();
 
         // Only jk-agent-smith:latest should have had rmi attempted.
-        assert!(runner
-            .recorded
-            .iter()
-            .any(|c| c.contains("docker rmi jk-agent-smith:latest")));
-        assert!(!runner
-            .recorded
-            .iter()
-            .any(|c| c.contains("docker rmi jk-neo:latest")));
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker rmi jk-agent-smith:latest"))
+        );
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker rmi jk-neo:latest"))
+        );
     }
 
     #[test]
