@@ -63,10 +63,11 @@ pub(super) fn image_name(selector: &RoleSelector) -> String {
 
 /// Image tag for a branch-specific local build. Branch slashes become dashes
 /// so the tag is a valid Docker name and does not overwrite the stable image
-/// (e.g. `jk-the-architect-feat-my-pr`).
+/// (e.g. `jk-the-architect_feat-my-pr`). The `_` between role slug and branch
+/// slug mirrors the namespace separator so the boundary is unambiguous.
 pub(super) fn image_name_for_branch(selector: &RoleSelector, branch: &str) -> String {
     let slug = branch.replace('/', "-").to_ascii_lowercase();
-    format!("{CONTAINER_PREFIX_DASH}{}-{slug}", runtime_slug(selector))
+    format!("{CONTAINER_PREFIX_DASH}{}_{slug}", runtime_slug(selector))
 }
 
 /// Docker volume name for the TLS client certificates shared between the
@@ -95,16 +96,16 @@ mod tests {
 
         assert_eq!(
             image_name_for_branch(&namespaced, "feat/my-pr"),
-            "jk-chainargos_agent-brown-feat-my-pr"
+            "jk-chainargos_agent-brown_feat-my-pr"
         );
         assert_eq!(
             image_name_for_branch(&flat, "main"),
-            "jk-the-architect-main"
+            "jk-the-architect_main"
         );
         // Branch with multiple slashes — all become dashes.
         assert_eq!(
             image_name_for_branch(&flat, "feat/scope/detail"),
-            "jk-the-architect-feat-scope-detail"
+            "jk-the-architect_feat-scope-detail"
         );
     }
 
