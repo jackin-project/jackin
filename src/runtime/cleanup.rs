@@ -343,8 +343,10 @@ pub fn prune_images(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
 
     if removed == 0 && failed == 0 {
         println!("No unused jackin-managed images to remove.");
-    } else {
+    } else if failed == 0 {
         println!("Removed {removed} image(s), skipped {skipped}.");
+    } else {
+        println!("Removed {removed} image(s), skipped {skipped}, failed {failed}.");
     }
     Ok(())
 }
@@ -1088,12 +1090,12 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         let mut runner = FakeRunner::default();
         prune_instances(&paths, &mut runner).unwrap();
 
+        let index = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
         for name in [clean, superseded, failed, purged] {
             assert!(
                 !paths.data_dir.join(name).exists(),
                 "{name} should be pruned"
             );
-            let index = crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
             assert!(
                 index.instances.iter().all(|e| e.container_base != name),
                 "{name} should be absent from index"
