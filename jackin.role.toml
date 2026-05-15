@@ -7,6 +7,7 @@ agents = ["claude", "codex", "amp"]
 name = "Agent Brown"
 
 [claude]
+model = "claude-sonnet-4-6"
 plugins = [
   "code-review@claude-plugins-official",
   "code-simplifier@claude-plugins-official",
