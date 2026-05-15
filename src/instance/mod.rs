@@ -10,10 +10,7 @@ pub use manifest::{
     DockerResources, InstanceIndex, InstanceIndexEntry, InstanceManifest, InstanceQuery,
     InstanceStatus, NewInstanceManifest,
 };
-pub use naming::{
-    CONTAINER_PREFIX_DASH, class_family_matches, container_name_with_id, new_container_name,
-    runtime_slug,
-};
+pub use naming::{class_family_matches, container_name_with_id, new_container_name, runtime_slug};
 
 /// Outcome of the `.claude.json` provisioning step, so callers can surface
 /// a one-time notice when host credentials are forwarded.
