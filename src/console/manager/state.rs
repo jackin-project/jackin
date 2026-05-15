@@ -1801,7 +1801,7 @@ mod tests {
                 agent_runtime: crate::agent::Agent::Claude,
                 role_source_git: "https://example.invalid/alpha.git",
                 role_source_ref: None,
-                image_tag: "jk-alpha",
+                image_tag: "jk_alpha",
                 docker: crate::instance::DockerResources {
                     role_container: "jk-k7p9m2xq-demo-alpha".into(),
                     dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
@@ -1847,7 +1847,7 @@ mod tests {
                 agent_runtime: crate::agent::Agent::Claude,
                 role_source_git: "https://example.invalid/alpha.git",
                 role_source_ref: None,
-                image_tag: "jk-alpha",
+                image_tag: "jk_alpha",
                 docker: crate::instance::DockerResources {
                     role_container: "jk-k7p9m2xq-demo-alpha".into(),
                     dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),

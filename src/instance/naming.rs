@@ -1,7 +1,7 @@
 use crate::selector::RoleSelector;
 use sha2::{Digest, Sha256};
 
-pub const CONTAINER_PREFIX: &str = "jk";
+pub(crate) const CONTAINER_PREFIX: &str = "jk";
 pub const CONTAINER_PREFIX_DASH: &str = "jk-";
 const INSTANCE_ID_LEN: usize = 8;
 const ROLE_BASE_DNS_BUDGET: usize = 58;
