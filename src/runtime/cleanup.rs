@@ -307,7 +307,7 @@ pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
     prune_dir(&paths.cache_dir, "shared cache")
 }
 
-/// Remove jk-* Docker images that have no jackin-managed role containers (running or stopped).
+/// Remove jk_* Docker images that have no jackin-managed role containers (running or stopped).
 ///
 /// Per-image `rmi` failures are printed to stderr and counted in the summary but do not
 /// propagate. The initial `docker images` and `docker ps` enumeration calls do propagate.
@@ -444,13 +444,24 @@ pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> 
         // Stale index entries with no state dir are harmless — purge_container_filesystem
         // tolerates NotFound, so the next prune run retries unless the index is corrupt.
         let refs: Vec<&str> = removed.iter().map(String::as_str).collect();
-        if let Err(err) = InstanceIndex::remove_many(&paths.data_dir, &refs) {
-            eprintln!(
-                "{} instance index could not be updated: {err:#}; run `jackin prune instances` again to retry",
-                "warning:".yellow().bold()
+        let index_updated = match InstanceIndex::remove_many(&paths.data_dir, &refs) {
+            Ok(()) => true,
+            Err(err) => {
+                eprintln!(
+                    "{} instance index could not be updated: {err:#}; run `jackin prune instances` again to retry",
+                    "warning:".yellow().bold()
+                );
+                false
+            }
+        };
+        if index_updated {
+            println!("Pruned {} instance(s):", removed.len());
+        } else {
+            println!(
+                "Removed state for {} instance(s) (index not updated):",
+                removed.len()
             );
         }
-        println!("Pruned {} instance(s):", removed.len());
         for name in &removed {
             println!("  {name}");
         }
@@ -944,6 +955,32 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         };
 
         gc_orphaned_resources(&mut runner); // must not panic
+    }
+
+    #[test]
+    fn gc_does_not_panic_when_list_role_names_fails_in_orphaned_networks() {
+        // Network ls succeeds (non-empty), but the docker ps to list running roles fails.
+        // gc_orphaned_networks must emit a warning and return without calling network rm.
+        let mut runner = FakeRunner {
+            fail_with: vec![(
+                "label=jackin.kind=role".to_string(),
+                "Error response from daemon: socket timeout".to_string(),
+            )],
+            capture_queue: std::collections::VecDeque::from(vec![
+                String::new(),                                    // collect_orphaned_dind: no DinD
+                "jk-agent-smith-net\tjk-agent-smith".to_string(), // gc_orphaned_networks: network ls
+            ]),
+            ..Default::default()
+        };
+
+        gc_orphaned_resources(&mut runner); // must not panic
+
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker network rm"))
+        );
     }
 
     // ── prune_dir ────────────────────────────────────────────────────────────

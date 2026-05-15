@@ -18,7 +18,7 @@ Examples:
 pub struct EjectArgs {
     /// Role class selector, instance ID, or container name to stop
     pub selector: String,
-    /// Stop every instance of this role class, not just the default
+    /// Stop every matching instance (otherwise errors if multiple exist)
     #[arg(long)]
     pub all: bool,
     /// Also delete persisted state after stopping
@@ -41,7 +41,7 @@ Examples:
 pub struct PurgeArgs {
     /// Role class selector, instance ID, or container name
     pub selector: String,
-    /// Delete state for every instance, not just the default
+    /// Delete state for every matching instance (otherwise errors if multiple exist)
     #[arg(long)]
     pub all: bool,
 }

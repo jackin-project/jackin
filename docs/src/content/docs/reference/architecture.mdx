@@ -138,7 +138,7 @@ On first worktree creation for a host repo, jackin' enables `extensions.worktree
 Materialized isolated mounts are recorded at:
 
 ```
-<data_dir>/jk-<container>/.jackin/isolation.json
+<data_dir>/<container>/.jackin/isolation.json
 ```
 
 The file lives next to the per-container agent state and `.jackin/` metadata and is the source of truth for `purge` after the operator has changed (or removed) the workspace config. Each record contains at least:

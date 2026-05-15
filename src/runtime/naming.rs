@@ -5,9 +5,8 @@ use crate::selector::RoleSelector;
 
 /// Prefix for jackin-managed Docker image names.
 ///
-/// Uses `_` as the separator (vs `jk-` for container names) so the image-name
-/// boundary is visually distinct from the container-name boundary and all
-/// structural separators in an image name are `_`.
+/// Uses `_` as the separator so all structural boundaries in an image name
+/// are `_`, visually distinct from container names which use `jk-{id}-…`.
 pub(super) const IMAGE_PREFIX: &str = "jk_";
 
 // ── Docker label keys ─────────────────────────────────────────────────────
@@ -70,8 +69,8 @@ pub(super) fn image_name(selector: &RoleSelector) -> String {
 /// Image tag for a branch-specific local build. Branch slashes become dashes
 /// so the tag is a valid Docker name and does not overwrite the stable image
 /// (e.g. `jk_the-architect_feat-my-pr`). All structural separators in image
-/// names are `_` — unambiguous because role names and branch slugs contain
-/// only `[a-z0-9-]`.
+/// names are `_`. Role names and branch slugs contain only `[a-z0-9-]`, so
+/// `_` marks every boundary.
 pub(super) fn image_name_for_branch(selector: &RoleSelector, branch: &str) -> String {
     let slug = branch.replace('/', "-").to_ascii_lowercase();
     format!("{IMAGE_PREFIX}{}_{slug}", runtime_slug(selector))
