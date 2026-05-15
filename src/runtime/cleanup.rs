@@ -173,16 +173,19 @@ pub(super) fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
         let certs_volume = dind_certs_volume(&info.role);
         let network = format!("{}-net", info.role);
 
-        let _ = run_cleanup_command(runner, &["rm", "-f", &info.role]);
-        let _ = run_cleanup_command(runner, &["rm", "-f", &info.name]);
-        let _ = run_cleanup_command(runner, &["volume", "rm", &certs_volume]);
-        let _ = run_cleanup_command(runner, &["network", "rm", &network]);
-
-        eprintln!(
-            "        {} orphaned resources for {}",
-            "cleaned up".dimmed(),
-            info.role
-        );
+        let results = [
+            run_cleanup_command(runner, &["rm", "-f", &info.role]),
+            run_cleanup_command(runner, &["rm", "-f", &info.name]),
+            run_cleanup_command(runner, &["volume", "rm", &certs_volume]),
+            run_cleanup_command(runner, &["network", "rm", &network]),
+        ];
+        if results.iter().any(|r| r.is_ok()) {
+            eprintln!(
+                "        {} orphaned resources for {}",
+                "cleaned up".dimmed(),
+                info.role
+            );
+        }
     }
 
     // Clean up any orphaned networks that survived without a DinD container
@@ -402,7 +405,7 @@ pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> 
         // the index file itself is permanently corrupt.
         if let Err(err) = InstanceIndex::remove_many(&paths.data_dir, &refs) {
             eprintln!(
-                "{} instance index could not be updated: {err}; run `jackin prune instances` again to retry",
+                "{} instance index could not be updated: {err:#}; run `jackin prune instances` again to retry",
                 "warning:".yellow().bold()
             );
         }
@@ -1077,6 +1080,27 @@ jk-a1b2c3d4-myworkspace-agentsmith"
                 .iter()
                 .any(|c| c.contains("docker rmi jk-agent-smith:latest"))
         );
+    }
+
+    #[test]
+    fn prune_images_mixed_removed_and_skipped() {
+        // One image is in-use (pre-filtered), one is removed successfully.
+        let mut runner = FakeRunner::with_capture_queue([
+            "jk-agent-smith:latest\njk-neo:latest".to_string(), // docker images: two images
+            "jk-neo".to_string(), // docker ps -a: jk-neo in use (no :tag → normalised to jk-neo:latest)
+        ]);
+
+        prune_images(&mut runner).unwrap();
+
+        // Only jk-agent-smith:latest should have had rmi attempted.
+        assert!(runner
+            .recorded
+            .iter()
+            .any(|c| c.contains("docker rmi jk-agent-smith:latest")));
+        assert!(!runner
+            .recorded
+            .iter()
+            .any(|c| c.contains("docker rmi jk-neo:latest")));
     }
 
     #[test]
