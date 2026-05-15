@@ -69,41 +69,43 @@ DNS-sensitive environment variables (`DOCKER_HOST`, `JACKIN_DIND_HOSTNAME`, `DOC
 The Docker image is built once per role and rebuilt only when the role changes. It is stable across sessions.
 
 ```text
-Namespaced role:  jk-{namespace}_{role-name}
-Flat role:        jk-{role-name}
+Namespaced role:  jk_{namespace}_{role-name}
+Flat role:        jk_{role-name}
 ```
 
-The underscore (`_`) separates namespace from role name. This is collision-safe: role segment names are validated to `[a-z0-9-]` only, so `_` can never appear in a role name and unambiguously marks the namespace boundary.
+All structural separators in image names are `_`. Role segment names are validated to `[a-z0-9-]` only, so `_` never appears in a role or namespace name — `_` always marks a structural boundary, never a word break inside a component.
 
 **Examples:**
 
 ```text
-jk-chainargos_agent-brown   ← chainargos/agent-brown
-jk-agent-smith              ← agent-smith (no namespace)
-jk-scentbird_the-architect  ← scentbird/the-architect
+jk_chainargos_agent-brown   ← chainargos/agent-brown
+jk_agent-smith              ← agent-smith (no namespace)
+jk_scentbird_the-architect  ← scentbird/the-architect
 ```
 
-**Collision safety:** `chainargos/agent-brown` produces `jk-chainargos_agent-brown` while a flat role literally named `chainargos-agent-brown` produces `jk-chainargos-agent-brown`. The underscore vs hyphen difference makes them distinct.
+**Collision safety:** `chainargos/agent-brown` produces `jk_chainargos_agent-brown` while a flat role literally named `chainargos-agent-brown` produces `jk_chainargos-agent-brown`. The underscore vs hyphen difference makes them distinct.
+
+**Image vs container names:** Container names use `jk-{id}-…` with `-` separators (required for DNS label validity). Image names use `jk_…` with `_` separators. Both start with `jk` but use a different delimiter, so they are visually distinct in `docker ps` and `docker images` output.
 
 ### Branch-specific build tags
 
-When a role is built from a specific branch (`jackin load --branch`), the image tag adds the branch slug after a second `_` separator:
+When a role is built from a specific branch (`jackin load --branch`), the image tag adds the branch slug after a `_` separator:
 
 ```text
-Namespaced role:  jk-{namespace}_{role-name}_{branch-slug}
-Flat role:        jk-{role-name}_{branch-slug}
+Namespaced role:  jk_{namespace}_{role-name}_{branch-slug}
+Flat role:        jk_{role-name}_{branch-slug}
 ```
 
-Branch slashes become dashes in the slug. The `_` between role slug and branch slug follows the same convention as the namespace separator — unambiguous because branch slugs contain only `[a-z0-9-]`.
+Branch slashes become dashes in the slug. All separators are `_` — unambiguous because branch slugs contain only `[a-z0-9-]`.
 
 **Examples:**
 
 ```text
-jk-the-architect_feat-my-pr          ← the-architect, branch feat/my-pr
-jk-chainargos_agent-brown_feat-my-pr ← chainargos/agent-brown, branch feat/my-pr
+jk_the-architect_feat-my-pr          ← the-architect, branch feat/my-pr
+jk_chainargos_agent-brown_feat-my-pr ← chainargos/agent-brown, branch feat/my-pr
 ```
 
-Branch-specific images do not replace the stable image — they coexist with `jk-the-architect` under a distinct tag.
+Branch-specific images do not replace the stable image — they coexist with `jk_the-architect` under a distinct tag.
 
 ## State directory
 

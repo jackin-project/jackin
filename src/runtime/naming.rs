@@ -1,8 +1,14 @@
 //! Naming conventions, Docker label/filter constants, and lightweight identifier helpers.
 
-use crate::instance::naming::CONTAINER_PREFIX_DASH;
 use crate::instance::runtime_slug;
 use crate::selector::RoleSelector;
+
+/// Prefix for jackin-managed Docker image names.
+///
+/// Uses `_` as the separator (vs `jk-` for container names) so the image-name
+/// boundary is visually distinct from the container-name boundary and all
+/// structural separators in an image name are `_`.
+pub(super) const IMAGE_PREFIX: &str = "jk_";
 
 // ── Docker label keys ─────────────────────────────────────────────────────
 //
@@ -15,7 +21,7 @@ pub(super) const LABEL_KIND_ROLE: &str = "jackin.kind=role";
 /// `DinD` sidecars only — distinguishes them from role containers.
 pub(super) const LABEL_KIND_DIND: &str = "jackin.kind=dind";
 /// Filter expression for `docker images --filter` to list jackin-managed role images.
-pub(super) const FILTER_IMAGES: &str = "reference=jk-*";
+pub(super) const FILTER_IMAGES: &str = "reference=jk_*";
 /// Filter expression for `docker ps --filter` to find managed containers.
 pub(super) const FILTER_MANAGED: &str = "label=jackin.managed=true";
 /// Filter expression for `docker ps --filter` to find role containers.
@@ -58,16 +64,17 @@ pub fn matching_family(selector: &RoleSelector, names: &[String]) -> Vec<String>
 }
 
 pub(super) fn image_name(selector: &RoleSelector) -> String {
-    format!("{CONTAINER_PREFIX_DASH}{}", runtime_slug(selector))
+    format!("{IMAGE_PREFIX}{}", runtime_slug(selector))
 }
 
 /// Image tag for a branch-specific local build. Branch slashes become dashes
 /// so the tag is a valid Docker name and does not overwrite the stable image
-/// (e.g. `jk-the-architect_feat-my-pr`). The `_` between role slug and branch
-/// slug mirrors the namespace separator so the boundary is unambiguous.
+/// (e.g. `jk_the-architect_feat-my-pr`). All structural separators in image
+/// names are `_` — unambiguous because role names and branch slugs contain
+/// only `[a-z0-9-]`.
 pub(super) fn image_name_for_branch(selector: &RoleSelector, branch: &str) -> String {
     let slug = branch.replace('/', "-").to_ascii_lowercase();
-    format!("{CONTAINER_PREFIX_DASH}{}_{slug}", runtime_slug(selector))
+    format!("{IMAGE_PREFIX}{}_{slug}", runtime_slug(selector))
 }
 
 /// Docker volume name for the TLS client certificates shared between the
@@ -85,8 +92,8 @@ mod tests {
         let namespaced = crate::selector::RoleSelector::new(Some("chainargos"), "agent-brown");
         let flat = crate::selector::RoleSelector::new(None, "chainargos-agent-brown");
         assert_ne!(image_name(&namespaced), image_name(&flat));
-        assert_eq!(image_name(&namespaced), "jk-chainargos_agent-brown");
-        assert_eq!(image_name(&flat), "jk-chainargos-agent-brown");
+        assert_eq!(image_name(&namespaced), "jk_chainargos_agent-brown");
+        assert_eq!(image_name(&flat), "jk_chainargos-agent-brown");
     }
 
     #[test]
@@ -96,16 +103,16 @@ mod tests {
 
         assert_eq!(
             image_name_for_branch(&namespaced, "feat/my-pr"),
-            "jk-chainargos_agent-brown_feat-my-pr"
+            "jk_chainargos_agent-brown_feat-my-pr"
         );
         assert_eq!(
             image_name_for_branch(&flat, "main"),
-            "jk-the-architect_main"
+            "jk_the-architect_main"
         );
         // Branch with multiple slashes — all become dashes.
         assert_eq!(
             image_name_for_branch(&flat, "feat/scope/detail"),
-            "jk-the-architect_feat-scope-detail"
+            "jk_the-architect_feat-scope-detail"
         );
     }
 
@@ -115,11 +122,11 @@ mod tests {
         let flat = crate::selector::RoleSelector::new(None, "the-architect");
         assert_eq!(
             image_name_for_branch(&namespaced, "Feat/MY-PR"),
-            "jk-chainargos_agent-brown_feat-my-pr"
+            "jk_chainargos_agent-brown_feat-my-pr"
         );
         assert_eq!(
             image_name_for_branch(&flat, "RELEASE/1.0"),
-            "jk-the-architect_release-1.0"
+            "jk_the-architect_release-1.0"
         );
     }
 

@@ -545,7 +545,7 @@ mod tests {
                 agent_runtime: crate::agent::Agent::Claude,
                 role_source_git: "https://example.invalid/agent-smith.git",
                 role_source_ref: None,
-                image_tag: "jk-agent-smith",
+                image_tag: "jk_agent-smith",
                 docker: crate::instance::DockerResources {
                     role_container: primary.into(),
                     dind_container: format!("{primary}-dind"),
@@ -567,7 +567,7 @@ mod tests {
                 agent_runtime: crate::agent::Agent::Claude,
                 role_source_git: "https://example.invalid/agent-smith.git",
                 role_source_ref: None,
-                image_tag: "jk-agent-smith",
+                image_tag: "jk_agent-smith",
                 docker: crate::instance::DockerResources {
                     role_container: second.into(),
                     dind_container: format!("{second}-dind"),
@@ -987,7 +987,7 @@ jk-a1b2c3d4-myworkspace-agentsmith"
                 agent_runtime: crate::agent::Agent::Claude,
                 role_source_git: "https://example.invalid/agent-smith.git",
                 role_source_ref: None,
-                image_tag: "jk-agent-smith",
+                image_tag: "jk_agent-smith",
                 docker: crate::instance::DockerResources {
                     role_container: container.to_string(),
                     dind_container: format!("{container}-dind"),
@@ -1064,8 +1064,8 @@ jk-a1b2c3d4-myworkspace-agentsmith"
     #[test]
     fn prune_images_skips_images_in_use_by_role_containers() {
         let mut runner = FakeRunner::with_capture_queue([
-            "jk-agent-smith:latest".to_string(), // docker images output
-            "jk-agent-smith".to_string(),        // docker ps -a output (no :tag)
+            "jk_agent-smith:latest".to_string(), // docker images output
+            "jk_agent-smith".to_string(),        // docker ps -a output (no :tag)
         ]);
 
         prune_images(&mut runner).unwrap();
@@ -1080,12 +1080,12 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         // skipped (Ok), not failed (error message + nonzero failed count).
         let mut runner = FakeRunner {
             fail_with: vec![(
-                "docker rmi jk-agent-smith:latest".to_string(),
+                "docker rmi jk_agent-smith:latest".to_string(),
                 "conflict: unable to remove (cannot be forced) - image is being used by running container"
                     .to_string(),
             )],
             capture_queue: std::collections::VecDeque::from(vec![
-                "jk-agent-smith:latest".to_string(), // docker images
+                "jk_agent-smith:latest".to_string(), // docker images
                 String::new(),                        // docker ps -a: no containers in index
             ]),
             ..Default::default()
@@ -1098,14 +1098,14 @@ jk-a1b2c3d4-myworkspace-agentsmith"
             runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker rmi jk-agent-smith:latest"))
+                .any(|c| c.contains("docker rmi jk_agent-smith:latest"))
         );
     }
 
     #[test]
     fn prune_images_removes_images_not_in_use() {
         let mut runner = FakeRunner::with_capture_queue([
-            "jk-agent-smith:latest".to_string(), // docker images output
+            "jk_agent-smith:latest".to_string(), // docker images output
             String::new(),                       // docker ps -a: no containers
         ]);
 
@@ -1115,7 +1115,7 @@ jk-a1b2c3d4-myworkspace-agentsmith"
             runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker rmi jk-agent-smith:latest"))
+                .any(|c| c.contains("docker rmi jk_agent-smith:latest"))
         );
     }
 
@@ -1139,11 +1139,11 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         // but prune_images still returns Ok — best-effort cleanup.
         let mut runner = FakeRunner {
             fail_with: vec![(
-                "docker rmi jk-agent-smith:latest".to_string(),
+                "docker rmi jk_agent-smith:latest".to_string(),
                 "Error response from daemon: permission denied".to_string(),
             )],
             capture_queue: std::collections::VecDeque::from(vec![
-                "jk-agent-smith:latest".to_string(), // docker images
+                "jk_agent-smith:latest".to_string(), // docker images
                 String::new(),                       // docker ps -a
             ]),
             ..Default::default()
@@ -1155,7 +1155,7 @@ jk-a1b2c3d4-myworkspace-agentsmith"
             runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker rmi jk-agent-smith:latest"))
+                .any(|c| c.contains("docker rmi jk_agent-smith:latest"))
         );
     }
 
@@ -1163,24 +1163,24 @@ jk-a1b2c3d4-myworkspace-agentsmith"
     fn prune_images_mixed_removed_and_skipped() {
         // One image is in-use (pre-filtered), one is removed successfully.
         let mut runner = FakeRunner::with_capture_queue([
-            "jk-agent-smith:latest\njk-neo:latest".to_string(), // docker images: two images
-            "jk-neo".to_string(), // docker ps -a: jk-neo in use (no :tag → normalised to jk-neo:latest)
+            "jk_agent-smith:latest\njk_neo:latest".to_string(), // docker images: two images
+            "jk_neo".to_string(), // docker ps -a: jk-neo in use (no :tag → normalised to jk_neo:latest)
         ]);
 
         prune_images(&mut runner).unwrap();
 
-        // Only jk-agent-smith:latest should have had rmi attempted.
+        // Only jk_agent-smith:latest should have had rmi attempted.
         assert!(
             runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker rmi jk-agent-smith:latest"))
+                .any(|c| c.contains("docker rmi jk_agent-smith:latest"))
         );
         assert!(
             !runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker rmi jk-neo:latest"))
+                .any(|c| c.contains("docker rmi jk_neo:latest"))
         );
     }
 
@@ -1189,11 +1189,11 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         // TOCTOU: image listed but already gone by rmi time — should be skipped, not failed.
         let mut runner = FakeRunner {
             fail_with: vec![(
-                "docker rmi jk-agent-smith:latest".to_string(),
-                "Error response from daemon: No such image: jk-agent-smith:latest".to_string(),
+                "docker rmi jk_agent-smith:latest".to_string(),
+                "Error response from daemon: No such image: jk_agent-smith:latest".to_string(),
             )],
             capture_queue: std::collections::VecDeque::from(vec![
-                "jk-agent-smith:latest".to_string(),
+                "jk_agent-smith:latest".to_string(),
                 String::new(),
             ]),
             ..Default::default()
@@ -1262,7 +1262,7 @@ jk-a1b2c3d4-myworkspace-agentsmith"
                 agent_runtime: crate::agent::Agent::Claude,
                 role_source_git: "https://example.invalid/agent-smith.git",
                 role_source_ref: None,
-                image_tag: "jk-agent-smith",
+                image_tag: "jk_agent-smith",
                 docker: crate::instance::DockerResources {
                     role_container: container.to_string(),
                     dind_container: format!("{container}-dind"),

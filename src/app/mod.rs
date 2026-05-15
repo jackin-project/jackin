@@ -2186,7 +2186,7 @@ mod auth_set_tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jk-agent-smith",
+            image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agentsmith".to_string(),
                 dind_container: "jk-k7p9m2xq-workspace-agentsmith-dind".to_string(),
@@ -2221,7 +2221,7 @@ mod auth_set_tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jk-agent-smith",
+            image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agentsmith".to_string(),
                 dind_container: "jk-k7p9m2xq-workspace-agentsmith-dind".to_string(),
@@ -2440,7 +2440,7 @@ mod auth_set_tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jk-agent-smith",
+            image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
                 role_container: "jk-k7p9m2xq-agentsmith".to_string(),
                 dind_container: "jk-k7p9m2xq-agentsmith-dind".to_string(),
@@ -2466,7 +2466,7 @@ mod auth_set_tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jk-agent-smith",
+            image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
                 role_container: container.to_string(),
                 dind_container: format!("{container}-dind"),
@@ -2510,7 +2510,7 @@ mod auth_set_tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jk-agent-smith",
+            image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
                 role_container: container.to_string(),
                 dind_container: format!("{container}-dind"),

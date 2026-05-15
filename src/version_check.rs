@@ -227,10 +227,10 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        store_image_version(&paths, "jk-agent-smith", "2.1.91");
+        store_image_version(&paths, "jk_agent-smith", "2.1.91");
 
         assert_eq!(
-            stored_image_version(&paths, "jk-agent-smith"),
+            stored_image_version(&paths, "jk_agent-smith"),
             Some("2.1.91".to_string())
         );
     }
@@ -241,13 +241,13 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        store_image_version(&paths, "jk-agent-smith", "2.1.91");
+        store_image_version(&paths, "jk_agent-smith", "2.1.91");
         // Seed the npm cache with a newer version
         let cache = npm_cache_path(&paths);
         let _ = write_cached(&cache, "2.1.92");
 
         let mut runner = StubRunner("2.1.92".to_string());
-        assert!(needs_claude_update(&paths, "jk-agent-smith", &mut runner));
+        assert!(needs_claude_update(&paths, "jk_agent-smith", &mut runner));
     }
 
     #[test]
@@ -256,12 +256,12 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        store_image_version(&paths, "jk-agent-smith", "2.1.92");
+        store_image_version(&paths, "jk_agent-smith", "2.1.92");
         let cache = npm_cache_path(&paths);
         let _ = write_cached(&cache, "2.1.92");
 
         let mut runner = StubRunner("2.1.92".to_string());
-        assert!(!needs_claude_update(&paths, "jk-agent-smith", &mut runner));
+        assert!(!needs_claude_update(&paths, "jk_agent-smith", &mut runner));
     }
 
     #[test]
@@ -272,7 +272,7 @@ mod tests {
 
         let mut runner = StubRunner("2.1.92".to_string());
         // No stored version yet → should not force rebuild
-        assert!(!needs_claude_update(&paths, "jk-agent-smith", &mut runner));
+        assert!(!needs_claude_update(&paths, "jk_agent-smith", &mut runner));
     }
 
     #[test]
@@ -328,10 +328,10 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        store_opencode_version(&paths, "jk-the-architect", "1.14.48");
+        store_opencode_version(&paths, "jk_the-architect", "1.14.48");
 
         assert_eq!(
-            stored_opencode_version(&paths, "jk-the-architect"),
+            stored_opencode_version(&paths, "jk_the-architect"),
             Some("1.14.48".to_string())
         );
     }
@@ -342,14 +342,14 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        store_opencode_version(&paths, "jk-the-architect", "1.14.47");
+        store_opencode_version(&paths, "jk_the-architect", "1.14.47");
         let cache = opencode_npm_cache_path(&paths);
         let _ = write_cached(&cache, "1.14.48");
 
         let mut runner = StubRunner("1.14.48".to_string());
         assert!(needs_opencode_update(
             &paths,
-            "jk-the-architect",
+            "jk_the-architect",
             &mut runner
         ));
     }
@@ -360,14 +360,14 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        store_opencode_version(&paths, "jk-the-architect", "1.14.48");
+        store_opencode_version(&paths, "jk_the-architect", "1.14.48");
         let cache = opencode_npm_cache_path(&paths);
         let _ = write_cached(&cache, "1.14.48");
 
         let mut runner = StubRunner("1.14.48".to_string());
         assert!(!needs_opencode_update(
             &paths,
-            "jk-the-architect",
+            "jk_the-architect",
             &mut runner
         ));
     }

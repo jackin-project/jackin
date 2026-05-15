@@ -3210,7 +3210,7 @@ mod tests {
         agent: crate::agent::Agent,
     ) -> InstanceManifest {
         let role_source_git = format!("https://example.invalid/{role_key}.git");
-        let image_tag = format!("{}-{role_key}", crate::instance::naming::CONTAINER_PREFIX);
+        let image_tag = format!("{}{role_key}", crate::runtime::naming::IMAGE_PREFIX);
         InstanceManifest::new(NewInstanceManifest {
             container_base: container_name,
             workspace_name: Some("workspace"),
@@ -4483,7 +4483,7 @@ plugins = ["code-review@claude-plugins-official"]
                 .any(|call| call.contains("git -C") || call.contains("git clone"))
         );
         assert!(runner.recorded.iter().any(|call| {
-            call.contains("docker build ") && call.contains("-t jk-chainargos_the-architect")
+            call.contains("docker build ") && call.contains("-t jk_chainargos_the-architect")
         }));
         assert!(runner.recorded.iter().any(|call| {
             call.contains("docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jk-")
@@ -4700,7 +4700,7 @@ plugins = ["code-review@claude-plugins-official"]
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("docker build ") && call.contains("-t jk-agent-smith"))
+                .any(|call| call.contains("docker build ") && call.contains("-t jk_agent-smith"))
         );
         assert!(
             runner
@@ -5009,7 +5009,7 @@ plugins = []
         let build_call = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker build ") && call.contains("-t jk-agent-smith"))
+            .find(|call| call.contains("docker build ") && call.contains("-t jk_agent-smith"))
             .unwrap();
         assert!(build_call.contains("--build-arg JACKIN_HOST_UID="));
         assert!(build_call.contains("--build-arg JACKIN_HOST_GID="));
