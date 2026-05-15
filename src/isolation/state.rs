@@ -44,7 +44,6 @@ struct IsolationFile {
 }
 
 /// Path to `isolation.json` for a given container's state directory.
-/// `container_state_dir` is `<data_dir>/<container-name>` (e.g. `<data_dir>/jk-k7p9m2xq-agentsmith/`).
 pub fn isolation_file_path(container_state_dir: &Path) -> PathBuf {
     container_state_dir.join(STATE_DIR).join(ISOLATION_FILE)
 }

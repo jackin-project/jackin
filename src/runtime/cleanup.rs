@@ -5,7 +5,9 @@ use crate::selector::RoleSelector;
 use owo_colors::OwoColorize;
 
 use super::discovery::{list_managed_role_names, list_role_names};
-use super::naming::{FILTER_KIND_DIND, FILTER_KIND_ROLE, FILTER_MANAGED, dind_certs_volume};
+use super::naming::{
+    FILTER_IMAGES, FILTER_KIND_DIND, FILTER_KIND_ROLE, FILTER_MANAGED, dind_certs_volume,
+};
 
 pub fn purge_class_data(
     paths: &JackinPaths,
@@ -296,7 +298,7 @@ pub fn prune_images(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
         &[
             "images",
             "--filter",
-            "reference=jk-*",
+            FILTER_IMAGES,
             "--format",
             "{{.Repository}}:{{.Tag}}",
         ],

@@ -374,7 +374,7 @@ impl InstanceIndex {
         })
     }
 
-    /// Remove multiple entries from the index in a single lock pass.
+    /// Removes entries in a single lock pass.
     pub fn remove_many(data_dir: &Path, container_bases: &[&str]) -> anyhow::Result<()> {
         if container_bases.is_empty() {
             return Ok(());

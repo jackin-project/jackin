@@ -1,5 +1,7 @@
 //! Naming conventions, Docker label/filter constants, and lightweight identifier helpers.
 
+use crate::instance::naming::CONTAINER_PREFIX_DASH;
+use crate::instance::runtime_slug;
 use crate::selector::RoleSelector;
 
 // ── Docker label keys ─────────────────────────────────────────────────────
@@ -12,6 +14,8 @@ pub(super) const LABEL_MANAGED: &str = "jackin.managed=true";
 pub(super) const LABEL_KIND_ROLE: &str = "jackin.kind=role";
 /// `DinD` sidecars only — distinguishes them from role containers.
 pub(super) const LABEL_KIND_DIND: &str = "jackin.kind=dind";
+/// Filter expression for `docker images --filter` to list jackin-managed role images.
+pub(super) const FILTER_IMAGES: &str = "reference=jk-*";
 /// Filter expression for `docker ps --filter` to find managed containers.
 pub(super) const FILTER_MANAGED: &str = "label=jackin.managed=true";
 /// Filter expression for `docker ps --filter` to find role containers.
@@ -54,11 +58,7 @@ pub fn matching_family(selector: &RoleSelector, names: &[String]) -> Vec<String>
 }
 
 pub(super) fn image_name(selector: &RoleSelector) -> String {
-    format!(
-        "{}{}",
-        crate::instance::naming::CONTAINER_PREFIX_DASH,
-        crate::instance::runtime_slug(selector)
-    )
+    format!("{CONTAINER_PREFIX_DASH}{}", runtime_slug(selector))
 }
 
 /// Image tag for a branch-specific local build. Branch slashes become dashes
@@ -66,11 +66,7 @@ pub(super) fn image_name(selector: &RoleSelector) -> String {
 /// (e.g. `jk-the-architect-feat-my-pr`).
 pub(super) fn image_name_for_branch(selector: &RoleSelector, branch: &str) -> String {
     let slug = branch.replace('/', "-").to_ascii_lowercase();
-    format!(
-        "{}{}-{slug}",
-        crate::instance::naming::CONTAINER_PREFIX_DASH,
-        crate::instance::runtime_slug(selector)
-    )
+    format!("{CONTAINER_PREFIX_DASH}{}-{slug}", runtime_slug(selector))
 }
 
 /// Docker volume name for the TLS client certificates shared between the
