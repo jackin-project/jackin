@@ -635,7 +635,7 @@ mod tests {
         let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
 
-        hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap();
+        hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap();
 
         // The attach command must appear; the trailing inspect for the
         // finalizer is appended after.
@@ -643,7 +643,7 @@ mod tests {
             runner
                 .recorded
                 .iter()
-                .any(|c| c == "docker attach --detach-keys= --sig-proxy=false jackin-agent-smith"),
+                .any(|c| c == "docker attach --detach-keys= --sig-proxy=false jk-agent-smith"),
             "expected docker attach in recorded commands"
         );
     }
@@ -651,7 +651,7 @@ mod tests {
     #[test]
     fn hardline_new_session_execs_entrypoint_in_running_container() {
         let (_tmp, paths) = test_paths();
-        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
             container_base: container_name,
             workspace_name: Some("workspace"),
@@ -663,7 +663,7 @@ mod tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jackin-agent-smith",
+            image_tag: "jk-agent-smith",
             docker: crate::instance::DockerResources {
                 role_container: container_name.to_string(),
                 dind_container: format!("{container_name}-dind"),
@@ -687,7 +687,7 @@ mod tests {
         .unwrap();
 
         assert!(runner.recorded.iter().any(|call| {
-            call == "docker exec -it -e JACKIN_AGENT=codex --workdir /workspace/project jackin-workspace-agentsmith-k7p9m2xq /jackin/runtime/entrypoint.sh"
+            call == "docker exec -it -e JACKIN_AGENT=codex --workdir /workspace/project jk-k7p9m2xq-workspace-agentsmith /jackin/runtime/entrypoint.sh"
         }));
     }
 
@@ -698,7 +698,7 @@ mod tests {
 
         let err = spawn_agent_session(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             None,
             crate::agent::Agent::Claude,
             &mut runner,
@@ -719,7 +719,7 @@ mod tests {
         let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::default();
 
-        let err = hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap_err();
+        let err = hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap_err();
 
         assert!(err.to_string().contains("not found"));
         assert!(
@@ -735,10 +735,10 @@ mod tests {
         let mut missing = FakeRunner::default();
         missing.fail_with.push((
             "docker inspect".to_string(),
-            "Error: No such object: jackin-agent-smith".to_string(),
+            "Error: No such object: jk-agent-smith".to_string(),
         ));
         assert_eq!(
-            inspect_container_state(&mut missing, "jackin-agent-smith"),
+            inspect_container_state(&mut missing, "jk-agent-smith"),
             ContainerState::NotFound
         );
 
@@ -748,7 +748,7 @@ mod tests {
             "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
         ));
         assert!(matches!(
-            inspect_container_state(&mut unavailable, "jackin-agent-smith"),
+            inspect_container_state(&mut unavailable, "jk-agent-smith"),
             ContainerState::InspectUnavailable(reason)
                 if reason.contains("Cannot connect to the Docker daemon")
         ));
@@ -763,7 +763,7 @@ mod tests {
             "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
         ));
 
-        let err = hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap_err();
+        let err = hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap_err();
 
         assert!(err.to_string().contains("Docker is unavailable"));
         assert!(
@@ -777,7 +777,7 @@ mod tests {
     #[test]
     fn hardline_marks_missing_manifest_restore_available() {
         let (_tmp, paths) = test_paths();
-        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
             container_base: container_name,
             workspace_name: Some("workspace"),
@@ -789,7 +789,7 @@ mod tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jackin-agent-smith",
+            image_tag: "jk-agent-smith",
             docker: crate::instance::DockerResources {
                 role_container: container_name.to_string(),
                 dind_container: format!("{container_name}-dind"),
@@ -815,7 +815,7 @@ mod tests {
     #[test]
     fn inspect_hardline_instance_reports_state_without_attaching() {
         let (_tmp, paths) = test_paths();
-        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
             container_base: container_name,
             workspace_name: Some("workspace"),
@@ -827,7 +827,7 @@ mod tests {
             agent_runtime: crate::agent::Agent::Codex,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: Some("feature/role"),
-            image_tag: "jackin-agent-smith",
+            image_tag: "jk-agent-smith",
             docker: crate::instance::DockerResources {
                 role_container: container_name.to_string(),
                 dind_container: format!("{container_name}-dind"),
@@ -859,13 +859,13 @@ mod tests {
             report.contains("Agent sessions: 101 /jackin/runtime/entrypoint.sh; 202 codex exec"),
             "{report}"
         );
-        assert!(report.contains("Role container: jackin-workspace-agentsmith-k7p9m2xq (running)"));
-        assert!(report.contains(
-            "DinD container: jackin-workspace-agentsmith-k7p9m2xq-dind (stopped exit:137)"
-        ));
+        assert!(report.contains("Role container: jk-k7p9m2xq-workspace-agentsmith (running)"));
         assert!(
-            report.contains("Docker network: jackin-workspace-agentsmith-k7p9m2xq-net (present)")
+            report.contains(
+                "DinD container: jk-k7p9m2xq-workspace-agentsmith-dind (stopped exit:137)"
+            )
         );
+        assert!(report.contains("Docker network: jk-k7p9m2xq-workspace-agentsmith-net (present)"));
         assert!(
             !runner
                 .recorded
@@ -882,7 +882,7 @@ mod tests {
         ]);
 
         let sessions =
-            inspect_agent_sessions(&mut runner, "jackin-agent-smith", &ContainerState::Running);
+            inspect_agent_sessions(&mut runner, "jk-agent-smith", &ContainerState::Running);
 
         let AgentSessionInventory::Sessions(sessions) = sessions else {
             panic!("expected sessions");
@@ -898,7 +898,7 @@ mod tests {
 
         let sessions = inspect_agent_sessions(
             &mut runner,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &ContainerState::Stopped {
                 exit_code: 137,
                 oom_killed: false,
@@ -912,7 +912,7 @@ mod tests {
     #[test]
     fn inspect_hardline_instance_still_reports_manifest_when_docker_unavailable() {
         let (_tmp, paths) = test_paths();
-        let container_name = "jackin-workspace-agentsmith-k7p9m2xq";
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
             container_base: container_name,
             workspace_name: Some("workspace"),
@@ -924,7 +924,7 @@ mod tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jackin-agent-smith",
+            image_tag: "jk-agent-smith",
             docker: crate::instance::DockerResources {
                 role_container: container_name.to_string(),
                 dind_container: format!("{container_name}-dind"),
@@ -948,12 +948,9 @@ mod tests {
         let report = inspect_hardline_instance(&paths, container_name, &mut runner).unwrap();
 
         assert!(report.contains("Workspace: workspace"), "{report}");
+        assert!(report.contains("Role container: jk-k7p9m2xq-workspace-agentsmith (unavailable:"));
         assert!(
-            report.contains("Role container: jackin-workspace-agentsmith-k7p9m2xq (unavailable:")
-        );
-        assert!(
-            report
-                .contains("Docker network: jackin-workspace-agentsmith-k7p9m2xq-net (unavailable:")
+            report.contains("Docker network: jk-k7p9m2xq-workspace-agentsmith-net (unavailable:")
         );
         assert!(
             !runner
@@ -968,7 +965,7 @@ mod tests {
         let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::with_capture_queue(["false 0 false".to_string()]);
 
-        let err = hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap_err();
+        let err = hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap_err();
 
         assert!(err.to_string().contains("exited cleanly"));
         assert!(
@@ -988,19 +985,19 @@ mod tests {
             "true 0 false".to_string(),
         ]);
 
-        hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap();
+        hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap();
 
         assert!(
             runner
                 .recorded
                 .iter()
-                .any(|c| c == "docker start jackin-agent-smith"),
+                .any(|c| c == "docker start jk-agent-smith"),
             "expected docker start before attach"
         );
         let start_idx = runner
             .recorded
             .iter()
-            .position(|c| c == "docker start jackin-agent-smith")
+            .position(|c| c == "docker start jk-agent-smith")
             .unwrap();
         let attach_idx = runner
             .recorded
@@ -1019,45 +1016,45 @@ mod tests {
             String::new(),
         ]);
         runner.fail_with.push((
-            "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-agent-smith-dind".to_string(),
-            "Error: No such object: jackin-agent-smith-dind".to_string(),
+            "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jk-agent-smith-dind".to_string(),
+            "Error: No such object: jk-agent-smith-dind".to_string(),
         ));
         runner.fail_with.push((
-            "docker network inspect jackin-agent-smith-net".to_string(),
-            "Error: No such network: jackin-agent-smith-net".to_string(),
+            "docker network inspect jk-agent-smith-net".to_string(),
+            "Error: No such network: jk-agent-smith-net".to_string(),
         ));
 
-        hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap();
+        hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap();
 
         let network_create_idx = runner
             .recorded
             .iter()
-            .position(|c| c == "docker network create --label jackin.managed=true --label jackin.role=jackin-agent-smith jackin-agent-smith-net")
+            .position(|c| c == "docker network create --label jackin.managed=true --label jackin.role=jk-agent-smith jk-agent-smith-net")
             .expect("expected missing network recreation");
         let network_connect_idx = runner
             .recorded
             .iter()
-            .position(|c| c == "docker network connect jackin-agent-smith-net jackin-agent-smith")
+            .position(|c| c == "docker network connect jk-agent-smith-net jk-agent-smith")
             .expect("expected role container network reconnect");
         let dind_run_idx = runner
             .recorded
             .iter()
             .position(|c| {
-                c.contains("docker run -d --name jackin-agent-smith-dind")
-                    && c.contains("--network jackin-agent-smith-net")
-                    && c.contains("DOCKER_TLS_SAN=DNS:jackin-agent-smith-dind")
-                    && c.contains("jackin-agent-smith-dind-certs:/certs/client")
+                c.contains("docker run -d --name jk-agent-smith-dind")
+                    && c.contains("--network jk-agent-smith-net")
+                    && c.contains("DOCKER_TLS_SAN=DNS:jk-agent-smith-dind")
+                    && c.contains("jk-agent-smith-dind-certs:/certs/client")
             })
             .expect("expected missing DinD sidecar recreation");
         let dind_ready_idx = runner
             .recorded
             .iter()
-            .position(|c| c == "docker exec jackin-agent-smith-dind docker info")
+            .position(|c| c == "docker exec jk-agent-smith-dind docker info")
             .expect("expected DinD readiness check");
         let role_start_idx = runner
             .recorded
             .iter()
-            .position(|c| c == "docker start jackin-agent-smith")
+            .position(|c| c == "docker start jk-agent-smith")
             .expect("expected role restart");
         let attach_idx = runner
             .recorded
@@ -1076,11 +1073,11 @@ mod tests {
         let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
         runner.fail_with.push((
-            "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jackin-agent-smith-dind".to_string(),
+            "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jk-agent-smith-dind".to_string(),
             "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
         ));
 
-        let err = hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap_err();
+        let err = hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap_err();
 
         assert!(err.to_string().contains("Docker is unavailable"));
         assert!(
@@ -1101,22 +1098,22 @@ mod tests {
             String::new(),
         ]);
 
-        hardline_agent(&paths, "jackin-agent-smith", &mut runner).unwrap();
+        hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap();
 
         let dind_start_idx = runner
             .recorded
             .iter()
-            .position(|c| c == "docker start jackin-agent-smith-dind")
+            .position(|c| c == "docker start jk-agent-smith-dind")
             .expect("expected stopped DinD sidecar restart");
         let dind_ready_idx = runner
             .recorded
             .iter()
-            .position(|c| c == "docker exec jackin-agent-smith-dind docker info")
+            .position(|c| c == "docker exec jk-agent-smith-dind docker info")
             .expect("expected DinD readiness check");
         let role_start_idx = runner
             .recorded
             .iter()
-            .position(|c| c == "docker start jackin-agent-smith")
+            .position(|c| c == "docker start jk-agent-smith")
             .expect("expected role restart");
         let attach_idx = runner
             .recorded

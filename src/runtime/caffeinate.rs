@@ -398,9 +398,7 @@ mod tests {
     #[test]
     fn count_keep_awake_agents_counts_nonempty_lines() {
         let mut runner =
-            FakeRunner::with_capture_queue(
-                ["jackin-agent-smith\njackin-the-architect".to_string()],
-            );
+            FakeRunner::with_capture_queue(["jk-agent-smith\njk-the-architect".to_string()]);
         let count = count_keep_awake_agents(&mut runner).unwrap();
         assert_eq!(count, 2);
     }

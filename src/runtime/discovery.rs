@@ -84,11 +84,11 @@ mod tests {
 
     #[test]
     fn list_managed_agent_names_excludes_dind_sidecars() {
-        let mut runner = FakeRunner::with_capture_queue(["jackin-agent-smith".to_string()]);
+        let mut runner = FakeRunner::with_capture_queue(["jk-agent-smith".to_string()]);
 
         let names = list_managed_role_names(&mut runner).unwrap();
 
-        assert_eq!(names, vec!["jackin-agent-smith"]);
+        assert_eq!(names, vec!["jk-agent-smith"]);
         assert!(runner.recorded.iter().any(|call| {
             call == "docker ps -a --filter label=jackin.kind=role --format {{.Names}}"
         }));
@@ -97,7 +97,7 @@ mod tests {
     #[test]
     fn list_running_agent_display_names_excludes_dind_sidecars() {
         let mut runner =
-            FakeRunner::with_capture_queue(["jackin-agentsmith-k7p9m2xq\tAgent Smith".to_string()]);
+            FakeRunner::with_capture_queue(["jk-k7p9m2xq-agentsmith\tAgent Smith".to_string()]);
 
         let names = list_running_agent_display_names(&mut runner).unwrap();
 

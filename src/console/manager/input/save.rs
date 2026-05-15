@@ -2084,7 +2084,9 @@ mod tests {
             worktree_path: cdir.join("isolated").join(dst).display().to_string(),
             scratch_branch: format!("jackin/scratch/{container}"),
             base_commit: "deadbeef".into(),
-            selector_key: container.trim_start_matches("jackin-").into(),
+            selector_key: container
+                .trim_start_matches(crate::instance::naming::CONTAINER_PREFIX_DASH)
+                .into(),
             container_name: container.into(),
             cleanup_status: CleanupStatus::Active,
         };
@@ -2111,8 +2113,12 @@ mod tests {
 
     #[test]
     fn save_blocks_with_error_popup_when_running_container_has_drifted_state() {
-        let (tmp, paths, mut config, ws) =
-            setup_with_isolated_record("driftws", "/old/src", "/workspace/x", "jackin-driftws");
+        let (tmp, paths, mut config, ws) = setup_with_isolated_record(
+            "driftws",
+            "/old/src",
+            "/workspace/x",
+            "jk-a1b2c3d4-driftws",
+        );
         let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("driftws".into(), ws);
@@ -2141,7 +2147,7 @@ mod tests {
             e.modal = None;
         }
 
-        let mut runner = fake_runner_with_running(&["jackin-driftws"]);
+        let mut runner = fake_runner_with_running(&["jk-a1b2c3d4-driftws"]);
         super::commit_editor_save_with_runner(
             &mut state,
             &mut config,
@@ -2172,8 +2178,12 @@ mod tests {
 
     #[test]
     fn save_opens_confirm_modal_when_stopped_container_has_drifted_state() {
-        let (tmp, paths, mut config, ws) =
-            setup_with_isolated_record("driftws2", "/old/src", "/workspace/x", "jackin-driftws2");
+        let (tmp, paths, mut config, ws) = setup_with_isolated_record(
+            "driftws2",
+            "/old/src",
+            "/workspace/x",
+            "jk-b2c3d4e5-driftws2",
+        );
         let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("driftws2".into(), ws);
@@ -2226,7 +2236,7 @@ mod tests {
             }) => {
                 assert_eq!(
                     affected_containers,
-                    &vec!["jackin-driftws2".to_string()],
+                    &vec!["jk-b2c3d4e5-driftws2".to_string()],
                     "modal must carry the affected container names",
                 );
             }

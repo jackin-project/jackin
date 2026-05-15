@@ -1,10 +1,11 @@
 pub mod context;
 
 use anyhow::{Context, Result};
+use owo_colors::OwoColorize;
 
 use crate::cli::cleanup::{EjectArgs, PurgeArgs};
 use crate::cli::role::{ConsoleArgs, HardlineArgs, LoadArgs};
-use crate::cli::{self, Cli, Command, WorkspaceCommand};
+use crate::cli::{self, Cli, Command, PruneCommand, WorkspaceCommand};
 use crate::config::{self, AppConfig};
 use crate::console;
 use crate::docker::ShellRunner;
@@ -196,7 +197,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 } else {
                     match Selector::parse(&sel)? {
                         Selector::Container(name) => name,
-                        Selector::Role(class) => instance::primary_container_name(&class),
+                        Selector::Role(class) => resolve_role_to_container(&class, &mut runner)?,
                     }
                 }
             } else {
@@ -277,7 +278,7 @@ pub fn run(cli: Cli) -> Result<()> {
                                 &runtime::list_managed_role_names(&mut runner)?,
                             )
                         } else {
-                            vec![instance::primary_container_name(&class)]
+                            vec![resolve_role_to_container(&class, &mut runner)?]
                         }
                     }
                 }
@@ -890,13 +891,13 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
                 if let Some(v) = keep_awake_change {
                     changes.push(format!(
-                        "keep_awake → {}",
+                        "keep-awake → {}",
                         if v { "enabled" } else { "disabled" }
                     ));
                 }
                 if let Some(v) = git_pull_change {
                     changes.push(format!(
-                        "git_pull_on_entry → {}",
+                        "git-pull-on-entry → {}",
                         if v { "enabled" } else { "disabled" }
                     ));
                 }
@@ -1168,7 +1169,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         runtime::purge_class_data(&paths, &class, &mut runner)?;
                         println!("Purged all state for {}.", class.key());
                     } else {
-                        let container = instance::primary_container_name(&class);
+                        let container = resolve_role_to_container(&class, &mut runner)?;
                         runtime::purge_container_state(&paths, &container, &mut runner)?;
                         println!("Purged state for {container}.");
                     }
@@ -1176,6 +1177,44 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
             }
         }
+        Command::Prune(cmd) => match cmd {
+            PruneCommand::Roles => runtime::prune_roles(&paths),
+            PruneCommand::Cache => runtime::prune_cache(&paths),
+            PruneCommand::Images => runtime::prune_images(&mut runner),
+            PruneCommand::Instances => runtime::prune_instances(&paths, &mut runner),
+            PruneCommand::All(args) => {
+                if !args.yes {
+                    let confirmed = dialoguer::Confirm::new()
+                        .with_prompt(
+                            "Remove all prunable data? (instances, images, role cache, shared cache)",
+                        )
+                        .default(false)
+                        .interact()?;
+                    if !confirmed {
+                        anyhow::bail!("aborted by operator");
+                    }
+                }
+                // Run every step regardless of individual failures so a single
+                // Docker error doesn't leave the role cache and shared cache
+                // untouched.
+                let results = [
+                    runtime::prune_instances(&paths, &mut runner).context("prune instances"),
+                    runtime::prune_images(&mut runner).context("prune images"),
+                    runtime::prune_roles(&paths).context("prune roles"),
+                    runtime::prune_cache(&paths).context("prune cache"),
+                ];
+                let errors: Vec<anyhow::Error> =
+                    results.into_iter().filter_map(Result::err).collect();
+                if errors.is_empty() {
+                    Ok(())
+                } else {
+                    for err in &errors {
+                        eprintln!("{} {err:#}", "error:".red().bold());
+                    }
+                    anyhow::bail!("{} prune step(s) failed", errors.len())
+                }
+            }
+        },
         Command::Help { .. } => {
             // Handled upstream in dispatch before reaching this function.
             unreachable!("Command::Help is dispatched to Action::PrintHelp before run() is called")
@@ -1593,6 +1632,22 @@ const fn hardline_action_options() -> [(&'static str, HardlineAction); 4] {
         ("Inspect state without attaching", HardlineAction::Inspect),
         ("Cancel", HardlineAction::Cancel),
     ]
+}
+
+fn resolve_role_to_container(
+    class: &RoleSelector,
+    runner: &mut impl crate::docker::CommandRunner,
+) -> Result<String> {
+    let candidates = runtime::matching_family(class, &runtime::list_managed_role_names(runner)?);
+    match candidates.len() {
+        1 => Ok(candidates.into_iter().next().unwrap()),
+        0 => anyhow::bail!("no managed container found for role `{}`", class.key()),
+        _ => anyhow::bail!(
+            "multiple containers found for role `{}`: {}; pass a specific container name",
+            class.key(),
+            candidates.join(", ")
+        ),
+    }
 }
 
 fn resolve_instance_reference(paths: &JackinPaths, input: &str) -> Result<Option<String>> {
@@ -2121,7 +2176,7 @@ mod auth_set_tests {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
-            container_base: "jackin-workspace-agentsmith-k7p9m2xq",
+            container_base: "jk-k7p9m2xq-workspace-agentsmith",
             workspace_name: Some("workspace"),
             workspace_label: "workspace",
             workdir: "/workspace",
@@ -2131,12 +2186,12 @@ mod auth_set_tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jackin-agent-smith",
+            image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
-                role_container: "jackin-workspace-agentsmith-k7p9m2xq".to_string(),
-                dind_container: "jackin-workspace-agentsmith-k7p9m2xq-dind".to_string(),
-                network: "jackin-workspace-agentsmith-k7p9m2xq-net".to_string(),
-                certs_volume: "jackin-workspace-agentsmith-k7p9m2xq-dind-certs".to_string(),
+                role_container: "jk-k7p9m2xq-workspace-agentsmith".to_string(),
+                dind_container: "jk-k7p9m2xq-workspace-agentsmith-dind".to_string(),
+                network: "jk-k7p9m2xq-workspace-agentsmith-net".to_string(),
+                certs_volume: "jk-k7p9m2xq-workspace-agentsmith-dind-certs".to_string(),
             },
         });
         let state_dir = paths.data_dir.join(&manifest.container_base);
@@ -2147,7 +2202,7 @@ mod auth_set_tests {
 
         assert_eq!(
             resolved.as_deref(),
-            Some("jackin-workspace-agentsmith-k7p9m2xq")
+            Some("jk-k7p9m2xq-workspace-agentsmith")
         );
     }
 
@@ -2156,7 +2211,7 @@ mod auth_set_tests {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
-            container_base: "jackin-workspace-agentsmith-k7p9m2xq",
+            container_base: "jk-k7p9m2xq-workspace-agentsmith",
             workspace_name: Some("workspace"),
             workspace_label: "workspace",
             workdir: "/workspace",
@@ -2166,12 +2221,12 @@ mod auth_set_tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jackin-agent-smith",
+            image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
-                role_container: "jackin-workspace-agentsmith-k7p9m2xq".to_string(),
-                dind_container: "jackin-workspace-agentsmith-k7p9m2xq-dind".to_string(),
-                network: "jackin-workspace-agentsmith-k7p9m2xq-net".to_string(),
-                certs_volume: "jackin-workspace-agentsmith-k7p9m2xq-dind-certs".to_string(),
+                role_container: "jk-k7p9m2xq-workspace-agentsmith".to_string(),
+                dind_container: "jk-k7p9m2xq-workspace-agentsmith-dind".to_string(),
+                network: "jk-k7p9m2xq-workspace-agentsmith-net".to_string(),
+                certs_volume: "jk-k7p9m2xq-workspace-agentsmith-dind-certs".to_string(),
             },
         });
         manifest.mark_status(instance::InstanceStatus::Purged);
@@ -2375,7 +2430,7 @@ mod auth_set_tests {
     fn ad_hoc_manifest_for_workdir(workdir: &std::path::Path) -> instance::InstanceManifest {
         let workdir = workdir.display().to_string();
         instance::InstanceManifest::new(instance::NewInstanceManifest {
-            container_base: "jackin-agentsmith-k7p9m2xq",
+            container_base: "jk-k7p9m2xq-agentsmith",
             workspace_name: None,
             workspace_label: &workdir,
             workdir: &workdir,
@@ -2385,12 +2440,12 @@ mod auth_set_tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jackin-agent-smith",
+            image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
-                role_container: "jackin-agentsmith-k7p9m2xq".to_string(),
-                dind_container: "jackin-agentsmith-k7p9m2xq-dind".to_string(),
-                network: "jackin-agentsmith-k7p9m2xq-net".to_string(),
-                certs_volume: "jackin-agentsmith-k7p9m2xq-dind-certs".to_string(),
+                role_container: "jk-k7p9m2xq-agentsmith".to_string(),
+                dind_container: "jk-k7p9m2xq-agentsmith-dind".to_string(),
+                network: "jk-k7p9m2xq-agentsmith-net".to_string(),
+                certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_string(),
             },
         })
     }
@@ -2399,7 +2454,7 @@ mod auth_set_tests {
     fn hardline_restore_candidate_marks_missing_manifest_available() {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let container = "jackin-workspace-agentsmith-k7p9m2xq";
+        let container = "jk-k7p9m2xq-workspace-agentsmith";
         let mut manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
             container_base: container,
             workspace_name: Some("workspace"),
@@ -2411,7 +2466,7 @@ mod auth_set_tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jackin-agent-smith",
+            image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
                 role_container: container.to_string(),
                 dind_container: format!("{container}-dind"),
@@ -2443,7 +2498,7 @@ mod auth_set_tests {
     fn hardline_restore_candidate_errors_when_docker_unavailable() {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
-        let container = "jackin-workspace-agentsmith-k7p9m2xq";
+        let container = "jk-k7p9m2xq-workspace-agentsmith";
         let mut manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
             container_base: container,
             workspace_name: Some("workspace"),
@@ -2455,7 +2510,7 @@ mod auth_set_tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jackin-agent-smith",
+            image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
                 role_container: container.to_string(),
                 dind_container: format!("{container}-dind"),
@@ -2771,5 +2826,47 @@ mod auth_set_tests {
             msg.contains("op item delete I_UUID --vault V_UUID"),
             "must include copy-pasteable recovery command, got: {msg}"
         );
+    }
+}
+
+#[cfg(test)]
+mod resolve_role_tests {
+    use super::*;
+
+    #[test]
+    fn resolve_role_no_match_errors() {
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = runtime::FakeRunner::default();
+        runner.capture_queue.push_back(String::new());
+        let err = resolve_role_to_container(&selector, &mut runner).unwrap_err();
+        assert!(
+            err.to_string().contains("no managed container found"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn resolve_role_multiple_matches_errors_with_names() {
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = runtime::FakeRunner::default();
+        runner
+            .capture_queue
+            .push_back("jk-k7p9m2xq-agentsmith\njk-a1b2c3d4-agentsmith".to_string());
+        let err = resolve_role_to_container(&selector, &mut runner).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("multiple containers found"), "{msg}");
+        assert!(msg.contains("jk-k7p9m2xq-agentsmith"), "{msg}");
+        assert!(msg.contains("jk-a1b2c3d4-agentsmith"), "{msg}");
+    }
+
+    #[test]
+    fn resolve_role_single_match_returns_name() {
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = runtime::FakeRunner::default();
+        runner
+            .capture_queue
+            .push_back("jk-k7p9m2xq-agentsmith".to_string());
+        let name = resolve_role_to_container(&selector, &mut runner).unwrap();
+        assert_eq!(name, "jk-k7p9m2xq-agentsmith");
     }
 }

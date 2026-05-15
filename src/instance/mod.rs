@@ -10,10 +10,7 @@ pub use manifest::{
     DockerResources, InstanceIndex, InstanceIndexEntry, InstanceManifest, InstanceQuery,
     InstanceStatus, NewInstanceManifest,
 };
-pub use naming::{
-    class_family_matches, container_name_with_id, new_container_name, primary_container_name,
-    runtime_slug,
-};
+pub use naming::{class_family_matches, container_name_with_id, new_container_name, runtime_slug};
 
 /// Outcome of the `.claude.json` provisioning step, so callers can surface
 /// a one-time notice when host credentials are forwarded.
@@ -551,7 +548,7 @@ plugins = []
 
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-k7p9m2xq-agentsmith",
             &manifest,
             &|_| AuthForwardMode::Ignore,
             &GithubAuthContext::default(),
@@ -579,7 +576,7 @@ plugins = []
         // above, since they only look up paths through the enum. These
         // assertions verify the actual host paths under
         // `<container>/claude/`.
-        let container_root = paths.data_dir.join("jackin-agent-smith");
+        let container_root = paths.data_dir.join("jk-k7p9m2xq-agentsmith");
         assert_eq!(
             state.claude_account_json().unwrap(),
             container_root.join("claude").join("account.json"),
@@ -622,7 +619,7 @@ model = "gpt-5"
 
         let (state, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-k7p9m2xq-agentsmith",
             &manifest,
             &|_| AuthForwardMode::Ignore,
             &GithubAuthContext::default(),
@@ -636,7 +633,7 @@ model = "gpt-5"
         assert!(
             !paths
                 .data_dir
-                .join("jackin-agent-smith")
+                .join("jk-k7p9m2xq-agentsmith")
                 .join("codex")
                 .join("config.toml")
                 .exists()
@@ -644,7 +641,7 @@ model = "gpt-5"
         assert!(
             paths
                 .data_dir
-                .join("jackin-agent-smith")
+                .join("jk-k7p9m2xq-agentsmith")
                 .join("home/.codex")
                 .is_dir()
         );
@@ -698,7 +695,7 @@ plugins = []
 
         let (state, selected_outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-k7p9m2xq-agentsmith",
             &manifest,
             &auth_modes,
             &GithubAuthContext::default(),
