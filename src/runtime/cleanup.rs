@@ -299,12 +299,10 @@ fn prune_dir(path: &std::path::Path, label: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Re-cloned on next launch.
 pub fn prune_roles(paths: &JackinPaths) -> anyhow::Result<()> {
     prune_dir(&paths.roles_dir, "role cache")
 }
 
-/// Terminfo and version-check caches regenerate on first use.
 pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
     prune_dir(&paths.cache_dir, "shared cache")
 }
