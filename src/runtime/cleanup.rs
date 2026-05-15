@@ -266,6 +266,9 @@ pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
 }
 
 /// Remove jk-* Docker images that have no jackin-managed role containers (running or stopped).
+///
+/// Best-effort: always returns `Ok(())`. Per-image failures are printed to stderr and
+/// counted in the summary but never propagate as errors.
 pub fn prune_images(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     let images_output = runner.capture(
         "docker",
@@ -342,7 +345,7 @@ pub fn prune_images(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
 
     if removed == 0 && failed == 0 {
         if skipped > 0 {
-            println!("All {skipped} image(s) are in use by containers; nothing removed.");
+            println!("No images removed ({skipped} skipped).");
         } else {
             println!("No unused jackin-managed images to remove.");
         }
@@ -996,6 +999,33 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         prune_images(&mut runner).unwrap();
 
         assert!(!runner.recorded.iter().any(|c| c.contains("docker rmi")));
+    }
+
+    #[test]
+    fn prune_images_counts_rmi_in_use_error_as_skipped_not_failed() {
+        // Image passes the pre-filter (not in the in_use set from docker ps)
+        // but docker rmi returns an in-use error at removal time. Should be
+        // skipped (Ok), not failed (error message + nonzero failed count).
+        let mut runner = FakeRunner {
+            fail_with: vec![(
+                "docker rmi jk-agent-smith:latest".to_string(),
+                "conflict: unable to remove (cannot be forced) - image is being used by running container"
+                    .to_string(),
+            )],
+            capture_queue: std::collections::VecDeque::from(vec![
+                "jk-agent-smith:latest".to_string(), // docker images
+                String::new(),                        // docker ps -a: no containers in index
+            ]),
+            ..Default::default()
+        };
+
+        prune_images(&mut runner).unwrap();
+
+        // rmi was attempted (image was not in the pre-filter set)
+        assert!(runner
+            .recorded
+            .iter()
+            .any(|c| c.contains("docker rmi jk-agent-smith:latest")));
     }
 
     #[test]

@@ -404,7 +404,7 @@ mod tests {
     }
 
     #[test]
-    fn is_image_in_use_error_matches_all_three_patterns() {
+    fn is_image_in_use_error_matches_in_use_patterns() {
         assert!(is_image_in_use_error(
             "image is being used by stopped container abc123"
         ));
