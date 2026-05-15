@@ -17,13 +17,15 @@ pub fn is_missing_resource_error(message: &str) -> bool {
 }
 
 /// `True` when a Docker `rmi` error indicates an image is still referenced
-/// by a container. Match is case-insensitive.
+/// by a running container. Match is case-insensitive.
+///
+/// `"cannot be forced"` guards the running-container case. `"must be forced"`
+/// fires for multi-repo image references (not a container conflict) and is
+/// intentionally excluded — those images should be removable.
 #[must_use]
 pub fn is_image_in_use_error(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
-    lower.contains("image is being used by")
-        || lower.contains("cannot be forced")
-        || lower.contains("must be forced")
+    lower.contains("image is being used by") || lower.contains("cannot be forced")
 }
 
 /// Options that control how a command is executed.
@@ -409,7 +411,9 @@ mod tests {
         assert!(is_image_in_use_error(
             "conflict: unable to remove (cannot be forced)"
         ));
-        assert!(is_image_in_use_error(
+        // "must be forced" is the multi-repo case, NOT a container conflict —
+        // it should not match so those images can be removed.
+        assert!(!is_image_in_use_error(
             "conflict: unable to remove (must be forced)"
         ));
     }
@@ -427,6 +431,9 @@ mod tests {
         assert!(!is_image_in_use_error("permission denied"));
         assert!(!is_image_in_use_error(
             "Error response from daemon: no such image"
+        ));
+        assert!(!is_image_in_use_error(
+            "conflict: unable to remove (must be forced) - image is referenced in multiple repositories"
         ));
     }
 

@@ -173,7 +173,6 @@ pub(super) fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
         let certs_volume = dind_certs_volume(&info.role);
         let network = format!("{}-net", info.role);
 
-        // Remove stopped role container, DinD sidecar, cert volume, and network.
         let _ = run_cleanup_command(runner, &["rm", "-f", &info.role]);
         let _ = run_cleanup_command(runner, &["rm", "-f", &info.name]);
         let _ = run_cleanup_command(runner, &["volume", "rm", &certs_volume]);
@@ -342,7 +341,11 @@ pub fn prune_images(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     }
 
     if removed == 0 && failed == 0 {
-        println!("No unused jackin-managed images to remove.");
+        if skipped > 0 {
+            println!("All {skipped} image(s) are in use by containers; nothing removed.");
+        } else {
+            println!("No unused jackin-managed images to remove.");
+        }
     } else if failed == 0 {
         println!("Removed {removed} image(s), skipped {skipped}.");
     } else {
