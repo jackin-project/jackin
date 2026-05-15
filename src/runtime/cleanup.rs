@@ -398,11 +398,9 @@ pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> 
     }
 
     if !removed.is_empty() {
+        // Stale index entries with no state dir are harmless — purge_container_filesystem
+        // tolerates NotFound, so the next prune run retries unless the index is corrupt.
         let refs: Vec<&str> = removed.iter().map(String::as_str).collect();
-        // State dirs are already gone; index update is best-effort. A stale
-        // entry with no state dir on disk is harmless — purge_container_filesystem
-        // tolerates NotFound, so the next prune run re-removes successfully unless
-        // the index file itself is permanently corrupt.
         if let Err(err) = InstanceIndex::remove_many(&paths.data_dir, &refs) {
             eprintln!(
                 "{} instance index could not be updated: {err:#}; run `jackin prune instances` again to retry",
@@ -901,7 +899,7 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         container: &str,
         status: crate::instance::InstanceStatus,
     ) {
-        let manifest =
+        let mut manifest =
             crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
                 container_base: container,
                 workspace_name: Some("ws"),
@@ -921,7 +919,6 @@ jk-a1b2c3d4-myworkspace-agentsmith"
                     certs_volume: format!("{container}-dind-certs"),
                 },
             });
-        let mut manifest = manifest;
         manifest.mark_status(status);
         let state_dir = paths.data_dir.join(container);
         std::fs::create_dir_all(&state_dir).unwrap();

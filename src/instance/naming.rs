@@ -79,10 +79,8 @@ pub fn class_family_matches(selector: &RoleSelector, container_name: &str) -> bo
     class_family_matches_with_slug(&compact_component(&selector.name, "role"), container_name)
 }
 
-/// Loop-friendly variant of [`class_family_matches`].
-///
-/// Callers precompute `role_slug` once via [`compact_component`] and pass
-/// it in — avoids one `String` allocation per candidate.
+/// Loop-friendly variant of [`class_family_matches`] for callers that
+/// precompute the slug once across many candidates.
 #[must_use]
 pub fn class_family_matches_with_slug(role_slug: &str, container_name: &str) -> bool {
     let Some(rest) = container_name.strip_prefix(CONTAINER_PREFIX_DASH) else {
