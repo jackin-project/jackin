@@ -584,7 +584,7 @@ mod tests {
             agent_runtime: Agent::Claude,
             role_source_git: "https://example.invalid/role.git",
             role_source_ref: Some("main"),
-            image_tag: "jk-org_agent",
+            image_tag: "jk_org_agent",
             docker: DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
                 dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
@@ -608,7 +608,7 @@ mod tests {
             agent_runtime: Agent::Claude,
             role_source_git: "https://example.invalid/role.git",
             role_source_ref: Some("main"),
-            image_tag: "jk-org_agent",
+            image_tag: "jk_org_agent",
             docker: DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
                 dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
@@ -641,7 +641,7 @@ mod tests {
             agent_runtime: Agent::Claude,
             role_source_git: "https://example.invalid/role.git",
             role_source_ref: Some("main"),
-            image_tag: "jk-org_agent",
+            image_tag: "jk_org_agent",
             docker: DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
                 dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),
@@ -685,7 +685,7 @@ mod tests {
             agent_runtime: Agent::Claude,
             role_source_git: "https://example.invalid/role.git",
             role_source_ref: Some("main"),
-            image_tag: "jk-org_agent",
+            image_tag: "jk_org_agent",
             docker: DockerResources {
                 role_container: "jk-k7p9m2xq-workspace-agent".to_string(),
                 dind_container: "jk-k7p9m2xq-workspace-agent-dind".to_string(),

@@ -96,6 +96,12 @@ mod tests {
     }
 
     #[test]
+    fn image_name_flat_role_uses_jk_underscore_prefix() {
+        let flat = crate::selector::RoleSelector::new(None, "agent-smith");
+        assert_eq!(image_name(&flat), "jk_agent-smith");
+    }
+
+    #[test]
     fn image_name_for_branch_substitutes_slashes_and_keeps_prefix() {
         let namespaced = crate::selector::RoleSelector::new(Some("chainargos"), "agent-brown");
         let flat = crate::selector::RoleSelector::new(None, "the-architect");

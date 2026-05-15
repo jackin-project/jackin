@@ -397,7 +397,7 @@ pub fn prune_images(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     } else if failed == 0 {
         println!("Removed {removed} image(s), skipped {skipped}.");
     } else {
-        println!("Removed {removed} image(s), skipped {skipped}, failed {failed}.");
+        eprintln!("Removed {removed} image(s), skipped {skipped}, failed {failed}.");
     }
     Ok(())
 }
@@ -407,7 +407,7 @@ pub fn prune_images(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
 /// Targets `clean_exited`, `superseded`, `failed_setup`, and `purged`
 /// tombstones. Any instance whose filesystem teardown fails — typically because
 /// Docker resources are still present — is skipped; use
-/// `jackin eject <selector> --purge` for those.
+/// `jackin hardline <selector>` to return or `jackin eject <selector> --purge` to discard.
 pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
 

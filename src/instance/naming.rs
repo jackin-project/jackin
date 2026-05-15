@@ -244,6 +244,20 @@ mod tests {
     }
 
     #[test]
+    fn class_family_matches_workspace_and_adhoc_for_same_selector() {
+        // A single role selector must match both a workspace-scoped container
+        // (jk-<id>-<ws>-<role>) and an ad-hoc container (jk-<id>-<role>).
+        // The rsplit_once fallback path handles the no-workspace case.
+        let selector = RoleSelector::new(None, "agent-smith");
+        assert!(class_family_matches(&selector, "jk-k7p9m2xq-agentsmith")); // ad-hoc
+        assert!(class_family_matches(
+            &selector,
+            "jk-k7p9m2xq-myproject-agentsmith" // workspace-scoped
+        ));
+        assert!(!class_family_matches(&selector, "jk-k7p9m2xq-agentbrown"));
+    }
+
+    #[test]
     fn no_workspace_long_role_fits_dns_budget() {
         let selector = RoleSelector::new(None, "role-name-with-a-very-long-human-friendly-label");
 
