@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use super::{BANNER, HELP_STYLES};
 
-/// Jack an role into an isolated container
+/// Jack a role into an isolated container
 ///
 /// TARGET can be a path (~/Projects/my-app), a path with container
 /// destination (~/Projects/my-app:/app), or a saved workspace name.
@@ -84,7 +84,7 @@ Examples:
   jackin hardline --inspect k7p9m2xq
   jackin hardline chainargos/the-architect
   jackin hardline k7p9m2xq
-  jackin hardline jackin-agent-smith-clone-1"
+  jackin hardline jk-k7p9m2xq-agentsmith"
 )]
 pub struct HardlineArgs {
     /// Role class selector, instance ID, or container name to reconnect to.
@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn load_help_shows_description_and_examples() {
         let help = help_text(&["jackin", "load", "--help"]);
-        assert!(help.contains("Jack an role into an isolated container"));
+        assert!(help.contains("Jack a role into an isolated container"));
         assert!(help.contains("Examples:"));
         assert!(help.contains("jackin load agent-smith"));
         assert!(help.contains("jackin load agent-smith big-monorepo"));

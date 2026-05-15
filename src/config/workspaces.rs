@@ -589,7 +589,9 @@ mod tests {
                 worktree_path: format!("/data/{container}/isolated{dst}"),
                 scratch_branch: format!("jackin/scratch/{container}"),
                 base_commit: "abc".into(),
-                selector_key: container.trim_start_matches("jackin-").into(),
+                selector_key: container
+                    .trim_start_matches(crate::instance::naming::CONTAINER_PREFIX_DASH)
+                    .into(),
                 container_name: container.into(),
                 cleanup_status: CleanupStatus::Active,
             }
@@ -619,13 +621,13 @@ mod tests {
         #[test]
         fn detect_drift_flags_running_containers() {
             let data = TempDir::new().unwrap();
-            let cdir = data.path().join("jackin-x");
+            let cdir = data.path().join("jk-a1b2c3d4-jackin");
             std::fs::create_dir_all(&cdir).unwrap();
             write_records(
                 &cdir,
                 std::slice::from_ref(&record_for(
                     "jackin",
-                    "jackin-x",
+                    "jk-a1b2c3d4-jackin",
                     "/workspace/jackin",
                     "/old/src",
                 )),
@@ -639,23 +641,28 @@ mod tests {
                 MountIsolation::Worktree,
             )];
             let mut runner = FakeRunner::default();
-            runner.capture_queue.push_back("jackin-x\n".into());
+            runner
+                .capture_queue
+                .push_back("jk-a1b2c3d4-jackin\n".into());
             runner.capture_queue.push_back(String::new());
             let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &mut runner).unwrap();
-            assert_eq!(det.running_containers, vec!["jackin-x".to_string()]);
+            assert_eq!(
+                det.running_containers,
+                vec!["jk-a1b2c3d4-jackin".to_string()]
+            );
             assert!(det.stopped_records.is_empty());
         }
 
         #[test]
         fn detect_drift_flags_stopped_records_when_src_changes() {
             let data = TempDir::new().unwrap();
-            let cdir = data.path().join("jackin-x");
+            let cdir = data.path().join("jk-a1b2c3d4-jackin");
             std::fs::create_dir_all(&cdir).unwrap();
             write_records(
                 &cdir,
                 std::slice::from_ref(&record_for(
                     "jackin",
-                    "jackin-x",
+                    "jk-a1b2c3d4-jackin",
                     "/workspace/jackin",
                     "/old/src",
                 )),
@@ -674,19 +681,19 @@ mod tests {
             let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &mut runner).unwrap();
             assert!(det.running_containers.is_empty());
             assert_eq!(det.stopped_records.len(), 1);
-            assert_eq!(det.stopped_records[0].container_name, "jackin-x");
+            assert_eq!(det.stopped_records[0].container_name, "jk-a1b2c3d4-jackin");
         }
 
         #[test]
         fn detect_drift_quiet_when_src_unchanged() {
             let data = TempDir::new().unwrap();
-            let cdir = data.path().join("jackin-x");
+            let cdir = data.path().join("jk-a1b2c3d4-jackin");
             std::fs::create_dir_all(&cdir).unwrap();
             write_records(
                 &cdir,
                 std::slice::from_ref(&record_for(
                     "jackin",
-                    "jackin-x",
+                    "jk-a1b2c3d4-jackin",
                     "/workspace/jackin",
                     "/same/src",
                 )),
@@ -718,13 +725,13 @@ mod tests {
         #[test]
         fn detect_drift_does_not_currently_flag_isolation_mode_flips() {
             let data = TempDir::new().unwrap();
-            let cdir = data.path().join("jackin-x");
+            let cdir = data.path().join("jk-a1b2c3d4-jackin");
             std::fs::create_dir_all(&cdir).unwrap();
             write_records(
                 &cdir,
                 std::slice::from_ref(&record_for(
                     "jackin",
-                    "jackin-x",
+                    "jk-a1b2c3d4-jackin",
                     "/workspace/jackin",
                     "/same/src",
                 )),
@@ -760,13 +767,13 @@ mod tests {
         #[test]
         fn detect_drift_flags_record_when_dst_removed_from_edit() {
             let data = TempDir::new().unwrap();
-            let cdir = data.path().join("jackin-x");
+            let cdir = data.path().join("jk-a1b2c3d4-jackin");
             std::fs::create_dir_all(&cdir).unwrap();
             write_records(
                 &cdir,
                 std::slice::from_ref(&record_for(
                     "jackin",
-                    "jackin-x",
+                    "jk-a1b2c3d4-jackin",
                     "/workspace/jackin",
                     "/old/src",
                 )),

@@ -109,6 +109,7 @@ export default defineConfig({
             { label: 'eject', slug: 'commands/eject' },
             { label: 'exile', slug: 'commands/exile' },
             { label: 'purge', slug: 'commands/purge' },
+            { label: 'prune', slug: 'commands/prune' },
             { label: 'workspace', slug: 'commands/workspace' },
             { label: 'config', slug: 'commands/config' },
             { label: 'role', slug: 'commands/role' },
@@ -137,6 +138,7 @@ export default defineConfig({
           items: [
             { label: 'Architecture', slug: 'reference/architecture' },
             { label: 'Runtime Instance Model', slug: 'reference/runtime-instance-model' },
+            { label: 'Instance and Resource Naming', slug: 'reference/instance-resource-naming' },
             { label: 'Configuration File', slug: 'reference/configuration' },
             { label: 'Schema Versions', slug: 'reference/schema-versions' },
             { label: 'Codebase Map', slug: 'reference/codebase-map' },

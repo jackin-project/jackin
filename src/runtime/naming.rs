@@ -1,6 +1,13 @@
 //! Naming conventions, Docker label/filter constants, and lightweight identifier helpers.
 
+use crate::instance::runtime_slug;
 use crate::selector::RoleSelector;
+
+/// Prefix for jackin-managed Docker image names.
+///
+/// Uses `_` as the separator so all structural boundaries in an image name
+/// are `_`, visually distinct from container names which use `jk-{id}-…`.
+pub(super) const IMAGE_PREFIX: &str = "jk_";
 
 // ── Docker label keys ─────────────────────────────────────────────────────
 //
@@ -12,6 +19,8 @@ pub(super) const LABEL_MANAGED: &str = "jackin.managed=true";
 pub(super) const LABEL_KIND_ROLE: &str = "jackin.kind=role";
 /// `DinD` sidecars only — distinguishes them from role containers.
 pub(super) const LABEL_KIND_DIND: &str = "jackin.kind=dind";
+/// Filter expression for `docker images --filter` to list jackin-managed role images.
+pub(super) const FILTER_IMAGES: &str = "reference=jk_*";
 /// Filter expression for `docker ps --filter` to find managed containers.
 pub(super) const FILTER_MANAGED: &str = "label=jackin.managed=true";
 /// Filter expression for `docker ps --filter` to find role containers.
@@ -29,8 +38,8 @@ pub(super) const LABEL_KEEP_AWAKE: &str = "jackin.keep_awake=true";
 /// Format a human-friendly role name from a container name and its display label.
 ///
 /// Examples:
-///   - `("jackin-thearchitect-k7p9m2xq", "The Architect")` → `"The Architect (k7p9m2xq)"`
-///   - `("jackin-thearchitect-k7p9m2xq", "")` → `"jackin-thearchitect-k7p9m2xq"`
+///   - `("jk-k7p9m2xq-thearchitect", "The Architect")` → `"The Architect (k7p9m2xq)"`
+///   - `("jk-k7p9m2xq-thearchitect", "")` → `"jk-k7p9m2xq-thearchitect"`
 ///
 /// The instance-ID suffix is appended so two concurrent sessions of the
 /// same role render as distinct rows in operator output.
@@ -54,15 +63,17 @@ pub fn matching_family(selector: &RoleSelector, names: &[String]) -> Vec<String>
 }
 
 pub(super) fn image_name(selector: &RoleSelector) -> String {
-    format!("jackin-{}", crate::instance::runtime_slug(selector))
+    format!("{IMAGE_PREFIX}{}", runtime_slug(selector))
 }
 
 /// Image tag for a branch-specific local build. Branch slashes become dashes
 /// so the tag is a valid Docker name and does not overwrite the stable image
-/// (e.g. `jackin-the-architect-feat-my-pr`).
+/// (e.g. `jk_the-architect_feat-my-pr`). All structural separators in image
+/// names are `_`. Role names and branch slugs contain only `[a-z0-9-]`, so
+/// `_` marks every boundary.
 pub(super) fn image_name_for_branch(selector: &RoleSelector, branch: &str) -> String {
     let slug = branch.replace('/', "-").to_ascii_lowercase();
-    format!("jackin-{}-{slug}", crate::instance::runtime_slug(selector))
+    format!("{IMAGE_PREFIX}{}_{slug}", runtime_slug(selector))
 }
 
 /// Docker volume name for the TLS client certificates shared between the
@@ -76,29 +87,70 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dind_certs_volume_derives_from_container_name() {
+    fn image_name_distinguishes_namespaced_and_flat_classes() {
+        let namespaced = crate::selector::RoleSelector::new(Some("chainargos"), "agent-brown");
+        let flat = crate::selector::RoleSelector::new(None, "chainargos-agent-brown");
+        assert_ne!(image_name(&namespaced), image_name(&flat));
+        assert_eq!(image_name(&namespaced), "jk_chainargos_agent-brown");
+        assert_eq!(image_name(&flat), "jk_chainargos-agent-brown");
+    }
+
+    #[test]
+    fn image_name_flat_role_uses_jk_underscore_prefix() {
+        let flat = crate::selector::RoleSelector::new(None, "agent-smith");
+        assert_eq!(image_name(&flat), "jk_agent-smith");
+    }
+
+    #[test]
+    fn image_name_for_branch_substitutes_slashes_and_keeps_prefix() {
+        let namespaced = crate::selector::RoleSelector::new(Some("chainargos"), "agent-brown");
+        let flat = crate::selector::RoleSelector::new(None, "the-architect");
+
         assert_eq!(
-            dind_certs_volume("jackin-agent-smith"),
-            "jackin-agent-smith-dind-certs"
+            image_name_for_branch(&namespaced, "feat/my-pr"),
+            "jk_chainargos_agent-brown_feat-my-pr"
         );
         assert_eq!(
-            dind_certs_volume("jackin-chainargos__the-architect-clone-2"),
-            "jackin-chainargos__the-architect-clone-2-dind-certs"
+            image_name_for_branch(&flat, "main"),
+            "jk_the-architect_main"
+        );
+        // Branch with multiple slashes — all become dashes.
+        assert_eq!(
+            image_name_for_branch(&flat, "feat/scope/detail"),
+            "jk_the-architect_feat-scope-detail"
         );
     }
 
     #[test]
-    fn image_name_distinguishes_namespaced_and_flat_classes() {
-        let namespaced = RoleSelector::new(Some("chainargos"), "the-architect");
-        let flat = RoleSelector::new(None, "chainargos-the-architect");
+    fn image_name_for_branch_lowercases_uppercase_branch() {
+        let namespaced = crate::selector::RoleSelector::new(Some("chainargos"), "agent-brown");
+        let flat = crate::selector::RoleSelector::new(None, "the-architect");
+        assert_eq!(
+            image_name_for_branch(&namespaced, "Feat/MY-PR"),
+            "jk_chainargos_agent-brown_feat-my-pr"
+        );
+        assert_eq!(
+            image_name_for_branch(&flat, "RELEASE/1.0"),
+            "jk_the-architect_release-1.0"
+        );
+    }
 
-        assert_ne!(image_name(&namespaced), image_name(&flat));
+    #[test]
+    fn dind_certs_volume_derives_from_container_name() {
+        assert_eq!(
+            dind_certs_volume("jk-agent-smith"),
+            "jk-agent-smith-dind-certs"
+        );
+        assert_eq!(
+            dind_certs_volume("jk-k7p9m2xq-chainargos-thearchitect"),
+            "jk-k7p9m2xq-chainargos-thearchitect-dind-certs"
+        );
     }
 
     #[test]
     fn format_agent_display_appends_instance_id() {
         assert_eq!(
-            format_role_display("jackin-thearchitect-k7p9m2xq", "The Architect"),
+            format_role_display("jk-k7p9m2xq-thearchitect", "The Architect"),
             "The Architect (k7p9m2xq)"
         );
     }
@@ -106,8 +158,8 @@ mod tests {
     #[test]
     fn format_agent_display_falls_back_to_container_name() {
         assert_eq!(
-            format_role_display("jackin-thearchitect-k7p9m2xq", ""),
-            "jackin-thearchitect-k7p9m2xq"
+            format_role_display("jk-k7p9m2xq-thearchitect", ""),
+            "jk-k7p9m2xq-thearchitect"
         );
     }
 }

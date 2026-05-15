@@ -38,11 +38,13 @@ The runtime instance model is the source of truth for how jackin names container
 Fresh launches use DNS-safe base names:
 
 ```text
-jackin-<workspace-name>-<agent-role>-<unique-id>
-jackin-<agent-role>-<unique-id>
+jk-<unique-id>-<workspace-name>-<agent-role>
+jk-<unique-id>-<agent-role>
 ```
 
-The first form is for saved workspaces. The second form is for ad-hoc launches. Workspace and role components are compact lowercase ASCII alphanumeric strings. The unique ID makes concurrent launches distinct and removes the old deterministic `clone-N` slot model.
+The first form is for saved workspaces. The second form is for ad-hoc launches. The `jk-` prefix identifies all jackin-managed Docker resources. The unique ID comes second so all resources from the same session share a common prefix. Workspace and role components are compact lowercase ASCII alphanumeric strings derived by stripping non-alphanumeric characters (hyphens, slashes, underscores) from the source names. The unique ID makes concurrent launches distinct.
+
+The total base name fits within 58 characters so that `<base>-dind` stays within the 63-character DNS label limit. If the compacted workspace and role components together exceed the available budget they are truncated with a 4-character SHA-256 suffix to keep names deterministic.
 
 Derived Docker resources use the base name:
 
@@ -55,7 +57,7 @@ cert volume:     <base>-dind-certs
 
 DNS-sensitive values such as `DOCKER_HOST`, `JACKIN_DIND_HOSTNAME`, `DOCKER_TLS_SAN`, `NO_PROXY`, `no_proxy`, and `TESTCONTAINERS_HOST_OVERRIDE` use the DNS-safe DinD name. The role-container base must fit the DinD label budget because `<base>-dind` is used as a network hostname.
 
-Implementation lives in <RepoFile path="src/instance/naming.rs" /> and <RepoFile path="src/runtime/naming.rs" />.
+Implementation lives in <RepoFile path="src/instance/naming.rs" /> and <RepoFile path="src/runtime/naming.rs" />. The full naming reference — including image names, derived resource names, lock files, roles cache layout, CLI selector formats, and worked examples — is in [Instance and Resource Naming](/reference/instance-resource-naming/).
 
 ## State Layout
 

@@ -970,7 +970,7 @@ plugins = []
 
         let (state, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
@@ -996,7 +996,7 @@ plugins = []
 
         let (state, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1026,7 +1026,7 @@ plugins = []
 
         let (state, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1053,7 +1053,7 @@ plugins = []
         seed_host_auth(&temp);
         let (state, outcome1) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1077,7 +1077,7 @@ plugins = []
         // Second run: should overwrite with host content
         let (state2, outcome2) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1105,7 +1105,7 @@ plugins = []
         // First run: sync mode writes credentials
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1118,7 +1118,7 @@ plugins = []
         // Operator switches to ignore — credentials must be wiped
         let (state2, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
@@ -1143,7 +1143,7 @@ plugins = []
 
         let (state, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::OAuthToken,
             &crate::instance::GithubAuthContext::default(),
@@ -1184,7 +1184,7 @@ plugins = []
         // get wiped under api_key.
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1199,7 +1199,7 @@ plugins = []
 
         let (state2, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::ApiKey,
             &crate::instance::GithubAuthContext::default(),
@@ -1230,7 +1230,7 @@ plugins = []
         // First run: sync mode writes credentials
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1245,7 +1245,7 @@ plugins = []
         // wizard and authenticates exclusively via CLAUDE_CODE_OAUTH_TOKEN.
         let (state2, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::OAuthToken,
             &crate::instance::GithubAuthContext::default(),
@@ -1271,7 +1271,7 @@ plugins = []
         // First run: token mode writes the onboarding skeleton
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::OAuthToken,
             &crate::instance::GithubAuthContext::default(),
@@ -1287,7 +1287,7 @@ plugins = []
         // Operator switches to sync — host auth must now be forwarded
         let (state2, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1317,7 +1317,7 @@ plugins = []
         // Token mode seeds an empty state
         let (_, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::OAuthToken,
             &crate::instance::GithubAuthContext::default(),
@@ -1329,7 +1329,7 @@ plugins = []
         // Switching to ignore must keep the empty shape (no .credentials.json)
         let (state2, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
@@ -1355,7 +1355,7 @@ plugins = []
         seed_host_auth(&temp);
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1375,7 +1375,7 @@ plugins = []
         // Second run: host auth missing — container auth must be preserved
         let (state2, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1402,7 +1402,7 @@ plugins = []
 
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1441,7 +1441,7 @@ plugins = []
         // First run: create the file with ignore mode (gets 0600)
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
@@ -1465,7 +1465,7 @@ plugins = []
         seed_host_auth(&temp);
         let (state2, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1497,7 +1497,7 @@ plugins = []
         seed_host_auth(&temp);
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1522,7 +1522,7 @@ plugins = []
         // Second run: host auth missing — files preserved but permissions repaired
         let (state2, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1563,7 +1563,7 @@ plugins = []
         // First run: create the state directory
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1581,7 +1581,7 @@ plugins = []
         // Sync should refuse to write through the symlink
         let err = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1609,7 +1609,7 @@ plugins = []
         // First run: create the state directory with credentials
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1628,7 +1628,7 @@ plugins = []
         // Sync should refuse to write through the symlink
         let err = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),

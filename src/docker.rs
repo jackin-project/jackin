@@ -4,8 +4,8 @@ use std::path::Path;
 /// `True` when a Docker CLI error message reports an absent resource.
 ///
 /// Matches `inspect`'s `No such object`, or `rm`/`network rm`/`volume rm`'s
-/// `No such container`/`network`/`volume`. Match is case-insensitive
-/// because different daemon versions vary the casing.
+/// `No such container`/`network`/`volume`, and `rmi`'s `No such image`.
+/// Match is case-insensitive because different daemon versions vary the casing.
 #[must_use]
 pub fn is_missing_resource_error(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
@@ -13,6 +13,20 @@ pub fn is_missing_resource_error(message: &str) -> bool {
         || lower.contains("no such container")
         || lower.contains("no such network")
         || lower.contains("no such volume")
+        || lower.contains("no such image")
+}
+
+/// `True` when a Docker `rmi` error indicates an image is still referenced
+/// by a running or stopped container. Match is case-insensitive.
+///
+/// `"image is being used by"` covers stopped containers. `"cannot be forced"`
+/// covers running containers (Docker refuses `rmi --force`). `"must be forced"`
+/// fires for multi-repo image references (not a container conflict) and is
+/// intentionally excluded — those images should be removable.
+#[must_use]
+pub fn is_image_in_use_error(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    lower.contains("image is being used by") || lower.contains("cannot be forced")
 }
 
 /// Options that control how a command is executed.
@@ -388,5 +402,47 @@ mod tests {
         let args = &["run", "-e"];
         let redacted = redact_env_args(args);
         assert_eq!(redacted, vec!["run", "-e"]);
+    }
+
+    #[test]
+    fn is_image_in_use_error_matches_in_use_patterns() {
+        assert!(is_image_in_use_error(
+            "image is being used by stopped container abc123"
+        ));
+        assert!(is_image_in_use_error(
+            "conflict: unable to remove (cannot be forced)"
+        ));
+        // "must be forced" is the multi-repo case, NOT a container conflict —
+        // it should not match so those images can be removed.
+        assert!(!is_image_in_use_error(
+            "conflict: unable to remove (must be forced)"
+        ));
+    }
+
+    #[test]
+    fn is_image_in_use_error_is_case_insensitive() {
+        assert!(is_image_in_use_error(
+            "Image Is Being Used By running container"
+        ));
+        assert!(is_image_in_use_error("CANNOT BE FORCED"));
+    }
+
+    #[test]
+    fn is_image_in_use_error_does_not_match_real_errors() {
+        assert!(!is_image_in_use_error("permission denied"));
+        assert!(!is_image_in_use_error(
+            "Error response from daemon: no such image"
+        ));
+        assert!(!is_image_in_use_error(
+            "conflict: unable to remove (must be forced) - image is referenced in multiple repositories"
+        ));
+    }
+
+    #[test]
+    fn is_missing_resource_error_matches_no_such_image() {
+        assert!(is_missing_resource_error(
+            "Error response from daemon: No such image: jk-agent-smith:latest"
+        ));
+        assert!(is_missing_resource_error("no such image: jk-foo"));
     }
 }
