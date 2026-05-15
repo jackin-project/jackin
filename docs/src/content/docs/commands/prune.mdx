@@ -43,7 +43,7 @@ Removes the shared cache directory, including compiled terminfo entries and vers
 jackin prune images
 ```
 
-Removes `jk-*` Docker images that have no containers — running or stopped — that depend on them. Images still in use by any container are skipped silently. Because Docker images are rebuilt from the role Dockerfile on the next `jackin load`, removing an unused image does not lose any data.
+Removes `jk-*` Docker images that have no containers — running or stopped — that depend on them. Images still in use by any container are skipped; the final summary reports the count of images removed and skipped. Because Docker images are rebuilt from the role Dockerfile on the next `jackin load`, removing an unused image does not lose any data.
 
 ## `jackin prune instances`
 

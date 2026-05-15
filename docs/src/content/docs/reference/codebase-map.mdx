@@ -45,6 +45,7 @@ Start at <RepoFile path="src/cli/mod.rs" /> — the top-level `Cli` and
 | `load` / `hardline` / `console` | <RepoFile path="src/cli/role.rs" /> |
 | `role` | <RepoFile path="src/cli/role.rs" /> and <RepoFile path="src/role_authoring.rs" /> |
 | `eject` / `purge` | <RepoFile path="src/cli/cleanup.rs" /> |
+| `prune` | <RepoFile path="src/cli/prune.rs" /> |
 | `workspace` | <RepoFile path="src/cli/workspace.rs" /> |
 | `config` | <RepoFile path="src/cli/config.rs" /> |
 | `exile` (unit variant) | <RepoFile path="src/cli/mod.rs" /> |
@@ -67,7 +68,7 @@ The container lifecycle lives in `src/runtime/`:
 - <RepoFile path="src/runtime/attach.rs" /> — the attach + reconnect path
   (`hardline`).
 - <RepoFile path="src/runtime/cleanup.rs" /> — `eject`, `exile`, `purge`,
-  and orphan GC.
+  `prune` (roles/cache/images/instances), and orphan GC.
 - <RepoFile path="src/runtime/image.rs" /> — `docker build` invocation.
 - <RepoFile path="src/runtime/repo_cache.rs" /> — the role-repo cache lock
   + fetch logic.

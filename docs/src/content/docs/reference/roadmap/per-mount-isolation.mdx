@@ -57,10 +57,10 @@ The mode vocabulary is `shared | worktree | clone`. `shared` is the canonical sp
 
 Branch naming (Model B — full container name verbatim):
 
-- Instance: `jackin/scratch/jackin-thearchitect-k7p9m2xq`
-- Workspace-scoped instance: `jackin/scratch/jackin-myproject-thearchitect-a1b2c3d4`
+- Instance: `jackin/scratch/jk-k7p9m2xq-thearchitect`
+- Workspace-scoped instance: `jackin/scratch/jk-a1b2c3d4-myproject-thearchitect`
 
-The branch leaf is the **full container name verbatim**. Container names are workspace-unique by construction in <RepoFile path="src/instance/naming.rs" /> (random 8-char instance ID per launch), so the branch ref inherits that uniqueness without a separate derivation step. The trade-off is **trivial 1:1 mapping** (container → branch, no derivation logic, no instance-suffix stripping) at the cost of a mildly redundant `jackin-` prefix under the `jackin/scratch/` namespace. The branch intentionally says `scratch`: it is jackin-managed, disposable, and stable enough for recovery until the agent or operator renames it.
+The branch leaf is the **full container name verbatim**. Container names are workspace-unique by construction in <RepoFile path="src/instance/naming.rs" /> (random 8-char instance ID per launch), so the branch ref inherits that uniqueness without a separate derivation step. The trade-off is **trivial 1:1 mapping** (container → branch, no derivation logic, no instance-suffix stripping). The branch intentionally says `scratch`: it is jackin-managed, disposable, and stable enough for recovery until the agent or operator renames it.
 
 ## CLI Surface
 
@@ -122,8 +122,8 @@ Beyond the per-type validation:
 
 When the operator runs `jackin load <agent> <workspace>` and a workspace mount has `isolation = "worktree"`:
 
-1. **On the host, before the container starts**: `git worktree add` creates a per-container worktree under `<data_dir>/jackin-<container>/git/worktree/repo/<dst-tree>/<container>/`. The branch is `jackin/scratch/<container>` (Model B), branched from the host repo's current `HEAD`. A record is written to `<data_dir>/jackin-<container>/.jackin/isolation.json` so `purge` can clean up later even if the operator changes the workspace config.
-2. **Two override files are written** under `<data_dir>/jackin-<container>/git/overrides/<dst-tree>/`: a `.git` file pointing to `/jackin/host/<dst-tree>/.git/worktrees/<container>` and a `gitdir` back-pointer naming `<dst>/.git`. These exist because git stores **absolute paths** in worktree pointer files, and the absolute path that resolves on the host doesn't resolve inside the container — these two override files re-express the same relationships in container-side absolute paths.
+1. **On the host, before the container starts**: `git worktree add` creates a per-container worktree under `<data_dir>/<container>/git/worktree/repo/<dst-tree>/<container>/`. The branch is `jackin/scratch/<container>` (Model B), branched from the host repo's current `HEAD`. A record is written to `<data_dir>/<container>/.jackin/isolation.json` so `purge` can clean up later even if the operator changes the workspace config.
+2. **Two override files are written** under `<data_dir>/<container>/git/overrides/<dst-tree>/`: a `.git` file pointing to `/jackin/host/<dst-tree>/.git/worktrees/<container>` and a `gitdir` back-pointer naming `<dst>/.git`. These exist because git stores **absolute paths** in worktree pointer files, and the absolute path that resolves on the host doesn't resolve inside the container — these two override files re-express the same relationships in container-side absolute paths.
 3. **The container starts with four bind mounts** for the isolated mount: the worktree at `<dst>` (rw), the host repo's `.git/` at `/jackin/host/<dst-tree>/.git` (rw, includes the per-worktree admin entry at `worktrees/<container>/` natively), and the two override files (`:ro`, layered over the worktree's `.git` and the admin's `gitdir`).
 4. **Inside the container**, `git status`, `git log`, `git commit`, `git push` all work normally. The agent never sees the host's main checkout, only the per-container worktree. Commits go to the scratch branch, which is visible on the host immediately via `git branch -a` (refs and objects are shared with the host repo — that's the worktree contract).
 5. **On clean exit**, jackin' removes the worktree and scratch branch automatically when no work would be lost. Dirty/unpushed exits preserve the worktree on disk; the operator runs `jackin hardline` to return, inspects the printed worktree path directly, or runs `jackin purge` to discard.
@@ -132,10 +132,10 @@ The rest of this section drills into each step. For the rationale behind this sp
 
 ### Per-container state layout
 
-Worktrees live inside the existing per-container state tree, matching the flat `<data_dir>/jackin-<container>/` layout already in use for `.claude/`, `.jackin/`, and other per-agent state:
+Worktrees live inside the existing per-container state tree, matching the flat `<data_dir>/<container>/` layout already in use for `.claude/`, `.jackin/`, and other per-agent state:
 
 ```
-<data_dir>/jackin-<container>/
+<data_dir>/<container>/
   .claude/                # existing
   .jackin/                # existing
     isolation.json        # materialized isolated-mount state for purge/cd
@@ -191,7 +191,7 @@ For each isolated worktree, jackin' wires up:
 The two override files are jackin-owned and live alongside the materialized worktree on host. Per-mount on-disk layout groups all git-related artifacts for one mount under one dst-tree subtree:
 
 ```text
-<data_dir>/jackin-<container>/git/
+<data_dir>/<container>/git/
 ├── worktree/repo/<dst-stripped>/<container>/    ← the materialized worktree
 │                                                  (basename = container; the `repo/`
 │                                                  segment marks the subtree as
@@ -209,11 +209,11 @@ Host-side worktree files (`<wt>/.git` and `<host_repo>/.git/worktrees/<container
 For parallel containers loading isolation against the same host repo:
 
 ```text
-Container jackin-thearchitect-k7p9m2xq → admin: <host>/.git/worktrees/jackin-thearchitect-k7p9m2xq/
-Container jackin-thearchitect-a1b2c3d4 → admin: <host>/.git/worktrees/jackin-thearchitect-a1b2c3d4/
+Container jk-k7p9m2xq-thearchitect → admin: <host>/.git/worktrees/jk-k7p9m2xq-thearchitect/
+Container jk-a1b2c3d4-thearchitect  → admin: <host>/.git/worktrees/jk-a1b2c3d4-thearchitect/
 ```
 
-**Branch naming uses the full container name.** Branch ref = `jackin/scratch/<container>` (e.g. `jackin/scratch/jackin-thearchitect-k7p9m2xq`). Container name is the disambiguator because branch refs live in the host repo's shared `<host>/.git/refs/heads/` namespace and `git worktree add -b` fails hard on branch collisions (no auto-suffix like admin entries get). Includes the `jackin-` prefix because the container name is used verbatim — the prefix is mildly redundant under the `jackin/scratch/` namespace but the trade is **trivial 1:1 mapping** (container name → branch leaf, no derivation logic).
+**Branch naming uses the full container name.** Branch ref = `jackin/scratch/<container>` (e.g. `jackin/scratch/jk-k7p9m2xq-thearchitect`). Container name is the disambiguator because branch refs live in the host repo's shared `<host>/.git/refs/heads/` namespace and `git worktree add -b` fails hard on branch collisions (no auto-suffix like admin entries get). The trade is **trivial 1:1 mapping** (container name → branch leaf, no derivation logic).
 
 **Mount permissions, summarized.** The host `.git/` mount is read-write (refs, objects, HEAD/index/logs are all written under it on every commit/branch/fetch). Both override files are mounted **read-only** as defensive hardening: git only reads them during normal agent work, and a misbehaving agent could otherwise rewrite the worktree's `.git` pointer to redirect operations at a different gitdir entirely. The only legitimate writes to those files (`git worktree repair`, `git worktree move`, `git init` inside the worktree) are maintenance commands that have no place in normal agent workflows.
 
@@ -259,7 +259,7 @@ We can't replicate that absolute-path equivalence in a Docker container without 
 
 ### Option B — Indirect mount + `.git` pointer override (chosen)
 
-The worktree stays at `<data_dir>/jackin-<container>/git/worktree/repo/<dst-stripped>/<container>/` (jackin's data-dir-based layout, with the `worktree/repo/` segments marking the subtree as git-managed). The container sees the worktree at `<dst>` (matching operator expectations exactly). Three extra bind mounts make git work inside the container: one for the host's `.git/` at `/jackin/host/<dst-stripped>/.git` (which natively includes the per-worktree admin entry at `worktrees/<container>/`), plus two override files (the worktree's `.git` pointer and git's admin-dir back-pointer) so the gitdir relationship is consistent inside the container.
+The worktree stays at `<data_dir>/<container>/git/worktree/repo/<dst-stripped>/<container>/` (jackin's data-dir-based layout, with the `worktree/repo/` segments marking the subtree as git-managed). The container sees the worktree at `<dst>` (matching operator expectations exactly). Three extra bind mounts make git work inside the container: one for the host's `.git/` at `/jackin/host/<dst-stripped>/.git` (which natively includes the per-worktree admin entry at `worktrees/<container>/`), plus two override files (the worktree's `.git` pointer and git's admin-dir back-pointer) so the gitdir relationship is consistent inside the container.
 
 Why this fits jackin' specifically:
 
@@ -314,8 +314,8 @@ The decision to support both worktree mode (Option B) and clone mode is delibera
 - **Unsafe clean-exit cleanup** — if safe cleanup would lose work and stdin is interactive, jackin' asks what to do before deleting anything. The prompt wording branches on a `PreservedReason` discriminator so the operator sees the actual risk; for a dirty working tree:
 
   ```text
-  Isolated worktree for jackin-the-architect has uncommitted changes:
-    /.../.jackin/data/jackin-the-architect/git/worktree/repo/workspace/jackin/jackin-the-architect
+  Isolated worktree for jk-k7p9m2xq-thearchitect has uncommitted changes:
+    /.../.jackin/data/jk-k7p9m2xq-thearchitect/git/worktree/repo/workspace/jackin/jk-k7p9m2xq-thearchitect
 
   What do you want to do?
     1. Return to agent to address it
@@ -326,8 +326,8 @@ The decision to support both worktree mode (Option B) and clone mode is delibera
   For a clean tree with at least one local branch carrying unpushed commits the wording becomes "has unpushed commits on a local branch" instead — same three actions, but the operator no longer sees "uncommitted changes" alongside a tree that obviously has none. Returning to the agent means restarting the just-exited container before teardown, attaching again, and retrying safe cleanup after the agent exits again. This works the same whether the foreground session came from `load`, `launch`, `hardline`, or a future console UI. Preserving means leaving the stopped container/DinD recovery state and isolated worktree in place so `jackin hardline <container>` can return to it later, the operator can inspect the preserved worktree directly on disk (path printed in the warning), and `jackin purge <container>` can discard it. Force delete uses the same destructive cleanup path as `purge` for the selected isolated worktree and runtime state. If stdin is non-interactive, jackin' preserves the recovery state, prints the worktree path plus the per-reason phrasing, and tells the operator how to return, inspect, or discard. This lives behind a shared runtime finalization helper rather than only inside <RepoFile path="src/runtime/launch.rs" />; <RepoFile path="src/runtime/attach.rs" /> calls the same helper after `hardline` attaches. Non-interactive warning shape:
 
   ```text
-  [jackin] preserved isolated worktree for jackin-the-architect:
-           /.../.jackin/data/jackin-the-architect/git/worktree/repo/workspace/jackin/jackin-the-architect
+  [jackin] preserved isolated worktree for jk-k7p9m2xq-thearchitect:
+           /.../.jackin/data/jk-k7p9m2xq-thearchitect/git/worktree/repo/workspace/jackin/jk-k7p9m2xq-thearchitect
            reason: uncommitted changes
            run `jackin hardline the-architect` to return, inspect the path above directly, or `jackin purge the-architect` to discard
   ```
@@ -363,9 +363,9 @@ Ship:
 - Runtime source-drift guard: `load` errors when a saved workspace mount reuses a materialized isolated `dst` with a different `src`; CLI/TUI workspace edits should detect the same drift before saving and ask whether to delete preserved state or cancel. Non-interactive edits require `--delete-isolated-state` to delete affected preserved state.
 - Clean-exit cleanup deletes clean worktrees automatically when no commits would be lost, including clean branches whose local commits are already reachable from their upstream/remote tracking branch. Preserved states use `active | preserved_dirty | preserved_unpushed`; successful cleanup removes the state record.
 - `extensions.worktreeConfig` enabled on the host repo on first worktree creation.
-- For each isolated worktree, **four** bind mounts wired up at Docker run time so git works inside the container: the worktree at `<dst>` (rw), host's `.git/` at `/jackin/host/<dst-stripped>/.git` (rw, includes the per-worktree admin dir natively), plus two jackin-owned `:ro` override files (replacement `.git` pointer at `<dst>/.git`, replacement back-pointer at the admin's `gitdir`). The override files live at `<data_dir>/jackin-<container>/git/overrides/<dst-stripped>/{.git,gitdir}` with filenames matching their docker mount destinations. The materialized worktree lives at `<data_dir>/jackin-<container>/git/worktree/repo/<dst-stripped>/<container>/` — `repo/` marks the subtree as git-managed, `<container>` basename ensures globally unique admin entries in the host repo's `.git/worktrees/`. See [Container-side mount layout](#host-side-materialization) and [Design Decision: Worktree Materialization Layout](#design-decision-worktree-materialization-layout).
-- For each isolated clone, one bind mount is enough: the materialized clone at `<data_dir>/jackin-<container>/git/clone/repo/<dst-stripped>/<container>/` is mounted at `<dst>` (rw). The clone carries its own `.git/`, so no host `.git/` auxiliary mounts or override files are needed.
-- Branch naming uses the full container name verbatim: `jackin/scratch/<container>` (e.g. `jackin/scratch/jackin-thearchitect-k7p9m2xq`). Globally unique by construction; trivial container → branch mapping; no instance-suffix derivation logic.
+- For each isolated worktree, **four** bind mounts wired up at Docker run time so git works inside the container: the worktree at `<dst>` (rw), host's `.git/` at `/jackin/host/<dst-stripped>/.git` (rw, includes the per-worktree admin dir natively), plus two jackin-owned `:ro` override files (replacement `.git` pointer at `<dst>/.git`, replacement back-pointer at the admin's `gitdir`). The override files live at `<data_dir>/<container>/git/overrides/<dst-stripped>/{.git,gitdir}` with filenames matching their docker mount destinations. The materialized worktree lives at `<data_dir>/<container>/git/worktree/repo/<dst-stripped>/<container>/` — `repo/` marks the subtree as git-managed, `<container>` basename ensures globally unique admin entries in the host repo's `.git/worktrees/`. See [Container-side mount layout](#host-side-materialization) and [Design Decision: Worktree Materialization Layout](#design-decision-worktree-materialization-layout).
+- For each isolated clone, one bind mount is enough: the materialized clone at `<data_dir>/<container>/git/clone/repo/<dst-stripped>/<container>/` is mounted at `<dst>` (rw). The clone carries its own `.git/`, so no host `.git/` auxiliary mounts or override files are needed.
+- Branch naming uses the full container name verbatim: `jackin/scratch/<container>` (e.g. `jackin/scratch/jk-k7p9m2xq-thearchitect`). Globally unique by construction; trivial container → branch mapping; no instance-suffix derivation logic.
 - `validate_isolation_layout` rejects two worktree mounts that resolve to the same host repository within one workspace. Clone mounts can share the same host repository because each has an independent `.git/`.
 - `load` materializes, foreground session finalization safely removes throwaway isolated worktrees when no work would be lost, unsafe clean-exit cleanup asks interactive operators whether to return to the agent, preserve recovery state, or force-delete, `eject` leaves worktrees alone, and `purge` force-deletes everything (container, DinD sidecar, the per-container `git/` tree, worktree, local branch).
 - `purge` refuses on running agents (also closes the pre-existing gap for `shared` mode).
