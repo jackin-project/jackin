@@ -110,6 +110,20 @@ mod tests {
     }
 
     #[test]
+    fn image_name_for_branch_lowercases_uppercase_branch() {
+        let namespaced = crate::selector::RoleSelector::new(Some("chainargos"), "agent-brown");
+        let flat = crate::selector::RoleSelector::new(None, "the-architect");
+        assert_eq!(
+            image_name_for_branch(&namespaced, "Feat/MY-PR"),
+            "jk-chainargos_agent-brown_feat-my-pr"
+        );
+        assert_eq!(
+            image_name_for_branch(&flat, "RELEASE/1.0"),
+            "jk-the-architect_release-1.0"
+        );
+    }
+
+    #[test]
     fn dind_certs_volume_derives_from_container_name() {
         assert_eq!(
             dind_certs_volume("jk-agent-smith"),

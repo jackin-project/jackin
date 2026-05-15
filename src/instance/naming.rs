@@ -80,7 +80,8 @@ pub fn class_family_matches(selector: &RoleSelector, container_name: &str) -> bo
 }
 
 /// Loop-friendly variant of [`class_family_matches`] for callers that
-/// precompute the slug once across many candidates.
+/// precompute the slug once across many candidates — avoids one
+/// [`compact_component`] allocation per comparison.
 #[must_use]
 pub fn class_family_matches_with_slug(role_slug: &str, container_name: &str) -> bool {
     let Some(rest) = container_name.strip_prefix(CONTAINER_PREFIX_DASH) else {

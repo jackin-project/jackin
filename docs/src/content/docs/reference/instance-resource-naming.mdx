@@ -85,6 +85,26 @@ jk-scentbird_the-architect  ← scentbird/the-architect
 
 **Collision safety:** `chainargos/agent-brown` produces `jk-chainargos_agent-brown` while a flat role literally named `chainargos-agent-brown` produces `jk-chainargos-agent-brown`. The underscore vs hyphen difference makes them distinct.
 
+### Branch-specific build tags
+
+When a role is built from a specific branch (`jackin load --branch`), the image tag adds the branch slug after a second `_` separator:
+
+```text
+Namespaced role:  jk-{namespace}_{role-name}_{branch-slug}
+Flat role:        jk-{role-name}_{branch-slug}
+```
+
+Branch slashes become dashes in the slug. The `_` between role slug and branch slug follows the same convention as the namespace separator — unambiguous because branch slugs contain only `[a-z0-9-]`.
+
+**Examples:**
+
+```text
+jk-the-architect_feat-my-pr          ← the-architect, branch feat/my-pr
+jk-chainargos_agent-brown_feat-my-pr ← chainargos/agent-brown, branch feat/my-pr
+```
+
+Branch-specific images do not replace the stable image — they coexist with `jk-the-architect` under a distinct tag.
+
 ## State directory
 
 The per-instance state directory on the host always has the same name as the container:

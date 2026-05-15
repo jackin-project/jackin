@@ -201,7 +201,7 @@ pub(super) fn gc_orphaned_resources(runner: &mut impl CommandRunner) {
                 );
             }
         }
-        if results.iter().any(Result::is_ok) {
+        if results.iter().all(Result::is_ok) {
             eprintln!(
                 "        {} orphaned resources for {}",
                 "cleaned up".dimmed(),
@@ -378,7 +378,10 @@ pub fn prune_images(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
                 {
                     skipped += 1;
                 } else {
-                    eprintln!("  could not remove {image}: {error}");
+                    eprintln!(
+                        "  {} could not remove {image}: {error}",
+                        "error:".red().bold()
+                    );
                     failed += 1;
                 }
             }
@@ -908,6 +911,39 @@ jk-a1b2c3d4-myworkspace-agentsmith"
                 .iter()
                 .any(|c| c.contains("docker network rm jk-neo-net"))
         );
+    }
+
+    #[test]
+    fn gc_does_not_panic_when_collect_orphaned_dind_fails() {
+        // Docker daemon unreachable — the DinD ps call fails. gc_orphaned_resources
+        // must emit a warning and return without panicking.
+        let mut runner = FakeRunner {
+            fail_with: vec![(
+                "label=jackin.kind=dind".to_string(),
+                "Error response from daemon: socket timeout".to_string(),
+            )],
+            ..Default::default()
+        };
+
+        gc_orphaned_resources(&mut runner); // must not panic
+    }
+
+    #[test]
+    fn gc_does_not_panic_when_network_ls_fails() {
+        // DinD list succeeds (no orphans), but docker network ls fails.
+        // gc_orphaned_networks must emit a warning and return without panicking.
+        let mut runner = FakeRunner {
+            fail_with: vec![(
+                "network ls".to_string(),
+                "Error response from daemon: socket timeout".to_string(),
+            )],
+            capture_queue: std::collections::VecDeque::from(vec![
+                String::new(), // collect_orphaned_dind: no DinD sidecars
+            ]),
+            ..Default::default()
+        };
+
+        gc_orphaned_resources(&mut runner); // must not panic
     }
 
     // ── prune_dir ────────────────────────────────────────────────────────────
