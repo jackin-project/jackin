@@ -276,9 +276,8 @@ pub(super) fn render_horizontal_scrollbar(
     if viewport == 0 || content_width <= viewport {
         return;
     }
-    let position = scrollbar_position(content_width, viewport, scroll_x);
     let mut state = ScrollbarState::new(content_width)
-        .position(position)
+        .position(usize::from(scroll_x))
         .viewport_content_length(viewport);
     let scrollbar = Scrollbar::new(ScrollbarOrientation::HorizontalBottom)
         .begin_symbol(None)
@@ -374,9 +373,8 @@ pub(super) fn render_vertical_scrollbar(
     if viewport == 0 || content_height <= viewport {
         return;
     }
-    let position = scrollbar_position(content_height, viewport, scroll_y);
     let mut state = ScrollbarState::new(content_height)
-        .position(position)
+        .position(usize::from(scroll_y))
         .viewport_content_length(viewport);
     let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
         .begin_symbol(None)
@@ -440,15 +438,6 @@ pub(super) fn render_scrollable_block(
     );
     render_horizontal_scrollbar(frame, area, content_width, eff_x);
     render_vertical_scrollbar(frame, area, content_height, eff_y);
-}
-
-fn scrollbar_position(content_width: usize, viewport: usize, scroll_x: u16) -> usize {
-    let scroll_x = usize::from(effective_scroll_x(content_width, viewport, scroll_x));
-    let max_scroll = content_width.saturating_sub(viewport);
-    scroll_x
-        .saturating_mul(content_width.saturating_sub(1))
-        .checked_div(max_scroll)
-        .unwrap_or(0)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -945,19 +934,7 @@ pub(super) fn centered_rect_fixed(outer: Rect, pct_w: u16, rows: u16) -> Rect {
 
 #[cfg(test)]
 mod horizontal_scrollbar_tests {
-    use super::{clamp_scroll_x, scrollbar_position};
-
-    #[test]
-    fn text_scroll_end_maps_to_scrollbar_end() {
-        assert_eq!(scrollbar_position(100, 60, 0), 0);
-        assert_eq!(scrollbar_position(100, 60, 20), 49);
-        assert_eq!(scrollbar_position(100, 60, 40), 99);
-    }
-
-    #[test]
-    fn scrollbar_position_clamps_overscroll_to_end() {
-        assert_eq!(scrollbar_position(100, 60, 400), 99);
-    }
+    use super::clamp_scroll_x;
 
     #[test]
     fn stored_scroll_offset_clamps_to_visible_end() {
