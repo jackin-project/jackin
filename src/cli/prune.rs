@@ -93,6 +93,33 @@ mod tests {
     }
 
     #[test]
+    fn prune_cache_parses() {
+        let cli = Cli::try_parse_from(["jackin", "prune", "cache"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(crate::cli::Command::Prune(PruneCommand::Cache))
+        ));
+    }
+
+    #[test]
+    fn prune_images_parses() {
+        let cli = Cli::try_parse_from(["jackin", "prune", "images"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(crate::cli::Command::Prune(PruneCommand::Images))
+        ));
+    }
+
+    #[test]
+    fn prune_instances_parses() {
+        let cli = Cli::try_parse_from(["jackin", "prune", "instances"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(crate::cli::Command::Prune(PruneCommand::Instances))
+        ));
+    }
+
+    #[test]
     fn prune_all_defaults_yes_false() {
         let cli = Cli::try_parse_from(["jackin", "prune", "all"]).unwrap();
         assert!(matches!(

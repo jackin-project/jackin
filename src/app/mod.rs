@@ -1,6 +1,7 @@
 pub mod context;
 
 use anyhow::{Context, Result};
+use owo_colors::OwoColorize;
 
 use crate::cli::cleanup::{EjectArgs, PurgeArgs};
 use crate::cli::role::{ConsoleArgs, HardlineArgs, LoadArgs};
@@ -1208,7 +1209,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 } else {
                     for err in &errors {
-                        eprintln!("prune error: {err:#}");
+                        eprintln!("{} {err:#}", "error:".red().bold());
                     }
                     anyhow::bail!("{} prune step(s) failed", errors.len())
                 }

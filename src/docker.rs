@@ -4,8 +4,8 @@ use std::path::Path;
 /// `True` when a Docker CLI error message reports an absent resource.
 ///
 /// Matches `inspect`'s `No such object`, or `rm`/`network rm`/`volume rm`'s
-/// `No such container`/`network`/`volume`. Match is case-insensitive
-/// because different daemon versions vary the casing.
+/// `No such container`/`network`/`volume`, and `rmi`'s `No such image`.
+/// Match is case-insensitive because different daemon versions vary the casing.
 #[must_use]
 pub fn is_missing_resource_error(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
@@ -13,6 +13,7 @@ pub fn is_missing_resource_error(message: &str) -> bool {
         || lower.contains("no such container")
         || lower.contains("no such network")
         || lower.contains("no such volume")
+        || lower.contains("no such image")
 }
 
 /// `True` when a Docker `rmi` error indicates an image is still referenced
@@ -427,5 +428,13 @@ mod tests {
         assert!(!is_image_in_use_error(
             "Error response from daemon: no such image"
         ));
+    }
+
+    #[test]
+    fn is_missing_resource_error_matches_no_such_image() {
+        assert!(is_missing_resource_error(
+            "Error response from daemon: No such image: jk-agent-smith:latest"
+        ));
+        assert!(is_missing_resource_error("no such image: jk-foo"));
     }
 }
