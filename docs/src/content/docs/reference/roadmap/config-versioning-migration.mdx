@@ -180,7 +180,7 @@ Open design questions:
 - <RepoFile path="src/config/editor.rs" /> — `ConfigEditor`, used for comment-preserving file rewrites.
 - <RepoFile path="src/manifest/mod.rs" /> — `RoleManifest`, the role manifest struct.
 - <RepoFile path="src/config/mod.rs" /> — `AppConfig` and workspace config structs.
-- [Split config.toml into per-workspace files](/reference/roadmap/split-workspace-config-files/) — sibling ergonomics item; migration must handle both the monolithic and split layouts if both can exist in the field.
+- [split workspace-file layout](/reference/configuration/#one-file-per-workspace-by-design) — sibling ergonomics item; migration must handle both the monolithic and split layouts if both can exist in the field.
 - [Agent version pinning](/reference/roadmap/reproducibility-pinning/) — related: pinning roles to tagged versions implies a version relationship between the jackin binary and the role manifest schema.
 - [Configuration File](/reference/configuration/) — internals reference; covers `version` and migration behavior.
 - [Schema Versions](/reference/schema-versions/) — canonical history of schema versions, fields, and migration changes.

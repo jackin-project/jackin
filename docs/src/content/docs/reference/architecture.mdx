@@ -148,7 +148,7 @@ The file lives next to the per-container agent state and `.jackin/` metadata and
 | `workspace` | Workspace name at materialization time |
 | `mount_dst` | Container destination path (the mount identity) |
 | `original_src` | Resolved host `src` recorded for source-drift detection |
-| `isolation` | Mode (`worktree` in V1) |
+| `isolation` | Mode (`worktree` or `clone`) |
 | `worktree_path` | Materialized worktree path on the host |
 | `scratch_branch` | Scratch branch name (`jackin/scratch/<container>`) |
 | `base_commit` | Host `HEAD` at first materialization |
@@ -251,6 +251,7 @@ If the main thing you need is the strongest local boundary for autonomous agents
 - **Derived build context rejects symlinks.** Role repos with symlink-heavy layouts are not supported yet.
 - **Cached role repos must stay clean.** jackin' refuses to build from a dirty or origin-mismatched cache.
 - **Container mutability is intentionally thin.** That keeps sessions cleaner, but makes ad-hoc package installs non-persistent.
+- **Isolation-mode edits are guarded only when preserved state already records the previous mode.** Source drift is checked before workspace edits are saved; changing only `mounts[].isolation` can still take effect on the next launch without a pre-save warning when there is no conflicting preserved record.
 
 ## Technology stack
 
