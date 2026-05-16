@@ -16,7 +16,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, `Amp`, and `
 - Layered authentication forwarding per (workspace × role × agent) — `sync` / `api_key` / `oauth_token` / `ignore` for `Claude Code`, and `sync` / `api_key` / `ignore` for `Codex`, `Amp`, and `OpenCode` (none supports `oauth_token`)
 - `Docker` container isolation with `Docker-in-Docker`
 - Interactive operator console (TUI) with workspace, role, and agent selection
-- Workspace management (add, edit, remove, list, show) — CLI and TUI
+- Workspace management (create, edit, remove, prune, list, show, plus `env` and `claude-token` subcommands) — CLI and TUI
 - Global mount configuration with role scoping
 - Role repository contract validation
 - Derived `Dockerfile` generation with UID/GID remapping
@@ -24,7 +24,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, `Amp`, and `
 - Agent identity (display names)
 - UID/GID host user mapping
 - GitHub CLI authentication state persists across container restarts (forwarding host login on launch is tracked separately under [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/))
-- Homebrew installation
+- Homebrew distribution via [`jackin-project/homebrew-tap`](https://github.com/jackin-project/homebrew-tap)
 - Namespaced roles (e.g., `chainargos/frontend-engineer`)
 - Last-agent memory per workspace
 - Custom `Claude Code` plugin marketplaces in `jackin.role.toml` — see the [role manifest reference](/developing/role-manifest/)
@@ -37,6 +37,11 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, `Amp`, and `
 - `JACKIN_DEBUG` environment variable — verbose tracing for shell commands and jackin internals; documented inline in every command page
 - MSRV toolchain pin — `rust-toolchain.toml` enforced in CI
 - Worktree cleanup on container removal — orphaned host-side worktrees no longer accumulate
+- `jackin eject` — stop and clean per-container state (with `--all` and `--purge`)
+- `jackin prune` family — orphaned roles, derived images, cache, and instance state
+- `jackin config trust grant | revoke | list` — explicit CLI management of role-source trust beyond the trust-on-first-use prompts
+- Per-workspace `git_pull_on_entry` — opt-in host repo refresh at launch via `--git-pull` / `--no-git-pull`
+- macOS keep-awake reconciler — `--keep-awake` / `--no-keep-awake` workspace flags hold the system awake while an agent is active
 - [Per-mount isolation for parallel agents](/reference/roadmap/per-mount-isolation/) — `shared | worktree | clone` modes implemented in V1
 - [Split `config.toml` into per-workspace files](/reference/roadmap/split-workspace-config-files/) — `~/.config/jackin/workspaces/<name>.toml` layout shipped; per-file `version` stamps and migration land via the config-versioning item below
 - Global mount visibility and editing — workspace views show applicable global mounts separately, and the console has a dedicated global mounts editor for `~/.config/jackin/config.toml`. See the [Mounts guide](/guides/mounts/)

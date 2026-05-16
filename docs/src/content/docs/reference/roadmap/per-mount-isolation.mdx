@@ -397,12 +397,15 @@ Defer:
 - <RepoFile path="src/instance/naming.rs" /> — per-container naming provides collision-free container names used by worktree paths and branch names
 - <RepoFile path="src/runtime/launch.rs" /> — `load`/`launch` path where materialization hooks in and foreground finalization begins
 - <RepoFile path="src/runtime/attach.rs" /> — `hardline` attach/restart path; should call the shared foreground finalizer after attach returns
-- <RepoFile path="src/runtime/cleanup.rs" /> — `purge` path where teardown hooks in; `list_agent_names` is the primitive for the running-agent guard
-- <RepoFile path="src/app/mod.rs" /> — `Command::Purge` dispatch; gains the running-agent guard
-- <RepoFile path="src/config/mod.rs" /> — serialization of the new `isolation` field
+- <RepoFile path="src/runtime/cleanup.rs" /> — `purge_container_state` houses the running-agent guard (uses `list_agent_names`); `Command::Purge` dispatches through here
+- <RepoFile path="src/config/mod.rs" /> — serialization of the `isolation` field
 - <RepoFile path="src/config/workspaces.rs" /> — `workspace show` output and edit flows
 - <RepoFile path="src/cli/workspace.rs" /> — `--mount-isolation` create/edit flags and `workspace show` output
 - <RepoFile path="src/cli/role.rs" /> — `load --force` dirty-host acknowledgement
 - <RepoFile path="src/cli/cleanup.rs" /> — `PurgeArgs`; error messaging when target is running
-- New module (e.g. `src/isolation.rs`) — materialization, `isolation.json`, mount-destination slugging, and host-side git shell-outs
+- <RepoFile path="src/isolation/mod.rs" />, <RepoFile path="src/isolation/materialize.rs" />, <RepoFile path="src/isolation/state.rs" />, <RepoFile path="src/isolation/branch.rs" />, <RepoFile path="src/isolation/cleanup.rs" />, <RepoFile path="src/isolation/finalize.rs" /> — `isolation` directory module covering materialization, `isolation.json`, mount-destination slugging, and host-side git shell-outs
 - [Workspaces](/guides/workspaces/), [Mounts](/guides/mounts/), [Configuration](/reference/configuration/), [Architecture](/reference/architecture/) — doc pages to update alongside the code change
+
+## Known limitations after V1
+
+- **Isolation-mode flips between loads do not fire drift detection.** Changing a mount's `isolation` value in TOML between loads silently takes effect on the next launch without warning the operator. Source-`src` drift on a materialized `dst` is guarded, but the `isolation` field itself is not. See the matching comment + test in <RepoFile path="src/config/workspaces.rs" />.

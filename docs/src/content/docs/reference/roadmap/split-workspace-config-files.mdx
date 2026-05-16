@@ -172,6 +172,8 @@ inside the workspace file as nested tables — for example
 
 ## Open questions
 
+The questions below were settled at ship time and are kept as historical context; the shipped behaviour matches the proposed answers (filename validation, empty-dir handling, and the `.toml` extension filter all live in <RepoFile path="src/config/persist.rs" />).
+
 - **Workspace-name characters in filenames.** Today's workspace names
   may include `/` (namespaced) — for example
   `jackin-roles`. The split must agree with the OS filesystem on what
@@ -198,8 +200,8 @@ inside the workspace file as nested tables — for example
 
 ## Related
 
-- <RepoFile path="src/config/persist.rs" /> — `AppConfig::load_or_init` (single-file load today).
-- <RepoFile path="src/config/editor.rs" /> — `ConfigEditor::save` (single-file write today).
+- <RepoFile path="src/config/persist.rs" /> — `AppConfig::load_or_init`, `load_workspace_files`, and the `workspaces/<name>.toml` writer.
+- <RepoFile path="src/config/editor.rs" /> — `ConfigEditor::save` (per-workspace writes).
 - <RepoFile path="src/config/workspaces.rs" /> — workspace CRUD entry points.
 - [Configuration File](/reference/configuration/) — internals reference; will need a rewrite to describe the split layout once shipped.
 - [Workspaces](/guides/workspaces/) — operator-facing guide; the operator-side promise (CLI/TUI manages everything) does not change.

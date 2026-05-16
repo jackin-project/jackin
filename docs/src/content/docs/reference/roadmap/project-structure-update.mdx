@@ -3,39 +3,26 @@ title: "Update PROJECT_STRUCTURE.md"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open — Phase 1, no confirmation needed
+**Status**: Partially implemented — most of the original drift has been resolved by rewriting <RepoFile path="PROJECT_STRUCTURE.md" /> into a terse pointer + ecosystem table + code↔docs cross-reference, with the detailed module map delegated to [Codebase Map](/reference/codebase-map/). Only the small workflow / root-files residual gaps remain.
 
-## Problem
+## Background
 
-<RepoFile path="PROJECT_STRUCTURE.md" /> has drifted in several sections. The `console/` entry still lists the pre-PR#171 widget set and omits new widgets plus the fuller `manager/` sub-structure, but the staleness is broader than that: docs navigation and workflow sections also reference files that no longer exist or omit files that now do.
+The original page (October 2025) catalogued a large drift between <RepoFile path="PROJECT_STRUCTURE.md" /> and the actual repo: the `console/` widget list, the `manager/` sub-structure, missing files such as `op_cache.rs`, a stale `commands/cd.mdx` reference, an omitted `guides/environment-variables.mdx`, and an incomplete workflow table.
 
-## Specific gaps
+Most of that drift was resolved by rewriting <RepoFile path="PROJECT_STRUCTURE.md" /> as a short pointer file: it now covers the ecosystem table and the code↔docs cross-reference, and delegates the detailed module map to the new [Codebase Map](/reference/codebase-map/) reference page. The widget list, `manager/` sub-structure, `op_cache.rs`, and docs-page enumerations all moved to the codebase-map page (or were removed entirely), so they can no longer drift in the root file.
 
-Currently listed in `widgets/`: `file_browser`, `text_input`, `confirm`, `confirm_save`, `error_popup`, `mount_dst_choice`, `workdir_pick`, `github_picker`, `save_discard`, `panel_rain`
+## Remaining work
 
-**Missing:**
-- `op_picker/` (1712L, 1Password picker state machine)
-- `agent_picker.rs` (436L, agent disambiguation modal)
-- `scope_picker.rs` (201L, workspace-vs-agent choice)
-- `source_picker.rs` (244L, plain-or-1Password choice)
+Small residual gaps in <RepoFile path="PROJECT_STRUCTURE.md" />:
 
-**Also stale:** `manager/` description doesn't reflect the actual structure: `state.rs`, `input/` (mouse.rs, editor.rs, save.rs, list.rs, prelude.rs, mod.rs), `render/` (editor.rs, list.rs, mod.rs), `create.rs`, `mount_info.rs`, `agent_allow.rs`, `github_mounts.rs`.
+- The CI/CD workflows table is brought into line with `.github/workflows/` (`ci.yml`, `preview.yml`, `renovate.yml`, `renovate-validate.yml` added).
+- <RepoFile path="build.rs" /> is added to the Root Files table.
 
-**Also missing:** `op_cache.rs` (session-scoped op metadata cache).
+Once those land the item can be retired in favour of:
 
-**Outside `src/console/`:**
-- `commands/cd.mdx` is still listed even though that page does not exist
-- `guides/environment-variables.mdx` exists but is omitted
-- <RepoFile path="build.rs" /> exists at the repo root but is omitted from Root Files
-- current workflows such as `preview.yml` and `renovate.yml` are omitted
-
-## Steps
-
-1. Update the `console/` section: widgets list, `manager/` sub-structure, and `op_cache.rs`.
-2. Fix docs-page listings so only real command pages are listed and current guides are present.
-3. Refresh the root-file / workflow tables so they mention current files such as <RepoFile path="build.rs" />, plus the newer workflows (`preview.yml`, `renovate.yml`, etc.).
-4. Re-read the file top-to-bottom once after editing; this page is a navigational map, so partial spot-fixes are how it drifts again.
+1. The per-PR code↔docs contract baked into the rewritten <RepoFile path="PROJECT_STRUCTURE.md" /> (every structural PR updates the [Codebase Map](/reference/codebase-map/) in the same commit).
+2. A potential CI staleness gate — see [CI project-structure gate](/reference/roadmap/ci-project-structure-gate/).
 
 ## Caveats
 
-Purely documentation — no code change. Do before enabling the CI staleness gate.
+Purely documentation — no code change.
