@@ -91,17 +91,21 @@ if [ "${JACKIN_GIT_COAUTHOR_TRAILER:-0}" = "1" ]; then
 [ "${2:-}" = "commit" ] && exit 0
 _agent="${JACKIN_AGENT:-}"
 if [ "$_agent" = "claude" ]; then
-    _trailer="Co-authored-by: Claude <noreply@anthropic.com>"
+    _email="noreply@anthropic.com"
+    _trailer="Co-authored-by: Claude <${_email}>"
 elif [ "$_agent" = "codex" ]; then
-    _trailer="Co-authored-by: Codex <codex@openai.com>"
+    _email="codex@openai.com"
+    _trailer="Co-authored-by: Codex <${_email}>"
 elif [ "$_agent" = "amp" ]; then
-    _trailer="Co-authored-by: Amp <amp@ampcode.com>"
+    _email="amp@ampcode.com"
+    _trailer="Co-authored-by: Amp <${_email}>"
 elif [ "$_agent" = "opencode" ]; then
-    _trailer="Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>"
+    _email="opencode-agent[bot]@users.noreply.github.com"
+    _trailer="Co-authored-by: opencode-agent[bot] <${_email}>"
 else
     exit 0
 fi
-grep -qF "$_trailer" "$1" && exit 0
+grep -qF "$_email" "$1" && exit 0
 printf '\n%s\n' "$_trailer" >> "$1"
 HOOK_EOF
     chmod +x "$_hooks_dir/prepare-commit-msg"
