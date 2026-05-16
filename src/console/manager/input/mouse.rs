@@ -7,7 +7,11 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use super::super::super::widgets::file_browser::FileBrowserState;
 use super::super::render::global_mounts::trust_content_width;
 use super::super::render::list::{
-    global_mounts_content_width, mount_block_height, workspace_mounts_content_width,
+    global_mounts_block_height, global_mounts_content_height, global_mounts_content_width,
+    mount_block_height, workspace_mounts_content_height, workspace_mounts_content_width,
+};
+use super::super::render::{
+    is_scrollable, max_scroll_offset, scroll_viewport_height, scroll_viewport_width,
 };
 use super::super::state::{
     DragState, EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, Modal,
@@ -315,7 +319,8 @@ fn try_select_editor_mount_row(
         return false;
     };
     editor.active_field = FieldFocus::Row(index);
-    editor.workspace_mounts_scroll_focused = is_scrollable(area, area_info.content_width);
+    editor.workspace_mounts_scroll_focused =
+        is_scrollable(area_info.content_width, scroll_viewport_width(area));
     true
 }
 
@@ -459,26 +464,35 @@ fn update_scroll_focus(
                 return;
             };
             state.list_scroll_focus = if point_in(mouse, areas.workspace.area)
-                && (is_scrollable(areas.workspace.area, areas.workspace.content_width)
-                    || is_scrollable_v(areas.workspace.area, areas.workspace.content_height))
-            {
+                && (is_scrollable(
+                    areas.workspace.content_width,
+                    scroll_viewport_width(areas.workspace.area),
+                ) || is_scrollable(
+                    areas.workspace.content_height,
+                    scroll_viewport_height(areas.workspace.area),
+                )) {
                 Some(MountScrollFocus::Workspace)
             } else if point_in(mouse, areas.global.area)
                 && areas.global.area.height > 0
-                && (is_scrollable(areas.global.area, areas.global.content_width)
-                    || is_scrollable_v(areas.global.area, areas.global.content_height))
+                && (is_scrollable(
+                    areas.global.content_width,
+                    scroll_viewport_width(areas.global.area),
+                ) || is_scrollable(
+                    areas.global.content_height,
+                    scroll_viewport_height(areas.global.area),
+                ))
             {
                 Some(MountScrollFocus::Global)
             } else if areas.role_global.is_some_and(|r| {
                 point_in(mouse, r.area)
-                    && (is_scrollable(r.area, r.content_width)
-                        || is_scrollable_v(r.area, r.content_height))
+                    && (is_scrollable(r.content_width, scroll_viewport_width(r.area))
+                        || is_scrollable(r.content_height, scroll_viewport_height(r.area)))
             }) {
                 Some(MountScrollFocus::RoleGlobal)
             } else if areas.roles.is_some_and(|r| {
                 point_in(mouse, r.area)
-                    && (is_scrollable(r.area, r.content_width)
-                        || is_scrollable_v(r.area, r.content_height))
+                    && (is_scrollable(r.content_width, scroll_viewport_width(r.area))
+                        || is_scrollable(r.content_height, scroll_viewport_height(r.area)))
             }) {
                 Some(MountScrollFocus::Roles)
             } else {
@@ -491,8 +505,8 @@ fn update_scroll_focus(
                     editor.workspace_mounts_scroll_focused = false;
                 } else {
                     let area = editor_scroll_area(editor, term_size);
-                    editor.workspace_mounts_scroll_focused =
-                        point_in(mouse, area.area) && is_scrollable(area.area, area.content_width);
+                    editor.workspace_mounts_scroll_focused = point_in(mouse, area.area)
+                        && is_scrollable(area.content_width, scroll_viewport_width(area.area));
                 }
                 editor.tab_content_scroll_focused = false;
             } else {
@@ -502,9 +516,9 @@ fn update_scroll_focus(
                 } else {
                     let content_area = settings_content_area(term_size);
                     let in_content = point_in(mouse, content_area);
-                    let viewport_h = content_area.height.saturating_sub(2) as usize;
+                    let viewport_h = scroll_viewport_height(content_area);
                     editor.tab_content_scroll_focused =
-                        in_content && editor.tab_content_height > viewport_h;
+                        in_content && is_scrollable(editor.tab_content_height, viewport_h);
                 }
             }
         }
@@ -538,16 +552,6 @@ const fn point_in(mouse: MouseEvent, area: Rect) -> bool {
         && mouse.row < area.y.saturating_add(area.height)
 }
 
-const fn is_scrollable(area: Rect, content_width: usize) -> bool {
-    let viewport = area.width.saturating_sub(2) as usize;
-    viewport > 0 && content_width > viewport
-}
-
-const fn is_scrollable_v(area: Rect, content_height: usize) -> bool {
-    let viewport = area.height.saturating_sub(2) as usize;
-    viewport > 0 && content_height > viewport
-}
-
 #[derive(Clone, Copy)]
 struct ScrollArea {
     area: Rect,
@@ -556,8 +560,8 @@ struct ScrollArea {
 }
 
 fn drag_scrollbar(value: &mut u16, mouse: MouseEvent, area: Rect, content_width: usize) -> bool {
-    let viewport = area.width.saturating_sub(2) as usize;
-    if viewport == 0 || content_width <= viewport {
+    let viewport = scroll_viewport_width(area);
+    if !is_scrollable(content_width, viewport) {
         return false;
     }
     let scrollbar_y = area.y + area.height.saturating_sub(1);
@@ -566,7 +570,7 @@ fn drag_scrollbar(value: &mut u16, mouse: MouseEvent, area: Rect, content_width:
     if mouse.row != scrollbar_y || mouse.column < start_x || mouse.column > end_x {
         return false;
     }
-    let max_position = content_width.saturating_sub(viewport);
+    let max_position = usize::from(max_scroll_offset(content_width, viewport));
     let track = usize::from(end_x.saturating_sub(start_x)).max(1);
     let rel = usize::from(mouse.column.saturating_sub(start_x));
     *value = ((max_position * rel) / track).min(usize::from(u16::MAX)) as u16;
@@ -584,7 +588,7 @@ fn scroll_active_panel(
         ManagerStage::List => {
             update_scroll_focus(state, mouse, term_size, config);
             if state.list_names_focused {
-                apply_horizontal_scroll_unbounded(&mut state.list_names_scroll_x, delta);
+                apply_scroll_delta(&mut state.list_names_scroll_x, delta);
                 return;
             }
             let Some(areas) = list_scroll_areas(state, term_size, config) else {
@@ -616,7 +620,9 @@ fn scroll_active_panel(
                 return;
             }
             let area = editor_scroll_area(editor, term_size);
-            if point_in(mouse, area.area) && is_scrollable(area.area, area.content_width) {
+            if point_in(mouse, area.area)
+                && is_scrollable(area.content_width, scroll_viewport_width(area.area))
+            {
                 editor.workspace_mounts_scroll_focused = true;
                 apply_horizontal_scroll(
                     &mut editor.workspace_mounts_scroll_x,
@@ -657,6 +663,7 @@ fn scroll_active_panel(
 /// Dispatch a vertical scroll event to whichever content block the mouse is over.
 /// Horizontal-only blocks (List view mounts) are silently ignored here —
 /// their scroll is only driven by left/right events via `scroll_active_panel`.
+#[allow(clippy::missing_const_for_fn)]
 fn scroll_active_panel_vertical(
     state: &mut ManagerState<'_>,
     mouse: MouseEvent,
@@ -671,13 +678,13 @@ fn scroll_active_panel_vertical(
             }
             match settings.active_tab {
                 SettingsTab::Mounts => {
-                    apply_vertical_scroll(&mut settings.mounts.scroll_y, delta);
+                    apply_scroll_delta(&mut settings.mounts.scroll_y, delta);
                 }
                 SettingsTab::Environments => {
-                    apply_vertical_scroll(&mut settings.env.scroll_y, delta);
+                    apply_scroll_delta(&mut settings.env.scroll_y, delta);
                 }
                 SettingsTab::Trust => {
-                    apply_vertical_scroll(&mut settings.trust.scroll_y, delta);
+                    apply_scroll_delta(&mut settings.trust.scroll_y, delta);
                 }
                 // Auth has too few rows to overflow — ignore vertical scroll.
                 SettingsTab::Auth => {}
@@ -689,7 +696,7 @@ fn scroll_active_panel_vertical(
                 EditorTab::General => {}
                 // Mounts, Roles, Secrets, Auth all use tab_scroll_y.
                 EditorTab::Mounts | EditorTab::Roles | EditorTab::Secrets | EditorTab::Auth => {
-                    apply_vertical_scroll(&mut editor.tab_scroll_y, delta);
+                    apply_scroll_delta(&mut editor.tab_scroll_y, delta);
                 }
             }
         }
@@ -697,16 +704,16 @@ fn scroll_active_panel_vertical(
             // Scroll the focused block vertically.
             match state.list_scroll_focus {
                 Some(MountScrollFocus::Workspace) => {
-                    apply_vertical_scroll(&mut state.list_mounts_scroll_y, delta);
+                    apply_scroll_delta(&mut state.list_mounts_scroll_y, delta);
                 }
                 Some(MountScrollFocus::Global) => {
-                    apply_vertical_scroll(&mut state.list_global_mounts_scroll_y, delta);
+                    apply_scroll_delta(&mut state.list_global_mounts_scroll_y, delta);
                 }
                 Some(MountScrollFocus::RoleGlobal) => {
-                    apply_vertical_scroll(&mut state.list_role_global_mounts_scroll_y, delta);
+                    apply_scroll_delta(&mut state.list_role_global_mounts_scroll_y, delta);
                 }
                 Some(MountScrollFocus::Roles) => {
-                    apply_vertical_scroll(&mut state.list_roles_scroll_y, delta);
+                    apply_scroll_delta(&mut state.list_roles_scroll_y, delta);
                 }
                 None => {}
             }
@@ -715,19 +722,8 @@ fn scroll_active_panel_vertical(
     }
 }
 
-#[allow(clippy::missing_const_for_fn)]
-fn apply_vertical_scroll(value: &mut u16, delta: i16) {
-    *value = if delta.is_negative() {
-        value.saturating_sub(delta.unsigned_abs())
-    } else {
-        value.saturating_add(delta as u16)
-    };
-}
-
-/// Apply a horizontal scroll delta without clamping to content width.
-/// The render frame (`render_scrollable_block`) clamps the stored value each
-/// time it draws, so no separate max is needed here.
-const fn apply_horizontal_scroll_unbounded(value: &mut u16, delta: i16) {
+/// The render frame clamps stored values each draw, so no max is needed here.
+const fn apply_scroll_delta(value: &mut u16, delta: i16) {
     *value = if delta.is_negative() {
         value.saturating_sub(delta.unsigned_abs())
     } else {
@@ -736,7 +732,7 @@ const fn apply_horizontal_scroll_unbounded(value: &mut u16, delta: i16) {
 }
 
 fn apply_horizontal_scroll(value: &mut u16, delta: i16, area: Rect, content_width: usize) {
-    let max = max_scroll_offset(area, content_width);
+    let max = max_scroll_offset(content_width, scroll_viewport_width(area));
     let current = (*value).min(max);
     let next = if delta.is_negative() {
         current.saturating_sub(delta.unsigned_abs())
@@ -744,17 +740,6 @@ fn apply_horizontal_scroll(value: &mut u16, delta: i16, area: Rect, content_widt
         current.saturating_add(delta as u16)
     };
     *value = next.min(max);
-}
-
-fn max_scroll_offset(area: Rect, content_width: usize) -> u16 {
-    let viewport = area.width.saturating_sub(2) as usize;
-    if viewport == 0 || content_width <= viewport {
-        0
-    } else {
-        content_width
-            .saturating_sub(viewport)
-            .min(usize::from(u16::MAX)) as u16
-    }
 }
 
 struct ListScrollAreas {
@@ -801,26 +786,21 @@ fn list_scroll_areas(
     let global_h = if global_mounts.is_empty() {
         0
     } else {
-        mount_block_height(global_mounts.as_slice())
+        global_mounts_block_height(global_mounts.as_slice())
     };
     let role_global_h = if role_global_mounts.is_empty() {
         0
     } else {
-        mount_block_height(role_global_mounts.as_slice())
+        global_mounts_block_height(role_global_mounts.as_slice())
     };
     let agent_count = super::super::render::list::agents_block_agent_count(Some(workspace), config);
     let roles_h = super::super::render::list::agents_block_height(agent_count);
     let roles_y = body_y + 3 + mounts_h + global_h + role_global_h;
     let roles_content_w =
         super::super::render::list::agents_block_content_width(Some(workspace), config);
-    let workspace_mounts_content_h = 1 + workspace
-        .mounts
-        .iter()
-        .map(|m| if m.src == m.dst { 1 } else { 2 })
-        .sum::<usize>()
-        .max(1);
-    let global_content_h = global_mounts.len() * 2 + 1;
-    let role_global_content_h = role_global_mounts.len() * 2 + 1;
+    let workspace_mounts_content_h = workspace_mounts_content_height(workspace.mounts.as_slice());
+    let global_content_h = global_mounts_content_height(global_mounts.as_slice());
+    let role_global_content_h = global_mounts_content_height(role_global_mounts.as_slice());
     let roles_content_h = 2 + agent_count;
     Some(ListScrollAreas {
         workspace: ScrollArea {
@@ -879,11 +859,7 @@ fn current_dir_scroll_areas(
     let roles_h = super::super::render::list::agents_block_height(agent_count);
     let roles_y = body_y + 3 + mounts_h;
     let roles_content_w = super::super::render::list::agents_block_content_width(None, config);
-    let workspace_content_h = 1 + mounts
-        .iter()
-        .map(|m| if m.src == m.dst { 1 } else { 2 })
-        .sum::<usize>()
-        .max(1);
+    let workspace_content_h = workspace_mounts_content_height(&mounts);
     let roles_content_h = 2 + agent_count;
     ListScrollAreas {
         workspace: ScrollArea {
@@ -1817,8 +1793,8 @@ mod mouse_drag_tests {
             height: 5,
         };
         let expected_max = super::max_scroll_offset(
-            global_area,
             super::global_mounts_content_width(global_mounts.as_slice()),
+            super::scroll_viewport_width(global_area),
         );
         assert_eq!(state.list_global_mounts_scroll_x, expected_max);
 
@@ -1859,14 +1835,15 @@ mod mouse_drag_tests {
         }
 
         let workspace = config.workspaces.get("demo").unwrap();
+        let workspace_area = Rect {
+            x: 30,
+            y: 6,
+            width: 70,
+            height: 4,
+        };
         let expected_max = super::max_scroll_offset(
-            Rect {
-                x: 30,
-                y: 6,
-                width: 70,
-                height: 4,
-            },
             super::workspace_mounts_content_width(workspace.mounts.as_slice()),
+            super::scroll_viewport_width(workspace_area),
         );
 
         assert_eq!(
@@ -1894,8 +1871,8 @@ mod mouse_drag_tests {
             height: 5,
         };
         let expected_max = super::max_scroll_offset(
-            global_area,
             super::global_mounts_content_width(global_mounts.as_slice()),
+            super::scroll_viewport_width(global_area),
         );
 
         handle_mouse_with_config(
@@ -2029,5 +2006,22 @@ mod mouse_drag_tests {
         };
         assert!(matches!(editor.active_field, FieldFocus::Row(0)));
         assert!(!editor.workspace_mounts_scroll_focused);
+    }
+
+    #[test]
+    fn scroll_up_decrements_vertical_scroll_offset() {
+        let config = config_with_scrollable_workspace_and_global_mounts();
+        let mut state = selected_demo_state(&config);
+        state.list_scroll_focus = Some(MountScrollFocus::Global);
+        state.list_global_mounts_scroll_y = 3;
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollUp, 31, 12),
+            term(100),
+            Some(&config),
+        );
+
+        assert_eq!(state.list_global_mounts_scroll_y, 2);
     }
 }
