@@ -240,7 +240,7 @@ pub struct DockerConfig {
     pub mounts: DockerMounts,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GitConfig {
     #[serde(default, skip_serializing_if = "is_false")]
     pub auto_coauthor_trailer: bool,
