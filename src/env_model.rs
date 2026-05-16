@@ -226,6 +226,7 @@ mod tests {
             "JACKIN_DIND_HOSTNAME", // was manifest JACKIN_DIND_HOSTNAME_ENV_NAME value
             "JACKIN_AGENT",         // injected by runtime — agent slug (claude/codex/amp)
             "JACKIN_ROLE",          // injected by runtime — role selector key
+            "JACKIN_GIT_COAUTHOR_TRAILER",
             "DOCKER_HOST",
             "DOCKER_TLS_VERIFY",
             "DOCKER_CERT_PATH",
@@ -245,6 +246,7 @@ mod tests {
             "JACKIN_DIND_HOSTNAME",
             "JACKIN_AGENT",
             "JACKIN_ROLE",
+            "JACKIN_GIT_COAUTHOR_TRAILER",
             "DOCKER_HOST",
             "DOCKER_TLS_VERIFY",
             "DOCKER_CERT_PATH",

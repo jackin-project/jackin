@@ -245,6 +245,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     &container,
                     Some(&manifest),
                     selected_agent,
+                    config.git.auto_coauthor_trailer,
                     &mut runner,
                 );
                 runtime::reconcile_keep_awake(&paths, &mut runner);
@@ -1615,6 +1616,7 @@ fn handle_console_instance_action(
                 &container,
                 Some(&manifest),
                 selected_agent,
+                config.git.auto_coauthor_trailer,
                 runner,
             );
             runtime::reconcile_keep_awake(paths, runner);

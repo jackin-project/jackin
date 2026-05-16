@@ -1398,4 +1398,22 @@ OPENAI_API_KEY = "op://Work/big-monorepo/OpenAI"
             "op://Work/big-monorepo/OpenAI"
         );
     }
+
+    #[test]
+    fn git_config_auto_coauthor_trailer_round_trips() {
+        let toml_str = "[git]\nauto_coauthor_trailer = true\n";
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.git.auto_coauthor_trailer);
+        let serialized = toml::to_string(&config).unwrap();
+        assert!(serialized.contains("auto_coauthor_trailer = true"), "{serialized}");
+    }
+
+    #[test]
+    fn git_config_default_omits_git_table_from_serialized_output() {
+        let config = AppConfig::default();
+        assert!(!config.git.auto_coauthor_trailer);
+        let serialized = toml::to_string(&config).unwrap();
+        assert!(!serialized.contains("[git]"), "{serialized}");
+        assert!(!serialized.contains("auto_coauthor_trailer"), "{serialized}");
+    }
 }
