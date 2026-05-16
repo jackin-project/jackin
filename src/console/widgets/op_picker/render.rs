@@ -5,11 +5,12 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{Block, Borders, Paragraph},
 };
 
 use crate::operator_env::OpField;
 
+use super::super::scrollable::{is_scrollable, render_vertical_scrollbar_in_area};
 use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use super::{OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState};
 
@@ -189,29 +190,21 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
 
     // Vertical scrollbar on the right edge of the list area.
     if let Some((total, position, viewport)) = scroll_info
-        && total > viewport
+        && is_scrollable(total, viewport)
     {
-        let scrolled = position
-            .saturating_mul(total.saturating_sub(1))
-            .checked_div(total.saturating_sub(viewport))
-            .unwrap_or(0);
-        let mut sb_state = ScrollbarState::new(total)
-            .position(scrolled)
-            .viewport_content_length(viewport);
-        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .begin_symbol(None)
-            .end_symbol(None)
-            .track_symbol(Some("·"))
-            .thumb_symbol("█")
-            .track_style(Style::default().fg(PHOSPHOR_DARK))
-            .thumb_style(Style::default().fg(PHOSPHOR_DIM));
         let sb_area = Rect {
             x: rows[3].x + rows[3].width.saturating_sub(1),
             y: rows[3].y,
             width: 1,
             height: rows[3].height,
         };
-        frame.render_stateful_widget(scrollbar, sb_area, &mut sb_state);
+        render_vertical_scrollbar_in_area(
+            frame,
+            sb_area,
+            total,
+            viewport,
+            position.min(usize::from(u16::MAX)) as u16,
+        );
     }
 }
 
