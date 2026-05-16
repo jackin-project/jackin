@@ -607,6 +607,20 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
             },
+            cli::ConfigCommand::Git(git_cmd) => match git_cmd {
+                cli::GitCommand::CoauthorTrailer(cmd) => {
+                    let enable = matches!(cmd, cli::CoauthorTrailerCommand::Enable);
+                    let mut editor = config::ConfigEditor::open(&paths)?;
+                    editor.set_git_auto_coauthor_trailer(enable);
+                    editor.save()?;
+                    if enable {
+                        println!("auto_coauthor_trailer: enabled");
+                    } else {
+                        println!("auto_coauthor_trailer: disabled");
+                    }
+                    Ok(())
+                }
+            },
         },
         Command::Workspace(command) => match command {
             WorkspaceCommand::Create {

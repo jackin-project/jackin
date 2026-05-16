@@ -290,6 +290,24 @@ impl ConfigEditor {
         self.remove_env_var(&EnvScope::GlobalGithub, key)
     }
 
+    pub fn set_git_auto_coauthor_trailer(&mut self, enabled: bool) {
+        let git_path = ["git".to_string()];
+        if enabled {
+            let table = table_path_mut(&mut self.doc, &git_path);
+            table.insert("auto_coauthor_trailer", toml_edit::value(true));
+        } else {
+            if let Some(git_table) = self
+                .doc
+                .as_table_mut()
+                .get_mut("git")
+                .and_then(|t| t.as_table_mut())
+            {
+                git_table.remove("auto_coauthor_trailer");
+            }
+            prune_empty_trailing_tables(&mut self.doc, &git_path, 1);
+        }
+    }
+
     /// Write or clear `[<agent>].auth_forward` inside the workspace file.
     ///
     /// `mode = Some(m)` writes the named mode; `mode = None` removes the

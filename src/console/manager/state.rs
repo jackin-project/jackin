@@ -159,12 +159,42 @@ pub struct GlobalMountsState<'a> {
     pub exit_requested: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsGeneralState {
+    pub pending: bool,
+    pub original: bool,
+}
+
+impl SettingsGeneralState {
+    pub fn from_config(config: &AppConfig) -> Self {
+        Self {
+            pending: config.git.auto_coauthor_trailer,
+            original: config.git.auto_coauthor_trailer,
+        }
+    }
+
+    #[must_use]
+    pub fn is_dirty(&self) -> bool {
+        self.pending != self.original
+    }
+
+    pub fn discard(&mut self) {
+        self.pending = self.original;
+    }
+
+    #[must_use]
+    pub fn change_count(&self) -> usize {
+        usize::from(self.pending != self.original)
+    }
+}
+
 #[derive(Debug)]
 pub struct SettingsState<'a> {
     pub active_tab: SettingsTab,
     /// W3C ARIA Tabs: when true, focus is on the tab list (←/→ cycle tabs,
     /// Tab/↓ enters content); when false, focus is in the tab panel.
     pub tab_bar_focused: bool,
+    pub general: SettingsGeneralState,
     pub mounts: GlobalMountsState<'a>,
     pub env: SettingsEnvState<'a>,
     pub auth: SettingsAuthState,
@@ -173,6 +203,7 @@ pub struct SettingsState<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
+    General,
     Mounts,
     Environments,
     Auth,
@@ -180,11 +211,18 @@ pub enum SettingsTab {
 }
 
 impl SettingsTab {
-    pub const ALL: [Self; 4] = [Self::Mounts, Self::Environments, Self::Auth, Self::Trust];
+    pub const ALL: [Self; 5] = [
+        Self::General,
+        Self::Mounts,
+        Self::Environments,
+        Self::Auth,
+        Self::Trust,
+    ];
 
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
+            Self::General => "General",
             Self::Mounts => "Mounts",
             Self::Environments => "Environments",
             Self::Auth => "Auth",
@@ -587,8 +625,9 @@ impl GlobalMountsState<'_> {
 impl SettingsState<'_> {
     pub fn from_config(config: &AppConfig) -> Self {
         Self {
-            active_tab: SettingsTab::Mounts,
+            active_tab: SettingsTab::General,
             tab_bar_focused: true,
+            general: SettingsGeneralState::from_config(config),
             mounts: GlobalMountsState::from_config(config),
             env: SettingsEnvState::from_config(config),
             auth: SettingsAuthState::from_config(config),
@@ -598,7 +637,8 @@ impl SettingsState<'_> {
 
     #[must_use]
     pub fn is_dirty(&self) -> bool {
-        self.mounts.is_dirty()
+        self.general.is_dirty()
+            || self.mounts.is_dirty()
             || self.env.is_dirty()
             || self.auth.is_dirty()
             || self.trust.is_dirty()
@@ -606,7 +646,8 @@ impl SettingsState<'_> {
 
     #[must_use]
     pub fn change_count(&self) -> usize {
-        self.mounts_change_count()
+        self.general.change_count()
+            + self.mounts_change_count()
             + self.env.change_count()
             + settings_vec_change_count(&self.auth.original, &self.auth.pending)
             + env_change_count(&self.auth.original_github_env, &self.auth.github_env)
@@ -618,6 +659,7 @@ impl SettingsState<'_> {
     }
 
     pub fn discard(&mut self) {
+        self.general.discard();
         self.mounts.discard();
         self.env.discard();
         self.auth.discard();
@@ -702,7 +744,10 @@ impl SettingsState<'_> {
             editor.set_agent_trust(&row.role, row.trusted);
         }
 
+        editor.set_git_auto_coauthor_trailer(self.general.pending);
+
         let config = editor.save()?;
+        self.general.original = self.general.pending;
         self.mounts.original = self.mounts.pending.clone();
         self.env.original = self.env.pending.clone();
         self.auth.original = self.auth.pending.clone();

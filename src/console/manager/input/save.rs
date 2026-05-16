@@ -2359,6 +2359,8 @@ pub(super) fn build_settings_save_lines(
     out.push(Line::from(Span::styled("Save settings", heading)));
     out.push(Line::raw(""));
 
+    let general_stats =
+        settings_general_stats(settings.general.original, settings.general.pending);
     let mount_stats = settings_mount_stats(&settings.mounts.original, &settings.mounts.pending);
     let env_stats = settings_env_stats(&settings.env.original, &settings.env.pending);
     let auth_stats = settings_auth_stats(
@@ -2369,6 +2371,12 @@ pub(super) fn build_settings_save_lines(
     );
     let trust_stats = settings_trust_stats(&settings.trust.original, &settings.trust.pending);
 
+    if let Some(s) = general_stats {
+        out.push(Line::from(vec![
+            Span::styled("  General:      ", heading),
+            Span::styled(s, add_style),
+        ]));
+    }
     if let Some(s) = mount_stats.as_deref() {
         out.push(Line::from(vec![
             Span::styled("  Mounts:       ", heading),
@@ -2398,6 +2406,21 @@ pub(super) fn build_settings_save_lines(
     out.push(Line::raw(""));
     out.push(Line::from(Span::styled("  \u{2500}".repeat(30), sep_style)));
     out.push(Line::raw(""));
+
+    // ── General details ───────────────────────────────────────────────
+    if general_stats.is_some() {
+        out.push(Line::from(Span::styled("General:", heading)));
+        let arrow = "\u{2192}";
+        let from = if settings.general.original { "enabled" } else { "disabled" };
+        let to = if settings.general.pending { "enabled" } else { "disabled" };
+        out.push(Line::from(vec![
+            Span::styled("  auto_coauthor_trailer: ", remove_style),
+            Span::styled(from, remove_style),
+            Span::styled(format!(" {arrow} "), remove_style),
+            Span::styled(to, add_style),
+        ]));
+        out.push(Line::raw(""));
+    }
 
     // ── Mount details ─────────────────────────────────────────────────
     let mount_lines = settings_mount_diff_lines(
@@ -2505,6 +2528,10 @@ fn settings_env_stats(
         parts.push(format!("{modified} modified"));
     }
     Some(parts.join(", "))
+}
+
+fn settings_general_stats(original: bool, pending: bool) -> Option<&'static str> {
+    if original == pending { None } else { Some("1 change") }
 }
 
 fn settings_auth_stats(

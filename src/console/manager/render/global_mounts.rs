@@ -65,6 +65,7 @@ pub(super) fn render_settings(
     super::editor::render_tab_strip(frame, chunks[1], &labels, state.tab_bar_focused);
 
     match state.active_tab {
+        SettingsTab::General => render_general_tab(frame, state, chunks[2]),
         SettingsTab::Mounts => render_mounts_tab(frame, state, chunks[2]),
         SettingsTab::Environments => render_env_tab(frame, state, chunks[2]),
         SettingsTab::Auth => render_auth_tab(frame, state, chunks[2]),
@@ -72,6 +73,45 @@ pub(super) fn render_settings(
     }
 
     render_footer(frame, chunks[3], &footer);
+}
+
+fn render_general_tab(
+    frame: &mut Frame,
+    state: &SettingsState<'_>,
+    area: ratatui::layout::Rect,
+) {
+    let lines = general_lines(state);
+    let mut sx = 0u16;
+    let mut sy = 0u16;
+    super::render_scrollable_block(frame, area, lines, &mut sx, &mut sy, false, None);
+}
+
+fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
+    let header = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let on_style = Style::default().fg(PHOSPHOR_GREEN).add_modifier(Modifier::BOLD);
+    let off_style = Style::default().fg(PHOSPHOR_DIM);
+    let label_style = Style::default().fg(WHITE);
+    let value = if state.general.pending {
+        "enabled"
+    } else {
+        "disabled"
+    };
+    let value_style = if state.general.pending {
+        on_style
+    } else {
+        off_style
+    };
+    vec![
+        Line::from(Span::styled(
+            "  Setting                        Value",
+            header,
+        )),
+        Line::from(vec![
+            Span::styled("\u{25b8} ", on_style),
+            Span::styled("Auto co-author trailer           ", label_style),
+            Span::styled(value, value_style),
+        ]),
+    ]
 }
 
 fn render_mounts_tab(
@@ -231,6 +271,12 @@ fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<FooterItem
 #[allow(clippy::too_many_lines)]
 fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<FooterItem> {
     match state.active_tab {
+        SettingsTab::General => {
+            vec![
+                FooterItem::Key("Space"),
+                FooterItem::Text("toggle"),
+            ]
+        }
         SettingsTab::Mounts => {
             let cursor = state.mounts.selected;
             let mount_count = state.mounts.pending.len();
