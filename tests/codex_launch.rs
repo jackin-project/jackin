@@ -138,7 +138,7 @@ model = "gpt-5"
     let run_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker run -d -it"))
+        .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
         .expect("role docker run should run");
     assert!(run_cmd.contains("-e JACKIN_AGENT=codex"), "{run_cmd}");
     assert!(run_cmd.contains("-e JACKIN_ROLE=agent-smith"), "{run_cmd}");
@@ -146,8 +146,14 @@ model = "gpt-5"
         run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"),
         "{run_cmd}"
     );
-    assert!(run_cmd.contains(" -m gpt-5"), "{run_cmd}");
     assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"), "{run_cmd}");
+    // Model flag is forwarded to the tmux session, not the docker run CMD.
+    let session_cmd = runner
+        .recorded
+        .iter()
+        .find(|call| call.contains("tmux new-session") && call.contains("entrypoint.sh"))
+        .expect("tmux primary session should start");
+    assert!(session_cmd.contains(" -m gpt-5"), "{session_cmd}");
     assert!(!run_cmd.contains("/jackin/codex/config.toml"), "{run_cmd}");
     // Multi-agent role (`agents = ["claude", "codex"]`) provisions
     // every supported agent's home state so `hardline --new --agent
@@ -231,7 +237,7 @@ plugins = []
     let run_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker run -d -it"))
+        .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
         .expect("role docker run should run");
     assert!(run_cmd.contains("-e JACKIN_AGENT=codex"), "{run_cmd}");
 }

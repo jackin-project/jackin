@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 const ENTRYPOINT_SH: &str = include_str!("../docker/runtime/entrypoint.sh");
+const SUPERVISOR_SH: &str = include_str!("../docker/runtime/supervisor.sh");
 
 #[derive(Debug)]
 pub struct DerivedBuildContext {
@@ -129,6 +130,8 @@ RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/de
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 RUN chmod +x /jackin/runtime/entrypoint.sh
+COPY .jackin-runtime/supervisor.sh /jackin/runtime/supervisor.sh
+RUN chmod +x /jackin/runtime/supervisor.sh
 USER agent
 ENTRYPOINT [\"/jackin/runtime/entrypoint.sh\"]
 "
@@ -208,6 +211,7 @@ pub fn create_derived_build_context(
     let runtime_dir = context_dir.join(".jackin-runtime");
     std::fs::create_dir_all(&runtime_dir)?;
     std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH)?;
+    std::fs::write(runtime_dir.join("supervisor.sh"), SUPERVISOR_SH)?;
 
     let hooks = validated.manifest.hooks.as_ref();
 
@@ -250,6 +254,7 @@ fn ensure_runtime_assets_are_included(
     let mut rules = vec![
         "!.jackin-runtime/".to_string(),
         "!.jackin-runtime/entrypoint.sh".to_string(),
+        "!.jackin-runtime/supervisor.sh".to_string(),
         "!.jackin-runtime/DerivedDockerfile".to_string(),
     ];
     for entry in hooks.into_iter().flat_map(HooksConfig::entries) {
@@ -314,6 +319,9 @@ mod tests {
         assert!(
             dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
         );
+        assert!(
+            dockerfile.contains("COPY .jackin-runtime/supervisor.sh /jackin/runtime/supervisor.sh")
+        );
         assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/entrypoint.sh\"]"));
     }
 
@@ -332,6 +340,9 @@ mod tests {
         assert!(dockerfile.contains("RUN claude --version"));
         assert!(
             dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
+        );
+        assert!(
+            dockerfile.contains("COPY .jackin-runtime/supervisor.sh /jackin/runtime/supervisor.sh")
         );
     }
 

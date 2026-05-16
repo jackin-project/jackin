@@ -3,7 +3,7 @@ title: "Console Agent Session Control"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — Phase 1 instance discovery and console Instances panel shipped with unique container identity and restore; shell entry and reconnectable tmux-backed session substrate are Phase 2 (open — design proposal, [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/))
+**Status**: Partially implemented — Phases 1–3 shipped: instance discovery, console Instances panel, `--shell` flag, tmux-backed primary session, secondary agent sessions via `hardline --new`, and console `a`/`x` keybindings for new-agent and shell. Phase 4 (agent runtime status + resource panel integration) remains open.
 
 ## Problem
 
@@ -178,29 +178,23 @@ Session status reconciliation on every console refresh:
 
 ## Implementation Plan
 
-### Phase 1 — Discovery and shell entry *(partially shipped)*
+### Phase 1 — Discovery and shell entry *(shipped)*
 
-Instance discovery that lists running jackin-managed containers by manifest/labels has shipped as part of the unique container identity and restore work. The console Instances panel showing matching instances per workspace/directory and recovery actions (`r`, `s`, `i`, `p`) has also shipped. The following Phase 1 items remain:
+Instance discovery, console Instances panel (`r`, `i`, `p` keybindings), `jackin hardline --shell` for one-shot zsh, and console `x`/`X` keybinding for shell are all shipped.
 
-- Add `jackin hardline --shell` or equivalent to open a one-shot zsh session in a selected running container without needing a named tmux session for reconnect.
-- Add a console action that triggers the same shell path.
+### Phase 2 — Reconnectable primary session via tmux *(shipped)*
 
-### Phase 2 — Reconnectable primary session via tmux *(open)*
+- `tmux` added to the construct image (<RepoFile path="docker/construct/Dockerfile" />).
+- <RepoFile path="docker/runtime/supervisor.sh" /> becomes PID 1 via `--entrypoint` override on `docker run`; the supervisor is a bash wait loop that keeps the container alive while agent sessions run via `docker exec`.
+- `load_role_with` in <RepoFile path="src/runtime/launch.rs" /> starts the container detached with the supervisor, then runs `docker exec -e TMUX= -it <container> tmux new-session -A -s jackin-primary -- /jackin/runtime/entrypoint.sh [model-args]`. Model overrides moved from docker run CMD to the tmux exec args.
+- `hardline_agent` in <RepoFile path="src/runtime/attach.rs" /> attaches via `docker exec -e TMUX= -it <container> tmux new-session -A -s jackin-primary -- /jackin/runtime/entrypoint.sh`. `TMUX=` prevents nested-session warnings when the operator's host terminal is already inside tmux.
+- `SessionRecord` and `SessionStatus` types added to <RepoFile path="src/instance/manifest.rs" />; `sessions` field added to `InstanceManifest` with `#[serde(default)]`.
 
-- Add `tmux` to the construct image (<RepoFile path="docker/construct/Dockerfile" />, `apt-get install tmux`).
-- Add a container supervisor entry point: a minimal script or `tini`-wrapped wait loop that becomes PID 1 on `docker run`. The supervisor does not start an agent; it keeps the container alive and provides a stable PID 1 that outlives any agent session.
-- Change `load_role_with` in <RepoFile path="src/runtime/launch.rs" /> to start the container detached (`-d`) with the supervisor as CMD, then immediately run `docker exec -it <container> tmux new-session -s jackin-primary /jackin/runtime/entrypoint.sh [agent-args]` to give the operator the agent TTY.
-- Change `hardline_agent` in <RepoFile path="src/runtime/attach.rs" /> to attach via `docker exec -it <container> tmux attach-session -t <session-name>` instead of `docker attach`.
-- Write the session record (`session_id`, `tmux_name`, `agent_runtime`, `created_at`, `status`) into the instance manifest after the primary session starts. Reconcile on `hardline` and console refresh.
-- Preserve current `docker attach` behavior for legacy containers (those without a `sessions` array in their manifest) to avoid breaking instances started before this change lands.
+### Phase 3 — Secondary agent sessions *(shipped)*
 
-### Phase 3 — Secondary agent sessions *(open)*
-
-- Expand `hardline --new` to create a named tmux session inside the running container for the chosen agent. The current `hardline --new` already prompts for agent choice (from the unique container identity restore work) and calls `spawn_agent_session`; Phase 3 replaces the `docker exec` call inside `spawn_agent_session` with a tmux session creation.
-- Update `inspect_agent_sessions` in <RepoFile path="src/runtime/attach.rs" /> to query `tmux list-sessions` inside the container instead of parsing `docker top` output.
-- Add console actions for starting Claude/Codex/Amp sessions inside an existing instance.
-- Extend the Instances panel stop-session action to kill a named tmux session without stopping the container.
-- Persist session records and reconcile them on console startup.
+- `hardline --new` creates named tmux sessions `jackin-<agent>-<id>` inside the running container via `spawn_agent_session` in <RepoFile path="src/runtime/attach.rs" />.
+- `inspect_agent_sessions` queries `tmux list-sessions` inside the container instead of `docker top`.
+- Console `a`/`A` keybinding launches `NewSession` (secondary agent); `x`/`X` launches `Shell`.
 
 ### Phase 4 — Rich operator coordination *(open)*
 

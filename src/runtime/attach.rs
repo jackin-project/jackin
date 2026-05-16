@@ -7,6 +7,8 @@ use crate::tui;
 
 use super::naming::{LABEL_KIND_DIND, LABEL_MANAGED, dind_certs_volume};
 
+pub const PRIMARY_SESSION_NAME: &str = "jackin-primary";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainerState {
     NotFound,
@@ -118,41 +120,37 @@ pub fn inspect_agent_sessions(
         return AgentSessionInventory::NotRunning;
     }
 
-    match runner.capture("docker", &["top", container_name, "-eo", "pid,args"], None) {
-        Ok(output) => AgentSessionInventory::Sessions(parse_agent_sessions(&output)),
+    match runner.capture(
+        "docker",
+        &[
+            "exec",
+            container_name,
+            "tmux",
+            "list-sessions",
+            "-F",
+            "#{session_name}",
+        ],
+        None,
+    ) {
+        Ok(output) => AgentSessionInventory::Sessions(parse_tmux_sessions(&output)),
         Err(error) => AgentSessionInventory::Unavailable(error.to_string()),
     }
 }
 
-fn parse_agent_sessions(output: &str) -> Vec<AgentSession> {
+fn parse_tmux_sessions(output: &str) -> Vec<AgentSession> {
     output
         .lines()
-        .skip(1)
         .filter_map(|line| {
-            let mut fields = line.splitn(2, char::is_whitespace);
-            let pid = fields.next()?.trim();
-            let command = fields.next()?.trim();
-            if pid.is_empty() || command.is_empty() || !is_agent_session_command(command) {
+            let name = line.trim();
+            if name.is_empty() {
                 return None;
             }
             Some(AgentSession {
-                pid: pid.to_string(),
-                command: command.to_string(),
+                pid: String::new(),
+                command: name.to_string(),
             })
         })
         .collect()
-}
-
-fn is_agent_session_command(command: &str) -> bool {
-    if command.contains("/jackin/runtime/entrypoint.sh") {
-        return true;
-    }
-    crate::agent::Agent::ALL.iter().any(|agent| {
-        command
-            .split_whitespace()
-            .next()
-            .is_some_and(|program| program.ends_with(agent.slug()))
-    })
 }
 
 /// Builder for `docker inspect`-failure operator messages. `clause`
@@ -169,30 +167,77 @@ fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
     docker_unavailable_msg(&format!("inspect container `{container_name}`"), reason)
 }
 
-/// Re-attach to a running role, or restart a crashed one in place.
+/// Attach to or create the primary tmux session in a running container.
 ///
-/// Behavior by container state:
-///   - `Running`                  → attach directly.
-///   - `Stopped` / exit 0         → error.  The previous session ended cleanly;
-///     the user wants `jackin load` for a new one.
-///   - `Stopped` / exit ≠0 or OOM → ensure the derived `DinD` sidecar is
-///     ready, restart the existing container, then attach.
-///   - `NotFound`                 → error.
-pub(super) fn attach_running(
+/// Uses `tmux new-session -A` which attaches if `jackin-primary` already
+/// exists, or creates it running `entrypoint.sh` when the session is absent
+/// (primary agent exited cleanly while the supervisor kept the container up).
+///
+/// `TMUX=` is unset on the exec so a host tmux session does not cause
+/// "sessions should be nested with care" errors inside the container.
+pub(super) fn attach_primary_session(
     container_name: &str,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     runner.run(
         "docker",
         &[
-            "attach",
-            "--detach-keys=",
-            "--sig-proxy=false",
+            "exec",
+            "-e",
+            "TMUX=",
+            "-it",
             container_name,
+            "tmux",
+            "new-session",
+            "-A",
+            "-s",
+            PRIMARY_SESSION_NAME,
+            "--",
+            "/jackin/runtime/entrypoint.sh",
         ],
         None,
         &RunOptions::default(),
     )
+}
+
+/// Open a one-shot interactive zsh shell in a running container.
+///
+/// Intentionally ephemeral — no tmux session, no reconnect. Used by
+/// `jackin hardline --shell` and the console Shell action.
+pub fn spawn_shell_session(
+    paths: &JackinPaths,
+    container_name: &str,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    match inspect_container_state(runner, container_name) {
+        ContainerState::Running => {}
+        ContainerState::NotFound => {
+            if let Some(message) = missing_restore_message(paths, container_name)? {
+                anyhow::bail!("{message}");
+            }
+            anyhow::bail!(
+                "container '{container_name}' not found; use `jackin load` to start a new session"
+            );
+        }
+        ContainerState::InspectUnavailable(reason) => {
+            anyhow::bail!("{}", inspect_unavailable_message(container_name, &reason));
+        }
+        ContainerState::Stopped { .. } => {
+            anyhow::bail!(
+                "container '{container_name}' is stopped; run `jackin hardline {container_name}` to restart it before opening a shell"
+            );
+        }
+    }
+
+    super::caffeinate::reconcile(paths, runner);
+    let result = runner.run(
+        "docker",
+        &["exec", "-e", "TMUX=", "-it", container_name, "/bin/zsh"],
+        None,
+        &RunOptions::default(),
+    );
+    eprintln!();
+    result
 }
 
 pub fn spawn_agent_session(
@@ -228,17 +273,34 @@ pub fn spawn_agent_session(
         crate::env_model::JACKIN_AGENT_ENV_NAME,
         agent.slug()
     );
+    // Generate a short unique suffix so two sessions of the same agent don't
+    // collide on their tmux session name.
+    let short_id: String = {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.subsec_millis());
+        format!("{ts:03x}")
+    };
+    let session_name = format!("jackin-{}-{short_id}", agent.slug());
     super::caffeinate::reconcile(paths, runner);
     let result = runner.run(
         "docker",
         &[
             "exec",
-            "-it",
+            "-e",
+            "TMUX=",
             "-e",
             &agent_env,
             "--workdir",
             workdir,
+            "-it",
             container_name,
+            "tmux",
+            "new-session",
+            "-s",
+            &session_name,
+            "--",
             "/jackin/runtime/entrypoint.sh",
         ],
         None,
@@ -257,17 +319,15 @@ pub fn hardline_agent(
     container_name: &str,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    // Reconcile keep_awake right before each `attach_running` call.
-    // `attach_running` blocks on `docker attach` until the container
-    // exits, so the post-hardline reconcile in `app::Command::Hardline`
-    // would fire too late: by the time attach returns, the container
-    // is stopped and the keep_awake count is zero. Firing here, while
-    // the container is observably running, ensures caffeinate spawns
-    // for the duration of the re-attached session.
+    // Reconcile keep_awake right before each `attach_primary_session` call.
+    // `attach_primary_session` blocks on the tmux exec until the session ends,
+    // so the post-hardline reconcile in `app::Command::Hardline` would fire
+    // too late. Firing here, while the container is observably running, ensures
+    // caffeinate spawns for the duration of the re-attached session.
     let attach_outcome = match inspect_container_state(runner, container_name) {
         ContainerState::Running => {
             super::caffeinate::reconcile(paths, runner);
-            attach_running(container_name, runner)
+            attach_primary_session(container_name, runner)
         }
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
@@ -322,7 +382,7 @@ pub fn hardline_agent(
                 &RunOptions::default(),
             )?;
             super::caffeinate::reconcile(paths, runner);
-            attach_running(container_name, runner)
+            attach_primary_session(container_name, runner)
         }
     };
     attach_outcome?;
@@ -435,7 +495,7 @@ fn describe_agent_sessions(sessions: &AgentSessionInventory) -> String {
         }
         AgentSessionInventory::Sessions(sessions) => sessions
             .iter()
-            .map(|session| format!("{} {}", session.pid, session.command))
+            .map(|session| session.command.as_str())
             .collect::<Vec<_>>()
             .join("; "),
     }
@@ -637,14 +697,16 @@ mod tests {
 
         hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap();
 
-        // The attach command must appear; the trailing inspect for the
-        // finalizer is appended after.
         assert!(
-            runner
-                .recorded
-                .iter()
-                .any(|c| c == "docker attach --detach-keys= --sig-proxy=false jk-agent-smith"),
-            "expected docker attach in recorded commands"
+            runner.recorded.iter().any(|c| {
+                c.contains("docker exec")
+                    && c.contains("TMUX=")
+                    && c.contains("jk-agent-smith")
+                    && c.contains("tmux new-session")
+                    && c.contains(PRIMARY_SESSION_NAME)
+            }),
+            "expected tmux new-session exec in recorded commands; got: {:?}",
+            runner.recorded
         );
     }
 
@@ -686,9 +748,20 @@ mod tests {
         )
         .unwrap();
 
-        assert!(runner.recorded.iter().any(|call| {
-            call == "docker exec -it -e JACKIN_AGENT=codex --workdir /workspace/project jk-k7p9m2xq-workspace-agentsmith /jackin/runtime/entrypoint.sh"
-        }));
+        assert!(
+            runner.recorded.iter().any(|call| {
+                call.contains("docker exec")
+                    && call.contains("TMUX=")
+                    && call.contains("JACKIN_AGENT=codex")
+                    && call.contains("--workdir /workspace/project")
+                    && call.contains("jk-k7p9m2xq-workspace-agentsmith")
+                    && call.contains("tmux new-session")
+                    && call.contains("jackin-codex-")
+                    && call.contains("/jackin/runtime/entrypoint.sh")
+            }),
+            "expected tmux new-session for codex; got: {:?}",
+            runner.recorded
+        );
     }
 
     #[test]
@@ -726,7 +799,7 @@ mod tests {
             !runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker start") || c.contains("docker attach"))
+                .any(|c| c.contains("docker start") || c.contains("tmux new-session"))
         );
     }
 
@@ -770,7 +843,7 @@ mod tests {
             !runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker start") || c.contains("docker attach"))
+                .any(|c| c.contains("docker start") || c.contains("tmux new-session"))
         );
     }
 
@@ -842,7 +915,7 @@ mod tests {
             .unwrap();
         let mut runner = FakeRunner::with_capture_queue([
             "true 0 false".to_string(),
-            "PID COMMAND\n101 /jackin/runtime/entrypoint.sh\n202 codex exec".to_string(),
+            "jackin-primary\njackin-codex-abc".to_string(),
             "false 137 false".to_string(),
             "[]".to_string(),
         ]);
@@ -856,7 +929,7 @@ mod tests {
         assert!(report.contains("Status: preserved_dirty"), "{report}");
         assert!(report.contains("Last attach outcome: exit:137"), "{report}");
         assert!(
-            report.contains("Agent sessions: 101 /jackin/runtime/entrypoint.sh; 202 codex exec"),
+            report.contains("Agent sessions: jackin-primary; jackin-codex-abc"),
             "{report}"
         );
         assert!(report.contains("Role container: jk-k7p9m2xq-workspace-agentsmith (running)"));
@@ -870,15 +943,14 @@ mod tests {
             !runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker start") || c.contains("docker attach"))
+                .any(|c| c.contains("docker start") || c.contains("tmux new-session -A"))
         );
     }
 
     #[test]
-    fn inspect_agent_sessions_counts_entrypoint_and_agent_processes() {
+    fn inspect_agent_sessions_lists_tmux_sessions() {
         let mut runner = FakeRunner::with_capture_queue([
-            "PID COMMAND\n1 /jackin/runtime/entrypoint.sh\n42 codex exec\n77 sleep infinity"
-                .to_string(),
+            "jackin-primary\njackin-codex-abc".to_string(),
         ]);
 
         let sessions =
@@ -888,12 +960,12 @@ mod tests {
             panic!("expected sessions");
         };
         assert_eq!(sessions.len(), 2);
-        assert_eq!(sessions[0].pid, "1");
-        assert_eq!(sessions[1].command, "codex exec");
+        assert_eq!(sessions[0].command, "jackin-primary");
+        assert_eq!(sessions[1].command, "jackin-codex-abc");
     }
 
     #[test]
-    fn inspect_agent_sessions_skips_docker_top_when_container_is_not_running() {
+    fn inspect_agent_sessions_skips_query_when_container_is_not_running() {
         let mut runner = FakeRunner::default();
 
         let sessions = inspect_agent_sessions(
@@ -972,7 +1044,7 @@ mod tests {
             !runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker start") || c.contains("docker attach"))
+                .any(|c| c.contains("docker start") || c.contains("tmux new-session"))
         );
     }
 
@@ -992,7 +1064,7 @@ mod tests {
                 .recorded
                 .iter()
                 .any(|c| c == "docker start jk-agent-smith"),
-            "expected docker start before attach"
+            "expected docker start before tmux session"
         );
         let start_idx = runner
             .recorded
@@ -1002,9 +1074,9 @@ mod tests {
         let attach_idx = runner
             .recorded
             .iter()
-            .position(|c| c.contains("docker attach"))
+            .position(|c| c.contains("tmux new-session") && c.contains(PRIMARY_SESSION_NAME))
             .unwrap();
-        assert!(start_idx < attach_idx, "start must precede attach");
+        assert!(start_idx < attach_idx, "start must precede tmux session");
     }
 
     #[test]
@@ -1059,8 +1131,8 @@ mod tests {
         let attach_idx = runner
             .recorded
             .iter()
-            .position(|c| c.contains("docker attach"))
-            .expect("expected role attach");
+            .position(|c| c.contains("tmux new-session") && c.contains(PRIMARY_SESSION_NAME))
+            .expect("expected tmux session start");
         assert!(network_create_idx < network_connect_idx);
         assert!(network_connect_idx < dind_run_idx);
         assert!(dind_run_idx < dind_ready_idx);
@@ -1084,7 +1156,7 @@ mod tests {
             !runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker start") || c.contains("docker attach"))
+                .any(|c| c.contains("docker start") || c.contains("tmux new-session"))
         );
     }
 
@@ -1118,8 +1190,8 @@ mod tests {
         let attach_idx = runner
             .recorded
             .iter()
-            .position(|c| c.contains("docker attach"))
-            .expect("expected role attach");
+            .position(|c| c.contains("tmux new-session") && c.contains(PRIMARY_SESSION_NAME))
+            .expect("expected tmux session start");
         assert!(dind_start_idx < dind_ready_idx);
         assert!(dind_ready_idx < role_start_idx);
         assert!(role_start_idx < attach_idx);

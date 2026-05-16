@@ -8,7 +8,7 @@ pub mod manifest;
 pub mod naming;
 pub use manifest::{
     DockerResources, InstanceIndex, InstanceIndexEntry, InstanceManifest, InstanceQuery,
-    InstanceStatus, NewInstanceManifest,
+    InstanceStatus, NewInstanceManifest, SessionRecord, SessionStatus,
 };
 pub use naming::{class_family_matches, container_name_with_id, new_container_name, runtime_slug};
 

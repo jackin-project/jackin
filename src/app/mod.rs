@@ -187,9 +187,10 @@ pub fn run(cli: Cli) -> Result<()> {
             inspect,
             new,
             agent,
+            shell,
         }) => {
-            // `--inspect` / `--new` mutual exclusion is enforced by clap
-            // `conflicts_with` on `HardlineArgs::new`; no runtime guard needed.
+            // `--inspect` / `--new` / `--shell` mutual exclusion is enforced by
+            // clap `conflicts_with_all` on `HardlineArgs`; no runtime guard needed.
             let explicit_selector = selector.is_some();
             let container = if let Some(sel) = selector {
                 if let Some(container) = resolve_instance_reference(&paths, &sel)? {
@@ -204,6 +205,9 @@ pub fn run(cli: Cli) -> Result<()> {
                 let cwd = std::env::current_dir()?;
                 resolve_running_container_from_context(&paths, &config, &cwd, &mut runner)?
             };
+            if shell {
+                return runtime::spawn_shell_session(&paths, &container, &mut runner);
+            }
             let action = if inspect {
                 HardlineAction::Inspect
             } else if new {
@@ -1603,6 +1607,9 @@ fn handle_console_instance_action(
             );
             runtime::reconcile_keep_awake(paths, runner);
             result
+        }
+        console::ConsoleInstanceAction::Shell => {
+            runtime::spawn_shell_session(paths, &container, runner)
         }
         console::ConsoleInstanceAction::Inspect => {
             println!(

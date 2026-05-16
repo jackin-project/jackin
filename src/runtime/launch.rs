@@ -865,7 +865,6 @@ fn launch_role_runtime(
     let mut run_args: Vec<&str> = vec![
         "run",
         "-d",
-        "-it",
         "--name",
         container_name,
         "--hostname",
@@ -1028,65 +1027,72 @@ fn launch_role_runtime(
         run_args.push("-v");
         run_args.push(ms);
     }
+    // Use the supervisor as PID 1 so the container outlives individual agent
+    // sessions. The primary agent session starts immediately below via
+    // `docker exec tmux new-session`, and model/CLI flags are passed there
+    // rather than as CMD args to the image.
+    run_args.extend_from_slice(&["--entrypoint", "/jackin/runtime/supervisor.sh"]);
     run_args.push(image);
-    if let Some(model) = state.claude_model() {
-        run_args.push("--model");
-        run_args.push(model);
-    }
-    if let Some(model) = state.codex_model() {
-        run_args.push("-m");
-        run_args.push(model);
-    }
-    if let Some(model) = state.opencode_model() {
-        run_args.push("-m");
-        run_args.push(model);
-    }
     runner.run("docker", &run_args, None, &docker_run_opts)?;
 
+    // Collect entrypoint args to forward model overrides into the tmux session.
+    let mut session_arg_strings: Vec<String> = Vec::new();
+    if let Some(model) = state.claude_model() {
+        session_arg_strings.push("--model".to_string());
+        session_arg_strings.push(model.to_string());
+    }
+    if let Some(model) = state.codex_model() {
+        session_arg_strings.push("-m".to_string());
+        session_arg_strings.push(model.to_string());
+    }
+    if let Some(model) = state.opencode_model() {
+        session_arg_strings.push("-m".to_string());
+        session_arg_strings.push(model.to_string());
+    }
+
     // Reconcile keep_awake AFTER the role container is running but
-    // BEFORE the foreground attach blocks. This is the only window in
-    // which an interactive `jackin load` can spawn caffeinate: the
-    // pre-launch reconcile in `app::Command::Load` runs before the
-    // container exists (count=0 → no-op), and the post-launch
-    // reconcile only runs after attach returns, by which time the
-    // container has stopped (count=0 again → no-op). Without this
-    // mid-flight call the feature would never hold a power assertion
-    // for a single interactive session.
+    // BEFORE the foreground session blocks. This is the only window in
+    // which an interactive `jackin load` can spawn caffeinate.
     super::caffeinate::reconcile(paths, runner);
 
-    // Pre-attach safety check: if the container has already exited
-    // (entrypoint crashed, agent CLI failed at startup, etc.), `docker
-    // attach` will print the opaque "cannot attach to a stopped
-    // container, start it first" and we'd lose the actual reason.
-    // Capture `docker logs` and surface it in the error so the operator
-    // sees what really happened.
+    // Pre-session safety check: if the supervisor exited immediately (missing
+    // or broken supervisor script), surface the container logs rather than
+    // failing with a cryptic docker exec error.
     if let Some(err) = diagnose_premature_exit(runner, container_name) {
         return Err(err);
     }
 
-    // Attach with signal forwarding disabled and the default detach shortcut
-    // cleared: only an explicit exit from inside (or terminal close) ends the
-    // foreground session, and closing the terminal leaves the container
-    // running so `jackin hardline` can reconnect.
-    let attach_result = runner.run(
-        "docker",
-        &[
-            "attach",
-            "--detach-keys=",
-            "--sig-proxy=false",
-            container_name,
-        ],
-        None,
-        &RunOptions::default(),
-    );
+    // Start the primary agent session inside the running container. Using
+    // `tmux new-session -A` attaches if jackin-primary already exists (e.g.
+    // after a `hardline` that left the container alive), or creates it fresh.
+    // TMUX= prevents nested-session warnings when the operator's host
+    // terminal is itself inside a tmux session.
+    let mut exec_args: Vec<&str> = vec![
+        "exec",
+        "-e",
+        "TMUX=",
+        "-it",
+        container_name,
+        "tmux",
+        "new-session",
+        "-A",
+        "-s",
+        super::attach::PRIMARY_SESSION_NAME,
+        "--",
+        "/jackin/runtime/entrypoint.sh",
+    ];
+    for s in &session_arg_strings {
+        exec_args.push(s.as_str());
+    }
+    let session_result = runner.run("docker", &exec_args, None, &RunOptions::default());
     // Ensure cleanup debug logs start on a fresh line after the interactive session
     eprintln!();
-    if attach_result.is_err()
+    if session_result.is_err()
         && let Some(err) = diagnose_premature_exit(runner, container_name)
     {
         return Err(err);
     }
-    attach_result?;
+    session_result?;
 
     Ok(())
 }
@@ -3466,14 +3472,14 @@ mod tests {
     #[test]
     fn diagnose_premature_exit_passes_through_when_inspect_returns_notfound() {
         // Empty inspect output maps to `ContainerState::NotFound`. We
-        // intentionally let docker attach surface its own
-        // `No such container` rather than synthesize a less-helpful
-        // diagnostic — and a transient inspect hiccup must not abort
-        // an otherwise-healthy launch.
+        // Empty inspect output maps to `ContainerState::NotFound`. We
+        // intentionally defer to the exec error rather than synthesize a
+        // less-helpful diagnostic — and a transient inspect hiccup must not
+        // abort an otherwise-healthy launch.
         let mut runner = FakeRunner::with_capture_queue([String::new()]);
         assert!(
             super::diagnose_premature_exit(&mut runner, "jackin-x").is_none(),
-            "NotFound must defer to docker attach's own error path"
+            "NotFound must not abort launch before exec attempt"
         );
     }
 
@@ -4290,7 +4296,7 @@ echo "pulled $2"
         let command = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it --name "))
+            .find(|call| call.contains("docker run -d --name ") && call.contains("supervisor.sh"))
             .expect("expected role docker run command");
         arg_after(command, "--name")
     }
@@ -4299,7 +4305,7 @@ echo "pulled $2"
         let command = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d --name "))
+            .find(|call| call.contains("docker run -d --name ") && !call.contains("supervisor.sh"))
             .expect("expected DinD docker run command");
         arg_after(command, "--name")
     }
@@ -4493,10 +4499,18 @@ plugins = ["code-review@claude-plugins-official"]
             .recorded
             .iter()
             .find(|call| {
-                call.contains("docker run -d -it --name jk-") && call.contains("thearchitect")
+                call.contains("docker run -d --name jk-")
+                    && call.contains("thearchitect")
+                    && call.contains("supervisor.sh")
             })
             .unwrap();
-        assert!(run_cmd.contains(" --model sonnet"));
+        // Model flag is forwarded to the tmux session, not the docker run CMD.
+        let session_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("tmux new-session") && call.contains("entrypoint.sh"))
+            .unwrap();
+        assert!(session_cmd.contains(" --model sonnet"));
         let container_name = launched_role_container_name(&runner);
         assert!(crate::instance::naming::is_dns_label(&container_name));
         assert!(!container_name.contains("__"));
@@ -4649,7 +4663,7 @@ trusted = true
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(run_cmd.contains(&format!("{}:/test-data:ro", mount_src.display())));
     }
@@ -4713,7 +4727,7 @@ plugins = ["code-review@claude-plugins-official"]
                 && call.contains("agentsmith")
         }));
         assert!(runner.recorded.iter().any(
-            |call| call.contains("docker run -d -it --name jk-") && call.contains("agentsmith")
+            |call| call.contains("docker run -d --name jk-") && call.contains("agentsmith")
         ));
         assert!(
             !runner
@@ -4794,11 +4808,17 @@ model = "gpt-5"
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(run_cmd.contains("-e JACKIN_AGENT=codex"));
-        assert!(run_cmd.contains(" -m gpt-5"));
         assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"));
+        // Model flag is forwarded to the tmux session, not the docker run CMD.
+        let session_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("tmux new-session") && call.contains("entrypoint.sh"))
+            .unwrap();
+        assert!(session_cmd.contains(" -m gpt-5"));
         assert!(run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"));
         assert!(!run_cmd.contains("/jackin/codex/config.toml"));
         // Multi-agent role `agents = ["claude", "codex"]` provisions
@@ -4870,7 +4890,7 @@ agents = ["codex"]
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .expect("role docker run should fire even without OPENAI_API_KEY");
         assert!(run_cmd.contains("-e JACKIN_AGENT=codex"));
         assert!(!run_cmd.contains("-e OPENAI_API_KEY="));
@@ -4937,7 +4957,7 @@ plugins = []
         let run_call = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(run_call.contains(&format!("--workdir {}", workspace.workdir)));
         assert!(run_call.contains(&format!(
@@ -5225,7 +5245,7 @@ plugins = []
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner {
-            fail_on: vec!["docker run -d -it --name jk-".to_string()],
+            fail_on: vec!["supervisor.sh".to_string()],
             capture_queue: VecDeque::from(vec![
                 String::new(),
                 String::new(),
@@ -5265,7 +5285,7 @@ plugins = ["code-review@claude-plugins-official"]
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("docker run -d -it --name jk-"));
+        assert!(error.to_string().contains("docker run -d --name jk-"));
         let container_name = launched_role_container_name(&runner);
         let dind = format!("{container_name}-dind");
         let certs_volume = format!("{container_name}-dind-certs");
@@ -5447,7 +5467,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(
             run_cmd.contains(&format!("DOCKER_HOST=tcp://{dind}:2376")),
@@ -5525,7 +5545,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         let dind = dind_env_from_run_cmd(run_cmd);
         assert!(run_cmd.contains("HTTPS_PROXY=http://proxy.internal:8305"));
@@ -5635,7 +5655,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap()
             .clone();
         (run_cmd, temp)
@@ -5702,7 +5722,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(run_cmd.contains("jackin.display_name=Agent Smith"));
     }
@@ -5757,7 +5777,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(
             run_cmd.contains("--label jackin.keep_awake=true"),
@@ -5816,7 +5836,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(
             !run_cmd.contains("jackin.keep_awake"),
@@ -5872,7 +5892,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         let dind = dind_env_from_run_cmd(run_cmd);
         assert!(run_cmd.contains("-e JACKIN=1"));
@@ -5991,7 +6011,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(run_cmd.contains("-e JACKIN_DEBUG=1"));
     }
@@ -6091,7 +6111,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(
             run_cmd.contains("-e OPERATOR_SMOKE=smoke-literal"),
@@ -6184,7 +6204,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(
             run_cmd.contains(
@@ -6269,7 +6289,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(
             run_cmd.contains("-e OPERATOR_SMOKE=operator-wins"),
@@ -6357,7 +6377,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(
             run_cmd.contains("-e FROM_HOST=from-host-env"),
@@ -6456,7 +6476,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(
             run_cmd.contains("-e OPERATOR_TOKEN=resolved-op-token"),

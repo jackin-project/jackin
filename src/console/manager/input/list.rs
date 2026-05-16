@@ -138,6 +138,16 @@ pub(super) fn handle_list_key(
             ConsoleInstanceAction::Reconnect,
             "No recoverable instance for this row",
         )),
+        KeyCode::Char('a' | 'A') => Ok(instance_action_outcome(
+            state,
+            ConsoleInstanceAction::NewSession,
+            "No running instance for this row",
+        )),
+        KeyCode::Char('x' | 'X') => Ok(instance_action_outcome(
+            state,
+            ConsoleInstanceAction::Shell,
+            "No running instance for this row",
+        )),
         KeyCode::Char('i' | 'I') => Ok(instance_action_outcome(
             state,
             ConsoleInstanceAction::Inspect,
@@ -221,7 +231,7 @@ const fn instance_action_accepts_status(
         ConsoleInstanceAction::Reconnect | ConsoleInstanceAction::Inspect => {
             !matches!(status, crate::instance::InstanceStatus::Purged)
         }
-        ConsoleInstanceAction::NewSession => matches!(
+        ConsoleInstanceAction::NewSession | ConsoleInstanceAction::Shell => matches!(
             status,
             crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
         ),

@@ -18,7 +18,7 @@ pub(crate) use self::attach::docker_unavailable_msg;
 pub use self::attach::{
     AgentSession, AgentSessionInventory, ContainerState, describe_agent_session_count,
     hardline_agent, inspect_agent_sessions, inspect_container_state, inspect_hardline_instance,
-    spawn_agent_session,
+    spawn_agent_session, spawn_shell_session,
 };
 pub use self::caffeinate::reconcile as reconcile_keep_awake;
 pub use self::cleanup::{
