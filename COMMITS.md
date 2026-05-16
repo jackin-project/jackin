@@ -62,7 +62,7 @@ git push --force-with-lease origin <branch>
 ```
 
 The `Signed-off-by` trailer must match the commit author, not any
-`Co-authored-by` trailer (Claude, Codex, etc.). If `git config user.email`
+`Co-authored-by` trailer (Claude, Codex, Amp, OpenCode, etc.). If `git config user.email`
 is not set to the expected personal address, correct it **before**
 committing — do not paper over a wrong-author commit with an unrelated
 sign-off.
@@ -76,6 +76,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full DCO v1.1 text.
 
 Agent-specific attribution trailer requirements (e.g., for the Codex agent) are in [AGENTS.md](AGENTS.md).
 
+## Push after every commit (agent rule)
+
+After every `git commit`, immediately run `git push`. Never leave commits in local-only state. This applies to every commit on every branch — feature branches, fix branches, everything. There is no "push later" batching.
+
+```sh
+git commit -s -m "feat(scope): description"
+git push
+```
+
+The only exception is an explicit operator instruction to hold off.
+
 ## Merge-readiness Verification
 
 Do not run the full verification suite before every commit by default. Run it
@@ -83,10 +94,13 @@ when a pull request is ready to be merged, or earlier only when the operator
 explicitly asks for it. The merge-readiness check is:
 
 ```sh
-cargo fmt -- --check && cargo clippy -- -D warnings && cargo nextest run
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo check --all-targets
+cargo nextest run --all-features
 ```
 
-The `-- -D warnings` flag promotes clippy warnings to hard errors, matching what CI runs. Without it, lints like `clippy::branches_sharing_code` and `clippy::doc_markdown` exit clippy with status 0 locally but fail CI — wasting a round-trip. Use the strict invocation locally so CI never catches a lint your local check missed.
+CI runs clippy across all targets with all enabled features, runs `cargo check --all-targets` to verify the default-features compile path, then runs nextest with all enabled features (including feature-gated integration tests). The `e2e` feature is purely additive — `cargo nextest run --all-features` is a strict superset of the default-features test suite, so a separate default-features `cargo nextest run` would re-execute every non-feature-gated test for no extra coverage. The `-- -D warnings` flag promotes clippy warnings to hard errors, matching what CI runs. Without it, lints like `clippy::branches_sharing_code` and `clippy::doc_markdown` exit clippy with status 0 locally but fail CI — wasting a round-trip. Use the strict invocation locally so CI never catches a lint your local check missed.
 
 If formatting fails, run `cargo fmt` to fix it, then re-run the checks.
 

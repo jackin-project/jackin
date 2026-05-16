@@ -7,6 +7,14 @@
 //! exposes only a single shared `dir_style`). All are consumed by both
 //! the manager (PR 2) and the Secrets tab (PR 3).
 
+use ratatui::style::Color;
+
+/// Canonical phosphor-green palette used across every TUI surface.
+pub(crate) const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
+pub(crate) const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
+pub(crate) const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
+pub(crate) const WHITE: Color = Color::Rgb(255, 255, 255);
+
 pub mod agent_choice;
 pub mod auth_panel;
 pub mod confirm;
@@ -20,6 +28,7 @@ pub mod panel_rain;
 pub mod role_picker;
 pub mod save_discard;
 pub mod scope_picker;
+pub mod scrollable;
 pub mod source_picker;
 pub mod text_input;
 pub mod workdir_pick;
@@ -63,16 +72,9 @@ mod consistency_tests {
     //! `┌ Title ─...` renders with breathing room, and a hint footer
     //! whose separator glyphs use `PHOSPHOR_DARK`. These tests pin that
     //! contract so a future drift doesn't silently degrade the look.
-    use ratatui::{
-        Terminal,
-        backend::TestBackend,
-        buffer::Buffer,
-        layout::Rect,
-        style::{Color, Modifier},
-    };
+    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
 
-    const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
-    const WHITE: Color = Color::Rgb(255, 255, 255);
+    use super::{PHOSPHOR_DARK, WHITE};
 
     /// Render a closure into a fresh `TestBackend` and return the resulting
     /// buffer. Size is chosen to comfortably fit every modal under test.
@@ -145,47 +147,11 @@ mod consistency_tests {
         }
     }
 
-    /// Find the bottom-most non-blank content row inside `area` (excluding
-    /// the top/bottom border rows) and assert that its first styled span is
-    /// a bold-white "key" glyph — matching the canonical
-    /// `<KEY> <verb> ... Esc cancel` hint format.
-    ///
-    /// We can't easily inspect the whole hint line's styles without knowing
-    /// each widget's exact hint text; instead we look for at least one
-    /// WHITE+BOLD cell followed by a `PHOSPHOR_GREEN` label cell on the hint
-    /// row. That matches every canonical hint (`Enter commit`, `Enter
-    /// confirm`, `↑↓ navigate`, etc.) and rejects any widget that forgets
-    /// the hint entirely.
-    fn assert_hint_row_present(buf: &Buffer, area: Rect, widget: &str) {
-        let phosphor_green = Color::Rgb(0, 255, 65);
-        let bottom_inner = area.y + area.height - 2; // row above bottom border
-        let top_inner = area.y + 1; // row below top border
-        // Scan bottom-up for the first non-blank inner row.
-        for y in (top_inner..=bottom_inner).rev() {
-            let mut saw_key = false;
-            let mut saw_label = false;
-            for x in (area.x + 1)..(area.x + area.width - 1) {
-                let cell = &buf[(x, y)];
-                if cell.symbol().is_empty() || cell.symbol() == " " {
-                    continue;
-                }
-                if cell.fg == WHITE && cell.modifier.contains(Modifier::BOLD) {
-                    saw_key = true;
-                } else if cell.fg == phosphor_green {
-                    saw_label = true;
-                }
-            }
-            if saw_key && saw_label {
-                return; // canonical hint found
-            }
-            assert!(
-                !(saw_key || saw_label),
-                "{widget}: hint row at y={y} has key={saw_key}/label={saw_label}; \
-                 expected both WHITE+BOLD key and PHOSPHOR_GREEN label cells"
-            );
-        }
-        panic!("{widget}: no hint row found inside {area:?}");
-    }
+    // Note: the former `assert_hint_row_present` helper and
+    // `all_modal_hint_rows_use_canonical_styles` test were removed when hint
+    // lines moved out of widget interiors into the main footer. Widgets no
+    // longer render an internal hint row; the footer is the single source of
+    // truth for available key hints.
 
     /// Build and render the `SaveDiscardCancel` modal into a full-area
     /// buffer. Returns (buffer, area).
@@ -326,22 +292,5 @@ mod consistency_tests {
         }
     }
 
-    /// Every modal renders a canonical hint row with WHITE+BOLD keys and
-    /// `PHOSPHOR_GREEN` labels.
-    #[test]
-    fn all_modal_hint_rows_use_canonical_styles() {
-        for (name, (buf, area)) in [
-            ("SaveDiscardCancel", render_save_discard()),
-            ("Confirm", render_confirm()),
-            ("MountDstChoice", render_mount_dst()),
-            ("TextInput", render_text_input()),
-            ("WorkdirPick", render_workdir_pick()),
-            ("GithubPicker", render_github_picker()),
-            ("AgentPicker", render_role_picker()),
-            ("ConfirmSave", render_confirm_save()),
-            ("AgentChoice", render_agent_choice()),
-        ] {
-            assert_hint_row_present(&buf, area, name);
-        }
-    }
+    // `all_modal_hint_rows_use_canonical_styles` test removed — hints moved to footer.
 }

@@ -91,6 +91,7 @@ fn manager_on_secrets_tab<'a>(config: &AppConfig, cwd: &std::path::Path) -> Mana
         .clone();
     let mut editor = EditorState::new_edit("big-monorepo".into(), ws);
     editor.active_tab = EditorTab::Secrets;
+    editor.tab_bar_focused = false;
     editor.active_field = FieldFocus::Row(0);
     state.stage = ManagerStage::Editor(editor);
     state
@@ -423,6 +424,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
             claude: None,
             codex: None,
             amp: None,
+            opencode: None,
             github: None,
         },
     );
@@ -1199,6 +1201,7 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
 /// is the bare `op://Vault/Item/Field` form (account scope is not
 /// encoded in the path).
 #[test]
+#[allow(clippy::too_many_lines)]
 fn op_picker_multi_account_flow() -> Result<()> {
     use jackin::console::widgets::op_picker::{OpLoadState, OpPickerStage};
     use jackin::operator_env::{OpAccount, OpField, OpItem, OpVault};
@@ -1396,20 +1399,20 @@ fn agent_picker_opens_when_multiple_agents_available() -> Result<()> {
         "multi-role dispatch must stay in the run-loop (Ok(None)); got {outcome:?}"
     );
     let ConsoleStage::Manager(ms) = &state.stage;
-    match &ms.list_modal {
-        Some(Modal::RolePicker { state: picker }) => {
+    match &ms.inline_role_picker {
+        Some(picker) => {
             assert_eq!(picker.roles.len(), 2);
             assert_eq!(picker.filtered.len(), 2);
         }
-        other => panic!("expected Modal::RolePicker on list_modal; got {other:?}"),
+        other => panic!("expected inline RolePicker; got {other:?}"),
     }
     Ok(())
 }
 
-/// `default_role` set on the workspace must short-circuit the picker
-/// and produce an `Ok(Some(_))` direct launch outcome — no modal opens.
+/// `default_role` set on the workspace must preselect that role in the
+/// inline picker instead of launching without confirmation.
 #[test]
-fn agent_picker_skipped_when_default_agent_set() -> Result<()> {
+fn agent_picker_opens_with_default_agent_preselected() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let config = seed_config_with_agents(
@@ -1426,21 +1429,26 @@ fn agent_picker_skipped_when_default_agent_set() -> Result<()> {
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
-    let (role, _ws) = outcome.expect("default_role must short-circuit to a direct launch");
-    assert_eq!(role.key(), "chainargos/agent-smith");
-    let ConsoleStage::Manager(ms) = &state.stage;
     assert!(
-        ms.list_modal.is_none(),
-        "default_role dispatch must NOT open the picker; got {:?}",
-        ms.list_modal
+        outcome.is_none(),
+        "default_role dispatch must stay in the run-loop so the operator confirms"
     );
+    let ConsoleStage::Manager(ms) = &state.stage;
+    let picker = ms
+        .inline_role_picker
+        .as_ref()
+        .expect("default_role dispatch must open the inline picker");
+    let selected = picker
+        .list_state
+        .selected
+        .expect("default role should be selected");
+    assert_eq!(picker.filtered[selected].key(), "chainargos/agent-smith");
     Ok(())
 }
 
-/// Exactly one eligible role must short-circuit the picker — same
-/// direct-launch outcome as the default-role path.
+/// Exactly one eligible role skips the picker and returns the role directly.
 #[test]
-fn agent_picker_skipped_when_single_eligible_agent() -> Result<()> {
+fn agent_picker_opens_when_single_eligible_agent() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let config = seed_config_with_agents(&paths, temp.path(), &["chainargos/agent-smith"], None)?;
@@ -1452,10 +1460,15 @@ fn agent_picker_skipped_when_single_eligible_agent() -> Result<()> {
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
-    let (role, _ws) = outcome.expect("single eligible role must short-circuit to a direct launch");
+    let (role, _workspace, agent) = outcome
+        .expect("single eligible role must auto-select and return directly, not open picker");
     assert_eq!(role.key(), "chainargos/agent-smith");
+    assert!(agent.is_none(), "agent must not be pre-selected");
     let ConsoleStage::Manager(ms) = &state.stage;
-    assert!(ms.list_modal.is_none());
+    assert!(
+        ms.inline_role_picker.is_none(),
+        "picker must not be open after single-role auto-select"
+    );
     Ok(())
 }
 
@@ -1483,7 +1496,7 @@ fn agent_picker_enter_commits_launch() -> Result<()> {
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    assert!(matches!(ms.list_modal, Some(Modal::RolePicker { .. })));
+    assert!(ms.inline_role_picker.is_some());
 
     // Enter on the picker — selection defaults to index 0
     // (BTreeMap ordering of role keys).
@@ -1499,8 +1512,8 @@ fn agent_picker_enter_commits_launch() -> Result<()> {
         other => panic!("expected LaunchWithAgent outcome; got {other:?}"),
     }
     assert!(
-        ms.list_modal.is_none(),
-        "picker commit must close the modal"
+        ms.inline_role_picker.is_none(),
+        "picker commit must close the inline picker"
     );
     Ok(())
 }
@@ -1528,7 +1541,7 @@ fn agent_picker_esc_closes_modal() -> Result<()> {
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
     let ConsoleStage::Manager(ms) = &mut state.stage;
-    assert!(matches!(ms.list_modal, Some(Modal::RolePicker { .. })));
+    assert!(ms.inline_role_picker.is_some());
 
     let outcome = handle_key(ms, &mut config, &paths, cwd, key(KeyCode::Esc))?;
     assert!(
@@ -1536,9 +1549,9 @@ fn agent_picker_esc_closes_modal() -> Result<()> {
         "Esc on the picker must produce Continue; got {outcome:?}"
     );
     assert!(
-        ms.list_modal.is_none(),
-        "Esc must close the picker modal; got {:?}",
-        ms.list_modal
+        ms.inline_role_picker.is_none(),
+        "Esc must close the inline picker; got {:?}",
+        ms.inline_role_picker
     );
     Ok(())
 }
@@ -1634,6 +1647,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
             claude: None,
             codex: None,
             amp: None,
+            opencode: None,
             github: None,
         },
     );
@@ -1793,6 +1807,7 @@ fn seed_override_picker_workspace(
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -2467,21 +2482,20 @@ fn launch_after_create_workspace_uses_fresh_data() -> Result<()> {
         config = ce.save()?;
     }
 
-    // Dispatch a launch against the freshly-created name. With the bug,
-    // `ConsoleState.workspaces` would not contain "freshly-created" and
-    // the dispatcher would return Ok(None). With the fix, the dispatcher
-    // builds the choice from the current `config` and short-circuits on
-    // the single eligible role.
+    // Dispatch a launch against the freshly-created name. The dispatcher
+    // must build the choice from the current `config` and auto-select the
+    // single role, proving it reads fresh data rather than a startup snapshot.
     let outcome = state.dispatch_launch_for_workspace(
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("freshly-created".into()),
     )?;
-    let (role, _ws) = outcome.expect(
-        "freshly-created workspace must resolve through the dispatcher; under the bug, \
+    let (role, _workspace, agent) = outcome.expect(
+        "freshly-created workspace must auto-select and return directly; under the bug, \
          ConsoleState.workspaces was a startup snapshot and didn't include the new name",
     );
     assert_eq!(role.key(), "chainargos/agent-smith");
+    assert!(agent.is_none());
     Ok(())
 }
 
@@ -2512,15 +2526,17 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
         config = ce.save()?;
     }
 
-    // Dispatch against the new name — must resolve and short-circuit
-    // (single eligible role + default_role set).
+    // Dispatch against the new name — must resolve and auto-select the
+    // single eligible role, proving the dispatcher uses the new name.
     let outcome = state.dispatch_launch_for_workspace(
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("renamed-ws".into()),
     )?;
-    let (role, _ws) = outcome.expect("renamed workspace must resolve under the new name");
+    let (role, _workspace, agent) = outcome
+        .expect("renamed workspace must resolve under the new name and auto-select the role");
     assert_eq!(role.key(), "chainargos/agent-smith");
+    assert!(agent.is_none());
 
     // OLD name must not resolve — under the snapshot bug it did.
     let stale_outcome = state.dispatch_launch_for_workspace(
@@ -2535,10 +2551,9 @@ fn launch_after_rename_uses_new_name() -> Result<()> {
     Ok(())
 }
 
-/// Post-edit `default_role` must short-circuit dispatch from picker
-/// to direct launch.
+/// Post-edit `default_role` must preselect the new default in the picker.
 #[test]
-fn launch_after_default_agent_change_uses_new_default() -> Result<()> {
+fn launch_after_default_agent_change_preselects_new_default() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
     let mut config = seed_config_with_agents(
@@ -2583,23 +2598,26 @@ fn launch_after_default_agent_change_uses_new_default() -> Result<()> {
     }
 
     // Dispatch again — with the new default_role in config, the
-    // dispatcher must short-circuit to a direct launch outcome.
+    // dispatcher must preselect that role in the picker.
     let after = state.dispatch_launch_for_workspace(
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("multi-role-ws".into()),
     )?;
-    let (role, _ws) = after.expect(
-        "after default_role is set, dispatch must short-circuit to a direct launch outcome; \
-         under the bug, the snapshot's default_role: None forced the picker open",
-    );
-    assert_eq!(role.key(), "chainargos/agent-smith");
-    let ConsoleStage::Manager(ms) = &state.stage;
     assert!(
-        ms.list_modal.is_none(),
-        "post-default direct-launch must NOT have opened the picker; got {:?}",
-        ms.list_modal
+        after.is_none(),
+        "after default_role is set, dispatch must keep the operator in the picker flow"
     );
+    let ConsoleStage::Manager(ms) = &state.stage;
+    let picker = ms
+        .inline_role_picker
+        .as_ref()
+        .expect("post-default dispatch must open the inline picker");
+    let selected = picker
+        .list_state
+        .selected
+        .expect("default role should be selected");
+    assert_eq!(picker.filtered[selected].key(), "chainargos/agent-smith");
     Ok(())
 }
 
@@ -2657,14 +2675,16 @@ fn launch_after_delete_workspace_does_not_resolve_old_choice() -> Result<()> {
          got {outcome:?}"
     );
 
-    // Sanity: the surviving workspace still resolves.
+    // Sanity: the surviving workspace still resolves and auto-selects its single role.
     let alive = state.dispatch_launch_for_workspace(
         &config,
         cwd,
         jackin::workspace::LoadWorkspaceInput::Saved("survivor-ws".into()),
     )?;
-    let (role, _ws) = alive.expect("survivor-ws must still resolve");
+    let (role, _workspace, agent) =
+        alive.expect("survivor-ws must still resolve and auto-select its role");
     assert_eq!(role.key(), "chainargos/agent-smith");
+    assert!(agent.is_none());
     Ok(())
 }
 
@@ -2699,6 +2719,7 @@ fn auth_row_idx(
 // separately) but the mode never reached disk; on reload, the resolver
 // fell back to the global default and ignored the freshly-written key.
 #[test]
+#[allow(clippy::too_many_lines)]
 fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     let temp = tempdir()?;
     let paths = JackinPaths::for_tests(temp.path());
@@ -2811,7 +2832,7 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     assert_eq!(
         ws_on_disk.claude.as_ref().map(|c| c.auth_forward),
         Some(jackin::config::AuthForwardMode::ApiKey),
-        "reload must see [workspaces.big-monorepo.claude] auth_forward = api_key"
+        "reload must see [claude] auth_forward = api_key in the workspace file"
     );
     let env_value = ws_on_disk
         .env
@@ -2827,9 +2848,9 @@ fn auth_form_save_persists_mode_and_credential_to_disk() -> Result<()> {
     // Belt-and-braces: read the raw TOML and confirm the literal text is
     // there. Catches a future regression where a typed accessor papered
     // over a missing block (e.g. resolver fall-through).
-    let toml = std::fs::read_to_string(&paths.config_file)?;
+    let toml = std::fs::read_to_string(paths.workspaces_dir.join("big-monorepo.toml"))?;
     assert!(
-        toml.contains("[workspaces.big-monorepo.claude]"),
+        toml.contains("[claude]"),
         "raw TOML must carry the workspace claude block; got:\n{toml}"
     );
     assert!(
@@ -2964,15 +2985,18 @@ fn auth_role_header_left_right_toggles_expansion() -> Result<()> {
     let cwd = temp.path();
 
     let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
-    let mut over = WorkspaceRoleOverride::default();
-    over.claude = Some(jackin::config::AgentAuthConfig {
-        auth_forward: jackin::config::AuthForwardMode::Ignore,
-    });
+    let over = WorkspaceRoleOverride {
+        claude: Some(jackin::config::AgentAuthConfig {
+            auth_forward: jackin::config::AuthForwardMode::Ignore,
+        }),
+        ..Default::default()
+    };
     ws.roles.insert("the-architect".into(), over);
 
     let mut state = ManagerState::from_config(&config, cwd);
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
+    ed.tab_bar_focused = false;
     ed.auth_selected_kind = Some(AuthKind::Claude);
     let header_idx = auth_row_idx(&ed, &config, |r| matches!(r, AuthRow::RoleHeader { .. }));
     ed.active_field = FieldFocus::Row(header_idx);
@@ -2993,16 +3017,18 @@ fn auth_role_header_d_clears_selected_auth_kind_override() -> Result<()> {
     let cwd = temp.path();
 
     let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
-    let mut over = WorkspaceRoleOverride::default();
-    over.claude = Some(jackin::config::AgentAuthConfig {
-        auth_forward: jackin::config::AuthForwardMode::Ignore,
-    });
-    over.codex = Some(
-        jackin::config::CodexAuthConfig::new(jackin::config::AgentAuthConfig {
-            auth_forward: jackin::config::AuthForwardMode::ApiKey,
-        })
-        .unwrap(),
-    );
+    let over = WorkspaceRoleOverride {
+        claude: Some(jackin::config::AgentAuthConfig {
+            auth_forward: jackin::config::AuthForwardMode::Ignore,
+        }),
+        codex: Some(
+            jackin::config::CodexAuthConfig::new(jackin::config::AgentAuthConfig {
+                auth_forward: jackin::config::AuthForwardMode::ApiKey,
+            })
+            .unwrap(),
+        ),
+        ..Default::default()
+    };
     ws.roles.insert("the-architect".into(), over);
 
     let mut state = ManagerState::from_config(&config, cwd);
@@ -3045,16 +3071,18 @@ fn auth_role_agent_row_d_silently_clears_single_agent() -> Result<()> {
     let cwd = temp.path();
 
     let mut ws = config.workspaces.get("big-monorepo").unwrap().clone();
-    let mut over = WorkspaceRoleOverride::default();
-    over.claude = Some(jackin::config::AgentAuthConfig {
-        auth_forward: jackin::config::AuthForwardMode::Ignore,
-    });
-    over.codex = Some(
-        jackin::config::CodexAuthConfig::new(jackin::config::AgentAuthConfig {
-            auth_forward: jackin::config::AuthForwardMode::ApiKey,
-        })
-        .unwrap(),
-    );
+    let over = WorkspaceRoleOverride {
+        claude: Some(jackin::config::AgentAuthConfig {
+            auth_forward: jackin::config::AuthForwardMode::Ignore,
+        }),
+        codex: Some(
+            jackin::config::CodexAuthConfig::new(jackin::config::AgentAuthConfig {
+                auth_forward: jackin::config::AuthForwardMode::ApiKey,
+            })
+            .unwrap(),
+        ),
+        ..Default::default()
+    };
     ws.roles.insert("the-architect".into(), over);
 
     let mut state = ManagerState::from_config(&config, cwd);
@@ -3186,9 +3214,11 @@ fn auth_tab_cycle_off_auth_clears_selected_agent() -> Result<()> {
     let ws = config.workspaces.get("big-monorepo").unwrap().clone();
     let mut ed = EditorState::new_edit("big-monorepo".into(), ws);
     ed.active_tab = EditorTab::Auth;
+    ed.tab_bar_focused = false;
     ed.auth_selected_kind = Some(AuthKind::Claude);
     state.stage = ManagerStage::Editor(ed);
 
+    // Tab from content returns to tab bar and advances to next tab (General).
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Tab))?;
     let ed = editor(&state);
     assert_ne!(ed.active_tab, EditorTab::Auth);
@@ -3386,9 +3416,9 @@ fn auth_source_picker_op_disabled_when_op_missing() -> Result<()> {
 // Mirror-shape with `auth_form_save_persists_mode_and_credential_to_disk`
 // for Claude — open the form on the workspace × Github row, set mode =
 // token + a literal `GH_TOKEN`, commit, save, reload from disk, and
-// assert the persisted TOML carries BOTH the
-// `[workspaces.<ws>.github] auth_forward = "token"` block AND the
-// `GH_TOKEN` env var on the matching `[github.env]` block.
+// assert the persisted TOML carries BOTH the `[github]`
+// auth_forward = "token" block AND the `GH_TOKEN` env var on the
+// matching `[github.env]` block.
 #[allow(clippy::too_many_lines)]
 #[test]
 fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()> {
@@ -3505,7 +3535,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
     let github_on_disk = ws_on_disk
         .github
         .as_ref()
-        .expect("[workspaces.big-monorepo.github] block must be on disk after save");
+        .expect("[github] block must be on disk after save");
     assert_eq!(
         github_on_disk.auth_forward,
         jackin::config::GithubAuthMode::Token
@@ -3522,16 +3552,14 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
     // reload (the kind-scoped layer is the only place it should live).
     assert!(
         !ws_on_disk.env.contains_key("GH_TOKEN"),
-        "GH_TOKEN must not appear in [workspaces.<ws>.env]; only in [workspaces.<ws>.github.env]"
+        "GH_TOKEN must not appear in [env]; only in [github.env]"
     );
 
-    // Belt-and-braces: read the raw TOML and confirm the literal text
-    // landed on `[workspaces.big-monorepo.github]` and
-    // `[workspaces.big-monorepo.github.env]`, not on
-    // `[workspaces.big-monorepo.env]`.
-    let toml = std::fs::read_to_string(&paths.config_file)?;
+    // Belt-and-braces: read the raw workspace TOML and confirm the
+    // literal text landed on `[github]` / `[github.env]`, not `[env]`.
+    let toml = std::fs::read_to_string(paths.workspaces_dir.join("big-monorepo.toml"))?;
     assert!(
-        toml.contains("[workspaces.big-monorepo.github]"),
+        toml.contains("[github]"),
         "raw TOML must carry the workspace github block; got:\n{toml}"
     );
     assert!(
@@ -3546,7 +3574,7 @@ fn github_auth_form_save_persists_token_mode_and_gh_token_to_disk() -> Result<()
 }
 
 /// `D` on a Github `RoleHeader` clears the role's
-/// `[workspaces.<ws>.roles.<role>.github]` override end-to-end through
+/// `[roles.<role>.github]` override end-to-end through
 /// the input dispatcher (in addition to the unit-level coverage in
 /// `src/console/manager/input/auth.rs`).
 #[test]
@@ -3639,7 +3667,11 @@ fn github_role_override_picker_filters_already_overridden_roles_via_dispatcher()
             editor(&state).modal
         );
     };
-    let labels: Vec<String> = picker.roles.iter().map(|c| c.key()).collect();
+    let labels: Vec<String> = picker
+        .roles
+        .iter()
+        .map(jackin::selector::RoleSelector::key)
+        .collect();
     assert!(
         !labels.iter().any(|s| s == "the-architect"),
         "the-architect already has a github override and must be filtered out; got {labels:?}"

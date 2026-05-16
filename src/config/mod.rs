@@ -6,14 +6,19 @@ pub use crate::workspace::MountConfig;
 pub use crate::workspace::WorkspaceRoleOverride;
 
 pub mod editor;
+pub(crate) mod migrations;
 mod mounts;
-mod persist;
+pub(crate) mod persist;
 mod roles;
 mod workspaces;
 
 pub use editor::{ConfigEditor, EnvScope};
-pub use mounts::DockerMounts;
+pub use migrations::{
+    CURRENT_CONFIG_VERSION, CURRENT_WORKSPACE_VERSION, migrate_config_file_if_needed,
+    migrate_workspace_file_if_needed,
+};
 pub(crate) use mounts::MountEntry;
+pub use mounts::{DockerMounts, GlobalMountRow, WorkspaceGlobalMountRows};
 pub use roles::{build_github_env_layers, resolve_github_mode, resolve_mode};
 pub use workspaces::{DriftDetection, detect_workspace_edit_drift};
 
@@ -247,6 +252,41 @@ impl std::ops::Deref for AmpAuthConfig {
     }
 }
 
+#[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
+pub struct OpencodeAuthConfig(pub(crate) AgentAuthConfig);
+
+impl OpencodeAuthConfig {
+    pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
+        if cfg.auth_forward == AuthForwardMode::OAuthToken {
+            return Err("auth_forward 'oauth_token' is not supported for opencode");
+        }
+        Ok(Self(cfg))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for OpencodeAuthConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let cfg = AgentAuthConfig::deserialize(deserializer)?;
+        if cfg.auth_forward == AuthForwardMode::OAuthToken {
+            return Err(serde::de::Error::custom(
+                "auth_forward 'oauth_token' is not supported for opencode; \
+                 supported modes: sync, api_key, ignore",
+            ));
+        }
+        Ok(Self(cfg))
+    }
+}
+
+impl std::ops::Deref for OpencodeAuthConfig {
+    type Target = AgentAuthConfig;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoleSource {
@@ -266,14 +306,18 @@ pub struct DockerConfig {
     pub mounts: DockerMounts,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(default = "migrations::current_config_version", rename = "version")]
+    pub version: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude: Option<AgentAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex: Option<CodexAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub amp: Option<AmpAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opencode: Option<OpencodeAuthConfig>,
     /// Global `[github]` block — bottom layer of the layered resolver
     /// (global → workspace → workspace × role). Operator-only; role
     /// manifests cannot set or override it.
@@ -287,8 +331,25 @@ pub struct AppConfig {
     pub roles: BTreeMap<String, RoleSource>,
     #[serde(default)]
     pub docker: DockerConfig,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub workspaces: BTreeMap<String, WorkspaceConfig>,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            version: CURRENT_CONFIG_VERSION.to_string(),
+            claude: None,
+            codex: None,
+            amp: None,
+            opencode: None,
+            github: None,
+            env: BTreeMap::new(),
+            roles: BTreeMap::new(),
+            docker: DockerConfig::default(),
+            workspaces: BTreeMap::new(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -570,6 +631,10 @@ auth_forward = "ignore"
             "codex must be None when [codex] absent"
         );
         assert!(cfg.amp.is_none(), "amp must be None when [amp] absent");
+        assert!(
+            cfg.opencode.is_none(),
+            "opencode must be None when [opencode] absent"
+        );
     }
 
     #[test]

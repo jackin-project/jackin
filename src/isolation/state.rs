@@ -44,9 +44,78 @@ struct IsolationFile {
 }
 
 /// Path to `isolation.json` for a given container's state directory.
-/// `container_state_dir` is `<data_dir>/jackin-<container>`.
 pub fn isolation_file_path(container_state_dir: &Path) -> PathBuf {
     container_state_dir.join(STATE_DIR).join(ISOLATION_FILE)
+}
+
+/// Snapshot counts of a container's mount records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MountSummary {
+    pub total: usize,
+    pub dirty: usize,
+    pub unpushed: usize,
+}
+
+impl MountSummary {
+    #[must_use]
+    pub fn from_records(records: &[IsolationRecord]) -> Self {
+        Self {
+            total: records.len(),
+            dirty: records
+                .iter()
+                .filter(|r| r.cleanup_status == CleanupStatus::PreservedDirty)
+                .count(),
+            unpushed: records
+                .iter()
+                .filter(|r| r.cleanup_status == CleanupStatus::PreservedUnpushed)
+                .count(),
+        }
+    }
+
+    /// `Err` propagates the `isolation.json` read/parse error; callers
+    /// that want the "unknown" rendering should map it themselves.
+    pub fn for_state_dir(container_state_dir: &Path) -> anyhow::Result<Self> {
+        Ok(Self::from_records(&read_records(container_state_dir)?))
+    }
+
+    /// Prompt-style mount summary for a container's state dir. Returns
+    /// `"mounts:unknown"` when the isolation manifest can't be read.
+    #[must_use]
+    pub fn prompt_label_for_state_dir(state_dir: &Path) -> String {
+        Self::for_state_dir(state_dir)
+            .map_or_else(|_| "mounts:unknown".to_string(), Self::prompt_label)
+    }
+
+    /// `"mounts:N dirty:N unpushed:N"`. Returns `"mounts:none"` for the
+    /// empty case and `"mounts:N"` when no records are dirty/unpushed.
+    #[must_use]
+    pub fn prompt_label(self) -> String {
+        if self.total == 0 {
+            return "mounts:none".to_string();
+        }
+        if self.dirty > 0 || self.unpushed > 0 {
+            return format!(
+                "mounts:{} dirty:{} unpushed:{}",
+                self.total, self.dirty, self.unpushed
+            );
+        }
+        format!("mounts:{}", self.total)
+    }
+
+    /// `"N total, N dirty, N unpushed"`.
+    #[must_use]
+    pub fn inspect_label(self) -> String {
+        if self.total == 0 {
+            return "none".to_string();
+        }
+        if self.dirty > 0 || self.unpushed > 0 {
+            return format!(
+                "{} total, {} dirty, {} unpushed",
+                self.total, self.dirty, self.unpushed
+            );
+        }
+        format!("{} total", self.total)
+    }
 }
 
 /// Read every record for a container. Returns empty Vec when the file is
@@ -155,9 +224,7 @@ pub fn remove_record(container_state_dir: &Path, mount_dst: &str) -> anyhow::Res
     Ok(())
 }
 
-const CONTAINER_DIR_PREFIX: &str = "jackin-";
-
-/// Walk every `<data_dir>/jackin-*/` directory and collect records whose
+/// Walk every `<data_dir>/jk-*/` directory and collect records whose
 /// `workspace` matches the given name. Missing data dir → empty result.
 /// Per-container parse failures bubble up.
 pub fn list_records_for_workspace(
@@ -180,7 +247,7 @@ pub fn list_records_for_workspace(
         let Some(name_str) = name.to_str() else {
             continue;
         };
-        if !name_str.starts_with(CONTAINER_DIR_PREFIX) {
+        if !name_str.starts_with(crate::instance::naming::CONTAINER_PREFIX_DASH) {
             continue;
         }
         let records = read_records(&entry.path())?;
@@ -208,7 +275,7 @@ mod tests {
             scratch_branch: "jackin/scratch/the-architect".into(),
             base_commit: "deadbeef".into(),
             selector_key: "the-architect".into(),
-            container_name: "jackin-the-architect".into(),
+            container_name: "jk-a1b2c3d4-thearchitect".into(),
             cleanup_status: CleanupStatus::Active,
         }
     }
@@ -310,24 +377,24 @@ mod tests {
     fn list_records_for_workspace_walks_all_container_dirs() {
         let data = TempDir::new().unwrap();
         // Container A: workspace=jackin
-        let a = data.path().join("jackin-the-architect");
+        let a = data.path().join("jk-a1b2c3d4-thearchitect");
         std::fs::create_dir_all(&a).unwrap();
         let mut rec_a = sample_record();
-        rec_a.container_name = "jackin-the-architect".into();
+        rec_a.container_name = "jk-a1b2c3d4-thearchitect".into();
         write_records(&a, std::slice::from_ref(&rec_a)).unwrap();
         // Container B: workspace=jackin
-        let b = data.path().join("jackin-the-builder");
+        let b = data.path().join("jk-k7p9m2xq-thebuilder");
         std::fs::create_dir_all(&b).unwrap();
         let mut rec_b = sample_record();
-        rec_b.container_name = "jackin-the-builder".into();
+        rec_b.container_name = "jk-k7p9m2xq-thebuilder".into();
         rec_b.scratch_branch = "jackin/scratch/the-builder".into();
         write_records(&b, std::slice::from_ref(&rec_b)).unwrap();
         // Container C: workspace=docs (must be skipped when filtering by jackin)
-        let c = data.path().join("jackin-doc-writer");
+        let c = data.path().join("jk-b2c3d4e5-docwriter");
         std::fs::create_dir_all(&c).unwrap();
         let mut rec_c = sample_record();
         rec_c.workspace = "docs".into();
-        rec_c.container_name = "jackin-doc-writer".into();
+        rec_c.container_name = "jk-b2c3d4e5-docwriter".into();
         write_records(&c, &[rec_c]).unwrap();
 
         let mut found = list_records_for_workspace(data.path(), "jackin").unwrap();

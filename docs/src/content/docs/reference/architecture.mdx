@@ -47,6 +47,12 @@ The role repo owns the environment layer. jackin' owns the derived agent layer.
 
 That means an role defines the tools and conventions, while jackin' injects the agent-specific pieces such as Claude or Codex installation, the entrypoint, and UID/GID remapping.
 
+## Role repository tooling
+
+Role repositories are normal source repositories, so jackin keeps role maintenance split between two surfaces. The main operator CLI owns desktop ergonomics: its role-authoring dispatch validates checked-out role repositories, applies manifest migrations to local copies, and writes small starter repositories for authors. That path lives in <RepoFile path="src/role_authoring.rs" /> and reuses the same manifest migration registry and repository contract checks used by runtime launch.
+
+Automation stays on the small role-focused binary in <RepoFile path="src/bin/validate.rs" />. CI workflows and future Renovate-style migration jobs should not depend on the full operator CLI just to validate a role repo or restamp a manifest; they call the standalone validator, which shares <RepoFile path="src/repo.rs" /> and <RepoFile path="src/manifest/migrations.rs" /> with the desktop path.
+
 ## Container lifecycle
 
 ### Loading an agent
@@ -54,7 +60,7 @@ That means an role defines the tools and conventions, while jackin' injects the 
 1. **Resolve role** — map the selector to a repo, clone or update it, and reject dirty cached checkouts
 2. **Validate the repo contract** — require `jackin.role.toml` and a valid Dockerfile path, validate manifest strictly
 3. **Resolve environment variables** — prompt the user for interactive env vars declared in the manifest
-4. **Generate a derived build context** — copy the repo, inject agent assets (entrypoint + pre-launch hook), and render a derived Dockerfile
+4. **Generate a derived build context** — copy the repo, inject agent assets (entrypoint + runtime hooks), and render a derived Dockerfile
 5. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible
 6. **Create a per-agent Docker network**
 7. **Start a privileged `docker:dind` sidecar** with TLS enabled and a shared certificate volume
@@ -67,9 +73,11 @@ The detached-start + attach split decouples the container's lifetime from the fo
 - **stopped with exit 0** → the user exited cleanly; tear down container, DinD, network, and certs volume
 - **stopped with non-zero exit or OOM** → crash; preserve the container and DinD so `jackin hardline` can restart in place
 
+Every fresh launch gets a unique DNS-safe instance identity. Existing running or stopped instances are not fresh-launch blockers; they remain discoverable through `hardline` and the console. Missing recoverable state is the case that can prompt or block before a fresh load. The detailed contributor contract lives in [Runtime Instance Model](/reference/runtime-instance-model/).
+
 ### Reconnecting
 
-`jackin hardline` inspects the target container. If it's running, it attaches. If it's stopped with a non-zero exit (crash / OOM) and the DinD sidecar is still running, it restarts the container and attaches. Clean exits (exit code 0) and missing DinD sidecars are refused — those cases require `jackin load` to start a fresh session.
+`jackin hardline` inspects the target container. If it's running, it attaches. If it's stopped with a non-zero exit (crash / OOM), it restores the required DinD sidecar/network/certs when needed, restarts the role container, and attaches. If the role container itself is missing but indexed recoverable state exists, hardline can rebuild the runtime around jackin-managed local state. Clean exits (exit code 0) are treated as completed sessions — use `jackin load` to start a fresh instance.
 
 ### Stopping
 
@@ -77,7 +85,8 @@ The detached-start + attach split decouples the container's lifetime from the fo
 
 1. the agent container
 2. the DinD sidecar
-3. the per-agent network
+3. the TLS certs volume (`{container}-dind-certs`)
+4. the per-agent network
 
 Persisted state remains unless you also purge it.
 
@@ -120,7 +129,7 @@ Workspace mounts pass through three distinct shapes between operator intent and 
 | `ResolvedWorkspace` | `resolve_load_workspace` | Expanded host paths plus the merged composition of workspace, ad-hoc, and global mounts. Still independent of the actual container instance. |
 | `MaterializedWorkspace` | post-name-claim materializer | Final host paths Docker should bind-mount for *this* container. Isolated checkouts have been created on disk; isolated `src` values point at the per-container worktree or clone path. |
 
-Materialization happens **after** jackin claims the final container name (e.g. resolves `-clone-N` collisions) and the per-container state directory exists. For each non-`shared` mount, materialization is idempotent: first load creates the scratch branch from host `HEAD` and records `base_commit`; later loads to the same container reuse the existing checkout as-is — no reset, no rebase, no fast-forward.
+Materialization happens **after** jackin claims the final unique container name and the per-container state directory exists. For each non-`shared` mount, materialization is idempotent: first load creates the scratch branch from host `HEAD` and records `base_commit`; later loads to the same container reuse the existing checkout as-is — no reset, no rebase, no fast-forward.
 
 On first worktree creation for a host repo, jackin' enables `extensions.worktreeConfig` (bumping `core.repositoryformatversion` to 1 if needed) so per-worktree config writes via `git config --worktree` don't leak into the shared host `.git/config`.
 
@@ -129,7 +138,7 @@ On first worktree creation for a host repo, jackin' enables `extensions.worktree
 Materialized isolated mounts are recorded at:
 
 ```
-<data_dir>/jackin-<container>/.jackin/isolation.json
+<data_dir>/<container>/.jackin/isolation.json
 ```
 
 The file lives next to the per-container agent state and `.jackin/` metadata and is the source of truth for `purge` after the operator has changed (or removed) the workspace config. Each record contains at least:
@@ -139,7 +148,7 @@ The file lives next to the per-container agent state and `.jackin/` metadata and
 | `workspace` | Workspace name at materialization time |
 | `mount_dst` | Container destination path (the mount identity) |
 | `original_src` | Resolved host `src` recorded for source-drift detection |
-| `isolation` | Mode (`worktree` in V1) |
+| `isolation` | Mode (`worktree` or `clone`) |
 | `worktree_path` | Materialized worktree path on the host |
 | `scratch_branch` | Scratch branch name (`jackin/scratch/<container>`) |
 | `base_commit` | Host `HEAD` at first materialization |
@@ -166,28 +175,39 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 ```
 ~/.jackin/
 ├── roles/                         # Cached role repos
-│   └── github.com/
-│       └── jackin-project/
-│           └── jackin-agent-smith/
+│   ├── agent-smith/               # Flat role (no namespace)
+│   └── chainargos/                # Namespace directory
+│       └── agent-brown/           # Namespaced role
 ├── cache/                         # Shared caches (terminfo, version checks)
 │   └── terminfo/
-├── data/                          # Persisted state per instance
-│   └── jackin-agent-smith/
-│       ├── claude/                # Claude-only state (when launched under Claude)
-│       │   ├── state/             # Claude Code session history, context
-│       │   │   └── .credentials.json  # OAuth tokens (forwarded or container-local)
-│       │   └── account.json       # Claude Code account metadata and preferences
-│       ├── codex/                 # Codex-only state (when launched under Codex)
-│       │   ├── config.toml        # Codex config generated at launch
+├── data/
+│   ├── instances.json             # Rebuildable index of all known instances
+│   └── <container-base>/          # Persisted state per instance
+│       ├── claude/                # Claude auth handoff (provisioned when Claude is a supported agent)
+│       │   ├── credentials.json   # Forwarded OAuth credentials under auth_forward=sync
+│       │   └── account.json       # Forwarded Claude Code account metadata under sync/token modes
+│       ├── codex/                 # Codex auth handoff (provisioned when Codex is a supported agent)
 │       │   └── auth.json          # ChatGPT OAuth tokens (synced from host ~/.codex/auth.json under auth_forward=sync)
+│       ├── amp/                   # Amp auth handoff (provisioned when Amp is a supported agent)
+│       │   └── secrets.json       # Amp API key or OAuth token (synced from host ~/.local/share/amp/secrets.json under auth_forward=sync)
+│       ├── opencode/              # OpenCode auth handoff (provisioned when OpenCode is a supported agent)
+│       │   └── auth.json          # OpenCode provider credentials (synced from host ~/.local/share/opencode/auth.json under auth_forward=sync)
+│       ├── home/                  # Durable agent home state mounted into the container
+│       │   ├── .claude/           # Claude Code conversation history, runtime-local plugins, settings
+│       │   ├── .claude.json       # Claude Code account metadata inside the durable home
+│       │   ├── .codex/            # Codex conversation history, runtime-local config, login state
+│       │   ├── .local/share/amp/  # Amp conversation history, runtime-local config, login state
+│       │   └── .local/share/opencode/  # OpenCode provider credentials, model preferences
+│       ├── state/                 # jackin runtime markers mounted at /jackin/state
 │       ├── .config/gh/            # GitHub CLI authentication (agent-neutral)
 │       └── .jackin/               # jackin runtime metadata (agent-neutral)
+│           ├── instance.json      # Per-instance manifest (identity, role, agent, mounts, status)
 │           └── isolation.json     # Per-mount isolation records (when applicable)
 ```
 
 This is what persists across sessions:
 
-- Claude history, settings, and authentication
+- Claude/Codex/Amp/OpenCode history, runtime-local settings, plugins, and authentication state stored under the per-instance durable home
 - jackin' plugin metadata
 - `gh` state acquired inside the agent container
 
@@ -197,7 +217,9 @@ This is what does **not** persist:
 - ad-hoc root filesystem changes outside mounted paths
 - DinD images, containers, and cache
 
-That means jackin' is biased toward **reproducible roles** rather than **mutable long-lived sandboxes**.
+That means jackin' restores only host-backed state: workspace mounts, isolated worktrees/clones, and the per-instance agent home under `~/.jackin/data/<container>/home/`. Anything installed or edited only in the container writable layer is intentionally disposable and will not be restored after Docker deletes the container.
+
+Jackin' is biased toward **reproducible roles** rather than **mutable long-lived sandboxes**.
 
 If a tool should always exist, put it in the role repo Dockerfile instead of installing it ad hoc during a session.
 
@@ -229,6 +251,7 @@ If the main thing you need is the strongest local boundary for autonomous agents
 - **Derived build context rejects symlinks.** Role repos with symlink-heavy layouts are not supported yet.
 - **Cached role repos must stay clean.** jackin' refuses to build from a dirty or origin-mismatched cache.
 - **Container mutability is intentionally thin.** That keeps sessions cleaner, but makes ad-hoc package installs non-persistent.
+- **Isolation-mode edits are guarded only when preserved state already records the previous mode.** Source drift is checked before workspace edits are saved; changing only `mounts[].isolation` can still take effect on the next launch without a pre-save warning when there is no conflicting preserved record.
 
 ## Technology stack
 

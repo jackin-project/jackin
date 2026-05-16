@@ -3,19 +3,16 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
 
 use crate::operator_env::OpField;
 
+use super::super::scrollable::{is_scrollable, render_vertical_scrollbar_in_area};
+use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use super::{OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState};
-
-const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
-const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
-const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
-const WHITE: Color = Color::Rgb(255, 255, 255);
 
 const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -89,23 +86,8 @@ fn modal_block<'a>(title: impl Into<String>) -> Block<'a> {
     );
     Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(PHOSPHOR_GREEN))
         .title(title_span)
-}
-
-fn footer_line(pairs: &[(&str, &str)]) -> Line<'static> {
-    let key_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text_style = Style::default().fg(PHOSPHOR_GREEN);
-    let sep_style = Style::default().fg(PHOSPHOR_DARK);
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    for (i, (k, t)) in pairs.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled(" \u{b7} ", sep_style));
-        }
-        spans.push(Span::styled((*k).to_string(), key_style));
-        spans.push(Span::styled(format!(" {t}"), text_style));
-    }
-    Line::from(spans)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -135,8 +117,6 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         Constraint::Length(1),             // filter row
         Constraint::Length(1),             // spacer
         Constraint::Min(1),                // list
-        Constraint::Length(1),             // spacer
-        Constraint::Length(1),             // footer
     ];
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -185,12 +165,13 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         OpPickerStage::Item => render_item_lines(state),
         OpPickerStage::Field => render_field_lines(state),
     };
-    let list_para = if list_lines.is_empty() {
-        Paragraph::new(Line::from(Span::styled(
+    let (list_para, scroll_info) = if list_lines.is_empty() {
+        let para = Paragraph::new(Line::from(Span::styled(
             "(no matches)",
             Style::default().fg(PHOSPHOR_DIM),
         )))
-        .alignment(Alignment::Center)
+        .alignment(Alignment::Center);
+        (para, None)
     } else {
         let selected = match state.stage {
             OpPickerStage::Account => state.account_list_state.selected,
@@ -203,51 +184,28 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         let offset = viewport_offset(selected.unwrap_or(0), height, total);
         let take = height.min(total.saturating_sub(offset));
         let visible: Vec<Line<'static>> = list_lines.into_iter().skip(offset).take(take).collect();
-        Paragraph::new(visible)
+        (Paragraph::new(visible), Some((total, offset, height)))
     };
     frame.render_widget(list_para, rows[3]);
 
-    let pairs: Vec<(&str, &str)> = match state.stage {
-        OpPickerStage::Account => vec![
-            ("\u{2191}\u{2193}", "navigate"),
-            ("type", "filter"),
-            ("Enter", "select"),
-            ("r", "refresh"),
-            ("Esc", "cancel"),
-        ],
-        OpPickerStage::Vault => {
-            let esc_label = if multi_account {
-                "back to accounts"
-            } else {
-                "cancel"
-            };
-            vec![
-                ("\u{2191}\u{2193}", "navigate"),
-                ("type", "filter"),
-                ("Enter", "select"),
-                ("r", "refresh"),
-                ("Esc", esc_label),
-            ]
-        }
-        OpPickerStage::Item => vec![
-            ("\u{2191}\u{2193}", "navigate"),
-            ("Backspace", "clear filter"),
-            ("Enter", "select"),
-            ("r", "refresh"),
-            ("Esc", "back to vaults"),
-        ],
-        OpPickerStage::Field => vec![
-            ("\u{2191}\u{2193}", "navigate"),
-            ("type", "filter"),
-            ("Enter", "select"),
-            ("r", "refresh"),
-            ("Esc", "back"),
-        ],
-    };
-    frame.render_widget(
-        Paragraph::new(footer_line(&pairs)).alignment(Alignment::Center),
-        rows[5],
-    );
+    // Vertical scrollbar on the right edge of the list area.
+    if let Some((total, position, viewport)) = scroll_info
+        && is_scrollable(total, viewport)
+    {
+        let sb_area = Rect {
+            x: rows[3].x + rows[3].width.saturating_sub(1),
+            y: rows[3].y,
+            width: 1,
+            height: rows[3].height,
+        };
+        render_vertical_scrollbar_in_area(
+            frame,
+            sb_area,
+            total,
+            viewport,
+            position.min(usize::from(u16::MAX)) as u16,
+        );
+    }
 }
 
 fn render_account_lines(state: &OpPickerState) -> Vec<Line<'static>> {
@@ -435,12 +393,7 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
+        .constraints([Constraint::Length(1), Constraint::Min(1)])
         .split(inner);
 
     let body = Line::from(vec![
@@ -449,9 +402,6 @@ fn render_loading(frame: &mut Frame, area: Rect, state: &OpPickerState, tick: u8
         Span::styled(descriptor, Style::default().fg(PHOSPHOR_DIM)),
     ]);
     frame.render_widget(Paragraph::new(body).alignment(Alignment::Center), rows[1]);
-
-    let footer = footer_line(&[("running op", "subcommand"), ("Esc", "cancel")]);
-    frame.render_widget(Paragraph::new(footer).alignment(Alignment::Center), rows[3]);
 }
 
 fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
@@ -526,21 +476,13 @@ fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
+        .constraints([Constraint::Length(1), Constraint::Min(1)])
         .split(inner);
 
     frame.render_widget(
         Paragraph::new(body_lines).alignment(Alignment::Center),
         rows[1],
     );
-
-    let footer = footer_line(&[("Esc", "close")]);
-    frame.render_widget(Paragraph::new(footer).alignment(Alignment::Center), rows[3]);
 }
 
 #[cfg(test)]

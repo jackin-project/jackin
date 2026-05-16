@@ -28,8 +28,8 @@ Create a new workspace definition.
 | `--workdir <PATH>` | Working directory inside the container |
 | `--mount <SPEC>` | Bind-mount spec (repeatable, at least one required) |
 | `--allowed-role <NAME>` | Restrict to these roles (repeatable) |
-| `--default-role <NAME>` | Role to auto-select |
-| `--default-agent <claude\|codex\|amp>` | Default agent for this workspace |
+| `--default-role <NAME>` | Role to preselect in interactive pickers and CLI context loading |
+| `--default-agent <claude\|codex\|amp\|opencode>` | Default agent for this workspace |
 | `--mount-isolation <DST>=<TYPE>` | Set per-mount isolation by container destination. Repeatable. `<TYPE>` is `shared`, `worktree`, or `clone`. The `<DST>` must match a mount destination present in the final mount plan; an unknown `<DST>` is a hard error. |
 | `--keep-awake` | macOS only: opt this workspace into the keep-awake reconciler. While any agent in the workspace is running, jackin keeps a single detached `caffeinate -imsu` alive so the host stays awake. No-op on Linux/Windows. See [Keeping the host awake](/guides/workspaces/#keeping-the-host-awake). |
 | `--git-pull` | Run `git pull` on every mounted git repository from the host before the agent container starts. Failures are non-fatal — the launch continues even when offline or the working tree is dirty. See [Git pull on entry](/guides/workspaces/#git-pull-on-entry). |
@@ -83,9 +83,9 @@ Modify an existing workspace.
 | `--remove-destination <PATH>` | Remove a mount by container path (repeatable) |
 | `--allowed-role <NAME>` | Grant role access (repeatable) |
 | `--remove-allowed-role <NAME>` | Revoke role access (repeatable) |
-| `--default-role <NAME>` | Set default role |
+| `--default-role <NAME>` | Set the default role for picker preselection and CLI context loading |
 | `--clear-default-role` | Clear the default role |
-| `--default-agent <claude\|codex\|amp>` | Set default agent |
+| `--default-agent <claude\|codex\|amp\|opencode>` | Set default agent |
 | `--clear-default-agent` | Clear the explicit default agent and fall back to Claude |
 | `--mount-isolation <DST>=<TYPE>` | Set isolation for a mount destination (repeatable). Can target an existing mount or a mount being upserted in the same command. |
 | `--delete-isolated-state` | Acknowledge deleting preserved isolated state when an edit changes the `src` of a materialized isolated mount. Required for non-interactive source-drift edits; ignored when no preserved state exists. |
@@ -250,7 +250,7 @@ jackin workspace claude-token <SUBCOMMAND>
 | `setup`  | Generate (or adopt) a token, store it, switch the workspace to OAuth-token mode. |
 | `rotate` | Replace the workspace's current token with a freshly-captured one and delete the prior 1P item. |
 | `revoke` | Clear the wired token and switch the workspace's Claude auth back to `ignore`. Optionally delete the 1P item. |
-| `doctor` | Resolve the wired token via `op` and report its SHA-256 prefix so the operator can confirm the canonical slot points at a real, readable item. |
+| `doctor` | Resolve the wired token via `op` and report its SHA-256 prefix so the operator can confirm the managed token source points at a real, readable item. |
 
 Every subcommand needs `claude` and `op` on `PATH`. `setup` and `rotate` drive `claude setup-token` interactively under a PTY — the operator completes the OAuth flow in their browser. The token is captured into a redacted in-memory secret and never echoed to stdout, scrollback, or shell history.
 
@@ -267,7 +267,7 @@ jackin workspace claude-token setup <WORKSPACE> --vault <VAULT> [OPTIONS]
 | `--op-account <ACCOUNT>` | Pin every `op` invocation to a specific 1P account. Persists onto the workspace so subsequent `rotate` / `revoke` use the same account. |
 | `--reuse <OP_REF>`       | Skip token generation and adopt the supplied `op://Vault/Item/field` reference verbatim. Use when an item already exists in 1Password. |
 
-On success the workspace's Claude auth flips to OAuth-token mode and the new (or reused) `op://` reference becomes the canonical slot. An "expires in N days" countdown is stamped into the local cache so the launch banner can surface it. On failure no on-disk config is changed and any orphan 1P item is best-effort deleted; if the cleanup itself fails the error message includes the exact `op item delete` command to run by hand.
+On success the workspace's Claude auth flips to OAuth-token mode and the new (or reused) `op://` reference is written as the managed `CLAUDE_CODE_OAUTH_TOKEN` env value for that workspace. An "expires in N days" countdown is stamped into the local cache so the launch banner can surface it. On failure no on-disk config is changed and any orphan 1P item is best-effort deleted; if the cleanup itself fails the error message includes the exact `op item delete` command to run by hand.
 
 ```bash
 # First-time setup — opens the browser for the OAuth flow
@@ -347,4 +347,4 @@ op_ref           Personal/jackin · my-app · claude-token/token
 token sha256     a3f9c2b81e74… (12 hex prefix; matches stored value)
 ```
 
-See [Claude OAuth-token authentication](/guides/authentication/agents/#oauth_token-claude-only) for the operator-level concept; [Claude Token Orchestrator](/reference/claude-token-orchestrator/) for the under-the-hood mechanics (contributor reference).
+See [Claude OAuth-token authentication](/guides/authentication/agents/claude-code/#oauth_token-claude-code-only) for the operator-level concept; [Claude Token Orchestrator](/reference/claude-token-orchestrator/) for the under-the-hood mechanics (contributor reference).

@@ -11,11 +11,21 @@ Rules in one line each:
 - Verify-locally URLs use http://localhost:4321/... only — never deployed.
 - Each verify-locally docs page: bolded URL on its own line, soft-break (two
   trailing spaces), description on the next line, blank line between blocks.
-- Drop the headings you don't need. "Hard rule" is only when the PR introduces
-  or honours a non-trivial cross-cutting rule. "What's deferred" is only for the
-  first slice of a longer plan. "Migration notes" can read "None" during
-  pre-release.
+- Drop the headings you don't need. "Related pull requests" is only when the PR
+  spans multiple repos. "Hard rule" is only when the PR introduces or honours a
+  non-trivial cross-cutting rule. "What's deferred" is only for the first slice
+  of a longer plan. "Migration notes" can read "None" during pre-release.
 -->
+
+## Related pull requests
+
+<When this PR is part of a coordinated set spanning multiple repos (jackin,
+role repos, construct image, CI actions), list every PR here — just the link,
+no description. The reader follows the link for details. Drop this section
+entirely when the PR stands alone.>
+
+- <https://github.com/org/repo/pull/N>
+- <https://github.com/org/repo/pull/N>
 
 ## Summary
 
@@ -64,17 +74,34 @@ git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
 git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
 ```
 
+### Isolation
+
+<Include when the PR touches config/state layout, path resolution, versioned schemas, runtime state under ~/.jackin/, or the construct image. Drop this section entirely for docs-only, roadmap, CI, or pure-refactor PRs. See PULL_REQUESTS.md § "Isolation env vars" for the full decision rule.>
+
+```sh
+export JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"
+export JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"
+```
+
+<For construct image PRs only, also add:>
+
+```sh
+just construct-build-local
+export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
+```
+
 ### Static checks
 
 ```sh
 cargo fmt --check
-cargo clippy --lib
+cargo clippy --all-targets --all-features -- -D warnings
 ```
 
 ### Tests
 
 ```sh
-cargo test --lib -- <SCOPED_TEST_FILTER>
+cargo nextest run -E '<SCOPED_TEST_FILTER>'
+cargo nextest run --all-features
 ```
 
 <One sentence describing what the tests cover — provisioning, parser, error

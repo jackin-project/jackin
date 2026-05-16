@@ -2,7 +2,7 @@ use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Parser, Subcommand};
 
 use cleanup::{EjectArgs, PurgeArgs};
-use role::{ConsoleArgs, HardlineArgs, LoadArgs};
+use role::{ConsoleArgs, HardlineArgs, LoadArgs, RoleCommand};
 
 pub(super) const HELP_STYLES: Styles = Styles::styled()
     .header(AnsiColor::BrightGreen.on_default().effects(Effects::BOLD))
@@ -34,20 +34,20 @@ pub mod config;
 pub mod daemon;
 pub mod dispatch;
 pub mod help;
+pub mod prune;
 pub mod role;
 pub mod workspace;
 
 pub use config::{AuthCommand, ConfigCommand, EnvCommand, MountCommand, TrustCommand};
 pub use daemon::DaemonCommand;
+pub use prune::PruneCommand;
 pub use workspace::{WorkspaceClaudeTokenCommand, WorkspaceCommand, WorkspaceEnvCommand};
 
 /// Operator's CLI for orchestrating AI coding roles in isolated containers
 ///
 /// Running `jackin` with no subcommand opens the operator console when
 /// stdout is attached to a reasonably-sized interactive terminal, and
-/// otherwise prints this help page (exit 0, silent). The flattened
-/// [`ConsoleArgs`] make `jackin --debug` equivalent to
-/// `jackin console --debug`.
+/// otherwise prints this help page (exit 0, silent).
 #[derive(Debug, Parser)]
 #[command(
     name = "jackin",
@@ -64,6 +64,21 @@ pub struct Cli {
     /// no subcommand is given (i.e. bare `jackin`).
     #[command(flatten)]
     pub console_args: ConsoleArgs,
+    /// Print raw container output for troubleshooting.
+    ///
+    /// Global flag: accepted before or after any subcommand.
+    /// Also enabled by setting `JACKIN_DEBUG=1` in the environment.
+    //
+    // `SetTrue` + `FalseyValueParser` lets `JACKIN_DEBUG=1` parse as
+    // true while the absence of `--debug` defaults to false.
+    #[arg(
+        long,
+        global = true,
+        env = "JACKIN_DEBUG",
+        action = clap::ArgAction::SetTrue,
+        value_parser = clap::builder::FalseyValueParser::new(),
+    )]
+    pub debug: bool,
 }
 
 /// Top-level `jackin` subcommand dispatch.
@@ -87,7 +102,13 @@ pub enum Command {
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Exile,
     Purge(PurgeArgs),
+    /// Delete cached or stale jackin data
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    Prune(PruneCommand),
     Console(ConsoleArgs),
+    /// Validate, migrate, and scaffold role repositories
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    Role(RoleCommand),
     /// Manage saved workspaces
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Workspace(WorkspaceCommand),
@@ -172,7 +193,9 @@ mod tests {
             "eject",
             "exile",
             "purge",
+            "prune",
             "console",
+            "role",
             "workspace",
             "config",
             "daemon",
@@ -250,6 +273,11 @@ mod tests {
             vec!["jackin", "eject", "--help"],
             vec!["jackin", "exile", "--help"],
             vec!["jackin", "purge", "--help"],
+            vec!["jackin", "prune", "roles", "--help"],
+            vec!["jackin", "prune", "cache", "--help"],
+            vec!["jackin", "prune", "images", "--help"],
+            vec!["jackin", "prune", "instances", "--help"],
+            vec!["jackin", "prune", "all", "--help"],
             vec!["jackin", "console", "--help"],
             vec!["jackin", "workspace", "create", "--help"],
             vec!["jackin", "workspace", "list", "--help"],

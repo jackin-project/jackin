@@ -7,28 +7,37 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-About 47% of source files have `//!` orientation docs. The remaining 53% give AI agents and contributors no orientation when they open the file — purpose, scope, and key invariants must be reverse-engineered from the code.
+About 46% of source files (53 of 116) have `//!` orientation docs. The remaining 54% (63 files) give AI agents and contributors no orientation when they open the file — purpose, scope, and key invariants must be reverse-engineered from the code. This has barely improved since the original analysis.
 
 ## Priority files (current largest / most central undocumented modules)
 
-| File | Production LOC | Why urgent |
+| File | Current LOC (May 2026) | Original LOC | Growth | Why urgent |
+|---|---|---|---|---|
+| <RepoFile path="src/runtime/launch.rs" /> | **7575** | ~5494 | +38% | Largest undocumented production file, `jackin load` critical path |
+| <RepoFile path="src/app/mod.rs" /> | **2767** | ~1243 | +123% | CLI dispatch entry point — more than doubled |
+| <RepoFile path="src/app/context.rs" /> | **1466** | ~1022 | +43% | Target resolution and workspace/agent context helpers |
+| <RepoFile path="src/instance/auth.rs" /> | **2607** | ~2401 | +9% | Credential forwarding and auth provisioning logic |
+| <RepoFile path="src/isolation/materialize.rs" /> | **2392** | ~2392 | — | Central mount-materialization flow with many invariants |
+| <RepoFile path="src/isolation/finalize.rs" /> | **1819** | ~1819 | — | Foreground-session cleanup / preservation policy |
+| <RepoFile path="src/config/mod.rs" /> | **1407** | ~1254 | +12% | Main config schema and auth/source policy |
+| <RepoFile path="src/workspace/mod.rs" /> | **1056** | ~905 | +17% | Core workspace types and validation rules |
+| <RepoFile path="src/runtime/cleanup.rs" /> | 687 | ~637 | +8% | Container/class cleanup semantics |
+| <RepoFile path="src/derived_image.rs" /> | **983** | ~989 | — | Dockerfile generation, UID/GID remapping |
+
+Notable new entries not in original list:
+
+| File | Current LOC | Why urgent |
 |---|---|---|
-| <RepoFile path="src/runtime/launch.rs" /> | ~5494 | Largest undocumented production file, `jackin load` critical path |
-| <RepoFile path="src/instance/auth.rs" /> | ~2401 | Credential forwarding and auth provisioning logic |
-| <RepoFile path="src/isolation/materialize.rs" /> | ~2392 | Central mount-materialization flow with many invariants |
-| <RepoFile path="src/isolation/finalize.rs" /> | ~1819 | Foreground-session cleanup / preservation policy |
-| <RepoFile path="src/config/mod.rs" /> | ~1254 | Main config schema and auth/source policy |
-| <RepoFile path="src/app/mod.rs" /> | ~1243 | CLI dispatch entry point |
-| <RepoFile path="src/app/context.rs" /> | ~1022 | Target resolution and workspace/agent context helpers |
-| <RepoFile path="src/workspace/mod.rs" /> | ~905 | Core workspace types and validation rules |
-| <RepoFile path="src/runtime/cleanup.rs" /> | ~637 | Container/class cleanup semantics |
-| <RepoFile path="src/tui/animation.rs" /> | ~582 | Shared intro/outro animation behavior |
+| <RepoFile path="src/console/manager/state.rs" /> | **2477** | Central state machine for the entire console — enums, modal definitions, workspace state. No `//!`. |
+| <RepoFile path="src/console/manager/input/save.rs" /> | **2734** | Save flow, validation, commit planning. Grew from zero to 2734L. No `//!`. |
+| <RepoFile path="src/console/manager/input/global_mounts.rs" /> | **1984** | Global mounts editor input handling. Grew from ~344L to 1984L. No `//!`. |
+| <RepoFile path="src/manifest/validate.rs" /> | **1222** | Role manifest validation logic. No `//!`. |
 
 ## Steps
 
 1. For each file, read the first 50 lines and the public item list.
 2. Write a `//!` block at the top: purpose, scope claim, key invariants, what callers can assume.
-3. Model on `env_model.rs` (the 3-element exemplar: purpose + scope + history).
+3. Model on <RepoFile path="src/env_model.rs" /> (the 3-element exemplar: purpose + scope + history).
 4. Do not add `///` item-level docs in this pass — only `//!` module-level.
 
 ## What a good `//!` block says
@@ -39,4 +48,4 @@ About 47% of source files have `//!` orientation docs. The remaining 53% give AI
 
 ## Caveats
 
-Purely additive — no behavior change, no CI risk. Do before the behavioral specs (ITEM-002, 003) since the spec presupposes the module has a stated contract.
+Purely additive — no behavior change, no CI risk. Do before the behavioral specs since the spec presupposes the module has a stated contract.

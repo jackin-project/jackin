@@ -29,6 +29,7 @@ pub enum AuthKind {
     Claude,
     Codex,
     Amp,
+    Opencode,
     Github,
 }
 
@@ -41,6 +42,7 @@ impl AuthKind {
             Self::Claude => "Claude Code",
             Self::Codex => "Codex",
             Self::Amp => "Amp",
+            Self::Opencode => "OpenCode",
             Self::Github => "GitHub CLI",
         }
     }
@@ -58,7 +60,9 @@ impl AuthKind {
                 AuthMode::OAuthToken,
                 AuthMode::Ignore,
             ],
-            Self::Codex | Self::Amp => &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore],
+            Self::Codex | Self::Amp | Self::Opencode => {
+                &[AuthMode::Sync, AuthMode::ApiKey, AuthMode::Ignore]
+            }
             Self::Github => &[AuthMode::Sync, AuthMode::Token, AuthMode::Ignore],
         }
     }
@@ -74,6 +78,7 @@ impl AuthKind {
             (Self::Claude, AuthMode::OAuthToken) => Some("CLAUDE_CODE_OAUTH_TOKEN"),
             (Self::Codex, AuthMode::ApiKey) => Some("OPENAI_API_KEY"),
             (Self::Amp, AuthMode::ApiKey) => Some("AMP_API_KEY"),
+            (Self::Opencode, AuthMode::ApiKey) => Some("OPENCODE_API_KEY"),
             (Self::Github, AuthMode::Token) => Some(crate::env_model::GH_TOKEN_ENV_NAME),
             _ => None,
         }
@@ -88,6 +93,7 @@ impl AuthKind {
             Agent::Claude => Self::Claude,
             Agent::Codex => Self::Codex,
             Agent::Amp => Self::Amp,
+            Agent::Opencode => Self::Opencode,
         }
     }
 
@@ -101,6 +107,7 @@ impl AuthKind {
             Self::Claude => Some(Agent::Claude),
             Self::Codex => Some(Agent::Codex),
             Self::Amp => Some(Agent::Amp),
+            Self::Opencode => Some(Agent::Opencode),
             Self::Github => None,
         }
     }
@@ -115,6 +122,7 @@ impl AuthKind {
             Self::Claude => ro.claude.is_some(),
             Self::Codex => ro.codex.is_some(),
             Self::Amp => ro.amp.is_some(),
+            Self::Opencode => ro.opencode.is_some(),
             Self::Github => ro.github.is_some(),
         }
     }

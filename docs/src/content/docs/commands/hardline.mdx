@@ -6,20 +6,29 @@ description: "Reattach to a running agent's session, or restart a crashed one"
 ## Synopsis
 
 ```bash
-jackin hardline <SELECTOR>
+jackin hardline [--inspect | --new [--agent <agent>]] [--debug] [SELECTOR]
 ```
 
 Reconnect your terminal to an agent container. Use this when you've closed your terminal but the agent is still running in the background, or when an agent crashed and you want to resume the same session without rebuilding the whole stack.
 
 A `hardline` is the direct line back into an agent session that's already running — the operator's way to step back inside without loading a fresh instance.
 
-If you pass an role selector, `jackin hardline` targets that class's primary container. If you have multiple instances, use the full container name to pick a specific clone.
+When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspace or ad-hoc directory from the local instance index, prompts for an instance when more than one matches, then prompts for the action: reconnect/recover, start another foreground agent session, inspect, or cancel. If you pass a role selector, `jackin hardline` targets that class's primary container. If you pass an exact instance or container selector and jackin detects multiple running agent processes in that container, it prompts for the safe action instead of blindly attaching. If you have multiple instances, use the instance ID or full container name to pick a specific one.
 
 ## Arguments
 
 | Argument | Required | Description |
 |---|---|---|
-| `SELECTOR` | Yes | Role selector (e.g., `agent-smith`) or full container name (e.g., `jackin-agent-smith-clone-1`) |
+| `SELECTOR` | No | Role selector (e.g., `agent-smith`), instance ID, or full container name (e.g., `jk-k7p9m2xq-agentsmith`) |
+
+## Options
+
+| Option | Description |
+|---|---|
+| `--inspect` | Resolve the same target but print the instance manifest, live agent-session inventory, role/DinD Docker state, Docker network state, cert volume name, and mount-state summary without attaching or restarting anything. |
+| `--new` | Start another foreground agent process inside the selected running instance instead of attaching to the original container process. On roles that support multiple agents, omitting `--agent` triggers an interactive prompt so you can choose the runtime; the workspace `default_agent` is used when set and skips the prompt. |
+| `--agent <agent>` | Agent runtime for `--new` (`claude`, `codex`, `amp`, or `opencode`). When omitted on a multi-agent role with no `default_agent` set on the workspace, an interactive prompt asks. |
+| `--debug` | Print every external command jackin issues (`docker`, `git`, etc.) and their captured output. Also enabled by `JACKIN_DEBUG=1`. |
 
 ## Behavior
 
@@ -29,12 +38,23 @@ If you pass an role selector, `jackin hardline` targets that class's primary con
 |---|---|
 | Running | Attach directly to the live session. |
 | Stopped, exit code `0` (clean `/exit`) | Error. The previous session ended normally — use `jackin load` to start a new one. |
-| Stopped, non-zero exit or OOM-killed | Restart the existing container in place and attach. Requires the DinD sidecar (`<container>-dind`) to still be present **and running**. |
-| Not found | Error. Nothing to reconnect to — use `jackin load`. |
+| Stopped, non-zero exit or OOM-killed | Restart the existing container in place and attach. If the DinD sidecar (`<container>-dind`) is stopped, restart it first; if it is missing, recreate the derived jackin network/DinD sidecar and wait for TLS readiness. |
+| Not found with indexed state | Rebuild the jackin-managed runtime for that instance when the saved workspace, original ad-hoc directory, or a confirmed moved ad-hoc directory can be resolved. |
+| Not found without indexed state | Error. Nothing to reconnect to — use `jackin load`. |
 
 Restart is intentionally scoped to crashes (non-zero exit, OOM kill, hard kill). Clean exits are treated as "session over" — the next run of the agent should be a fresh `jackin load` so you see the full launch output and any updated configuration.
 
-If the DinD sidecar has been removed or is itself stopped, `jackin hardline` refuses to restart: the Docker network plumbing needs to be rebuilt, which is what `jackin load` does.
+If the DinD sidecar has been removed, `jackin hardline` recreates the derived jackin network and DinD sidecar around the existing role container before restarting it.
+
+If the role container itself was deleted, jackin can rebuild the runtime around jackin-managed local state such as the per-instance agent home and preserved worktrees/clones. Changes written only to the deleted container's writable layer are gone. Jackin intentionally does not restore packages installed ad hoc inside the container, global files edited outside mounted paths, DinD images, or other container-layer mutations.
+
+For ad-hoc instances, `jackin hardline <instance-id>` normally expects the original project directory. If that directory moved, run the exact hardline command in an interactive terminal; jackin lets you mount the current directory, browse for the moved project directory, or enter another path manually at the original in-container workdir before rebuilding the missing runtime.
+
+`--inspect` is read-only. It works from the current workspace or ad-hoc directory, or with an explicit selector/instance ID/container name, and reports local manifest details even when Docker is unavailable. When the role container is running, it also reports detected agent processes from `docker top`.
+
+`--new` requires a running indexed instance. It starts a second agent process inside that container with the same mounts, Docker-in-Docker sidecar, working directory, and in-container state. This is useful when you want a separate foreground session without creating a fresh jackin instance. If the selected container is stopped or missing, run plain `jackin hardline` first so jackin can restart or rebuild it.
+
+When `jackin hardline` resolves an instance from the current directory without an explicit selector or option, the same actions are available through an interactive picker. Candidate labels include the detected live agent-session count when Docker can inspect a running role container. Exact selectors also show the action picker when multiple running agent processes are detected. Non-interactive runs default to reconnect/recover.
 
 ## Terminal close vs. exit
 
@@ -48,8 +68,23 @@ To stop an agent, exit it from inside (e.g., `/exit` in Claude Code). That ends 
 # Reconnect to agent-smith
 jackin hardline agent-smith
 
+# Reconnect from the current workspace or ad-hoc directory
+jackin hardline
+
+# Inspect the detected instance without attaching
+jackin hardline --inspect
+
+# Inspect a specific instance ID
+jackin hardline --inspect k7p9m2xq
+
+# Start another agent process in the detected running instance
+jackin hardline --new
+
+# Start a Codex process in a specific running instance
+jackin hardline --new --agent codex k7p9m2xq
+
 # Reconnect to a specific container by name
-jackin hardline jackin-agent-smith-clone-1
+jackin hardline jk-k7p9m2xq-agentsmith
 
 # Reconnect to a namespaced agent
 jackin hardline chainargos/backend-engineer
@@ -60,4 +95,7 @@ jackin hardline chainargos/backend-engineer
 - You closed your terminal window but the agent container is still running.
 - An agent crashed (non-zero exit, OOM) and you want to resume in the same container with the same DinD sidecar.
 - You want to check on an agent that's been running autonomously.
+- You want another foreground agent process inside an already-running instance.
 - You accidentally disconnected from a session.
+
+For workflows that intentionally run multiple runtimes together in one instance, see [Parallel Agents](/guides/parallel-agents/).

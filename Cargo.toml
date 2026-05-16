@@ -34,6 +34,7 @@ tempfile = "3.20"
 owo-colors = { version = "4", features = ["supports-colors"] }
 ratatui = { version = "0.30", features = ["unstable-widget-ref"] }
 crossterm = "0.29"
+nix = { version = "0.31", features = ["term"] }
 ratatui-textarea = "0.9"
 tui-widget-list = "0.15"
 dialoguer = "0.12"
@@ -43,17 +44,17 @@ clap_mangen = "0.3"
 serde_yaml_ng = "0.10.0"
 secrecy = "0.10"
 portable-pty = "0.9"
-sha2 = "0.10"
+sha2 = "0.11"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+rand = "0.10"
 
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.1"
 
 [features]
-# `e2e` gates real-docker smoke tests (tests/e2e_auth_modes.rs).
-# Default `cargo nextest run` skips them; enable with `--features e2e`
-# on a host with a reachable docker daemon.
+# `e2e` gates real-Docker smoke tests. Default `cargo nextest run` skips them;
+# enable with `--features e2e` on a host with a reachable Docker daemon.
 e2e = []
 
 [lints.rust]

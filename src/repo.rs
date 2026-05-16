@@ -70,14 +70,14 @@ pub enum RoleRepoValidationError {
     PathIsSymlink { label: &'static str },
     #[error("{label} path escapes the repo boundary")]
     PathEscapesBoundary { label: &'static str },
-    #[error("pre_launch hook is empty: {}", _0.display())]
-    EmptyPreLaunchHook(PathBuf),
+    #[error("{label} is empty: {}", path.display())]
+    EmptyHook { label: &'static str, path: PathBuf },
     #[error("unable to parse Dockerfile: {0}")]
     DockerfileParse(String),
     #[error("Dockerfile must contain at least one FROM instruction")]
     DockerfileMissingFrom,
     #[error("final Dockerfile stage must use literal FROM {expected}")]
-    DockerfileNonConstruct { expected: &'static str },
+    DockerfileNonConstruct { expected: String },
     /// Catch-all for non-structural failures (TOML parse, IO, manifest
     /// semantic validation). The friendly translator renders these as
     /// the generic "not a valid Jackin role" message.
@@ -102,13 +102,17 @@ pub fn validate_role_repo(repo_dir: &Path) -> Result<ValidatedRoleRepo, RoleRepo
     let dockerfile_path = validate_relative_path(repo_dir, &manifest.dockerfile, "dockerfile")?;
     let dockerfile = validate_agent_dockerfile(&dockerfile_path)?;
 
-    if let Some(ref hooks) = manifest.hooks
-        && let Some(ref pre_launch) = hooks.pre_launch
-    {
-        let hook_path = validate_relative_path(repo_dir, pre_launch, "pre_launch hook")?;
-        let contents = std::fs::read_to_string(&hook_path)?;
-        if contents.is_empty() {
-            return Err(RoleRepoValidationError::EmptyPreLaunchHook(hook_path));
+    if let Some(ref hooks) = manifest.hooks {
+        for entry in hooks.entries() {
+            let hook_path = validate_relative_path(repo_dir, entry.path, entry.label)?;
+            // metadata().len() avoids slurping a potentially large hook
+            // script into memory just to check emptiness.
+            if std::fs::metadata(&hook_path)?.len() == 0 {
+                return Err(RoleRepoValidationError::EmptyHook {
+                    label: entry.label,
+                    path: hook_path,
+                });
+            }
         }
     }
 
@@ -222,7 +226,8 @@ mod tests {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "docker/role.Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "docker/role.Dockerfile"
 
 [claude]
 plugins = []
@@ -240,7 +245,8 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "../Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "../Dockerfile"
 
 [claude]
 plugins = []
@@ -262,7 +268,8 @@ plugins = []
         std::os::unix::fs::symlink(outside.path(), temp.path().join("escape")).unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "escape/Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "escape/Dockerfile"
 
 [claude]
 plugins = []
@@ -286,7 +293,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "docker/role.Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "docker/role.Dockerfile"
 
 [claude]
 plugins = []
@@ -306,11 +314,11 @@ plugins = []
     }
 
     #[test]
-    fn accepts_manifest_with_valid_pre_launch_hook() {
+    fn accepts_manifest_with_valid_preflight_hook() {
         let temp = tempdir().unwrap();
         std::fs::create_dir_all(temp.path().join("hooks")).unwrap();
         std::fs::write(
-            temp.path().join("hooks/pre-launch.sh"),
+            temp.path().join("hooks/preflight.sh"),
             r"#!/bin/bash
 echo hello
 ",
@@ -323,13 +331,14 @@ echo hello
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
 
 [hooks]
-pre_launch = "hooks/pre-launch.sh"
+preflight = "hooks/preflight.sh"
 "#,
         )
         .unwrap();
@@ -342,13 +351,53 @@ pre_launch = "hooks/pre-launch.sh"
                 .hooks
                 .as_ref()
                 .unwrap()
-                .pre_launch
+                .preflight
                 .is_some()
         );
     }
 
     #[test]
-    fn rejects_pre_launch_hook_outside_repo() {
+    fn accepts_manifest_with_runtime_hooks() {
+        let temp = tempdir().unwrap();
+        std::fs::create_dir_all(temp.path().join("hooks")).unwrap();
+        for name in ["setup-once.sh", "source.sh", "preflight.sh"] {
+            std::fs::write(
+                temp.path().join("hooks").join(name),
+                "#!/bin/bash\necho ok\n",
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[hooks]
+setup_once = "hooks/setup-once.sh"
+source = "hooks/source.sh"
+preflight = "hooks/preflight.sh"
+"#,
+        )
+        .unwrap();
+
+        let validated = validate_role_repo(temp.path()).unwrap();
+        let hooks = validated.manifest.hooks.as_ref().unwrap();
+
+        assert!(hooks.setup_once.is_some());
+        assert!(hooks.source.is_some());
+        assert!(hooks.preflight.is_some());
+    }
+
+    #[test]
+    fn rejects_preflight_hook_outside_repo() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
@@ -357,13 +406,14 @@ pre_launch = "hooks/pre-launch.sh"
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
 
 [hooks]
-pre_launch = "../escape.sh"
+preflight = "../escape.sh"
 "#,
         )
         .unwrap();
@@ -374,7 +424,7 @@ pre_launch = "../escape.sh"
     }
 
     #[test]
-    fn rejects_pre_launch_hook_that_does_not_exist() {
+    fn rejects_preflight_hook_that_does_not_exist() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
@@ -383,13 +433,14 @@ pre_launch = "../escape.sh"
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
 
 [hooks]
-pre_launch = "hooks/missing.sh"
+preflight = "hooks/missing.sh"
 "#,
         )
         .unwrap();
@@ -400,7 +451,7 @@ pre_launch = "hooks/missing.sh"
     }
 
     #[test]
-    fn rejects_absolute_pre_launch_hook_path() {
+    fn rejects_absolute_preflight_hook_path() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
@@ -409,13 +460,14 @@ pre_launch = "hooks/missing.sh"
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
 
 [hooks]
-pre_launch = "/etc/evil.sh"
+preflight = "/etc/evil.sh"
 "#,
         )
         .unwrap();
@@ -426,10 +478,27 @@ pre_launch = "/etc/evil.sh"
     }
 
     #[test]
-    fn rejects_empty_pre_launch_hook() {
+    fn rejects_empty_preflight_hook() {
+        let error = empty_hook_error("preflight", "hooks/preflight.sh");
+        assert!(error.contains("preflight hook is empty"));
+    }
+
+    #[test]
+    fn rejects_empty_setup_once_hook() {
+        let error = empty_hook_error("setup_once", "hooks/setup-once.sh");
+        assert!(error.contains("setup_once hook is empty"));
+    }
+
+    #[test]
+    fn rejects_empty_source_hook() {
+        let error = empty_hook_error("source", "hooks/source.sh");
+        assert!(error.contains("source hook is empty"));
+    }
+
+    fn empty_hook_error(field: &str, path: &str) -> String {
         let temp = tempdir().unwrap();
         std::fs::create_dir_all(temp.path().join("hooks")).unwrap();
-        std::fs::write(temp.path().join("hooks/pre-launch.sh"), "").unwrap();
+        std::fs::write(temp.path().join(path), "").unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
             "FROM projectjackin/construct:trixie\n",
@@ -437,31 +506,32 @@ pre_launch = "/etc/evil.sh"
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            format!(
+                r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
 
 [hooks]
-pre_launch = "hooks/pre-launch.sh"
-"#,
+{field} = "{path}"
+"#
+            ),
         )
         .unwrap();
 
-        let error = validate_role_repo(temp.path()).unwrap_err();
-
-        assert!(error.to_string().contains("empty"));
+        validate_role_repo(temp.path()).unwrap_err().to_string()
     }
 
     #[cfg(unix)]
     #[test]
-    fn rejects_symlinked_pre_launch_hook_inside_repo() {
+    fn rejects_symlinked_preflight_hook_inside_repo() {
         let temp = tempdir().unwrap();
         std::fs::create_dir_all(temp.path().join("hooks")).unwrap();
         std::fs::write(temp.path().join("real-hook.sh"), "#!/bin/bash\necho hi\n").unwrap();
         std::os::unix::fs::symlink(
             temp.path().join("real-hook.sh"),
-            temp.path().join("hooks/pre-launch.sh"),
+            temp.path().join("hooks/preflight.sh"),
         )
         .unwrap();
         std::fs::write(
@@ -471,13 +541,14 @@ pre_launch = "hooks/pre-launch.sh"
         .unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
 
 [hooks]
-pre_launch = "hooks/pre-launch.sh"
+preflight = "hooks/preflight.sh"
 "#,
         )
         .unwrap();
@@ -485,6 +556,6 @@ pre_launch = "hooks/pre-launch.sh"
         let error = validate_role_repo(temp.path()).unwrap_err();
 
         assert!(error.to_string().contains("symlink"));
-        assert!(error.to_string().contains("pre_launch"));
+        assert!(error.to_string().contains("preflight"));
     }
 }

@@ -21,23 +21,18 @@ Creating a custom agent lets you define a specialized environment for a specific
 ## Step by step
 
 <Steps>
-1. **Create a GitHub repository**
+1. **Create the role scaffold**
 
-   Name it `jackin-{your-agent-name}`. For example, `jackin-rustacean` for a Rust-focused agent.
-
-2. **Create the manifest file**
-
-   ```toml
-   dockerfile = "Dockerfile"
-
-   [claude]
-   plugins = []
-
-   [identity]
-   name = "Rustacean"
+   ```bash
+   jackin role create ChainArgos/Rustacean "$HOME/Projects"
+   cd "$HOME/Projects/chainargos/jackin-rustacean"
    ```
 
-3. **Create the Dockerfile**
+   The generated repository includes a minimal manifest, Dockerfile, README, ignore files, and a validation workflow. Jackin lowercases the selector, so `ChainArgos/Rustacean` becomes `chainargos/rustacean`.
+
+2. **Edit the Dockerfile**
+
+   Start from the generated file and add the tools your role needs:
 
    ```dockerfile
    FROM projectjackin/construct:trixie
@@ -49,19 +44,37 @@ Creating a custom agent lets you define a specialized environment for a specific
    RUN cargo install cargo-nextest cargo-watch
    ```
 
-4. **Push to GitHub**
+3. **Validate locally**
 
    ```bash
-   git add -A && git commit -m "Initial agent setup"
-   git push origin main
+   jackin role validate .
+   ```
+
+4. **Create a GitHub repository and push**
+
+   ```bash
+   git init
+   git branch -M main
+   git add -A
+   git commit -m "Initial role setup"
+   gh repo create chainargos/jackin-rustacean --source=. --remote=origin --push
    ```
 
 5. **Load your agent**
 
    ```bash
-   jackin load rustacean
+   jackin load chainargos/rustacean . --debug
+   ```
+
+6. **Migrate when the manifest schema changes**
+
+   ```bash
+   jackin role migrate .
    ```
 </Steps>
+
+Use `jackin role migrate` on your own desktop when you are updating a checked-out role repo. CI workflows should keep using the generated validation workflow and the standalone `jackin-validate` binary instead of the full Jackin operator CLI.
+
 ## Dockerfile guidelines
 
 ### The construct base is required
@@ -125,9 +138,11 @@ USER agent
 Role repos can declare Claude Code plugins to install. Add them to the `[claude]` section in your manifest:
 
 ```toml title="jackin.role.toml"
+version = "v1alpha3"
 dockerfile = "Dockerfile"
 
 [claude]
+model = "sonnet"
 plugins = ["code-review@claude-plugins-official"]
 
 [identity]
@@ -139,6 +154,7 @@ These plugin IDs are written into the agent's runtime state and installed automa
 If you need plugins from a custom marketplace, declare the marketplace separately and keep plugin IDs fully qualified:
 
 ```toml title="jackin.role.toml"
+version = "v1alpha3"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -167,8 +183,9 @@ jackin adds each declared marketplace at container startup, then installs each p
 An role can support more than one agent while keeping one shared Dockerfile:
 
 ```toml title="jackin.role.toml"
+version = "v1alpha3"
 dockerfile = "Dockerfile"
-agents = ["claude", "codex", "amp"]
+agents = ["claude", "codex", "amp", "opencode"]
 
 [claude]
 plugins = ["code-review@claude-plugins-official"]
@@ -242,8 +259,8 @@ non-interactive shells fail rather than defaulting to yes.
 The recommended flow when reviewing someone else's role-repo PR:
 
 1. Fetch the PR branch into a checkout of the role repo and read the
-   diff yourself, especially `Dockerfile`, any pre-launch hook, and
-   the `jackin.role.toml` manifest.
+   diff yourself, especially `Dockerfile`, any runtime hook scripts,
+   and the `jackin.role.toml` manifest.
 2. Run the load command above with `--role-branch <PR-branch-name>`
    and `--rebuild`.
 3. When the trust prompt appears, confirm only after the diff review

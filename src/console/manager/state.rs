@@ -1,9 +1,11 @@
 //! Manager state machine. See docs/superpowers/specs/2026-04-23-workspace-manager-tui-design.md § 3.
 
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::rc::Rc;
+
+use ratatui::layout::Rect;
 
 use crate::config::AppConfig;
 use crate::console::op_cache::OpCache;
@@ -56,11 +58,29 @@ impl ManagerListRow {
 pub struct ManagerState<'a> {
     pub stage: ManagerStage<'a>,
     pub workspaces: Vec<WorkspaceSummary>,
+    pub instances: Vec<crate::instance::InstanceIndexEntry>,
+    pub current_dir: String,
     pub selected: usize,
     pub toast: Option<Toast>,
     /// Modal slot at the list level (e.g. `Modal::GithubPicker`); the
     /// Editor / `CreatePrelude` stages own their own modal slots.
     pub list_modal: Option<Modal<'a>>,
+    pub inline_role_picker: Option<RolePickerState>,
+    pub inline_agent_picker: Option<(
+        crate::selector::RoleSelector,
+        crate::console::widgets::agent_choice::AgentChoiceState,
+    )>,
+    pub list_mounts_scroll_x: u16,
+    pub list_mounts_scroll_y: u16,
+    pub list_global_mounts_scroll_x: u16,
+    pub list_global_mounts_scroll_y: u16,
+    pub list_role_global_mounts_scroll_x: u16,
+    pub list_role_global_mounts_scroll_y: u16,
+    pub list_roles_scroll_x: u16,
+    pub list_roles_scroll_y: u16,
+    pub list_scroll_focus: Option<MountScrollFocus>,
+    pub list_names_scroll_x: u16,
+    pub list_names_focused: bool,
     pub list_split_pct: u16,
     pub drag_state: Option<DragState>,
     /// Process-lifetime cache of `op` structural metadata, threaded
@@ -71,6 +91,25 @@ pub struct ManagerState<'a> {
     /// startup) so the Secrets-tab editor can disable the
     /// source-picker's 1Password choice without re-probing.
     pub op_available: bool,
+    /// Last known terminal size, updated at the top of every render
+    /// frame. Used by keyboard handlers to compute `viewport_h` for
+    /// cursor-to-viewport scroll adjustment without needing a render pass.
+    pub cached_term_size: Rect,
+    /// Throttle the per-tick `InstanceIndex::read_or_rebuild` poll —
+    /// state on disk can't change at the 20 Hz render cadence and the
+    /// rebuild path walks every container directory.
+    instances_last_refresh: Option<std::time::Instant>,
+    /// Last surfaced `refresh_instances` error message. Dedup gate so
+    /// transient errors don't spam toasts every refresh tick.
+    instances_last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MountScrollFocus {
+    Workspace,
+    Global,
+    RoleGlobal,
+    Roles,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,8 +138,252 @@ pub const fn clamp_split(pct: u16) -> u16 {
 pub enum ManagerStage<'a> {
     List,
     Editor(EditorState<'a>),
+    Settings(SettingsState<'a>),
     CreatePrelude(CreatePreludeState<'a>),
     ConfirmDelete { name: String, state: ConfirmState },
+}
+
+#[derive(Debug)]
+pub struct GlobalMountsState<'a> {
+    pub selected: usize,
+    pub pending: Vec<crate::config::GlobalMountRow>,
+    pub original: Vec<crate::config::GlobalMountRow>,
+    pub modal: Option<GlobalMountModal<'a>>,
+    pub add_draft: Option<GlobalMountDraft>,
+    pub error: Option<String>,
+    pub success: Option<String>,
+    pub scroll_x: u16,
+    pub scroll_y: u16,
+    pub scroll_focused: bool,
+    /// Dispatcher pops back to the workspace list when set.
+    pub exit_requested: bool,
+}
+
+#[derive(Debug)]
+pub struct SettingsState<'a> {
+    pub active_tab: SettingsTab,
+    /// W3C ARIA Tabs: when true, focus is on the tab list (←/→ cycle tabs,
+    /// Tab/↓ enters content); when false, focus is in the tab panel.
+    pub tab_bar_focused: bool,
+    pub mounts: GlobalMountsState<'a>,
+    pub env: SettingsEnvState<'a>,
+    pub auth: SettingsAuthState,
+    pub trust: SettingsTrustState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsTab {
+    Mounts,
+    Environments,
+    Auth,
+    Trust,
+}
+
+impl SettingsTab {
+    pub const ALL: [Self; 4] = [Self::Mounts, Self::Environments, Self::Auth, Self::Trust];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Mounts => "Mounts",
+            Self::Environments => "Environments",
+            Self::Auth => "Auth",
+            Self::Trust => "Trust",
+        }
+    }
+
+    #[must_use]
+    pub fn next(self) -> Self {
+        let idx = Self::ALL.iter().position(|t| *t == self).unwrap_or(0);
+        Self::ALL[(idx + 1) % Self::ALL.len()]
+    }
+
+    #[must_use]
+    pub fn previous(self) -> Self {
+        let idx = Self::ALL.iter().position(|t| *t == self).unwrap_or(0);
+        Self::ALL[(idx + Self::ALL.len() - 1) % Self::ALL.len()]
+    }
+}
+
+#[derive(Debug)]
+pub struct SettingsEnvState<'a> {
+    pub selected: usize,
+    pub pending: SettingsEnvConfig,
+    pub original: SettingsEnvConfig,
+    pub modal: Option<SettingsEnvModal<'a>>,
+    pub pending_env_key: Option<(SettingsEnvScope, String)>,
+    pub pending_picker_target: Option<(SettingsEnvScope, Option<String>)>,
+    pub pending_picker_value: Option<crate::operator_env::EnvValue>,
+    pub unmasked_rows: BTreeSet<(SettingsEnvScope, String)>,
+    pub expanded: BTreeSet<String>,
+    pub error: Option<String>,
+    pub scroll_y: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsEnvConfig {
+    pub env: BTreeMap<String, crate::operator_env::EnvValue>,
+    pub roles: BTreeMap<String, BTreeMap<String, crate::operator_env::EnvValue>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SettingsEnvScope {
+    Global,
+    Role(String),
+}
+
+#[derive(Debug)]
+pub enum SettingsEnvModal<'a> {
+    Text {
+        target: SettingsEnvTextTarget,
+        state: Box<TextInputState<'a>>,
+    },
+    SourcePicker {
+        state: SourcePickerState,
+    },
+    OpPicker {
+        state: Box<OpPickerState>,
+    },
+    RolePicker {
+        state: RolePickerState,
+    },
+    ScopePicker {
+        state: ScopePickerState,
+    },
+    Confirm {
+        action: SettingsEnvConfirm,
+        state: ConfirmState,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsEnvConfirm {
+    Delete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsEnvTextTarget {
+    EnvKey {
+        scope: SettingsEnvScope,
+    },
+    EnvValue {
+        scope: SettingsEnvScope,
+        key: String,
+    },
+}
+
+#[derive(Debug)]
+pub struct SettingsAuthState {
+    pub selected: usize,
+    pub selected_kind: Option<crate::console::manager::auth_kind::AuthKind>,
+    pub pending: Vec<SettingsAuthRow>,
+    pub original: Vec<SettingsAuthRow>,
+    pub github_env: BTreeMap<String, crate::operator_env::EnvValue>,
+    pub original_github_env: BTreeMap<String, crate::operator_env::EnvValue>,
+    pub modal: Option<SettingsAuthModal<'static>>,
+    pub pending_auth_form_return: Option<AuthFormReturnPath>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsAuthRow {
+    pub kind: crate::console::manager::auth_kind::AuthKind,
+    pub mode: crate::console::manager::auth_kind::AuthMode,
+}
+
+#[derive(Debug)]
+pub enum SettingsAuthModal<'a> {
+    TextInput {
+        state: Box<TextInputState<'a>>,
+    },
+    SourcePicker {
+        state: SourcePickerState,
+    },
+    OpPicker {
+        state: Box<OpPickerState>,
+    },
+    AuthForm {
+        target: AuthFormTarget,
+        state: Box<AuthForm>,
+        focus: AuthFormFocus,
+        literal_buffer: String,
+    },
+}
+
+#[derive(Debug)]
+pub struct SettingsTrustState {
+    pub selected: usize,
+    pub pending: Vec<SettingsTrustRow>,
+    pub original: Vec<SettingsTrustRow>,
+    pub error: Option<String>,
+    pub scroll_x: u16,
+    pub scroll_y: u16,
+    pub scroll_focused: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsTrustRow {
+    pub role: String,
+    pub git: String,
+    pub trusted: bool,
+}
+
+#[derive(Debug, Default)]
+pub struct GlobalMountDraft {
+    pub name: String,
+    pub src: String,
+    pub dst: String,
+    pub scope: Option<String>,
+}
+
+#[derive(Debug)]
+pub enum GlobalMountModal<'a> {
+    Text {
+        target: GlobalMountTextTarget,
+        state: Box<TextInputState<'a>>,
+    },
+    FileBrowser {
+        state: Box<FileBrowserState>,
+    },
+    MountDstChoice {
+        state: MountDstChoiceState,
+    },
+    ScopePicker {
+        state: ScopePickerState,
+    },
+    RolePicker {
+        state: RolePickerState,
+    },
+    Confirm {
+        action: GlobalMountConfirm,
+        state: ConfirmState,
+    },
+    /// Full change-preview dialog shown before committing a settings save.
+    /// Reuses the `ConfirmSave` widget so the operator sees the same
+    /// scrollable diff format as the workspace editor.
+    PreviewSave {
+        state: crate::console::widgets::confirm_save::ConfirmSaveState,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GlobalMountConfirm {
+    Remove,
+    Save,
+    Sensitive,
+    Discard,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GlobalMountTextTarget {
+    AddScope,
+    AddName,
+    AddSource,
+    AddDestination,
+    Source,
+    Destination,
+    Scope,
+    Rename,
 }
 
 #[derive(Debug, Clone)]
@@ -118,6 +401,9 @@ pub struct WorkspaceSummary {
 pub struct EditorState<'a> {
     pub mode: EditorMode,
     pub active_tab: EditorTab,
+    /// W3C ARIA Tabs: when true, focus is on the tab list (←/→ cycle tabs,
+    /// Tab/↓ enters content); when false, focus is in the tab panel.
+    pub tab_bar_focused: bool,
     pub active_field: FieldFocus,
     pub original: WorkspaceConfig,
     pub pending: WorkspaceConfig,
@@ -173,6 +459,18 @@ pub struct EditorState<'a> {
     /// touch this slot — see `AUTH00x` debug tags in
     /// `input::auth` for the recovery path on stash desync.
     pub pending_auth_form_return: Option<AuthFormReturnPath>,
+    pub workspace_mounts_scroll_x: u16,
+    pub workspace_mounts_scroll_focused: bool,
+    /// Vertical scroll offset shared across all editor content tabs.
+    /// Reset to 0 on every tab change so each tab starts at the top.
+    pub tab_scroll_y: u16,
+    /// Whether the non-Mounts tab content block has keyboard/click focus
+    /// (green border). Updated each click via `update_scroll_focus`.
+    pub tab_content_scroll_focused: bool,
+    /// Last rendered line count for the active non-Mounts tab content block.
+    /// Written by the render function; read by `update_scroll_focus` to
+    /// determine whether the block is actually scrollable.
+    pub tab_content_height: usize,
 }
 
 /// Captured auth-form context to re-mount the form after a side
@@ -228,6 +526,409 @@ impl EditorSaveFlow {
             None
         }
     }
+}
+
+impl GlobalMountsState<'_> {
+    pub fn from_config(config: &AppConfig) -> Self {
+        let rows = config.list_mount_rows();
+        Self {
+            selected: 0,
+            pending: rows.clone(),
+            original: rows,
+            modal: None,
+            add_draft: None,
+            error: None,
+            success: None,
+            scroll_x: 0,
+            scroll_y: 0,
+            scroll_focused: false,
+            exit_requested: false,
+        }
+    }
+
+    #[must_use]
+    pub fn is_dirty(&self) -> bool {
+        self.pending != self.original
+    }
+
+    pub fn discard(&mut self) {
+        self.pending = self.original.clone();
+        self.selected = self.selected.min(self.pending.len().saturating_sub(1));
+        self.add_draft = None;
+        self.error = None;
+        self.success = None;
+    }
+
+    pub fn save_to_config(
+        &mut self,
+        paths: &crate::paths::JackinPaths,
+    ) -> anyhow::Result<AppConfig> {
+        AppConfig::validate_global_mount_rows(&self.pending)?;
+        let mut editor = crate::config::ConfigEditor::open(paths)?;
+        for row in &self.original {
+            editor.remove_mount(&row.name, row.scope.as_deref());
+        }
+        for row in &self.pending {
+            editor.add_mount(&row.name, row.mount.clone(), row.scope.as_deref());
+        }
+        let config = editor.save()?;
+        self.original = self.pending.clone();
+        Ok(config)
+    }
+}
+
+impl SettingsState<'_> {
+    pub fn from_config(config: &AppConfig) -> Self {
+        Self {
+            active_tab: SettingsTab::Mounts,
+            tab_bar_focused: true,
+            mounts: GlobalMountsState::from_config(config),
+            env: SettingsEnvState::from_config(config),
+            auth: SettingsAuthState::from_config(config),
+            trust: SettingsTrustState::from_config(config),
+        }
+    }
+
+    #[must_use]
+    pub fn is_dirty(&self) -> bool {
+        self.mounts.is_dirty()
+            || self.env.is_dirty()
+            || self.auth.is_dirty()
+            || self.trust.is_dirty()
+    }
+
+    #[must_use]
+    pub fn change_count(&self) -> usize {
+        self.mounts_change_count()
+            + self.env.change_count()
+            + settings_vec_change_count(&self.auth.original, &self.auth.pending)
+            + env_change_count(&self.auth.original_github_env, &self.auth.github_env)
+            + settings_vec_change_count(&self.trust.original, &self.trust.pending)
+    }
+
+    fn mounts_change_count(&self) -> usize {
+        settings_vec_change_count(&self.mounts.original, &self.mounts.pending)
+    }
+
+    pub fn discard(&mut self) {
+        self.mounts.discard();
+        self.env.discard();
+        self.auth.discard();
+        self.trust.discard();
+    }
+
+    pub fn save_to_config(
+        &mut self,
+        paths: &crate::paths::JackinPaths,
+    ) -> anyhow::Result<AppConfig> {
+        AppConfig::validate_global_mount_rows(&self.mounts.pending)?;
+        validate_settings_env(&self.env.pending, &self.trust.pending)?;
+        let mut editor = crate::config::ConfigEditor::open(paths)?;
+
+        for row in &self.mounts.original {
+            editor.remove_mount(&row.name, row.scope.as_deref());
+        }
+        for row in &self.mounts.pending {
+            editor.add_mount(&row.name, row.mount.clone(), row.scope.as_deref());
+        }
+
+        for key in self.env.original.env.keys() {
+            editor.remove_env_var(&crate::config::EnvScope::Global, key);
+        }
+        for (role, env) in &self.env.original.roles {
+            for key in env.keys() {
+                editor.remove_env_var(&crate::config::EnvScope::Role(role.clone()), key);
+            }
+        }
+        for (key, value) in &self.env.pending.env {
+            editor.set_env_var(&crate::config::EnvScope::Global, key, value.clone())?;
+        }
+        for (role, env) in &self.env.pending.roles {
+            for (key, value) in env {
+                editor.set_env_var(
+                    &crate::config::EnvScope::Role(role.clone()),
+                    key,
+                    value.clone(),
+                )?;
+            }
+        }
+
+        for row in &self.auth.pending {
+            match row.kind {
+                crate::console::manager::auth_kind::AuthKind::Claude
+                | crate::console::manager::auth_kind::AuthKind::Codex
+                | crate::console::manager::auth_kind::AuthKind::Amp
+                | crate::console::manager::auth_kind::AuthKind::Opencode => {
+                    let Some(agent) = row.kind.agent() else {
+                        continue;
+                    };
+                    let Some(mode) = row.mode.to_auth_forward() else {
+                        anyhow::bail!(
+                            "auth mode {} is not supported for {}",
+                            row.mode.as_str(),
+                            row.kind.label()
+                        );
+                    };
+                    editor.set_global_auth_forward(agent, mode);
+                }
+                crate::console::manager::auth_kind::AuthKind::Github => {
+                    let Some(mode) = row.mode.to_github() else {
+                        anyhow::bail!(
+                            "auth mode {} is not supported for {}",
+                            row.mode.as_str(),
+                            row.kind.label()
+                        );
+                    };
+                    editor.set_global_github_auth_forward(mode);
+                }
+            }
+        }
+        for key in self.auth.original_github_env.keys() {
+            editor.remove_global_github_env_var(key);
+        }
+        for (key, value) in &self.auth.github_env {
+            editor.set_global_github_env_var(key, value.clone())?;
+        }
+
+        for row in &self.trust.pending {
+            editor.set_agent_trust(&row.role, row.trusted);
+        }
+
+        let config = editor.save()?;
+        self.mounts.original = self.mounts.pending.clone();
+        self.env.original = self.env.pending.clone();
+        self.auth.original = self.auth.pending.clone();
+        self.auth.original_github_env = self.auth.github_env.clone();
+        self.trust.original = self.trust.pending.clone();
+        Ok(config)
+    }
+}
+
+fn settings_vec_change_count<T: PartialEq>(original: &[T], pending: &[T]) -> usize {
+    let common_changes = original
+        .iter()
+        .zip(pending.iter())
+        .filter(|(a, b)| a != b)
+        .count();
+    common_changes + original.len().abs_diff(pending.len())
+}
+
+impl SettingsEnvState<'_> {
+    pub fn from_config(config: &AppConfig) -> Self {
+        let pending = SettingsEnvConfig {
+            env: config.env.clone(),
+            roles: config
+                .roles
+                .iter()
+                .map(|(role, source)| (role.clone(), source.env.clone()))
+                .collect(),
+        };
+        Self {
+            selected: 0,
+            original: pending.clone(),
+            pending,
+            modal: None,
+            pending_env_key: None,
+            pending_picker_target: None,
+            pending_picker_value: None,
+            unmasked_rows: BTreeSet::default(),
+            expanded: BTreeSet::default(),
+            error: None,
+            scroll_y: 0,
+        }
+    }
+
+    #[must_use]
+    pub fn is_dirty(&self) -> bool {
+        self.pending != self.original
+    }
+
+    pub fn discard(&mut self) {
+        self.pending = self.original.clone();
+        self.selected = self
+            .selected
+            .min(settings_env_flat_row_count(self).saturating_sub(1));
+        self.modal = None;
+        self.pending_env_key = None;
+        self.pending_picker_target = None;
+        self.pending_picker_value = None;
+        self.unmasked_rows.clear();
+        self.expanded.clear();
+        self.error = None;
+    }
+
+    #[must_use]
+    pub fn change_count(&self) -> usize {
+        env_change_count(&self.original.env, &self.pending.env)
+            + self
+                .original
+                .roles
+                .keys()
+                .chain(self.pending.roles.keys())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .map(|role| {
+                    let empty = BTreeMap::new();
+                    let original = self.original.roles.get(role).unwrap_or(&empty);
+                    let pending = self.pending.roles.get(role).unwrap_or(&empty);
+                    env_change_count(original, pending)
+                })
+                .sum::<usize>()
+    }
+}
+
+impl SettingsAuthState {
+    pub fn from_config(config: &AppConfig) -> Self {
+        let pending = [
+            crate::console::manager::auth_kind::AuthKind::Claude,
+            crate::console::manager::auth_kind::AuthKind::Codex,
+            crate::console::manager::auth_kind::AuthKind::Amp,
+            crate::console::manager::auth_kind::AuthKind::Opencode,
+            crate::console::manager::auth_kind::AuthKind::Github,
+        ]
+        .into_iter()
+        .map(|kind| SettingsAuthRow {
+            kind,
+            mode: match kind {
+                crate::console::manager::auth_kind::AuthKind::Claude
+                | crate::console::manager::auth_kind::AuthKind::Codex
+                | crate::console::manager::auth_kind::AuthKind::Amp
+                | crate::console::manager::auth_kind::AuthKind::Opencode => kind.agent().map_or(
+                    crate::console::manager::auth_kind::AuthMode::Sync,
+                    |agent| {
+                        crate::console::manager::auth_kind::AuthMode::from_auth_forward(
+                            crate::config::resolve_mode(config, agent, "", ""),
+                        )
+                    },
+                ),
+                crate::console::manager::auth_kind::AuthKind::Github => {
+                    crate::console::manager::auth_kind::AuthMode::from_github(
+                        crate::config::resolve_github_mode(config, "", ""),
+                    )
+                }
+            },
+        })
+        .collect::<Vec<_>>();
+        Self {
+            selected: 0,
+            selected_kind: None,
+            original: pending.clone(),
+            pending,
+            github_env: config
+                .github
+                .as_ref()
+                .map(|github| github.env.clone())
+                .unwrap_or_default(),
+            original_github_env: config
+                .github
+                .as_ref()
+                .map(|github| github.env.clone())
+                .unwrap_or_default(),
+            modal: None,
+            pending_auth_form_return: None,
+            error: None,
+        }
+    }
+
+    #[must_use]
+    pub fn is_dirty(&self) -> bool {
+        self.pending != self.original || self.github_env != self.original_github_env
+    }
+
+    pub fn discard(&mut self) {
+        self.pending = self.original.clone();
+        self.github_env = self.original_github_env.clone();
+        self.selected_kind = None;
+        self.selected = self.selected.min(self.pending.len().saturating_sub(1));
+        self.modal = None;
+        self.pending_auth_form_return = None;
+        self.error = None;
+    }
+}
+
+impl SettingsTrustState {
+    pub fn from_config(config: &AppConfig) -> Self {
+        let pending = config
+            .roles
+            .iter()
+            .map(|(role, source)| SettingsTrustRow {
+                role: role.clone(),
+                git: source.git.clone(),
+                trusted: source.trusted,
+            })
+            .collect::<Vec<_>>();
+        Self {
+            selected: 0,
+            original: pending.clone(),
+            pending,
+            error: None,
+            scroll_x: 0,
+            scroll_y: 0,
+            scroll_focused: false,
+        }
+    }
+
+    #[must_use]
+    pub fn is_dirty(&self) -> bool {
+        self.pending != self.original
+    }
+
+    pub fn discard(&mut self) {
+        self.pending = self.original.clone();
+        self.selected = self.selected.min(self.pending.len().saturating_sub(1));
+        self.error = None;
+    }
+}
+
+fn validate_settings_env(
+    env: &SettingsEnvConfig,
+    roles: &[SettingsTrustRow],
+) -> anyhow::Result<()> {
+    let registered: std::collections::BTreeSet<&str> =
+        roles.iter().map(|r| r.role.as_str()).collect();
+    validate_settings_env_keys("global", env.env.keys())?;
+    for (role, role_env) in &env.roles {
+        if !registered.contains(role.as_str()) {
+            anyhow::bail!("role {role:?} is not registered");
+        }
+        validate_settings_env_keys(role, role_env.keys())?;
+    }
+    Ok(())
+}
+
+fn validate_settings_env_keys<'a>(
+    scope: &str,
+    keys: impl Iterator<Item = &'a String>,
+) -> anyhow::Result<()> {
+    for key in keys {
+        if key.trim().is_empty() {
+            anyhow::bail!("env var key cannot be empty");
+        }
+        if crate::env_model::is_reserved(key) {
+            anyhow::bail!(
+                "env name {key:?} in {scope} is reserved by the jackin runtime and cannot be set"
+            );
+        }
+    }
+    Ok(())
+}
+
+fn settings_env_flat_row_count(env: &SettingsEnvState<'_>) -> usize {
+    let mut rows = env.pending.env.len();
+    if !env.pending.env.is_empty() {
+        rows += 1;
+    }
+    rows += 1;
+    for (role, role_env) in &env.pending.roles {
+        if role_env.is_empty() {
+            continue;
+        }
+        rows += 2;
+        if env.expanded.contains(role) {
+            rows += role_env.len() + 2;
+        }
+    }
+    rows
 }
 
 #[derive(Debug, Clone)]
@@ -520,6 +1221,43 @@ impl WorkspaceSummary {
 }
 
 impl ManagerState<'_> {
+    pub(in crate::console::manager) const fn list_scroll_x_mut(
+        &mut self,
+        focus: MountScrollFocus,
+    ) -> &mut u16 {
+        match focus {
+            MountScrollFocus::Workspace => &mut self.list_mounts_scroll_x,
+            MountScrollFocus::Global => &mut self.list_global_mounts_scroll_x,
+            MountScrollFocus::RoleGlobal => &mut self.list_role_global_mounts_scroll_x,
+            MountScrollFocus::Roles => &mut self.list_roles_scroll_x,
+        }
+    }
+
+    pub(in crate::console::manager) const fn list_scroll_y_mut(
+        &mut self,
+        focus: MountScrollFocus,
+    ) -> &mut u16 {
+        match focus {
+            MountScrollFocus::Workspace => &mut self.list_mounts_scroll_y,
+            MountScrollFocus::Global => &mut self.list_global_mounts_scroll_y,
+            MountScrollFocus::RoleGlobal => &mut self.list_role_global_mounts_scroll_y,
+            MountScrollFocus::Roles => &mut self.list_roles_scroll_y,
+        }
+    }
+
+    pub(in crate::console::manager) const fn reset_list_scroll(&mut self) {
+        self.list_mounts_scroll_x = 0;
+        self.list_mounts_scroll_y = 0;
+        self.list_global_mounts_scroll_x = 0;
+        self.list_global_mounts_scroll_y = 0;
+        self.list_role_global_mounts_scroll_x = 0;
+        self.list_role_global_mounts_scroll_y = 0;
+        self.list_roles_scroll_x = 0;
+        self.list_roles_scroll_y = 0;
+        self.list_scroll_focus = None;
+        self.list_names_scroll_x = 0;
+    }
+
     /// Allocates a fresh empty cache and assumes `op` unavailable —
     /// production reset paths use the `_with_cache_and_op` variant to
     /// preserve the `ConsoleState`-owned cache.
@@ -559,13 +1297,36 @@ impl ManagerState<'_> {
         Self {
             stage: ManagerStage::List,
             workspaces,
+            instances: Vec::new(),
+            current_dir: cwd.display().to_string(),
             selected,
             toast: None,
             list_modal: None,
+            inline_role_picker: None,
+            inline_agent_picker: None,
+            list_mounts_scroll_x: 0,
+            list_mounts_scroll_y: 0,
+            list_global_mounts_scroll_x: 0,
+            list_global_mounts_scroll_y: 0,
+            list_role_global_mounts_scroll_x: 0,
+            list_role_global_mounts_scroll_y: 0,
+            list_roles_scroll_x: 0,
+            list_roles_scroll_y: 0,
+            list_scroll_focus: None,
+            list_names_scroll_x: 0,
+            list_names_focused: false,
             list_split_pct: DEFAULT_SPLIT_PCT,
             drag_state: None,
             op_cache,
             op_available,
+            cached_term_size: Rect {
+                x: 0,
+                y: 0,
+                width: 80,
+                height: 24,
+            },
+            instances_last_refresh: None,
+            instances_last_error: None,
         }
     }
 
@@ -657,6 +1418,45 @@ impl ManagerState<'_> {
         }
     }
 
+    pub fn refresh_instances(&mut self, paths: &crate::paths::JackinPaths) {
+        const REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
+        let now = std::time::Instant::now();
+        if let Some(last) = self.instances_last_refresh
+            && now.duration_since(last) < REFRESH_INTERVAL
+        {
+            return;
+        }
+        self.instances_last_refresh = Some(now);
+        match crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir) {
+            Ok(index) => {
+                self.instances = index.instances;
+                self.instances_last_error = None;
+            }
+            Err(error) => {
+                // Empty list would look identical to "no instances",
+                // hiding corrupt index / permission errors. Surface
+                // via toast so the operator has a path to investigate.
+                self.instances.clear();
+                let message = format!("instance index error: {error}");
+                if self.instances_last_error.as_deref() != Some(&message) {
+                    self.toast = Some(Toast {
+                        message: message.clone(),
+                        kind: ToastKind::Error,
+                        shown_at: std::time::Instant::now(),
+                    });
+                    self.instances_last_error = Some(message);
+                }
+            }
+        }
+    }
+
+    /// Test helper: force the next `refresh_instances` call to hit disk
+    /// regardless of the throttle interval.
+    #[cfg(test)]
+    pub const fn force_refresh_instances_for_test(&mut self) {
+        self.instances_last_refresh = None;
+    }
+
     /// Drained from the outer event loop every tick so picker results
     /// land without keystroke pumping. Idempotent on empty channels.
     /// Covers both modal anchors (`list_modal` and `editor.modal`).
@@ -669,6 +1469,16 @@ impl ManagerState<'_> {
         {
             state.poll_load();
         }
+        if let ManagerStage::Settings(settings) = &mut self.stage
+            && let Some(SettingsEnvModal::OpPicker { state }) = settings.env.modal.as_mut()
+        {
+            state.poll_load();
+        }
+        if let ManagerStage::Settings(settings) = &mut self.stage
+            && let Some(SettingsAuthModal::OpPicker { state }) = settings.auth.modal.as_mut()
+        {
+            state.poll_load();
+        }
     }
 }
 
@@ -677,6 +1487,7 @@ impl EditorState<'_> {
         Self {
             mode: EditorMode::Edit { name },
             active_tab: EditorTab::General,
+            tab_bar_focused: true,
             active_field: FieldFocus::Row(0),
             original: ws.clone(),
             pending: ws,
@@ -692,6 +1503,11 @@ impl EditorState<'_> {
             pending_picker_target: None,
             pending_picker_value: None,
             pending_auth_form_return: None,
+            workspace_mounts_scroll_x: 0,
+            workspace_mounts_scroll_focused: false,
+            tab_scroll_y: 0,
+            tab_content_scroll_focused: false,
+            tab_content_height: 0,
         }
     }
 
@@ -700,6 +1516,7 @@ impl EditorState<'_> {
         Self {
             mode: EditorMode::Create,
             active_tab: EditorTab::General,
+            tab_bar_focused: true,
             active_field: FieldFocus::Row(0),
             original: empty.clone(),
             pending: empty,
@@ -715,6 +1532,11 @@ impl EditorState<'_> {
             pending_picker_target: None,
             pending_picker_value: None,
             pending_auth_form_return: None,
+            workspace_mounts_scroll_x: 0,
+            workspace_mounts_scroll_focused: false,
+            tab_scroll_y: 0,
+            tab_content_scroll_focused: false,
+            tab_content_height: 0,
         }
     }
 
@@ -915,6 +1737,7 @@ mod tests {
 
     fn empty_ws(workdir: &str) -> WorkspaceConfig {
         WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: workdir.into(),
             ..Default::default()
         }
@@ -923,6 +1746,7 @@ mod tests {
     #[test]
     fn summary_counts_mounts_and_readonly() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/a".into(),
             mounts: vec![
                 MountConfig {
@@ -962,6 +1786,154 @@ mod tests {
     }
 
     #[test]
+    fn refresh_instances_loads_rebuildable_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let mut manifest =
+            crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+                container_base: "jk-k7p9m2xq-demo-alpha",
+                workspace_name: Some("demo"),
+                workspace_label: "demo",
+                workdir: "/workspace/demo",
+                host_workdir_fingerprint: "sha256:test",
+                role_key: "alpha",
+                role_display_name: "Alpha",
+                agent_runtime: crate::agent::Agent::Claude,
+                role_source_git: "https://example.invalid/alpha.git",
+                role_source_ref: None,
+                image_tag: "jk_alpha",
+                docker: crate::instance::DockerResources {
+                    role_container: "jk-k7p9m2xq-demo-alpha".into(),
+                    dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+                    network: "jk-k7p9m2xq-demo-alpha-net".into(),
+                    certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+                },
+            });
+        manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
+        manifest
+            .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
+            .unwrap();
+
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.refresh_instances(&paths);
+
+        assert_eq!(state.instances.len(), 1);
+        assert_eq!(state.instances[0].instance_id, "k7p9m2xq");
+        assert_eq!(
+            state.instances[0].status,
+            crate::instance::InstanceStatus::RestoreAvailable
+        );
+    }
+
+    #[test]
+    fn refresh_instances_throttles_within_interval() {
+        // 20 Hz render loop must not reparse instances.json on every
+        // tick. After the first refresh, a follow-up call inside the
+        // throttle window keeps the cached `instances` snapshot even
+        // when the on-disk index changes; `force_refresh_instances_for_test`
+        // bypasses the gate.
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        let mut manifest =
+            crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
+                container_base: "jk-k7p9m2xq-demo-alpha",
+                workspace_name: Some("demo"),
+                workspace_label: "demo",
+                workdir: "/workspace/demo",
+                host_workdir_fingerprint: "sha256:test",
+                role_key: "alpha",
+                role_display_name: "Alpha",
+                agent_runtime: crate::agent::Agent::Claude,
+                role_source_git: "https://example.invalid/alpha.git",
+                role_source_ref: None,
+                image_tag: "jk_alpha",
+                docker: crate::instance::DockerResources {
+                    role_container: "jk-k7p9m2xq-demo-alpha".into(),
+                    dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+                    network: "jk-k7p9m2xq-demo-alpha-net".into(),
+                    certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
+                },
+            });
+        manifest.mark_status(crate::instance::InstanceStatus::Active);
+        manifest
+            .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
+            .unwrap();
+
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.refresh_instances(&paths);
+        assert_eq!(state.instances.len(), 1);
+        assert_eq!(
+            state.instances[0].status,
+            crate::instance::InstanceStatus::Active
+        );
+
+        // Mutate the manifest on disk; without the bypass, an
+        // immediate refresh must observe the cached value.
+        manifest.mark_status(crate::instance::InstanceStatus::Crashed);
+        manifest
+            .write(&paths.data_dir.join("jackin-demo-alpha-k7p9m2xq"))
+            .unwrap();
+        crate::instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+
+        state.refresh_instances(&paths);
+        assert_eq!(
+            state.instances[0].status,
+            crate::instance::InstanceStatus::Active,
+            "throttle window must keep the cached snapshot",
+        );
+
+        // Bypass the throttle — disk state is now observable.
+        state.force_refresh_instances_for_test();
+        state.refresh_instances(&paths);
+        assert_eq!(
+            state.instances[0].status,
+            crate::instance::InstanceStatus::Crashed,
+        );
+    }
+
+    #[test]
+    fn refresh_instances_surfaces_index_error_via_toast() {
+        // Corrupt the index file; the read path must surface the parse
+        // error as a toast and dedup so subsequent identical errors
+        // don't pin a new toast every refresh tick.
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(tmp.path());
+        std::fs::create_dir_all(&paths.data_dir).unwrap();
+        std::fs::write(paths.data_dir.join("instances.json"), b"not json").unwrap();
+        // Also drop a directory that looks like a state dir so
+        // `rebuild()` doesn't silently regenerate a fresh empty index.
+        let bogus = paths.data_dir.join("jackin-bogus-k7p9m2xq");
+        std::fs::create_dir_all(bogus.join(".jackin")).unwrap();
+        std::fs::write(bogus.join(".jackin/instance.json"), b"not json").unwrap();
+
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.refresh_instances(&paths);
+
+        assert!(state.instances.is_empty());
+        let toast = state.toast.as_ref().expect("error toast must be emitted");
+        assert_eq!(toast.kind, ToastKind::Error);
+        assert!(
+            toast.message.contains("instance index error"),
+            "toast message: {}",
+            toast.message
+        );
+
+        let first_shown_at = toast.shown_at;
+        // Second refresh: stash + dedup must not overwrite the first
+        // toast when the error message is unchanged.
+        state.force_refresh_instances_for_test();
+        state.refresh_instances(&paths);
+        let toast2 = state.toast.as_ref().unwrap();
+        assert_eq!(
+            toast2.shown_at, first_shown_at,
+            "identical error must not re-emit the toast",
+        );
+    }
+
+    #[test]
     fn manager_preselects_saved_workspace_matching_cwd() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path().canonicalize().unwrap();
@@ -971,6 +1943,7 @@ mod tests {
         config.workspaces.insert(
             "big-monorepo".into(),
             WorkspaceConfig {
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                 workdir: workdir.clone(),
                 mounts: vec![MountConfig {
                     src: workdir.clone(),
@@ -1183,6 +2156,7 @@ mod tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -1235,6 +2209,7 @@ mod tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -1367,6 +2342,59 @@ mod tests {
         assert!(state.is_new_workspace_selected());
     }
 
+    #[test]
+    fn global_mounts_state_persists_add_edit_remove_rename_scope_readonly() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+        let source_a = temp.path().join("cache-a");
+        let source_b = temp.path().join("cache-b");
+        std::fs::create_dir_all(&source_a).unwrap();
+        std::fs::create_dir_all(&source_b).unwrap();
+
+        let mut state = GlobalMountsState::from_config(&AppConfig::default());
+        state.pending.push(crate::config::GlobalMountRow {
+            scope: None,
+            name: "gradle".into(),
+            mount: MountConfig {
+                src: source_a.display().to_string(),
+                dst: "/home/agent/.gradle/caches".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+        });
+        state.save_to_config(&paths).unwrap();
+
+        state.pending[0].name = "cargo".into();
+        state.pending[0].mount.src = source_b.display().to_string();
+        state.pending[0].mount.dst = "/home/agent/.cargo/registry".into();
+        state.pending[0].mount.readonly = true;
+        state.pending[0].scope = Some("chainargos/*".into());
+        state.pending.push(crate::config::GlobalMountRow {
+            scope: None,
+            name: "remove-me".into(),
+            mount: MountConfig {
+                src: source_a.display().to_string(),
+                dst: "/remove-me".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+        });
+        state.pending.retain(|row| row.name != "remove-me");
+        let saved = state.save_to_config(&paths).unwrap();
+
+        let rows = saved.list_mount_rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "cargo");
+        assert_eq!(rows[0].scope.as_deref(), Some("chainargos/*"));
+        assert!(rows[0].mount.readonly);
+        assert_eq!(rows[0].mount.dst, "/home/agent/.cargo/registry");
+        let raw = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(raw.contains("[docker.mounts.\"chainargos/*\"]"), "{raw}");
+        assert!(!raw.contains("remove-me"), "{raw}");
+    }
+
     // ── cycle_isolation_for_selected_mount ─────────────────────────────
 
     /// Build an editor sitting on the Mounts tab with a single Shared mount,
@@ -1375,6 +2403,7 @@ mod tests {
     fn editor_with_one_shared_mount() -> EditorState<'static> {
         use std::collections::BTreeMap;
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: String::new(),
             mounts: vec![MountConfig {
                 src: "/host/a".into(),
@@ -1393,6 +2422,7 @@ mod tests {
             claude: None,
             codex: None,
             amp: None,
+            opencode: None,
             github: None,
             git_pull_on_entry: false,
         };

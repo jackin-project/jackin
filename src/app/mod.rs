@@ -1,12 +1,11 @@
 pub mod context;
 
 use anyhow::{Context, Result};
-use std::io::ErrorKind;
-use std::path::Path;
+use owo_colors::OwoColorize;
 
 use crate::cli::cleanup::{EjectArgs, PurgeArgs};
 use crate::cli::role::{ConsoleArgs, HardlineArgs, LoadArgs};
-use crate::cli::{self, Cli, Command, WorkspaceCommand};
+use crate::cli::{self, Cli, Command, PruneCommand, WorkspaceCommand};
 use crate::config::{self, AppConfig};
 use crate::console;
 use crate::docker::ShellRunner;
@@ -38,9 +37,8 @@ fn parse_agent_from_cli(raw: &str) -> anyhow::Result<crate::agent::Agent> {
 
 #[allow(clippy::too_many_lines)]
 pub fn run(cli: Cli) -> Result<()> {
-    let paths = JackinPaths::detect()?;
-    let mut config = AppConfig::load_or_init(&paths)?;
-    let mut runner = ShellRunner::default();
+    let debug = cli.debug;
+    tui::set_debug_mode(debug);
 
     // Resolve the subcommand. Bare `jackin` currently routes to the same
     // console handler as `jackin console`; the TTY-capability fallback and
@@ -50,6 +48,15 @@ pub fn run(cli: Cli) -> Result<()> {
         None => Command::Console(cli.console_args),
     };
 
+    let command = match command {
+        Command::Role(command) => return crate::role_authoring::run(command),
+        command => command,
+    };
+
+    let paths = JackinPaths::detect()?;
+    let mut config = AppConfig::load_or_init(&paths)?;
+    let mut runner = ShellRunner { debug };
+
     match command {
         Command::Load(LoadArgs {
             selector,
@@ -57,13 +64,10 @@ pub fn run(cli: Cli) -> Result<()> {
             mounts,
             rebuild,
             no_intro,
-            debug,
             force,
             agent,
             role_branch,
         }) => {
-            runner.debug = debug;
-            tui::set_debug_mode(debug);
             let cwd = std::env::current_dir()?;
 
             let (class, workspace_input) = if let Some(sel) = selector {
@@ -141,17 +145,28 @@ pub fn run(cli: Cli) -> Result<()> {
             runtime::reconcile_keep_awake(&paths, &mut runner);
             result
         }
-        Command::Console(ConsoleArgs { debug }) => {
-            runner.debug = debug;
-            tui::set_debug_mode(debug);
+        Command::Console(ConsoleArgs {}) => {
             let cwd = std::env::current_dir()?;
-            let Some((class, workspace)) = console::run_console(config, &paths, &cwd)? else {
+            let Some(outcome) = console::run_console(config, &paths, &cwd)? else {
                 return Ok(());
             };
 
             // config was consumed by run_console (the manager may have written to
             // disk). Reload so the post-console path sees the latest state.
             let mut config = AppConfig::load_or_init(&paths)?;
+            let (class, workspace, selected_agent) = match outcome {
+                console::ConsoleOutcome::Launch(class, workspace, selected_agent) => {
+                    (class, workspace, selected_agent)
+                }
+                outcome @ console::ConsoleOutcome::InstanceAction { .. } => {
+                    return handle_console_instance_action(
+                        &paths,
+                        &mut config,
+                        outcome,
+                        &mut runner,
+                    );
+                }
+            };
 
             let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
             if !sensitive.is_empty() && !crate::workspace::confirm_sensitive_mounts(&sensitive)? {
@@ -159,7 +174,10 @@ pub fn run(cli: Cli) -> Result<()> {
             }
 
             let mut opts = runtime::LoadOptions::for_launch(debug);
-            opts.agent = prompt_agent_choice_if_needed(&paths, &class, workspace.default_agent)?;
+            opts.agent = match selected_agent {
+                Some(agent) => Some(agent),
+                None => prompt_agent_choice_if_needed(&paths, &class, workspace.default_agent)?,
+            };
             if let Err(err) = crate::daemon::ensure_started(&paths) {
                 eprintln!("[jackin] daemon unavailable: {err:#}");
             }
@@ -170,18 +188,78 @@ pub fn run(cli: Cli) -> Result<()> {
             runtime::reconcile_keep_awake(&paths, &mut runner);
             result
         }
-        Command::Hardline(HardlineArgs { selector }) => {
+        Command::Hardline(HardlineArgs {
+            selector,
+            inspect,
+            new,
+            agent,
+        }) => {
+            // `--inspect` / `--new` mutual exclusion is enforced by clap
+            // `conflicts_with` on `HardlineArgs::new`; no runtime guard needed.
+            let explicit_selector = selector.is_some();
             let container = if let Some(sel) = selector {
-                match Selector::parse(&sel)? {
-                    Selector::Container(name) => name,
-                    Selector::Role(class) => instance::primary_container_name(&class),
+                if let Some(container) = resolve_instance_reference(&paths, &sel)? {
+                    container
+                } else {
+                    match Selector::parse(&sel)? {
+                        Selector::Container(name) => name,
+                        Selector::Role(class) => resolve_role_to_container(&class, &mut runner)?,
+                    }
                 }
             } else {
                 let cwd = std::env::current_dir()?;
-                resolve_running_container_from_context(&config, &cwd, &mut runner)?
+                resolve_running_container_from_context(&paths, &config, &cwd, &mut runner)?
             };
+            let action = if inspect {
+                HardlineAction::Inspect
+            } else if new {
+                HardlineAction::NewSession
+            } else if explicit_selector {
+                prompt_explicit_hardline_action_if_multiple_sessions(&container, &mut runner)?
+            } else {
+                prompt_hardline_action(&container)?
+            };
+            if action == HardlineAction::Inspect {
+                println!(
+                    "{}",
+                    runtime::inspect_hardline_instance(&paths, &container, &mut runner)?
+                );
+                return Ok(());
+            }
+            if action == HardlineAction::Cancel {
+                return Ok(());
+            }
+            if action == HardlineAction::NewSession {
+                let manifest = instance::InstanceManifest::read(&paths.data_dir.join(&container))
+                    .with_context(|| {
+                        format!(
+                            "cannot start a new agent session in `{container}` because its instance manifest is missing"
+                        )
+                    })?;
+                let selected_agent = if let Some(agent) = agent {
+                    agent
+                } else {
+                    resolve_new_session_agent(&paths, &config, &manifest)?
+                };
+                runtime::reconcile_keep_awake(&paths, &mut runner);
+                let result = runtime::spawn_agent_session(
+                    &paths,
+                    &container,
+                    Some(&manifest),
+                    selected_agent,
+                    &mut runner,
+                );
+                runtime::reconcile_keep_awake(&paths, &mut runner);
+                return result;
+            }
             runtime::reconcile_keep_awake(&paths, &mut runner);
-            let result = runtime::hardline_agent(&paths, &container, &mut runner);
+            let result = if let Some(manifest) =
+                restore_candidate_for_hardline(&paths, &container, &mut runner)?
+            {
+                restore_hardline_instance(&paths, &mut config, &manifest, &mut runner)
+            } else {
+                runtime::hardline_agent(&paths, &container, &mut runner)
+            };
             runtime::reconcile_keep_awake(&paths, &mut runner);
             result
         }
@@ -190,16 +268,24 @@ pub fn run(cli: Cli) -> Result<()> {
             all,
             purge,
         }) => {
-            let containers = match Selector::parse(&selector)? {
-                Selector::Container(container) => vec![container],
-                Selector::Role(class) => {
-                    if all {
-                        runtime::matching_family(
-                            &class,
-                            &runtime::list_managed_role_names(&mut runner)?,
-                        )
-                    } else {
-                        vec![instance::primary_container_name(&class)]
+            let containers = if let Some(container) = resolve_instance_reference(&paths, &selector)?
+            {
+                if all {
+                    anyhow::bail!("--all applies only to role selectors, not instance IDs");
+                }
+                vec![container]
+            } else {
+                match Selector::parse(&selector)? {
+                    Selector::Container(container) => vec![container],
+                    Selector::Role(class) => {
+                        if all {
+                            runtime::matching_family(
+                                &class,
+                                &runtime::list_managed_role_names(&mut runner)?,
+                            )
+                        } else {
+                            vec![resolve_role_to_container(&class, &mut runner)?]
+                        }
                     }
                 }
             };
@@ -215,13 +301,8 @@ pub fn run(cli: Cli) -> Result<()> {
                         runtime::eject_role(container, &mut runner)
                             .with_context(|| format!("ejecting {container}"))?;
                         if purge {
-                            crate::isolation::cleanup::purge_isolated_for_container(
-                                &paths.data_dir.join(container),
-                                &mut runner,
-                            )
-                            .with_context(|| format!("purging isolated state for {container}"))?;
-                            remove_data_dir_if_exists(&paths.data_dir.join(container))
-                                .with_context(|| format!("removing data dir for {container}"))?;
+                            runtime::purge_container_state(&paths, container, &mut runner)
+                                .with_context(|| format!("purging local state for {container}"))?;
                             println!("Ejected and purged {container}.");
                         } else {
                             println!("Ejected {container}.");
@@ -269,10 +350,41 @@ pub fn run(cli: Cli) -> Result<()> {
                         readonly,
                         isolation: crate::isolation::MountIsolation::Shared,
                     };
+                    crate::workspace::validate_mounts(std::slice::from_ref(&mount))?;
+                    let sensitive =
+                        crate::workspace::find_sensitive_mounts(std::slice::from_ref(&mount));
+                    if !sensitive.is_empty()
+                        && !crate::workspace::confirm_sensitive_mounts(&sensitive)?
+                    {
+                        anyhow::bail!("aborted — sensitive mount paths were not confirmed");
+                    }
+                    let (matched, mut candidate_rows): (
+                        Vec<crate::config::GlobalMountRow>,
+                        Vec<crate::config::GlobalMountRow>,
+                    ) = config
+                        .list_mount_rows()
+                        .into_iter()
+                        .partition(|row| row.name == name && row.scope == scope);
+                    let existing = matched.into_iter().next();
+                    candidate_rows.push(crate::config::GlobalMountRow {
+                        scope: scope.clone(),
+                        name: name.clone(),
+                        mount: mount.clone(),
+                    });
+                    AppConfig::validate_global_mount_rows(&candidate_rows)?;
                     let mut editor = crate::config::ConfigEditor::open(&paths)?;
                     editor.add_mount(&name, mount, scope.as_deref());
                     editor.save()?;
-                    println!("Added mount {name:?} ({scope_label}): {src} -> {dst}{ro}");
+                    if let Some(prev) = existing {
+                        println!(
+                            "Replaced mount {name:?} ({scope_label}):\n  was: {} -> {}\n  now: {} -> {}{ro}",
+                            prev.mount.src, prev.mount.dst, src, dst
+                        );
+                    } else {
+                        println!(
+                            "Added mount {name:?} ({scope_label}):\n  {dst}\n  host: {src}{ro}"
+                        );
+                    }
                     Ok(())
                 }
                 cli::MountCommand::Remove { name, scope } => {
@@ -287,42 +399,67 @@ pub fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
                 cli::MountCommand::List => {
-                    let mounts = config.list_mounts();
+                    let mounts = config.list_mount_rows();
                     if mounts.is_empty() {
                         println!("No mounts configured.");
                     } else {
                         use tabled::settings::Style;
                         use tabled::{Table, Tabled};
                         #[derive(Tabled)]
+                        struct GlobalRow {
+                            #[tabled(rename = "Name")]
+                            name: String,
+                            #[tabled(rename = "Mount")]
+                            mount: String,
+                            #[tabled(rename = "Mode")]
+                            mode: String,
+                        }
+                        #[derive(Tabled)]
                         struct Row {
                             #[tabled(rename = "Scope")]
                             scope: String,
                             #[tabled(rename = "Name")]
                             name: String,
-                            #[tabled(rename = "Source")]
-                            src: String,
-                            #[tabled(rename = "Destination")]
-                            dst: String,
+                            #[tabled(rename = "Mount")]
+                            mount: String,
                             #[tabled(rename = "Mode")]
                             mode: String,
                         }
-                        let rows: Vec<Row> = mounts
-                            .iter()
-                            .map(|(scope, name, m)| Row {
-                                scope: scope.clone(),
-                                name: name.clone(),
-                                src: tui::shorten_home(&m.src),
-                                dst: m.dst.clone(),
-                                mode: if m.readonly {
-                                    "read-only".to_string()
-                                } else {
-                                    "read-write".to_string()
-                                },
-                            })
-                            .collect();
-                        let mut table = Table::new(rows);
-                        table.with(Style::modern_rounded());
-                        println!("{table}");
+                        let (global, scoped): (Vec<_>, Vec<_>) =
+                            mounts.iter().partition(|row| row.scope.is_none());
+                        let has_global = !global.is_empty();
+                        if !global.is_empty() {
+                            let rows: Vec<GlobalRow> = global
+                                .into_iter()
+                                .map(|row| GlobalRow {
+                                    name: row.name.clone(),
+                                    mount: mount_display(&row.mount.src, &row.mount.dst),
+                                    mode: mount_mode(row.mount.readonly),
+                                })
+                                .collect();
+                            let mut table = Table::new(rows);
+                            table.with(Style::modern_rounded());
+                            println!("Global mounts:");
+                            println!("{table}");
+                        }
+                        if !scoped.is_empty() {
+                            if has_global {
+                                println!();
+                            }
+                            let rows: Vec<Row> = scoped
+                                .into_iter()
+                                .map(|row| Row {
+                                    scope: row.scope.clone().unwrap_or_default(),
+                                    name: row.name.clone(),
+                                    mount: mount_display(&row.mount.src, &row.mount.dst),
+                                    mode: mount_mode(row.mount.readonly),
+                                })
+                                .collect();
+                            let mut table = Table::new(rows);
+                            table.with(Style::modern_rounded());
+                            println!("Scoped global mounts:");
+                            println!("{table}");
+                        }
                     }
                     Ok(())
                 }
@@ -512,6 +649,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
                 let mount_count = plan.final_mounts.len();
                 let ws = WorkspaceConfig {
+                    version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                     workdir: expanded_workdir,
                     mounts: plan.final_mounts,
                     allowed_roles,
@@ -527,6 +665,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     claude: None,
                     codex: None,
                     amp: None,
+                    opencode: None,
                     github: None,
                     git_pull_on_entry: git_pull,
                 };
@@ -591,7 +730,7 @@ pub fn run(cli: Cli) -> Result<()> {
             }
             WorkspaceCommand::Show { name } => {
                 let workspace = config.require_workspace(&name)?;
-                print!("{}", render_workspace_show(&name, workspace));
+                print!("{}", render_workspace_show(&config, &name, workspace));
                 Ok(())
             }
             WorkspaceCommand::Edit {
@@ -759,13 +898,13 @@ pub fn run(cli: Cli) -> Result<()> {
                 }
                 if let Some(v) = keep_awake_change {
                     changes.push(format!(
-                        "keep_awake → {}",
+                        "keep-awake → {}",
                         if v { "enabled" } else { "disabled" }
                     ));
                 }
                 if let Some(v) = git_pull_change {
                     changes.push(format!(
-                        "git_pull_on_entry → {}",
+                        "git-pull-on-entry → {}",
                         if v { "enabled" } else { "disabled" }
                     ));
                 }
@@ -1016,40 +1155,78 @@ pub fn run(cli: Cli) -> Result<()> {
                 handle_claude_token(&paths, &mut config, action)
             }
         },
-        Command::Purge(PurgeArgs { selector, all }) => match Selector::parse(&selector)? {
-            Selector::Container(container) => {
-                let short_name = container.trim_start_matches("jackin-");
-                runtime::ensure_role_not_running(&mut runner, short_name)?;
-                crate::isolation::cleanup::purge_isolated_for_container(
-                    &paths.data_dir.join(&container),
-                    &mut runner,
-                )?;
-                remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
-                println!("Purged state for {container}.");
-                Ok(())
-            }
-            Selector::Role(class) => {
+        Command::Purge(PurgeArgs { selector, all }) => {
+            if let Some(container) = resolve_instance_reference(&paths, &selector)? {
                 if all {
-                    runtime::purge_class_data(&paths, &class)?;
-                    println!("Purged all state for {}.", class.key());
-                } else {
-                    let container = instance::primary_container_name(&class);
-                    let short_name = container.trim_start_matches("jackin-");
-                    runtime::ensure_role_not_running(&mut runner, short_name)?;
-                    crate::isolation::cleanup::purge_isolated_for_container(
-                        &paths.data_dir.join(&container),
-                        &mut runner,
-                    )?;
-                    remove_data_dir_if_exists(&paths.data_dir.join(&container))?;
-                    println!("Purged state for {container}.");
+                    anyhow::bail!("--all applies only to role selectors, not instance IDs");
                 }
-                Ok(())
+                runtime::purge_container_state(&paths, &container, &mut runner)?;
+                println!("Purged state for {container}.");
+                return Ok(());
+            }
+
+            match Selector::parse(&selector)? {
+                Selector::Container(container) => {
+                    runtime::purge_container_state(&paths, &container, &mut runner)?;
+                    println!("Purged state for {container}.");
+                    Ok(())
+                }
+                Selector::Role(class) => {
+                    if all {
+                        runtime::purge_class_data(&paths, &class, &mut runner)?;
+                        println!("Purged all state for {}.", class.key());
+                    } else {
+                        let container = resolve_role_to_container(&class, &mut runner)?;
+                        runtime::purge_container_state(&paths, &container, &mut runner)?;
+                        println!("Purged state for {container}.");
+                    }
+                    Ok(())
+                }
+            }
+        }
+        Command::Prune(cmd) => match cmd {
+            PruneCommand::Roles => runtime::prune_roles(&paths),
+            PruneCommand::Cache => runtime::prune_cache(&paths),
+            PruneCommand::Images => runtime::prune_images(&mut runner),
+            PruneCommand::Instances => runtime::prune_instances(&paths, &mut runner),
+            PruneCommand::All(args) => {
+                if !args.yes {
+                    let confirmed = dialoguer::Confirm::new()
+                        .with_prompt(
+                            "Remove all prunable data? (instances, images, role cache, shared cache)",
+                        )
+                        .default(false)
+                        .interact()?;
+                    if !confirmed {
+                        anyhow::bail!("aborted by operator");
+                    }
+                }
+                // Run every step regardless of individual failures so a single
+                // Docker error doesn't leave the role cache and shared cache
+                // untouched.
+                let results = [
+                    runtime::prune_instances(&paths, &mut runner).context("prune instances"),
+                    runtime::prune_images(&mut runner).context("prune images"),
+                    runtime::prune_roles(&paths).context("prune roles"),
+                    runtime::prune_cache(&paths).context("prune cache"),
+                ];
+                let errors: Vec<anyhow::Error> =
+                    results.into_iter().filter_map(Result::err).collect();
+                if errors.is_empty() {
+                    Ok(())
+                } else {
+                    for err in &errors {
+                        eprintln!("{} {err:#}", "error:".red().bold());
+                    }
+                    anyhow::bail!("{} prune step(s) failed", errors.len())
+                }
             }
         },
         Command::Help { .. } => {
             // Handled upstream in dispatch before reaching this function.
             unreachable!("Command::Help is dispatched to Action::PrintHelp before run() is called")
         }
+        Command::Role(_) => unreachable!("Command::Role returns before config-backed dispatch"),
     }
 }
 
@@ -1315,11 +1492,478 @@ fn print_env_table(vars: &[(String, String)]) {
     println!("{table}");
 }
 
-fn remove_data_dir_if_exists(path: &Path) -> Result<()> {
-    match std::fs::remove_dir_all(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error.into()),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HardlineAction {
+    Reconnect,
+    NewSession,
+    Inspect,
+    Cancel,
+}
+
+fn prompt_hardline_action(container: &str) -> Result<HardlineAction> {
+    prompt_hardline_action_with_prompt(&format!(
+        "Instance `{container}` is available. Choose hardline action:"
+    ))
+}
+
+fn prompt_explicit_hardline_action_if_multiple_sessions(
+    container: &str,
+    runner: &mut impl crate::docker::CommandRunner,
+) -> Result<HardlineAction> {
+    use std::io::IsTerminal;
+
+    if !std::io::stdin().is_terminal() {
+        return Ok(HardlineAction::Reconnect);
+    }
+    let state = runtime::inspect_container_state(runner, container);
+    let sessions = runtime::inspect_agent_sessions(runner, container, &state);
+    if !has_multiple_agent_sessions(&sessions) {
+        return Ok(HardlineAction::Reconnect);
+    }
+    prompt_hardline_action_with_prompt(&format!(
+        "Instance `{}` has multiple detected agent sessions ({}). Docker can reconnect the original container TTY or start another foreground session. Choose hardline action:",
+        container,
+        runtime::describe_agent_session_count(&sessions)
+    ))
+}
+
+const fn has_multiple_agent_sessions(sessions: &runtime::AgentSessionInventory) -> bool {
+    matches!(sessions, runtime::AgentSessionInventory::Sessions(items) if items.len() > 1)
+}
+
+fn prompt_hardline_action_with_prompt(prompt: &str) -> Result<HardlineAction> {
+    use std::io::IsTerminal;
+
+    if !std::io::stdin().is_terminal() {
+        return Ok(HardlineAction::Reconnect);
+    }
+
+    let options = hardline_action_options();
+    let labels: Vec<&str> = options.iter().map(|(label, _)| *label).collect();
+    let choice = tui::prompt_choice(prompt, &labels)?;
+    Ok(options[choice].1)
+}
+
+/// Pick the agent for a new foreground session inside an existing
+/// instance, mirroring the `load` / `hardline --new` resolution order:
+/// workspace `default_agent` short-circuits the prompt; otherwise
+/// `prompt_agent_choice_if_needed` offers the manifest's supported
+/// agents; on non-TTY or single-agent roles, fall back to the
+/// workspace default or the manifest's recorded agent.
+fn resolve_new_session_agent(
+    paths: &JackinPaths,
+    config: &AppConfig,
+    manifest: &instance::InstanceManifest,
+) -> Result<crate::agent::Agent> {
+    let class = RoleSelector::parse(&manifest.role_key)?;
+    let workspace_default_agent = manifest
+        .workspace_name
+        .as_deref()
+        .and_then(|name| config.workspaces.get(name))
+        .and_then(|ws| ws.default_agent);
+    // Prompt declined to ask → workspace default covers it, role is
+    // single-agent, or non-TTY context. Prefer the workspace default;
+    // fall back to the manifest's recorded agent.
+    prompt_agent_choice_if_needed(paths, &class, workspace_default_agent)?.map_or_else(
+        || workspace_default_agent.map_or_else(|| manifest.agent(), Ok),
+        Ok,
+    )
+}
+
+fn handle_console_instance_action(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    outcome: console::ConsoleOutcome,
+    runner: &mut ShellRunner,
+) -> Result<()> {
+    let console::ConsoleOutcome::InstanceAction { container, action } = outcome else {
+        unreachable!("console launch outcomes are handled before instance actions")
+    };
+    match action {
+        console::ConsoleInstanceAction::Reconnect => {
+            runtime::reconcile_keep_awake(paths, runner);
+            let result = if let Some(manifest) =
+                restore_candidate_for_hardline(paths, &container, runner)?
+            {
+                restore_hardline_instance(paths, config, &manifest, runner)
+            } else {
+                runtime::hardline_agent(paths, &container, runner)
+            };
+            runtime::reconcile_keep_awake(paths, runner);
+            result
+        }
+        console::ConsoleInstanceAction::NewSession => {
+            let manifest = instance::InstanceManifest::read(&paths.data_dir.join(&container))
+                .with_context(|| {
+                    format!(
+                        "cannot start a new agent session in `{container}` because its instance manifest is missing"
+                    )
+                })?;
+            let selected_agent = resolve_new_session_agent(paths, config, &manifest)?;
+            runtime::reconcile_keep_awake(paths, runner);
+            let result = runtime::spawn_agent_session(
+                paths,
+                &container,
+                Some(&manifest),
+                selected_agent,
+                runner,
+            );
+            runtime::reconcile_keep_awake(paths, runner);
+            result
+        }
+        console::ConsoleInstanceAction::Inspect => {
+            println!(
+                "{}",
+                runtime::inspect_hardline_instance(paths, &container, runner)?
+            );
+            Ok(())
+        }
+        console::ConsoleInstanceAction::Purge => {
+            runtime::purge_container_state(paths, &container, runner)?;
+            println!("Purged state for {container}.");
+            Ok(())
+        }
+    }
+}
+
+const fn hardline_action_options() -> [(&'static str, HardlineAction); 4] {
+    [
+        (
+            "Reconnect or recover this instance",
+            HardlineAction::Reconnect,
+        ),
+        (
+            "Start another foreground agent session",
+            HardlineAction::NewSession,
+        ),
+        ("Inspect state without attaching", HardlineAction::Inspect),
+        ("Cancel", HardlineAction::Cancel),
+    ]
+}
+
+fn resolve_role_to_container(
+    class: &RoleSelector,
+    runner: &mut impl crate::docker::CommandRunner,
+) -> Result<String> {
+    let candidates = runtime::matching_family(class, &runtime::list_managed_role_names(runner)?);
+    match candidates.len() {
+        1 => Ok(candidates.into_iter().next().unwrap()),
+        0 => anyhow::bail!("no managed container found for role `{}`", class.key()),
+        _ => anyhow::bail!(
+            "multiple containers found for role `{}`: {}; pass a specific container name",
+            class.key(),
+            candidates.join(", ")
+        ),
+    }
+}
+
+fn resolve_instance_reference(paths: &JackinPaths, input: &str) -> Result<Option<String>> {
+    let index = instance::InstanceIndex::read_or_rebuild(&paths.data_dir)?;
+    let mut matches = Vec::new();
+    for entry in index.instances {
+        if entry.status == instance::InstanceStatus::Purged {
+            continue;
+        }
+        if entry.container_base == input || entry.instance_id == input {
+            matches.push(entry.container_base);
+        }
+    }
+    matches.sort();
+    matches.dedup();
+
+    match matches.as_slice() {
+        [] => Ok(None),
+        [container] => Ok(Some(container.clone())),
+        _ => anyhow::bail!(
+            "instance reference {input:?} is ambiguous; pass the full container name instead"
+        ),
+    }
+}
+
+fn restore_candidate_for_hardline(
+    paths: &JackinPaths,
+    container: &str,
+    runner: &mut impl crate::docker::CommandRunner,
+) -> Result<Option<instance::InstanceManifest>> {
+    let state_dir = paths.data_dir.join(container);
+    let Some(mut manifest) = instance::InstanceManifest::read_optional(&state_dir)? else {
+        return Ok(None);
+    };
+    if !manifest.is_restore_candidate() {
+        return Ok(None);
+    }
+
+    match runtime::inspect_container_state(runner, container) {
+        runtime::ContainerState::NotFound => {
+            manifest.mark_restore_available(paths)?;
+            Ok(Some(manifest))
+        }
+        runtime::ContainerState::InspectUnavailable(reason) => {
+            anyhow::bail!(
+                "{}",
+                runtime::docker_unavailable_msg(
+                    &format!("inspect container `{container}`"),
+                    &reason,
+                )
+            );
+        }
+        runtime::ContainerState::Running | runtime::ContainerState::Stopped { .. } => Ok(None),
+    }
+}
+
+fn restore_hardline_instance(
+    paths: &JackinPaths,
+    config: &mut AppConfig,
+    manifest: &instance::InstanceManifest,
+    runner: &mut impl crate::docker::CommandRunner,
+) -> Result<()> {
+    let class = RoleSelector::parse(&manifest.role_key)?;
+    let cwd = std::env::current_dir()?;
+    let workspace = if let Some(workspace_name) = manifest.workspace_name.as_ref() {
+        workspace::resolve_load_workspace(
+            config,
+            &class,
+            &cwd,
+            LoadWorkspaceInput::Saved(workspace_name.clone()),
+            &[],
+        )?
+    } else {
+        let input = resolve_ad_hoc_restore_input(manifest, &cwd)?;
+        workspace::resolve_load_workspace(config, &class, &cwd, input, &[])?
+    };
+
+    let sensitive = crate::workspace::find_sensitive_mounts(&workspace.mounts);
+    if !sensitive.is_empty() && !crate::workspace::confirm_sensitive_mounts(&sensitive)? {
+        anyhow::bail!("aborted — sensitive mount paths were not confirmed");
+    }
+
+    let opts = runtime::LoadOptions {
+        agent: Some(manifest.agent()?),
+        role_branch: manifest.role_source_ref.clone(),
+        restore_container_base: Some(manifest.container_base.clone()),
+        restore_role_source_git: Some(manifest.role_source_git.clone()),
+        ..runtime::LoadOptions::default()
+    };
+    runtime::load_role(paths, config, &class, &workspace, runner, &opts)
+}
+
+fn resolve_ad_hoc_restore_input(
+    manifest: &instance::InstanceManifest,
+    cwd: &std::path::Path,
+) -> Result<LoadWorkspaceInput> {
+    let cwd = cwd.canonicalize()?;
+    if ad_hoc_restore_input_for_current_dir(manifest, &cwd, false).is_some() {
+        return Ok(LoadWorkspaceInput::CurrentDir);
+    }
+    if let Some(path) = prompt_moved_ad_hoc_project_path(manifest, &cwd)? {
+        return ad_hoc_restore_input_for_moved_path(manifest, &path).with_context(|| {
+            format!(
+                "cannot restore ad-hoc instance `{}` from {}",
+                manifest.container_base,
+                path.display()
+            )
+        });
+    }
+    anyhow::bail!(
+        "cannot restore ad-hoc instance `{}` from {}; rerun `jackin hardline {}` from its original project directory, select the moved project path interactively, or use `jackin eject {} --purge` to discard it",
+        manifest.container_base,
+        cwd.display(),
+        manifest.container_base,
+        manifest.container_base
+    )
+}
+
+fn ad_hoc_restore_input_for_current_dir(
+    manifest: &instance::InstanceManifest,
+    cwd: &std::path::Path,
+    allow_moved: bool,
+) -> Option<LoadWorkspaceInput> {
+    let cwd_str = cwd.display().to_string();
+    let cwd_fingerprint = instance::manifest::host_path_fingerprint(&cwd_str);
+    if cwd_fingerprint == manifest.host_workdir_fingerprint {
+        return Some(LoadWorkspaceInput::CurrentDir);
+    }
+    if allow_moved {
+        return Some(LoadWorkspaceInput::Path {
+            src: cwd_str,
+            dst: manifest.workdir.clone(),
+        });
+    }
+    None
+}
+
+fn ad_hoc_restore_input_for_moved_path(
+    manifest: &instance::InstanceManifest,
+    path: &std::path::Path,
+) -> Option<LoadWorkspaceInput> {
+    let path = path.canonicalize().ok()?;
+    ad_hoc_restore_input_for_current_dir(manifest, &path, true)
+}
+
+fn prompt_moved_ad_hoc_project_path(
+    manifest: &instance::InstanceManifest,
+    cwd: &std::path::Path,
+) -> Result<Option<std::path::PathBuf>> {
+    use std::io::IsTerminal;
+
+    if !std::io::stdin().is_terminal() {
+        return Ok(None);
+    }
+    let choices = [
+        format!("Use current directory ({})", cwd.display()),
+        "Browse for moved project path".to_string(),
+        "Enter another moved project path".to_string(),
+        "Cancel restore".to_string(),
+    ];
+    let selected = dialoguer::Select::new()
+        .with_prompt(format!(
+            "Ad-hoc instance `{}` was created for `{}`, but the current directory is `{}`. Which host path should be mounted at the original in-container workdir?",
+            manifest.container_base,
+            manifest.workdir,
+            cwd.display()
+        ))
+        .items(&choices)
+        .default(0)
+        .interact()?;
+
+    match selected {
+        0 => Ok(Some(cwd.to_path_buf())),
+        1 => prompt_ad_hoc_moved_path_browser(cwd),
+        2 => prompt_ad_hoc_moved_path_entry(),
+        _ => Ok(None),
+    }
+}
+
+fn prompt_ad_hoc_moved_path_browser(start: &std::path::Path) -> Result<Option<std::path::PathBuf>> {
+    let mut cwd = start.canonicalize().unwrap_or_else(|_| start.to_path_buf());
+    loop {
+        let choices = moved_path_browser_choices(&cwd);
+        let labels: Vec<String> = choices.iter().map(MovedPathBrowserChoice::label).collect();
+        let selected = dialoguer::Select::new()
+            .with_prompt(format!(
+                "Browse to the moved project directory from {}",
+                cwd.display()
+            ))
+            .items(&labels)
+            .default(0)
+            .interact()?;
+        match choices
+            .get(selected)
+            .cloned()
+            .unwrap_or(MovedPathBrowserChoice::Cancel)
+        {
+            MovedPathBrowserChoice::SelectCurrent(path) => return Ok(Some(path)),
+            MovedPathBrowserChoice::Parent(path) | MovedPathBrowserChoice::Child(path) => {
+                cwd = path;
+            }
+            MovedPathBrowserChoice::Manual => return prompt_ad_hoc_moved_path_entry(),
+            MovedPathBrowserChoice::Cancel => return Ok(None),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MovedPathBrowserChoice {
+    SelectCurrent(std::path::PathBuf),
+    Parent(std::path::PathBuf),
+    Child(std::path::PathBuf),
+    Manual,
+    Cancel,
+}
+
+impl MovedPathBrowserChoice {
+    fn label(&self) -> String {
+        match self {
+            Self::SelectCurrent(path) => format!("Use this directory ({})", path.display()),
+            Self::Parent(path) => format!("Go up ({})", path.display()),
+            Self::Child(path) => format!(
+                "{}/",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            ),
+            Self::Manual => "Enter a path manually".to_string(),
+            Self::Cancel => "Cancel restore".to_string(),
+        }
+    }
+}
+
+fn moved_path_browser_choices(cwd: &std::path::Path) -> Vec<MovedPathBrowserChoice> {
+    let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    let mut choices = vec![MovedPathBrowserChoice::SelectCurrent(cwd.clone())];
+    if let Some(parent) = cwd.parent() {
+        choices.push(MovedPathBrowserChoice::Parent(parent.to_path_buf()));
+    }
+    choices.extend(
+        moved_path_browser_child_dirs(&cwd)
+            .into_iter()
+            .map(MovedPathBrowserChoice::Child),
+    );
+    choices.push(MovedPathBrowserChoice::Manual);
+    choices.push(MovedPathBrowserChoice::Cancel);
+    choices
+}
+
+fn moved_path_browser_child_dirs(cwd: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = std::fs::read_dir(cwd) else {
+        return Vec::new();
+    };
+    let mut dirs: Vec<std::path::PathBuf> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            path.is_dir().then_some(path)
+        })
+        .collect();
+    dirs.sort_by_key(|path| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().to_lowercase())
+            .unwrap_or_default()
+    });
+    dirs
+}
+
+/// One step of the moved-path entry loop, factored out of the
+/// `dialoguer::Input::interact_text()` call so the four cases (blank /
+/// valid dir / not-a-dir / canonicalize-fail) can be unit-tested
+/// without an interactive prompt.
+enum MovedPathEntryStep {
+    /// Empty input → operator cancelled.
+    Cancel,
+    /// Canonical absolute path; entry loop returns this.
+    Accepted(std::path::PathBuf),
+    /// Operator must retry; carries the message to print before the
+    /// next prompt iteration.
+    Retry(String),
+}
+
+fn classify_moved_path_entry(raw: &str) -> MovedPathEntryStep {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return MovedPathEntryStep::Cancel;
+    }
+    let path = std::path::PathBuf::from(resolve_path(trimmed));
+    match path.canonicalize() {
+        Ok(canonical) if canonical.is_dir() => MovedPathEntryStep::Accepted(canonical),
+        Ok(canonical) => MovedPathEntryStep::Retry(format!(
+            "path `{}` exists but is not a directory; enter a project directory or leave blank to cancel",
+            canonical.display(),
+        )),
+        Err(err) => MovedPathEntryStep::Retry(format!(
+            "cannot use `{}`: {err}; enter an existing project directory or leave blank to cancel",
+            path.display(),
+        )),
+    }
+}
+
+fn prompt_ad_hoc_moved_path_entry() -> Result<Option<std::path::PathBuf>> {
+    loop {
+        let raw: String = dialoguer::Input::new()
+            .with_prompt("Moved project path")
+            .interact_text()?;
+        match classify_moved_path_entry(&raw) {
+            MovedPathEntryStep::Cancel => return Ok(None),
+            MovedPathEntryStep::Accepted(path) => return Ok(Some(path)),
+            MovedPathEntryStep::Retry(msg) => eprintln!("{msg}"),
+        }
     }
 }
 
@@ -1344,21 +1988,42 @@ fn render_auth_show(config: &AppConfig) -> String {
 /// trailing mounts table with one row per mount. The mounts table renders the
 /// canonical lowercase isolation name (`shared`/`worktree`/`clone`) so the output
 /// matches TOML/CLI input verbatim.
-fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
+#[allow(clippy::too_many_lines)]
+fn render_workspace_show(config: &AppConfig, name: &str, workspace: &WorkspaceConfig) -> String {
     use std::fmt::Write as _;
     use tabled::settings::Style;
     use tabled::{Table, Tabled};
 
     #[derive(Tabled)]
     struct MountRow {
-        #[tabled(rename = "Source")]
-        src: String,
-        #[tabled(rename = "Destination")]
-        dst: String,
+        #[tabled(rename = "Mount")]
+        mount: String,
         #[tabled(rename = "Mode")]
         mode: String,
         #[tabled(rename = "Isolation")]
         isolation: String,
+        #[tabled(rename = "Type")]
+        kind: String,
+    }
+    #[derive(Tabled)]
+    struct GlobalMountRowWithScope {
+        #[tabled(rename = "Scope")]
+        scope: String,
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "Mount")]
+        mount: String,
+        #[tabled(rename = "Mode")]
+        mode: String,
+    }
+    #[derive(Tabled)]
+    struct GlobalMountRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "Mount")]
+        mount: String,
+        #[tabled(rename = "Mode")]
+        mode: String,
     }
 
     let allowed = if workspace.allowed_roles.is_empty() {
@@ -1401,24 +2066,88 @@ fn render_workspace_show(name: &str, workspace: &WorkspaceConfig) -> String {
             .mounts
             .iter()
             .map(|m| MountRow {
-                src: tui::shorten_home(&m.src),
-                dst: tui::shorten_home(&m.dst),
-                mode: if m.readonly {
-                    "read-only".to_string()
-                } else {
-                    "read-write".to_string()
-                },
+                mount: mount_display(&m.src, &m.dst),
+                mode: mount_mode(m.readonly),
                 isolation: m.isolation.as_str().to_string(),
+                kind: crate::console::manager::mount_info::inspect(&m.src).label(),
             })
             .collect();
         let mut mount_table = Table::new(mount_rows);
         mount_table.with(Style::modern_rounded());
         let _ = writeln!(out);
-        let _ = writeln!(out, "Mounts:");
+        let _ = writeln!(out, "Workspace mounts:");
         let _ = writeln!(out, "{mount_table}");
     }
 
+    let render_unscoped_table = |out: &mut String, rows: &[&crate::config::GlobalMountRow]| {
+        if rows.is_empty() {
+            return;
+        }
+        let mut table = Table::new(rows.iter().map(|row| GlobalMountRow {
+            name: row.name.clone(),
+            mount: mount_display(&row.mount.src, &row.mount.dst),
+            mode: mount_mode(row.mount.readonly),
+        }));
+        table.with(Style::modern_rounded());
+        let _ = writeln!(out);
+        let _ = writeln!(out, "Global mounts:");
+        let _ = writeln!(out, "{table}");
+    };
+
+    match config.workspace_applicable_mount_rows(workspace) {
+        crate::config::WorkspaceGlobalMountRows::Applicable { role, rows } => {
+            if rows.is_empty() {
+                return out;
+            }
+            let has_scoped_rows = rows.iter().any(|row| row.scope.is_some());
+            if !has_scoped_rows {
+                render_unscoped_table(&mut out, &rows.iter().collect::<Vec<_>>());
+                return out;
+            }
+            let mut table = Table::new(rows.iter().map(|row| GlobalMountRowWithScope {
+                scope: row.scope.as_deref().unwrap_or("global").to_string(),
+                name: row.name.clone(),
+                mount: mount_display(&row.mount.src, &row.mount.dst),
+                mode: mount_mode(row.mount.readonly),
+            }));
+            table.with(Style::modern_rounded());
+            let _ = writeln!(out);
+            let _ = writeln!(out, "Global mounts ({role}):");
+            let _ = writeln!(out, "{table}");
+        }
+        crate::config::WorkspaceGlobalMountRows::Ambiguous { candidates } => {
+            // Unscoped global mounts apply regardless of role — render
+            // them even when the role is ambiguous. Only the scoped
+            // subset depends on role selection.
+            let all_rows = config.list_mount_rows();
+            let unscoped: Vec<&crate::config::GlobalMountRow> =
+                all_rows.iter().filter(|row| row.scope.is_none()).collect();
+            render_unscoped_table(&mut out, &unscoped);
+            if all_rows.iter().any(|row| row.scope.is_some()) {
+                let _ = writeln!(out);
+                let _ = writeln!(
+                    out,
+                    "Role-scoped global mounts depend on selected role ({})",
+                    candidates.join(", ")
+                );
+            }
+        }
+    }
+
     out
+}
+
+fn mount_mode(readonly: bool) -> String {
+    if readonly { "read-only" } else { "read-write" }.to_string()
+}
+
+fn mount_display(src: &str, dst: &str) -> String {
+    let short_dst = tui::shorten_home(dst);
+    if src == dst {
+        short_dst
+    } else {
+        format!("{}\nhost: {}", short_dst, tui::shorten_home(src))
+    }
 }
 
 #[cfg(test)]
@@ -1450,18 +2179,384 @@ mod auth_set_tests {
     }
 
     #[test]
+    fn resolve_instance_reference_matches_manifest_instance_id() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
+            container_base: "jk-k7p9m2xq-workspace-agentsmith",
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jk_agent-smith",
+            docker: instance::DockerResources {
+                role_container: "jk-k7p9m2xq-workspace-agentsmith".to_string(),
+                dind_container: "jk-k7p9m2xq-workspace-agentsmith-dind".to_string(),
+                network: "jk-k7p9m2xq-workspace-agentsmith-net".to_string(),
+                certs_volume: "jk-k7p9m2xq-workspace-agentsmith-dind-certs".to_string(),
+            },
+        });
+        let state_dir = paths.data_dir.join(&manifest.container_base);
+        manifest.write(&state_dir).unwrap();
+        instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+
+        let resolved = resolve_instance_reference(&paths, "k7p9m2xq").unwrap();
+
+        assert_eq!(
+            resolved.as_deref(),
+            Some("jk-k7p9m2xq-workspace-agentsmith")
+        );
+    }
+
+    #[test]
+    fn resolve_instance_reference_ignores_purged_tombstones() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
+            container_base: "jk-k7p9m2xq-workspace-agentsmith",
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jk_agent-smith",
+            docker: instance::DockerResources {
+                role_container: "jk-k7p9m2xq-workspace-agentsmith".to_string(),
+                dind_container: "jk-k7p9m2xq-workspace-agentsmith-dind".to_string(),
+                network: "jk-k7p9m2xq-workspace-agentsmith-net".to_string(),
+                certs_volume: "jk-k7p9m2xq-workspace-agentsmith-dind-certs".to_string(),
+            },
+        });
+        manifest.mark_status(instance::InstanceStatus::Purged);
+        instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+
+        let resolved = resolve_instance_reference(&paths, "k7p9m2xq").unwrap();
+
+        assert!(resolved.is_none());
+    }
+
+    #[test]
+    fn hardline_action_options_expose_recovery_controls() {
+        let options = hardline_action_options();
+
+        assert_eq!(options[0].1, HardlineAction::Reconnect);
+        assert_eq!(options[1].1, HardlineAction::NewSession);
+        assert_eq!(options[2].1, HardlineAction::Inspect);
+        assert_eq!(options[3].1, HardlineAction::Cancel);
+        assert!(options[1].0.contains("agent session"));
+        assert!(options[2].0.contains("Inspect"));
+    }
+
+    #[test]
+    fn explicit_hardline_prompts_only_for_multiple_agent_sessions() {
+        assert!(!has_multiple_agent_sessions(
+            &runtime::AgentSessionInventory::NotRunning
+        ));
+        assert!(!has_multiple_agent_sessions(
+            &runtime::AgentSessionInventory::Sessions(vec![runtime::AgentSession {
+                pid: "1".to_string(),
+                command: "claude".to_string(),
+            }])
+        ));
+        assert!(has_multiple_agent_sessions(
+            &runtime::AgentSessionInventory::Sessions(vec![
+                runtime::AgentSession {
+                    pid: "1".to_string(),
+                    command: "claude".to_string(),
+                },
+                runtime::AgentSession {
+                    pid: "2".to_string(),
+                    command: "codex".to_string(),
+                },
+            ])
+        ));
+    }
+
+    #[test]
+    fn ad_hoc_restore_input_accepts_original_project_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("project");
+        std::fs::create_dir(&project).unwrap();
+        let project = project.canonicalize().unwrap();
+        let manifest = ad_hoc_manifest_for_workdir(&project);
+
+        let input = ad_hoc_restore_input_for_current_dir(&manifest, &project, false);
+
+        assert!(matches!(input, Some(LoadWorkspaceInput::CurrentDir)));
+    }
+
+    #[test]
+    fn ad_hoc_restore_input_can_use_confirmed_moved_project_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = temp.path().join("original");
+        let moved = temp.path().join("moved");
+        std::fs::create_dir(&original).unwrap();
+        std::fs::create_dir(&moved).unwrap();
+        let original = original.canonicalize().unwrap();
+        let moved = moved.canonicalize().unwrap();
+        let manifest = ad_hoc_manifest_for_workdir(&original);
+
+        assert!(ad_hoc_restore_input_for_current_dir(&manifest, &moved, false).is_none());
+        let input = ad_hoc_restore_input_for_current_dir(&manifest, &moved, true);
+
+        match input {
+            Some(LoadWorkspaceInput::Path { src, dst }) => {
+                assert_eq!(src, moved.display().to_string());
+                assert_eq!(dst, original.display().to_string());
+            }
+            other => panic!("expected moved project path input; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ad_hoc_restore_input_can_use_entered_moved_project_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = temp.path().join("original");
+        let moved = temp.path().join("moved");
+        std::fs::create_dir(&original).unwrap();
+        std::fs::create_dir(&moved).unwrap();
+        let original = original.canonicalize().unwrap();
+        let moved = moved.canonicalize().unwrap();
+        let manifest = ad_hoc_manifest_for_workdir(&original);
+
+        let input = ad_hoc_restore_input_for_moved_path(&manifest, &moved);
+
+        match input {
+            Some(LoadWorkspaceInput::Path { src, dst }) => {
+                assert_eq!(src, moved.display().to_string());
+                assert_eq!(dst, original.display().to_string());
+            }
+            other => panic!("expected moved project path input; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ad_hoc_restore_input_rejects_missing_entered_moved_project_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = temp.path().join("original");
+        std::fs::create_dir(&original).unwrap();
+        let original = original.canonicalize().unwrap();
+        let manifest = ad_hoc_manifest_for_workdir(&original);
+
+        let input = ad_hoc_restore_input_for_moved_path(&manifest, &temp.path().join("missing"));
+
+        assert!(input.is_none());
+    }
+
+    #[test]
+    fn classify_moved_path_entry_empty_input_cancels() {
+        assert!(matches!(
+            classify_moved_path_entry(""),
+            MovedPathEntryStep::Cancel
+        ));
+        assert!(matches!(
+            classify_moved_path_entry("   \t  "),
+            MovedPathEntryStep::Cancel
+        ));
+    }
+
+    #[test]
+    fn classify_moved_path_entry_accepts_existing_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path().join("project");
+        std::fs::create_dir_all(&dir).unwrap();
+        match classify_moved_path_entry(&dir.display().to_string()) {
+            MovedPathEntryStep::Accepted(p) => {
+                assert_eq!(p, dir.canonicalize().unwrap());
+            }
+            other => panic!("expected Accepted, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_moved_path_entry_rejects_regular_file_with_retry() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = temp.path().join("not-a-dir");
+        std::fs::write(&file, "").unwrap();
+        match classify_moved_path_entry(&file.display().to_string()) {
+            MovedPathEntryStep::Retry(msg) => assert!(msg.contains("not a directory"), "{msg}"),
+            other => panic!("expected Retry, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_moved_path_entry_rejects_missing_path_with_retry() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("does-not-exist");
+        match classify_moved_path_entry(&missing.display().to_string()) {
+            MovedPathEntryStep::Retry(msg) => assert!(msg.contains("cannot use"), "{msg}"),
+            other => panic!("expected Retry, got {other:?}"),
+        }
+    }
+
+    impl std::fmt::Debug for MovedPathEntryStep {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::Cancel => write!(f, "Cancel"),
+                Self::Accepted(p) => write!(f, "Accepted({})", p.display()),
+                Self::Retry(s) => write!(f, "Retry({s})"),
+            }
+        }
+    }
+
+    #[test]
+    fn moved_path_browser_choices_include_parent_sorted_children_and_manual_escape() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let cwd = root.join("current");
+        let alpha = cwd.join("alpha");
+        let beta = cwd.join("Beta");
+        std::fs::create_dir_all(&beta).unwrap();
+        std::fs::create_dir_all(&alpha).unwrap();
+        std::fs::write(cwd.join("not-a-dir"), "").unwrap();
+
+        let choices = moved_path_browser_choices(&cwd);
+
+        assert_eq!(
+            choices,
+            vec![
+                MovedPathBrowserChoice::SelectCurrent(cwd.canonicalize().unwrap()),
+                MovedPathBrowserChoice::Parent(root.canonicalize().unwrap()),
+                MovedPathBrowserChoice::Child(alpha.canonicalize().unwrap()),
+                MovedPathBrowserChoice::Child(beta.canonicalize().unwrap()),
+                MovedPathBrowserChoice::Manual,
+                MovedPathBrowserChoice::Cancel,
+            ]
+        );
+    }
+
+    fn ad_hoc_manifest_for_workdir(workdir: &std::path::Path) -> instance::InstanceManifest {
+        let workdir = workdir.display().to_string();
+        instance::InstanceManifest::new(instance::NewInstanceManifest {
+            container_base: "jk-k7p9m2xq-agentsmith",
+            workspace_name: None,
+            workspace_label: &workdir,
+            workdir: &workdir,
+            host_workdir_fingerprint: &instance::manifest::host_path_fingerprint(&workdir),
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jk_agent-smith",
+            docker: instance::DockerResources {
+                role_container: "jk-k7p9m2xq-agentsmith".to_string(),
+                dind_container: "jk-k7p9m2xq-agentsmith-dind".to_string(),
+                network: "jk-k7p9m2xq-agentsmith-net".to_string(),
+                certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_string(),
+            },
+        })
+    }
+
+    #[test]
+    fn hardline_restore_candidate_marks_missing_manifest_available() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container = "jk-k7p9m2xq-workspace-agentsmith";
+        let mut manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
+            container_base: container,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jk_agent-smith",
+            docker: instance::DockerResources {
+                role_container: container.to_string(),
+                dind_container: format!("{container}-dind"),
+                network: format!("{container}-net"),
+                certs_volume: format!("{container}-dind-certs"),
+            },
+        });
+        manifest.mark_status(instance::InstanceStatus::Crashed);
+        let state_dir = paths.data_dir.join(container);
+        manifest.write(&state_dir).unwrap();
+        instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let mut runner = runtime::FakeRunner::default();
+
+        let candidate = restore_candidate_for_hardline(&paths, container, &mut runner)
+            .unwrap()
+            .expect("missing crashed manifest should restore");
+
+        assert_eq!(candidate.container_base, container);
+        let manifest = instance::InstanceManifest::read(&state_dir).unwrap();
+        assert_eq!(manifest.status, instance::InstanceStatus::RestoreAvailable);
+        let index = instance::InstanceIndex::read_or_rebuild(&paths.data_dir).unwrap();
+        assert_eq!(
+            index.instances[0].status,
+            instance::InstanceStatus::RestoreAvailable
+        );
+    }
+
+    #[test]
+    fn hardline_restore_candidate_errors_when_docker_unavailable() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container = "jk-k7p9m2xq-workspace-agentsmith";
+        let mut manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
+            container_base: container,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jk_agent-smith",
+            docker: instance::DockerResources {
+                role_container: container.to_string(),
+                dind_container: format!("{container}-dind"),
+                network: format!("{container}-net"),
+                certs_volume: format!("{container}-dind-certs"),
+            },
+        });
+        manifest.mark_status(instance::InstanceStatus::Crashed);
+        manifest.write(&paths.data_dir.join(container)).unwrap();
+        let mut runner = runtime::FakeRunner::default();
+        runner.fail_with.push((
+            "docker inspect".to_string(),
+            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+        ));
+
+        let error = restore_candidate_for_hardline(&paths, container, &mut runner).unwrap_err();
+
+        assert!(error.to_string().contains("Docker is unavailable"));
+    }
+
+    #[test]
     fn workspace_show_includes_isolation_column() {
+        let temp = tempfile::tempdir().unwrap();
+        let worktree_src = temp.path().join("x");
+        let cache_src = temp.path().join("cache");
+        std::fs::create_dir_all(&worktree_src).unwrap();
+        std::fs::create_dir_all(&cache_src).unwrap();
         let ws = crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/workspace/jackin".into(),
             mounts: vec![
                 crate::workspace::MountConfig {
-                    src: "/tmp/x".into(),
+                    src: worktree_src.display().to_string(),
                     dst: "/workspace/jackin".into(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Worktree,
                 },
                 crate::workspace::MountConfig {
-                    src: "/tmp/cache".into(),
+                    src: cache_src.display().to_string(),
                     dst: "/workspace/cache".into(),
                     readonly: false,
                     isolation: crate::isolation::MountIsolation::Shared,
@@ -1478,13 +2573,133 @@ mod auth_set_tests {
             claude: None,
             codex: None,
             amp: None,
+            opencode: None,
             github: None,
             git_pull_on_entry: false,
         };
-        let out = render_workspace_show("jackin", &ws);
+        let out = render_workspace_show(&AppConfig::default(), "jackin", &ws);
         assert!(out.contains("Isolation"));
+        assert!(out.contains("Type"));
+        assert!(out.contains("folder"));
         assert!(out.contains("worktree"));
         assert!(out.contains("shared"));
+    }
+
+    #[test]
+    fn workspace_show_splits_workspace_and_global_mount_groups() {
+        let temp = tempfile::tempdir().unwrap();
+        let global_src = temp.path().join("gradle");
+        std::fs::create_dir_all(&global_src).unwrap();
+        let work_src = temp.path().join("work");
+        std::fs::create_dir_all(&work_src).unwrap();
+        let mut config = AppConfig::default();
+        config
+            .roles
+            .insert("agent-smith".into(), crate::config::RoleSource::default());
+        config.add_mount(
+            "gradle-cache",
+            crate::workspace::MountConfig {
+                src: global_src.display().to_string(),
+                dst: "/home/agent/.gradle/caches".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            None,
+        );
+        let ws = crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            workdir: "/workspace/jackin".into(),
+            mounts: vec![crate::workspace::MountConfig {
+                src: work_src.display().to_string(),
+                dst: "/workspace/jackin".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }],
+            allowed_roles: vec!["agent-smith".into()],
+            ..Default::default()
+        };
+
+        let out = render_workspace_show(&config, "jackin", &ws);
+
+        assert!(out.contains("Workspace mounts:"), "{out}");
+        assert!(out.contains("Global mounts:"), "{out}");
+        assert!(!out.contains("Global mounts (agent-smith):"), "{out}");
+        assert!(out.contains("gradle-cache"), "{out}");
+        assert!(!out.contains("│ Scope"), "{out}");
+    }
+
+    #[test]
+    fn workspace_show_explains_ambiguous_role_scoped_global_mounts() {
+        let temp = tempfile::tempdir().unwrap();
+        let global_src = temp.path().join("secrets");
+        std::fs::create_dir_all(&global_src).unwrap();
+        let mut config = AppConfig::default();
+        config
+            .roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
+        config
+            .roles
+            .insert("beta".into(), crate::config::RoleSource::default());
+        config.add_mount(
+            "team-secrets",
+            crate::workspace::MountConfig {
+                src: global_src.display().to_string(),
+                dst: "/secrets".into(),
+                readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            Some("alpha"),
+        );
+        let ws = crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            workdir: "/workspace/jackin".into(),
+            mounts: vec![],
+            allowed_roles: vec!["alpha".into(), "beta".into()],
+            ..Default::default()
+        };
+
+        let out = render_workspace_show(&config, "jackin", &ws);
+
+        assert!(out.contains("selected role"), "{out}");
+        assert!(!out.contains("team-secrets"), "{out}");
+    }
+
+    #[test]
+    fn workspace_show_keeps_scope_column_for_scoped_global_mounts() {
+        let temp = tempfile::tempdir().unwrap();
+        let global_src = temp.path().join("secrets");
+        std::fs::create_dir_all(&global_src).unwrap();
+        let mut config = AppConfig::default();
+        config.roles.insert(
+            "chainargos/agent-brown".into(),
+            crate::config::RoleSource::default(),
+        );
+        config.add_mount(
+            "team-secrets",
+            crate::workspace::MountConfig {
+                src: global_src.display().to_string(),
+                dst: "/secrets".into(),
+                readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            Some("chainargos/*"),
+        );
+        let ws = crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
+            workdir: "/workspace/jackin".into(),
+            mounts: vec![],
+            allowed_roles: vec!["chainargos/agent-brown".into()],
+            ..Default::default()
+        };
+
+        let out = render_workspace_show(&config, "jackin", &ws);
+
+        assert!(
+            out.contains("Global mounts (chainargos/agent-brown):"),
+            "{out}"
+        );
+        assert!(out.contains("│ Scope"), "{out}");
+        assert!(out.contains("chainargos/*"), "{out}");
     }
 
     /// Test fake for [`crate::operator_env::OpWriteRunner`] used by
@@ -1512,7 +2727,7 @@ mod auth_set_tests {
             &self,
             _params: crate::operator_env::OpItemCreateParams<'_>,
         ) -> anyhow::Result<crate::operator_env::OpRef> {
-            unimplemented!("rotate-cleanup tests do not exercise item_create")
+            anyhow::bail!("rotate-cleanup tests do not exercise item_create")
         }
         fn item_delete(
             &self,
@@ -1618,5 +2833,47 @@ mod auth_set_tests {
             msg.contains("op item delete I_UUID --vault V_UUID"),
             "must include copy-pasteable recovery command, got: {msg}"
         );
+    }
+}
+
+#[cfg(test)]
+mod resolve_role_tests {
+    use super::*;
+
+    #[test]
+    fn resolve_role_no_match_errors() {
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = runtime::FakeRunner::default();
+        runner.capture_queue.push_back(String::new());
+        let err = resolve_role_to_container(&selector, &mut runner).unwrap_err();
+        assert!(
+            err.to_string().contains("no managed container found"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn resolve_role_multiple_matches_errors_with_names() {
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = runtime::FakeRunner::default();
+        runner
+            .capture_queue
+            .push_back("jk-k7p9m2xq-agentsmith\njk-a1b2c3d4-agentsmith".to_string());
+        let err = resolve_role_to_container(&selector, &mut runner).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("multiple containers found"), "{msg}");
+        assert!(msg.contains("jk-k7p9m2xq-agentsmith"), "{msg}");
+        assert!(msg.contains("jk-a1b2c3d4-agentsmith"), "{msg}");
+    }
+
+    #[test]
+    fn resolve_role_single_match_returns_name() {
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = runtime::FakeRunner::default();
+        runner
+            .capture_queue
+            .push_back("jk-k7p9m2xq-agentsmith".to_string());
+        let name = resolve_role_to_container(&selector, &mut runner).unwrap();
+        assert_eq!(name, "jk-k7p9m2xq-agentsmith");
     }
 }

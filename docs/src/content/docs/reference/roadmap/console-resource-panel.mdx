@@ -83,9 +83,10 @@ Fields per agent:
 
 Cross-platform — use the `sysinfo` crate (already a candidate dependency
 for this kind of work) for CPU/RAM. For the data-dir disk usage, walk
-`~/.jackin/data/` once on console open and incrementally on archive events;
-also show free disk for the filesystem containing jackin's data directory. Do
-not poll disk usage on every render.
+`~/.jackin/data/` once on console open and after instance lifecycle changes
+such as load, hardline recovery, clean exit, or purge; also show free disk for
+the filesystem containing jackin's data directory. Do not poll disk usage on
+every render.
 
 ### Console rendering
 

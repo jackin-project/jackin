@@ -10,14 +10,15 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
 };
 
-use super::super::state::{ManagerListRow, ManagerState, WorkspaceSummary};
+use super::super::state::{ManagerListRow, ManagerState, MountScrollFocus, WorkspaceSummary};
 use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::config::AppConfig;
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn render_list_body(
     frame: &mut Frame,
     area: Rect,
-    state: &ManagerState<'_>,
+    state: &mut ManagerState<'_>,
     config: &AppConfig,
     cwd: &std::path::Path,
 ) {
@@ -43,62 +44,190 @@ pub(super) fn render_list_body(
 
     match state.selected_row() {
         ManagerListRow::CurrentDirectory => {
-            render_current_dir_details_pane(frame, columns[1], cwd, config);
+            render_current_dir_details_pane(frame, columns[1], cwd, config, state);
         }
         ManagerListRow::NewWorkspace => {
             render_sentinel_description_pane(frame, columns[1]);
         }
         ManagerListRow::SavedWorkspace(i) => {
-            if let Some(ws) = state.workspaces.get(i) {
-                render_details_pane(frame, columns[1], ws, config);
+            if let Some(ws) = state.workspaces.get(i).cloned() {
+                render_details_pane(frame, columns[1], &ws, config, state);
             }
         }
     }
 
-    // Left: [Current directory] + saved workspaces + blank spacer +
-    // [+ New workspace]. The spacer is visual-only; state keeps logical row
-    // indices without it.
-    // The cwd path itself is shown on the right-pane `workdir` line; keep the
-    // list row label short to avoid duplicate visual load.
-    let has_saved_workspaces = saved_count > 0;
-    let mut items: Vec<ListItem> =
-        Vec::with_capacity(saved_count + 2 + usize::from(has_saved_workspaces));
-    items.push(ListItem::new(Line::from(Span::styled(
-        "Current directory",
-        Style::default().fg(WHITE),
-    ))));
-    items.extend(
-        state
-            .workspaces
-            .iter()
-            .map(|w| ListItem::new(Line::from(w.name.as_str()))),
-    );
-    if has_saved_workspaces {
-        items.push(ListItem::new(Line::from("")));
+    if let Some((role, picker)) = state.inline_agent_picker.as_ref() {
+        render_agent_picker_sidebar(frame, list_area, &role.key(), picker);
+    } else if let Some(picker) = state.inline_role_picker.as_ref() {
+        let title = state
+            .selected_workspace_summary()
+            .map_or("Current directory", |summary| summary.name.as_str());
+        render_role_picker_sidebar(frame, list_area, title, picker);
+    } else {
+        // Left: [Current directory] + saved workspaces + blank spacer +
+        // [+ New workspace]. Rendered as a Paragraph so horizontal scroll
+        // works for long workspace names.
+        let visual_selected = state.visual_selected();
+        let has_saved_workspaces = saved_count > 0;
+        // Initialise max_w at the inner viewport width so the selected-row
+        // background always fills the full block width, even when all names
+        // are shorter than the visible area.
+        let inner_w = list_area.width.saturating_sub(2) as usize;
+        let mut max_w: usize = inner_w;
+
+        let mut list_lines: Vec<Line> =
+            Vec::with_capacity(saved_count + 2 + usize::from(has_saved_workspaces));
+
+        // Row 0 — "Current directory"
+        {
+            let selected = visual_selected == 0;
+            let prefix = if selected { "▸ " } else { "  " };
+            let style = if selected {
+                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)
+            } else {
+                Style::default().fg(WHITE)
+            };
+            max_w = max_w.max(2 + "Current directory".len());
+            list_lines.push(Line::from(Span::styled(
+                format!("{prefix}Current directory"),
+                style,
+            )));
+        }
+        // Saved workspace rows
+        for (i, ws) in state.workspaces.iter().enumerate() {
+            let visual_idx = i + 1;
+            let selected = visual_selected == visual_idx;
+            let prefix = if selected { "▸ " } else { "  " };
+            let style = if selected {
+                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)
+            } else {
+                Style::default().fg(PHOSPHOR_GREEN)
+            };
+            max_w = max_w.max(2 + ws.name.chars().count());
+            list_lines.push(Line::from(Span::styled(
+                format!("{prefix}{}", ws.name),
+                style,
+            )));
+        }
+        // Blank spacer before sentinel when there are saved workspaces
+        if has_saved_workspaces {
+            list_lines.push(Line::from(""));
+        }
+        // Sentinel — WHITE when unselected to signal it's an action, not a workspace.
+        {
+            let selected = visual_selected
+                == if has_saved_workspaces {
+                    saved_count + 2
+                } else {
+                    1
+                };
+            let prefix = if selected { "▸ " } else { "  " };
+            let style = if selected {
+                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)
+            } else {
+                Style::default().fg(WHITE)
+            };
+            max_w = max_w.max(2 + "+ New workspace".len());
+            list_lines.push(Line::from(Span::styled(
+                format!("{prefix}+ New workspace"),
+                style,
+            )));
+        }
+
+        // visual_selected maps 1-to-1 to list_lines indices: cwd=0,
+        // workspaces=1..=saved_count, sentinel=last. Pad the selected line
+        // with a bg-colored trailing span so the highlight fills max_w.
+        if let Some(line) = list_lines.get_mut(visual_selected) {
+            let current_w = super::line_width(line);
+            if current_w < max_w {
+                line.spans.push(Span::styled(
+                    " ".repeat(max_w - current_w),
+                    Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
+                ));
+            }
+        }
+
+        let mut scroll_y = 0u16;
+        super::render_scrollable_block(
+            frame,
+            list_area,
+            list_lines,
+            &mut state.list_names_scroll_x,
+            &mut scroll_y,
+            state.list_names_focused,
+            None,
+        );
     }
-    items.push(ListItem::new(Line::from(Span::styled(
-        "+ New workspace",
-        Style::default().fg(WHITE),
-    ))));
-
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(PHOSPHOR_DARK)),
-        )
-        .style(Style::default().fg(PHOSPHOR_GREEN))
-        .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
-        .highlight_symbol("▸ ");
-
-    let mut ls = ListState::default();
-    ls.select(Some(state.visual_selected()));
-    frame.render_stateful_widget(list, list_area, &mut ls);
 
     // Toast overlay — rendered last so it appears on top.
     if let Some(toast) = &state.toast {
         render_toast(frame, area, toast);
     }
+}
+
+fn render_role_picker_sidebar(
+    frame: &mut Frame,
+    area: Rect,
+    workspace_name: &str,
+    picker: &crate::console::widgets::role_picker::RolePickerState,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            format!(" {workspace_name} "),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let items: Vec<ListItem> = picker
+        .filtered
+        .iter()
+        .map(|role| ListItem::new(Line::from(role.key())))
+        .collect();
+    let list = List::new(items)
+        .block(block)
+        .style(Style::default().fg(PHOSPHOR_GREEN))
+        .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
+        .highlight_symbol("▸ ");
+    let mut list_state = ListState::default();
+    list_state.select(picker.list_state.selected);
+    frame.render_stateful_widget(list, area, &mut list_state);
+}
+
+fn render_agent_picker_sidebar(
+    frame: &mut Frame,
+    area: Rect,
+    role_name: &str,
+    picker: &crate::console::widgets::agent_choice::AgentChoiceState,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            format!(" {role_name} "),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+    let items: Vec<ListItem> = picker
+        .choices
+        .iter()
+        .map(|agent| {
+            ListItem::new(Line::from(
+                crate::console::widgets::agent_choice::agent_picker_label(*agent),
+            ))
+        })
+        .collect();
+    let list = List::new(items)
+        .block(block)
+        .style(Style::default().fg(PHOSPHOR_GREEN))
+        .highlight_style(Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black))
+        .highlight_symbol("▸ ");
+    let mut list_state = ListState::default();
+    list_state.select(
+        picker
+            .choices
+            .iter()
+            .position(|agent| *agent == picker.focused),
+    );
+    frame.render_stateful_widget(list, area, &mut list_state);
 }
 
 fn render_toast(frame: &mut Frame, area: Rect, toast: &super::super::state::Toast) {
@@ -130,27 +259,44 @@ fn render_toast(frame: &mut Frame, area: Rect, toast: &super::super::state::Toas
     frame.render_widget(Paragraph::new(line), banner_area);
 }
 
-/// Build aligned 4-column mount rows: (`path_display`, mode, `iso_label`,
-/// `kind_label`). `iso_label` is the canonical spelling of the mount's
-/// isolation strategy ("shared" / "worktree") — rendered for every
-/// mount including `shared` per the per-mount-isolation spec.
-pub(super) fn format_mount_rows(
-    mounts: &[crate::workspace::MountConfig],
-) -> Vec<(String, &'static str, &'static str, String)> {
+/// Pre-formatted mount row. `host_source` is `Some` only when src != dst
+/// (rendered as a continuation line).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct MountDisplayRow {
+    pub(super) destination: String,
+    pub(super) host_source: Option<String>,
+    pub(super) mode: &'static str,
+    pub(super) isolation: &'static str,
+    pub(super) kind: String,
+}
+
+pub(super) fn mount_display_paths(
+    mount: &crate::workspace::MountConfig,
+) -> (String, Option<String>) {
+    let src = crate::tui::shorten_home(&mount.src);
+    let dst = crate::tui::shorten_home(&mount.dst);
+    if mount.src == mount.dst {
+        (dst, None)
+    } else {
+        (dst, Some(format!("host: {src}")))
+    }
+}
+
+pub(super) fn format_mount_rows(mounts: &[crate::workspace::MountConfig]) -> Vec<MountDisplayRow> {
     mounts
         .iter()
         .map(|m| {
-            let src = crate::tui::shorten_home(&m.src);
-            let dst = crate::tui::shorten_home(&m.dst);
-            let path = if m.src == m.dst {
-                src
-            } else {
-                format!("{src} \u{2192} {dst}")
-            };
+            let (destination, host_source) = mount_display_paths(m);
             let mode: &'static str = if m.readonly { "ro" } else { "rw" };
             let iso: &'static str = m.isolation.as_str();
             let kind = super::super::mount_info::inspect(&m.src).label();
-            (path, mode, iso, kind)
+            MountDisplayRow {
+                destination,
+                host_source,
+                mode,
+                isolation: iso,
+                kind,
+            }
         })
         .collect()
 }
@@ -165,78 +311,180 @@ pub(super) const MOUNT_MODE_COL_WIDTH: usize = 4;
 /// the downstream `Type` column shifting.
 pub(super) const MOUNT_ISOLATION_COL_WIDTH: usize = 9;
 
-/// Compute the width used for the `Path` column so that header and data rows
-/// align. Derived from both the "Path" header label and the widest row path,
-/// with a minimum floor so short-path tables still look tabular.
-pub(super) fn mount_path_width(rows: &[(String, &str, &str, String)]) -> usize {
+/// Width of the `Destination` column, sized to fit the widest path plus
+/// the header label. Floored at 10 so short-path tables still look tabular.
+pub(super) fn mount_path_width(rows: &[MountDisplayRow]) -> usize {
     rows.iter()
-        .map(|(p, _, _, _)| p.chars().count())
+        .flat_map(|row| std::iter::once(&row.destination).chain(row.host_source.as_ref()))
+        .map(|p| p.chars().count())
         .max()
         .unwrap_or(0)
         .max(10)
-        .max("Path".len())
+        .max("Destination".len())
 }
 
 pub(super) fn render_mount_header(path_w: usize) -> Line<'static> {
-    // Format: "  <path padded to path_w>  <mode padded>  <iso padded>  Type"
-    // Leading two-space gutter + two-space gap between every column matches
-    // the data-row format so columns never run into each other.
+    // Two-space gutter + two-space gaps match the data-row format so
+    // columns never run into each other.
     let mode_col = format!("{:<mw$}", "Mode", mw = MOUNT_MODE_COL_WIDTH);
     let iso_col = format!("{:<iw$}", "Isolation", iw = MOUNT_ISOLATION_COL_WIDTH);
     Line::from(Span::styled(
         format!(
             "  {path:<path_w$}  {mode_col}  {iso_col}  Type",
-            path = "Path"
+            path = "Destination"
         ),
         Style::default().fg(WHITE),
     ))
 }
 
-pub(super) fn render_mount_lines(
-    rows: &[(String, &str, &str, String)],
-    path_w: usize,
-) -> Vec<Line<'static>> {
-    rows.iter()
-        .map(|(path, mode, iso, kind)| {
-            Line::from(vec![
-                Span::raw(format!("  {path:<path_w$}  ")),
-                Span::styled(
-                    format!("{mode:<MOUNT_MODE_COL_WIDTH$}"),
-                    Style::default().fg(PHOSPHOR_DIM),
-                ),
-                // Two-space gap before the iso column — matches the header.
-                Span::raw("  "),
-                Span::styled(
-                    format!("{iso:<MOUNT_ISOLATION_COL_WIDTH$}"),
-                    Style::default().fg(PHOSPHOR_DIM),
-                ),
-                // Two-space gap before the type column — matches the header.
-                Span::raw("  "),
-                Span::styled(
-                    kind.clone(),
-                    Style::default()
-                        .fg(PHOSPHOR_DIM)
-                        .add_modifier(Modifier::ITALIC),
-                ),
-            ])
-        })
-        .collect()
+pub(super) fn render_mount_lines(rows: &[MountDisplayRow], path_w: usize) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    for row in rows {
+        lines.push(Line::from(vec![
+            Span::raw(format!("  {:<path_w$}  ", row.destination)),
+            Span::styled(
+                format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
+                Style::default().fg(PHOSPHOR_DIM),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
+                Style::default().fg(PHOSPHOR_DIM),
+            ),
+            Span::raw("  "),
+            Span::styled(
+                row.kind.clone(),
+                Style::default()
+                    .fg(PHOSPHOR_DIM)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ]));
+        if let Some(host_source) = &row.host_source {
+            lines.push(Line::from(Span::styled(
+                format!("  {host_source:<path_w$}"),
+                Style::default().fg(PHOSPHOR_DIM),
+            )));
+        }
+    }
+    lines
 }
 
-fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, config: &AppConfig) {
+pub(super) fn render_global_mount_header(path_w: usize) -> Line<'static> {
+    Line::from(Span::styled(
+        format!("  {path:<path_w$}  Mode", path = "Destination"),
+        Style::default().fg(WHITE),
+    ))
+}
+
+pub(super) fn render_global_mount_lines(
+    rows: &[MountDisplayRow],
+    path_w: usize,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    for row in rows {
+        lines.push(Line::from(vec![
+            Span::raw(format!("  {:<path_w$}  ", row.destination)),
+            Span::styled(row.mode, Style::default().fg(PHOSPHOR_DIM)),
+        ]));
+        if let Some(host_source) = &row.host_source {
+            lines.push(Line::from(Span::styled(
+                format!("  {host_source:<path_w$}"),
+                Style::default().fg(PHOSPHOR_DIM),
+            )));
+        }
+    }
+    lines
+}
+
+pub(in crate::console::manager) fn workspace_mounts_content_width(
+    mounts: &[crate::workspace::MountConfig],
+) -> usize {
+    let rows = format_mount_rows(mounts);
+    let path_w = mount_path_width(&rows);
+    let mut lines = vec![render_mount_header(path_w)];
+    lines.extend(render_mount_lines(&rows, path_w));
+    super::max_line_width(&lines)
+}
+
+pub(in crate::console::manager) fn workspace_mounts_content_height(
+    mounts: &[crate::workspace::MountConfig],
+) -> usize {
+    1 + mounts
+        .iter()
+        .map(|m| if m.src == m.dst { 1 } else { 2 })
+        .sum::<usize>()
+        .max(1)
+}
+
+pub(in crate::console::manager) fn global_mounts_content_width(
+    mounts: &[crate::workspace::MountConfig],
+) -> usize {
+    let rows = format_mount_rows(mounts);
+    let path_w = mount_path_width(&rows);
+    let mut lines = vec![render_global_mount_header(path_w)];
+    lines.extend(render_global_mount_lines(&rows, path_w));
+    super::max_line_width(&lines)
+}
+
+#[allow(clippy::too_many_lines)]
+fn render_details_pane(
+    frame: &mut Frame,
+    area: Rect,
+    ws: &WorkspaceSummary,
+    config: &AppConfig,
+    state: &mut ManagerState<'_>,
+) {
     let ws_config = config.workspaces.get(&ws.name);
     let mounts = ws_config.map_or(&[][..], |w| w.mounts.as_slice());
-    let agent_count = agents_block_agent_count(ws_config, config);
+    let picker_role = state
+        .inline_role_picker
+        .as_ref()
+        .and_then(selected_picker_role)
+        .or_else(|| {
+            state
+                .inline_agent_picker
+                .as_ref()
+                .map(|(role, _)| role.clone())
+        });
+    let global_rows: Vec<crate::config::GlobalMountRow> = if ws_config.is_some() {
+        super::global_rows_for(config, picker_role.as_ref())
+    } else {
+        Vec::new()
+    };
+    let has_global = !global_rows.is_empty();
+    let inline_picker_active =
+        state.inline_role_picker.is_some() || state.inline_agent_picker.is_some();
+    let agent_count = if inline_picker_active {
+        0
+    } else {
+        agents_block_agent_count(ws_config, config)
+    };
     let show_envs = ws_config.is_some_and(workspace_has_any_env);
+    let instance_rows = workspace_instance_rows(
+        &state.instances,
+        Some(ws.name.as_str()),
+        &ws.name,
+        &ws.workdir,
+    );
 
     let mut constraints = vec![
         Constraint::Length(3),
         Constraint::Length(mount_block_height(mounts)),
     ];
+    if has_global {
+        constraints.push(Constraint::Length(global_mount_block_height(&global_rows)));
+    }
     if show_envs {
         constraints.push(Constraint::Length(env_block_height(ws_config)));
     }
-    constraints.push(Constraint::Length(agents_block_height(agent_count)));
+    if !instance_rows.is_empty() {
+        constraints.push(Constraint::Length(instance_block_height(
+            instance_rows.len(),
+        )));
+    }
+    if !inline_picker_active {
+        constraints.push(Constraint::Length(agents_block_height(agent_count)));
+    }
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -246,22 +494,133 @@ fn render_details_pane(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary, con
     let mut idx = 0;
     render_general_subpanel(frame, rows[idx], ws);
     idx += 1;
-    render_mounts_subpanel(frame, rows[idx], mounts);
+    let ws_focused = state.list_scroll_focus == Some(MountScrollFocus::Workspace);
+    render_mounts_subpanel(
+        frame,
+        rows[idx],
+        mounts,
+        &mut state.list_mounts_scroll_x,
+        &mut state.list_mounts_scroll_y,
+        ws_focused,
+    );
     idx += 1;
+    if has_global {
+        let role_label = picker_role
+            .as_ref()
+            .map_or_else(String::new, crate::selector::RoleSelector::key);
+        let global_focused = state.list_scroll_focus;
+        render_global_mounts_subpanel(
+            frame,
+            rows[idx],
+            &role_label,
+            &global_rows,
+            &mut state.list_global_mounts_scroll_x,
+            &mut state.list_global_mounts_scroll_y,
+            &mut state.list_role_global_mounts_scroll_x,
+            &mut state.list_role_global_mounts_scroll_y,
+            global_focused,
+        );
+        idx += 1;
+    }
     if show_envs {
         render_environments_subpanel(frame, rows[idx], ws_config);
         idx += 1;
     }
-    render_agents_subpanel(frame, rows[idx], ws_config, config);
+    if !instance_rows.is_empty() {
+        render_instances_subpanel(frame, rows[idx], &instance_rows);
+        idx += 1;
+    }
+    if !inline_picker_active {
+        let roles_focused = state.list_scroll_focus == Some(MountScrollFocus::Roles);
+        render_agents_subpanel_scrollable(
+            frame,
+            rows[idx],
+            ws_config,
+            config,
+            &mut state.list_roles_scroll_x,
+            &mut state.list_roles_scroll_y,
+            roles_focused,
+        );
+    }
+}
+
+fn selected_picker_role(
+    picker: &crate::console::widgets::role_picker::RolePickerState,
+) -> Option<crate::selector::RoleSelector> {
+    picker
+        .list_state
+        .selected
+        .and_then(|idx| picker.filtered.get(idx).cloned())
 }
 
 fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
     !ws.env.is_empty() || ws.roles.values().any(|o| !o.env.is_empty())
 }
 
-fn mount_block_height(mounts: &[crate::workspace::MountConfig]) -> u16 {
-    let data_rows = if mounts.is_empty() { 1 } else { mounts.len() };
+pub(in crate::console::manager) fn mount_block_height(
+    mounts: &[crate::workspace::MountConfig],
+) -> u16 {
+    let data_rows = if mounts.is_empty() {
+        1
+    } else {
+        mounts
+            .iter()
+            .map(|mount| if mount.src == mount.dst { 1 } else { 2 })
+            .sum()
+    };
     (data_rows + 2 + 1).min(12) as u16
+}
+
+fn global_mount_block_height(rows: &[crate::config::GlobalMountRow]) -> u16 {
+    let (global, scoped) = split_global_mount_rows(rows);
+    let mut h = 0;
+    if !global.is_empty() || scoped.is_empty() {
+        h += global_mount_rows_height(&global);
+    }
+    if !scoped.is_empty() {
+        h += global_mount_rows_height(&scoped);
+    }
+    h
+}
+
+fn global_mount_rows_height(rows: &[&crate::config::GlobalMountRow]) -> u16 {
+    let content_height = if rows.is_empty() {
+        1
+    } else {
+        1 + rows
+            .iter()
+            .map(|row| if row.mount.src == row.mount.dst { 1 } else { 2 })
+            .sum::<usize>()
+    };
+    (content_height + 2).min(12) as u16
+}
+
+pub(in crate::console::manager) fn global_mounts_content_height(
+    mounts: &[crate::workspace::MountConfig],
+) -> usize {
+    if mounts.is_empty() {
+        1
+    } else {
+        1 + mounts
+            .iter()
+            .map(|mount| if mount.src == mount.dst { 1 } else { 2 })
+            .sum::<usize>()
+    }
+}
+
+pub(in crate::console::manager) fn global_mounts_block_height(
+    mounts: &[crate::workspace::MountConfig],
+) -> u16 {
+    (global_mounts_content_height(mounts) + 2).min(12) as u16
+}
+
+fn split_global_mount_rows(
+    rows: &[crate::config::GlobalMountRow],
+) -> (
+    Vec<&crate::config::GlobalMountRow>,
+    Vec<&crate::config::GlobalMountRow>,
+) {
+    rows.iter().partition(|row| row.scope.is_none())
 }
 
 /// Caller is expected to have gated on `workspace_has_any_env` —
@@ -277,7 +636,7 @@ fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceConfig>) -> u1
     (total_rows + 2).min(20) as u16
 }
 
-fn agents_block_agent_count(
+pub(in crate::console::manager) fn agents_block_agent_count(
     ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
 ) -> usize {
@@ -289,11 +648,24 @@ fn agents_block_agent_count(
     }
 }
 
-fn agents_block_height(agent_count: usize) -> u16 {
+pub(in crate::console::manager) fn agents_block_height(agent_count: usize) -> u16 {
     // Reserve at least one row even when empty so the block doesn't
     // read as broken.
     let agent_rows = agent_count.max(1);
     (2 + 1 + 1 + agent_rows).min(14) as u16
+}
+
+pub(in crate::console::manager) fn agents_block_content_width(
+    _ws_config: Option<&crate::workspace::WorkspaceConfig>,
+    config: &AppConfig,
+) -> usize {
+    // 4 chars prefix + longest role name gives a good enough estimate for
+    // scroll range — avoids duplicating the full line-building logic here.
+    config.roles.keys().map(|k| k.len() + 4).max().unwrap_or(0)
+}
+
+fn instance_block_height(instance_count: usize) -> u16 {
+    (instance_count + 4).min(8) as u16
 }
 
 /// Cursor on the synthetic "Current directory" row — mirrors
@@ -303,24 +675,35 @@ fn render_current_dir_details_pane(
     area: Rect,
     cwd: &std::path::Path,
     config: &AppConfig,
+    state: &mut ManagerState<'_>,
 ) {
     let cwd_str = cwd.display().to_string();
     let workdir_short = crate::tui::shorten_home(&cwd_str);
 
     let mounts = [crate::workspace::MountConfig {
         src: cwd_str.clone(),
-        dst: cwd_str,
+        dst: cwd_str.clone(),
         readonly: false,
         isolation: crate::isolation::MountIsolation::Shared,
     }];
+    let instance_rows = workspace_instance_rows(&state.instances, None, &cwd_str, &cwd_str);
+
+    let mut constraints = vec![
+        Constraint::Length(3),
+        Constraint::Length(mount_block_height(&mounts)),
+    ];
+    if !instance_rows.is_empty() {
+        constraints.push(Constraint::Length(instance_block_height(
+            instance_rows.len(),
+        )));
+    }
+    constraints.push(Constraint::Length(agents_block_height(
+        agents_block_agent_count(None, config),
+    )));
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(mount_block_height(&mounts)),
-            Constraint::Length(agents_block_height(agents_block_agent_count(None, config))),
-        ])
+        .constraints(constraints)
         .split(area);
 
     // General — titled the same as the saved-workspace pane so the
@@ -352,12 +735,133 @@ fn render_current_dir_details_pane(
         rows[0],
     );
 
-    render_mounts_subpanel(frame, rows[1], &mounts);
+    let ws_focused = state.list_scroll_focus == Some(MountScrollFocus::Workspace);
+    render_mounts_subpanel(
+        frame,
+        rows[1],
+        &mounts,
+        &mut state.list_mounts_scroll_x,
+        &mut state.list_mounts_scroll_y,
+        ws_focused,
+    );
+
+    let agents_row = if instance_rows.is_empty() {
+        2
+    } else {
+        render_instances_subpanel(frame, rows[2], &instance_rows);
+        3
+    };
 
     // Roles block — reuse the no-`ws_config` branch of the shared renderer,
     // which lists every globally-configured role (without per-role
     // overrides since the cwd workspace has none).
-    render_agents_subpanel(frame, rows[2], None, config);
+    let roles_focused = state.list_scroll_focus == Some(MountScrollFocus::Roles);
+    render_agents_subpanel_scrollable(
+        frame,
+        rows[agents_row],
+        None,
+        config,
+        &mut state.list_roles_scroll_x,
+        &mut state.list_roles_scroll_y,
+        roles_focused,
+    );
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct InstanceDisplayRow {
+    id: String,
+    role: String,
+    agent: String,
+    status: String,
+}
+
+fn workspace_instance_rows(
+    instances: &[crate::instance::InstanceIndexEntry],
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+) -> Vec<InstanceDisplayRow> {
+    let query = crate::instance::InstanceQuery {
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key: None,
+        agent_runtime: None,
+    };
+    instances
+        .iter()
+        .filter(|entry| entry.matches(query) && instance_status_is_operator_relevant(entry.status))
+        .map(|entry| InstanceDisplayRow {
+            id: entry.instance_id.clone(),
+            role: entry.role_key.clone(),
+            agent: entry.agent_runtime.clone(),
+            status: entry.status.short_label().to_string(),
+        })
+        .collect()
+}
+
+const fn instance_status_is_operator_relevant(status: crate::instance::InstanceStatus) -> bool {
+    !matches!(
+        status,
+        crate::instance::InstanceStatus::CleanExited
+            | crate::instance::InstanceStatus::Superseded
+            | crate::instance::InstanceStatus::Purged
+    )
+}
+
+fn render_instances_subpanel(frame: &mut Frame, area: Rect, rows: &[InstanceDisplayRow]) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .title(Span::styled(
+            " Instances ",
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        ));
+
+    let id_w = rows
+        .iter()
+        .map(|row| row.id.chars().count())
+        .max()
+        .unwrap_or(8)
+        .max("ID".len());
+    let status_w = rows
+        .iter()
+        .map(|row| row.status.chars().count())
+        .max()
+        .unwrap_or(6)
+        .max("Status".len());
+    let mut lines = vec![Line::from(Span::styled(
+        format!(
+            "  {id:<id_w$}  {status:<status_w$}  Agent  Role",
+            id = "ID",
+            status = "Status"
+        ),
+        Style::default().fg(WHITE),
+    ))];
+    lines.extend(rows.iter().map(|row| {
+        Line::from(vec![
+            Span::raw(format!("  {:<id_w$}  ", row.id)),
+            Span::styled(
+                format!("{:<status_w$}", row.status),
+                Style::default().fg(PHOSPHOR_DIM),
+            ),
+            Span::raw("  "),
+            Span::styled(row.agent.clone(), Style::default().fg(PHOSPHOR_DIM)),
+            Span::raw("  "),
+            Span::raw(row.role.clone()),
+        ])
+    }));
+    lines.push(Line::from(Span::styled(
+        "  r recover  i inspect  p purge",
+        Style::default().fg(PHOSPHOR_DIM),
+    )));
+
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(block)
+            .style(Style::default().fg(PHOSPHOR_GREEN)),
+        area,
+    );
 }
 
 /// Right-pane description shown when the cursor is on the "+ New workspace"
@@ -465,38 +969,121 @@ fn render_general_subpanel(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary)
 /// `subpanel_content_column_alignment` in the visual regression tests.
 const SUBPANEL_CONTENT_INDENT: usize = 2;
 
-fn render_mounts_subpanel(frame: &mut Frame, area: Rect, mounts: &[crate::workspace::MountConfig]) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            " Mounts ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
-
+fn render_mounts_subpanel(
+    frame: &mut Frame,
+    area: Rect,
+    mounts: &[crate::workspace::MountConfig],
+    scroll_x: &mut u16,
+    scroll_y: &mut u16,
+    focused: bool,
+) {
     let mut lines: Vec<Line> = Vec::new();
-
     if mounts.is_empty() {
-        // No data rows — fall back to the minimum column width so the header
-        // still shows sensible column boundaries.
         lines.push(render_mount_header(mount_path_width(&[])));
         lines.push(Line::from(Span::styled(
             "  (none)",
             Style::default().fg(PHOSPHOR_DIM),
         )));
     } else {
-        // Plain-text labels — the operator uses the `o` key on a selected
-        // mount row to open the GitHub URL in a real browser instead.
         let rows = format_mount_rows(mounts);
         let path_w = mount_path_width(&rows);
         lines.push(render_mount_header(path_w));
         lines.extend(render_mount_lines(&rows, path_w));
     }
+    super::render_scrollable_block(
+        frame,
+        area,
+        lines,
+        scroll_x,
+        scroll_y,
+        focused,
+        Some(" Mounts "),
+    );
+}
 
-    let p = Paragraph::new(lines)
-        .block(block)
-        .style(Style::default().fg(PHOSPHOR_GREEN));
-    frame.render_widget(p, area);
+#[allow(clippy::too_many_arguments)]
+fn render_global_mounts_subpanel(
+    frame: &mut Frame,
+    area: Rect,
+    role: &str,
+    rows: &[crate::config::GlobalMountRow],
+    global_scroll_x: &mut u16,
+    global_scroll_y: &mut u16,
+    role_scroll_x: &mut u16,
+    role_scroll_y: &mut u16,
+    focused: Option<MountScrollFocus>,
+) {
+    let (global, scoped) = split_global_mount_rows(rows);
+    let chunks = {
+        let constraints: Vec<Constraint> = {
+            let mut c = Vec::new();
+            if !global.is_empty() || scoped.is_empty() {
+                c.push(Constraint::Length(global_mount_rows_height(&global)));
+            }
+            if !scoped.is_empty() {
+                c.push(Constraint::Length(global_mount_rows_height(&scoped)));
+            }
+            c
+        };
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(constraints)
+            .split(area)
+    };
+    let mut chunk_iter = chunks.iter();
+    if (!global.is_empty() || scoped.is_empty())
+        && let Some(chunk) = chunk_iter.next()
+    {
+        render_global_mount_rows_section(
+            frame,
+            *chunk,
+            " Global mounts ",
+            &global,
+            global_scroll_x,
+            global_scroll_y,
+            focused == Some(MountScrollFocus::Global),
+        );
+    }
+    if !scoped.is_empty()
+        && let Some(chunk) = chunk_iter.next()
+    {
+        let title = format!(" Role global mounts · {role} ");
+        render_global_mount_rows_section(
+            frame,
+            *chunk,
+            &title,
+            &scoped,
+            role_scroll_x,
+            role_scroll_y,
+            focused == Some(MountScrollFocus::RoleGlobal),
+        );
+    }
+}
+
+fn render_global_mount_rows_section(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    rows: &[&crate::config::GlobalMountRow],
+    scroll_x: &mut u16,
+    scroll_y: &mut u16,
+    focused: bool,
+) {
+    let mut lines = Vec::new();
+    if rows.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (none)",
+            Style::default().fg(PHOSPHOR_DIM),
+        )));
+    } else {
+        let mounts: Vec<crate::workspace::MountConfig> =
+            rows.iter().map(|row| row.mount.clone()).collect();
+        let display_rows = format_mount_rows(&mounts);
+        let path_w = mount_path_width(&display_rows);
+        lines.push(render_global_mount_header(path_w));
+        lines.extend(render_global_mount_lines(&display_rows, path_w));
+    }
+    super::render_scrollable_block(frame, area, lines, scroll_x, scroll_y, focused, Some(title));
 }
 
 /// One row in the flat Environments preview list.
@@ -640,26 +1227,30 @@ fn env_row_line(row: &EnvRow, inner_width: usize) -> Line<'static> {
     Line::from(spans)
 }
 
+#[cfg(test)]
 fn render_agents_subpanel(
     frame: &mut Frame,
     area: Rect,
     ws_config: Option<&crate::workspace::WorkspaceConfig>,
     config: &AppConfig,
 ) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            " Roles ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
+    render_agents_subpanel_scrollable(frame, area, ws_config, config, &mut 0, &mut 0, false);
+}
 
+fn render_agents_subpanel_scrollable(
+    frame: &mut Frame,
+    area: Rect,
+    ws_config: Option<&crate::workspace::WorkspaceConfig>,
+    config: &AppConfig,
+    scroll_x: &mut u16,
+    scroll_y: &mut u16,
+    focused: bool,
+) {
     let allowed = ws_config.map_or(&[][..], |w| w.allowed_roles.as_slice());
     let all_allowed = ws_config.is_none_or(super::super::agent_allow::allows_all_agents);
+    let default = ws_config.and_then(|w| w.default_role.as_deref());
 
     let mut lines: Vec<Line> = Vec::new();
-
-    let default = ws_config.and_then(|w| w.default_role.as_deref());
     let (value_text, value_style): (String, Style) = default.map_or_else(
         || ("(none)".to_string(), Style::default().fg(PHOSPHOR_DIM)),
         |name| (name.to_string(), Style::default().fg(PHOSPHOR_GREEN)),
@@ -676,7 +1267,6 @@ fn render_agents_subpanel(
     } else {
         allowed.iter().map(String::as_str).collect()
     };
-
     let name_style = |role: &str| {
         if config.roles.contains_key(role) {
             Style::default().fg(PHOSPHOR_GREEN)
@@ -684,28 +1274,43 @@ fn render_agents_subpanel(
             Style::default().fg(PHOSPHOR_DIM)
         }
     };
-    let star_style = Style::default().fg(PHOSPHOR_DIM);
-
     for role in &agent_names {
         let is_default = Some(*role) == default;
         let mut spans = vec![Span::styled(format!("  {role}"), name_style(role))];
         if is_default {
-            spans.push(Span::styled(" \u{2605}", star_style));
+            spans.push(Span::styled(" \u{2605}", Style::default().fg(PHOSPHOR_DIM)));
+        }
+        if let Ok(selector) = crate::selector::RoleSelector::parse(role) {
+            let scoped_count = config
+                .resolve_mount_rows(&selector)
+                .into_iter()
+                .filter(|row| row.scope.is_some())
+                .count();
+            if scoped_count > 0 {
+                spans.push(Span::styled(
+                    format!("    +{scoped_count} role mounts"),
+                    Style::default().fg(PHOSPHOR_DIM),
+                ));
+            }
         }
         lines.push(Line::from(spans));
     }
-
-    let p = Paragraph::new(lines)
-        .block(block)
-        .style(Style::default().fg(PHOSPHOR_GREEN));
-    frame.render_widget(p, area);
+    super::render_scrollable_block(
+        frame,
+        area,
+        lines,
+        scroll_x,
+        scroll_y,
+        focused,
+        Some(" Roles "),
+    );
 }
 
 #[cfg(test)]
 mod mount_table_tests {
     use super::{
-        MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, format_mount_rows, mount_path_width,
-        render_mount_header, render_mount_lines,
+        MOUNT_ISOLATION_COL_WIDTH, MOUNT_MODE_COL_WIDTH, MountDisplayRow, format_mount_rows,
+        mount_path_width, render_mount_header, render_mount_lines,
     };
     use crate::workspace::MountConfig;
 
@@ -752,16 +1357,31 @@ mod mount_table_tests {
         panic!("mode column not found in line: {s:?}");
     }
 
+    fn mount_row(
+        destination: &str,
+        mode: &'static str,
+        isolation: &'static str,
+        kind: &str,
+    ) -> MountDisplayRow {
+        MountDisplayRow {
+            destination: destination.into(),
+            host_source: None,
+            mode,
+            isolation,
+            kind: kind.into(),
+        }
+    }
+
     #[test]
     fn header_and_data_rows_share_path_column_width() {
         // Short path + long path forces path_w to be the length of the long one.
-        let rows: Vec<(String, &str, &str, String)> = vec![
-            ("~/short".into(), "rw", "shared", "git · main".into()),
-            (
-                "~/Projects/very/deeply/nested/directory".into(),
+        let rows = vec![
+            mount_row("~/short", "rw", "shared", "git · main"),
+            mount_row(
+                "~/Projects/very/deeply/nested/directory",
                 "ro",
                 "worktree",
-                "dir".into(),
+                "dir",
             ),
         ];
         let path_w = mount_path_width(&rows);
@@ -788,11 +1408,11 @@ mod mount_table_tests {
     fn single_row_still_uses_minimum_column_width() {
         // Single short mount — path_w should stay at the floor so the
         // table is still visibly tabular.
-        let rows: Vec<(String, &str, &str, String)> = vec![(
-            "~/Projects/ChainArgos/blockchain-nodes".into(),
+        let rows = vec![mount_row(
+            "~/Projects/ChainArgos/blockchain-nodes",
             "rw",
             "shared",
-            "git · main".into(),
+            "git · main",
         )];
         let path_w = mount_path_width(&rows);
         assert_eq!(path_w, "~/Projects/ChainArgos/blockchain-nodes".len());
@@ -807,12 +1427,12 @@ mod mount_table_tests {
         // Empty case: header should still render with the floor width and
         // include the two-space gap between every column.
         let path_w = mount_path_width(&[]);
-        assert_eq!(path_w, 10);
+        assert_eq!(path_w, "Destination".len());
         let header = render_mount_header(path_w);
         // "  <path padded>  <mode padded>  <iso padded>  Type"
         let expected = format!(
             "  {path:<path_w$}  {mode:<mw$}  {iso:<iw$}  Type",
-            path = "Path",
+            path = "Destination",
             mode = "Mode",
             iso = "Isolation",
             path_w = path_w,
@@ -832,8 +1452,7 @@ mod mount_table_tests {
         // kind. Additionally pins the type-column alignment: the `Type`
         // header label must start at the same character offset as the data
         // row's kind label.
-        let rows: Vec<(String, &str, &str, String)> =
-            vec![("~/p".into(), "rw", "shared", "folder".into())];
+        let rows = vec![mount_row("~/p", "rw", "shared", "folder")];
         let path_w = mount_path_width(&rows);
         let header = render_mount_header(path_w);
         let data = render_mount_lines(&rows, path_w);
@@ -901,7 +1520,7 @@ mod mount_block_height_tests {
     //! against the "phantom empty row" regression where a fixed
     //! `Constraint::Length(5)` over-allocated by 1 for a single-mount
     //! current-directory workspace.
-    use super::mount_block_height;
+    use super::{global_mounts_block_height, global_mounts_content_height, mount_block_height};
     use crate::workspace::MountConfig;
 
     fn mount(path: &str) -> MountConfig {
@@ -941,6 +1560,21 @@ mod mount_block_height_tests {
         let mounts: Vec<MountConfig> = (0..20).map(|i| mount(&format!("/m/{i}"))).collect();
         assert_eq!(mount_block_height(&mounts), 12);
     }
+
+    #[test]
+    fn global_mount_heights_match_rendered_line_count() {
+        let same_path = mount("/cache/shared");
+        let split_path = MountConfig {
+            src: "/host/cache".into(),
+            dst: "/container/cache".into(),
+            readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
+        };
+
+        assert_eq!(global_mounts_content_height(&[same_path]), 2);
+        assert_eq!(global_mounts_content_height(&[split_path]), 3);
+        assert_eq!(global_mounts_block_height(&[]), 3);
+    }
 }
 
 #[cfg(test)]
@@ -958,6 +1592,7 @@ mod subpanel_padding_tests {
     use crate::workspace::WorkspaceConfig;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
 
     /// Scan the first content row inside a sub-panel block (y = 1, skipping
@@ -984,6 +1619,18 @@ mod subpanel_padding_tests {
         None
     }
 
+    fn buffer_text(buf: &Buffer) -> String {
+        let area = buf.area;
+        let mut joined = String::new();
+        for y in 0..area.height {
+            for x in 0..area.width {
+                joined.push_str(buf[(x, y)].symbol());
+            }
+            joined.push('\n');
+        }
+        joined
+    }
+
     fn summary() -> WorkspaceSummary {
         WorkspaceSummary {
             name: "demo".into(),
@@ -998,6 +1645,7 @@ mod subpanel_padding_tests {
 
     fn ws_config_with_allowed(names: &[&str], default: Option<&str>) -> WorkspaceConfig {
         WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/tmp/demo".into(),
             mounts: vec![],
             allowed_roles: names.iter().map(|s| (*s).into()).collect(),
@@ -1011,6 +1659,7 @@ mod subpanel_padding_tests {
             claude: None,
             codex: None,
             amp: None,
+            opencode: None,
             github: None,
             git_pull_on_entry: false,
         }
@@ -1035,7 +1684,7 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(40, 4);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_mounts_subpanel(f, Rect::new(0, 0, 40, 4), &[]);
+            render_mounts_subpanel(f, Rect::new(0, 0, 40, 4), &[], &mut 0, &mut 0, false);
         })
         .unwrap();
         let mounts_col = first_content_indent(&term).expect("mounts has content");
@@ -1886,8 +2535,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
+        let mut state = crate::console::manager::state::ManagerState::from_config(
+            &cfg,
+            std::path::Path::new("/tmp"),
+        );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
         })
         .unwrap();
 
@@ -1908,6 +2561,55 @@ mod subpanel_padding_tests {
             !joined.contains("(no environment variables)"),
             "the placeholder line must NOT appear (block is omitted entirely); got {joined}"
         );
+    }
+
+    #[test]
+    fn preview_shows_unscoped_global_mounts_without_role_ambiguity_text() {
+        let ws = ws_config_with_allowed(&["alpha", "beta"], None);
+        let mut cfg = AppConfig::default();
+        cfg.workspaces.insert("demo".into(), ws);
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
+        cfg.roles
+            .insert("beta".into(), crate::config::RoleSource::default());
+        cfg.add_mount(
+            "cargo",
+            crate::workspace::MountConfig {
+                src: "/tmp/cargo".into(),
+                dst: "/home/agent/.cargo".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            None,
+        );
+        cfg.add_mount(
+            "beta-only",
+            crate::workspace::MountConfig {
+                src: "/tmp/beta".into(),
+                dst: "/beta".into(),
+                readonly: true,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+            Some("beta"),
+        );
+
+        let backend = TestBackend::new(72, 24);
+        let mut term = Terminal::new(backend).unwrap();
+        let mut state = crate::console::manager::state::ManagerState::from_config(
+            &cfg,
+            std::path::Path::new("/tmp"),
+        );
+        term.draw(|f| {
+            super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary(), &cfg, &mut state);
+        })
+        .unwrap();
+
+        let joined = buffer_text(term.backend().buffer());
+        assert!(joined.contains("Global mounts"), "{joined}");
+        assert!(joined.contains(".cargo"), "{joined}");
+        assert!(!joined.contains("selected role affects"), "{joined}");
+        assert!(!joined.contains("/beta"), "{joined}");
+        assert!(joined.contains("+1 role mounts"), "{joined}");
     }
 
     /// The Environments block appears as soon as ANY env entry exists
@@ -1934,8 +2636,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
+        let mut state = crate::console::manager::state::ManagerState::from_config(
+            &cfg,
+            std::path::Path::new("/tmp"),
+        );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
         })
         .unwrap();
 
@@ -1955,6 +2661,71 @@ mod subpanel_padding_tests {
         assert!(
             joined.contains("API_KEY"),
             "the workspace env key must render; got {joined}"
+        );
+    }
+
+    #[test]
+    fn preview_includes_recoverable_instances_from_index() {
+        let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
+        let mut cfg = AppConfig::default();
+        cfg.workspaces.insert("demo".into(), ws);
+        cfg.roles
+            .insert("alpha".into(), crate::config::RoleSource::default());
+
+        let mut state = crate::console::manager::state::ManagerState::from_config(
+            &cfg,
+            std::path::Path::new("/tmp"),
+        );
+        state.instances = vec![
+            crate::instance::InstanceIndexEntry {
+                instance_id: "k7p9m2xq".into(),
+                container_base: "jackin-demo-alpha-k7p9m2xq".into(),
+                workspace_name: Some("demo".into()),
+                workspace_label: "demo".into(),
+                workdir: "/workspace/demo".into(),
+                role_key: "alpha".into(),
+                agent_runtime: "claude".into(),
+                status: crate::instance::InstanceStatus::RestoreAvailable,
+                updated_at: "2026-05-11T00:00:00Z".into(),
+            },
+            crate::instance::InstanceIndexEntry {
+                instance_id: "done0001".into(),
+                container_base: "jackin-demo-alpha-done0001".into(),
+                workspace_name: Some("demo".into()),
+                workspace_label: "demo".into(),
+                workdir: "/workspace/demo".into(),
+                role_key: "alpha".into(),
+                agent_runtime: "claude".into(),
+                status: crate::instance::InstanceStatus::CleanExited,
+                updated_at: "2026-05-11T00:00:00Z".into(),
+            },
+        ];
+
+        let summary = WorkspaceSummary {
+            name: "demo".into(),
+            workdir: "/workspace/demo".into(),
+            mount_count: 0,
+            readonly_mount_count: 0,
+            allowed_role_count: 1,
+            default_role: Some("alpha".into()),
+            last_role: None,
+        };
+
+        let backend = TestBackend::new(72, 24);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary, &cfg, &mut state);
+        })
+        .unwrap();
+
+        let joined = buffer_text(term.backend().buffer());
+        assert!(joined.contains("Instances"), "{joined}");
+        assert!(joined.contains("k7p9m2xq"), "{joined}");
+        assert!(joined.contains("restore"), "{joined}");
+        assert!(joined.contains("alpha"), "{joined}");
+        assert!(
+            !joined.contains("done0001"),
+            "cleanly exited instances should not occupy the active panel: {joined}"
         );
     }
 
@@ -1986,8 +2757,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
+        let mut state = crate::console::manager::state::ManagerState::from_config(
+            &cfg,
+            std::path::Path::new("/tmp"),
+        );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
         })
         .unwrap();
 
@@ -2045,8 +2820,12 @@ mod subpanel_padding_tests {
 
         let backend = TestBackend::new(60, 24);
         let mut term = Terminal::new(backend).unwrap();
+        let mut state = crate::console::manager::state::ManagerState::from_config(
+            &cfg,
+            std::path::Path::new("/tmp"),
+        );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
         })
         .unwrap();
 

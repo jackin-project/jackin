@@ -1,3 +1,4 @@
+use crate::manifest::HooksConfig;
 use crate::repo::ValidatedRoleRepo;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -11,25 +12,77 @@ pub struct DerivedBuildContext {
     pub dockerfile_path: PathBuf,
 }
 
+/// Caller must pass a `HooksConfig` whose paths have already passed
+/// `validate_role_repo` — paths are interpolated directly into Dockerfile
+/// `COPY` instructions with no further sanitization here.
 pub fn render_derived_dockerfile(
     base_dockerfile: &str,
-    pre_launch_hook: Option<&str>,
+    hooks: Option<&HooksConfig>,
     supported: &[crate::agent::Agent],
     claude_config: Option<&crate::manifest::ClaudeConfig>,
 ) -> String {
-    let hook_section = pre_launch_hook.map_or_else(String::new, |hook_path| {
-        format!(
+    use std::fmt::Write as _;
+
+    let mut hook_section = String::new();
+    let source_hook_declared = hooks.is_some_and(|h| h.source.is_some());
+    let mut entries = hooks.into_iter().flat_map(HooksConfig::entries).peekable();
+    if entries.peek().is_some() {
+        // chown only /jackin/state — agent writes the marker here.
+        // /jackin/runtime/hooks gets per-file ownership from
+        // `COPY --chown=agent:agent` below; the dir itself stays root.
+        hook_section.push_str(
             "\
 USER root
-COPY {hook_path} /home/agent/.jackin-runtime/pre-launch.sh
-RUN chmod +x /home/agent/.jackin-runtime/pre-launch.sh
+RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks \\
+    && chown -R agent:agent /jackin/state
 USER agent
-"
-        )
-    });
+",
+        );
+        for entry in entries {
+            write!(
+                hook_section,
+                "\
+COPY --chown=agent:agent {src} /jackin/runtime/hooks/{dst}
+RUN chmod +x /jackin/runtime/hooks/{dst}
+",
+                src = entry.path,
+                dst = entry.filename,
+            )
+            .expect("writing to String is infallible");
+        }
+        if source_hook_declared {
+            // `docker exec zsh` inherits the image ENV but none of PID 1's
+            // runtime exports, so operator shells miss the source-hook
+            // exports the entrypoint applied to the agent. The marker is
+            // namespaced and exported only after a successful source so a
+            // failed hook does not leave a sticky guard that hides
+            // re-source attempts from nested subshells (mirrors the rc
+            // capture + `trap - ERR` clear the entrypoint does at
+            // docker/runtime/entrypoint.sh:172-181). The outer
+            // `grep -q ... ||` keeps the file single-shimmed across
+            // derived-from-derived builds via `base_image_override`.
+            #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
+            const ZSHENV_SOURCE_SHIM: &str = "\
+RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
+    || printf '%s\\n' \\
+    'if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\" ] && [ -f /jackin/runtime/hooks/source.sh ]; then' \\
+    '  __jackin_rc=0' \\
+    '  source /jackin/runtime/hooks/source.sh || __jackin_rc=$?' \\
+    '  trap - ERR' \\
+    '  if [ \"$__jackin_rc\" -ne 0 ]; then' \\
+    '    print -u2 \"[zshenv] jackin source hook returned non-zero (exit $__jackin_rc); environment may be incomplete\"' \\
+    '  else' \\
+    '    export __JACKIN_ZSHENV_SOURCE_LOADED=1' \\
+    '  fi' \\
+    '  unset __jackin_rc' \\
+    'fi' >> /home/agent/.zshenv
+";
+            hook_section.push_str(ZSHENV_SOURCE_SHIM);
+        }
+    }
 
     // Concatenate per-agent install blocks in a stable order (Claude
-    // first when present, Codex second, Amp third). Each block declares
+    // first when present, Codex second, Amp third, OpenCode fourth). Each block declares
     // its own `ARG JACKIN_CACHE_BUST=0` (see the per-agent blocks returned
     // by `Agent::install_block`), so layer cache keys advance
     // independently when `--build-arg JACKIN_CACHE_BUST=<ts>` is
@@ -42,6 +95,7 @@ USER agent
         crate::agent::Agent::Claude => 0,
         crate::agent::Agent::Codex => 1,
         crate::agent::Agent::Amp => 2,
+        crate::agent::Agent::Opencode => 3,
     });
     for h in sorted {
         install_blocks.push_str(h.install_block());
@@ -67,10 +121,16 @@ RUN current_gid=\"$(id -g agent)\" \
        fi \
     && chown -R agent:agent /home/agent
 {install_blocks}{hook_section}USER root
-COPY .jackin-runtime/entrypoint.sh /home/agent/entrypoint.sh
-RUN chmod +x /home/agent/entrypoint.sh
+RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/default-home/.local/share/amp /jackin/default-home/.local/share/opencode \
+    && ( cp -a /home/agent/.claude/. /jackin/default-home/.claude/ 2>/dev/null || true ) \
+    && ( cp -a /home/agent/.codex/. /jackin/default-home/.codex/ 2>/dev/null || true ) \
+    && ( cp -a /home/agent/.local/share/amp/. /jackin/default-home/.local/share/amp/ 2>/dev/null || true ) \
+    && ( cp -a /home/agent/.local/share/opencode/. /jackin/default-home/.local/share/opencode/ 2>/dev/null || true ) \
+    && chown -R agent:agent /jackin/default-home
+COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
+RUN chmod +x /jackin/runtime/entrypoint.sh
 USER agent
-ENTRYPOINT [\"/home/agent/entrypoint.sh\"]
+ENTRYPOINT [\"/jackin/runtime/entrypoint.sh\"]
 "
     )
 }
@@ -114,7 +174,10 @@ RUN claude plugin marketplace add anthropics/claude-plugins-official || true
     block
 }
 
-fn shell_quote(value: &str) -> String {
+/// Single-quote `value` for safe inclusion in a `/bin/sh -c` string. Embedded
+/// single quotes are escaped via the POSIX `'"'"'` idiom; an empty string
+/// becomes `''` so it survives shell word splitting.
+pub fn shell_quote(value: &str) -> String {
     if value.is_empty() {
         return "''".to_string();
     }
@@ -146,11 +209,7 @@ pub fn create_derived_build_context(
     std::fs::create_dir_all(&runtime_dir)?;
     std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH)?;
 
-    let pre_launch_hook = validated
-        .manifest
-        .hooks
-        .as_ref()
-        .and_then(|h| h.pre_launch.as_deref());
+    let hooks = validated.manifest.hooks.as_ref();
 
     let base_dockerfile = base_image_override.map_or_else(
         || validated.dockerfile.dockerfile_contents.clone(),
@@ -163,12 +222,12 @@ pub fn create_derived_build_context(
         &dockerfile_path,
         render_derived_dockerfile(
             &base_dockerfile,
-            pre_launch_hook,
+            hooks,
             &supported,
             validated.manifest.claude.as_ref(),
         ),
     )?;
-    ensure_runtime_assets_are_included(&context_dir, pre_launch_hook)?;
+    ensure_runtime_assets_are_included(&context_dir, hooks)?;
 
     Ok(DerivedBuildContext {
         temp_dir,
@@ -179,7 +238,7 @@ pub fn create_derived_build_context(
 
 fn ensure_runtime_assets_are_included(
     context_dir: &Path,
-    pre_launch_hook: Option<&str>,
+    hooks: Option<&HooksConfig>,
 ) -> anyhow::Result<()> {
     let dockerignore_path = context_dir.join(".dockerignore");
     let mut dockerignore = if dockerignore_path.exists() {
@@ -193,8 +252,8 @@ fn ensure_runtime_assets_are_included(
         "!.jackin-runtime/entrypoint.sh".to_string(),
         "!.jackin-runtime/DerivedDockerfile".to_string(),
     ];
-    if let Some(hook_path) = pre_launch_hook {
-        rules.push(format!("!{hook_path}"));
+    for entry in hooks.into_iter().flat_map(HooksConfig::entries) {
+        rules.push(format!("!{}", entry.path));
     }
 
     for rule in &rules {
@@ -253,9 +312,9 @@ mod tests {
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
         assert!(!dockerfile.contains("WORKDIR"));
         assert!(
-            dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /home/agent/entrypoint.sh")
+            dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
         );
-        assert!(dockerfile.contains("ENTRYPOINT [\"/home/agent/entrypoint.sh\"]"));
+        assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/entrypoint.sh\"]"));
     }
 
     #[test]
@@ -272,7 +331,7 @@ mod tests {
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
         assert!(dockerfile.contains("RUN claude --version"));
         assert!(
-            dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /home/agent/entrypoint.sh")
+            dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
         );
     }
 
@@ -293,23 +352,59 @@ mod tests {
     }
 
     #[test]
-    fn renders_derived_dockerfile_with_pre_launch_hook() {
+    fn renders_derived_dockerfile_with_runtime_hooks() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
-            Some("hooks/pre-launch.sh"),
+            Some(&HooksConfig {
+                setup_once: Some("hooks/setup-once.sh".to_string()),
+                source: Some("hooks/source.sh".to_string()),
+                preflight: Some("hooks/preflight.sh".to_string()),
+            }),
             &[Agent::Claude],
             None,
         );
 
+        assert!(dockerfile.contains(
+            "COPY --chown=agent:agent hooks/setup-once.sh /jackin/runtime/hooks/setup-once.sh"
+        ));
+        assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
         assert!(
-            dockerfile
-                .contains("COPY hooks/pre-launch.sh /home/agent/.jackin-runtime/pre-launch.sh")
+            dockerfile.contains(
+                "COPY --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh"
+            )
         );
-        assert!(dockerfile.contains("RUN chmod +x /home/agent/.jackin-runtime/pre-launch.sh"));
+        assert!(dockerfile.contains(
+            "COPY --chown=agent:agent hooks/preflight.sh /jackin/runtime/hooks/preflight.sh"
+        ));
+        // Structural shape: the four load-bearing fragments must appear
+        // in order — guard test, rc capture, source call, success-only
+        // export, file append. A regression that drops the guard, the rc
+        // check, or the `fi` terminator breaks this ordering.
+        let copy_pos = dockerfile
+            .find("COPY --chown=agent:agent hooks/source.sh")
+            .unwrap();
+        let guard_pos = dockerfile
+            .find("if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\"")
+            .unwrap();
+        let source_pos = dockerfile
+            .find("source /jackin/runtime/hooks/source.sh || __jackin_rc=$?")
+            .unwrap();
+        let export_pos = dockerfile
+            .find("export __JACKIN_ZSHENV_SOURCE_LOADED=1")
+            .unwrap();
+        let append_pos = dockerfile.find(">> /home/agent/.zshenv").unwrap();
+        assert!(copy_pos < guard_pos);
+        assert!(guard_pos < source_pos);
+        assert!(source_pos < export_pos);
+        assert!(export_pos < append_pos);
+        assert!(dockerfile.contains("trap - ERR"));
+        // Single emission — derived-from-derived rebuilds must not stack
+        // duplicate shim blocks in /home/agent/.zshenv.
+        assert_eq!(dockerfile.matches(">> /home/agent/.zshenv").count(), 1);
     }
 
     #[test]
-    fn renders_derived_dockerfile_without_pre_launch_hook() {
+    fn renders_derived_dockerfile_without_runtime_hooks() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             None,
@@ -317,7 +412,12 @@ mod tests {
             None,
         );
 
-        assert!(!dockerfile.contains("pre-launch.sh"));
+        assert!(!dockerfile.contains("setup-once.sh"));
+        assert!(!dockerfile.contains("source.sh"));
+        assert!(!dockerfile.contains("preflight.sh"));
+        assert!(!dockerfile.contains("/jackin/runtime/hooks"));
+        assert!(!dockerfile.contains("/jackin/state/hooks"));
+        assert!(!dockerfile.contains("/home/agent/.zshenv"));
     }
 
     #[test]
@@ -387,8 +487,7 @@ mod tests {
         );
         let last_user = dockerfile
             .lines()
-            .filter(|l| l.starts_with("USER "))
-            .last()
+            .rfind(|l| l.starts_with("USER "))
             .unwrap();
         assert_eq!(last_user, "USER agent");
     }
@@ -417,7 +516,7 @@ mod tests {
 
         assert!(dockerfile.contains("/home/agent"));
         assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" agent"));
-        assert!(dockerfile.contains("ENTRYPOINT [\"/home/agent/entrypoint.sh\"]"));
+        assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/entrypoint.sh\"]"));
     }
 
     #[test]
@@ -443,6 +542,7 @@ mod tests {
         assert!(ENTRYPOINT_SH.contains("  claude)"));
         assert!(ENTRYPOINT_SH.contains("  codex)"));
         assert!(ENTRYPOINT_SH.contains("  amp)"));
+        assert!(ENTRYPOINT_SH.contains("  opencode)"));
     }
 
     #[test]
@@ -463,6 +563,23 @@ mod tests {
     }
 
     #[test]
+    fn entrypoint_codex_branch_uses_cli_flags_not_generated_config() {
+        let codex_section = ENTRYPOINT_SH
+            .split("codex)")
+            .nth(1)
+            .unwrap()
+            .split(";;")
+            .next()
+            .unwrap();
+        assert!(
+            codex_section
+                .contains("codex --enable goals --dangerously-bypass-approvals-and-sandbox")
+        );
+        assert!(codex_section.contains("LAUNCH+=(\"$@\")"));
+        assert!(!codex_section.contains("config.toml"));
+    }
+
+    #[test]
     fn entrypoint_amp_branch_copies_secrets_and_launches_amp() {
         let amp_section = ENTRYPOINT_SH
             .split_once("\n  amp)")
@@ -477,8 +594,42 @@ mod tests {
     }
 
     #[test]
+    fn entrypoint_seeds_durable_agent_home_from_image_defaults() {
+        assert!(
+            ENTRYPOINT_SH
+                .contains("seed_home_dir /jackin/default-home/.claude /home/agent/.claude")
+        );
+        assert!(
+            ENTRYPOINT_SH.contains("seed_home_dir /jackin/default-home/.codex /home/agent/.codex")
+        );
+        assert!(ENTRYPOINT_SH.contains(
+            "seed_home_dir /jackin/default-home/.local/share/amp /home/agent/.local/share/amp"
+        ));
+        assert!(ENTRYPOINT_SH.contains(
+            "seed_home_dir /jackin/default-home/.local/share/opencode /home/agent/.local/share/opencode"
+        ));
+    }
+
+    #[test]
+    fn derived_image_snapshots_agent_home_defaults() {
+        let dockerfile = render_derived_dockerfile(
+            "FROM projectjackin/construct:trixie\n",
+            None,
+            &[Agent::Claude, Agent::Codex, Agent::Amp, Agent::Opencode],
+            None,
+        );
+
+        assert!(dockerfile.contains("/jackin/default-home/.claude"));
+        assert!(dockerfile.contains("/jackin/default-home/.codex"));
+        assert!(dockerfile.contains("/jackin/default-home/.local/share/amp"));
+        assert!(dockerfile.contains("/jackin/default-home/.local/share/opencode"));
+        assert!(dockerfile.contains("cp -a /home/agent/.claude/. /jackin/default-home/.claude/"));
+    }
+
+    #[test]
     fn renders_claude_plugin_installs_after_claude_cli() {
         let config = crate::manifest::ClaudeConfig {
+            model: None,
             marketplaces: vec![crate::manifest::ClaudeMarketplaceConfig {
                 source: "obra/superpowers-marketplace".to_string(),
                 sparse: vec!["plugins".to_string(), ".claude-plugin".to_string()],
@@ -521,6 +672,7 @@ mod tests {
             .split(";;")
             .next()
             .unwrap();
+        assert!(claude_section.contains("LAUNCH+=(\"$@\")"));
         assert!(claude_section.contains("claude mcp add tirith -- tirith mcp-server"));
         assert!(claude_section.contains("claude mcp add shellfirm -- shellfirm mcp"));
     }
@@ -532,8 +684,174 @@ mod tests {
     }
 
     #[test]
-    fn entrypoint_pre_launch_hook_path_uses_agent_home() {
-        assert!(ENTRYPOINT_SH.contains("/home/agent/.jackin-runtime/pre-launch.sh"));
+    fn entrypoint_references_runtime_hook_paths() {
+        assert!(ENTRYPOINT_SH.contains("/jackin/runtime/hooks/setup-once.sh"));
+        assert!(ENTRYPOINT_SH.contains("/jackin/runtime/hooks/source.sh"));
+        assert!(ENTRYPOINT_SH.contains("/jackin/runtime/hooks/preflight.sh"));
+    }
+
+    #[test]
+    fn entrypoint_sources_source_hook_so_exports_persist() {
+        assert!(ENTRYPOINT_SH.contains(". /jackin/runtime/hooks/source.sh"));
+    }
+
+    #[test]
+    fn entrypoint_runs_setup_once_with_writable_marker() {
+        assert!(ENTRYPOINT_SH.contains("/jackin/state/hooks/setup-once.done"));
+        assert!(ENTRYPOINT_SH.contains("touch \"$setup_once_marker\""));
+    }
+
+    fn extract_block<'a>(haystack: &'a str, start: &str, end: &str) -> &'a str {
+        haystack
+            .split_once(start)
+            .unwrap_or_else(|| panic!("missing block start: {start}"))
+            .1
+            .split_once(end)
+            .unwrap_or_else(|| panic!("missing block end: {end}"))
+            .0
+    }
+
+    #[test]
+    fn entrypoint_marker_touched_only_after_setup_once_succeeds() {
+        // Reordering would write the marker on hook failure and break first-launch retries.
+        let run_pos = ENTRYPOINT_SH.find("run_hook setup-once").unwrap();
+        let touch_pos = ENTRYPOINT_SH.find("touch \"$setup_once_marker\"").unwrap();
+        assert!(run_pos < touch_pos);
+    }
+
+    #[test]
+    fn entrypoint_run_hook_helper_captures_rc_before_failure() {
+        // `$?` after `if ! cmd; then` is 0 — capture before the test.
+        // Pin the pattern so a regression to `if ! "$path"` (which
+        // silently makes failure exit 0) is caught.
+        let helper = extract_block(ENTRYPOINT_SH, "run_hook() {", "\n}\n");
+        assert!(helper.contains("local rc=0"));
+        assert!(helper.contains("\"$path\" || rc=$?"));
+        assert!(helper.contains("if [ \"$rc\" -ne 0 ]"));
+        assert!(helper.contains("exit \"$rc\""));
+    }
+
+    #[test]
+    fn entrypoint_source_hook_block_clears_trap_and_restores_pwd_and_xtrace() {
+        // The source block must:
+        //   - save PWD before sourcing
+        //   - suspend xtrace via `case $- in *x*)` to avoid leaking
+        //     expanded secrets under JACKIN_DEBUG=1
+        //   - capture rc BEFORE testing (same `$?`-after-`!cmd` trap as run_hook)
+        //   - restore xtrace
+        //   - clear the ERR trap before the cd so a vanished pwd
+        //     doesn't fire a hook-installed trap
+        let block = extract_block(
+            ENTRYPOINT_SH,
+            "if [ -x /jackin/runtime/hooks/source.sh ]; then",
+            "\nfi\n",
+        );
+        assert!(block.contains("source_pwd=\"$PWD\""));
+        assert!(block.contains("case $- in *x*)"));
+        assert!(block.contains(". /jackin/runtime/hooks/source.sh || rc=$?"));
+        assert!(block.contains("trap - ERR"));
+        let xtrace_suspend_pos = block.find("case $- in *x*)").unwrap();
+        let source_pos = block.find(". /jackin/runtime/hooks/source.sh").unwrap();
+        assert!(
+            xtrace_suspend_pos < source_pos,
+            "xtrace suspend must precede the dot-source"
+        );
+        let trap_pos = block.find("trap - ERR").unwrap();
+        let cd_pos = block.find("cd \"$source_pwd\"").unwrap();
+        assert!(
+            trap_pos < cd_pos,
+            "trap - ERR must precede the cd back to source_pwd"
+        );
+    }
+
+    #[test]
+    fn renders_derived_dockerfile_with_only_source_hook() {
+        // Mixed-presence: only `source` set. Header block + exactly
+        // one COPY line; absent hook filenames must not appear.
+        let dockerfile = render_derived_dockerfile(
+            "FROM projectjackin/construct:trixie\n",
+            Some(&HooksConfig {
+                setup_once: None,
+                source: Some("hooks/source.sh".to_string()),
+                preflight: None,
+            }),
+            &[Agent::Claude],
+            None,
+        );
+
+        assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
+        assert!(
+            dockerfile.contains(
+                "COPY --chown=agent:agent hooks/source.sh /jackin/runtime/hooks/source.sh"
+            )
+        );
+        assert!(dockerfile.contains(">> /home/agent/.zshenv"));
+        assert!(dockerfile.contains("source /jackin/runtime/hooks/source.sh"));
+        assert!(!dockerfile.contains("setup-once.sh"));
+        assert!(!dockerfile.contains("preflight.sh"));
+        assert_eq!(
+            dockerfile
+                .matches("COPY --chown=agent:agent hooks/")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn source_hook_zshenv_shim_is_not_rendered_for_non_source_hooks() {
+        let dockerfile = render_derived_dockerfile(
+            "FROM projectjackin/construct:trixie\n",
+            Some(&HooksConfig {
+                setup_once: Some("hooks/setup-once.sh".to_string()),
+                source: None,
+                preflight: Some("hooks/preflight.sh".to_string()),
+            }),
+            &[Agent::Claude],
+            None,
+        );
+
+        assert!(dockerfile.contains("/jackin/runtime/hooks/setup-once.sh"));
+        assert!(dockerfile.contains("/jackin/runtime/hooks/preflight.sh"));
+        assert!(!dockerfile.contains(">> /home/agent/.zshenv"));
+        assert!(!dockerfile.contains("__JACKIN_ZSHENV_SOURCE_LOADED"));
+    }
+
+    #[test]
+    fn build_context_dockerignore_allowlists_only_declared_hooks() {
+        // ensure_runtime_assets_are_included must allowlist exactly the
+        // hook source paths in the manifest. A regression that dropped
+        // the per-hook loop would silently filter scripts out of the
+        // build context and fail at docker build time only.
+        let repo = tempdir().unwrap();
+        std::fs::create_dir_all(repo.path().join("hooks")).unwrap();
+        std::fs::write(repo.path().join("hooks/source.sh"), "#!/bin/bash\n").unwrap();
+        std::fs::write(
+            repo.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo.path().join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[hooks]
+source = "hooks/source.sh"
+"#,
+        )
+        .unwrap();
+
+        let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
+        let build = create_derived_build_context(repo.path(), &validated, None).unwrap();
+        let dockerignore =
+            std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
+
+        assert!(dockerignore.contains("!hooks/source.sh"));
+        assert!(!dockerignore.contains("!hooks/setup-once.sh"));
+        assert!(!dockerignore.contains("!hooks/preflight.sh"));
     }
 
     #[test]
@@ -546,7 +864,8 @@ mod tests {
         .unwrap();
         std::fs::write(
             repo.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -584,7 +903,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -612,7 +932,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -644,7 +965,8 @@ plugins = []
         .unwrap();
         std::fs::write(
             repo.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []

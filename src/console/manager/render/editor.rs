@@ -11,6 +11,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
+use std::cmp::Ordering;
 
 use super::super::state::{EditorMode, EditorState, EditorTab, FieldFocus, SecretsScopeTag};
 use super::list::{
@@ -18,7 +19,8 @@ use super::list::{
     render_mount_header,
 };
 use super::{
-    FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, render_footer, render_header,
+    FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, footer_height, render_footer,
+    render_header,
 };
 use crate::config::AppConfig;
 use crate::operator_env::EnvValue;
@@ -28,7 +30,7 @@ use crate::operator_env::EnvValue;
 const ACTION_ACCENT: Color = Color::Rgb(180, 255, 180);
 const DISCLOSURE_ACCENT: Color = Color::Rgb(255, 208, 102);
 
-fn action_row_style(selected: bool) -> Style {
+pub(in crate::console::manager) fn action_row_style(selected: bool) -> Style {
     let style = Style::default().fg(ACTION_ACCENT);
     if selected {
         style.add_modifier(Modifier::BOLD)
@@ -37,26 +39,99 @@ fn action_row_style(selected: bool) -> Style {
     }
 }
 
-fn disclosure_style() -> Style {
+pub(in crate::console::manager) fn disclosure_style() -> Style {
     Style::default()
         .fg(DISCLOSURE_ACCENT)
         .add_modifier(Modifier::BOLD)
 }
 
+fn editor_footer_items(
+    state: &EditorState<'_>,
+    config: &AppConfig,
+    op_available: bool,
+) -> Vec<FooterItem> {
+    if let Some(modal) = &state.modal {
+        return super::modal::modal_footer_items(modal);
+    }
+    if state.tab_bar_focused {
+        let mut items = vec![
+            FooterItem::Key("\u{2190}\u{2192}"),
+            FooterItem::Text("switch tab"),
+            FooterItem::GroupSep,
+            FooterItem::Key("Tab/\u{2193}"),
+            FooterItem::Text("enter content"),
+            FooterItem::GroupSep,
+            FooterItem::Key("S"),
+            FooterItem::Text("save workspace"),
+        ];
+        if state.is_dirty() {
+            items.push(FooterItem::Dyn(format!(
+                "({} changes)",
+                state.change_count()
+            )));
+        }
+        items.extend([
+            FooterItem::GroupSep,
+            FooterItem::Key("Esc"),
+            if state.is_dirty() {
+                FooterItem::Text("discard")
+            } else {
+                FooterItem::Text("back")
+            },
+        ]);
+        return items;
+    }
+    let mut items: Vec<FooterItem> = vec![
+        FooterItem::Key("\u{2191}\u{2193}"),
+        FooterItem::Text("navigate"),
+    ];
+    let row_items = contextual_row_items(state, config, op_available);
+    if !row_items.is_empty() {
+        items.push(FooterItem::GroupSep);
+        items.extend(row_items);
+    }
+    items.extend([
+        FooterItem::GroupSep,
+        FooterItem::Key("BackTab"),
+        FooterItem::Text("tab bar"),
+        FooterItem::GroupSep,
+        FooterItem::Key("S"),
+        FooterItem::Text("save workspace"),
+    ]);
+    if state.is_dirty() {
+        items.push(FooterItem::Dyn(format!(
+            "({} changes)",
+            state.change_count()
+        )));
+    }
+    items.extend([
+        FooterItem::GroupSep,
+        FooterItem::Key("Esc"),
+        if state.is_dirty() {
+            FooterItem::Text("discard")
+        } else {
+            FooterItem::Text("back")
+        },
+    ]);
+    items
+}
+
 pub fn render_editor(
     frame: &mut Frame,
-    state: &EditorState<'_>,
+    state: &mut EditorState<'_>,
     config: &AppConfig,
     op_available: bool,
 ) {
     let area = frame.area();
+    let items = editor_footer_items(state, config, op_available);
+    let footer_h = footer_height(&items, area.width).max(1);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
             Constraint::Length(2),
-            Constraint::Min(8),
-            Constraint::Length(2),
+            Constraint::Min(5),
+            Constraint::Length(footer_h),
         ])
         .split(area);
 
@@ -65,8 +140,7 @@ pub fn render_editor(
         EditorMode::Create => "create workspace".to_string(),
     };
     render_header(frame, chunks[0], &title);
-
-    render_tab_strip(frame, chunks[1], state.active_tab);
+    render_editor_tab_strip(frame, chunks[1], state.active_tab, state.tab_bar_focused);
 
     match state.active_tab {
         EditorTab::General => render_general_tab(frame, chunks[2], state),
@@ -74,31 +148,6 @@ pub fn render_editor(
         EditorTab::Roles => render_roles_tab(frame, chunks[2], state, config),
         EditorTab::Secrets => render_secrets_tab(frame, chunks[2], state, config),
         EditorTab::Auth => render_auth_tab(frame, chunks[2], state, config),
-    }
-
-    let mut items: Vec<FooterItem> = Vec::new();
-
-    let row_items = contextual_row_items(state, config, op_available);
-    if !row_items.is_empty() {
-        items.extend(row_items);
-        items.push(FooterItem::GroupSep);
-    }
-
-    items.push(FooterItem::Key("S"));
-    items.push(FooterItem::Text("save workspace"));
-    if state.is_dirty() {
-        items.push(FooterItem::Dyn(format!(
-            "({} changes)",
-            state.change_count()
-        )));
-    }
-
-    items.push(FooterItem::GroupSep);
-    items.push(FooterItem::Key("Esc"));
-    if state.is_dirty() {
-        items.push(FooterItem::Text("discard"));
-    } else {
-        items.push(FooterItem::Text("back"));
     }
 
     render_footer(frame, chunks[3], &items);
@@ -153,48 +202,41 @@ fn contextual_row_items(
         }
         EditorTab::Mounts => {
             let mount_count = state.pending.mounts.len();
-            if cursor < mount_count {
-                let mut items = vec![
-                    FooterItem::Key("D"),
-                    FooterItem::Text("remove"),
-                    FooterItem::Sep,
-                    FooterItem::Key("A"),
-                    FooterItem::Text("add"),
-                ];
-                // Surface `O open in GitHub` when the cursor is on a mount
-                // whose source resolves to a GitHub-hosted git repo with a
-                // web URL. Editor-only — the list view's mounts pane is
-                // a preview, not a focus target.
-                if let Some(m) = state.pending.mounts.get(cursor)
-                    && matches!(
-                        super::super::mount_info::inspect(&m.src),
-                        super::super::mount_info::MountKind::Git {
-                            origin: Some(super::super::mount_info::GitOrigin::Github { .. }),
-                            ..
-                        }
-                    )
-                {
+            match cursor.cmp(&mount_count) {
+                Ordering::Less => {
+                    let mut items = vec![
+                        FooterItem::Key("D"),
+                        FooterItem::Text("remove"),
+                        FooterItem::Sep,
+                        FooterItem::Key("A"),
+                        FooterItem::Text("add"),
+                    ];
+                    if let Some(m) = state.pending.mounts.get(cursor)
+                        && matches!(
+                            super::super::mount_info::inspect(&m.src),
+                            super::super::mount_info::MountKind::Git {
+                                origin: Some(super::super::mount_info::GitOrigin::Github { .. }),
+                                ..
+                            }
+                        )
+                    {
+                        items.push(FooterItem::Sep);
+                        items.push(FooterItem::Key("O"));
+                        items.push(FooterItem::Text("open in GitHub"));
+                    }
                     items.push(FooterItem::Sep);
-                    items.push(FooterItem::Key("O"));
-                    items.push(FooterItem::Text("open in GitHub"));
+                    items.push(FooterItem::Key("R"));
+                    items.push(FooterItem::Text("toggle ro/rw"));
+                    items.push(FooterItem::Sep);
+                    items.push(FooterItem::Key("I"));
+                    items.push(FooterItem::Text("cycle isolation"));
+                    items.push(FooterItem::Sep);
+                    items.push(FooterItem::Key("H/L"));
+                    items.push(FooterItem::Text("scroll"));
+                    items
                 }
-                // `R` toggles the readonly flag on the highlighted mount row
-                // (rw ↔ ro). Sentinel row omits this hint — there's nothing
-                // to toggle yet.
-                items.push(FooterItem::Sep);
-                items.push(FooterItem::Key("R"));
-                items.push(FooterItem::Text("toggle ro/rw"));
-                // `I` cycles the per-mount isolation strategy on the
-                // highlighted row (shared ↔ worktree).
-                // Same gating as R: hidden on the `+ Add mount` sentinel.
-                items.push(FooterItem::Sep);
-                items.push(FooterItem::Key("I"));
-                items.push(FooterItem::Text("cycle isolation"));
-                items
-            } else {
-                // Sentinel "+ Add mount" row — both Enter and A invoke the
-                // same add-mount flow, so render as a single combined key.
-                vec![FooterItem::Key("Enter/A"), FooterItem::Text("add")]
+                Ordering::Equal => vec![FooterItem::Key("Enter/A"), FooterItem::Text("add")],
+                Ordering::Greater => Vec::new(),
             }
         }
         EditorTab::Roles => {
@@ -238,20 +280,25 @@ fn contextual_row_items(
                 Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::RoleKeyRow { .. })
                     if focused_value_is_op_ref =>
                 {
-                    // Op:// rows: only D delete · A add · Q exit.
-                    // Per operator preference, mask/unmask and Enter edit
-                    // are suppressed because the breadcrumb isn't a
-                    // credential and isn't text-editable.
-                    vec![
+                    let mut items = if op_available {
+                        vec![
+                            FooterItem::Key("Enter"),
+                            FooterItem::Sep,
+                            FooterItem::Key("P"),
+                            FooterItem::Text("re-pick from 1Password"),
+                            FooterItem::Sep,
+                        ]
+                    } else {
+                        Vec::new()
+                    };
+                    items.extend([
                         FooterItem::Key("D"),
                         FooterItem::Text("delete"),
                         FooterItem::Sep,
                         FooterItem::Key("A"),
                         FooterItem::Text("add"),
-                        FooterItem::Sep,
-                        FooterItem::Key("Q"),
-                        FooterItem::Text("exit"),
-                    ]
+                    ]);
+                    items
                 }
                 Some(SecretsRow::WorkspaceKeyRow(_) | SecretsRow::RoleKeyRow { .. }) => {
                     let mut items = vec![
@@ -345,17 +392,45 @@ pub(in crate::console::manager) fn auth_row_count(
     auth_flat_rows(state, config).len()
 }
 
-fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
-    let labels = [
-        (EditorTab::General, "General"),
-        (EditorTab::Mounts, "Mounts"),
-        (EditorTab::Roles, "Roles"),
-        (EditorTab::Secrets, "Environments"),
-        (EditorTab::Auth, "Auth"),
-    ];
-    let mut spans = Vec::new();
-    for (tab, label) in labels {
-        let style = if tab == active {
+/// Order/labels shared with mouse hit-testing; renderer and click code
+/// must measure the same strip.
+pub(in crate::console::manager) const EDITOR_TAB_LABELS: &[(EditorTab, &str)] = &[
+    (EditorTab::General, "General"),
+    (EditorTab::Mounts, "Mounts"),
+    (EditorTab::Roles, "Roles"),
+    (EditorTab::Secrets, "Environments"),
+    (EditorTab::Auth, "Auth"),
+];
+
+fn render_editor_tab_strip(
+    frame: &mut Frame,
+    area: Rect,
+    active: EditorTab,
+    tab_bar_focused: bool,
+) {
+    let labels: Vec<(&str, bool)> = EDITOR_TAB_LABELS
+        .iter()
+        .map(|(tab, label)| (*label, *tab == active))
+        .collect();
+    render_tab_strip(frame, area, &labels, tab_bar_focused);
+}
+
+pub(in crate::console::manager) fn render_tab_strip(
+    frame: &mut Frame,
+    area: Rect,
+    labels: &[(&str, bool)],
+    tab_bar_focused: bool,
+) {
+    let mut label_spans: Vec<Span> = Vec::new();
+    // Row 1: underline bar shown only when the tab bar has keyboard focus
+    // so the operator can see which area is active.
+    let mut bar_spans: Vec<Span> = Vec::new();
+
+    for &(label, active) in labels {
+        let cell_width = label.len() + 2; // " label " padding
+        let label_style = if active {
+            // Active tab always shows green background — underline bar is the
+            // additional indicator when the tab bar itself has keyboard focus.
             Style::default()
                 .bg(PHOSPHOR_GREEN)
                 .fg(Color::Black)
@@ -363,10 +438,34 @@ fn render_tab_strip(frame: &mut Frame, area: Rect, active: EditorTab) {
         } else {
             Style::default().fg(PHOSPHOR_DIM)
         };
-        spans.push(Span::styled(format!(" {label} "), style));
-        spans.push(Span::raw(" "));
+        label_spans.push(Span::styled(format!(" {label} "), label_style));
+        label_spans.push(Span::raw(" "));
+
+        // Underline bar only meaningful when tab bar is focused.
+        if tab_bar_focused {
+            let bar_text = if active {
+                "━".repeat(cell_width)
+            } else {
+                " ".repeat(cell_width)
+            };
+            bar_spans.push(Span::styled(
+                bar_text,
+                if active {
+                    Style::default().fg(WHITE)
+                } else {
+                    Style::default()
+                },
+            ));
+        } else {
+            bar_spans.push(Span::raw(" ".repeat(cell_width)));
+        }
+        bar_spans.push(Span::raw(" "));
     }
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+
+    frame.render_widget(
+        Paragraph::new(vec![Line::from(label_spans), Line::from(bar_spans)]),
+        area,
+    );
 }
 
 fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
@@ -454,10 +553,7 @@ fn render_editor_row(row: usize, cursor: usize, label: &str, value: &str) -> Lin
     Line::from(spans)
 }
 
-fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK));
+fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>) {
     let FieldFocus::Row(cursor) = state.active_field;
 
     // Build aligned table rows for all mounts.
@@ -468,7 +564,7 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     // with data rows regardless of path width.
     let mut lines: Vec<Line> = vec![render_mount_header(path_w)];
 
-    lines.extend(rows.iter().enumerate().map(|(i, (path, mode, iso, kind))| {
+    for (i, row) in rows.iter().enumerate() {
         let selected = i == cursor;
         let prefix = if selected { "▸ " } else { "  " };
         let base_style = if selected {
@@ -481,23 +577,32 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         let dim_style = Style::default()
             .fg(PHOSPHOR_DIM)
             .add_modifier(Modifier::ITALIC);
-        Line::from(vec![
-            Span::styled(format!("{prefix}{path:<path_w$}  "), base_style),
+        lines.push(Line::from(vec![
             Span::styled(
-                format!("{mode:<MOUNT_MODE_COL_WIDTH$}"),
+                format!("{prefix}{:<path_w$}  ", row.destination),
+                base_style,
+            ),
+            Span::styled(
+                format!("{:<MOUNT_MODE_COL_WIDTH$}", row.mode),
                 Style::default().fg(PHOSPHOR_DIM),
             ),
             // Two-space gap before the iso column — matches the header.
             Span::raw("  "),
             Span::styled(
-                format!("{iso:<MOUNT_ISOLATION_COL_WIDTH$}"),
+                format!("{:<MOUNT_ISOLATION_COL_WIDTH$}", row.isolation),
                 Style::default().fg(PHOSPHOR_DIM),
             ),
             // Two-space gap before the type column — matches the header.
             Span::raw("  "),
-            Span::styled(kind.clone(), dim_style),
-        ])
-    }));
+            Span::styled(row.kind.clone(), dim_style),
+        ]));
+        if let Some(host_source) = &row.host_source {
+            lines.push(Line::from(Span::styled(
+                format!("  {host_source:<path_w$}"),
+                Style::default().fg(PHOSPHOR_DIM),
+            )));
+        }
+    }
 
     // Sentinel row: + Add mount — selectable, styled distinctly from mounts.
     let sentinel_idx = state.pending.mounts.len();
@@ -511,13 +616,24 @@ fn render_mounts_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
         action_row_style(sentinel_selected),
     )));
 
-    frame.render_widget(Paragraph::new(lines).block(block), area);
+    state.tab_content_height = lines.len();
+    super::render_scrollable_block(
+        frame,
+        area,
+        lines,
+        &mut state.workspace_mounts_scroll_x,
+        &mut state.tab_scroll_y,
+        state.workspace_mounts_scroll_focused,
+        None,
+    );
 }
 
-fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK));
+fn render_roles_tab(
+    frame: &mut Frame,
+    area: Rect,
+    state: &mut EditorState<'_>,
+    config: &AppConfig,
+) {
     let FieldFocus::Row(cursor) = state.active_field;
 
     // Status line: "Allowed roles:  [ all ]" or "[ custom ]   (3 of 5 allowed)"
@@ -570,7 +686,7 @@ fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, conf
         let check = if effectively_allowed { "[x]" } else { "[ ]" };
         let star = if is_default { "★" } else { " " };
         let prefix = if selected { "▸ " } else { "  " };
-        let text = format!("{prefix}{check}  {star} {role_name}");
+        let text = format!("{prefix}{check} {star} {role_name}");
         let style = if selected {
             Style::default()
                 .fg(PHOSPHOR_GREEN)
@@ -590,7 +706,17 @@ fn render_roles_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, conf
         format!("{sentinel_prefix}+ Add role"),
         action_row_style(sentinel_selected),
     )));
-    frame.render_widget(Paragraph::new(lines).block(block), area);
+    state.tab_content_height = lines.len();
+    let mut no_scroll_x = 0u16;
+    super::render_scrollable_block(
+        frame,
+        area,
+        lines,
+        &mut no_scroll_x,
+        &mut state.tab_scroll_y,
+        state.tab_content_scroll_focused,
+        None,
+    );
 }
 
 /// Flat row model for the Secrets tab; cursor is a single index.
@@ -713,6 +839,9 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
                 kind: AuthKind::Amp,
             },
             AuthRow::AuthKindRow {
+                kind: AuthKind::Opencode,
+            },
+            AuthRow::AuthKindRow {
                 kind: AuthKind::Github,
             },
         ];
@@ -791,12 +920,12 @@ fn resolve_panel_mode(
 ) -> crate::console::manager::auth_kind::AuthMode {
     use crate::console::manager::auth_kind::{AuthKind, AuthMode};
     match kind {
-        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp => {
-            // `kind.agent()` returns `Some` for Claude/Codex/Amp; the
+        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp | AuthKind::Opencode => {
+            // `kind.agent()` returns `Some` for Claude/Codex/Amp/Opencode; the
             // GitHub arm below means the unwrap is unreachable here.
             let agent = kind
                 .agent()
-                .expect("Claude/Codex/Amp kinds map to an Agent");
+                .expect("Claude/Codex/Amp/Opencode kinds map to an Agent");
             let mode = crate::config::resolve_mode(cfg, agent, workspace, role);
             AuthMode::from_auth_forward(mode)
         }
@@ -824,10 +953,12 @@ pub(in crate::console::manager) fn eligible_agents_for_override(
 
 // Linear match per row kind reads better than scattered helpers.
 #[allow(clippy::too_many_lines)]
-fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK));
+fn render_secrets_tab(
+    frame: &mut Frame,
+    area: Rect,
+    state: &mut EditorState<'_>,
+    config: &AppConfig,
+) {
     let FieldFocus::Row(cursor) = state.active_field;
 
     let rows = secrets_flat_rows(state);
@@ -859,13 +990,8 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
                 ));
             }
             SecretsRow::WorkspaceAddSentinel => {
-                let marker_col = if state.pending.env.is_empty() {
-                    ""
-                } else {
-                    "     "
-                };
                 lines.push(Line::from(Span::styled(
-                    format!("{cursor_col}{marker_col}+ Add environment variable"),
+                    format!("{cursor_col}+ Add environment variable"),
                     action_row_style(selected),
                 )));
             }
@@ -919,7 +1045,17 @@ fn render_secrets_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, co
         }
     }
 
-    frame.render_widget(Paragraph::new(lines).block(block), area);
+    state.tab_content_height = lines.len();
+    let mut no_scroll_x = 0u16;
+    super::render_scrollable_block(
+        frame,
+        area,
+        lines,
+        &mut no_scroll_x,
+        &mut state.tab_scroll_y,
+        state.tab_content_scroll_focused,
+        None,
+    );
 }
 
 /// Display-side breadcrumb parser for `OpRef.path`.
@@ -991,7 +1127,7 @@ fn split_bracket_subtitle(s: &str) -> (String, Option<String>) {
 /// optional `?attribute=...` query suffix renders in `PHOSPHOR_DIM` after
 /// the field. `Plain` rows render as a literal / masked value with no
 /// `[op]` marker.
-fn render_secrets_key_line(
+pub(in crate::console::manager) fn render_secrets_key_line(
     selected: bool,
     cursor_col: &str,
     key: &str,
@@ -1109,12 +1245,7 @@ fn render_secrets_key_line(
 /// Materializes a synthetic [`AppConfig`] from the editor's pending workspace
 /// merged with the (mostly read-only) global layer of the live config so
 /// in-flight edits are reflected immediately.
-fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, config: &AppConfig) {
-    use crate::console::widgets::auth_panel::{PHOSPHOR_DARK, WHITE};
-    use ratatui::style::Modifier;
-    use ratatui::text::Span;
-    use ratatui::widgets::{List, ListItem, ListState};
-
+fn render_auth_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>, config: &AppConfig) {
     let synthesized = synthesize_appconfig_for_auth(state, config);
     let workspace_name = workspace_name_for_panel(state);
     let rows = auth_flat_rows(state, config);
@@ -1123,32 +1254,24 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>, confi
     let max_idx = rows.len().saturating_sub(1);
     let selected = cursor.min(max_idx);
 
-    let items: Vec<ListItem> = rows
+    let lines: Vec<ratatui::text::Line> = rows
         .iter()
         .enumerate()
-        .map(|(i, r)| {
-            ListItem::new(render_auth_row(
-                i == selected,
-                r,
-                &synthesized,
-                &workspace_name,
-            ))
-        })
+        .map(|(i, r)| render_auth_row(i == selected, r, &synthesized, &workspace_name))
         .collect();
-    let mut block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK));
-    if let Some(kind) = state.auth_selected_kind {
-        let title_span = Span::styled(
-            format!(" {} ", kind.label()),
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        );
-        block = block.title(title_span);
-    }
-    let list = List::new(items).block(block).highlight_symbol("▸ ");
-    let mut list_state = ListState::default();
-    list_state.select(Some(selected));
-    frame.render_stateful_widget(list, area, &mut list_state);
+
+    state.tab_content_height = lines.len();
+    let title = state.auth_selected_kind.map(|k| format!(" {} ", k.label()));
+    let mut no_scroll_x = 0u16;
+    super::render_scrollable_block(
+        frame,
+        area,
+        lines,
+        &mut no_scroll_x,
+        &mut state.tab_scroll_y,
+        state.tab_content_scroll_focused,
+        title.as_deref(),
+    );
 }
 
 fn render_auth_row(
@@ -1165,7 +1288,11 @@ fn render_auth_row(
 
     match row {
         AuthRow::AuthKindRow { kind } => {
-            ratatui::text::Line::from(Span::styled(kind.label().to_string(), bold_white))
+            let cursor_col = if selected { "▸ " } else { "  " };
+            ratatui::text::Line::from(vec![
+                Span::raw(cursor_col),
+                Span::styled(kind.label().to_string(), bold_white),
+            ])
         }
         AuthRow::WorkspaceMode { kind } => {
             let ws = synthesized.workspaces.get(workspace_name);
@@ -1177,8 +1304,10 @@ fn render_auth_row(
             } else {
                 " (inherited)"
             };
+            let cursor_col = if selected { "▸ " } else { "  " };
             ratatui::text::Line::from(vec![
-                Span::styled(format!("{:<14}", "Mode"), bold_white),
+                Span::raw(cursor_col),
+                Span::styled(format!("{:<12}", "Mode"), bold_white),
                 Span::styled(mode_str(mode).to_string(), phosphor),
                 Span::styled(suffix.to_string(), dim_green),
             ])
@@ -1215,7 +1344,9 @@ fn render_auth_row(
             } else {
                 String::new()
             };
+            let cursor_col = if selected { "▸ " } else { "  " };
             ratatui::text::Line::from(vec![
+                Span::raw(cursor_col),
                 Span::styled("+ Override for a role", label_style),
                 Span::styled(suffix, dim_green),
             ])
@@ -1296,6 +1427,10 @@ fn explicit_workspace_mode(
             .amp
             .as_ref()
             .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
+        AuthKind::Opencode => ws
+            .opencode
+            .as_ref()
+            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
         AuthKind::Github => ws
             .github
             .as_ref()
@@ -1316,7 +1451,7 @@ fn auth_source_value<'a>(
     use crate::console::manager::auth_kind::AuthKind;
     match kind {
         AuthKind::Github => github_source_value(synthesized, workspace_name, role, env_name),
-        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp => {
+        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp | AuthKind::Opencode => {
             agent_env_source_value(synthesized, workspace_name, role, env_name)
         }
     }
@@ -1431,6 +1566,7 @@ pub(in crate::console::manager) fn synthesize_appconfig_for_auth(
         claude: config.claude.clone(),
         codex: config.codex.clone(),
         amp: config.amp.clone(),
+        opencode: config.opencode.clone(),
         github: config.github.clone(),
         env: config.env.clone(),
         roles: config.roles.clone(),
@@ -1717,7 +1853,7 @@ mod agents_tab_render_tests {
         let backend = TestBackend::new(60, 10);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_roles_tab(f, Rect::new(0, 0, 60, 10), &editor, config);
+            render_roles_tab(f, Rect::new(0, 0, 60, 10), &mut editor, config);
         })
         .unwrap();
         let buf = term.backend().buffer();
@@ -1856,6 +1992,7 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -1871,7 +2008,7 @@ mod secrets_tab_render_tests {
 
     /// Render the Secrets tab to a 80x15 `TestBackend`, return the raw
     /// buffer as newline-delimited rows so tests can search for glyphs.
-    fn render_to_dump(editor: &EditorState<'_>) -> String {
+    fn render_to_dump(editor: &mut EditorState<'_>) -> String {
         let config = AppConfig::default();
         let backend = TestBackend::new(80, 15);
         let mut term = Terminal::new(backend).unwrap();
@@ -1894,12 +2031,12 @@ mod secrets_tab_render_tests {
     fn secrets_tab_defaults_to_masked() {
         // `new_edit` leaves `unmasked_rows` empty, so every plain-text
         // value renders masked by default.
-        let editor = editor_with_workspace_env();
+        let mut editor = editor_with_workspace_env();
         assert!(
             editor.unmasked_rows.is_empty(),
             "new_edit must leave unmasked_rows empty (default = all masked)"
         );
-        let dump = render_to_dump(&editor);
+        let dump = render_to_dump(&mut editor);
         assert!(
             dump.contains("●●●●●●●●●●●"),
             "masked-default render must show the mask glyph; got:\n{dump}"
@@ -1916,7 +2053,7 @@ mod secrets_tab_render_tests {
         editor
             .unmasked_rows
             .insert((SecretsScopeTag::Workspace, "DB_URL".into()));
-        let dump = render_to_dump(&editor);
+        let dump = render_to_dump(&mut editor);
         assert!(
             dump.contains("postgres://localhost/db"),
             "unmasked render must show literal value; got:\n{dump}"
@@ -1932,9 +2069,9 @@ mod secrets_tab_render_tests {
         // `secrets_expanded` is empty by default (set by `new_edit`), so
         // the role section header renders but its `LOG_LEVEL` key row
         // does not.
-        let editor = editor_with_agent_override();
+        let mut editor = editor_with_agent_override();
         assert!(editor.secrets_expanded.is_empty());
-        let dump = render_to_dump(&editor);
+        let dump = render_to_dump(&mut editor);
         assert!(
             dump.contains("agent-smith"),
             "role header must render; got:\n{dump}"
@@ -1949,7 +2086,7 @@ mod secrets_tab_render_tests {
     fn secrets_tab_expanded_agent_shows_key_rows() {
         let mut editor = editor_with_agent_override();
         editor.secrets_expanded.insert("agent-smith".into());
-        let dump = render_to_dump(&editor);
+        let dump = render_to_dump(&mut editor);
         assert!(
             dump.contains("agent-smith"),
             "role header must still render when expanded; got:\n{dump}"
@@ -2002,6 +2139,7 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -2012,6 +2150,7 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -2060,8 +2199,8 @@ mod secrets_tab_render_tests {
 
     #[test]
     fn secrets_tab_empty_renders_only_sentinel() {
-        let editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
-        let dump = render_to_dump(&editor);
+        let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
+        let dump = render_to_dump(&mut editor);
 
         assert!(
             dump.contains("+ Add environment variable"),
@@ -2099,7 +2238,7 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        let dump = render_to_dump(&editor);
+        let dump = render_to_dump(&mut editor);
         assert!(
             dump.contains("Work"),
             "breadcrumb must render vault segment; dump:\n{dump}"
@@ -2152,7 +2291,7 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        let dump = render_to_dump(&editor);
+        let dump = render_to_dump(&mut editor);
         // All four components must appear, in order, with the arrow
         // glyph between the section and the field.
         assert!(
@@ -2200,7 +2339,7 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        let dump = render_to_dump(&editor);
+        let dump = render_to_dump(&mut editor);
         assert!(
             dump.contains("[op]"),
             "OpRef row must render the `[op]` text marker; dump:\n{dump}"
@@ -2223,7 +2362,7 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        let dump = render_to_dump(&editor);
+        let dump = render_to_dump(&mut editor);
         assert!(
             !dump.contains("[op]"),
             "plain-text row must not render the `[op]` marker; dump:\n{dump}"
@@ -2248,7 +2387,7 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        let dump = render_to_dump(&editor);
+        let dump = render_to_dump(&mut editor);
         assert!(
             dump.contains("[op] "),
             "OpRef row must render the marker as exactly `[op] ` (5 chars \
@@ -2274,7 +2413,7 @@ mod secrets_tab_render_tests {
         let mut term = Terminal::new(backend).unwrap();
         let config = AppConfig::default();
         term.draw(|f| {
-            render_secrets_tab(f, Rect::new(0, 0, 80, 15), &editor, &config);
+            render_secrets_tab(f, Rect::new(0, 0, 80, 15), &mut editor, &config);
         })
         .unwrap();
         let buf = term.backend().buffer();
@@ -2303,7 +2442,7 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        let dump = render_to_dump(&editor);
+        let dump = render_to_dump(&mut editor);
         let alpha = dump.find("ALPHA").expect("ALPHA must appear");
         let mike = dump.find("MIKE").expect("MIKE must appear");
         let zulu = dump.find("ZULU").expect("ZULU must appear");
@@ -2327,6 +2466,7 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -2365,6 +2505,7 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -2375,6 +2516,7 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
             },
         );
@@ -2400,7 +2542,7 @@ mod secrets_tab_render_tests {
 
     /// Helper that renders the Secrets tab to a wider (120-column) terminal
     /// so long breadcrumbs (subtitle + section + field) are not truncated.
-    fn render_to_dump_wide(editor: &EditorState<'_>) -> String {
+    fn render_to_dump_wide(editor: &mut EditorState<'_>) -> String {
         let config = AppConfig::default();
         let backend = TestBackend::new(120, 15);
         let mut term = Terminal::new(backend).unwrap();
@@ -2441,7 +2583,7 @@ mod secrets_tab_render_tests {
         editor.active_field = FieldFocus::Row(0);
 
         // Use the wide terminal so the subtitle and field are not truncated.
-        let dump = render_to_dump_wide(&editor);
+        let dump = render_to_dump_wide(&mut editor);
         // The row must carry the [op] marker (OpRef variant).
         assert!(
             dump.contains("[op]"),
@@ -2489,7 +2631,7 @@ mod secrets_tab_render_tests {
         editor.active_field = FieldFocus::Row(0);
 
         // Use the wide terminal so `?attribute=otp` is not truncated.
-        let dump = render_to_dump_wide(&editor);
+        let dump = render_to_dump_wide(&mut editor);
         // The row must carry the [op] marker.
         assert!(
             dump.contains("[op]"),
@@ -2530,7 +2672,7 @@ mod secrets_tab_render_tests {
         editor.active_field = FieldFocus::Row(0);
 
         // Use the wide terminal so no piece is truncated.
-        let dump = render_to_dump_wide(&editor);
+        let dump = render_to_dump_wide(&mut editor);
 
         // All visible pieces must appear in order:
         // vault → item → subtitle → section → field → query.
@@ -2562,7 +2704,7 @@ mod secrets_tab_render_tests {
         editor.active_tab = EditorTab::Secrets;
         editor.active_field = FieldFocus::Row(0);
 
-        let dump = render_to_dump(&editor);
+        let dump = render_to_dump(&mut editor);
         // Plain rows carrying a legacy op:// string must NOT render the
         // [op] marker — the visual distinction signals the need to re-pick.
         assert!(
@@ -2604,7 +2746,7 @@ mod secrets_tab_render_tests {
         editor.active_field = FieldFocus::Row(0);
 
         // Use the wide terminal so the breadcrumb is not truncated.
-        let dump = render_to_dump_wide(&editor);
+        let dump = render_to_dump_wide(&mut editor);
         assert!(
             dump.contains("CLAUDE_CODE_OAUTH_TOKEN  Private"),
             "expected at least 2 spaces between key and breadcrumb; dump:\n{dump}"
@@ -2640,7 +2782,7 @@ mod secrets_tab_render_tests {
             .unmasked_rows
             .insert((SecretsScopeTag::Workspace, "TOKEN".into()));
 
-        let dump = render_to_dump_wide(&editor);
+        let dump = render_to_dump_wide(&mut editor);
         // Malformed path → parse_path_breadcrumb returns None → no [op] marker.
         assert!(!dump.contains("[op]"), "no [op] marker; dump:\n{dump}");
         // Re-pick placeholder must be shown instead of the UUID URI.
@@ -2685,6 +2827,7 @@ mod eligible_agents_for_override_tests {
                     claude: None,
                     codex: None,
                     amp: None,
+                    opencode: None,
                     github: None,
                 },
             );
@@ -2849,6 +2992,9 @@ mod auth_flat_rows_tests {
                     kind: AuthKind::Amp,
                 },
                 AuthRow::AuthKindRow {
+                    kind: AuthKind::Opencode,
+                },
+                AuthRow::AuthKindRow {
                     kind: AuthKind::Github,
                 },
             ],
@@ -2860,12 +3006,16 @@ mod auth_flat_rows_tests {
     fn role_with_override_renders_collapsed_header_then_sentinel() {
         use crate::config::{AgentAuthConfig, AuthForwardMode};
         use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
-        let mut ws = WorkspaceConfig::default();
-        ws.allowed_roles = vec!["the-architect".into(), "agent-smith".into()];
-        let mut over = WorkspaceRoleOverride::default();
-        over.claude = Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::Ignore,
-        });
+        let mut ws = WorkspaceConfig {
+            allowed_roles: vec!["the-architect".into(), "agent-smith".into()],
+            ..Default::default()
+        };
+        let over = WorkspaceRoleOverride {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::Ignore,
+            }),
+            ..Default::default()
+        };
         ws.roles.insert("the-architect".into(), over);
 
         let mut editor = EditorState::new_edit("ws".into(), ws);
@@ -2899,15 +3049,19 @@ mod auth_flat_rows_tests {
     fn role_with_override_when_expanded_emits_kind_rows() {
         use crate::config::{AgentAuthConfig, AuthForwardMode, CodexAuthConfig};
         use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
-        let mut ws = WorkspaceConfig::default();
-        ws.allowed_roles = vec!["the-architect".into()];
-        let mut over = WorkspaceRoleOverride::default();
-        over.claude = Some(AgentAuthConfig {
-            auth_forward: AuthForwardMode::Ignore,
-        });
-        over.codex = Some(CodexAuthConfig(AgentAuthConfig {
-            auth_forward: AuthForwardMode::ApiKey,
-        }));
+        let mut ws = WorkspaceConfig {
+            allowed_roles: vec!["the-architect".into()],
+            ..Default::default()
+        };
+        let over = WorkspaceRoleOverride {
+            claude: Some(AgentAuthConfig {
+                auth_forward: AuthForwardMode::Ignore,
+            }),
+            codex: Some(CodexAuthConfig(AgentAuthConfig {
+                auth_forward: AuthForwardMode::ApiKey,
+            })),
+            ..Default::default()
+        };
         ws.roles.insert("the-architect".into(), over);
 
         let mut editor = EditorState::new_edit("ws".into(), ws);
@@ -3065,13 +3219,17 @@ mod auth_flat_rows_tests {
     fn github_role_override_emits_role_header_when_override_present() {
         use crate::config::{GithubAuthConfig, GithubAuthMode};
         use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
-        let mut ws = WorkspaceConfig::default();
-        ws.allowed_roles = vec!["the-architect".into()];
-        let mut over = WorkspaceRoleOverride::default();
-        over.github = Some(GithubAuthConfig {
-            auth_forward: GithubAuthMode::Ignore,
+        let mut ws = WorkspaceConfig {
+            allowed_roles: vec!["the-architect".into()],
             ..Default::default()
-        });
+        };
+        let over = WorkspaceRoleOverride {
+            github: Some(GithubAuthConfig {
+                auth_forward: GithubAuthMode::Ignore,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
         ws.roles.insert("the-architect".into(), over);
 
         let mut editor = EditorState::new_edit("ws".into(), ws);

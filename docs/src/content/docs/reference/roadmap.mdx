@@ -8,15 +8,15 @@ import RepoFile from '../../../components/RepoFile.astro'
 
 ## Current status
 
-jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` ship today as built-in agent runtimes**, with namespaced roles, workspace management, per-mount isolation for parallel agents, layered authentication forwarding (including `1Password` references), and an interactive operator console (TUI).
+jackin' is a functional proof of concept. **`Claude Code`, `Codex`, `Amp`, and `OpenCode` ship today as built-in agent runtimes**, with namespaced roles, workspace management, per-mount isolation for parallel agents, layered authentication forwarding (including `1Password` references), and an interactive operator console (TUI).
 
 ## Completed
 
 - `Claude Code` and `Codex` agent runtimes with full-speed mode (`--dangerously-skip-permissions` / YOLO) inside the container boundary
-- Layered authentication forwarding per (workspace × role × agent) — `sync` / `api_key` / `oauth_token` / `ignore` for `Claude Code`, and `sync` / `api_key` / `ignore` for `Codex` and `Amp` (neither supports `oauth_token`)
+- Layered authentication forwarding per (workspace × role × agent) — `sync` / `api_key` / `oauth_token` / `ignore` for `Claude Code`, and `sync` / `api_key` / `ignore` for `Codex`, `Amp`, and `OpenCode` (none supports `oauth_token`)
 - `Docker` container isolation with `Docker-in-Docker`
 - Interactive operator console (TUI) with workspace, role, and agent selection
-- Workspace management (add, edit, remove, list, show) — CLI and TUI
+- Workspace management (create, edit, remove, prune, list, show, plus `env` and `claude-token` subcommands) — CLI and TUI
 - Global mount configuration with role scoping
 - Role repository contract validation
 - Derived `Dockerfile` generation with UID/GID remapping
@@ -24,36 +24,42 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 - Agent identity (display names)
 - UID/GID host user mapping
 - GitHub CLI authentication state persists across container restarts (forwarding host login on launch is tracked separately under [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/))
-- Homebrew installation
+- Homebrew distribution via [`jackin-project/homebrew-tap`](https://github.com/jackin-project/homebrew-tap)
 - Namespaced roles (e.g., `chainargos/frontend-engineer`)
 - Last-agent memory per workspace
-- [Custom `Claude Code` plugin marketplaces](/reference/roadmap/custom-plugin-marketplace/) in `jackin.role.toml`
-- [Sensitive mount path warnings](/reference/roadmap/sensitive-mount-warnings/) (warn-and-confirm for `~/.ssh`, `~/.aws`, etc.)
-- [Automatic orphaned DinD cleanup](/reference/roadmap/orphaned-dind-cleanup/) (pre-launch garbage collection)
-- [`${env.VAR}` interpolation](/reference/roadmap/env-var-interpolation/) in env var prompts and defaults for dependent variables
-- [`JACKIN_DIND_HOSTNAME` environment variable](/reference/roadmap/dind-hostname-env-var/) for agents to discover the DinD sidecar hostname
-- [Agent source trust model](/reference/roadmap/agent-source-trust/) (trust-on-first-use verification for third-party role repos)
-- [DinD TLS authentication](/reference/roadmap/dind-tls/) with auto-generated certificates
-- [`JACKIN_DEBUG` environment variable](/reference/roadmap/jackin-debug-env-var/) — verbose tracing for shell commands and jackin internals
-- [MSRV toolchain pin](/reference/roadmap/msrv-toolchain/) — `rust-toolchain.toml` enforced in CI
-- [Worktree cleanup on container removal](/reference/roadmap/worktree-cleanup-assessment/) — orphaned host-side worktrees no longer accumulate
-- [Per-mount isolation for parallel agents](/reference/roadmap/per-mount-isolation/) — `shared | worktree | clone` modes implemented in V1
+- Custom `Claude Code` plugin marketplaces in `jackin.role.toml` — see the [role manifest reference](/developing/role-manifest/)
+- Sensitive mount path warnings (warn-and-confirm for `~/.ssh`, `~/.aws`, etc.) — see the [Mounts guide](/guides/mounts/) and the [Security model](/guides/security-model/)
+- Automatic orphaned DinD cleanup (pre-launch garbage collection)
+- [`${env.VAR}` interpolation](/developing/role-manifest/#interpolation) in env var prompts and defaults for dependent variables
+- `JACKIN_DIND_HOSTNAME` environment variable for agents to discover the DinD sidecar hostname — see the [Environment variables guide](/guides/environment-variables/#reserved-names)
+- Agent source trust model (trust-on-first-use verification for third-party role repos)
+- DinD TLS authentication with auto-generated certificates — see the [Security model](/guides/security-model/) and [Architecture](/reference/architecture/)
+- `JACKIN_DEBUG` environment variable — verbose tracing for shell commands and jackin internals; documented inline in every command page
+- MSRV toolchain pin — `rust-toolchain.toml` enforced in CI
+- Worktree cleanup on container removal — orphaned host-side worktrees no longer accumulate
+- `jackin eject` — stop and clean per-container state (with `--all` and `--purge`)
+- `jackin prune` family — orphaned roles, derived images, cache, and instance state
+- `jackin config trust grant | revoke | list` — explicit CLI management of role-source trust beyond the trust-on-first-use prompts
+- Per-workspace `git_pull_on_entry` — opt-in host repo refresh at launch via `--git-pull` / `--no-git-pull`
+- macOS keep-awake reconciler — `--keep-awake` / `--no-keep-awake` workspace flags hold the system awake while an agent is active
+- [Per-mount isolation for parallel agents](/guides/workspaces/#per-mount-isolation) — `shared | worktree | clone` modes implemented in V1
+- [Split `config.toml` into per-workspace files](/reference/configuration/#one-file-per-workspace-by-design) — `~/.config/jackin/workspaces/<name>.toml` layout shipped with per-file `version` stamps and migration
+- Global mount visibility and editing — workspace views show applicable global mounts separately, and the console has a dedicated global mounts editor for `~/.config/jackin/config.toml`. See the [Mounts guide](/guides/mounts/)
+- Settings TUI — the console has a tabbed `Settings` shell covering existing `jackin config` surfaces: global mounts, global/per-role env vars, global auth forwarding modes, and role source trust
+- Project structure map refresh — <RepoFile path="PROJECT_STRUCTURE.md" /> now covers the root file/workflow map and delegates detailed source navigation to the [Codebase Map](/reference/codebase-map/)
+- Unique container identity and restore — DNS-safe unique container identities, per-instance manifests and rebuildable index, hardline/load/console recovery flows, durable per-instance agent home restore, related-instance recovery/rebuild, moved ad-hoc path recovery, guarded purge, `hardline --new`, and Java Testcontainers DinD smoke coverage have shipped; operator workflow is documented in [Parallel Agents](/guides/parallel-agents/), contributor details live in [Runtime Instance Model](/reference/runtime-instance-model/), and reconnectable named sessions plus persistent lifecycle history are tracked separately
+- Role authoring CLI — desktop role creation, validation, and migration are documented in the [`role` command reference](/commands/role/) and [Creating a Role](/developing/creating-roles/); the standalone CI/Renovate-style validator split is documented in [Architecture](/reference/architecture/#role-repository-tooling) and [Schema Versions](/reference/schema-versions/)
 
 ## Partially implemented
 
-- [1Password integration](/reference/roadmap/onepassword-integration/) — workspace-managed `op://` env references shipped; file-mount generation (option 4) still deferred
-- [Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/) — `Claude Code`, `Codex`, and `Amp` all shipped as built-in runtimes; full feature parity across `claude` / `codex` / `amp` still in flight
-- [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/) — three-mode auth-forward (`sync` / `token` / `ignore`) at all three layers shipped, plus container HTTPS-normalize, `gh` credential helper wiring, and the auth-tab GitHub CLI row in `jackin console`; dedicated CLI subcommand, scope pre-flight, and bidirectional shared-store sync still pending
-- [Workspace Claude token setup](/reference/roadmap/workspace-claude-token-setup/) — `jackin workspace claude-token setup|rotate|revoke|doctor` orchestrator with PTY-captured tokens, 1Password write, post-write SHA validation, the in-container OAuth-token onboarding skeleton, and the launch-banner expiry countdown all shipped; TUI `[G] Generate token` action, Apple Keychain backend, and bulk `--all` migration flag remain. Under-the-hood mechanics at [Claude Token Orchestrator](/reference/claude-token-orchestrator/)
+- [1Password integration](/reference/roadmap/onepassword-integration/) — env references and picker flows are documented in standard docs; roadmap tracks future read-only secret file mounts
+- [Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/) — built-in runtime launch is documented in standard docs; roadmap tracks deeper runtime parity
+- [GitHub CLI authentication strategy](/reference/roadmap/github-cli-auth-strategy/) — shipped GitHub auth forwarding is documented in standard docs; roadmap tracks the CLI subcommand, scope pre-flight, and deeper GHE coverage
+- [Workspace Claude token setup](/reference/roadmap/workspace-claude-token-setup/) — shipped token commands are documented in standard docs; roadmap tracks the canonical auth slot, TUI generate action, Apple Keychain backend, validity probe, and bulk migration
+- [Config versioning and migration framework](/reference/roadmap/config-versioning-migration/) — shipped per-file schema gates for config, workspace files, and role manifests, plus automatic config/workspace migration, desktop role manifest migration through `jackin role migrate`, and CI migration through `jackin-validate --migrate`; roadmap tracks deferred `--pr` automation and the Renovate-style auto-migration GitHub Action
+- [Console agent session control](/reference/roadmap/console-agent-session-control/) — instance discovery and the console Instances panel (with recover/reconnect, new session, inspect, and guarded purge actions) shipped with unique container identity and restore; shell entry, reconnectable tmux-backed primary session, and stop-one-without-stopping-all secondary sessions remain in Phase 2+
 
 ## Planned
-
-### Agent runtimes
-
-<Aside type="note">
-`Claude Code`, `Codex`, and `Amp` are all built-in runtimes today (see Partially implemented above). The remaining work to reach full `claude` / `codex` / `amp` feature parity — runtime-specific auth, config, state, and entrypoint behaviour — continues under the same roadmap item.
-</Aside>
-- **[Multi-runtime support for Codex and Amp](/reference/roadmap/multi-runtime-support/)** — finish deeper runtime parity beyond basic launch/auth support. Phase 1 focuses on secure local usability, not full Claude-feature parity.
 
 ### Platform expansion
 
@@ -62,6 +68,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 ### Security improvements
 
 - **[Network egress policy](/reference/roadmap/network-egress-policy/)** — outbound policy per role/workspace, with explicit enforcement-quality reporting across DinD, future microVM backends, SSH remotes, and Kubernetes. Inspired by Docker Sandboxes' host-side proxy model, Hazmat's network tiering, and the upstream `anthropics/claude-code` devcontainer allowlist approach (status: open — design proposal)
+- **[Process-level sandboxing](/reference/roadmap/process-level-sandboxing/)** — per-operation isolation using OS-native mechanisms (Bubblewrap + Seccomp + Landlock on Linux, Apple Seatbelt on macOS) to restrict individual agent tool calls to only the paths, network hosts, and environment variables they need. Informed by [Zerobox](https://github.com/afshinm/zerobox) (the open-source library powering OpenAI Codex CLI's sandbox mode) and the three-tier isolation model: process sandbox → container → microVM (status: proposed — research captured, no implementation committed)
 - **Credential proxy** — proxy-based credential injection to avoid storing tokens inside containers
 - **[Agent version pinning](/reference/roadmap/reproducibility-pinning/)** — pin role repos to tagged versions for reproducible builds, with explicit `--update` to advance (status: needs design — brainstorming required before implementation)
 - **[Reliable Claude authentication strategy](/reference/roadmap/claude-auth-strategy/)** — move beyond copied session auth toward clearer, more durable modes for long-lived and concurrent agent runtimes (status: deferred — needs design work)
@@ -88,13 +95,9 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 
 ### Codebase health
 
-- **[Codebase readability program](/reference/roadmap/codebase-readability/)** — multi-phase internal-quality work covering documentation/setup, behavioral specs, module-contract refactors, and test coverage. The full leaf list lives in the program doc and in the sidebar under **Reference → Roadmap → Codebase health**.
+- **[Codebase readability program](/reference/roadmap/codebase-readability/)** — multi-phase internal-quality work covering documentation/setup, behavioral specs, DRY deduplication, module-contract refactors, and test coverage. Re-analyzed May 2026 against the current codebase (~91K lines of production Rust, 13 files over 1000 lines, pervasive TUI/auth/Docker duplication). The full leaf list lives in the program doc and in the sidebar under **Reference → Roadmap → Codebase health**.
 - **[Cargo workspace split](/reference/roadmap/cargo-workspace-split/)** — deferred multi-crate Cargo workspace plan for when LOC, compile time, or external-consumer triggers make crate boundaries worth the overhead (status: deferred to Phase 3 — trigger not yet met, but architecture is ready)
 - **[Open review findings catalog](/reference/roadmap/open-review-findings/)** — living backlog of review findings with accepted-exception annotations. Code review and automated scanning consult this catalog (see <RepoFile path="AGENTS.md" /> → "Code review & automated scanning").
-
-### Configuration ergonomics
-
-- **[Split `config.toml` into per-workspace files](/reference/roadmap/split-workspace-config-files/)** — keep the TOML format, but move every workspace into `~/.config/jackin/workspaces/<name>.toml`, leaving `config.toml` for global settings only. Designed for one-file sharing, fresh-machine reuse, and selective version control (e.g. via [chezmoi](https://www.chezmoi.io/)).
 
 ### Documentation infrastructure
 
@@ -103,7 +106,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, and `Amp` sh
 - **[Rustdoc → Starlight integration](/reference/roadmap/rustdoc-json-starlight/)** — surface rustdoc JSON inside the Starlight docs site (status: deferred — Phase 3)
 
 <Aside type="tip">
-Detailed design documents for individual TODO items are linked from the sidebar under **Roadmap** (each open category — `Agent Orchestrator Research`, `Codebase health`, `Agent runtimes & authentication`, `Isolation & security`, `Infrastructure`, `Documentation tooling`, `Configuration ergonomics`) and **Roadmap → Resolved** for shipped items. Each page is a self-contained proposal with problem statement, options, and related files.
+Detailed design documents for individual TODO items are linked from the sidebar under **Roadmap** (each open category — `Agent Orchestrator Research`, `Codebase health`, `Agent runtimes & authentication`, `Isolation & security`, `Infrastructure`, `Documentation tooling`, `Configuration ergonomics`). Fully shipped items are summarized under **Completed** above and documented in the canonical guides, commands, or reference pages instead of remaining as resolved roadmap pages.
 </Aside>
 ## Vision
 

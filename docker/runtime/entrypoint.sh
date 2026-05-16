@@ -14,6 +14,32 @@ run_maybe_quiet() {
     fi
 }
 
+seed_home_dir() {
+    local src="$1" dst="$2"
+    mkdir -p "$dst"
+    if [ -d "$src" ]; then
+        cp -an "$src"/. "$dst"/ 2>/dev/null || true
+    fi
+}
+
+# Run a child-process hook with a `[entrypoint]` log prefix and an
+# explicit failure-attributed exit. `$3` (optional) is appended after
+# `; ` to the failure line — used by setup-once to surface its retry
+# semantics.
+run_hook() {
+    local label="$1" path="$2" tail="${3:-}"
+    echo "[entrypoint] running $label hook..."
+    # `$?` inside `if ! cmd; then ...` is the negated test's status (0),
+    # not the hook's. Capture before the test so the failure log + exit
+    # surface the real exit code.
+    local rc=0
+    "$path" || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "[entrypoint] $label hook failed (exit $rc)${tail:+; $tail}" >&2
+        exit "$rc"
+    fi
+}
+
 # ── runtime-neutral setup ──────────────────────────────────────────
 # Configure git identity from host environment
 if [ -n "${GIT_AUTHOR_NAME:-}" ]; then
@@ -53,17 +79,16 @@ fi
 
 # ── agent-specific setup ───────────────────────────────────────────
 #
-# Auth/config files arrive under /jackin/<agent>/... rather than being
-# bind-mounted directly over the agent's home. The image bakes
-# ~/.claude/{settings.json,hooks,memory} (and the codex equivalents);
-# bind-mounting on top would mask those, so we copy from /jackin/ into
-# the agent home here at startup. Copies — not symlinks — to avoid
-# tools that resolve realpath and refuse paths outside $HOME, and so
-# in-session writes (token rotation, etc.) stay in the container's
-# writable layer instead of leaking back to the host.
+# The agent home is bind-mounted from jackin's per-instance data dir so
+# conversation history and runtime-local plugins survive Docker container
+# loss. The derived image stores its baked defaults under
+# /jackin/default-home; seed_home_dir copies only missing files so the first
+# launch gets the image defaults without clobbering state from prior runs.
+# Auth handoff files still arrive under /jackin/<agent>/... and are copied
+# into the durable home on every launch so the current auth mode wins.
 case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
   claude)
-    mkdir -p /home/agent/.claude
+    seed_home_dir /jackin/default-home/.claude /home/agent/.claude
     if [ -f /jackin/claude/account.json ]; then
         cp /jackin/claude/account.json /home/agent/.claude.json
         chmod 600 /home/agent/.claude.json
@@ -71,6 +96,8 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     if [ -f /jackin/claude/credentials.json ]; then
         cp /jackin/claude/credentials.json /home/agent/.claude/.credentials.json
         chmod 600 /home/agent/.claude/.credentials.json
+    else
+        rm -f /home/agent/.claude/.credentials.json
     fi
 
     # Register security tool MCP servers (ignore "already exists" on subsequent runs)
@@ -86,21 +113,25 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     fi
 
     LAUNCH=(claude --dangerously-skip-permissions --verbose)
+    if [ "$#" -gt 0 ]; then
+        LAUNCH+=("$@")
+    fi
     ;;
   codex)
-    mkdir -p /home/agent/.codex
-    if [ -f /jackin/codex/config.toml ]; then
-        cp /jackin/codex/config.toml /home/agent/.codex/config.toml
-        chmod 600 /home/agent/.codex/config.toml
-    fi
+    seed_home_dir /jackin/default-home/.codex /home/agent/.codex
     if [ -f /jackin/codex/auth.json ]; then
         cp /jackin/codex/auth.json /home/agent/.codex/auth.json
         chmod 600 /home/agent/.codex/auth.json
+    else
+        rm -f /home/agent/.codex/auth.json
     fi
-    LAUNCH=(codex)
+    LAUNCH=(codex --enable goals --dangerously-bypass-approvals-and-sandbox)
+    if [ "$#" -gt 0 ]; then
+        LAUNCH+=("$@")
+    fi
     ;;
   amp)
-    mkdir -p /home/agent/.local/share/amp
+    seed_home_dir /jackin/default-home/.local/share/amp /home/agent/.local/share/amp
     if [ -f /jackin/amp/secrets.json ]; then
         echo "[entrypoint] amp: forwarding host secrets.json into ~/.local/share/amp/" >&2
         cp /jackin/amp/secrets.json /home/agent/.local/share/amp/secrets.json
@@ -108,11 +139,33 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     elif [ -n "${AMP_API_KEY:-}" ]; then
         echo "[entrypoint] amp: AMP_API_KEY present in env; agent will use api-key auth" >&2
     else
+        rm -f /home/agent/.local/share/amp/secrets.json
         echo "[entrypoint] amp: no secrets.json mounted and AMP_API_KEY unset — agent will require interactive login" >&2
     fi
     # CLI flag chosen over `amp.dangerouslyAllowAll: true` so jackin
     # doesn't write to the operator's XDG_CONFIG.
     LAUNCH=(amp --dangerously-allow-all)
+    ;;
+  opencode)
+    seed_home_dir /jackin/default-home/.local/share/opencode /home/agent/.local/share/opencode
+    if [ -f /jackin/opencode/auth.json ]; then
+        echo "[entrypoint] opencode: forwarding host auth.json into ~/.local/share/opencode/" >&2
+        cp /jackin/opencode/auth.json /home/agent/.local/share/opencode/auth.json
+        chmod 600 /home/agent/.local/share/opencode/auth.json
+    elif [ -n "${OPENCODE_API_KEY:-}" ]; then
+        echo "[entrypoint] opencode: OPENCODE_API_KEY present in env; agent will use api-key auth" >&2
+    else
+        rm -f /home/agent/.local/share/opencode/auth.json
+        echo "[entrypoint] opencode: no auth.json mounted and OPENCODE_API_KEY unset — agent will require interactive login" >&2
+    fi
+    mkdir -p /home/agent/.config/opencode
+    if [ ! -f /home/agent/.config/opencode/opencode.json ]; then
+        printf '%s\n' '{"permission":"allow"}' > /home/agent/.config/opencode/opencode.json
+    fi
+    LAUNCH=(opencode)
+    if [ $# -gt 0 ]; then
+        LAUNCH+=("$@")
+    fi
     ;;
   *)
     echo "[entrypoint] unknown JACKIN_AGENT: $JACKIN_AGENT" >&2
@@ -120,10 +173,53 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     ;;
 esac
 
-# ── pre-launch hook (runtime-neutral) ──────────────────────────────
-if [ -x /home/agent/.jackin-runtime/pre-launch.sh ]; then
-    echo "Running pre-launch hook..."
-    /home/agent/.jackin-runtime/pre-launch.sh
+# ── role runtime hooks ─────────────────────────────────────────────
+if [ -x /jackin/runtime/hooks/setup-once.sh ]; then
+    setup_once_marker="/jackin/state/hooks/setup-once.done"
+    if [ ! -e "$setup_once_marker" ]; then
+        if ! mkdir -p "$(dirname "$setup_once_marker")"; then
+            echo "[entrypoint] failed to create marker directory $(dirname "$setup_once_marker")" >&2
+            exit 1
+        fi
+        run_hook setup-once /jackin/runtime/hooks/setup-once.sh \
+            "marker not written, will retry next launch"
+        # Wrap touch so the post-success failure surfaces as an attributed
+        # log; otherwise `set -e` aborts silently and the next launch
+        # silently re-runs setup-once with no operator-visible reason.
+        if ! touch "$setup_once_marker"; then
+            echo "[entrypoint] setup-once succeeded but marker write failed; will retry next launch" >&2
+            exit 1
+        fi
+    fi
+fi
+
+if [ -x /jackin/runtime/hooks/source.sh ]; then
+    echo "[entrypoint] sourcing runtime hook..."
+    # Hooks must use `return`, not `exit` (sourced `exit` kills the
+    # entrypoint). Save PWD and clear any ERR trap the hook installs
+    # so neither leaks into the exec'd agent.
+    source_pwd="$PWD"
+    # JACKIN_DEBUG xtrace would dump expanded `export SECRET=...` lines
+    # from the sourced shell into operator logs; suspend around source.
+    case $- in *x*) source_xtrace=1; set +x ;; esac
+    # Capture rc before the test — `$?` after `if ! .` is 0.
+    rc=0
+    # shellcheck source=/dev/null
+    . /jackin/runtime/hooks/source.sh || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo "[entrypoint] source hook returned non-zero (exit $rc); aborting before agent launch" >&2
+        exit "$rc"
+    fi
+    [ "${source_xtrace:-0}" = "1" ] && set -x
+    trap - ERR
+    if ! cd "$source_pwd"; then
+        echo "[entrypoint] saved PWD ($source_pwd) vanished after source hook; falling back to /" >&2
+        cd /
+    fi
+fi
+
+if [ -x /jackin/runtime/hooks/preflight.sh ]; then
+    run_hook preflight /jackin/runtime/hooks/preflight.sh
 fi
 
 # In debug mode, pause so the operator can review logs before the agent clears the screen

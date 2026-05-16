@@ -33,6 +33,7 @@ pub struct ConsoleState {
     /// its `WorkspaceChoice` from current config — manager edits flow
     /// through immediately.
     pub pending_launch: Option<LoadWorkspaceInput>,
+    pub pending_launch_role: Option<RoleSelector>,
     /// Process-lifetime `op` metadata cache. `Rc<RefCell<_>>` because
     /// the TUI event loop is single-threaded.
     pub op_cache: Rc<RefCell<OpCache>>,
@@ -61,6 +62,7 @@ impl ConsoleState {
                 ),
             ),
             pending_launch: None,
+            pending_launch_role: None,
             op_cache,
             op_available,
             quit_confirm: None,
@@ -180,6 +182,7 @@ mod tests {
         config.workspaces.insert(
             "ws".to_string(),
             crate::workspace::WorkspaceConfig {
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                 workdir: workdir.clone(),
                 mounts: vec![crate::workspace::MountConfig {
                     src: workdir.clone(),
@@ -198,6 +201,7 @@ mod tests {
                 claude: None,
                 codex: None,
                 amp: None,
+                opencode: None,
                 github: None,
                 git_pull_on_entry: false,
             },
@@ -226,6 +230,7 @@ mod tests {
 
     fn workspace_with_allowed(allowed: &[&str]) -> crate::workspace::WorkspaceConfig {
         crate::workspace::WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work".to_string(),
             mounts: vec![],
             allowed_roles: allowed.iter().map(|s| (*s).to_string()).collect(),
@@ -239,6 +244,7 @@ mod tests {
             claude: None,
             codex: None,
             amp: None,
+            opencode: None,
             github: None,
             git_pull_on_entry: false,
         }

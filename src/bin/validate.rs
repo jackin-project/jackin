@@ -3,17 +3,46 @@ use std::process::ExitCode;
 
 use jackin::repo::validate_role_repo;
 
+// Hand-rolled argv: pulling clap for one flag + one positional is not worth
+// the build cost. Switch to clap if a third option lands.
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 2 {
-        eprintln!("Usage: jackin-validate <role-repo-path>");
-        return ExitCode::FAILURE;
+    let (migrate, repo_arg) = match parse_args(&args[1..]) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            eprintln!("error: {err}");
+            eprintln!("Usage: jackin-validate [--migrate] <role-repo-path>");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let repo_dir = PathBuf::from(repo_arg);
+    match std::fs::metadata(&repo_dir) {
+        Ok(m) if m.is_dir() => {}
+        Ok(_) => {
+            eprintln!("error: {} is not a directory", repo_dir.display());
+            return ExitCode::FAILURE;
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("error: {} does not exist", repo_dir.display());
+            return ExitCode::FAILURE;
+        }
+        Err(e) => {
+            eprintln!("error: cannot inspect {}: {e}", repo_dir.display());
+            return ExitCode::FAILURE;
+        }
     }
 
-    let repo_dir = PathBuf::from(&args[1]);
-    if !repo_dir.is_dir() {
-        eprintln!("Error: {} is not a directory", repo_dir.display());
-        return ExitCode::FAILURE;
+    if migrate {
+        let manifest_path = repo_dir.join("jackin.role.toml");
+        match jackin::manifest::migrations::migrate_manifest_file(&manifest_path) {
+            Ok(Some((old, new))) => println!("Migrated manifest {old} -> {new}"),
+            Ok(None) => println!("Manifest already at current version"),
+            Err(error) => {
+                eprintln!("error: {error:#}");
+                return ExitCode::FAILURE;
+            }
+        }
     }
 
     match validate_role_repo(&repo_dir) {
@@ -22,8 +51,32 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!("error: {error}");
+            eprintln!("error: {error:#}");
             ExitCode::FAILURE
         }
     }
+}
+
+// Accept `--migrate` in any position so `jackin-validate <path> --migrate`
+// works as well as `jackin-validate --migrate <path>`. Errors return plain
+// messages; main prepends a single `error:` prefix at print time.
+fn parse_args(args: &[String]) -> Result<(bool, &str), String> {
+    let mut migrate = false;
+    let mut repo: Option<&str> = None;
+    for arg in args {
+        if arg == "--migrate" {
+            if migrate {
+                return Err("--migrate specified twice".into());
+            }
+            migrate = true;
+        } else if arg.starts_with("--") {
+            return Err(format!("unknown flag {arg}"));
+        } else if repo.is_some() {
+            return Err("too many positional arguments".into());
+        } else {
+            repo = Some(arg);
+        }
+    }
+    let repo = repo.ok_or_else(|| "missing role-repo-path".to_string())?;
+    Ok((migrate, repo))
 }

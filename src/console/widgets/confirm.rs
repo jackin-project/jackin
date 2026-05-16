@@ -88,24 +88,21 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
-const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
-const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
-const WHITE: Color = Color::Rgb(255, 255, 255);
+use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 const WARNING_YELLOW: Color = Color::Rgb(255, 216, 94);
 
 /// Height (rows) this Confirm modal wants, given its current contents.
 ///
-/// `Default` kind: N prompt lines + 6 chrome rows (top/bottom border = 2,
-/// spacer, buttons, spacer, hint). `RoleTrust` uses a fixed 12-row layout
-/// matching the structured renderer in `render_role_trust`.
+/// `Default` kind: N prompt lines + 4 chrome rows (top/bottom border = 2,
+/// spacer, buttons). `RoleTrust` uses a fixed 11-row layout matching the
+/// structured renderer in `render_role_trust`.
 #[must_use]
 pub fn required_height(state: &ConfirmState) -> u16 {
     match &state.kind {
-        ConfirmKind::RoleTrust { .. } => 12,
+        ConfirmKind::RoleTrust { .. } => 11,
         ConfirmKind::Default { prompt } => {
             let prompt_lines = prompt.lines().count().max(1) as u16;
-            prompt_lines + 6
+            prompt_lines + 4
         }
     }
 }
@@ -149,8 +146,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
             Constraint::Length(prompt_lines), // prompt (may span multiple lines)
             Constraint::Length(1),            // spacer
             Constraint::Length(1),            // button row
-            Constraint::Length(1),            // spacer between buttons and hint
-            Constraint::Length(1),            // footer hint
         ])
         .split(inner);
 
@@ -200,23 +195,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmState) {
         Paragraph::new(button_line).alignment(Alignment::Center),
         chunks[2],
     );
-
-    // Footer hint — same key/text/sep scheme as the main TUI footer.
-    let key = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text = Style::default().fg(PHOSPHOR_GREEN);
-    let sep = Style::default().fg(PHOSPHOR_DARK);
-    let hint = Paragraph::new(ratatui::text::Line::from(vec![
-        Span::styled("Y", key),
-        Span::styled(" yes", text),
-        Span::styled(" \u{b7} ", sep),
-        Span::styled("N", key),
-        Span::styled(" no", text),
-        Span::styled(" \u{b7} ", sep),
-        Span::styled("Esc", key),
-        Span::styled(" cancel", text),
-    ]))
-    .alignment(Alignment::Center);
-    frame.render_widget(hint, chunks[4]);
 }
 
 fn render_role_trust(
@@ -235,7 +213,6 @@ fn render_role_trust(
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(2),
-            Constraint::Length(1),
             Constraint::Length(1),
         ])
         .split(inner);
@@ -295,7 +272,6 @@ fn render_role_trust(
     );
 
     render_buttons(frame, rows[6], state);
-    render_hint(frame, rows[7]);
 }
 
 const fn inset(area: Rect, x: u16) -> Rect {
@@ -339,24 +315,6 @@ fn render_buttons(frame: &mut Frame, area: Rect, state: &ConfirmState) {
         Paragraph::new(button_line).alignment(Alignment::Center),
         area,
     );
-}
-
-fn render_hint(frame: &mut Frame, area: Rect) {
-    let key = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let text = Style::default().fg(PHOSPHOR_GREEN);
-    let sep = Style::default().fg(PHOSPHOR_DARK);
-    let hint = Paragraph::new(ratatui::text::Line::from(vec![
-        Span::styled("Y", key),
-        Span::styled(" yes", text),
-        Span::styled(" \u{b7} ", sep),
-        Span::styled("N", key),
-        Span::styled(" no", text),
-        Span::styled(" \u{b7} ", sep),
-        Span::styled("Esc", key),
-        Span::styled(" cancel", text),
-    ]))
-    .alignment(Alignment::Center);
-    frame.render_widget(hint, area);
 }
 
 #[cfg(test)]
@@ -466,8 +424,8 @@ mod tests {
         use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
         let s = ConfirmState::role_trust(
-            "scentbird/agent-jones",
-            "https://github.com/scentbird/jackin-agent-jones.git",
+            "acme/agent-jones",
+            "https://github.com/acme/jackin-agent-jones.git",
         );
         let area = Rect::new(0, 0, 100, required_height(&s));
         let backend = TestBackend::new(area.width, area.height);
@@ -484,10 +442,8 @@ mod tests {
         }
 
         assert!(rendered.contains("Trust role source"));
-        assert!(rendered.contains("Role: scentbird/agent-jones"));
-        assert!(
-            rendered.contains("Repository: https://github.com/scentbird/jackin-agent-jones.git")
-        );
+        assert!(rendered.contains("Role: acme/agent-jones"));
+        assert!(rendered.contains("Repository: https://github.com/acme/jackin-agent-jones.git"));
         assert!(rendered.contains("Dockerfile can run during image builds."));
         assert!(rendered.contains("The role can access mounted workspace files."));
     }

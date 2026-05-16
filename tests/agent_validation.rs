@@ -6,7 +6,8 @@ fn rejects_supported_agent_without_corresponding_table() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"dockerfile = "Dockerfile"
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
 
 [claude]
@@ -32,7 +33,8 @@ fn legacy_manifest_passes_validation() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"dockerfile = "Dockerfile"
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -54,7 +56,8 @@ fn codex_only_manifest_with_codex_table_passes() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"dockerfile = "Dockerfile"
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 agents = ["codex"]
 
 [codex]
@@ -76,7 +79,8 @@ fn amp_only_manifest_with_amp_table_passes() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"dockerfile = "Dockerfile"
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 agents = ["amp"]
 
 [amp]

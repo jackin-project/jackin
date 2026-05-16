@@ -29,6 +29,7 @@ pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) 
             Agent::Claude => ro.claude.as_ref().map(|c| c.auth_forward),
             Agent::Codex => ro.codex.as_ref().map(|c| c.auth_forward),
             Agent::Amp => ro.amp.as_ref().map(|c| c.auth_forward),
+            Agent::Opencode => ro.opencode.as_ref().map(|c| c.auth_forward),
         })
     {
         return m;
@@ -39,6 +40,7 @@ pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) 
         Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
         Agent::Codex => ws.codex.as_ref().map(|c| c.auth_forward),
         Agent::Amp => ws.amp.as_ref().map(|c| c.auth_forward),
+        Agent::Opencode => ws.opencode.as_ref().map(|c| c.auth_forward),
     }) {
         return m;
     }
@@ -48,6 +50,7 @@ pub fn resolve_mode(cfg: &AppConfig, agent: Agent, workspace: &str, role: &str) 
         Agent::Claude => cfg.claude.as_ref().map(|c| c.auth_forward),
         Agent::Codex => cfg.codex.as_ref().map(|c| c.auth_forward),
         Agent::Amp => cfg.amp.as_ref().map(|c| c.auth_forward),
+        Agent::Opencode => cfg.opencode.as_ref().map(|c| c.auth_forward),
     }
     .unwrap_or_default()
 }
@@ -157,7 +160,7 @@ impl AppConfig {
         Ok((source, true))
     }
 
-    /// Mark an role source as trusted.  Returns `true` when the flag changed.
+    /// Mark a role source as trusted.  Returns `true` when the flag changed.
     // pub(crate): test-only affordance; production callers use ConfigEditor.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn trust_agent(&mut self, key: &str) -> bool {
@@ -170,7 +173,7 @@ impl AppConfig {
         false
     }
 
-    /// Revoke trust for an role source.  Returns `true` when the flag changed.
+    /// Revoke trust for a role source.  Returns `true` when the flag changed.
     /// Note: does not prevent revoking builtins — the caller should check
     /// [`is_builtin_agent`] first.
     // pub(crate): test-only affordance; production callers use ConfigEditor.

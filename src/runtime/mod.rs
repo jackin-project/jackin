@@ -14,9 +14,17 @@ pub mod test_support;
 #[cfg(test)]
 pub use self::test_support::FakeRunner;
 
-pub use self::attach::{ContainerState, hardline_agent, inspect_container_state};
+pub(crate) use self::attach::docker_unavailable_msg;
+pub use self::attach::{
+    AgentSession, AgentSessionInventory, ContainerState, describe_agent_session_count,
+    hardline_agent, inspect_agent_sessions, inspect_container_state, inspect_hardline_instance,
+    spawn_agent_session,
+};
 pub use self::caffeinate::reconcile as reconcile_keep_awake;
-pub use self::cleanup::{eject_role, ensure_role_not_running, exile_all, purge_class_data};
+pub use self::cleanup::{
+    eject_role, exile_all, prune_cache, prune_images, prune_instances, prune_roles,
+    purge_class_data, purge_container_state,
+};
 pub(crate) use self::discovery::list_role_names;
 pub use self::discovery::{
     list_managed_role_names, list_running_agent_display_names, list_running_agent_names,

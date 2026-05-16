@@ -70,12 +70,22 @@ export default defineConfig({
           items: [
             { label: 'Workspaces', slug: 'guides/workspaces' },
             { label: 'Mounts', slug: 'guides/mounts' },
+            { label: 'Parallel Agents', slug: 'guides/parallel-agents' },
             { label: 'Environment Variables', slug: 'guides/environment-variables' },
             {
               label: 'Authentication',
               items: [
                 { label: 'Overview', slug: 'guides/authentication' },
-                { label: 'Agent Authentication', slug: 'guides/authentication/agents' },
+                {
+                  label: 'Agent Authentication',
+                  items: [
+                    { label: 'Overview', slug: 'guides/authentication/agents' },
+                    { label: 'Claude Code', slug: 'guides/authentication/agents/claude-code' },
+                    { label: 'Codex', slug: 'guides/authentication/agents/codex' },
+                    { label: 'Amp', slug: 'guides/authentication/agents/amp' },
+                    { label: 'OpenCode', slug: 'guides/authentication/agents/opencode' },
+                  ],
+                },
                 { label: 'GitHub CLI Authentication', slug: 'guides/authentication/github-cli' },
               ],
             },
@@ -99,8 +109,10 @@ export default defineConfig({
             { label: 'eject', slug: 'commands/eject' },
             { label: 'exile', slug: 'commands/exile' },
             { label: 'purge', slug: 'commands/purge' },
+            { label: 'prune', slug: 'commands/prune' },
             { label: 'workspace', slug: 'commands/workspace' },
             { label: 'config', slug: 'commands/config' },
+            { label: 'role', slug: 'commands/role' },
           ],
         },
         {
@@ -125,13 +137,18 @@ export default defineConfig({
           label: "Behind jackin' — Internals",
           items: [
             { label: 'Architecture', slug: 'reference/architecture' },
+            { label: 'Runtime Instance Model', slug: 'reference/runtime-instance-model' },
+            { label: 'Instance and Resource Naming', slug: 'reference/instance-resource-naming' },
             { label: 'Configuration File', slug: 'reference/configuration' },
+            { label: 'Schema Versions', slug: 'reference/schema-versions' },
             { label: 'Codebase Map', slug: 'reference/codebase-map' },
             { label: 'Claude Token Orchestrator', slug: 'reference/claude-token-orchestrator' },
             {
               label: 'Goal prompts',
               collapsed: true,
-              items: [{ label: 'Jackin Desktop Agent Hub', slug: 'reference/goals/jackin-desktop-agent-hub' }],
+              items: [
+                { label: 'Jackin Desktop Agent Hub', slug: 'reference/goals/jackin-desktop-agent-hub' },
+              ],
             },
             {
               // Roadmap groups are flat — every group below is open
@@ -158,7 +175,6 @@ export default defineConfig({
                       items: [
                         { label: 'Workspace description', slug: 'reference/roadmap/workspace-description' },
                         { label: 'Operator handler system', slug: 'reference/roadmap/operator-handler-system' },
-                        { label: 'Workspace archive', slug: 'reference/roadmap/workspace-archive' },
                         { label: 'Declarative resource limits', slug: 'reference/roadmap/declarative-resource-limits' },
                         { label: 'Ephemeral mount modes', slug: 'reference/roadmap/ephemeral-mount-modes' },
                       ],
@@ -168,6 +184,7 @@ export default defineConfig({
                       collapsed: true,
                       items: [
                         { label: 'Agent runtime status', slug: 'reference/roadmap/agent-runtime-status' },
+                        { label: 'Console agent session control', slug: 'reference/roadmap/console-agent-session-control' },
                         { label: 'Console resource panel', slug: 'reference/roadmap/console-resource-panel' },
                         { label: 'Agent tag protocol', slug: 'reference/roadmap/agent-tag-protocol' },
                         { label: 'GitHub link tracking', slug: 'reference/roadmap/github-link-tracking' },
@@ -232,10 +249,8 @@ export default defineConfig({
                         { label: 'Behavioral spec: op_picker', slug: 'reference/roadmap/behavioral-spec-op-picker' },
                         { label: 'Per-directory README + AGENTS.md', slug: 'reference/roadmap/per-directory-readme' },
                         { label: 'Developer Reference setup', slug: 'reference/roadmap/developer-reference-setup' },
-                        { label: 'Update PROJECT_STRUCTURE.md', slug: 'reference/roadmap/project-structure-update' },
                         { label: 'CI gate: PROJECT_STRUCTURE.md', slug: 'reference/roadmap/ci-project-structure-gate' },
                         { label: 'pub(crate) visibility', slug: 'reference/roadmap/pub-crate-visibility' },
-                        { label: 'MSRV & toolchain', slug: 'reference/roadmap/msrv-toolchain' },
                         { label: 'Architecture Decision Records', slug: 'reference/roadmap/architecture-decision-records' },
                         { label: 'Snapshot tests for TUI', slug: 'reference/roadmap/snapshot-tests-tui' },
                         { label: 'Agent workflow: cc-sdd', slug: 'reference/roadmap/agent-workflow-cc-sdd' },
@@ -301,6 +316,7 @@ export default defineConfig({
                   label: 'Isolation & security',
                   collapsed: true,
                   items: [
+                    { label: 'Process-level sandboxing', slug: 'reference/roadmap/process-level-sandboxing' },
                     { label: 'Rootless DinD', slug: 'reference/roadmap/rootless-dind' },
                     { label: 'Selectable sandbox backends', slug: 'reference/roadmap/selectable-sandbox-backends' },
                     { label: 'Reproducibility & provenance pinning', slug: 'reference/roadmap/reproducibility-pinning' },
@@ -328,23 +344,7 @@ export default defineConfig({
                   label: 'Configuration ergonomics',
                   collapsed: true,
                   items: [
-                    { label: 'Split config.toml into per-workspace files', slug: 'reference/roadmap/split-workspace-config-files' },
-                  ],
-                },
-                {
-                  label: 'Resolved',
-                  collapsed: true,
-                  items: [
-                    { label: 'Agent source trust', slug: 'reference/roadmap/agent-source-trust' },
-                    { label: 'Custom plugin marketplace', slug: 'reference/roadmap/custom-plugin-marketplace' },
-                    { label: 'DinD hostname env var', slug: 'reference/roadmap/dind-hostname-env-var' },
-                    { label: 'DinD TLS', slug: 'reference/roadmap/dind-tls' },
-                    { label: 'Env var interpolation', slug: 'reference/roadmap/env-var-interpolation' },
-                    { label: 'JACKIN_DEBUG env var', slug: 'reference/roadmap/jackin-debug-env-var' },
-                    { label: 'Orphaned DinD cleanup', slug: 'reference/roadmap/orphaned-dind-cleanup' },
-                    { label: 'Per-mount isolation', slug: 'reference/roadmap/per-mount-isolation' },
-                    { label: 'Sensitive mount warnings', slug: 'reference/roadmap/sensitive-mount-warnings' },
-                    { label: 'Worktree cleanup assessment', slug: 'reference/roadmap/worktree-cleanup-assessment' },
+                    { label: 'Config versioning and migration', slug: 'reference/roadmap/config-versioning-migration' },
                   ],
                 },
               ],

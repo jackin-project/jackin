@@ -15,7 +15,17 @@ This rule retires when the project gains additional human reviewers.
 
 ## Project status: pre-release (agent-only)
 
-Jackin has no released version — it is a proof-of-concept. **Breaking changes are expected and acceptable.** When schemas change (config TOML, on-disk state layout, CLI flags, role manifests, role/workspace/agent shapes), do not write migration code, compatibility shims, fallback parsers for old field names, "tolerant ignore + warn" handlers, or deprecation warnings. Make the new shape the only shape; let stale configs fail with the standard parser error.
+Jackin has no released version — it is a proof-of-concept. **Breaking changes are expected and acceptable.** When schemas change (on-disk state layout, CLI flags, role/agent shapes outside the three versioned files listed below), do not write migration code, compatibility shims, fallback parsers for old field names, "tolerant ignore + warn" handlers, or deprecation warnings. Make the new shape the only shape; let stale data fail with the standard parser error.
+
+`config.toml`, per-workspace files at `~/.config/jackin/workspaces/<name>.toml`, and `jackin.role.toml` are exceptions: all three are versioned schemas (`CURRENT_CONFIG_VERSION`, `CURRENT_WORKSPACE_VERSION`, `CURRENT_MANIFEST_VERSION` in `src/config/migrations.rs` and `src/manifest/migrations.rs`). Any PR that touches `AppConfig`, `WorkspaceConfig`, `RoleManifest`, `HooksConfig`, or any other type whose serde representation lives in one of those three files must ship with five artifacts:
+
+1. Bump of the relevant `CURRENT_*_VERSION`.
+2. A migration step in the corresponding registry (`CONFIG_MIGRATIONS`, `WORKSPACE_MIGRATIONS`, `MANIFEST_MIGRATIONS`).
+3. A new fixture directory under `tests/fixtures/migrations/<file-kind>/from-<predecessor-version>/` containing `meta.toml`, `before.toml`, and `after.toml`. The fixture harness in `tests/migration_fixtures.rs` walks every supported `from_version` on every CI run and asserts byte-equal output, so a delayed operator landing on the new schema after several version bumps still upgrades cleanly.
+4. Re-bake of every existing fixture's `after.toml` so it walks through the new step too. The fixture for the oldest supported `from_version` is the load-bearing test for users delayed by months — its diff is the proof the new chain is composable.
+5. A new entry at the top of the **Timeline** section in `docs/src/content/docs/reference/schema-versions.mdx` with date, predecessor, fixture link, summary, and a before/after example.
+
+A non-additive change (renamed field, removed field, type change, added enum variant, restructured table) without these five artifacts is incomplete; reviewers block merge until they appear or the change is reshaped to be additive (new optional field with a serde default). Operator config and per-workspace files migrate automatically during `AppConfig::load_or_init` at startup; role authors migrate local manifests on a desktop with `jackin role migrate <role-repo-path>`, while CI and Renovate-style automation migrate manifests with the small standalone `jackin-validate --migrate <role-repo-path>` binary.
 
 Do not memorialize old shapes in code comments ("formerly named X", "old location was Y") or in documentation files outside the changelog. The git history is the record of what changed; the code should describe only the current shape.
 
@@ -76,11 +86,46 @@ The changelog exists to communicate breaking changes and new features to *users 
 
 When the first release is being cut, the operator will explicitly ask for the changelog to be populated. Until then, leave `CHANGELOG.md` unchanged.
 
+## Roadmap freshness (agent-only)
+
+Before marking any PR ready to land, and again whenever the operator asks to merge a PR, check whether the change ships, advances, defers, or invalidates anything under `docs/src/content/docs/reference/roadmap/`. If yes, update the roadmap item's `**Status**`, related files, and implementation notes in the same PR, then update `docs/src/content/docs/reference/roadmap.mdx` so the item appears only in the correct overview section.
+
+Do this check even when the PR is mostly code, tests, CI, or rule changes. The roadmap is an operator-facing source of truth, not a retrospective cleanup task. A feature that lands without moving its roadmap item leaves stale planning docs behind and should be treated as an incomplete PR. If a merge request reveals stale roadmap state, stop before merging, update the roadmap and PR description, and only then continue with normal merge verification.
+
+Run the sidebar and overview audits documented in `docs/AGENTS.md` after any roadmap status or file movement. If a roadmap item is partially shipped, keep it in **Partially implemented** with the remaining phases named; do not duplicate the same item under **Planned**.
+
+Roadmap pages are for planned, researched, designed, deferred, or remaining work. Once behavior ships, move the operator details to normal docs (`guides/`, `commands/`, `reference/`) and replace roadmap detail with a short status plus canonical-doc links. Do not keep long copied implementation walkthroughs in roadmap items after the feature is documented elsewhere.
+
+**Fully-resolved roadmap items must be retired in the same PR that ships the last piece, not left behind as `Status: Resolved` pages.** The full retirement procedure — confirming there is no remaining work, auditing inbound links, splitting page detail between user-facing and contributor-facing docs, replacing the page with a single Completed bullet, and re-running the sidebar / overview / docs verification audits — lives in [`PULL_REQUESTS.md`](PULL_REQUESTS.md) under "Retire fully-resolved roadmap items in the same PR." Read it before deciding to keep or delete a `Resolved` page.
+
+## Documentation as the source of truth (agent-only)
+
+**The published docs site is the spec.** Every feature jackin ships must be described from two angles, and both must be kept current in the same PR that lands the change:
+
+- **User-facing docs** (the *Operator* and *Role Authoring* sidebar groups: `getting-started/`, `guides/`, `commands/`, `developing/`) describe **what jackin does from outside the binary**. They answer "if I run this command or set this config, what will happen?" without naming on-disk paths the operator never edits, internal Rust types, or implementation steps. A reader following only the user-facing docs must be able to use the feature successfully.
+- **Contributor-facing docs** (the *Internals* sidebar group: `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, `reference/claude-token-orchestrator.mdx`, `reference/schema-versions.mdx`, `reference/tui-design-decisions.mdx`, plus active items under `reference/roadmap/`) describe **how jackin is built**. On-disk layout, struct/enum/function names, design decisions, trade-offs, file paths under `src/`, and links into the source tree all live here. This surface is what an agent or contributor reads before changing code, and it is what they update when their change makes the description stale.
+
+Both surfaces are load-bearing. If an operator-visible behaviour ships without an update to the user-facing docs, the feature is not actually shipped — operators have no way to learn it exists or how to invoke it. If an internal change ships without an update to the contributor-facing docs, the next agent reading the internals page is debugging against a stale spec.
+
+**Before marking any PR ready to merge — and again whenever the operator asks to merge it — re-verify every change against the published docs and update both surfaces in the same PR.** Concretely:
+
+1. Walk the diff and ask, for each change: does this change what an operator sees, types, or relies on? If yes, the matching `guides/`, `commands/`, `getting-started/`, or `developing/` page must be updated in this PR.
+2. Walk the diff again and ask: does this change a struct, enum, function name, on-disk path, schema version, design decision, or any other detail an internals page describes? If yes, the matching `reference/` page must be updated in this PR.
+3. Apply the **Roadmap freshness** rule above: status updates, sidebar/overview audits, and retire-when-fully-resolved.
+4. Run `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from `docs/`. A docs change that doesn't compile or breaks repo-file references is incomplete.
+
+Do not split a feature PR from its docs PR by default. The docs land with the code that makes them true; landing them later means the docs are wrong for the gap, and the gap is exactly when other agents and operators will read them. The exception is the explicit "docs-only follow-up" pattern named in `PULL_REQUESTS.md`, which the operator authorizes per case.
+
+**Audience-correct placement is not optional.** When you find yourself wanting to put a TOML schema fragment, on-disk path, or struct name on a user-facing page, the placement is wrong — that detail goes on the matching internals page, and the user-facing page links to it. When you find yourself wanting to write `jackin foo --bar` operator instructions on an internals page, that block belongs in the `commands/` page, and the internals page links out. The split is what lets each audience trust their surface; mixing them weakens both.
+
+This rule does not retire when jackin ships its first release; the audience split is permanent. The roadmap-retirement portion of this rule and the **Roadmap freshness** rule retire only when there are no roadmap items left to maintain.
+
 ## Pull requests (agent-only) — see `PULL_REQUESTS.md`
 
 All rules for opening, iterating on, refreshing, reviewing, and merging pull requests live in [`PULL_REQUESTS.md`](PULL_REQUESTS.md). **Read that file before opening any PR.** It covers:
 
 - Per-PR merge authorization (agents never merge without explicit "merge it" confirmation).
+- Required base branch (agent-created PRs target `main` unless the operator explicitly names a different target branch in the same request).
 - Force-push authorization (agents never rewrite an existing remote branch without explicit operator approval).
 - Required PR body shape (Summary / hard-rule callout / What's deferred / Verify locally / Migration notes).
 - "Verify locally" templates, including the `export TIRITH=0` line that lets multi-line pastes survive the `tirith` paste scanner.
@@ -119,6 +164,14 @@ Until the listed agents emit their trailers automatically, the trailer must be a
   ```text
   Co-authored-by: Amp <amp@ampcode.com>
   ```
+
+- **OpenCode** (OpenCode CLI, regardless of underlying GLM model):
+
+  ```text
+  Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>
+  ```
+
+  This matches the GitHub App identity used by OpenCode when it creates commits, as defined in the `anomalyco/opencode` repository. Do not alter the format — match what OpenCode emits.
 
 Amp may additionally emit an `Amp-Thread-ID:` metadata trailer; that is acceptable alongside the single `Co-authored-by: Amp` trailer because the thread ID identifies the conversation, not a second agent.
 
@@ -189,6 +242,12 @@ This does not apply to:
 
 - Inspection commands the operator runs (`pgrep`, `pmset`, `cat`, `ls`) — those aren't jackin invocations.
 - Production recommendations or scripted automation (debug output is too noisy for those).
+
+## TUI design decisions (agent-only)
+
+All TUI design rules — navigation conventions, W3C ARIA Tabs pattern, focusability, component reuse, color palette, modal sizing, scroll semantics, hint/footer rules, and more — live in [`docs/src/content/docs/reference/tui-design-decisions.mdx`](docs/src/content/docs/reference/tui-design-decisions.mdx).
+
+**Read that document before implementing any TUI change.** When a new decision is made (operator explains what should change and why), add it there immediately, not here.
 
 ## Shared conventions
 

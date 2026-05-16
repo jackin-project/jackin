@@ -4,8 +4,13 @@ use crate::paths::JackinPaths;
 use std::path::{Path, PathBuf};
 
 mod auth;
+pub mod manifest;
 pub mod naming;
-pub use naming::{class_family_matches, next_container_name, primary_container_name, runtime_slug};
+pub use manifest::{
+    DockerResources, InstanceIndex, InstanceIndexEntry, InstanceManifest, InstanceQuery,
+    InstanceStatus, NewInstanceManifest,
+};
+pub use naming::{class_family_matches, container_name_with_id, new_container_name, runtime_slug};
 
 /// Outcome of the `.claude.json` provisioning step, so callers can surface
 /// a one-time notice when host credentials are forwarded.
@@ -149,72 +154,66 @@ pub enum GithubProvisionKind {
     Skipped,
 }
 
-/// Agent-specific paths that belong to one variant.
+/// Runtime state for the selected agent (model override only).
 ///
-/// Encoded as an enum so the agent variant and the actual paths can
-/// never disagree.
-///
-/// All host paths land under `/jackin/<agent>/...` inside the
-/// container. The agent's expected home-relative paths
-/// (`~/.claude.json`, `~/.codex/auth.json`, `~/.local/share/amp/secrets.json`,
-/// …) are NOT bind-mounted directly: jackin's entrypoint copies the
-/// relevant files from `/jackin/` into the agent's home before launch.
-/// This isolates the host→container handoff to a single tree (`/jackin/`)
-/// the operator can audit at a glance, and frees the agent's home tree
-/// (`/home/agent/.claude/`, `/home/agent/.codex/`,
-/// `/home/agent/.local/share/amp/`) to carry image-baked config without
-/// being masked by a runtime mount.
-///
-/// The mount decision is encoded in `forward_auth` (Claude) or in the
-/// optional path fields directly (Codex/Amp). For Claude,
-/// `forward_auth = false` means the agent authenticates via env vars
-/// (`CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`) and the auth files
-/// must not flow into the container even though they exist on the host
-/// (`wipe_claude_state` leaves a `{}` shell behind). For Codex/Amp,
-/// `None` on the optional path field means the same thing — wiped on
-/// disk, no mount, env-driven authentication
-/// (`OPENAI_API_KEY` / `AMP_API_KEY`).
+/// Auth paths for all agents in `manifest.supported_agents()` are tracked
+/// separately on [`ProvisionedAuth`] so `hardline --new` can switch to any
+/// supported agent without re-authentication.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum AgentRuntimeState {
-    Claude {
-        /// Host path to Claude's account-metadata file. Always
-        /// populated by `prepare` (as `{}` for non-sync modes); only
-        /// bind-mounted when `forward_auth` is `true` *and* the file
-        /// exists on disk.
-        account_json: PathBuf,
-        /// Host path to Claude's OAuth credentials file. May not exist
-        /// on disk in env-driven modes (the wipe path removes it).
-        /// Only bind-mounted when `forward_auth` is `true` *and* the
-        /// file exists.
-        credentials_json: PathBuf,
-        /// Whether `account_json` and `credentials_json` should be
-        /// bind-mounted under `/jackin/claude/`. `false` for
-        /// `ignore`/`api_key`/`oauth_token` (env-driven authentication
-        /// — no host filesystem state must reach the container).
-        forward_auth: bool,
-    },
-    Codex {
-        /// Host path mounted at `/jackin/codex/config.toml` (always —
-        /// generated from the manifest, not auth state).
-        config_toml: PathBuf,
-        /// Host path mounted at `/jackin/codex/auth.json` when the
-        /// file was synced from the host's `~/.codex/auth.json` on a
-        /// previous launch. `None` when the host had no auth.json at
-        /// the most recent launch — the bind mount is skipped and any
-        /// in-container `codex login` writes to the container's
-        /// writable layer (lost on `docker rm`).
-        auth_json: Option<PathBuf>,
-    },
-    Amp {
-        /// Host path mounted at `/jackin/amp/secrets.json`. `None`
-        /// when env-driven modes wiped it or sync had no host file
-        /// to copy and no carry-over to preserve.
-        ///
-        /// `XDG_DATA` path. `~/.config/amp/settings.json` (`XDG_CONFIG`)
-        /// holds preferences only and is intentionally not forwarded.
-        secrets_json: Option<PathBuf>,
-    },
+    Claude { model: Option<String> },
+    Codex { model: Option<String> },
+    Amp,
+    Opencode { model: Option<String> },
+}
+
+/// Claude's provisioned auth slot.
+///
+/// `forward_auth` is `true` only for modes that mount real credential
+/// files (`Sync` / `OAuthToken`); `ApiKey` and `Ignore` leave the
+/// placeholder files on disk but do not mount them, so they reach
+/// the container via env rather than `/jackin/claude/`.
+#[derive(Debug, Clone)]
+pub struct ClaudeAuth {
+    pub account_json: PathBuf,
+    pub credentials_json: PathBuf,
+    pub forward_auth: bool,
+}
+
+/// Codex' provisioned auth slot. `auth_json` is `None` under env-driven
+/// modes or when the host had no `~/.codex/auth.json`.
+#[derive(Debug, Clone, Default)]
+pub struct CodexAuth {
+    pub auth_json: Option<PathBuf>,
+}
+
+/// Amp's provisioned auth slot. `secrets_json` is `None` under
+/// env-driven modes or when no host secrets file was present.
+#[derive(Debug, Clone, Default)]
+pub struct AmpAuth {
+    pub secrets_json: Option<PathBuf>,
+}
+
+/// `OpenCode`'s provisioned auth slot. `auth_json` is `None` under
+/// env-driven modes or when no host auth file was present.
+#[derive(Debug, Clone, Default)]
+pub struct OpencodeAuth {
+    pub auth_json: Option<PathBuf>,
+}
+
+/// Auth state provisioned for every agent listed in `manifest.supported_agents()`.
+///
+/// Each per-agent slot is `Some(_)` iff that agent is supported and
+/// provisioned. Carrying state for every supported agent (not just the
+/// selected one) is what lets `hardline --new` switch agents without
+/// re-authentication.
+#[derive(Debug, Clone, Default)]
+pub struct ProvisionedAuth {
+    pub claude: Option<ClaudeAuth>,
+    pub codex: Option<CodexAuth>,
+    pub amp: Option<AmpAuth>,
+    pub opencode: Option<OpencodeAuth>,
 }
 
 #[derive(Debug, Clone)]
@@ -228,85 +227,99 @@ pub struct RoleState {
     /// parallel `Option<String>` field.
     pub gh_provision_outcome: GithubProvisionOutcome,
     pub agent_runtime: AgentRuntimeState,
+    pub auth: ProvisionedAuth,
 }
 
 impl RoleState {
-    /// Host path to Claude's account-metadata file. `None` when not
-    /// prepared for `Agent::Claude`. The path is returned regardless
-    /// of mount eligibility — call sites that care whether the file
-    /// will reach the container should also consult
-    /// [`Self::claude_forwards_auth`].
+    /// Host path to Claude's account-metadata file. `None` when Claude is
+    /// not in `supported_agents()`. Pair with [`Self::claude_forwards_auth`]
+    /// when filtering for runtime reachability.
     #[must_use]
     pub fn claude_account_json(&self) -> Option<&Path> {
+        self.auth.claude.as_ref().map(|c| c.account_json.as_path())
+    }
+
+    /// `Some` only when the selected runtime is Claude; the field on
+    /// `AgentRuntimeState::Claude` carries the manifest override.
+    #[must_use]
+    pub fn claude_model(&self) -> Option<&str> {
         match &self.agent_runtime {
-            AgentRuntimeState::Claude { account_json, .. } => Some(account_json),
-            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp { .. } => None,
+            AgentRuntimeState::Claude { model } => model.as_deref(),
+            AgentRuntimeState::Codex { .. }
+            | AgentRuntimeState::Amp
+            | AgentRuntimeState::Opencode { .. } => None,
         }
     }
 
-    /// Host path to Claude's OAuth credentials file. `None` when not
-    /// prepared for `Agent::Claude`. As with [`Self::claude_account_json`],
-    /// the path is returned regardless of whether the file currently
-    /// exists on disk or will be bind-mounted into the container; pair
-    /// with [`Self::claude_forwards_auth`] when filtering for runtime
-    /// reachability.
+    /// Host path to Claude's OAuth credentials file. `None` when Claude is
+    /// not in `supported_agents()`. Pair with [`Self::claude_forwards_auth`].
     #[must_use]
     pub fn claude_credentials_json(&self) -> Option<&Path> {
+        self.auth
+            .claude
+            .as_ref()
+            .map(|c| c.credentials_json.as_path())
+    }
+
+    /// Whether Claude's auth files flow into the container under
+    /// `/jackin/claude/`. `false` for env-driven modes (`ignore` /
+    /// `api_key` / `oauth_token`) and when Claude is not in
+    /// `supported_agents()`.
+    #[must_use]
+    pub fn claude_forwards_auth(&self) -> bool {
+        self.auth.claude.as_ref().is_some_and(|c| c.forward_auth)
+    }
+
+    /// `Some` only when the selected runtime is Codex.
+    #[must_use]
+    pub fn codex_model(&self) -> Option<&str> {
         match &self.agent_runtime {
-            AgentRuntimeState::Claude {
-                credentials_json, ..
-            } => Some(credentials_json),
-            AgentRuntimeState::Codex { .. } | AgentRuntimeState::Amp { .. } => None,
+            AgentRuntimeState::Codex { model } => model.as_deref(),
+            AgentRuntimeState::Claude { .. }
+            | AgentRuntimeState::Amp
+            | AgentRuntimeState::Opencode { .. } => None,
         }
     }
 
-    /// Whether Claude's auth files (`account.json`, `credentials.json`)
-    /// should flow into the container under `/jackin/claude/`. `false`
-    /// for env-driven modes (`ignore`/`api_key`/`oauth_token`) and for
-    /// non-Claude states.
+    /// `Some` only when the selected runtime is `OpenCode`.
     #[must_use]
-    pub const fn claude_forwards_auth(&self) -> bool {
-        matches!(
-            &self.agent_runtime,
-            AgentRuntimeState::Claude {
-                forward_auth: true,
-                ..
-            }
-        )
-    }
-
-    /// Host path to Codex's `config.toml` (mounted at
-    /// `/jackin/codex/config.toml` in the container). `None`
-    /// if this state was not prepared for `Agent::Codex`.
-    #[must_use]
-    pub fn codex_config_toml(&self) -> Option<&Path> {
+    pub fn opencode_model(&self) -> Option<&str> {
         match &self.agent_runtime {
-            AgentRuntimeState::Codex { config_toml, .. } => Some(config_toml),
-            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp { .. } => None,
+            AgentRuntimeState::Opencode { model } => model.as_deref(),
+            AgentRuntimeState::Claude { .. }
+            | AgentRuntimeState::Codex { .. }
+            | AgentRuntimeState::Amp => None,
         }
     }
 
-    /// Host path to Codex's `auth.json` (mounted at
-    /// `/jackin/codex/auth.json` in the container). `None` when
-    /// no auth file is available (host had none and no in-container
-    /// login has run yet) or when this state was not prepared for
-    /// `Agent::Codex`.
+    /// Host path to Codex's `auth.json`. `None` when Codex is not in
+    /// `supported_agents()` or no auth file is available.
     #[must_use]
     pub fn codex_auth_json(&self) -> Option<&Path> {
-        match &self.agent_runtime {
-            AgentRuntimeState::Codex { auth_json, .. } => auth_json.as_deref(),
-            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Amp { .. } => None,
-        }
+        self.auth
+            .codex
+            .as_ref()
+            .and_then(|c| c.auth_json.as_deref())
     }
 
-    /// Host path to Amp's `secrets.json`. `None` when no file is
-    /// available or when this state was not prepared for `Agent::Amp`.
+    /// Host path to Amp's `secrets.json`. `None` when Amp is not in
+    /// `supported_agents()` or no file is available.
     #[must_use]
     pub fn amp_secrets_json(&self) -> Option<&Path> {
-        match &self.agent_runtime {
-            AgentRuntimeState::Amp { secrets_json, .. } => secrets_json.as_deref(),
-            AgentRuntimeState::Claude { .. } | AgentRuntimeState::Codex { .. } => None,
-        }
+        self.auth
+            .amp
+            .as_ref()
+            .and_then(|c| c.secrets_json.as_deref())
+    }
+
+    /// Host path to `OpenCode`'s `auth.json`. `None` when `OpenCode` is not
+    /// in `supported_agents()` or no file is available.
+    #[must_use]
+    pub fn opencode_auth_json(&self) -> Option<&Path> {
+        self.auth
+            .opencode
+            .as_ref()
+            .and_then(|c| c.auth_json.as_deref())
     }
 }
 
@@ -337,74 +350,82 @@ impl std::fmt::Debug for GithubAuthContext {
 }
 
 impl RoleState {
+    /// Provision per-supported-agent auth state.
+    ///
+    /// `auth_modes` is invoked once per agent in `manifest.supported_agents()`
+    /// — pass `crate::config::resolve_mode(config, a, ws, role)` so each
+    /// agent gets its own configured forward mode. Reusing the *selected*
+    /// agent's mode for sibling agents silently wipes their durable state
+    /// when modes diverge (e.g. `claude.auth_forward = sync` next to
+    /// `codex.auth_forward = api_key`).
     pub fn prepare(
         paths: &JackinPaths,
         container_name: &str,
         manifest: &RoleManifest,
-        auth_forward: AuthForwardMode,
+        auth_modes: &dyn Fn(crate::agent::Agent) -> AuthForwardMode,
         github: &GithubAuthContext,
         host_home: &Path,
         agent: crate::agent::Agent,
     ) -> anyhow::Result<(Self, AuthProvisionOutcome)> {
         let root = paths.data_dir.join(container_name);
         let gh_config_dir = root.join(".config/gh");
+        let home_dir = root.join("home");
+        let jackin_state_dir = root.join("state");
 
         std::fs::create_dir_all(&gh_config_dir)?;
+        std::fs::create_dir_all(&home_dir)?;
+        std::fs::create_dir_all(&jackin_state_dir)?;
 
         let hosts_yml = gh_config_dir.join("hosts.yml");
         let gh_provision_outcome = Self::provision_github_auth(&hosts_yml, github, host_home)?;
 
-        let (agent_runtime, outcome) = match agent {
-            crate::agent::Agent::Claude => {
-                let claude_dir = root.join("claude");
-                std::fs::create_dir_all(&claude_dir)?;
+        let mut auth = ProvisionedAuth::default();
+        let mut selected_outcome = AuthProvisionOutcome::Skipped;
 
-                let account_json = claude_dir.join("account.json");
-                let credentials_json = claude_dir.join("credentials.json");
-                let (outcome, forward_auth) = Self::provision_claude_auth(
-                    &account_json,
-                    &credentials_json,
-                    auth_forward,
-                    host_home,
-                )?;
+        for supported in manifest.supported_agents() {
+            let mode = auth_modes(supported);
+            let outcome = match supported {
+                crate::agent::Agent::Claude => {
+                    let (slot, outcome) =
+                        Self::provision_claude_slot(&root, &home_dir, mode, host_home)?;
+                    auth.claude = Some(slot);
+                    outcome
+                }
+                crate::agent::Agent::Codex => {
+                    let (slot, outcome) =
+                        Self::provision_codex_slot(&root, &home_dir, mode, host_home)?;
+                    auth.codex = Some(slot);
+                    outcome
+                }
+                crate::agent::Agent::Amp => {
+                    let (slot, outcome) =
+                        Self::provision_amp_slot(&root, &home_dir, mode, host_home)?;
+                    auth.amp = Some(slot);
+                    outcome
+                }
+                crate::agent::Agent::Opencode => {
+                    let (slot, outcome) =
+                        Self::provision_opencode_slot(&root, &home_dir, mode, host_home)?;
+                    auth.opencode = Some(slot);
+                    outcome
+                }
+            };
+            if supported == agent {
+                selected_outcome = outcome;
+            }
+        }
 
-                (
-                    AgentRuntimeState::Claude {
-                        account_json,
-                        credentials_json,
-                        forward_auth,
-                    },
-                    outcome,
-                )
-            }
-            crate::agent::Agent::Codex => {
-                let codex_dir = root.join("codex");
-                std::fs::create_dir_all(&codex_dir)?;
-                let config_toml = codex_dir.join("config.toml");
-                let auth_json_path = codex_dir.join("auth.json");
-                let (outcome, auth_json) = Self::provision_codex_auth(
-                    &config_toml,
-                    &auth_json_path,
-                    manifest,
-                    auth_forward,
-                    host_home,
-                )?;
-                (
-                    AgentRuntimeState::Codex {
-                        config_toml,
-                        auth_json,
-                    },
-                    outcome,
-                )
-            }
-            crate::agent::Agent::Amp => {
-                let amp_dir = root.join("amp");
-                std::fs::create_dir_all(&amp_dir)?;
-                let secrets_json_path = amp_dir.join("secrets.json");
-                let (outcome, secrets_json) =
-                    Self::provision_amp_auth(&secrets_json_path, auth_forward, host_home)?;
-                (AgentRuntimeState::Amp { secrets_json }, outcome)
-            }
+        let agent_runtime = match agent {
+            crate::agent::Agent::Claude => AgentRuntimeState::Claude {
+                model: manifest.claude.as_ref().and_then(|cfg| cfg.model.clone()),
+            },
+            crate::agent::Agent::Codex => AgentRuntimeState::Codex {
+                model: manifest.codex.as_ref().and_then(|cfg| cfg.model.clone()),
+            },
+            crate::agent::Agent::Amp => AgentRuntimeState::Amp,
+            crate::agent::Agent::Opencode => AgentRuntimeState::Opencode {
+                model: manifest.opencode.as_ref().and_then(|cfg| cfg.model.clone()),
+            },
         };
 
         Ok((
@@ -413,9 +434,84 @@ impl RoleState {
                 gh_config_dir,
                 gh_provision_outcome,
                 agent_runtime,
+                auth,
+            },
+            selected_outcome,
+        ))
+    }
+
+    fn provision_claude_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(ClaudeAuth, AuthProvisionOutcome)> {
+        let claude_dir = root.join("claude");
+        let claude_home_dir = home_dir.join(".claude");
+        std::fs::create_dir_all(&claude_dir)?;
+        std::fs::create_dir_all(&claude_home_dir)?;
+        // 0o600 because the Claude CLI may later persist OAuth state
+        // into this file once the container runs.
+        let claude_account_home = home_dir.join(".claude.json");
+        auth::create_private_file_if_absent(&claude_account_home, b"{}")?;
+        let account_json = claude_dir.join("account.json");
+        let credentials_json = claude_dir.join("credentials.json");
+        let (outcome, forward_auth) =
+            Self::provision_claude_auth(&account_json, &credentials_json, mode, host_home)?;
+        Ok((
+            ClaudeAuth {
+                account_json,
+                credentials_json,
+                forward_auth,
             },
             outcome,
         ))
+    }
+
+    fn provision_codex_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(CodexAuth, AuthProvisionOutcome)> {
+        let codex_dir = root.join("codex");
+        let codex_home_dir = home_dir.join(".codex");
+        std::fs::create_dir_all(&codex_dir)?;
+        std::fs::create_dir_all(&codex_home_dir)?;
+        let auth_json_path = codex_dir.join("auth.json");
+        let (outcome, auth_json) = Self::provision_codex_auth(&auth_json_path, mode, host_home)?;
+        Ok((CodexAuth { auth_json }, outcome))
+    }
+
+    fn provision_amp_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(AmpAuth, AuthProvisionOutcome)> {
+        let amp_dir = root.join("amp");
+        let amp_home_dir = home_dir.join(".local/share/amp");
+        std::fs::create_dir_all(&amp_dir)?;
+        std::fs::create_dir_all(&amp_home_dir)?;
+        let secrets_json_path = amp_dir.join("secrets.json");
+        let (outcome, secrets_json) =
+            Self::provision_amp_auth(&secrets_json_path, mode, host_home)?;
+        Ok((AmpAuth { secrets_json }, outcome))
+    }
+
+    fn provision_opencode_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(OpencodeAuth, AuthProvisionOutcome)> {
+        let opencode_dir = root.join("opencode");
+        let opencode_home_dir = home_dir.join(".local/share/opencode");
+        std::fs::create_dir_all(&opencode_dir)?;
+        std::fs::create_dir_all(&opencode_home_dir)?;
+        let auth_json_path = opencode_dir.join("auth.json");
+        let (outcome, auth_json) = Self::provision_opencode_auth(&auth_json_path, mode, host_home)?;
+        Ok((OpencodeAuth { auth_json }, outcome))
     }
 }
 
@@ -428,7 +524,8 @@ mod tests {
     fn simple_manifest(temp: &tempfile::TempDir) -> crate::manifest::RoleManifest {
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
@@ -451,9 +548,9 @@ plugins = []
 
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-k7p9m2xq-agentsmith",
             &manifest,
-            AuthForwardMode::Ignore,
+            &|_| AuthForwardMode::Ignore,
             &GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Claude,
@@ -470,7 +567,8 @@ plugins = []
             !state.claude_forwards_auth(),
             "Ignore mode must not forward auth into the container",
         );
-        assert!(state.codex_config_toml().is_none());
+        assert!(state.claude_model().is_none());
+        assert!(state.codex_model().is_none());
 
         // Pin the host-side grouped layout: a regression to the legacy
         // flat shape (`.claude/state/.credentials.json` at the data-dir
@@ -478,7 +576,7 @@ plugins = []
         // above, since they only look up paths through the enum. These
         // assertions verify the actual host paths under
         // `<container>/claude/`.
-        let container_root = paths.data_dir.join("jackin-agent-smith");
+        let container_root = paths.data_dir.join("jk-k7p9m2xq-agentsmith");
         assert_eq!(
             state.claude_account_json().unwrap(),
             container_root.join("claude").join("account.json"),
@@ -487,19 +585,27 @@ plugins = []
             state.claude_credentials_json().unwrap(),
             container_root.join("claude").join("credentials.json"),
         );
+        assert!(container_root.join("home/.claude").is_dir());
+        assert_eq!(
+            std::fs::read_to_string(container_root.join("home/.claude.json")).unwrap(),
+            "{}"
+        );
+        assert!(container_root.join("state").is_dir());
     }
 
     #[test]
-    fn prepares_codex_state_writes_config_toml() {
+    fn prepares_codex_state_carries_model_without_config_toml() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
 
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"dockerfile = "Dockerfile"
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
 agents = ["codex"]
 
 [codex]
+model = "gpt-5"
 "#,
         )
         .unwrap();
@@ -513,9 +619,9 @@ agents = ["codex"]
 
         let (state, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-k7p9m2xq-agentsmith",
             &manifest,
-            AuthForwardMode::Ignore,
+            &|_| AuthForwardMode::Ignore,
             &GithubAuthContext::default(),
             temp.path(),
             crate::agent::Agent::Codex,
@@ -523,12 +629,106 @@ agents = ["codex"]
         .unwrap();
 
         assert_eq!(outcome, AuthProvisionOutcome::Skipped);
-        assert!(state.codex_config_toml().is_some());
-        assert!(state.codex_config_toml().unwrap().is_file());
+        assert_eq!(state.codex_model(), Some("gpt-5"));
+        assert!(
+            !paths
+                .data_dir
+                .join("jk-k7p9m2xq-agentsmith")
+                .join("codex")
+                .join("config.toml")
+                .exists()
+        );
+        assert!(
+            paths
+                .data_dir
+                .join("jk-k7p9m2xq-agentsmith")
+                .join("home/.codex")
+                .is_dir()
+        );
         // Codex state carries no Claude auth paths — the typed enum
         // makes the absence structural rather than a runtime nil.
         assert!(state.claude_account_json().is_none());
         assert!(state.claude_credentials_json().is_none());
         assert!(!state.claude_forwards_auth());
+    }
+
+    /// Regression: a multi-agent role must apply each supported
+    /// agent's *own* configured `auth_forward` mode, not the selected
+    /// agent's mode. Before the fix, selecting Codex with
+    /// `codex.auth_forward = ApiKey` would call `provision_claude_auth`
+    /// with `ApiKey` and silently `wipe_claude_state`, destroying the
+    /// operator's durable Claude credentials and breaking the next
+    /// `hardline --new --agent claude` switch.
+    #[test]
+    fn prepare_resolves_auth_mode_per_supported_agent() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["claude", "codex"]
+
+[claude]
+plugins = []
+
+[codex]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+
+        let manifest = RoleManifest::load(temp.path()).unwrap();
+
+        // Claude → Sync (host missing → HostMissing, forward_auth = true)
+        // Codex → ApiKey (would wipe Claude state if applied cross-agent)
+        let auth_modes = |agent: crate::agent::Agent| match agent {
+            crate::agent::Agent::Claude => AuthForwardMode::Sync,
+            crate::agent::Agent::Codex => AuthForwardMode::ApiKey,
+            crate::agent::Agent::Amp | crate::agent::Agent::Opencode => AuthForwardMode::Ignore,
+        };
+
+        let (state, selected_outcome) = RoleState::prepare(
+            &paths,
+            "jk-k7p9m2xq-agentsmith",
+            &manifest,
+            &auth_modes,
+            &GithubAuthContext::default(),
+            temp.path(),
+            crate::agent::Agent::Codex,
+        )
+        .unwrap();
+
+        // Selected agent is Codex with ApiKey → TokenMode (env-driven).
+        // The selected-outcome attribution must follow the *selected*
+        // agent, not the last-iterated one.
+        assert_eq!(selected_outcome, AuthProvisionOutcome::TokenMode);
+
+        // Both agents provisioned.
+        assert!(
+            state.auth.claude.is_some(),
+            "claude home dirs should be provisioned"
+        );
+        assert!(
+            state.auth.codex.is_some(),
+            "codex home dirs should be provisioned"
+        );
+
+        // Critical assertion: Claude's mode (Sync) is honored, not
+        // Codex's (ApiKey). A regression to applying Codex's mode to
+        // Claude would wipe state and set forward_auth = false.
+        assert!(
+            state.claude_forwards_auth(),
+            "claude.auth_forward = Sync must produce forward_auth = true even when Codex is the selected agent",
+        );
+        assert!(
+            state.claude_account_json().unwrap().exists(),
+            "Sync mode must leave an account.json placeholder on disk",
+        );
     }
 }

@@ -1,5 +1,6 @@
 //! Editor save flow: two-phase commit with planner validation, a
 //! `ConfirmSave` preview modal, and `ConfigEditor`-driven writes.
+#![allow(clippy::items_after_test_module)]
 
 use super::super::state::{
     EditorMode, EditorSaveFlow, EditorState, ManagerListRow, ManagerStage, ManagerState, Modal,
@@ -685,11 +686,16 @@ fn build_confirm_save_lines(
 }
 
 fn mount_summary(m: &crate::workspace::MountConfig) -> String {
-    let src = crate::tui::shorten_home(&m.src);
+    let dst = crate::tui::shorten_home(&m.dst);
     let kind = super::super::mount_info::inspect(&m.src);
     let rw = if m.readonly { "ro" } else { "rw" };
     let isolation = m.isolation.as_str();
-    format!("{src}  ({rw}, {isolation}, {})", kind.label())
+    let host = if m.src == m.dst {
+        String::new()
+    } else {
+        format!("  host: {}", crate::tui::shorten_home(&m.src))
+    };
+    format!("{dst}{host}  ({rw}, {isolation}, {})", kind.label())
 }
 
 fn allowed_agents_summary(editor: &EditorState<'_>, config: &AppConfig) -> String {
@@ -835,6 +841,11 @@ fn apply_auth_forward_diff(
     if original_amp != pending_amp {
         ce.set_workspace_auth_forward(workspace_name, Agent::Amp, pending_amp);
     }
+    let original_opencode = original.opencode.as_ref().map(|c| c.0.auth_forward);
+    let pending_opencode = pending.opencode.as_ref().map(|c| c.0.auth_forward);
+    if original_opencode != pending_opencode {
+        ce.set_workspace_auth_forward(workspace_name, Agent::Opencode, pending_opencode);
+    }
     // Github has no `Agent` peer — its `[github]` block is parallel to
     // `[claude]` / `[codex]` but agent-neutral by design.
     let original_github = original.github.as_ref().map(|g| g.auth_forward);
@@ -875,6 +886,20 @@ fn apply_auth_forward_diff(
             .map(|c| c.0.auth_forward);
         if orig_amp != pend_amp {
             ce.set_workspace_role_auth_forward(workspace_name, role, Agent::Amp, pend_amp);
+        }
+        let orig_opencode = orig_override
+            .and_then(|o| o.opencode.as_ref())
+            .map(|c| c.0.auth_forward);
+        let pend_opencode = pend_override
+            .and_then(|p| p.opencode.as_ref())
+            .map(|c| c.0.auth_forward);
+        if orig_opencode != pend_opencode {
+            ce.set_workspace_role_auth_forward(
+                workspace_name,
+                role,
+                Agent::Opencode,
+                pend_opencode,
+            );
         }
         let orig_github = orig_override
             .and_then(|o| o.github.as_ref())
@@ -1069,6 +1094,7 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
 
         let original = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/workspace/project".into(),
             mounts: vec![mount(tmp.path().to_str().unwrap(), "/workspace/project")],
             ..WorkspaceConfig::default()
@@ -1101,10 +1127,10 @@ mod tests {
         apply_auth_forward_diff(&mut editor, "proj", &original, &pending);
         editor.save().unwrap();
 
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains("[workspaces.proj.amp]"), "{out}");
+        let out = std::fs::read_to_string(paths.workspaces_dir.join("proj.toml")).unwrap();
+        assert!(out.contains("[amp]"), "{out}");
         assert!(out.contains(r#"auth_forward = "api_key""#), "{out}");
-        assert!(out.contains("[workspaces.proj.roles.smith.amp]"), "{out}");
+        assert!(out.contains("[roles.smith.amp]"), "{out}");
         assert!(out.contains(r#"auth_forward = "ignore""#), "{out}");
     }
 
@@ -1118,6 +1144,7 @@ mod tests {
         // `edit_workspace_toggles_keep_awake_when_set` enforces.
         use crate::workspace::KeepAwakeConfig;
         let original = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/workspace/proj".into(),
             mounts: vec![mount("/work", "/workspace/proj")],
             keep_awake: KeepAwakeConfig { enabled: false },
@@ -1153,6 +1180,7 @@ mod tests {
     #[test]
     fn save_editor_opens_confirm_save_on_edit_driven_collapse() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
             ..Default::default()
@@ -1195,6 +1223,7 @@ mod tests {
         // PendingCommit, drive commit_editor_save, and write the
         // collapsed mount set.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
             ..Default::default()
@@ -1229,6 +1258,7 @@ mod tests {
     #[test]
     fn cancelling_confirm_save_keeps_pending_intact() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
             ..Default::default()
@@ -1281,6 +1311,7 @@ mod tests {
         // planner errors surface as an inline banner, NOT as the new
         // ErrorPopup (which is reserved for commit-time failures).
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work/sub".into(),
             mounts: vec![ro_mount("/work/sub", "/work/sub")],
             ..Default::default()
@@ -1320,6 +1351,7 @@ mod tests {
         // "missing workspace name" — gating prevents the operator from
         // committing a nameless workspace.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/seed".into(),
             mounts: vec![mount("/seed", "/seed")],
             ..Default::default()
@@ -1356,6 +1388,7 @@ mod tests {
         // edit-mode behavior covered by
         // `readonly_mismatch_produces_error_banner_no_write`.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/seed".into(),
             mounts: vec![mount("/seed", "/seed")],
             ..Default::default()
@@ -1392,6 +1425,7 @@ mod tests {
     #[test]
     fn pre_existing_collapse_produces_prune_error_banner() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work".into(),
             mounts: vec![
                 mount("/work", "/work"),
@@ -1435,6 +1469,7 @@ mod tests {
     #[test]
     fn s_with_zero_changes_is_noop() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
@@ -1461,6 +1496,7 @@ mod tests {
     #[test]
     fn s_with_changes_opens_confirm_save_modal() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
@@ -1492,6 +1528,7 @@ mod tests {
         // `ExitIntent::Save` dispatcher). After Enter on the resulting
         // ConfirmSave modal, we should land back on ManagerStage::List.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
@@ -1520,6 +1557,7 @@ mod tests {
         // on "z-second" (screen index 2 = 1 + 1), not on "a-first" or the
         // CWD row.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
@@ -1528,6 +1566,7 @@ mod tests {
         config.workspaces.insert(
             "a-first".to_string(),
             WorkspaceConfig {
+                version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
                 workdir: "/a".into(),
                 mounts: vec![mount("/a", "/a")],
                 ..Default::default()
@@ -1560,6 +1599,7 @@ mod tests {
     #[test]
     fn exit_on_success_save_does_not_show_success_toast() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
@@ -1603,6 +1643,7 @@ mod tests {
         // against the live mount list and bails out with
         // "unknown workspace mount destination".
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
@@ -1699,6 +1740,7 @@ mod tests {
         // `s` + Enter on ConfirmSave returns the operator to the list,
         // consistent with the Esc→Save path.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             ..Default::default()
@@ -1727,11 +1769,13 @@ mod tests {
         // write hits ConfigEditor::rename_workspace's duplicate-name
         // guard and we expect an ErrorPopup.
         let ws_a = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/a".into(),
             mounts: vec![mount("/a", "/a")],
             ..Default::default()
         };
         let ws_b = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/b".into(),
             mounts: vec![mount("/b", "/b")],
             ..Default::default()
@@ -1766,11 +1810,13 @@ mod tests {
     #[test]
     fn error_popup_dismiss_returns_to_editor_with_changes_intact() {
         let ws_a = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/a".into(),
             mounts: vec![mount("/a", "/a")],
             ..Default::default()
         };
         let ws_b = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/b".into(),
             mounts: vec![mount("/b", "/b")],
             ..Default::default()
@@ -1909,6 +1955,7 @@ mod tests {
     #[test]
     fn edit_mode_confirm_save_shows_diff() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/old".into(),
             mounts: vec![mount("/old", "/old")],
             ..Default::default()
@@ -1945,6 +1992,7 @@ mod tests {
         // on-disk write was already correct; this pins the modal preview
         // so a future refactor cannot silently re-omit the diff line.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
             mounts: vec![mount("/w", "/w")],
             keep_awake: KeepAwakeConfig { enabled: false },
@@ -2000,6 +2048,7 @@ mod tests {
         // validation, so anchor it on `dst`. The drift safeguard cares
         // about `src`, not `workdir`, so this doesn't perturb the test.
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: dst.into(),
             mounts: vec![MountConfig {
                 src: original_src.into(),
@@ -2018,6 +2067,7 @@ mod tests {
             claude: None,
             codex: None,
             amp: None,
+            opencode: None,
             github: None,
             git_pull_on_entry: false,
         };
@@ -2034,7 +2084,9 @@ mod tests {
             worktree_path: cdir.join("isolated").join(dst).display().to_string(),
             scratch_branch: format!("jackin/scratch/{container}"),
             base_commit: "deadbeef".into(),
-            selector_key: container.trim_start_matches("jackin-").into(),
+            selector_key: container
+                .trim_start_matches(crate::instance::naming::CONTAINER_PREFIX_DASH)
+                .into(),
             container_name: container.into(),
             cleanup_status: CleanupStatus::Active,
         };
@@ -2061,8 +2113,12 @@ mod tests {
 
     #[test]
     fn save_blocks_with_error_popup_when_running_container_has_drifted_state() {
-        let (tmp, paths, mut config, ws) =
-            setup_with_isolated_record("driftws", "/old/src", "/workspace/x", "jackin-driftws");
+        let (tmp, paths, mut config, ws) = setup_with_isolated_record(
+            "driftws",
+            "/old/src",
+            "/workspace/x",
+            "jk-a1b2c3d4-driftws",
+        );
         let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("driftws".into(), ws);
@@ -2091,7 +2147,7 @@ mod tests {
             e.modal = None;
         }
 
-        let mut runner = fake_runner_with_running(&["jackin-driftws"]);
+        let mut runner = fake_runner_with_running(&["jk-a1b2c3d4-driftws"]);
         super::commit_editor_save_with_runner(
             &mut state,
             &mut config,
@@ -2122,8 +2178,12 @@ mod tests {
 
     #[test]
     fn save_opens_confirm_modal_when_stopped_container_has_drifted_state() {
-        let (tmp, paths, mut config, ws) =
-            setup_with_isolated_record("driftws2", "/old/src", "/workspace/x", "jackin-driftws2");
+        let (tmp, paths, mut config, ws) = setup_with_isolated_record(
+            "driftws2",
+            "/old/src",
+            "/workspace/x",
+            "jk-b2c3d4e5-driftws2",
+        );
         let cwd = tmp.path();
         let mut state = ManagerState::from_config(&config, cwd);
         let mut editor = EditorState::new_edit("driftws2".into(), ws);
@@ -2176,7 +2236,7 @@ mod tests {
             }) => {
                 assert_eq!(
                     affected_containers,
-                    &vec!["jackin-driftws2".to_string()],
+                    &vec!["jk-b2c3d4e5-driftws2".to_string()],
                     "modal must carry the affected container names",
                 );
             }
@@ -2191,6 +2251,7 @@ mod tests {
     #[test]
     fn confirm_save_integrates_mount_collapse_section_when_plan_has_collapses() {
         let ws = WorkspaceConfig {
+            version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/work/sub".into(),
             mounts: vec![mount("/work/sub", "/work/sub")],
             ..Default::default()
@@ -2268,4 +2329,436 @@ mod tests {
             "UUID URI must NOT appear in pre-save diff; got: {joined}"
         );
     }
+}
+
+// ── Settings save preview ─────────────────────────────────────────────────────
+
+/// Build the diff preview lines for the settings save confirmation dialog.
+/// Mirrors the format of `build_confirm_save_lines` for the workspace editor.
+/// Shows a summary section (counts per category) followed by per-category diffs.
+#[must_use]
+#[allow(clippy::too_many_lines)]
+pub(super) fn build_settings_save_lines(
+    settings: &super::super::state::SettingsState<'_>,
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::text::{Line, Span};
+
+    let green = Color::Rgb(0, 255, 65);
+    let dim = Color::Rgb(0, 140, 30);
+    let white = Color::Rgb(255, 255, 255);
+    let heading = Style::default().fg(white).add_modifier(Modifier::BOLD);
+    let add_style = Style::default().fg(green);
+    let remove_style = Style::default().fg(dim);
+    let sep_style = Style::default().fg(Color::Rgb(0, 50, 12));
+
+    let mut out: Vec<Line<'static>> = Vec::new();
+
+    // ── Summary ───────────────────────────────────────────────────────
+    out.push(Line::from(Span::styled("Save settings", heading)));
+    out.push(Line::raw(""));
+
+    let mount_stats = settings_mount_stats(&settings.mounts.original, &settings.mounts.pending);
+    let env_stats = settings_env_stats(&settings.env.original, &settings.env.pending);
+    let auth_stats = settings_auth_stats(
+        &settings.auth.original,
+        &settings.auth.pending,
+        &settings.auth.original_github_env,
+        &settings.auth.github_env,
+    );
+    let trust_stats = settings_trust_stats(&settings.trust.original, &settings.trust.pending);
+
+    if let Some(s) = mount_stats.as_deref() {
+        out.push(Line::from(vec![
+            Span::styled("  Mounts:       ", heading),
+            Span::styled(s.to_owned(), add_style),
+        ]));
+    }
+    if let Some(s) = env_stats.as_deref() {
+        out.push(Line::from(vec![
+            Span::styled("  Environments: ", heading),
+            Span::styled(s.to_owned(), add_style),
+        ]));
+    }
+    if let Some(s) = auth_stats.as_deref() {
+        out.push(Line::from(vec![
+            Span::styled("  Auth:         ", heading),
+            Span::styled(s.to_owned(), add_style),
+        ]));
+    }
+    if let Some(s) = trust_stats.as_deref() {
+        out.push(Line::from(vec![
+            Span::styled("  Trust:        ", heading),
+            Span::styled(s.to_owned(), add_style),
+        ]));
+    }
+
+    // Separator before details
+    out.push(Line::raw(""));
+    out.push(Line::from(Span::styled("  \u{2500}".repeat(30), sep_style)));
+    out.push(Line::raw(""));
+
+    // ── Mount details ─────────────────────────────────────────────────
+    let mount_lines = settings_mount_diff_lines(
+        &settings.mounts.original,
+        &settings.mounts.pending,
+        add_style,
+        remove_style,
+    );
+    if !mount_lines.is_empty() {
+        out.push(Line::from(Span::styled("Mounts:", heading)));
+        out.extend(mount_lines);
+        out.push(Line::raw(""));
+    }
+
+    // ── Environment details ───────────────────────────────────────────
+    let env_lines = settings_env_diff_lines(
+        &settings.env.original,
+        &settings.env.pending,
+        add_style,
+        remove_style,
+    );
+    if !env_lines.is_empty() {
+        out.push(Line::from(Span::styled("Environments:", heading)));
+        out.extend(env_lines);
+        out.push(Line::raw(""));
+    }
+
+    // ── Auth details ──────────────────────────────────────────────────
+    let auth_lines = settings_auth_diff_lines(
+        &settings.auth.original,
+        &settings.auth.pending,
+        &settings.auth.original_github_env,
+        &settings.auth.github_env,
+        add_style,
+        remove_style,
+    );
+    if !auth_lines.is_empty() {
+        out.push(Line::from(Span::styled("Auth:", heading)));
+        out.extend(auth_lines);
+        out.push(Line::raw(""));
+    }
+
+    // ── Trust details ─────────────────────────────────────────────────
+    let trust_lines = settings_trust_diff_lines(
+        &settings.trust.original,
+        &settings.trust.pending,
+        add_style,
+        remove_style,
+    );
+    if !trust_lines.is_empty() {
+        out.push(Line::from(Span::styled("Trust:", heading)));
+        out.extend(trust_lines);
+        out.push(Line::raw(""));
+    }
+
+    // Strip trailing blank lines.
+    while out.last().is_some_and(|l: &Line| {
+        l.spans.is_empty() || l.spans.iter().all(|s| s.content.trim().is_empty())
+    }) {
+        out.pop();
+    }
+
+    out
+}
+
+// ── Summary stats helpers ─────────────────────────────────────────────────────
+
+fn settings_mount_stats(
+    original: &[crate::config::GlobalMountRow],
+    pending: &[crate::config::GlobalMountRow],
+) -> Option<String> {
+    let (added, removed, modified) = mount_diff_counts(original, pending);
+    if added + removed + modified == 0 {
+        return None;
+    }
+    let mut parts: Vec<String> = Vec::new();
+    if added > 0 {
+        parts.push(format!("{added} added"));
+    }
+    if removed > 0 {
+        parts.push(format!("{removed} removed"));
+    }
+    if modified > 0 {
+        parts.push(format!("{modified} modified"));
+    }
+    Some(parts.join(", "))
+}
+
+fn settings_env_stats(
+    original: &super::super::state::SettingsEnvConfig,
+    pending: &super::super::state::SettingsEnvConfig,
+) -> Option<String> {
+    let (added, removed, modified) = env_config_diff_counts(original, pending);
+    if added + removed + modified == 0 {
+        return None;
+    }
+    let mut parts: Vec<String> = Vec::new();
+    if added > 0 {
+        parts.push(format!("{added} added"));
+    }
+    if removed > 0 {
+        parts.push(format!("{removed} removed"));
+    }
+    if modified > 0 {
+        parts.push(format!("{modified} modified"));
+    }
+    Some(parts.join(", "))
+}
+
+fn settings_auth_stats(
+    original: &[super::super::state::SettingsAuthRow],
+    pending: &[super::super::state::SettingsAuthRow],
+    orig_github_env: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    pend_github_env: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+) -> Option<String> {
+    let row_changes = original
+        .iter()
+        .zip(pending.iter())
+        .filter(|(a, b)| a.mode != b.mode)
+        .count();
+    let (env_added, env_removed, env_modified) =
+        env_map_diff_counts(orig_github_env, pend_github_env);
+    let total = row_changes + env_added + env_removed + env_modified;
+    if total == 0 {
+        return None;
+    }
+    Some(format!("{total} changed"))
+}
+
+fn settings_trust_stats(
+    original: &[super::super::state::SettingsTrustRow],
+    pending: &[super::super::state::SettingsTrustRow],
+) -> Option<String> {
+    let changed = original
+        .iter()
+        .zip(pending.iter())
+        .filter(|(a, b)| a.trusted != b.trusted)
+        .count();
+    if changed == 0 {
+        return None;
+    }
+    Some(format!("{changed} changed"))
+}
+
+// ── Count helpers ─────────────────────────────────────────────────────────────
+
+fn mount_diff_counts(
+    original: &[crate::config::GlobalMountRow],
+    pending: &[crate::config::GlobalMountRow],
+) -> (usize, usize, usize) {
+    use std::collections::BTreeMap;
+    let orig_map: BTreeMap<(Option<String>, String), &crate::config::GlobalMountRow> = original
+        .iter()
+        .map(|r| ((r.scope.clone(), r.name.clone()), r))
+        .collect();
+    let pend_map: BTreeMap<(Option<String>, String), &crate::config::GlobalMountRow> = pending
+        .iter()
+        .map(|r| ((r.scope.clone(), r.name.clone()), r))
+        .collect();
+    let added = pend_map
+        .keys()
+        .filter(|k| !orig_map.contains_key(k))
+        .count();
+    let removed = orig_map
+        .keys()
+        .filter(|k| !pend_map.contains_key(k))
+        .count();
+    let modified = pend_map
+        .iter()
+        .filter(|(k, prow)| orig_map.get(k).is_some_and(|orow| orow.mount != prow.mount))
+        .count();
+    (added, removed, modified)
+}
+
+fn env_config_diff_counts(
+    original: &super::super::state::SettingsEnvConfig,
+    pending: &super::super::state::SettingsEnvConfig,
+) -> (usize, usize, usize) {
+    let (ga, gr, gm) = env_map_diff_counts(&original.env, &pending.env);
+    let all_roles: std::collections::BTreeSet<&String> =
+        original.roles.keys().chain(pending.roles.keys()).collect();
+    let empty = std::collections::BTreeMap::default();
+    let (ra, rr, rm) = all_roles.into_iter().fold((0, 0, 0), |(a, r, m), role| {
+        let oe = original.roles.get(role).unwrap_or(&empty);
+        let pe = pending.roles.get(role).unwrap_or(&empty);
+        let (da, dr, dm) = env_map_diff_counts(oe, pe);
+        (a + da, r + dr, m + dm)
+    });
+    (ga + ra, gr + rr, gm + rm)
+}
+
+fn env_map_diff_counts(
+    original: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    pending: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+) -> (usize, usize, usize) {
+    let added = pending
+        .keys()
+        .filter(|k| !original.contains_key(*k))
+        .count();
+    let removed = original
+        .keys()
+        .filter(|k| !pending.contains_key(*k))
+        .count();
+    let modified = pending
+        .iter()
+        .filter(|(k, v)| original.get(*k).is_some_and(|ov| ov != *v))
+        .count();
+    (added, removed, modified)
+}
+
+// ── Detail diff-line helpers ──────────────────────────────────────────────────
+
+fn settings_mount_diff_lines(
+    original: &[crate::config::GlobalMountRow],
+    pending: &[crate::config::GlobalMountRow],
+    add_style: ratatui::style::Style,
+    remove_style: ratatui::style::Style,
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::text::{Line, Span};
+    use std::collections::BTreeMap;
+
+    let orig_map: BTreeMap<(Option<String>, String), &crate::config::GlobalMountRow> = original
+        .iter()
+        .map(|r| ((r.scope.clone(), r.name.clone()), r))
+        .collect();
+    let pend_map: BTreeMap<(Option<String>, String), &crate::config::GlobalMountRow> = pending
+        .iter()
+        .map(|r| ((r.scope.clone(), r.name.clone()), r))
+        .collect();
+
+    let mut out: Vec<Line<'static>> = Vec::new();
+    for (key, row) in &pend_map {
+        if !orig_map.contains_key(key) {
+            out.push(Line::from(Span::styled(
+                format!("  + {}", mount_row_summary(row)),
+                add_style,
+            )));
+        }
+    }
+    for (key, row) in &orig_map {
+        if !pend_map.contains_key(key) {
+            out.push(Line::from(Span::styled(
+                format!("  - {}", mount_row_summary(row)),
+                remove_style,
+            )));
+        }
+    }
+    for (key, prow) in &pend_map {
+        if let Some(orow) = orig_map.get(key)
+            && orow.mount != prow.mount
+        {
+            out.push(Line::from(Span::styled(
+                format!("  ~ {}", mount_row_summary(prow)),
+                add_style,
+            )));
+            out.push(Line::from(Span::styled(
+                format!("      was: {}", mount_row_summary(orow)),
+                remove_style,
+            )));
+        }
+    }
+    out
+}
+
+fn mount_row_summary(row: &crate::config::GlobalMountRow) -> String {
+    let scope = row
+        .scope
+        .as_deref()
+        .map(|s| format!("[{s}] "))
+        .unwrap_or_default();
+    let src = crate::tui::shorten_home(&row.mount.src);
+    let dst = crate::tui::shorten_home(&row.mount.dst);
+    let ro = if row.mount.readonly { " (ro)" } else { "" };
+    format!("{scope}{src} → {dst}{ro}")
+}
+
+fn settings_env_diff_lines(
+    original: &super::super::state::SettingsEnvConfig,
+    pending: &super::super::state::SettingsEnvConfig,
+    add_style: ratatui::style::Style,
+    remove_style: ratatui::style::Style,
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::text::{Line, Span};
+    let mut out: Vec<Line<'static>> = Vec::new();
+    append_env_map_diff_lines(
+        &mut out,
+        None,
+        &original.env,
+        &pending.env,
+        add_style,
+        remove_style,
+    );
+    let all_roles: std::collections::BTreeSet<&String> =
+        original.roles.keys().chain(pending.roles.keys()).collect();
+    let empty = std::collections::BTreeMap::default();
+    for role in all_roles {
+        let oe = original.roles.get(role).unwrap_or(&empty);
+        let pe = pending.roles.get(role).unwrap_or(&empty);
+        let mut probe: Vec<Line<'static>> = Vec::new();
+        append_env_map_diff_lines(&mut probe, None, oe, pe, add_style, remove_style);
+        if !probe.is_empty() {
+            out.push(Line::from(Span::styled(
+                format!("  role {role}:"),
+                add_style,
+            )));
+            append_env_map_diff_lines(&mut out, Some("  "), oe, pe, add_style, remove_style);
+        }
+    }
+    out
+}
+
+fn settings_auth_diff_lines(
+    original: &[super::super::state::SettingsAuthRow],
+    pending: &[super::super::state::SettingsAuthRow],
+    orig_github_env: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    pend_github_env: &std::collections::BTreeMap<String, crate::operator_env::EnvValue>,
+    add_style: ratatui::style::Style,
+    remove_style: ratatui::style::Style,
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::text::{Line, Span};
+    let mut out: Vec<Line<'static>> = Vec::new();
+    for (orig_row, pend_row) in original.iter().zip(pending.iter()) {
+        if orig_row.mode != pend_row.mode {
+            out.push(Line::from(Span::styled(
+                format!(
+                    "  ~ {}  {} \u{2192} {}",
+                    pend_row.kind.label(),
+                    orig_row.mode.as_str(),
+                    pend_row.mode.as_str(),
+                ),
+                add_style,
+            )));
+        }
+    }
+    append_env_map_diff_lines(
+        &mut out,
+        None,
+        orig_github_env,
+        pend_github_env,
+        add_style,
+        remove_style,
+    );
+    out
+}
+
+fn settings_trust_diff_lines(
+    original: &[super::super::state::SettingsTrustRow],
+    pending: &[super::super::state::SettingsTrustRow],
+    add_style: ratatui::style::Style,
+    remove_style: ratatui::style::Style,
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::text::{Line, Span};
+    let mut out: Vec<Line<'static>> = Vec::new();
+    for (orig_row, pend_row) in original.iter().zip(pending.iter()) {
+        if orig_row.trusted != pend_row.trusted {
+            let (label, style) = if pend_row.trusted {
+                (format!("  + {}  trusted", pend_row.role), add_style)
+            } else {
+                (format!("  - {}  untrusted", pend_row.role), remove_style)
+            };
+            out.push(Line::from(Span::styled(label, style)));
+        }
+    }
+    out
 }

@@ -4,6 +4,13 @@ Canonical guide for how pull requests are created, iterated on, reviewed, and me
 
 Read this file before opening, updating, or merging a pull request.
 
+All pull requests created by agents must target `main` as the base branch unless
+the operator explicitly names a different target branch in the same request.
+Checking out, researching, or stacking on another branch does not imply that the
+opened pull request should target that branch. If a change depends on an
+unmerged branch, open a `main`-targeted PR only after the dependency is merged
+or explicitly ask the operator how they want the dependency represented.
+
 PR-body refreshes during iteration are **operator-triggered, not commit-triggered.** Do not rewrite the body after every follow-up commit. The operator may iterate on a PR for many commits before deciding the shape is right; auto-updating the body each time wastes attention and produces churn. Refresh the body only when:
 
 1. The operator explicitly asks for it ("refresh the PR body", "update the description", "the body is out of date").
@@ -50,7 +57,7 @@ Every pull request created by an agent must include a copy-pasteable "Verify loc
 
 Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a separate test directory so the operator can inspect the PR without disturbing their normal working tree. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
 
-Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Tests only when there is a relevant automated test command. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. If the PR has no narrower manual path, use the console as the baseline smoke command: `cargo run --bin jackin -- console --debug`. For launch/runtime flows, prefer a command that hits the changed path, such as `cargo run --bin jackin -- load <role> <target> --debug`. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
+Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Tests only when there is a relevant automated test command. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. If the PR changes a CLI command or TUI surface, the User Smoke block must include the exact command that opens that changed surface from the checkout, plus any setup commands needed to make the changed rows/options visible. Prose like "open the console and verify the tab" is incomplete unless it is preceded by the command the operator should paste and the state-seeding commands needed for the UI to show the changed behavior. If the PR has no narrower manual path, use the console as the baseline smoke command: `cargo run --bin jackin -- console --debug`. For launch/runtime flows, prefer a command that hits the changed path, such as `cargo run --bin jackin -- load <role> <target> --debug`. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
 
 ### Documentation-only PRs
 
@@ -121,17 +128,84 @@ If the PR needs a different validation flow, replace the final example commands 
 For non-trivial code changes, structure the PR's "Verify locally" section by intent:
 
 - **Checkout** — copy-pasteable commands to fetch and check out the PR.
+- **Isolation** — env vars that redirect state/config away from the operator's live data, when the PR touches code that reads or writes those paths.
 - **Static Checks** — only checks that are relevant and expected to be run locally.
 - **Tests** — focused or full test commands that validate the changed behavior.
 - **User Smoke** — manual validation steps when behavior is visible in the CLI/TUI/runtime.
 
 Do not add generic commands that do not materially validate the PR. In particular, do not include `git diff --check` unless the PR is specifically about whitespace, patch hygiene, generated diffs, or another issue that command is meant to catch.
 
-For console/TUI changes that can be manually verified in jackin itself, prefer:
+For console/TUI changes that can be manually verified in jackin itself, include the command that opens the changed surface and then list the keys/clicks the operator should walk. Prefer:
 
 ```sh
 cargo run --bin jackin -- console --debug
 ```
+
+When the TUI change depends on config or workspace state, seed that state in the PR body before the console command. Use a disposable `HOME` when the smoke test writes jackin-owned config, so the operator can verify save flows without mutating their real `~/.config/jackin`:
+
+```sh
+export JACKIN_VERIFY_HOME="$PWD/.verify-home/<feature>"
+rm -rf "$JACKIN_VERIFY_HOME"
+mkdir -p "$JACKIN_VERIFY_HOME/.config/jackin"
+cat > "$JACKIN_VERIFY_HOME/.config/jackin/config.toml" <<'TOML'
+version = "v1alpha2"
+# Add the smallest config that makes the changed UI visible.
+TOML
+
+HOME="$JACKIN_VERIFY_HOME" cargo run --bin jackin -- console --debug
+```
+
+For CLI subcommand changes, include the exact subcommand invocation and the expected output or persisted file change, for example:
+
+```sh
+cargo run --bin jackin -- config mount list --debug
+```
+
+#### Isolation env vars
+
+Three env vars let the operator test a PR without touching their live config or state:
+
+| Var | Default | Overrides |
+|-----|---------|-----------|
+| `JACKIN_CONFIG_DIR` | `~/.config/jackin` | config.toml, workspaces/ |
+| `JACKIN_HOME_DIR` | `~/.jackin` | data/, roles/, cache/ |
+| `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | construct image used for role validation and launch |
+
+**Include an `### Isolation` section in the PR body when the PR touches any of:**
+
+- `src/paths.rs` — path resolution itself
+- `src/config/` — config schema, migrations, or on-disk layout
+- `src/manifest/` — role-manifest schema or migrations
+- Any versioned schema type (`AppConfig`, `WorkspaceConfig`, `RoleManifest`, `HooksConfig`)
+- Runtime state layout under `~/.jackin/` — instance manifests, index, agent home structure, cache layout
+- `docker/construct/` or `docker-bake.hcl` — construct image changes (include `JACKIN_CONSTRUCT_IMAGE` then)
+
+**Do not add an Isolation section when the PR is:**
+
+- Docs-only (`.mdx`, `astro.config.ts`, `docs/**`)
+- Roadmap updates, CI changes (except construct image CI), dependency bumps
+- Pure refactors, tests, or rule changes that do not alter any on-disk or in-memory shape that has already been stored
+
+The Isolation section must appear immediately after the Checkout section and before Static Checks. Use the PR number as the suffix so two PRs can be tested in parallel on the same machine without their state directories colliding:
+
+```sh
+export JACKIN_CONFIG_DIR="$HOME/.config/jackin-pr-<PR_NUMBER>"
+export JACKIN_HOME_DIR="$HOME/.jackin-pr-<PR_NUMBER>"
+```
+
+Replace `<PR_NUMBER>` with the actual PR number (e.g. `326`). After verification the directories can be deleted with `rm -rf "$JACKIN_CONFIG_DIR" "$JACKIN_HOME_DIR"`.
+
+For construct image PRs, add the build step and the override export:
+
+```sh
+just construct-build-local
+export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
+```
+
+`just construct-build-local` builds a single-platform image tagged `jackin-local/construct:trixie` and loads it into the local Docker daemon. `JACKIN_CONSTRUCT_IMAGE` then makes jackin use that image for Dockerfile validation and role container launch instead of the published one.
+
+Do not include `JACKIN_CONSTRUCT_IMAGE` in PRs that do not touch the construct image — the isolation pattern is about scoping test risk, not about exhaustively listing every available env var.
+
 
 ## Author the PR body so it renders correctly on GitHub
 
@@ -175,7 +249,11 @@ The PR body is read in GitHub's renderer, which already wraps long lines at the 
 
 ## Reviewing a PR
 
-Two cross-cutting rules apply to every PR review (manual, agent-driven, or automated) before output ships:
+Three cross-cutting rules apply to every PR review (manual, agent-driven, or automated) before output ships:
+
+### Versioned-schema migration check
+
+Missing or stale fixtures under `tests/fixtures/migrations/` break the smooth-migration guarantee for operators upgrading from older versions. When the diff touches a struct serialized into `config.toml`, `~/.config/jackin/workspaces/<name>.toml`, or `jackin.role.toml`, verify the PR ships with all five required artifacts: version bump, migration step, new fixture directory, re-baked `after.toml` files for every existing `from_version`, and a new entry in the `schema-versions.mdx` timeline. The full rule lives in `AGENTS.md` under "Project status: pre-release."
 
 ### Accepted-exceptions catalog
 
@@ -241,12 +319,27 @@ When the operator confirms a PR can be merged, verify the PR's title and descrip
 
 - Read the current metadata: `gh pr view <PR>`.
 - Read the actual diff being merged: `gh pr diff <PR>` (and `git log` on the PR branch if the diff is large).
+- Check whether the PR ships, advances, defers, or invalidates any roadmap item under `docs/src/content/docs/reference/roadmap/`. If the roadmap is stale, update the roadmap item and `docs/src/content/docs/reference/roadmap.mdx`, refresh the PR description, push that change, and only then continue toward merge. A merge request is the final freshness gate, even if earlier review missed the roadmap update.
 - Compare. The metadata is stale if any of these are true: commits added scope that the title/body doesn't reflect; a feature was descoped after the PR opened; the test plan is wrong relative to what was actually verified; file paths cited in the body have moved or been renamed; the title still says "design doc only" / "WIP" / etc. while the PR now contains implementation.
 - If stale, update the title and/or body via `gh pr edit <PR>` *before* running the merge. Squash-merge writes the PR title verbatim into the commit message; merging with stale metadata bakes the drift into history permanently.
 
 Don't ask the operator for permission to bring the metadata into agreement with the diff — they've authorized merging the *content*, and reconciling the description is part of finishing the merge cleanly. *Do* surface the discrepancy briefly in your reply ("title was 'docs(specs):' but the PR now ships the feature too — updated to 'feat(cli):' before merging") so the operator can object if your interpretation is wrong. Only pause for confirmation if the metadata rewrite would represent a meaningful change the operator might not have noticed (e.g. the PR has grown from "fix bug" into "rewrite module" — flag it and confirm before both updating and merging).
 
 Why this rule exists: the operator relies on PR titles and bodies as the long-term navigable record of what shipped. Drift between description and diff is the single most common cause of "what does this PR actually do?" archaeology after the fact.
+
+## Retire fully-resolved roadmap items in the same PR
+
+When a PR ships the last remaining piece of a roadmap item — every feature, sub-phase, and follow-up tracked by the page is now implemented — delete the roadmap `.mdx` file in that same PR rather than leaving it behind as a `Status: Resolved` page. The retirement steps:
+
+1. **Confirm there is no remaining work.** Re-read the page top to bottom. Any "Remaining Work", "Future Work", "Phase N — open", or open question that is not actually shipped is a remaining-work signal — keep the page and update its status to `Partially implemented` instead.
+2. **Confirm no load-bearing inbound links.** `rg "roadmap/<slug>" docs/` from the repo root. References from the roadmap overview and the sidebar config are expected and get cleaned up below; references from *open* roadmap items mean the page is acting as an internal contract for unfinished work — keep it, or repoint those references first.
+3. **Audit every detail on the page and place it in its long-term home.** Operator behaviour goes to a `guides/` or `commands/` page so users can learn the feature without reading internals; design decisions, on-disk layout, struct/enum/function names, and architecture trade-offs go to `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, or another internals page so the next contributor reads accurate internals. The git history is the long-term archive of design rationale; the roadmap directory is not. Apply the **Documentation as the source of truth** rule in `AGENTS.md` for the audience split — never inline TOML schemas, on-disk paths, or struct names on the user-facing pages, and never put `jackin foo --bar` operator instructions on internals pages.
+4. **Replace the page with a single bullet in the Completed section** of `docs/src/content/docs/reference/roadmap.mdx`. The bullet names the feature in plain prose and links to the canonical user-facing or contributor-facing doc that now describes the shipped behaviour. No link back to a deleted roadmap page.
+5. **Repoint inbound references.** Update any open roadmap item, goal prompt, or contributor doc that linked to the deleted page; point them at the canonical home from step 3 instead.
+6. **Run the sidebar and overview audits** documented in `docs/AGENTS.md`. The sidebar audit must show no diff after deleting the entry from `docs/astro.config.ts`. The overview audit must continue to pass (every roadmap file is reachable from `roadmap.mdx` or covered by a parent program entry).
+7. **Run the docs verification gate.** `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from `docs/`. A retirement that breaks the build or repo-link references is incomplete.
+
+A `Status: Resolved` roadmap page that still sits in the directory is a smell, not a shipping target. The only legitimate reasons to keep one are (a) genuine remaining work tracked on the same page, or (b) load-bearing inbound links from open roadmap items that still treat the page as an internal contract. Anything else gets retired in the PR that ships the last piece — not deferred to a later cleanup PR, because every later contributor reading the resolved page treats it as authoritative until it is gone.
 
 ## Workflow / CI changes (agent-only)
 

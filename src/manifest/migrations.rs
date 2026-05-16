@@ -1,0 +1,160 @@
+use std::path::Path;
+
+use anyhow::bail;
+use toml_edit::DocumentMut;
+
+pub const CURRENT_MANIFEST_VERSION: &str = "v1alpha3";
+
+const MANIFEST_MIGRATIONS: &[crate::config::migrations::MigrationStep] = &[
+    crate::config::migrations::MigrationStep {
+        from: crate::config::migrations::LEGACY_VERSION,
+        to: "v1alpha1",
+        migrate: crate::config::migrations::noop_migration,
+    },
+    crate::config::migrations::MigrationStep {
+        from: "v1alpha1",
+        to: "v1alpha2",
+        migrate: crate::config::migrations::noop_migration,
+    },
+    crate::config::migrations::MigrationStep {
+        from: "v1alpha2",
+        to: CURRENT_MANIFEST_VERSION,
+        migrate: crate::config::migrations::noop_migration,
+    },
+];
+
+pub fn current_manifest_version() -> String {
+    CURRENT_MANIFEST_VERSION.to_string()
+}
+
+/// Migrate `path` (typically `<repo>/jackin.role.toml`) to
+/// `CURRENT_MANIFEST_VERSION`.
+///
+/// Returns `Some((old, new))` when a migration ran, `None` when the manifest
+/// was already current. `old` and `new` are display strings (`"legacy"`,
+/// `"v1alpha2"`) so CLI callers can print them as-is without needing the
+/// structured `SchemaVersion`.
+pub fn migrate_manifest_file(path: &Path) -> anyhow::Result<Option<(String, String)>> {
+    let outcome = crate::config::migrations::migrate_file_if_needed(
+        path,
+        "role manifest",
+        CURRENT_MANIFEST_VERSION,
+        MANIFEST_MIGRATIONS,
+    )?;
+    Ok(outcome.map(|old| (old.to_string(), CURRENT_MANIFEST_VERSION.to_string())))
+}
+
+pub(crate) fn validate_manifest_version(
+    doc: &DocumentMut,
+) -> anyhow::Result<crate::config::migrations::SchemaVersion> {
+    let version = crate::config::migrations::doc_version(doc, "role manifest")?;
+    let current = crate::config::migrations::parse_version(CURRENT_MANIFEST_VERSION)?;
+    match version.cmp(&current) {
+        std::cmp::Ordering::Greater => bail!(
+            "role manifest is at {version}, this binary only understands up to {CURRENT_MANIFEST_VERSION}; upgrade jackin"
+        ),
+        std::cmp::Ordering::Less | std::cmp::Ordering::Equal => Ok(version),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn migrates_missing_manifest_version() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("jackin.role.toml");
+        std::fs::write(&path, "# keep me\ndockerfile = \"Dockerfile\"\n").unwrap();
+
+        let (old, new) = migrate_manifest_file(&path).unwrap().unwrap();
+        let out = std::fs::read_to_string(&path).unwrap();
+        let parsed: toml::Value = toml::from_str(&out).unwrap();
+
+        assert_eq!(old, "legacy");
+        assert_eq!(new, "v1alpha3");
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha3");
+        assert!(out.starts_with("version = \"v1alpha3\""), "{out}");
+        assert!(out.contains("# keep me"), "{out}");
+    }
+
+    #[test]
+    fn migrates_v1alpha1_manifest_to_current() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("jackin.role.toml");
+        std::fs::write(
+            &path,
+            "version = \"v1alpha1\"\ndockerfile = \"Dockerfile\"\n",
+        )
+        .unwrap();
+
+        let (old, new) = migrate_manifest_file(&path).unwrap().unwrap();
+        let out = std::fs::read_to_string(&path).unwrap();
+
+        assert_eq!(old, "v1alpha1");
+        assert_eq!(new, "v1alpha3");
+        assert!(out.starts_with("version = \"v1alpha3\""), "{out}");
+    }
+
+    #[test]
+    fn current_manifest_migration_is_noop() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("jackin.role.toml");
+        let manifest = "version = \"v1alpha3\"\ndockerfile = \"Dockerfile\"\n";
+        std::fs::write(&path, manifest).unwrap();
+
+        assert!(migrate_manifest_file(&path).unwrap().is_none());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), manifest);
+    }
+
+    #[test]
+    fn rejects_newer_manifest_version() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("jackin.role.toml");
+        std::fs::write(
+            &path,
+            "version = \"v2alpha1\"\ndockerfile = \"Dockerfile\"\n",
+        )
+        .unwrap();
+
+        let err = migrate_manifest_file(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("only understands up to v1alpha3"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn validate_manifest_version_accepts_current() {
+        let doc: DocumentMut = "version = \"v1alpha3\"\n".parse().unwrap();
+        validate_manifest_version(&doc).unwrap();
+    }
+
+    #[test]
+    fn validate_manifest_version_accepts_legacy() {
+        let doc: DocumentMut = "dockerfile = \"Dockerfile\"\n".parse().unwrap();
+        let version = validate_manifest_version(&doc).unwrap();
+        assert_eq!(version.to_string(), "legacy");
+    }
+
+    #[test]
+    fn validate_manifest_version_rejects_newer() {
+        let doc: DocumentMut = "version = \"v2alpha1\"\n".parse().unwrap();
+        let err = validate_manifest_version(&doc).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("only understands up to v1alpha3"), "{msg}");
+    }
+
+    #[test]
+    fn manifest_migrations_chain_reaches_current() {
+        // Production registry must form a contiguous chain from `legacy` to
+        // CURRENT_MANIFEST_VERSION. The shared helper catches typos,
+        // missing middle steps, backward steps, cycles, and duplicate
+        // `from` forks on every CI run.
+        crate::config::migrations::assert_registry_chain(
+            MANIFEST_MIGRATIONS,
+            CURRENT_MANIFEST_VERSION,
+        );
+    }
+}

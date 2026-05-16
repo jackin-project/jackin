@@ -4,6 +4,7 @@
 
 pub(super) mod auth;
 pub(super) mod editor;
+pub(super) mod global_mounts;
 pub(super) mod list;
 pub(super) mod mouse;
 pub(super) mod prelude;
@@ -18,7 +19,7 @@ use super::state::{
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 
-pub use mouse::handle_mouse;
+pub use mouse::{handle_mouse, handle_mouse_with_config};
 
 #[derive(Debug)]
 pub enum InputOutcome {
@@ -39,6 +40,13 @@ pub enum InputOutcome {
     /// when the picker opened), resolves it against this role, and
     /// breaks with `Ok(Some((role, ws)))`.
     LaunchWithAgent(crate::selector::RoleSelector),
+    /// Operator committed a runtime agent after choosing a role.
+    LaunchWithRuntimeAgent(crate::agent::Agent),
+    /// Run an instance recovery action selected from the console.
+    InstanceAction {
+        container: String,
+        action: crate::console::ConsoleInstanceAction,
+    },
 }
 
 #[allow(clippy::too_many_lines)]
@@ -57,6 +65,12 @@ pub fn handle_key(
     // `Continue`, but `AgentPicker` commit produces `LaunchWithAgent`.
     if state.list_modal.is_some() {
         return Ok(list::handle_list_modal(state, key));
+    }
+    if state.inline_agent_picker.is_some() {
+        return Ok(list::handle_inline_agent_picker(state, key));
+    }
+    if state.inline_role_picker.is_some() {
+        return Ok(list::handle_inline_role_picker(state, key));
     }
     // Modal precedence: if a modal is open, it gets the event.
     // Use a discriminant check so we can take &mut without keeping an
@@ -131,6 +145,33 @@ pub fn handle_key(
         }
         return Ok(InputOutcome::Continue);
     }
+    if let ManagerStage::Settings(settings) = &mut state.stage
+        && settings.mounts.modal.is_some()
+    {
+        global_mounts::handle_settings_confirm_modal(settings, config, paths, key);
+        global_mounts::after_settings_event(state);
+        return Ok(InputOutcome::Continue);
+    }
+    if let ManagerStage::Settings(settings) = &mut state.stage
+        && settings.env.modal.is_some()
+    {
+        global_mounts::handle_settings_env_modal(&mut settings.env, key, op_cache);
+        global_mounts::after_settings_event(state);
+        return Ok(InputOutcome::Continue);
+    }
+    if let ManagerStage::Settings(settings) = &mut state.stage
+        && settings.auth.modal.is_some()
+    {
+        global_mounts::handle_settings_auth_modal(
+            &mut settings.auth,
+            &mut settings.env,
+            key,
+            op_available,
+            op_cache,
+        );
+        global_mounts::after_settings_event(state);
+        return Ok(InputOutcome::Continue);
+    }
     if matches!(state.stage, ManagerStage::CreatePrelude(_)) {
         let has_modal = if let ManagerStage::CreatePrelude(p) = &state.stage {
             p.modal.is_some()
@@ -203,12 +244,14 @@ pub fn handle_key(
     enum StageDis {
         List,
         Editor,
+        Settings,
         CreatePrelude,
         ConfirmDelete,
     }
     let dis = match &state.stage {
         ManagerStage::List => StageDis::List,
         ManagerStage::Editor(_) => StageDis::Editor,
+        ManagerStage::Settings(_) => StageDis::Settings,
         ManagerStage::CreatePrelude(_) => StageDis::CreatePrelude,
         ManagerStage::ConfirmDelete { .. } => StageDis::ConfirmDelete,
     };
@@ -216,6 +259,11 @@ pub fn handle_key(
     match dis {
         StageDis::List => list::handle_list_key(state, config, paths, cwd, key),
         StageDis::Editor => editor::handle_editor_key(state, config, paths, cwd, key),
+        StageDis::Settings => {
+            global_mounts::handle_settings_key(state, key);
+            global_mounts::after_settings_event(state);
+            Ok(InputOutcome::Continue)
+        }
         StageDis::CreatePrelude => Ok(prelude::handle_prelude_key(state, config, paths, cwd, key)),
         StageDis::ConfirmDelete => handle_confirm_delete_key(state, config, paths, cwd, key),
     }

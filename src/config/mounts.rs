@@ -1,23 +1,15 @@
 use super::{AppConfig, MountConfig};
 use crate::selector::RoleSelector;
 use crate::workspace::expand_tilde;
+use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, BTreeSet};
 
-/// Wire format for global mounts (top-level `[[mounts]]` and scoped
-/// `[mounts.<scope>]` entries). Mirrors `MountConfig` minus the
-/// `isolation` field, which is a workspace-mount concept only.
-/// Rejects unknown fields so an operator who tries to set `isolation`
-/// directly on this struct gets a serde "unknown field" error.
-///
-/// Note: at the actual wire path (`AppConfig` → `DockerMounts` →
-/// `MountEntry`), `MountEntry` is `#[serde(untagged)]`, so the error
-/// surfaces as "data did not match any variant of untagged enum
-/// `MountEntry`" rather than a clean "unknown field `isolation`"
-/// message. This is acceptable; a custom `Deserialize` for
-/// `MountEntry` could improve the message but is not implemented
-/// here.
+/// Wire format for `[[mounts]]` / `[mounts.<scope>]` entries. Lacks
+/// the `isolation` field (workspace-only) and rejects unknown fields so
+/// setting `isolation` here fails deserialization with the generic
+/// `MountEntry` untagged-enum error.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct GlobalMountConfig {
@@ -70,42 +62,104 @@ impl DockerMounts {
 }
 
 impl AppConfig {
-    pub fn resolve_mounts(&self, selector: &RoleSelector) -> Vec<(String, MountConfig)> {
-        let mut by_name: BTreeMap<String, MountConfig> = BTreeMap::new();
+    /// Determine which role drives role-scoped global mounts for this
+    /// workspace. Returns `Applicable` (with the resolved role + merged
+    /// rows) when role is determinable; `Ambiguous` (with candidates)
+    /// otherwise. Role candidates merge `allowed_roles`, `default_role`,
+    /// and `last_role`; if none is set and the config has exactly one
+    /// role, that one is used.
+    pub fn workspace_applicable_mount_rows(
+        &self,
+        workspace: &crate::workspace::WorkspaceConfig,
+    ) -> WorkspaceGlobalMountRows {
+        let mut candidates: Vec<String> = workspace.allowed_roles.clone();
+        for extra in workspace
+            .default_role
+            .iter()
+            .chain(workspace.last_role.iter())
+        {
+            if !candidates.iter().any(|role| role == extra) {
+                candidates.push(extra.clone());
+            }
+        }
+        candidates.sort();
+        candidates.dedup();
 
-        // Priority order: global < wildcard < exact (later inserts override earlier)
+        let resolved_role = if candidates.len() == 1 {
+            Some(candidates.remove(0))
+        } else if candidates.is_empty() && self.roles.len() == 1 {
+            self.roles.keys().next().cloned()
+        } else {
+            None
+        };
+
+        if let Some(role) = resolved_role {
+            return RoleSelector::parse(&role).map_or_else(
+                |_| WorkspaceGlobalMountRows::Ambiguous {
+                    candidates: vec![role],
+                },
+                |selector| WorkspaceGlobalMountRows::Applicable {
+                    role: selector.key(),
+                    rows: self.resolve_mount_rows(&selector),
+                },
+            );
+        }
+
+        if candidates.is_empty() {
+            candidates = self.roles.keys().cloned().collect();
+        }
+        WorkspaceGlobalMountRows::Ambiguous { candidates }
+    }
+
+    pub fn resolve_mount_rows(&self, selector: &RoleSelector) -> Vec<GlobalMountRow> {
+        let mut by_name: BTreeMap<String, GlobalMountRow> = BTreeMap::new();
         let scopes = [
-            None,                                                    // global
-            selector.namespace.as_ref().map(|ns| format!("{ns}/*")), // wildcard
-            Some(selector.key()),                                    // exact
+            None,
+            selector.namespace.as_ref().map(|ns| format!("{ns}/*")),
+            Some(selector.key()),
         ];
 
         for scope in &scopes {
-            let entries: BTreeMap<String, MountConfig> = match scope {
+            match scope {
                 None => {
-                    let mut map = BTreeMap::new();
                     for (name, entry) in self.docker.mounts.iter() {
                         if let MountEntry::Mount(m) = entry {
-                            map.insert(name.clone(), MountConfig::from(m.clone()));
+                            by_name.insert(
+                                name.clone(),
+                                GlobalMountRow {
+                                    scope: None,
+                                    name: name.clone(),
+                                    mount: MountConfig::from(m.clone()),
+                                },
+                            );
                         }
                     }
-                    map
                 }
-                Some(scope_key) => match self.docker.mounts.get(scope_key) {
-                    Some(MountEntry::Scoped(scope_map)) => scope_map
-                        .iter()
-                        .map(|(name, m)| (name.clone(), MountConfig::from(m.clone())))
-                        .collect(),
-                    _ => continue,
-                },
-            };
-
-            for (name, mount) in entries {
-                by_name.insert(name, mount);
+                Some(scope_key) => {
+                    if let Some(MountEntry::Scoped(scope_map)) = self.docker.mounts.get(scope_key) {
+                        for (name, m) in scope_map {
+                            by_name.insert(
+                                name.clone(),
+                                GlobalMountRow {
+                                    scope: Some(scope_key.clone()),
+                                    name: name.clone(),
+                                    mount: MountConfig::from(m.clone()),
+                                },
+                            );
+                        }
+                    }
+                }
             }
         }
 
-        by_name.into_iter().collect()
+        by_name.into_values().collect()
+    }
+
+    pub fn resolve_mounts(&self, selector: &RoleSelector) -> Vec<(String, MountConfig)> {
+        self.resolve_mount_rows(selector)
+            .into_iter()
+            .map(|row| (row.name, row.mount))
+            .collect()
     }
 
     pub fn expand_and_validate_named_mounts(
@@ -124,14 +178,9 @@ impl AppConfig {
         Ok(expanded)
     }
 
-    // pub(crate): test-only affordance for in-memory AppConfig setup in tests
-    // (launch/preview.rs, workspace/resolve.rs). Production callers use ConfigEditor.
+    // Test-only; production writes go through ConfigEditor.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn add_mount(&mut self, name: &str, mount: MountConfig, scope: Option<&str>) {
-        // Global mounts cannot carry isolation; the wire format
-        // (`GlobalMountConfig`) doesn't have the field. Convert
-        // explicitly to make the lossy projection visible at the
-        // call site rather than hidden behind `Into`.
         debug_assert!(
             matches!(mount.isolation, crate::isolation::MountIsolation::Shared),
             "global mounts cannot carry isolation"
@@ -162,20 +211,22 @@ impl AppConfig {
         }
     }
 
-    pub fn list_mounts(&self) -> Vec<(String, String, MountConfig)> {
+    pub fn list_mount_rows(&self) -> Vec<GlobalMountRow> {
         let mut result = Vec::new();
         for (key, entry) in self.docker.mounts.iter() {
             match entry {
-                MountEntry::Mount(m) => {
-                    result.push((
-                        "(global)".to_string(),
-                        key.clone(),
-                        MountConfig::from(m.clone()),
-                    ));
-                }
+                MountEntry::Mount(m) => result.push(GlobalMountRow {
+                    scope: None,
+                    name: key.clone(),
+                    mount: MountConfig::from(m.clone()),
+                }),
                 MountEntry::Scoped(map) => {
                     for (name, m) in map {
-                        result.push((key.clone(), name.clone(), MountConfig::from(m.clone())));
+                        result.push(GlobalMountRow {
+                            scope: Some(key.clone()),
+                            name: name.clone(),
+                            mount: MountConfig::from(m.clone()),
+                        });
                     }
                 }
             }
@@ -183,16 +234,112 @@ impl AppConfig {
         result
     }
 
-    pub fn global_mounts(&self) -> Vec<MountConfig> {
-        self.docker
-            .mounts
-            .iter()
-            .filter_map(|(_, entry)| match entry {
-                MountEntry::Mount(m) => Some(MountConfig::from(m.clone())),
-                MountEntry::Scoped(_) => None,
-            })
-            .collect()
+    pub fn validate_effective_mount_destinations(
+        workspace: &crate::workspace::WorkspaceConfig,
+        rows: &[GlobalMountRow],
+    ) -> anyhow::Result<()> {
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for mount in &workspace.mounts {
+            if !seen.insert(mount.dst.as_str()) {
+                anyhow::bail!("duplicate mount destination: {}", mount.dst);
+            }
+        }
+        for row in rows {
+            if !seen.insert(row.mount.dst.as_str()) {
+                let scope = row.scope.as_deref().unwrap_or("global");
+                anyhow::bail!(
+                    "global mount destination conflicts with workspace destination: {} (from global mount {} [{}])",
+                    row.mount.dst,
+                    row.name,
+                    scope
+                );
+            }
+        }
+        Ok(())
     }
+
+    pub fn validate_global_mount_rows(rows: &[GlobalMountRow]) -> anyhow::Result<()> {
+        let mut seen_keys: BTreeSet<(Option<&str>, &str)> = BTreeSet::new();
+        for row in rows {
+            if row.name.trim().is_empty() {
+                anyhow::bail!("global mount name cannot be empty");
+            }
+            // Two rows with the same (scope, name) silently collapse on
+            // wire-write because `add_mount` keys the BTreeMap by name —
+            // catch it here before the editor loses one row's data.
+            if !seen_keys.insert((row.scope.as_deref(), row.name.as_str())) {
+                let scope = row.scope.as_deref().unwrap_or("global");
+                anyhow::bail!("duplicate global mount entry: {} [{}]", row.name, scope);
+            }
+            if !matches!(
+                row.mount.isolation,
+                crate::isolation::MountIsolation::Shared
+            ) {
+                anyhow::bail!(
+                    "global mount {} cannot use isolation {}; global mounts are always shared",
+                    row.name,
+                    row.mount.isolation.as_str()
+                );
+            }
+            let expanded = MountConfig {
+                src: expand_tilde(&row.mount.src),
+                dst: row.mount.dst.clone(),
+                readonly: row.mount.readonly,
+                isolation: row.mount.isolation,
+            };
+            crate::workspace::validate_mounts(std::slice::from_ref(&expanded))
+                .with_context(|| format!("validating global mount {}", row.name))?;
+        }
+        for (idx, left) in rows.iter().enumerate() {
+            for right in rows.iter().skip(idx + 1) {
+                if left.name != right.name
+                    && left.mount.dst == right.mount.dst
+                    && scopes_overlap(left.scope.as_ref(), right.scope.as_ref())
+                {
+                    anyhow::bail!(
+                        "duplicate global mount destination in overlapping scope: {}",
+                        left.mount.dst
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlobalMountRow {
+    pub scope: Option<String>,
+    pub name: String,
+    pub mount: MountConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkspaceGlobalMountRows {
+    Applicable {
+        role: String,
+        rows: Vec<GlobalMountRow>,
+    },
+    Ambiguous {
+        candidates: Vec<String>,
+    },
+}
+
+fn scopes_overlap(left: Option<&String>, right: Option<&String>) -> bool {
+    match (left.map(String::as_str), right.map(String::as_str)) {
+        (None, _) | (_, None) => true,
+        (Some(a), Some(b)) if a == b => true,
+        (Some(a), Some(b)) => wildcard_scope_matches(a, b) || wildcard_scope_matches(b, a),
+    }
+}
+
+fn wildcard_scope_matches(wildcard: &str, concrete: &str) -> bool {
+    let Some(prefix) = wildcard.strip_suffix("/*") else {
+        return false;
+    };
+    concrete
+        .strip_prefix(prefix)
+        .is_some_and(|rest| rest.starts_with('/'))
 }
 
 #[cfg(test)]
@@ -372,6 +519,152 @@ shared = { src = "/tmp/specific", dst = "/data" }
     }
 
     #[test]
+    fn validate_global_mount_rows_rejects_duplicate_scope_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let src = temp.path().display().to_string();
+        let rows = vec![
+            GlobalMountRow {
+                scope: None,
+                name: "cache".into(),
+                mount: MountConfig {
+                    src: src.clone(),
+                    dst: "/a".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            },
+            GlobalMountRow {
+                scope: None,
+                name: "cache".into(),
+                mount: MountConfig {
+                    src,
+                    dst: "/b".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            },
+        ];
+
+        let err = AppConfig::validate_global_mount_rows(&rows).unwrap_err();
+
+        assert!(
+            err.to_string().contains("duplicate global mount entry"),
+            "expected duplicate-entry error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_global_mount_rows_rejects_empty_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let rows = vec![GlobalMountRow {
+            scope: None,
+            name: "  ".into(),
+            mount: MountConfig {
+                src: temp.path().display().to_string(),
+                dst: "/x".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            },
+        }];
+
+        let err = AppConfig::validate_global_mount_rows(&rows).unwrap_err();
+
+        assert!(err.to_string().contains("name cannot be empty"));
+    }
+
+    #[test]
+    fn validate_global_mount_rows_rejects_overlapping_scope_duplicate_dst() {
+        let temp = tempfile::tempdir().unwrap();
+        let src = temp.path().display().to_string();
+        let rows = vec![
+            GlobalMountRow {
+                scope: Some("chainargos/*".into()),
+                name: "a".into(),
+                mount: MountConfig {
+                    src: src.clone(),
+                    dst: "/cache".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            },
+            GlobalMountRow {
+                scope: Some("chainargos/the-architect".into()),
+                name: "b".into(),
+                mount: MountConfig {
+                    src,
+                    dst: "/cache".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            },
+        ];
+
+        let err = AppConfig::validate_global_mount_rows(&rows).unwrap_err();
+
+        assert!(err.to_string().contains("duplicate"));
+    }
+
+    #[test]
+    fn validate_global_mount_rows_allows_disjoint_scope_duplicate_dst() {
+        let temp = tempfile::tempdir().unwrap();
+        let src = temp.path().display().to_string();
+        let rows = vec![
+            GlobalMountRow {
+                scope: Some("chainargos/*".into()),
+                name: "a".into(),
+                mount: MountConfig {
+                    src: src.clone(),
+                    dst: "/cache".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            },
+            GlobalMountRow {
+                scope: Some("scentbird/*".into()),
+                name: "b".into(),
+                mount: MountConfig {
+                    src,
+                    dst: "/cache".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            },
+        ];
+
+        AppConfig::validate_global_mount_rows(&rows).unwrap();
+    }
+
+    #[test]
+    fn validate_global_mount_rows_allows_same_name_override_duplicate_dst() {
+        let temp = tempfile::tempdir().unwrap();
+        let src = temp.path().display().to_string();
+        let rows = vec![
+            GlobalMountRow {
+                scope: None,
+                name: "cache".into(),
+                mount: MountConfig {
+                    src: src.clone(),
+                    dst: "/cache".into(),
+                    readonly: false,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            },
+            GlobalMountRow {
+                scope: Some("chainargos/*".into()),
+                name: "cache".into(),
+                mount: MountConfig {
+                    src,
+                    dst: "/cache".into(),
+                    readonly: true,
+                    isolation: crate::isolation::MountIsolation::Shared,
+                },
+            },
+        ];
+
+        AppConfig::validate_global_mount_rows(&rows).unwrap();
+    }
+
+    #[test]
     fn validate_mounts_expands_tilde_in_src() {
         let home = std::env::var("HOME").unwrap();
         let mounts = vec![(
@@ -459,6 +752,26 @@ gradle-cache = { src = "/tmp/x", dst = "/workspace/x", isolation = "worktree" }
         assert!(
             msg.contains("did not match any variant of untagged enum MountEntry"),
             "expected untagged-enum mismatch error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_global_mount_rows_rejects_non_shared_isolation() {
+        let rows = vec![GlobalMountRow {
+            scope: None,
+            name: "repo".into(),
+            mount: MountConfig {
+                src: "/tmp/repo".into(),
+                dst: "/workspace/repo".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Worktree,
+            },
+        }];
+
+        let err = AppConfig::validate_global_mount_rows(&rows).unwrap_err();
+        assert!(
+            err.to_string().contains("global mounts are always shared"),
+            "unexpected error: {err}"
         );
     }
 }

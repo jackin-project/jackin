@@ -7,39 +7,46 @@ use crate::console::widgets::ModalOutcome;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
-const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
-const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
-const WHITE: Color = Color::Rgb(255, 255, 255);
+use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone)]
 pub struct AgentChoiceState {
+    pub choices: Vec<Agent>,
     pub focused: Agent,
 }
 
 impl AgentChoiceState {
-    pub const fn new() -> Self {
-        Self {
-            focused: Agent::Claude,
-        }
+    pub fn new() -> Self {
+        Self::with_choices(Agent::ALL.to_vec())
+    }
+
+    pub fn with_choices(choices: Vec<Agent>) -> Self {
+        let choices = if choices.is_empty() {
+            Agent::ALL.to_vec()
+        } else {
+            choices
+        };
+        let focused = choices[0];
+        Self { choices, focused }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ModalOutcome<Agent> {
         match key.code {
             KeyCode::Down | KeyCode::Char('j') => {
-                let idx = focus_index(self.focused);
-                if idx + 1 < Agent::ALL.len() {
-                    self.focused = Agent::ALL[idx + 1];
+                let idx = focus_index_in(&self.choices, self.focused);
+                if idx + 1 < self.choices.len() {
+                    self.focused = self.choices[idx + 1];
                 }
                 ModalOutcome::Continue
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                let idx = focus_index(self.focused);
+                let idx = focus_index_in(&self.choices, self.focused);
                 if idx > 0 {
-                    self.focused = Agent::ALL[idx - 1];
+                    self.focused = self.choices[idx - 1];
                 }
                 ModalOutcome::Continue
             }
@@ -50,18 +57,16 @@ impl AgentChoiceState {
     }
 }
 
-fn focus_index(agent: Agent) -> usize {
-    Agent::ALL
-        .iter()
-        .position(|a| *a == agent)
-        .expect("Agent::ALL contains every Agent variant")
+fn focus_index_in(choices: &[Agent], agent: Agent) -> usize {
+    choices.iter().position(|a| *a == agent).unwrap_or(0)
 }
 
-const fn agent_picker_label(agent: Agent) -> &'static str {
+pub const fn agent_picker_label(agent: Agent) -> &'static str {
     match agent {
         Agent::Claude => "Claude",
         Agent::Codex => "Codex",
         Agent::Amp => "Amp",
+        Agent::Opencode => "OpenCode",
     }
 }
 
@@ -103,7 +108,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &AgentChoiceState) {
         ])
         .split(inner);
 
-    let lines: Vec<Line> = Agent::ALL
+    let lines: Vec<Line> = state
+        .choices
         .iter()
         .map(|a| make_row(*a, agent_picker_label(*a)))
         .collect();
@@ -145,13 +151,17 @@ mod tests {
         let _ = s.handle_key(key(KeyCode::Down));
         assert_eq!(s.focused, Agent::Amp);
         let _ = s.handle_key(key(KeyCode::Down));
-        assert_eq!(s.focused, Agent::Amp);
+        assert_eq!(s.focused, Agent::Opencode);
+        let _ = s.handle_key(key(KeyCode::Down));
+        assert_eq!(s.focused, Agent::Opencode);
     }
 
     #[test]
     fn up_moves_through_agents_then_clamps() {
         let mut s = AgentChoiceState::new();
-        s.focused = Agent::Amp;
+        s.focused = Agent::Opencode;
+        let _ = s.handle_key(key(KeyCode::Up));
+        assert_eq!(s.focused, Agent::Amp);
         let _ = s.handle_key(key(KeyCode::Up));
         assert_eq!(s.focused, Agent::Codex);
         let _ = s.handle_key(key(KeyCode::Up));
@@ -168,6 +178,25 @@ mod tests {
             ModalOutcome::Commit(a) => assert_eq!(a, Agent::Codex),
             other => panic!("expected commit, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn with_choices_limits_navigation_and_default_focus() {
+        let mut s = AgentChoiceState::with_choices(vec![Agent::Codex, Agent::Amp]);
+        assert_eq!(s.focused, Agent::Codex);
+        let _ = s.handle_key(key(KeyCode::Down));
+        assert_eq!(s.focused, Agent::Amp);
+        let _ = s.handle_key(key(KeyCode::Down));
+        assert_eq!(s.focused, Agent::Amp);
+        let _ = s.handle_key(key(KeyCode::Up));
+        assert_eq!(s.focused, Agent::Codex);
+    }
+
+    #[test]
+    fn empty_choices_falls_back_to_agent_all() {
+        let s = AgentChoiceState::with_choices(Vec::new());
+        assert_eq!(s.choices, Agent::ALL.to_vec());
+        assert_eq!(s.focused, Agent::ALL[0]);
     }
 
     #[test]

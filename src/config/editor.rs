@@ -5,6 +5,7 @@
 //! user-written comments, blank lines, and key ordering intact in
 //! sections untouched by the mutation.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use anyhow::Context;
@@ -16,20 +17,21 @@ use crate::paths::JackinPaths;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EnvScope {
     Global,
+    GlobalGithub,
     Role(String),
     Workspace(String),
     WorkspaceRole {
         workspace: String,
         role: String,
     },
-    /// `[workspaces.<workspace>.github.env]` — the github-kind env
+    /// `[github.env]` inside the workspace file — the github-kind env
     /// block, parallel to the regular workspace `env` map but read by
     /// [`crate::config::build_github_env_layers`] instead of the
     /// regular launch-time env merge. Used to thread `GH_TOKEN` /
     /// `GH_HOST` / `GH_ENTERPRISE_TOKEN` without polluting the
     /// agent-facing env map.
     WorkspaceGithub(String),
-    /// `[workspaces.<workspace>.roles.<role>.github.env]` — most-
+    /// `[roles.<role>.github.env]` inside the workspace file — most
     /// specific layer of the github env layering.
     WorkspaceRoleGithub {
         workspace: String,
@@ -40,14 +42,24 @@ pub enum EnvScope {
 pub struct ConfigEditor {
     doc: DocumentMut,
     path: PathBuf,
+    workspaces_dir: PathBuf,
+    workspace_docs: BTreeMap<String, DocumentMut>,
+    removed_workspaces: BTreeSet<String>,
 }
 
 impl ConfigEditor {
-    /// Loads the existing config file as a `DocumentMut`. If the file
-    /// does not exist, delegates to `AppConfig::load_or_init` to
-    /// materialize defaults, then reopens the resulting file.
+    /// Loads the existing config file as a `DocumentMut`. Performs both
+    /// schema-version and split-workspace migration before reading, so the
+    /// on-disk result matches what `AppConfig::load_or_init` would produce.
+    /// The recursion-when-missing branch covers the fresh-install case
+    /// where the file does not yet exist.
     pub fn open(paths: &JackinPaths) -> anyhow::Result<Self> {
-        if !paths.config_file.exists() {
+        if paths.config_file.exists() {
+            crate::config::migrations::migrate_config_file_if_needed(&paths.config_file)?;
+            let raw = std::fs::read_to_string(&paths.config_file)
+                .with_context(|| format!("reading {}", paths.config_file.display()))?;
+            let _ = crate::config::persist::load_split_config(paths, Some(raw))?;
+        } else {
             AppConfig::load_or_init(paths)?;
         }
         let raw = std::fs::read_to_string(&paths.config_file)
@@ -55,9 +67,13 @@ impl ConfigEditor {
         let doc: DocumentMut = raw
             .parse()
             .with_context(|| format!("parsing {}", paths.config_file.display()))?;
+        let workspace_docs = load_workspace_docs(paths)?;
         Ok(Self {
             doc,
             path: paths.config_file.clone(),
+            workspaces_dir: paths.workspaces_dir.clone(),
+            workspace_docs,
+            removed_workspaces: BTreeSet::new(),
         })
     }
 
@@ -73,33 +89,11 @@ impl ConfigEditor {
     /// that `load_or_init` ran once at `open` time, so builtins are
     /// already in place.
     pub fn save(self) -> anyhow::Result<AppConfig> {
-        let contents = self.doc.to_string();
-        let tmp = self.path.with_extension("tmp");
+        let global_contents = self.doc.to_string();
 
-        #[cfg(unix)]
-        {
-            use std::io::Write;
-            use std::os::unix::fs::OpenOptionsExt;
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .mode(0o600)
-                .open(&tmp)?;
-            file.write_all(contents.as_bytes())?;
-            file.sync_all()?;
-        }
-
-        #[cfg(not(unix))]
-        std::fs::write(&tmp, &contents)?;
-
-        // Validate before rename so an invalid mutation can't brick
-        // subsequent CLI commands.
-        let config: AppConfig = match validate_candidate(&contents) {
+        let config: AppConfig = match validate_candidate(&global_contents, &self.workspace_docs) {
             Ok(cfg) => cfg,
             Err(err) => {
-                // Best-effort cleanup so the real error reaches caller.
-                let _ = std::fs::remove_file(&tmp);
                 return Err(err.context(format!(
                     "rejecting candidate config (would have written to {})",
                     self.path.display()
@@ -107,7 +101,22 @@ impl ConfigEditor {
             }
         };
 
-        std::fs::rename(&tmp, &self.path)?;
+        crate::config::persist::atomic_write(&self.path, &global_contents)?;
+        std::fs::create_dir_all(&self.workspaces_dir)?;
+        for name in self.workspace_docs.keys() {
+            crate::config::persist::validate_workspace_file_stem(name)?;
+        }
+        for (name, doc) in &self.workspace_docs {
+            crate::config::persist::atomic_write(&self.workspace_file(name), &doc.to_string())?;
+        }
+        for removed in &self.removed_workspaces {
+            let path = self.workspace_file(removed);
+            match std::fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
         Ok(config)
     }
 
@@ -120,8 +129,8 @@ impl ConfigEditor {
         use crate::operator_env::EnvValue;
         use toml_edit::{InlineTable, Item, Value, value as toml_value};
 
-        let path = env_scope_path(scope);
-        let table = table_path_mut(&mut self.doc, &path);
+        let (doc, path) = self.doc_and_path_for_env_scope(scope);
+        let table = table_path_mut(doc, &path);
         let item = match value {
             EnvValue::Plain(s) => toml_value(s),
             EnvValue::OpRef(r) => {
@@ -136,10 +145,10 @@ impl ConfigEditor {
     }
 
     pub fn set_env_comment(&mut self, scope: &EnvScope, key: &str, comment: Option<&str>) {
-        let path = env_scope_path(scope);
+        let (doc, path) = self.doc_and_path_for_env_scope(scope);
         // Walk without creating — setting a comment on a nonexistent key
         // is a silent no-op (same contract as remove_env_var).
-        let mut current: &mut Item = self.doc.as_item_mut();
+        let mut current: &mut Item = doc.as_item_mut();
         for segment in &path {
             match current.as_table_mut().and_then(|t| t.get_mut(segment)) {
                 Some(next) => current = next,
@@ -263,7 +272,25 @@ impl ConfigEditor {
         table.insert("auth_forward", toml_edit::value(auth_forward_str(mode)));
     }
 
-    /// Write or clear `[workspaces.<workspace>.<agent>].auth_forward`.
+    /// Write `[github].auth_forward = <mode>` at the global layer.
+    pub fn set_global_github_auth_forward(&mut self, mode: crate::config::GithubAuthMode) {
+        let table = table_path_mut(&mut self.doc, &["github".to_string()]);
+        table.insert("auth_forward", toml_edit::value(github_mode_str(mode)));
+    }
+
+    pub fn set_global_github_env_var(
+        &mut self,
+        key: &str,
+        value: crate::operator_env::EnvValue,
+    ) -> anyhow::Result<()> {
+        self.set_env_var(&EnvScope::GlobalGithub, key, value)
+    }
+
+    pub fn remove_global_github_env_var(&mut self, key: &str) -> bool {
+        self.remove_env_var(&EnvScope::GlobalGithub, key)
+    }
+
+    /// Write or clear `[<agent>].auth_forward` inside the workspace file.
     ///
     /// `mode = Some(m)` writes the named mode; `mode = None` removes the
     /// `auth_forward` field (and the agent block if it becomes empty),
@@ -278,33 +305,25 @@ impl ConfigEditor {
         agent: crate::agent::Agent,
         mode: Option<crate::config::AuthForwardMode>,
     ) {
-        let agent_path = vec![
-            "workspaces".to_string(),
-            workspace.to_string(),
-            agent.slug().to_string(),
-        ];
-        match mode {
-            Some(m) => {
-                let table = table_path_mut(&mut self.doc, &agent_path);
-                table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
-            }
-            None => {
-                clear_auth_forward_field(&mut self.doc, &agent_path);
-            }
+        let agent_path = vec![agent.slug().to_string()];
+        let doc = self.workspace_doc_mut(workspace);
+        if let Some(m) = mode {
+            let table = table_path_mut(doc, &agent_path);
+            table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
+        } else {
+            clear_auth_forward_field(doc, &agent_path);
         }
     }
 
-    /// Write or clear `[workspaces.<workspace>].op_account`.
+    /// Write or clear `op_account` inside the workspace file.
     ///
     /// Pins every `op` invocation made on behalf of the workspace to
     /// the named 1P account. Operator can pass UUID, label, or email
     /// — `op` accepts all three.
     pub fn set_workspace_op_account(&mut self, workspace: &str, account: Option<&str>) {
         use toml_edit::value as toml_value;
-        let table = table_path_mut(
-            &mut self.doc,
-            &["workspaces".to_string(), workspace.to_string()],
-        );
+        let doc = self.workspace_doc_mut(workspace);
+        let table = table_path_mut(doc, &[]);
         match account {
             Some(acc) => {
                 table.insert("op_account", toml_value(acc));
@@ -315,7 +334,7 @@ impl ConfigEditor {
         }
     }
 
-    /// Write or clear `[workspaces.<workspace>.roles.<role>.<agent>].auth_forward`.
+    /// Write or clear `[roles.<role>.<agent>].auth_forward` inside the workspace file.
     ///
     /// Mirrors [`Self::set_workspace_auth_forward`] one layer deeper.
     /// Used by the workspace-manager's Auth tab when the operator commits
@@ -328,24 +347,20 @@ impl ConfigEditor {
         mode: Option<crate::config::AuthForwardMode>,
     ) {
         let agent_path = vec![
-            "workspaces".to_string(),
-            workspace.to_string(),
             "roles".to_string(),
             role.to_string(),
             agent.slug().to_string(),
         ];
-        match mode {
-            Some(m) => {
-                let table = table_path_mut(&mut self.doc, &agent_path);
-                table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
-            }
-            None => {
-                clear_auth_forward_field(&mut self.doc, &agent_path);
-            }
+        let doc = self.workspace_doc_mut(workspace);
+        if let Some(m) = mode {
+            let table = table_path_mut(doc, &agent_path);
+            table.insert("auth_forward", toml_edit::value(auth_forward_str(m)));
+        } else {
+            clear_auth_forward_field(doc, &agent_path);
         }
     }
 
-    /// Write or clear `[workspaces.<workspace>.github].auth_forward`.
+    /// Write or clear `[github].auth_forward` inside the workspace file.
     ///
     /// Mirrors [`Self::set_workspace_auth_forward`] but threads the
     /// GitHub kind's `[github]` block instead of an `Agent`-keyed
@@ -357,23 +372,17 @@ impl ConfigEditor {
         workspace: &str,
         mode: Option<crate::config::GithubAuthMode>,
     ) {
-        let github_path = vec![
-            "workspaces".to_string(),
-            workspace.to_string(),
-            "github".to_string(),
-        ];
-        match mode {
-            Some(m) => {
-                let table = table_path_mut(&mut self.doc, &github_path);
-                table.insert("auth_forward", toml_edit::value(github_mode_str(m)));
-            }
-            None => {
-                clear_auth_forward_field(&mut self.doc, &github_path);
-            }
+        let github_path = vec!["github".to_string()];
+        let doc = self.workspace_doc_mut(workspace);
+        if let Some(m) = mode {
+            let table = table_path_mut(doc, &github_path);
+            table.insert("auth_forward", toml_edit::value(github_mode_str(m)));
+        } else {
+            clear_auth_forward_field(doc, &github_path);
         }
     }
 
-    /// Write or clear `[workspaces.<workspace>.roles.<role>.github].auth_forward`.
+    /// Write or clear `[roles.<role>.github].auth_forward` inside the workspace file.
     ///
     /// Mirrors [`Self::set_workspace_role_auth_forward`] one kind
     /// dimension wider — `github` lives at the same three layers as
@@ -384,21 +393,13 @@ impl ConfigEditor {
         role: &str,
         mode: Option<crate::config::GithubAuthMode>,
     ) {
-        let github_path = vec![
-            "workspaces".to_string(),
-            workspace.to_string(),
-            "roles".to_string(),
-            role.to_string(),
-            "github".to_string(),
-        ];
-        match mode {
-            Some(m) => {
-                let table = table_path_mut(&mut self.doc, &github_path);
-                table.insert("auth_forward", toml_edit::value(github_mode_str(m)));
-            }
-            None => {
-                clear_auth_forward_field(&mut self.doc, &github_path);
-            }
+        let github_path = vec!["roles".to_string(), role.to_string(), "github".to_string()];
+        let doc = self.workspace_doc_mut(workspace);
+        if let Some(m) = mode {
+            let table = table_path_mut(doc, &github_path);
+            table.insert("auth_forward", toml_edit::value(github_mode_str(m)));
+        } else {
+            clear_auth_forward_field(doc, &github_path);
         }
     }
 
@@ -429,9 +430,9 @@ impl ConfigEditor {
     }
 
     pub fn remove_env_var(&mut self, scope: &EnvScope, key: &str) -> bool {
-        let path = env_scope_path(scope);
+        let (doc, path) = self.doc_and_path_for_env_scope(scope);
         // Walk without creating: return false if any segment is missing.
-        let mut current: &mut Item = self.doc.as_item_mut();
+        let mut current: &mut Item = doc.as_item_mut();
         for segment in &path {
             match current.as_table_mut().and_then(|t| t.get_mut(segment)) {
                 Some(next) => current = next,
@@ -448,16 +449,14 @@ impl ConfigEditor {
             // the `env` segment and its kind parent, but no further —
             // workspace / role identifier slots stay untouched even
             // when an operator names them "env" / "github" / etc.
-            prune_empty_trailing_tables(&mut self.doc, &path, 2);
+            prune_empty_trailing_tables(doc, &path, 2);
         }
         removed
     }
 
     pub fn set_last_agent(&mut self, workspace: &str, agent_key: &str) {
-        let table = table_path_mut(
-            &mut self.doc,
-            &["workspaces".to_string(), workspace.to_string()],
-        );
+        let doc = self.workspace_doc_mut(workspace);
+        let table = table_path_mut(doc, &[]);
         table.insert("last_role", toml_edit::value(agent_key));
     }
 
@@ -475,36 +474,25 @@ impl ConfigEditor {
         if old == new {
             return Ok(());
         }
-        let workspaces = self
-            .doc
-            .get_mut("workspaces")
-            .and_then(|i| i.as_table_mut())
-            .ok_or_else(|| anyhow::anyhow!("no workspaces table"))?;
-
-        if !workspaces.contains_key(old) {
+        if !self.workspace_docs.contains_key(old) {
             anyhow::bail!("workspace {old:?} not found");
         }
-        if workspaces.contains_key(new) {
+        if self.workspace_docs.contains_key(new) {
             anyhow::bail!("workspace {new:?} already exists");
         }
 
-        // Extract, remove under old name, re-insert under new name.
-        let value = workspaces.remove(old).expect("checked above");
-        workspaces.insert(new, value);
+        crate::config::persist::validate_workspace_file_stem(new)?;
+        let value = self.workspace_docs.remove(old).expect("checked above");
+        self.workspace_docs.insert(new.to_string(), value);
+        self.removed_workspaces.insert(old.to_string());
         Ok(())
     }
 
     pub fn remove_workspace(&mut self, name: &str) -> anyhow::Result<()> {
-        let Some(workspaces) = self
-            .doc
-            .get_mut("workspaces")
-            .and_then(|i| i.as_table_mut())
-        else {
-            anyhow::bail!("workspace {name:?} not found");
-        };
-        if workspaces.remove(name).is_none() {
+        if self.workspace_docs.remove(name).is_none() {
             anyhow::bail!("workspace {name:?} not found");
         }
+        self.removed_workspaces.insert(name.to_string());
         Ok(())
     }
 
@@ -517,8 +505,8 @@ impl ConfigEditor {
         // (collision check, workdir / mount-destination relationship,
         // plan-collapse sanity) so the editor path behaves identically
         // to the direct-mutation path. Mirrors edit_workspace's pattern.
-        let mut in_memory: AppConfig = toml::from_str(&self.doc.to_string())
-            .context("re-parsing current doc into AppConfig for workspace creation")?;
+        let mut in_memory = validate_candidate(&self.doc.to_string(), &self.workspace_docs)
+            .context("re-parsing current docs into AppConfig for workspace creation")?;
         in_memory.create_workspace(name, ws)?;
         let inserted = in_memory
             .workspaces
@@ -531,11 +519,8 @@ impl ConfigEditor {
             .parse()
             .with_context(|| format!("re-parsing serialized workspace {name:?}"))?;
 
-        let workspaces_table =
-            table_path_mut(&mut self.doc, &["workspaces".to_string(), name.to_string()]);
-        for (key, item) in parsed.as_table() {
-            workspaces_table.insert(key, item.clone());
-        }
+        self.workspace_docs.insert(name.to_string(), parsed);
+        self.removed_workspaces.remove(name);
 
         Ok(())
     }
@@ -546,8 +531,8 @@ impl ConfigEditor {
         edit: crate::workspace::WorkspaceEdit,
     ) -> anyhow::Result<()> {
         // Snapshot current on-disk state into an AppConfig.
-        let mut in_memory: AppConfig = toml::from_str(&self.doc.to_string())
-            .context("re-parsing current doc into AppConfig for workspace edit")?;
+        let mut in_memory = validate_candidate(&self.doc.to_string(), &self.workspace_docs)
+            .context("re-parsing current docs into AppConfig for workspace edit")?;
 
         // Apply the edit using the existing validated logic. Mutates
         // in_memory or returns Err with the validation message on failure.
@@ -559,20 +544,64 @@ impl ConfigEditor {
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("workspace {name:?} disappeared after edit"))?;
 
-        // Replace the entire [workspaces.<name>] table. This preserves
+        // Replace the entire workspace document. This preserves
         // comments in OTHER workspaces and in unrelated top-level sections,
         // which is what the migration cares about. Comments inside the
         // edited workspace itself are consumed — that's acceptable because
         // the edit IS the change the user is making to that workspace.
         let rendered = toml::to_string(updated)?;
         let parsed: DocumentMut = rendered.parse()?;
-        let target = table_path_mut(&mut self.doc, &["workspaces".to_string(), name.to_string()]);
-        target.clear();
-        for (key, item) in parsed.as_table() {
-            target.insert(key, item.clone());
-        }
+        self.workspace_docs.insert(name.to_string(), parsed);
 
         Ok(())
+    }
+
+    fn workspace_file(&self, name: &str) -> PathBuf {
+        self.workspaces_dir.join(format!("{name}.toml"))
+    }
+
+    fn workspace_doc_mut(&mut self, workspace: &str) -> &mut DocumentMut {
+        crate::config::persist::validate_workspace_file_stem(workspace)
+            .expect("workspace name must be valid for split config filename");
+        self.removed_workspaces.remove(workspace);
+        self.workspace_docs
+            .entry(workspace.to_string())
+            .or_default()
+    }
+
+    fn doc_and_path_for_env_scope(&mut self, scope: &EnvScope) -> (&mut DocumentMut, Vec<String>) {
+        match scope {
+            EnvScope::Global | EnvScope::GlobalGithub | EnvScope::Role(_) => {
+                (&mut self.doc, env_scope_path(scope))
+            }
+            EnvScope::Workspace(w) => {
+                let doc = self.workspace_doc_mut(w);
+                (doc, vec!["env".to_string()])
+            }
+            EnvScope::WorkspaceRole { workspace, role } => {
+                let doc = self.workspace_doc_mut(workspace);
+                (
+                    doc,
+                    vec!["roles".to_string(), role.clone(), "env".to_string()],
+                )
+            }
+            EnvScope::WorkspaceGithub(w) => {
+                let doc = self.workspace_doc_mut(w);
+                (doc, vec!["github".to_string(), "env".to_string()])
+            }
+            EnvScope::WorkspaceRoleGithub { workspace, role } => {
+                let doc = self.workspace_doc_mut(workspace);
+                (
+                    doc,
+                    vec![
+                        "roles".to_string(),
+                        role.clone(),
+                        "github".to_string(),
+                        "env".to_string(),
+                    ],
+                )
+            }
+        }
     }
 }
 
@@ -598,6 +627,7 @@ const fn github_mode_str(mode: crate::config::GithubAuthMode) -> &'static str {
 fn env_scope_path(scope: &EnvScope) -> Vec<String> {
     match scope {
         EnvScope::Global => vec!["env".to_string()],
+        EnvScope::GlobalGithub => vec!["github".to_string(), "env".to_string()],
         EnvScope::Role(a) => vec!["roles".to_string(), a.clone(), "env".to_string()],
         EnvScope::Workspace(w) => vec!["workspaces".to_string(), w.clone(), "env".to_string()],
         EnvScope::WorkspaceRole { workspace, role } => vec![
@@ -629,10 +659,52 @@ fn env_scope_path(scope: &EnvScope) -> Vec<String> {
 /// role missing `git`) and `validate_reserved_names`. Skips
 /// `validate_workspaces` — only `create_workspace`/`edit_workspace`
 /// mutate that geometry and they already validate.
-fn validate_candidate(contents: &str) -> anyhow::Result<AppConfig> {
-    let config: AppConfig = toml::from_str(contents).context("deserializing candidate config")?;
+fn validate_candidate(
+    global_contents: &str,
+    workspace_docs: &BTreeMap<String, DocumentMut>,
+) -> anyhow::Result<AppConfig> {
+    let mut config: AppConfig =
+        toml::from_str(global_contents).context("deserializing candidate global config")?;
+    if !config.workspaces.is_empty() {
+        anyhow::bail!("global config.toml must not contain [workspaces] tables");
+    }
+    for (name, doc) in workspace_docs {
+        crate::config::persist::validate_workspace_file_stem(name)?;
+        let workspace = toml::from_str(&doc.to_string())
+            .with_context(|| format!("deserializing candidate workspace {name:?}"))?;
+        config.workspaces.insert(name.clone(), workspace);
+    }
     crate::operator_env::validate_reserved_names(&config)?;
     Ok(config)
+}
+
+fn load_workspace_docs(paths: &JackinPaths) -> anyhow::Result<BTreeMap<String, DocumentMut>> {
+    let mut docs = BTreeMap::new();
+    let entries = match std::fs::read_dir(&paths.workspaces_dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(docs),
+        Err(e) => return Err(e.into()),
+    };
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| anyhow::anyhow!("invalid workspace filename {}", path.display()))?;
+        crate::config::persist::validate_workspace_file_stem(stem)
+            .with_context(|| format!("invalid workspace filename {}", path.display()))?;
+        let raw = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading workspace config {}", path.display()))?;
+        let doc = raw
+            .parse()
+            .with_context(|| format!("parsing workspace config {}", path.display()))?;
+        docs.insert(stem.to_string(), doc);
+    }
+    Ok(docs)
 }
 
 /// Remove the `auth_forward` field at `kind_path` (a `[…claude]` /
@@ -725,6 +797,10 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    fn workspace_file_contents(paths: &JackinPaths, name: &str) -> String {
+        std::fs::read_to_string(paths.workspaces_dir.join(format!("{name}.toml"))).unwrap()
+    }
+
     #[test]
     fn set_env_var_creates_global_env_table() {
         let temp = tempdir().unwrap();
@@ -776,9 +852,9 @@ workdir = "/workspace/prod"
             .unwrap();
         editor.save().unwrap();
 
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        let out = workspace_file_contents(&paths, "prod");
         assert!(
-            out.contains("[workspaces.prod.roles.agent-smith.env]"),
+            out.contains("[roles.agent-smith.env]"),
             "missing nested table: {out}"
         );
         assert!(
@@ -1074,15 +1150,22 @@ API_TOKEN = "op://vault-id/item-id/field"
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
-        let original = r#"# workspace a — keep this comment
-[workspaces.a]
+        std::fs::write(&paths.config_file, "").unwrap();
+        std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+        std::fs::write(
+            paths.workspaces_dir.join("a.toml"),
+            r#"# workspace a — keep this comment
 workdir = "/a"
-
-# workspace b — also keep
-[workspaces.b]
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            paths.workspaces_dir.join("b.toml"),
+            r#"# workspace b — also keep
 workdir = "/b"
-"#;
-        std::fs::write(&paths.config_file, original).unwrap();
+"#,
+        )
+        .unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
         editor
@@ -1090,9 +1173,12 @@ workdir = "/b"
             .unwrap();
         editor.save().unwrap();
 
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        let out = workspace_file_contents(&paths, "b");
         assert!(out.contains("# workspace b — also keep"), "{out}");
-        assert!(out.contains("# workspace a — keep this comment"), "{out}");
+        let out_a = workspace_file_contents(&paths, "a");
+        assert!(out_a.contains("K = \"v\""), "{out_a}");
+        let global = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!global.contains("[workspaces."), "{global}");
     }
 
     #[test]
@@ -1108,10 +1194,12 @@ workdir = "/b"
         editor.save().unwrap();
 
         let round_tripped = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert_eq!(
-            round_tripped, original,
-            "fixture round-trip is lossy — toml_edit is dropping something"
+        assert!(
+            !round_tripped.contains("[workspaces."),
+            "global file should contain only global config after split:\n{round_tripped}"
         );
+        assert!(paths.workspaces_dir.join("prod.toml").exists());
+        assert!(paths.workspaces_dir.join("playground.toml").exists());
     }
 
     #[test]
@@ -1120,7 +1208,8 @@ workdir = "/b"
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        let original = r#"# Top-of-file note about this config
+        let original = r#"version = "v1alpha2"
+# Top-of-file note about this config
 [claude]
 auth_forward = "sync"
 
@@ -1146,10 +1235,16 @@ API_TOKEN = "op://Personal/api/token"
         let editor = ConfigEditor::open(&paths).unwrap();
         editor.save().unwrap();
 
-        let round_tripped = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert_eq!(
-            round_tripped, original,
-            "open → save must be byte-identical"
+        let global = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!global.contains("[workspaces."), "{global}");
+        let workspace = workspace_file_contents(&paths, "prod");
+        assert!(
+            workspace.contains(r#"workdir = "/workspace/prod""#),
+            "{workspace}"
+        );
+        assert!(
+            workspace.contains(r#"API_TOKEN = "op://Personal/api/token""#),
+            "{workspace}"
         );
     }
 
@@ -1494,8 +1589,8 @@ workdir = "/tmp/proj"
         );
         editor.save().unwrap();
 
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains("[workspaces.proj.claude]"), "{out}");
+        let out = workspace_file_contents(&paths, "proj");
+        assert!(out.contains("[claude]"), "{out}");
         assert!(out.contains(r#"auth_forward = "api_key""#), "{out}");
     }
 
@@ -1520,9 +1615,9 @@ auth_forward = "api_key"
         editor.set_workspace_auth_forward("proj", crate::agent::Agent::Claude, None);
         editor.save().unwrap();
 
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        let out = workspace_file_contents(&paths, "proj");
         assert!(
-            !out.contains("[workspaces.proj.claude]"),
+            !out.contains("[claude]"),
             "agent block must be removed when mode = None; {out}"
         );
         assert!(
@@ -1554,8 +1649,8 @@ workdir = "/tmp/proj"
         );
         editor.save().unwrap();
 
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains("[workspaces.proj.roles.smith.codex]"), "{out}");
+        let out = workspace_file_contents(&paths, "proj");
+        assert!(out.contains("[roles.smith.codex]"), "{out}");
         assert!(out.contains(r#"auth_forward = "api_key""#), "{out}");
     }
 
@@ -1580,11 +1675,8 @@ auth_forward = "oauth_token"
         editor.set_workspace_role_auth_forward("proj", "smith", crate::agent::Agent::Claude, None);
         editor.save().unwrap();
 
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(
-            !out.contains("[workspaces.proj.roles.smith.claude]"),
-            "{out}"
-        );
+        let out = workspace_file_contents(&paths, "proj");
+        assert!(!out.contains("[roles.smith.claude]"), "{out}");
     }
 
     #[test]
@@ -1630,8 +1722,12 @@ auth_forward = "oauth_token"
         editor.create_workspace("new-ws", ws).unwrap();
         editor.save().unwrap();
 
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains("[workspaces.new-ws]"), "{out}");
+        let out = workspace_file_contents(&paths, "new-ws");
+        assert!(
+            !std::fs::read_to_string(&paths.config_file)
+                .unwrap()
+                .contains("[workspaces.")
+        );
         assert!(out.contains(r#"workdir = "/workspace/new""#), "{out}");
     }
 
@@ -1682,7 +1778,7 @@ default_role = "agent-smith"
         editor.set_last_agent("prod", "agent-smith");
         editor.save().unwrap();
 
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        let out = workspace_file_contents(&paths, "prod");
         assert!(out.contains(r#"last_role = "agent-smith""#), "{out}");
         assert!(out.contains(r#"default_role = "agent-smith""#), "{out}");
     }
@@ -1739,7 +1835,8 @@ workdir = "/b"
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(!out.contains("[workspaces.a]"), "{out}");
-        assert!(out.contains("[workspaces.b]"), "{out}");
+        assert!(!paths.workspaces_dir.join("a.toml").exists());
+        assert!(paths.workspaces_dir.join("b.toml").exists());
     }
 
     #[test]
@@ -1763,17 +1860,45 @@ dst = "/a"
         editor.rename_workspace("old-name", "new-name").unwrap();
         editor.save().unwrap();
 
-        let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains("[workspaces.new-name]"), "{out}");
+        let out = workspace_file_contents(&paths, "new-name");
+        assert!(!paths.workspaces_dir.join("old-name.toml").exists());
         assert!(
             out.contains(r#"workdir = "/a""#),
             "nested field preserved: {out}"
         );
-        assert!(
-            out.contains("[[workspaces.new-name.mounts]]"),
-            "array table preserved: {out}"
-        );
+        assert!(out.contains("[[mounts]]"), "array table preserved: {out}");
         assert!(!out.contains("old-name"), "{out}");
+    }
+
+    #[test]
+    fn rename_workspace_write_failure_preserves_old_file() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::create_dir_all(&paths.workspaces_dir).unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+        std::fs::write(
+            paths.workspaces_dir.join("old-name.toml"),
+            r#"workdir = "/a"
+"#,
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.rename_workspace("old-name", "new-name").unwrap();
+        std::fs::create_dir(paths.workspaces_dir.join("new-name.toml")).unwrap();
+
+        let err = editor.save().unwrap_err();
+
+        let chain = format!("{err:#}");
+        assert!(
+            chain.contains("Is a directory") || chain.contains("is a directory"),
+            "{chain}"
+        );
+        assert!(
+            paths.workspaces_dir.join("old-name.toml").exists(),
+            "failed rename save must leave the original workspace file in place"
+        );
     }
 
     #[test]
@@ -1894,8 +2019,8 @@ workdir = "/workspace/prod"
         editor.save().unwrap();
 
         // Sanity: both the kind block and its env subtable land on disk.
-        let after_save = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(after_save.contains("[workspaces.prod.github]"));
+        let after_save = workspace_file_contents(&paths, "prod");
+        assert!(after_save.contains("[github]"));
         assert!(after_save.contains("auth_forward"));
         assert!(after_save.contains("GH_TOKEN"));
 
@@ -1906,13 +2031,13 @@ workdir = "/workspace/prod"
         assert!(editor.remove_env_var(&env_scope, "GH_TOKEN"));
         editor.save().unwrap();
 
-        let cleaned = std::fs::read_to_string(&paths.config_file).unwrap();
+        let cleaned = workspace_file_contents(&paths, "prod");
         assert!(
             !cleaned.contains("github"),
             "stale [github] / [github.env] table left on disk:\n{cleaned}"
         );
         assert!(
-            cleaned.contains("[workspaces.prod]"),
+            cleaned.contains("workdir"),
             "workspace block was wrongly removed by the cascade:\n{cleaned}"
         );
         assert!(
@@ -1957,7 +2082,7 @@ workdir = "/workspace/prod"
         assert!(editor.remove_env_var(&env_scope, "GH_TOKEN"));
         editor.save().unwrap();
 
-        let cleaned = std::fs::read_to_string(&paths.config_file).unwrap();
+        let cleaned = workspace_file_contents(&paths, "prod");
         assert!(
             !cleaned.contains("github"),
             "stale [github] / [github.env] table left on disk:\n{cleaned}"
@@ -1992,17 +2117,17 @@ auth_forward = "ignore"
         editor.set_workspace_github_auth_forward("prod", None);
         editor.save().unwrap();
 
-        let cleaned = std::fs::read_to_string(&paths.config_file).unwrap();
+        let cleaned = workspace_file_contents(&paths, "prod");
         assert!(
-            !cleaned.contains("[workspaces.prod.github]"),
+            !cleaned.contains("[github]"),
             "github block should be removed:\n{cleaned}"
         );
         assert!(
-            cleaned.contains("[workspaces.prod.claude]"),
+            cleaned.contains("[claude]"),
             "claude block must survive:\n{cleaned}"
         );
         assert!(
-            cleaned.contains("[workspaces.prod.codex]"),
+            cleaned.contains("[codex]"),
             "codex block must survive:\n{cleaned}"
         );
     }
@@ -2034,13 +2159,13 @@ GH_TOKEN = "ghp_real"
         assert!(editor.remove_env_var(&env_scope, "GH_TOKEN"));
         editor.save().unwrap();
 
-        let cleaned = std::fs::read_to_string(&paths.config_file).unwrap();
+        let cleaned = workspace_file_contents(&paths, "prod");
         assert!(
-            !cleaned.contains("[workspaces.prod.github.env]"),
+            !cleaned.contains("[github.env]"),
             "empty env subtable must be pruned:\n{cleaned}"
         );
         assert!(
-            cleaned.contains("[workspaces.prod.github]"),
+            cleaned.contains("[github]"),
             "kind block must survive (still has auth_forward):\n{cleaned}"
         );
         assert!(
@@ -2049,7 +2174,7 @@ GH_TOKEN = "ghp_real"
         );
     }
 
-    /// Workspace with sibling content (allowed_roles, mounts) must
+    /// Workspace with sibling content (`allowed_roles`, mounts) must
     /// survive a github clear. Position-based prune bound prevents
     /// the walker from reaching the workspace identifier slot.
     #[test]
@@ -2078,13 +2203,13 @@ GH_TOKEN = "ghp_real"
         assert!(editor.remove_env_var(&env_scope, "GH_TOKEN"));
         editor.save().unwrap();
 
-        let cleaned = std::fs::read_to_string(&paths.config_file).unwrap();
+        let cleaned = workspace_file_contents(&paths, "prod");
         assert!(
-            !cleaned.contains("[workspaces.prod.github"),
+            !cleaned.contains("[github"),
             "github / github.env tables should be pruned:\n{cleaned}"
         );
         assert!(
-            cleaned.contains("[workspaces.prod]"),
+            cleaned.contains("workdir"),
             "workspace block must survive:\n{cleaned}"
         );
         assert!(
@@ -2121,11 +2246,10 @@ auth_forward = "ignore"
         editor.set_workspace_github_auth_forward("github", None);
         editor.save().unwrap();
 
-        let cleaned = std::fs::read_to_string(&paths.config_file).unwrap();
-        // Inner [workspaces.github.github] gone (kind block); outer
-        // [workspaces.github] (workspace identifier) preserved.
+        let cleaned = workspace_file_contents(&paths, "github");
+        // Inner [github] gone (kind block); workspace file preserved.
         assert!(
-            cleaned.contains("[workspaces.github]"),
+            cleaned.contains("workdir"),
             "workspace named 'github' must survive:\n{cleaned}"
         );
         assert!(
