@@ -249,7 +249,6 @@ export default defineConfig({
                         { label: 'Behavioral spec: op_picker', slug: 'reference/roadmap/behavioral-spec-op-picker' },
                         { label: 'Per-directory README + AGENTS.md', slug: 'reference/roadmap/per-directory-readme' },
                         { label: 'Developer Reference setup', slug: 'reference/roadmap/developer-reference-setup' },
-                        { label: 'Update PROJECT_STRUCTURE.md', slug: 'reference/roadmap/project-structure-update' },
                         { label: 'CI gate: PROJECT_STRUCTURE.md', slug: 'reference/roadmap/ci-project-structure-gate' },
                         { label: 'pub(crate) visibility', slug: 'reference/roadmap/pub-crate-visibility' },
                         { label: 'Architecture Decision Records', slug: 'reference/roadmap/architecture-decision-records' },
@@ -346,15 +345,6 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Config versioning and migration', slug: 'reference/roadmap/config-versioning-migration' },
-                  ],
-                },
-                {
-                  label: 'Resolved',
-                  collapsed: true,
-                  items: [
-                    { label: 'Env var interpolation', slug: 'reference/roadmap/env-var-interpolation' },
-                    { label: 'Per-mount isolation', slug: 'reference/roadmap/per-mount-isolation' },
-                    { label: 'Split config.toml into per-workspace files', slug: 'reference/roadmap/split-workspace-config-files' },
                   ],
                 },
               ],
