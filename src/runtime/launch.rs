@@ -693,6 +693,7 @@ struct LaunchContext<'a> {
     state: &'a RoleState,
     git: &'a GitIdentity,
     debug: bool,
+    git_coauthor_trailer: bool,
     agent: crate::agent::Agent,
     resolved_env: &'a crate::env_resolver::ResolvedEnv,
     /// Resolved `[…github.env]` map (post `op://` + `$NAME`
@@ -730,6 +731,7 @@ fn launch_role_runtime(
         state,
         git,
         debug,
+        git_coauthor_trailer,
         agent,
         resolved_env,
         github_env,
@@ -910,6 +912,9 @@ fn launch_role_runtime(
     ]);
     if *debug {
         run_args.extend_from_slice(&["-e", "JACKIN_DEBUG=1"]);
+    }
+    if *git_coauthor_trailer {
+        run_args.extend_from_slice(&["-e", "JACKIN_GIT_COAUTHOR_TRAILER=1"]);
     }
 
     // Forward JACKIN_DISABLE_* env vars from the host so the operator can
@@ -1900,6 +1905,7 @@ fn load_role_with(
             state: &state,
             git: &git,
             debug: opts.debug,
+            git_coauthor_trailer: config.git.auto_coauthor_trailer,
             agent,
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,

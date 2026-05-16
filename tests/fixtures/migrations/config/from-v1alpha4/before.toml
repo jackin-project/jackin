@@ -1,4 +1,4 @@
-version = "v1alpha5"
+version = "v1alpha4"
 data_dir = "/tmp/jackin"
 
 [opencode]

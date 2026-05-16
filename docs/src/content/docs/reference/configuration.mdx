@@ -300,6 +300,17 @@ secrets = { src = "/home/user/.chainargos/secrets", dst = "/secrets", readonly =
 
 Global mounts are stored by name. Unscoped mounts live directly under `[docker.mounts]`. Scoped mounts live under a scope key such as `[docker.mounts."chainargos/*"]`.
 
+### Git co-author trailer
+
+When `auto_coauthor_trailer` is `true`, jackin installs a `prepare-commit-msg` hook inside every role container on launch. The hook reads which agent is running and appends the correct `Co-authored-by` trailer to every new commit message automatically. Amend operations are skipped so the trailer is not added twice.
+
+```toml
+[git]
+auto_coauthor_trailer = true
+```
+
+The `[git]` table is omitted from `config.toml` when all fields are at their defaults (the table is not written unless the operator sets it). See [Schema Versions](/reference/schema-versions/#v1alpha3) for the field-level reference.
+
 ## Persisted state
 
 Each running role stores state at `~/.jackin/data/<container-name>/`:

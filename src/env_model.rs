@@ -46,6 +46,11 @@ pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
 /// scripts can identify which role they are running as.
 pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
 
+/// Env var that signals the entrypoint to install a `prepare-commit-msg`
+/// hook via `core.hooksPath` so the running agent's `Co-authored-by`
+/// trailer is appended automatically to every non-amend commit.
+pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAILER";
+
 // ── GitHub CLI / GitHub-tooling env-var names ──────────────────────
 //
 // jackin reads / forwards these names in the `[github]` auth-forward
@@ -92,6 +97,7 @@ pub(crate) const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     (JACKIN_DIND_HOSTNAME_ENV_NAME, None),
     (JACKIN_AGENT_ENV_NAME, None),
     (JACKIN_ROLE_ENV_NAME, None),
+    (JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, None),
     // Docker TLS vars injected by jackin — must not be overridden by manifests.
     ("DOCKER_HOST", None),
     ("DOCKER_TLS_VERIFY", None),

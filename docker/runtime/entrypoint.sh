@@ -77,6 +77,38 @@ else
     echo "[entrypoint] GitHub CLI not installed — skipping gh setup"
 fi
 
+# ── git co-author trailer hook ─────────────────────────────────────
+# When JACKIN_GIT_COAUTHOR_TRAILER=1, write a prepare-commit-msg hook
+# that appends the correct Co-authored-by trailer for the running agent.
+# core.hooksPath is a global git config write inside the container only —
+# the host's git config is never touched (per the hard rule in AGENTS.md).
+if [ "${JACKIN_GIT_COAUTHOR_TRAILER:-0}" = "1" ]; then
+    _hooks_dir="/jackin/runtime/git-hooks"
+    mkdir -p "$_hooks_dir"
+    cat > "$_hooks_dir/prepare-commit-msg" << 'HOOK_EOF'
+#!/bin/bash
+# Skip --amend: the original commit already has the trailer.
+[ "${2:-}" = "commit" ] && exit 0
+_agent="${JACKIN_AGENT:-}"
+if [ "$_agent" = "claude" ]; then
+    _trailer="Co-authored-by: Claude <noreply@anthropic.com>"
+elif [ "$_agent" = "codex" ]; then
+    _trailer="Co-authored-by: Codex <codex@openai.com>"
+elif [ "$_agent" = "amp" ]; then
+    _trailer="Co-authored-by: Amp <amp@ampcode.com>"
+elif [ "$_agent" = "opencode" ]; then
+    _trailer="Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>"
+else
+    exit 0
+fi
+grep -qF "$_trailer" "$1" && exit 0
+printf '\n%s\n' "$_trailer" >> "$1"
+HOOK_EOF
+    chmod +x "$_hooks_dir/prepare-commit-msg"
+    git config --global core.hooksPath "$_hooks_dir"
+    echo "[entrypoint] git co-author trailer hook installed (agent: ${JACKIN_AGENT:-unknown})"
+fi
+
 # ── agent-specific setup ───────────────────────────────────────────
 #
 # The agent home is bind-mounted from jackin's per-instance data dir so

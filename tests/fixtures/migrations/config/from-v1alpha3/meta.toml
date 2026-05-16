@@ -1,4 +1,4 @@
 from_version = "v1alpha3"
-target_version = "v1alpha4"
+target_version = "v1alpha5"
 target_version_shipped = "2026-05-17"
-summary = "Restamps config as v1alpha4 and moves version to the first line. Formalizes Kimi auth config tables after v1alpha3 shipped with OpenCode."
+summary = "Restamps config from v1alpha3 through v1alpha4 (Kimi), to v1alpha5 (auto_coauthor_trailer). All steps are no-op restamps."

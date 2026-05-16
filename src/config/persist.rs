@@ -355,7 +355,7 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
 
         assert_eq!(config.version, crate::config::CURRENT_CONFIG_VERSION);
-        assert!(out.contains(r#"version = "v1alpha4""#), "{out}");
+        assert!(out.contains(r#"version = "v1alpha5""#), "{out}");
         assert!(out.contains("# keep me"), "{out}");
     }
 
@@ -368,7 +368,7 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 
         let err = AppConfig::load_or_init(&paths).unwrap_err();
 
-        assert!(err.to_string().contains("only understands up to v1alpha4"));
+        assert!(err.to_string().contains("only understands up to v1alpha5"));
     }
 
     #[test]
@@ -448,7 +448,7 @@ LOCAL = "only-prod"
         assert!(config.workspaces.contains_key("prod"));
 
         let global = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(global.contains(r#"version = "v1alpha4""#), "{global}");
+        assert!(global.contains(r#"version = "v1alpha5""#), "{global}");
         assert!(global.contains("[env]"), "{global}");
         assert!(!global.contains("[workspaces."), "{global}");
 
@@ -501,7 +501,7 @@ workdir = "/workspace/prod"
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
 
         assert_eq!(config.version, crate::config::CURRENT_CONFIG_VERSION);
-        assert!(out.contains(r#"version = "v1alpha4""#), "{out}");
+        assert!(out.contains(r#"version = "v1alpha5""#), "{out}");
     }
 
     #[test]
@@ -617,7 +617,7 @@ dst = "/workspace/prod"
 
         let global_on_disk = std::fs::read_to_string(&paths.config_file).unwrap();
         let global_parsed: toml::Value = toml::from_str(&global_on_disk).unwrap();
-        assert_eq!(global_parsed["version"].as_str().unwrap(), "v1alpha4");
+        assert_eq!(global_parsed["version"].as_str().unwrap(), "v1alpha5");
         assert!(!global_on_disk.contains("[workspaces."), "{global_on_disk}");
 
         let prod_on_disk = std::fs::read_to_string(paths.workspaces_dir.join("prod.toml")).unwrap();

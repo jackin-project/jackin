@@ -4,7 +4,7 @@ use std::path::Path;
 use anyhow::{Context, bail};
 use toml_edit::DocumentMut;
 
-pub const CURRENT_CONFIG_VERSION: &str = "v1alpha4";
+pub const CURRENT_CONFIG_VERSION: &str = "v1alpha5";
 pub const CURRENT_WORKSPACE_VERSION: &str = "v1alpha4";
 pub const LEGACY_VERSION: &str = "legacy";
 
@@ -35,6 +35,11 @@ const CONFIG_MIGRATIONS: &[MigrationStep] = &[
     },
     MigrationStep {
         from: "v1alpha3",
+        to: "v1alpha4",
+        migrate: noop_migration,
+    },
+    MigrationStep {
+        from: "v1alpha4",
         to: CURRENT_CONFIG_VERSION,
         migrate: noop_migration,
     },
@@ -393,7 +398,7 @@ mod tests {
         assert!(migrate_config_file_if_needed(&path).unwrap());
         let out = std::fs::read_to_string(&path).unwrap();
         let parsed: toml::Value = toml::from_str(&out).unwrap();
-        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha4");
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha5");
         assert!(out.contains("# keep me"), "{out}");
     }
 
@@ -430,7 +435,7 @@ mod tests {
         std::fs::write(&path, r#"version = "v2alpha1""#).unwrap();
 
         let err = migrate_config_file_if_needed(&path).unwrap_err();
-        assert!(err.to_string().contains("only understands up to v1alpha4"));
+        assert!(err.to_string().contains("only understands up to v1alpha5"));
     }
 
     #[test]

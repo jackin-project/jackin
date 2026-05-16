@@ -240,6 +240,18 @@ pub struct DockerConfig {
     pub mounts: DockerMounts,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct GitConfig {
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub auto_coauthor_trailer: bool,
+}
+
+impl GitConfig {
+    fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default = "migrations::current_config_version", rename = "version")]
@@ -267,6 +279,8 @@ pub struct AppConfig {
     pub roles: BTreeMap<String, RoleSource>,
     #[serde(default)]
     pub docker: DockerConfig,
+    #[serde(default, skip_serializing_if = "GitConfig::is_default")]
+    pub git: GitConfig,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub workspaces: BTreeMap<String, WorkspaceConfig>,
 }
@@ -284,6 +298,7 @@ impl Default for AppConfig {
             env: BTreeMap::new(),
             roles: BTreeMap::new(),
             docker: DockerConfig::default(),
+            git: GitConfig::default(),
             workspaces: BTreeMap::new(),
         }
     }
