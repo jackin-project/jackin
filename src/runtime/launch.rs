@@ -1418,17 +1418,75 @@ fn load_role_with(
         .find(|(_, w)| w.workdir == workspace.workdir)
         .map(|(name, _)| name.clone());
 
-    // Show a preliminary config summary. The real launch ID is generated
-    // after the image build, but the preview follows the same DNS-safe shape.
+    let role_key = selector.key();
+    let restore_container = if let Some(container) = opts.restore_container_base.as_ref() {
+        Some(container.clone())
+    } else {
+        match resolve_restore_candidate(
+            paths,
+            workspace_name.as_deref(),
+            workspace.label.as_str(),
+            &workspace.workdir,
+            &role_key,
+            agent,
+            runner,
+        )? {
+            RestoreResolution::StartFresh => None,
+            RestoreResolution::RestoreCurrentRole(container) => Some(container),
+            RestoreResolution::RecoverRelatedRole(container) => {
+                let load_result = hardline_agent(paths, &container, runner).map(|()| container);
+                let agent_display_name = match &load_result {
+                    Ok(container_name) => format_role_display(container_name, &agent_display_name),
+                    Err(_) => agent_display_name,
+                };
+                match load_result {
+                    Ok(_) => {
+                        render_exit(&agent_display_name, runner, opts);
+                        return Ok(());
+                    }
+                    Err(error) => {
+                        render_exit(&agent_display_name, runner, opts);
+                        return Err(error);
+                    }
+                }
+            }
+            RestoreResolution::RebuildRelatedRole(manifest) => {
+                let selector = RoleSelector::parse(&manifest.role_key)?;
+                let related_opts = related_restore_load_options(opts, &manifest)?;
+                let load_result =
+                    load_role(paths, config, &selector, workspace, runner, &related_opts)
+                        .map(|()| manifest.container_base);
+                let agent_display_name = match &load_result {
+                    Ok(container_name) => format_role_display(container_name, &agent_display_name),
+                    Err(_) => agent_display_name,
+                };
+                match load_result {
+                    Ok(_) => {
+                        render_exit(&agent_display_name, runner, opts);
+                        return Ok(());
+                    }
+                    Err(error) => {
+                        render_exit(&agent_display_name, runner, opts);
+                        return Err(error);
+                    }
+                }
+            }
+        }
+    };
+    let restoring = restore_container.is_some();
+    let (container_name, _name_lock) = if let Some(container_name) = restore_container {
+        claim_known_container_name(paths, &container_name, runner)?
+    } else {
+        claim_container_name(paths, workspace_name.as_deref(), selector, runner)?
+    };
+
     let image_tag = opts.role_branch.as_deref().map_or_else(
         || image_name(selector),
         |b| image_name_for_branch(selector, b),
     );
-    let preliminary_name =
-        crate::instance::container_name_with_id(workspace_name.as_deref(), selector, "preview");
     let config_rows = build_config_rows(
         &agent_display_name,
-        &preliminary_name,
+        &container_name,
         workspace,
         &git,
         &image_tag,
@@ -1520,34 +1578,6 @@ fn load_role_with(
     }
 
     let load_result = (|| -> anyhow::Result<String> {
-        let role_key = selector.key();
-        let restore_container = if let Some(container) = opts.restore_container_base.as_ref() {
-            Some(container.clone())
-        } else {
-            match resolve_restore_candidate(
-                paths,
-                workspace_name.as_deref(),
-                workspace.label.as_str(),
-                &workspace.workdir,
-                &role_key,
-                agent,
-                runner,
-            )? {
-                RestoreResolution::StartFresh => None,
-                RestoreResolution::RestoreCurrentRole(container) => Some(container),
-                RestoreResolution::RecoverRelatedRole(container) => {
-                    hardline_agent(paths, &container, runner)?;
-                    return Ok(container);
-                }
-                RestoreResolution::RebuildRelatedRole(manifest) => {
-                    let selector = RoleSelector::parse(&manifest.role_key)?;
-                    let opts = related_restore_load_options(opts, &manifest)?;
-                    load_role(paths, config, &selector, workspace, runner, &opts)?;
-                    return Ok(manifest.container_base);
-                }
-            }
-        };
-
         // Step 2: Build Docker image
         let rebuild = opts.rebuild;
         let agent_update = !rebuild && {
@@ -1587,12 +1617,6 @@ fn load_role_with(
             repo_lock,
         )?;
 
-        let restoring = restore_container.is_some();
-        let (container_name, _name_lock) = if let Some(container_name) = restore_container {
-            claim_known_container_name(paths, &container_name, runner)?
-        } else {
-            claim_container_name(paths, workspace_name.as_deref(), selector, runner)?
-        };
         let container_state = paths.data_dir.join(&container_name);
         let network = format!("{container_name}-net");
         let dind = format!("{container_name}-dind");
