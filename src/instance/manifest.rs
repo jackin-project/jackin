@@ -63,6 +63,27 @@ impl InstanceStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionStatus {
+    Running,
+    Exited,
+    ContainerMissing,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionRecord {
+    pub session_id: String,
+    pub name: String,
+    pub agent_runtime: String,
+    pub tmux_name: String,
+    pub created_at: String,
+    pub status: SessionStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_attached_at: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DockerResources {
     pub role_container: String,
@@ -91,6 +112,8 @@ pub struct InstanceManifest {
     pub status: InstanceStatus,
     pub last_attach_outcome: Option<String>,
     pub docker: DockerResources,
+    #[serde(default)]
+    pub sessions: Vec<SessionRecord>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,6 +185,7 @@ impl InstanceManifest {
             status: InstanceStatus::Active,
             last_attach_outcome: None,
             docker: input.docker,
+            sessions: Vec::new(),
         }
     }
 

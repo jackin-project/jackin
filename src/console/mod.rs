@@ -36,6 +36,7 @@ pub enum ConsoleOutcome {
 pub enum ConsoleInstanceAction {
     Reconnect,
     NewSession,
+    Shell,
     Inspect,
     Purge,
 }
