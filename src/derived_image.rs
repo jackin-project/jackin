@@ -1009,4 +1009,13 @@ plugins = []
         assert!(error.to_string().contains("symlink"));
         assert!(error.to_string().contains("linked.txt"));
     }
+
+    #[test]
+    fn entrypoint_coauthor_hook_uses_canonical_agent_emails() {
+        // Guards against the shell trailer mapping drifting from AGENTS.md.
+        assert!(ENTRYPOINT_SH.contains("noreply@anthropic.com"));
+        assert!(ENTRYPOINT_SH.contains("codex@openai.com"));
+        assert!(ENTRYPOINT_SH.contains("amp@ampcode.com"));
+        assert!(ENTRYPOINT_SH.contains("opencode-agent[bot]@users.noreply.github.com"));
+    }
 }
