@@ -299,7 +299,7 @@ pub(super) fn follow_cursor_y(
 /// The chrome constant 9 = header 3 + tab strip 2 + footer 2 + block borders 2.
 /// `usize::MAX` is passed as `content_height` so `follow_cursor_y`'s upper clamp
 /// (`raw.min(max_scroll as u16)`) never fires: `max_scroll` overflows on the `as
-/// u16` cast to ≈ 65 535 − viewport_h, which is unreachable for any real cursor row.
+/// u16` cast to ≈ 65 535 − `viewport_h`, which is unreachable for any real cursor row.
 pub(super) fn cursor_scroll_for_panel(
     cursor: usize,
     scroll_y: u16,
