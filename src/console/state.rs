@@ -204,6 +204,7 @@ mod tests {
                 github: None,
                 git_pull_on_entry: false,
                 kimi: None,
+                opencode: None,
             },
         );
 
@@ -245,6 +246,7 @@ mod tests {
             codex: None,
             amp: None,
             kimi: None,
+            opencode: None,
             github: None,
             git_pull_on_entry: false,
         }

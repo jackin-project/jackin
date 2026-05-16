@@ -917,12 +917,16 @@ fn resolve_panel_mode(
 ) -> crate::console::manager::auth_kind::AuthMode {
     use crate::console::manager::auth_kind::{AuthKind, AuthMode};
     match kind {
-        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp | AuthKind::Kimi => {
-            // `kind.agent()` returns `Some` for Claude/Codex/Amp/Kimi; the
+        AuthKind::Claude
+        | AuthKind::Codex
+        | AuthKind::Amp
+        | AuthKind::Kimi
+        | AuthKind::Opencode => {
+            // `kind.agent()` returns `Some` for Claude/Codex/Amp/Kimi/Opencode; the
             // GitHub arm below means the unwrap is unreachable here.
             let agent = kind
                 .agent()
-                .expect("Claude/Codex/Amp/Kimi kinds map to an Agent");
+                .expect("Claude/Codex/Amp/Kimi/Opencode kinds map to an Agent");
             let mode = crate::config::resolve_mode(cfg, agent, workspace, role);
             AuthMode::from_auth_forward(mode)
         }
@@ -1428,6 +1432,10 @@ fn explicit_workspace_mode(
             .kimi
             .as_ref()
             .map(|c| AuthMode::from_auth_forward(c.auth_forward)),
+        AuthKind::Opencode => ws
+            .opencode
+            .as_ref()
+            .map(|c| AuthMode::from_auth_forward(c.auth_forward)),
         AuthKind::Github => ws
             .github
             .as_ref()
@@ -1448,7 +1456,11 @@ fn auth_source_value<'a>(
     use crate::console::manager::auth_kind::AuthKind;
     match kind {
         AuthKind::Github => github_source_value(synthesized, workspace_name, role, env_name),
-        AuthKind::Claude | AuthKind::Codex | AuthKind::Amp | AuthKind::Kimi => {
+        AuthKind::Claude
+        | AuthKind::Codex
+        | AuthKind::Amp
+        | AuthKind::Kimi
+        | AuthKind::Opencode => {
             agent_env_source_value(synthesized, workspace_name, role, env_name)
         }
     }
@@ -1990,6 +2002,7 @@ mod secrets_tab_render_tests {
                 amp: None,
                 github: None,
                 kimi: None,
+                opencode: None,
             },
         );
         let ws = WorkspaceConfig {
@@ -2137,6 +2150,7 @@ mod secrets_tab_render_tests {
                 amp: None,
                 github: None,
                 kimi: None,
+                opencode: None,
             },
         );
         roles.insert(
@@ -2148,6 +2162,7 @@ mod secrets_tab_render_tests {
                 amp: None,
                 github: None,
                 kimi: None,
+                opencode: None,
             },
         );
 
@@ -2464,6 +2479,7 @@ mod secrets_tab_render_tests {
                 amp: None,
                 github: None,
                 kimi: None,
+                opencode: None,
             },
         );
         let ws = WorkspaceConfig {
@@ -2503,6 +2519,7 @@ mod secrets_tab_render_tests {
                 amp: None,
                 github: None,
                 kimi: None,
+                opencode: None,
             },
         );
         roles.insert(
@@ -2514,6 +2531,7 @@ mod secrets_tab_render_tests {
                 amp: None,
                 github: None,
                 kimi: None,
+                opencode: None,
             },
         );
         let ws = WorkspaceConfig {
@@ -2825,6 +2843,7 @@ mod eligible_agents_for_override_tests {
                     amp: None,
                     github: None,
                     kimi: None,
+                    opencode: None,
                 },
             );
         }

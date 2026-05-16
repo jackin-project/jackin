@@ -292,6 +292,46 @@ impl std::ops::Deref for KimiAuthConfig {
     }
 }
 
+/// Newtype around `AgentAuthConfig` that rejects `oauth_token` at parse time.
+///
+/// Opencode does not support `AuthForwardMode::OAuthToken` — rejecting it at
+/// deserialization time keeps the type system honest.
+#[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
+pub struct OpencodeAuthConfig(pub(crate) AgentAuthConfig);
+
+impl OpencodeAuthConfig {
+    /// Construct, rejecting `OAuthToken`. See [`CodexAuthConfig::new`].
+    pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
+        if cfg.auth_forward == AuthForwardMode::OAuthToken {
+            return Err("auth_forward 'oauth_token' is not supported for opencode");
+        }
+        Ok(Self(cfg))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for OpencodeAuthConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let cfg = AgentAuthConfig::deserialize(deserializer)?;
+        if cfg.auth_forward == AuthForwardMode::OAuthToken {
+            return Err(serde::de::Error::custom(
+                "auth_forward 'oauth_token' is not supported for opencode; \
+                 supported modes: sync, api_key, ignore",
+            ));
+        }
+        Ok(Self(cfg))
+    }
+}
+
+impl std::ops::Deref for OpencodeAuthConfig {
+    type Target = AgentAuthConfig;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoleSource {
@@ -323,6 +363,8 @@ pub struct AppConfig {
     pub amp: Option<AmpAuthConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kimi: Option<KimiAuthConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opencode: Option<OpencodeAuthConfig>,
     /// Global `[github]` block — bottom layer of the layered resolver
     /// (global → workspace → workspace × role). Operator-only; role
     /// manifests cannot set or override it.
@@ -348,6 +390,7 @@ impl Default for AppConfig {
             codex: None,
             amp: None,
             kimi: None,
+            opencode: None,
             github: None,
             env: BTreeMap::new(),
             roles: BTreeMap::new(),

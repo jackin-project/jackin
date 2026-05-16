@@ -9,12 +9,14 @@ pub enum Agent {
     Codex,
     Amp,
     Kimi,
+    Opencode,
 }
 
 impl Agent {
     /// Every variant in declaration order. Iteration sites consult
     /// this instead of hand-rolling their own array.
-    pub const ALL: &'static [Self] = &[Self::Claude, Self::Codex, Self::Amp, Self::Kimi];
+    pub const ALL: &'static [Self] =
+        &[Self::Claude, Self::Codex, Self::Amp, Self::Kimi, Self::Opencode];
 
     pub const fn slug(self) -> &'static str {
         match self {
@@ -22,6 +24,7 @@ impl Agent {
             Self::Codex => "codex",
             Self::Amp => "amp",
             Self::Kimi => "kimi",
+            Self::Opencode => "opencode",
         }
     }
 
@@ -31,6 +34,7 @@ impl Agent {
             Self::Codex => CODEX_INSTALL_BLOCK,
             Self::Amp => AMP_INSTALL_BLOCK,
             Self::Kimi => KIMI_INSTALL_BLOCK,
+            Self::Opencode => OPENCODE_INSTALL_BLOCK,
         }
     }
 
@@ -49,8 +53,11 @@ impl Agent {
             (Self::Codex, M::ApiKey) => Some("OPENAI_API_KEY"),
             (Self::Amp, M::ApiKey) => Some("AMP_API_KEY"),
             (Self::Kimi, M::ApiKey) => Some("KIMI_API_KEY"),
+            (Self::Opencode, M::ApiKey) => Some("OPENCODE_API_KEY"),
             (Self::Claude, M::Sync | M::Ignore)
-            | (Self::Codex | Self::Amp | Self::Kimi, M::Sync | M::Ignore | M::OAuthToken) => None,
+            | (Self::Codex | Self::Amp | Self::Kimi | Self::Opencode, M::Sync | M::Ignore | M::OAuthToken) => {
+                None
+            }
         }
     }
 
@@ -63,7 +70,9 @@ impl Agent {
         use crate::config::AuthForwardMode as M;
         match self {
             Self::Claude => &[M::Sync, M::ApiKey, M::OAuthToken, M::Ignore],
-            Self::Codex | Self::Amp | Self::Kimi => &[M::Sync, M::ApiKey, M::Ignore],
+            Self::Codex | Self::Amp | Self::Kimi | Self::Opencode => {
+                &[M::Sync, M::ApiKey, M::Ignore]
+            }
         }
     }
 }
@@ -87,8 +96,16 @@ USER root
 ARG JACKIN_CACHE_BUST=0
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
-    curl -fsSL code.kimi.com/install.sh | bash && \\
+    curl -fsSL https://code.kimi.com/install.sh | bash && \\
     kimi --version
+";
+
+const OPENCODE_INSTALL_BLOCK: &str = "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN : \"${JACKIN_CACHE_BUST}\" && \\
+    curl -fsSL https://opencode.ai/install | bash && \\
+    opencode --version
 ";
 
 const CODEX_INSTALL_BLOCK: &str = "\
@@ -128,7 +145,7 @@ impl fmt::Display for Agent {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("unknown agent: {got:?}; supported: claude, codex, amp, kimi")]
+#[error("unknown agent: {got:?}; supported: claude, codex, amp, kimi, opencode")]
 pub struct ParseAgentError {
     got: String,
 }
@@ -141,6 +158,7 @@ impl FromStr for Agent {
             "codex" => Ok(Self::Codex),
             "amp" => Ok(Self::Amp),
             "kimi" => Ok(Self::Kimi),
+            "opencode" => Ok(Self::Opencode),
             other => Err(ParseAgentError {
                 got: other.to_string(),
             }),
@@ -154,8 +172,8 @@ mod tests {
 
     #[test]
     fn slug_round_trip() {
-        for h in [Agent::Claude, Agent::Codex, Agent::Amp, Agent::Kimi] {
-            assert_eq!(Agent::from_str(h.slug()).unwrap(), h);
+        for h in Agent::ALL {
+            assert_eq!(Agent::from_str(h.slug()).unwrap(), *h);
         }
     }
 
@@ -165,6 +183,7 @@ mod tests {
         assert_eq!(format!("{}", Agent::Codex), "codex");
         assert_eq!(format!("{}", Agent::Amp), "amp");
         assert_eq!(format!("{}", Agent::Kimi), "kimi");
+        assert_eq!(format!("{}", Agent::Opencode), "opencode");
     }
 
     #[test]
@@ -173,6 +192,7 @@ mod tests {
         assert!(err.to_string().contains("foo"));
         assert!(err.to_string().contains("claude"));
         assert!(err.to_string().contains("kimi"));
+        assert!(err.to_string().contains("opencode"));
     }
 
     #[test]
@@ -223,8 +243,16 @@ mod tests {
     fn kimi_install_block_uses_official_curl_installer() {
         let block = Agent::Kimi.install_block();
         assert!(block.starts_with("USER root\n"));
-        assert!(block.contains("curl -fsSL code.kimi.com/install.sh | bash"));
+        assert!(block.contains("curl -fsSL https://code.kimi.com/install.sh | bash"));
         assert!(block.contains("kimi --version"));
+    }
+
+    #[test]
+    fn opencode_install_block_uses_official_curl_installer() {
+        let block = Agent::Opencode.install_block();
+        assert!(block.starts_with("USER agent\n"));
+        assert!(block.contains("https://opencode.ai/install"));
+        assert!(block.contains("opencode --version"));
     }
 }
 
@@ -289,6 +317,22 @@ mod auth_table_tests {
             None
         );
         assert_eq!(Agent::Kimi.required_env_var(AuthForwardMode::Ignore), None);
+
+        // Opencode
+        assert_eq!(Agent::Opencode.required_env_var(AuthForwardMode::Sync), None);
+        assert_eq!(
+            Agent::Opencode.required_env_var(AuthForwardMode::ApiKey),
+            Some("OPENCODE_API_KEY")
+        );
+        // OAuthToken for Opencode is parser-rejected; method-level safety returns None.
+        assert_eq!(
+            Agent::Opencode.required_env_var(AuthForwardMode::OAuthToken),
+            None
+        );
+        assert_eq!(
+            Agent::Opencode.required_env_var(AuthForwardMode::Ignore),
+            None
+        );
     }
 
     #[test]
@@ -332,6 +376,18 @@ mod auth_table_tests {
         assert!(
             !modes.contains(&AuthForwardMode::OAuthToken),
             "kimi must not advertise oauth_token"
+        );
+        assert!(modes.contains(&AuthForwardMode::Ignore));
+    }
+
+    #[test]
+    fn supported_modes_opencode_excludes_oauth_token() {
+        let modes = Agent::Opencode.supported_modes();
+        assert!(modes.contains(&AuthForwardMode::Sync));
+        assert!(modes.contains(&AuthForwardMode::ApiKey));
+        assert!(
+            !modes.contains(&AuthForwardMode::OAuthToken),
+            "opencode must not advertise oauth_token"
         );
         assert!(modes.contains(&AuthForwardMode::Ignore));
     }

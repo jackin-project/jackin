@@ -613,6 +613,11 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
+        // Guard against a compromised container replacing the role-state
+        // directory with a symlink between launches. Mirrors the check in
+        // provision_codex_auth and provision_amp_auth.
+        reject_symlink(kimi_dir)?;
+
         let host_kimi = host_home.join(".kimi");
 
         let outcome = match mode {
@@ -692,10 +697,120 @@ impl RoleState {
 /// Remove the role-state Kimi directory so a prior Sync run cannot leak
 /// credentials under env-driven modes (`Ignore`, `ApiKey`).
 fn wipe_kimi_state(kimi_dir: &Path) -> anyhow::Result<()> {
+    use anyhow::Context;
     if kimi_dir.exists() {
-        std::fs::remove_dir_all(kimi_dir)?;
+        std::fs::remove_dir_all(kimi_dir).with_context(|| {
+            format!(
+                "failed to wipe stale Kimi state at {} \
+                 (auth_forward switched to ignore/api_key); remove the directory \
+                 manually if it has unexpected ownership",
+                kimi_dir.display()
+            )
+        })?;
     }
     Ok(())
+}
+
+impl RoleState {
+    /// Provision `OpenCode`'s host-side `auth.json` per the chosen mode.
+    ///
+    /// Source: `~/.opencode/auth.json`.
+    /// `OpenCode` stores provider credentials in this file.
+    ///
+    /// Follows the same semantics as `provision_codex_auth`.
+    pub(super) fn provision_opencode_auth(
+        auth_json: &std::path::Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(AuthProvisionOutcome, Option<std::path::PathBuf>)> {
+        use anyhow::Context;
+
+        reject_symlink(auth_json)?;
+
+        let host_auth = host_home.join(".opencode/auth.json");
+        let outcome = match mode {
+            AuthForwardMode::OAuthToken => {
+                eprintln!(
+                    "[jackin] internal: provision_opencode_auth received unsupported \
+                     OAuthToken mode for OpenCode — parser invariant bypassed; \
+                     wiping role state and falling back to token-mode."
+                );
+                wipe_opencode_state(auth_json)?;
+                AuthProvisionOutcome::TokenMode
+            }
+            AuthForwardMode::ApiKey => {
+                wipe_opencode_state(auth_json)?;
+                AuthProvisionOutcome::TokenMode
+            }
+            AuthForwardMode::Ignore => {
+                wipe_opencode_state(auth_json)?;
+                AuthProvisionOutcome::Skipped
+            }
+            AuthForwardMode::Sync => match std::fs::read_to_string(&host_auth) {
+                Ok(content) if content.trim().is_empty() => {
+                    eprintln!(
+                        "[jackin] host {} is empty/whitespace — treating as host-missing",
+                        host_auth.display()
+                    );
+                    if auth_json.exists() {
+                        repair_permissions(auth_json);
+                    }
+                    AuthProvisionOutcome::HostMissing
+                }
+                Ok(content) => {
+                    write_private_file(auth_json, &content).with_context(|| {
+                        format!(
+                            "failed to write OpenCode role-state auth.json at {}",
+                            auth_json.display()
+                        )
+                    })?;
+                    AuthProvisionOutcome::Synced
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    if auth_json.exists() {
+                        repair_permissions(auth_json);
+                    }
+                    AuthProvisionOutcome::HostMissing
+                }
+                Err(e) => {
+                    let hint = match e.kind() {
+                        std::io::ErrorKind::PermissionDenied => {
+                            " (check host file permissions on the parent dir)"
+                        }
+                        _ => "",
+                    };
+                    return Err(anyhow::Error::new(e).context(format!(
+                        "failed to read host {}{}",
+                        host_auth.display(),
+                        hint
+                    )));
+                }
+            },
+        };
+
+        let mounted_auth_json = match outcome {
+            AuthProvisionOutcome::Synced => Some(auth_json.to_path_buf()),
+            AuthProvisionOutcome::Skipped => None,
+            AuthProvisionOutcome::HostMissing | AuthProvisionOutcome::TokenMode => {
+                auth_json.exists().then(|| auth_json.to_path_buf())
+            }
+        };
+        Ok((outcome, mounted_auth_json))
+    }
+}
+
+/// Remove role-state `auth.json` for `OpenCode` so a prior Sync run cannot
+/// leak credentials under env-driven modes.
+fn wipe_opencode_state(auth_json: &Path) -> anyhow::Result<()> {
+    use anyhow::Context;
+    wipe_file_if_present(auth_json).with_context(|| {
+        format!(
+            "failed to wipe stale OpenCode auth.json at {} \
+             (auth_forward switched to ignore/api_key); remove the file \
+             manually if it has unexpected ownership",
+            auth_json.display()
+        )
+    })
 }
 
 /// Copy the host's `.claude.json` into the container state, or write `{}`

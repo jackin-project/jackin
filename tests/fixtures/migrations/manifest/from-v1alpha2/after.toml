@@ -3,6 +3,3 @@ dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
-
-[kimi]
-model = "kimi-for-coding"

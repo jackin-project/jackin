@@ -148,12 +148,32 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     ;;
   kimi)
     seed_home_dir /jackin/default-home/.kimi /home/agent/.kimi
-    if [ -n "${KIMI_API_KEY:-}" ]; then
+    if [ -d /jackin/kimi ] && [ "$(ls -A /jackin/kimi 2>/dev/null)" ]; then
+        echo "[entrypoint] kimi: copying provisioned credentials into ~/.kimi/" >&2
+        cp -a /jackin/kimi/. /home/agent/.kimi/ 2>/dev/null || true
+    elif [ -n "${KIMI_API_KEY:-}" ]; then
         echo "[entrypoint] kimi: KIMI_API_KEY present in env; agent will use api-key auth" >&2
     else
         echo "[entrypoint] kimi: KIMI_API_KEY unset — agent will require interactive login or config" >&2
     fi
     LAUNCH=(kimi --yolo)
+    ;;
+  opencode)
+    seed_home_dir /jackin/default-home/.opencode /home/agent/.opencode
+    if [ -f /jackin/opencode/auth.json ]; then
+        echo "[entrypoint] opencode: forwarding host auth.json into ~/.opencode/" >&2
+        cp /jackin/opencode/auth.json /home/agent/.opencode/auth.json
+        chmod 600 /home/agent/.opencode/auth.json
+    elif [ -n "${OPENCODE_API_KEY:-}" ]; then
+        echo "[entrypoint] opencode: OPENCODE_API_KEY present in env; agent will use api-key auth" >&2
+    else
+        rm -f /home/agent/.opencode/auth.json
+        echo "[entrypoint] opencode: no auth.json mounted and OPENCODE_API_KEY unset — agent will require interactive login" >&2
+    fi
+    LAUNCH=(opencode)
+    if [ $# -gt 0 ]; then
+        LAUNCH+=("$@")
+    fi
     ;;
   *)
     echo "[entrypoint] unknown JACKIN_AGENT: $JACKIN_AGENT" >&2

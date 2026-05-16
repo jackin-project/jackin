@@ -79,6 +79,72 @@ pub fn needs_claude_update(
     installed != latest
 }
 
+/// File that caches the latest published `OpenCode` version from `npm`.
+fn opencode_npm_cache_path(paths: &JackinPaths) -> PathBuf {
+    paths.cache_dir.join("opencode-latest-version")
+}
+
+/// File that records the `OpenCode` version baked into a given `Docker` image.
+fn opencode_image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
+    paths
+        .cache_dir
+        .join(format!("image-opencode-version/{image}"))
+}
+
+/// Query npm for the latest published `opencode-ai` version,
+/// returning a cached value when the cache is still fresh.
+pub fn latest_opencode_version(
+    paths: &JackinPaths,
+    runner: &mut impl CommandRunner,
+) -> Option<String> {
+    let cache_file = opencode_npm_cache_path(paths);
+
+    if let Some(cached) = read_if_fresh(&cache_file, NPM_CACHE_TTL) {
+        return Some(cached);
+    }
+
+    let version = runner
+        .capture("npm", &["view", "opencode-ai", "version"], None)
+        .ok()?;
+    let version = version.trim().to_string();
+    if version.is_empty() {
+        return None;
+    }
+
+    let _ = write_cached(&cache_file, &version);
+    Some(version)
+}
+
+/// Read the `OpenCode` version we stored for a previously-built image.
+pub fn stored_opencode_version(paths: &JackinPaths, image: &str) -> Option<String> {
+    let path = opencode_image_version_path(paths, image);
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
+/// Persist the `OpenCode` version that was just installed into an image.
+pub fn store_opencode_version(paths: &JackinPaths, image: &str, version: &str) {
+    let path = opencode_image_version_path(paths, image);
+    let _ = write_cached(&path, version);
+}
+
+/// Returns `true` when the image contains an older `OpenCode` version than
+/// the latest published release, meaning the image should be rebuilt.
+pub fn needs_opencode_update(
+    paths: &JackinPaths,
+    image: &str,
+    runner: &mut impl CommandRunner,
+) -> bool {
+    let Some(installed) = stored_opencode_version(paths, image) else {
+        return false;
+    };
+    let Some(latest) = latest_opencode_version(paths, runner) else {
+        return false;
+    };
+    installed != latest
+}
+
 /// File that records the last `JACKIN_CACHE_BUST` value used to build an image.
 fn cache_bust_path(paths: &JackinPaths, image: &str) -> PathBuf {
     paths.cache_dir.join(format!("image-cache-bust/{image}"))
@@ -130,6 +196,19 @@ pub fn parse_kimi_version(raw: &str) -> Option<&str> {
         return Some(second);
     }
     None
+}
+
+/// Extract a bare semver string from `opencode --version` output.
+///
+/// The command returns e.g. `"1.14.48"` or `"v1.14.48"`. Strip a leading `v`
+/// if present, then validate it looks like a semver.
+pub fn parse_opencode_version(raw: &str) -> Option<&str> {
+    let trimmed = raw.trim();
+    let token = trimmed.strip_prefix('v').unwrap_or(trimmed);
+    if token.split('.').count() < 2 || !token.starts_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(token)
 }
 
 // ── helpers ────────────────────────────────────────────────────────────
@@ -297,6 +376,31 @@ mod tests {
     #[test]
     fn parse_kimi_version_rejects_empty() {
         assert_eq!(parse_kimi_version(""), None);
+    }
+
+    #[test]
+    fn parse_opencode_version_bare_semver() {
+        assert_eq!(parse_opencode_version("1.14.48"), Some("1.14.48"));
+    }
+
+    #[test]
+    fn parse_opencode_version_strips_v_prefix() {
+        assert_eq!(parse_opencode_version("v1.14.48"), Some("1.14.48"));
+    }
+
+    #[test]
+    fn parse_opencode_version_two_part() {
+        assert_eq!(parse_opencode_version("1.0"), Some("1.0"));
+    }
+
+    #[test]
+    fn parse_opencode_version_rejects_garbage() {
+        assert_eq!(parse_opencode_version("not-a-version"), None);
+    }
+
+    #[test]
+    fn parse_opencode_version_rejects_empty() {
+        assert_eq!(parse_opencode_version(""), None);
     }
 
     /// Minimal [`CommandRunner`] that returns a fixed string for any `capture`.

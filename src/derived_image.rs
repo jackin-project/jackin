@@ -96,6 +96,7 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
         crate::agent::Agent::Codex => 1,
         crate::agent::Agent::Amp => 2,
         crate::agent::Agent::Kimi => 3,
+        crate::agent::Agent::Opencode => 4,
     });
     for h in sorted {
         install_blocks.push_str(h.install_block());
@@ -121,11 +122,12 @@ RUN current_gid=\"$(id -g agent)\" \
        fi \
     && chown -R agent:agent /home/agent
 {install_blocks}{hook_section}USER root
-RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/default-home/.kimi /jackin/default-home/.local/share/amp \
+RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/default-home/.kimi /jackin/default-home/.local/share/amp /jackin/default-home/.opencode \
     && ( cp -a /home/agent/.claude/. /jackin/default-home/.claude/ 2>/dev/null || true ) \
     && ( cp -a /home/agent/.codex/. /jackin/default-home/.codex/ 2>/dev/null || true ) \
     && ( cp -a /home/agent/.kimi/. /jackin/default-home/.kimi/ 2>/dev/null || true ) \
     && ( cp -a /home/agent/.local/share/amp/. /jackin/default-home/.local/share/amp/ 2>/dev/null || true ) \
+    && ( cp -a /home/agent/.opencode/. /jackin/default-home/.opencode/ 2>/dev/null || true ) \
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 RUN chmod +x /jackin/runtime/entrypoint.sh

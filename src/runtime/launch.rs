@@ -2817,6 +2817,7 @@ fn render_auth_credential_missing(
         crate::agent::Agent::Codex => "Codex",
         crate::agent::Agent::Amp => "Amp",
         crate::agent::Agent::Kimi => "Kimi",
+        crate::agent::Agent::Opencode => "OpenCode",
     };
 
     let _ = writeln!(out);
@@ -2986,12 +2987,14 @@ fn build_mode_resolution(
         Agent::Codex => cfg.codex.as_ref().map(|c| c.auth_forward),
         Agent::Amp => cfg.amp.as_ref().map(|c| c.auth_forward),
         Agent::Kimi => cfg.kimi.as_ref().map(|c| c.auth_forward),
+        Agent::Opencode => cfg.opencode.as_ref().map(|c| c.auth_forward),
     };
     let agent_at_workspace = cfg.workspaces.get(workspace).and_then(|ws| match agent {
         Agent::Claude => ws.claude.as_ref().map(|c| c.auth_forward),
         Agent::Codex => ws.codex.as_ref().map(|c| c.auth_forward),
         Agent::Amp => ws.amp.as_ref().map(|c| c.auth_forward),
         Agent::Kimi => ws.kimi.as_ref().map(|c| c.auth_forward),
+        Agent::Opencode => ws.opencode.as_ref().map(|c| c.auth_forward),
     });
     let agent_at_ws_role = cfg
         .workspaces
@@ -3002,6 +3005,7 @@ fn build_mode_resolution(
             Agent::Codex => ro.codex.as_ref().map(|c| c.auth_forward),
             Agent::Amp => ro.amp.as_ref().map(|c| c.auth_forward),
             Agent::Kimi => ro.kimi.as_ref().map(|c| c.auth_forward),
+            Agent::Opencode => ro.opencode.as_ref().map(|c| c.auth_forward),
         });
     vec![
         (format!("workspace × role × {agent}"), agent_at_ws_role),

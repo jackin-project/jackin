@@ -178,6 +178,10 @@ pub enum AgentRuntimeState {
         /// `[kimi].model`; passed to the CLI as `--model` at launch.
         model: Option<String>,
     },
+    Opencode {
+        /// `[opencode].model`; passed to the CLI as `-m` at launch.
+        model: Option<String>,
+    },
 }
 
 /// Claude's provisioned auth slot.
@@ -213,6 +217,13 @@ pub struct KimiAuth {
     pub forward_auth: bool,
 }
 
+/// `OpenCode`'s provisioned auth slot. `auth_json` is `None` under
+/// env-driven modes or when no host auth file was present.
+#[derive(Debug, Clone, Default)]
+pub struct OpencodeAuth {
+    pub auth_json: Option<PathBuf>,
+}
+
 /// Auth state provisioned for every agent listed in `manifest.supported_agents()`.
 ///
 /// Each per-agent slot is `Some(_)` iff that agent is supported and
@@ -225,6 +236,7 @@ pub struct ProvisionedAuth {
     pub codex: Option<CodexAuth>,
     pub amp: Option<AmpAuth>,
     pub kimi: Option<KimiAuth>,
+    pub opencode: Option<OpencodeAuth>,
 }
 
 #[derive(Debug, Clone)]
@@ -258,7 +270,8 @@ impl RoleState {
             AgentRuntimeState::Claude { model } => model.as_deref(),
             AgentRuntimeState::Codex { .. }
             | AgentRuntimeState::Amp
-            | AgentRuntimeState::Kimi { .. } => None,
+            | AgentRuntimeState::Kimi { .. }
+            | AgentRuntimeState::Opencode { .. } => None,
         }
     }
 
@@ -288,7 +301,8 @@ impl RoleState {
             AgentRuntimeState::Codex { model } => model.as_deref(),
             AgentRuntimeState::Claude { .. }
             | AgentRuntimeState::Amp
-            | AgentRuntimeState::Kimi { .. } => None,
+            | AgentRuntimeState::Kimi { .. }
+            | AgentRuntimeState::Opencode { .. } => None,
         }
     }
 
@@ -319,7 +333,8 @@ impl RoleState {
             AgentRuntimeState::Kimi { model } => model.as_deref(),
             AgentRuntimeState::Claude { .. }
             | AgentRuntimeState::Codex { .. }
-            | AgentRuntimeState::Amp => None,
+            | AgentRuntimeState::Amp
+            | AgentRuntimeState::Opencode { .. } => None,
         }
     }
 
@@ -327,6 +342,28 @@ impl RoleState {
     #[must_use]
     pub fn kimi_forward_auth(&self) -> bool {
         self.auth.kimi.as_ref().is_some_and(|c| c.forward_auth)
+    }
+
+    /// `Some` only when the selected runtime is `OpenCode`.
+    #[must_use]
+    pub fn opencode_model(&self) -> Option<&str> {
+        match &self.agent_runtime {
+            AgentRuntimeState::Opencode { model } => model.as_deref(),
+            AgentRuntimeState::Claude { .. }
+            | AgentRuntimeState::Codex { .. }
+            | AgentRuntimeState::Amp
+            | AgentRuntimeState::Kimi { .. } => None,
+        }
+    }
+
+    /// Host path to `OpenCode`'s `auth.json`. `None` when `OpenCode` is not
+    /// in `supported_agents()` or no file is available.
+    #[must_use]
+    pub fn opencode_auth_json(&self) -> Option<&Path> {
+        self.auth
+            .opencode
+            .as_ref()
+            .and_then(|c| c.auth_json.as_deref())
     }
 }
 
@@ -416,6 +453,12 @@ impl RoleState {
                     auth.kimi = Some(slot);
                     outcome
                 }
+                crate::agent::Agent::Opencode => {
+                    let (slot, outcome) =
+                        Self::provision_opencode_slot(&root, &home_dir, mode, host_home)?;
+                    auth.opencode = Some(slot);
+                    outcome
+                }
             };
             if supported == agent {
                 selected_outcome = outcome;
@@ -432,6 +475,9 @@ impl RoleState {
             crate::agent::Agent::Amp => AgentRuntimeState::Amp,
             crate::agent::Agent::Kimi => AgentRuntimeState::Kimi {
                 model: manifest.kimi.as_ref().and_then(|cfg| cfg.model.clone()),
+            },
+            crate::agent::Agent::Opencode => AgentRuntimeState::Opencode {
+                model: manifest.opencode.as_ref().and_then(|cfg| cfg.model.clone()),
             },
         };
 
@@ -518,6 +564,21 @@ impl RoleState {
         std::fs::create_dir_all(&kimi_home_dir)?;
         let (outcome, forward_auth) = Self::provision_kimi_auth(&kimi_dir, mode, host_home)?;
         Ok((KimiAuth { forward_auth }, outcome))
+    }
+
+    fn provision_opencode_slot(
+        root: &Path,
+        home_dir: &Path,
+        mode: AuthForwardMode,
+        host_home: &Path,
+    ) -> anyhow::Result<(OpencodeAuth, AuthProvisionOutcome)> {
+        let opencode_dir = root.join("opencode");
+        let opencode_home_dir = home_dir.join(".opencode");
+        std::fs::create_dir_all(&opencode_dir)?;
+        std::fs::create_dir_all(&opencode_home_dir)?;
+        let auth_json_path = opencode_dir.join("auth.json");
+        let (outcome, auth_json) = Self::provision_opencode_auth(&auth_json_path, mode, host_home)?;
+        Ok((OpencodeAuth { auth_json }, outcome))
     }
 }
 
@@ -696,7 +757,9 @@ plugins = []
         let auth_modes = |agent: crate::agent::Agent| match agent {
             crate::agent::Agent::Claude => AuthForwardMode::Sync,
             crate::agent::Agent::Codex => AuthForwardMode::ApiKey,
-            crate::agent::Agent::Amp | crate::agent::Agent::Kimi => AuthForwardMode::Ignore,
+            crate::agent::Agent::Amp
+            | crate::agent::Agent::Kimi
+            | crate::agent::Agent::Opencode => AuthForwardMode::Ignore,
         };
 
         let (state, selected_outcome) = RoleState::prepare(

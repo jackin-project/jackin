@@ -426,6 +426,7 @@ fn secrets_agent_section_expand_collapse() -> Result<()> {
             amp: None,
             github: None,
             kimi: None,
+            opencode: None,
         },
     );
     let ws = WorkspaceConfig {
@@ -1640,6 +1641,7 @@ fn env_key_modal_blocks_duplicate_agent_key() -> Result<()> {
             amp: None,
             github: None,
             kimi: None,
+            opencode: None,
         },
     );
     let ws = WorkspaceConfig {
@@ -1800,6 +1802,7 @@ fn seed_override_picker_workspace(
                 amp: None,
                 github: None,
                 kimi: None,
+                opencode: None,
             },
         );
     }

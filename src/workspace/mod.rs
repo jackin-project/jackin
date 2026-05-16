@@ -106,6 +106,10 @@ pub struct WorkspaceConfig {
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kimi: Option<crate::config::KimiAuthConfig>,
+    /// Workspace-level Opencode auth configuration. See `claude` above —
+    /// same role in the resolver, parallel field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opencode: Option<crate::config::OpencodeAuthConfig>,
     /// Workspace-level GitHub CLI (`gh`) auth configuration. Middle
     /// layer of the layered resolver (global → workspace → workspace
     /// × role). GitHub auth is agent-neutral — `.config/gh/` is shared
@@ -135,6 +139,7 @@ impl Default for WorkspaceConfig {
             codex: None,
             amp: None,
             kimi: None,
+            opencode: None,
             github: None,
             git_pull_on_entry: false,
         }
@@ -205,6 +210,10 @@ pub struct WorkspaceRoleOverride {
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kimi: Option<crate::config::KimiAuthConfig>,
+    /// Per-(workspace × role) Opencode auth override. See `claude` above —
+    /// same role in the resolver, parallel field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opencode: Option<crate::config::OpencodeAuthConfig>,
     /// Per-(workspace × role) GitHub CLI auth override — most-specific
     /// layer of the layered resolver. The `[github]` axis has no agent
     /// dimension because `.config/gh/` is shared by every agent in the
@@ -818,6 +827,7 @@ isolation = "clone"
             github: None,
             git_pull_on_entry: false,
             kimi: None,
+            opencode: None,
         };
         let err = validate_workspace_config("ws", &workspace).unwrap_err();
         let msg = err.to_string();

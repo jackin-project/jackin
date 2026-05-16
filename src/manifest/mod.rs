@@ -36,6 +36,8 @@ pub struct RoleManifest {
     #[serde(default)]
     pub kimi: Option<KimiConfig>,
     #[serde(default)]
+    pub opencode: Option<OpencodeConfig>,
+    #[serde(default)]
     pub hooks: Option<HooksConfig>,
     #[serde(default)]
     pub env: BTreeMap<String, EnvVarDecl>,
@@ -66,6 +68,18 @@ pub struct AmpConfig {}
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KimiConfig {
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+/// Per-role `OpenCode` configuration.
+///
+/// `model` is passed to `OpenCode` with `-m` in `provider/model` format
+/// (e.g. `zai-coding-plan/glm-5.1`). When absent, `OpenCode` uses its
+/// own default model selection.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpencodeConfig {
     #[serde(default)]
     pub model: Option<String>,
 }

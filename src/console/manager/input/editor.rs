@@ -3293,6 +3293,7 @@ plugins = []
                 amp: None,
                 github: None,
                 kimi: None,
+                opencode: None,
             },
         );
 
@@ -3578,6 +3579,7 @@ plugins = []
                 amp: None,
                 github: None,
                 kimi: None,
+                opencode: None,
             },
         );
         let mut state = ManagerState::from_config(&config, tmp.path());
@@ -3647,6 +3649,7 @@ plugins = []
                 amp: None,
                 github: None,
                 kimi: None,
+                opencode: None,
             },
         );
 
