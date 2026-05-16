@@ -198,7 +198,13 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
             width: 1,
             height: rows[3].height,
         };
-        render_vertical_scrollbar_in_area(frame, sb_area, total, viewport, position as u16);
+        render_vertical_scrollbar_in_area(
+            frame,
+            sb_area,
+            total,
+            viewport,
+            position.min(usize::from(u16::MAX)) as u16,
+        );
     }
 }
 

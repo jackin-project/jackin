@@ -23,6 +23,12 @@ pub(crate) const fn max_offset(content_len: usize, viewport: usize) -> u16 {
         0
     } else {
         let max = content_len.saturating_sub(viewport);
+        // Silent truncation: an overflow greater than u16::MAX cannot be fully
+        // addressed by a u16 scroll offset. Debug builds surface this.
+        debug_assert!(
+            max <= u16::MAX as usize,
+            "scroll overflow (content_len - viewport) exceeds u16::MAX — scrollbar position truncated"
+        );
         if max > u16::MAX as usize {
             u16::MAX
         } else {
@@ -53,6 +59,9 @@ pub(crate) fn scrollbar_position_for_offset(
 }
 
 const fn scrollbar_content_length(content_length: usize, viewport: usize) -> usize {
+    // Ratatui sizes the thumb as viewport / scrollbar_content_length. Passing raw
+    // content_length produces a thumb that is too small for moderate overflows.
+    // The correct value is the number of distinct scroll positions: overflow + 1.
     if is_scrollable(content_length, viewport) {
         content_length.saturating_sub(viewport).saturating_add(1)
     } else {
@@ -67,6 +76,8 @@ pub(crate) fn line_width(line: &Line<'_>) -> usize {
         .sum()
 }
 
+// Trailing padding mirrors leading spaces so indented content scrolls
+// symmetrically — without it the rightmost indent column is unreachable.
 fn leading_space_count(line: &Line<'_>) -> usize {
     let mut count = 0;
     for span in &line.spans {
@@ -80,12 +91,15 @@ fn leading_space_count(line: &Line<'_>) -> usize {
     count
 }
 
-fn scroll_line_width(line: &Line<'_>) -> usize {
-    line_width(line).saturating_add(leading_space_count(line))
-}
-
 pub(crate) fn max_line_width(lines: &[Line<'_>]) -> usize {
-    lines.iter().map(scroll_line_width).max().unwrap_or(0)
+    // Adds leading_space_count a second time to account for the matching trailing
+    // padding that add_trailing_padding appends; the padded line is genuinely that
+    // wide, so content_width must reflect it to keep the scrollbar range correct.
+    lines
+        .iter()
+        .map(|l| line_width(l).saturating_add(leading_space_count(l)))
+        .max()
+        .unwrap_or(0)
 }
 
 fn add_trailing_padding(mut lines: Vec<Line<'_>>) -> Vec<Line<'_>> {

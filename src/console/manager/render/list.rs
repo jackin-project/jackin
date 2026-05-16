@@ -406,6 +406,16 @@ pub(in crate::console::manager) fn workspace_mounts_content_width(
     super::max_line_width(&lines)
 }
 
+pub(in crate::console::manager) fn workspace_mounts_content_height(
+    mounts: &[crate::workspace::MountConfig],
+) -> usize {
+    1 + mounts
+        .iter()
+        .map(|m| if m.src == m.dst { 1 } else { 2 })
+        .sum::<usize>()
+        .max(1)
+}
+
 pub(in crate::console::manager) fn global_mounts_content_width(
     mounts: &[crate::workspace::MountConfig],
 ) -> usize {

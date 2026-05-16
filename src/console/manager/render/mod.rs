@@ -16,11 +16,11 @@ pub(super) mod global_mounts;
 pub(super) mod list;
 pub(super) mod modal;
 
-// Re-export the shared modal geometry helper so `manager::input::mouse` can
-// reach it via `super::super::render::modal_outer_rect`.
+// input::mouse has no path into the modal submodule — re-exported here so it
+// can reach modal_outer_rect via super::super::render.
 pub(super) use modal::modal_outer_rect;
-// Re-export the editor entry point so input handlers can redraw the editor
-// while a modal is being dismissed (see `input::mod`).
+// Modal dismissal sequencing requires a render call across a module boundary;
+// re-exported here so input handlers can reach render_editor directly.
 pub use editor::render_editor;
 
 pub(in crate::console::manager) use crate::console::widgets::scrollable::{
@@ -262,20 +262,12 @@ mod footer_wrap_tests {
     }
 }
 
-pub(super) const fn effective_scroll_x(
-    content_width: usize,
-    viewport: usize,
-    scroll_x: u16,
-) -> u16 {
-    effective_scroll(content_width, viewport, scroll_x)
-}
-
 pub(super) const fn clamp_scroll_x(
     content_width: usize,
     viewport: usize,
     scroll_x: &mut u16,
 ) -> u16 {
-    let effective = effective_scroll_x(content_width, viewport, *scroll_x);
+    let effective = effective_scroll(content_width, viewport, *scroll_x);
     *scroll_x = effective;
     effective
 }
@@ -305,10 +297,9 @@ pub(super) fn follow_cursor_y(
 /// Adjust `scroll_y` so `cursor` stays in the editor/settings content viewport.
 ///
 /// The chrome constant 9 = header 3 + tab strip 2 + footer 2 + block borders 2.
-/// `usize::MAX` is passed as `content_height` because the rendered line count is
-/// not known at input-dispatch time; it is large enough that `follow_cursor_y`'s
-/// upper clamp (`raw.min(max_scroll)`) never fires — the `as u16` truncation in
-/// the caller means the effective ceiling is 65 535, well above any real viewport.
+/// `usize::MAX` is passed as `content_height` so `follow_cursor_y`'s upper clamp
+/// (`raw.min(max_scroll as u16)`) never fires: `max_scroll` overflows on the `as
+/// u16` cast to ≈ 65 535 − viewport_h, which is unreachable for any real cursor row.
 pub(super) fn cursor_scroll_for_panel(
     cursor: usize,
     scroll_y: u16,
@@ -689,11 +680,7 @@ fn workspace_mounts_scrollable(
     viewport_w: usize,
 ) -> bool {
     let w = list::workspace_mounts_content_width(mounts);
-    let data_rows: usize = mounts
-        .iter()
-        .map(|m| if m.src == m.dst { 1 } else { 2 })
-        .sum();
-    let content_h = 1 + data_rows.max(1);
+    let content_h = list::workspace_mounts_content_height(mounts);
     let viewport_h = scroll_viewport_height(Rect {
         x: 0,
         y: 0,
@@ -991,6 +978,32 @@ mod horizontal_scrollbar_tests {
 
         assert_eq!(scroll_x, 6);
         assert_eq!(visible, "efgh  ");
+    }
+
+    #[test]
+    fn scrollable_block_clamps_scroll_y_in_place() {
+        let backend = TestBackend::new(12, 6);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut scroll_x = 0;
+        let mut scroll_y = 99;
+        let lines: Vec<Line<'static>> = (0..8).map(|idx| Line::from(format!("{idx:02}"))).collect();
+
+        terminal
+            .draw(|frame| {
+                render_scrollable_block(
+                    frame,
+                    Rect::new(0, 0, 12, 6),
+                    lines,
+                    &mut scroll_x,
+                    &mut scroll_y,
+                    false,
+                    None,
+                );
+            })
+            .unwrap();
+
+        // viewport_h = 4, content = 8, max_y = 4
+        assert_eq!(scroll_y, 4);
     }
 }
 

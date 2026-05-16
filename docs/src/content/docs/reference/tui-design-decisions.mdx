@@ -135,11 +135,11 @@ The workspace mounts formula uses `.max(1)` because an empty mount list renders 
 - Scrollbar thumbs are proportional to visible content in both axes, so small overflow produces a long thumb and large overflow produces a short thumb, while a block scrolled to its maximum offset still shows the thumb at the visible end of the track.
 - Horizontal scrolling preserves matching trailing padding for each row's leading padding, so two-space-indented tables do not pin their final visible character against the right border or scrollbar column at maximum horizontal offset.
 
-Input hit-testing, focusability, scrollbar dragging, wheel/key max-offset math, right-padding content width, and Ratatui scrollbar state construction must use the shared scroll helpers in <RepoFile path="src/console/widgets/scrollable.rs" /> (`viewport_width`, `viewport_height`, `is_scrollable`, `max_offset`, `effective_offset`, and `scrollbar_position_for_offset`). Do not reimplement `area.width - 2`, `area.height - 2`, `content - viewport`, proportional thumb sizing, trailing scroll padding, or Ratatui scrollbar-position formulas in input handlers or widget renderers; drift between input geometry and renderer geometry is a scroll bug.
+Input hit-testing, focusability, scrollbar dragging, wheel/key max-offset math, right-padding content width, and Ratatui scrollbar state construction must use the shared scroll helpers in <RepoFile path="src/console/widgets/scrollable.rs" /> (`viewport_width`, `viewport_height`, `is_scrollable`, `max_offset`, `effective_offset`, `scrollbar_position_for_offset`, and the private `scrollbar_content_length` via the existing `render_*_scrollbar` helpers). Do not reimplement `area.width - 2`, `area.height - 2`, `content - viewport`, proportional thumb sizing, trailing scroll padding, or Ratatui scrollbar-position formulas in input handlers or widget renderers; drift between input geometry and renderer geometry is a scroll bug. In particular, do not pass raw `content_length` to `ScrollbarState::new()` — the correct argument is `content_length - viewport + 1` (the number of distinct scroll positions), which `scrollbar_content_length` computes; passing the raw length produces a thumb that is too small for moderate overflows.
 
 Signature:
 ```rust
-pub(super) fn render_scrollable_block(
+pub(crate) fn render_scrollable_block(
     frame: &mut Frame,
     area: Rect,
     lines: Vec<Line<'_>>,
@@ -177,7 +177,7 @@ In `scroll_active_panel`, dispatch order for the list stage:
 1. If `list_names_focused` → scroll `list_names_scroll_x` (left pane).
 2. Otherwise → compute `list_scroll_areas`, route to the block under the pointer.
 
-The left pane scroll uses `apply_horizontal_scroll_unbounded` (no clamping to content width) because `render_scrollable_block` clamps on every frame anyway.
+The left pane scroll uses `apply_scroll_delta` (no clamping to content width) because `render_scrollable_block` clamps on every frame anyway.
 
 ---
 
