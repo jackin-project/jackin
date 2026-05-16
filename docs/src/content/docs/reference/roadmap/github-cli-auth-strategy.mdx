@@ -1,6 +1,7 @@
 ---
 title: "GitHub CLI Authentication Strategy"
 ---
+import RepoFile from '../../../../components/RepoFile.astro'
 
 **Status**: Partially implemented — sync / token / ignore modes, launch summary, and console Auth-tab UX are shipped; dedicated CLI subcommand, scope pre-flight, and deeper GHE coverage remain
 
@@ -14,7 +15,7 @@ This roadmap item no longer repeats the shipped schema, resolver, console UX, la
 
 ## Remaining Work
 
-1. **Dedicated CLI command.** Add `jackin config auth set --target github ...` (and matching show/reset behavior if needed) for operators who prefer CLI management of global defaults.
+1. **Dedicated CLI command.** Extend the existing `jackin config auth set <mode> [--agent <agent>]` (in <RepoFile path="src/cli/config.rs" />) with a github target — e.g. `jackin config auth set sync --target github` — and matching show/reset behavior if needed, for operators who prefer CLI management of global defaults.
 2. **Scope and expiry pre-flight.** Surface token scopes and expiry when GitHub exposes them, especially for `token` mode, so over-broad or expiring PATs are visible before an agent hits a 401.
 3. **GitHub Enterprise recipe and tests.** `GH_HOST` / `GH_ENTERPRISE_TOKEN` are wired through env injection, but the docs and tests need a full GHE path.
 4. **Bidirectional sync.** Host-to-container `sync` is shipped. Container-to-host or shared-store sync belongs under [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/) and likely depends on [jackin daemon](/reference/roadmap/jackin-daemon/).

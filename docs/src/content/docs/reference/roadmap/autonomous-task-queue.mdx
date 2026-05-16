@@ -97,7 +97,7 @@ materialized worktree exactly like manual `jackin load`. Each task
 gets a distinct container name, distinct data dir, distinct branch.
 
 The branch name follows the existing convention from
-[per-mount isolation](/reference/roadmap/per-mount-isolation/):
+[per-mount isolation](/guides/workspaces/#per-mount-isolation):
 `jackin/scratch/<container>` where `<container>` includes the unique
 suffix already produced by <RepoFile path="src/instance/naming.rs" />.
 
@@ -298,7 +298,7 @@ jackin queue approve <workspace> <id> <gate> # approve publish/review/merge gate
   required completion-detection signal
 - [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) —
   budget gating
-- [Per-mount isolation](/reference/roadmap/per-mount-isolation/) —
+- [Per-mount isolation](/guides/workspaces/#per-mount-isolation) —
   per-task isolation reuses worktree mode
 - [Idle runtime cleanup](/reference/roadmap/idle-runtime-cleanup/) —
   paired Phase 4 item

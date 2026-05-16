@@ -60,6 +60,7 @@ The CLI source lives under `src/`; supporting files at the repo root:
 |---|---|
 | `Cargo.toml` | Crate manifest — dependencies, lints, MSRV |
 | `Cargo.lock` | Locked dependency versions |
+| `build.rs` | Cargo build script (compile-time codegen / env) |
 | `AGENTS.md` | Shared instructions for all AI agents (testing, pre-commit, security, PR conventions) |
 | `CLAUDE.md` | Claude-specific pointer to `AGENTS.md` |
 | `RULES.md` | Project-wide conventions (docs go in `AGENTS.md`, not tool-specific files) |
@@ -132,9 +133,13 @@ and [Architecture](https://jackin.tailrocks.com/reference/architecture/).
 
 | Workflow | Triggers |
 |---|---|
+| `ci.yml` | Runs fmt, clippy, and the Rust test suite on PRs and pushes |
 | `construct.yml` | Builds and publishes the `construct` base Docker image |
 | `docs.yml` | Builds and deploys the documentation site |
+| `preview.yml` | Publishes the Homebrew preview formula (dispatch-from-main only) |
 | `release.yml` | Creates release artifacts |
+| `renovate.yml` | Self-hosted Renovate dependency update runner |
+| `renovate-validate.yml` | Verifies the upstream sources Renovate's `customManagers` point at still resolve |
 
 ## Code ↔ docs cross-reference
 

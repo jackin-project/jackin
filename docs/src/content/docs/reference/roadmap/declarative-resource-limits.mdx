@@ -147,7 +147,7 @@ not a hard error. Operators see the gap; the agent still runs.
   probably out of scope for V1.
 - **OOM preserve_state interaction with worktree cleanup** (the
   shipped per-branch safety policy described in
-  [Per-mount isolation](/reference/roadmap/per-mount-isolation/)).
+  [Per-mount isolation](/guides/workspaces/#per-mount-isolation)).
   An OOM-killed instance should always preserve. The cleanup helper
   already handles non-zero exits; OOM is a special case of that. Confirm the
   existing helper sees OOM as non-zero.
