@@ -565,17 +565,43 @@ fn global_mount_block_height(rows: &[crate::config::GlobalMountRow]) -> u16 {
     let (global, scoped) = split_global_mount_rows(rows);
     let mut h = 0;
     if !global.is_empty() || scoped.is_empty() {
-        h += global_mount_rows_height(global.len());
+        h += global_mount_rows_height(&global);
     }
     if !scoped.is_empty() {
-        h += global_mount_rows_height(scoped.len());
+        h += global_mount_rows_height(&scoped);
     }
     h
 }
 
-fn global_mount_rows_height(count: usize) -> u16 {
-    let rows = if count == 0 { 1 } else { count * 2 };
-    (rows + 3).min(12) as u16
+fn global_mount_rows_height(rows: &[&crate::config::GlobalMountRow]) -> u16 {
+    let content_height = if rows.is_empty() {
+        1
+    } else {
+        1 + rows
+            .iter()
+            .map(|row| if row.mount.src == row.mount.dst { 1 } else { 2 })
+            .sum::<usize>()
+    };
+    (content_height + 2).min(12) as u16
+}
+
+pub(in crate::console::manager) fn global_mounts_content_height(
+    mounts: &[crate::workspace::MountConfig],
+) -> usize {
+    if mounts.is_empty() {
+        1
+    } else {
+        1 + mounts
+            .iter()
+            .map(|mount| if mount.src == mount.dst { 1 } else { 2 })
+            .sum::<usize>()
+    }
+}
+
+pub(in crate::console::manager) fn global_mounts_block_height(
+    mounts: &[crate::workspace::MountConfig],
+) -> u16 {
+    (global_mounts_content_height(mounts) + 2).min(12) as u16
 }
 
 fn split_global_mount_rows(
@@ -982,10 +1008,10 @@ fn render_global_mounts_subpanel(
         let constraints: Vec<Constraint> = {
             let mut c = Vec::new();
             if !global.is_empty() || scoped.is_empty() {
-                c.push(Constraint::Length(global_mount_rows_height(global.len())));
+                c.push(Constraint::Length(global_mount_rows_height(&global)));
             }
             if !scoped.is_empty() {
-                c.push(Constraint::Length(global_mount_rows_height(scoped.len())));
+                c.push(Constraint::Length(global_mount_rows_height(&scoped)));
             }
             c
         };
@@ -1484,7 +1510,7 @@ mod mount_block_height_tests {
     //! against the "phantom empty row" regression where a fixed
     //! `Constraint::Length(5)` over-allocated by 1 for a single-mount
     //! current-directory workspace.
-    use super::mount_block_height;
+    use super::{global_mounts_block_height, global_mounts_content_height, mount_block_height};
     use crate::workspace::MountConfig;
 
     fn mount(path: &str) -> MountConfig {
@@ -1523,6 +1549,21 @@ mod mount_block_height_tests {
     fn many_mounts_clamp_to_twelve() {
         let mounts: Vec<MountConfig> = (0..20).map(|i| mount(&format!("/m/{i}"))).collect();
         assert_eq!(mount_block_height(&mounts), 12);
+    }
+
+    #[test]
+    fn global_mount_heights_match_rendered_line_count() {
+        let same_path = mount("/cache/shared");
+        let split_path = MountConfig {
+            src: "/host/cache".into(),
+            dst: "/container/cache".into(),
+            readonly: false,
+            isolation: crate::isolation::MountIsolation::Shared,
+        };
+
+        assert_eq!(global_mounts_content_height(&[same_path]), 2);
+        assert_eq!(global_mounts_content_height(&[split_path]), 3);
+        assert_eq!(global_mounts_block_height(&[]), 3);
     }
 }
 

@@ -28,6 +28,7 @@ pub mod panel_rain;
 pub mod role_picker;
 pub mod save_discard;
 pub mod scope_picker;
+pub mod scrollable;
 pub mod source_picker;
 pub mod text_input;
 pub mod workdir_pick;
