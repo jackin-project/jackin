@@ -483,6 +483,73 @@ pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> 
     Ok(())
 }
 
+/// Force-remove all managed Docker resources then purge every instance's
+/// state directory and index entry, regardless of status.
+///
+/// Used by `prune all` where the operator has explicitly asked to wipe
+/// everything. Unlike `prune_instances`, this does not skip `Active` or
+/// `RestoreAvailable` instances.
+pub fn prune_all_instances(
+    paths: &JackinPaths,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    // Eject all managed containers (running or stopped) before touching
+    // state dirs. eject_role uses `docker rm -f` which handles both states.
+    // Containers not in the index (orphaned) are also caught here.
+    exile_all(runner)?;
+
+    let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
+    if index.instances.is_empty() {
+        println!("No instances to prune.");
+        return Ok(());
+    }
+
+    let containers: Vec<String> = index
+        .instances
+        .iter()
+        .map(|e| e.container_base.clone())
+        .collect();
+
+    let mut removed: Vec<String> = Vec::new();
+    let mut skipped: Vec<(String, anyhow::Error)> = Vec::new();
+
+    for container_base in containers {
+        match purge_container_filesystem(paths, &container_base, runner) {
+            Ok(()) => removed.push(container_base),
+            Err(error) => skipped.push((container_base, error)),
+        }
+    }
+
+    if !removed.is_empty() {
+        let refs: Vec<&str> = removed.iter().map(String::as_str).collect();
+        match InstanceIndex::remove_many(&paths.data_dir, &refs) {
+            Ok(()) => {
+                println!("Pruned {} instance(s):", removed.len());
+            }
+            Err(err) => {
+                eprintln!(
+                    "{} instance index could not be updated: {err:#}",
+                    "warning:".yellow().bold()
+                );
+                println!(
+                    "Removed state for {} instance(s) (index not updated):",
+                    removed.len()
+                );
+            }
+        }
+        for name in &removed {
+            println!("  {name}");
+        }
+    }
+
+    for (name, error) in &skipped {
+        eprintln!("  {}: {}", "warning:".yellow().bold(), error);
+        eprintln!("    failed to purge state for {name}");
+    }
+
+    Ok(())
+}
+
 fn ensure_role_resources_absent_for_purge(
     runner: &mut impl CommandRunner,
     container_name: &str,
