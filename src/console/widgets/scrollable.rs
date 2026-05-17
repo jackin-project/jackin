@@ -405,7 +405,15 @@ pub(crate) fn render_scrollable_block(
     focused: bool,
     title: Option<&str>,
 ) {
-    let border_color = if focused {
+    let content_width = max_line_width(&lines);
+    let content_height = lines.len();
+    let viewport_w = viewport_width(area);
+    let viewport_h = viewport_height(area);
+    // Green border signals "you can scroll here". A focused but non-scrollable block
+    // uses the default border so it doesn't imply scroll capability it doesn't have.
+    let has_scroll =
+        is_scrollable(content_width, viewport_w) || is_scrollable(content_height, viewport_h);
+    let border_color = if focused && has_scroll {
         PHOSPHOR_GREEN
     } else {
         PHOSPHOR_DARK
@@ -419,10 +427,6 @@ pub(crate) fn render_scrollable_block(
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
     }
-    let content_width = max_line_width(&lines);
-    let content_height = lines.len();
-    let viewport_w = viewport_width(area);
-    let viewport_h = viewport_height(area);
     let eff_x = effective_offset(content_width, viewport_w, *scroll_x);
     let eff_y = effective_offset(content_height, viewport_h, *scroll_y);
     *scroll_x = eff_x;
