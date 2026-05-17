@@ -53,7 +53,13 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
 
     let target = format!("{}:/workspace", workspace_dir.display());
     let args = ["load", ROLE_KEY, &target, "--agent", "claude", "--no-intro"];
-    let output = run_in_pty(&jackin, &args, &home, &workspace_dir);
+    // The Dockerfile pins FROM to 0.1-trixie (versioned, as required by
+    // jackin-validate). That tag doesn't exist until the first construct CI
+    // build runs after this PR lands. Override with the published floating tag
+    // so the E2E build succeeds in CI while the Dockerfile stays correctly
+    // pinned for validation purposes.
+    let extra_env = [("JACKIN_CONSTRUCT_IMAGE", "projectjackin/construct:trixie")];
+    let output = run_in_pty(&jackin, &args, &home, &workspace_dir, &extra_env);
 
     assert!(
         output.status.success(),
@@ -150,7 +156,13 @@ fn script_available() -> bool {
         .is_ok_and(|out| out.status.success())
 }
 
-fn run_in_pty(jackin: &str, args: &[&str], home: &Path, cwd: &Path) -> std::process::Output {
+fn run_in_pty(
+    jackin: &str,
+    args: &[&str],
+    home: &Path,
+    cwd: &Path,
+    extra_env: &[(&str, &str)],
+) -> std::process::Output {
     let mut command = Command::new("script");
     // BSD `script` (macOS) takes the command as positional args after the
     // typescript file. util-linux `script` (most Linux distros) takes it
@@ -170,10 +182,11 @@ fn run_in_pty(jackin: &str, args: &[&str], home: &Path, cwd: &Path) -> std::proc
     command
         .env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join(".config"))
-        .env_remove("JACKIN_DEBUG")
-        .current_dir(cwd)
-        .output()
-        .expect("script must spawn")
+        .env_remove("JACKIN_DEBUG");
+    for (k, v) in extra_env {
+        command.env(k, v);
+    }
+    command.current_dir(cwd).output().expect("script must spawn")
 }
 
 fn seed_agent_smith_role_repo(path: &Path) {
