@@ -219,7 +219,15 @@ pub fn create_derived_build_context(
     let hooks = validated.manifest.hooks.as_ref();
 
     let base_dockerfile = base_image_override.map_or_else(
-        || validated.dockerfile.dockerfile_contents.clone(),
+        || {
+            // Substitute the canonical construct image with the local override
+            // (JACKIN_CONSTRUCT_IMAGE) when set. String::replace is a no-op
+            // when old == new, so this is always safe to call unconditionally.
+            validated.dockerfile.dockerfile_contents.replace(
+                &format!("FROM {}", crate::repo_contract::CONSTRUCT_IMAGE),
+                &format!("FROM {}", crate::repo_contract::construct_image()),
+            )
+        },
         |image| format!("FROM {image}\n"),
     );
 
