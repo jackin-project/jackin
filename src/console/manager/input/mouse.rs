@@ -7,8 +7,8 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use super::super::super::widgets::file_browser::FileBrowserState;
 use super::super::render::global_mounts::trust_content_width;
 use super::super::render::list::{
-    global_mounts_block_height, global_mounts_content_height, global_mounts_content_width,
-    mount_block_height, workspace_mounts_content_height, workspace_mounts_content_width,
+    global_mounts_block_height, global_mounts_content_width, mount_block_height,
+    workspace_mounts_content_width,
 };
 #[cfg(test)]
 use super::super::render::max_scroll_offset;
@@ -479,37 +479,13 @@ fn update_scroll_focus(
                 state.list_scroll_focus = None;
                 return;
             };
-            state.list_scroll_focus = if point_in(mouse, areas.workspace.area)
-                && (is_scrollable(
-                    areas.workspace.content_width,
-                    scroll_viewport_width(areas.workspace.area),
-                ) || is_scrollable(
-                    areas.workspace.content_height,
-                    scroll_viewport_height(areas.workspace.area),
-                )) {
+            state.list_scroll_focus = if point_in(mouse, areas.workspace.area) {
                 Some(MountScrollFocus::Workspace)
-            } else if point_in(mouse, areas.global.area)
-                && areas.global.area.height > 0
-                && (is_scrollable(
-                    areas.global.content_width,
-                    scroll_viewport_width(areas.global.area),
-                ) || is_scrollable(
-                    areas.global.content_height,
-                    scroll_viewport_height(areas.global.area),
-                ))
-            {
+            } else if point_in(mouse, areas.global.area) && areas.global.area.height > 0 {
                 Some(MountScrollFocus::Global)
-            } else if areas.role_global.is_some_and(|r| {
-                point_in(mouse, r.area)
-                    && (is_scrollable(r.content_width, scroll_viewport_width(r.area))
-                        || is_scrollable(r.content_height, scroll_viewport_height(r.area)))
-            }) {
+            } else if areas.role_global.is_some_and(|r| point_in(mouse, r.area)) {
                 Some(MountScrollFocus::RoleGlobal)
-            } else if areas.roles.is_some_and(|r| {
-                point_in(mouse, r.area)
-                    && (is_scrollable(r.content_width, scroll_viewport_width(r.area))
-                        || is_scrollable(r.content_height, scroll_viewport_height(r.area)))
-            }) {
+            } else if areas.roles.is_some_and(|r| point_in(mouse, r.area)) {
                 Some(MountScrollFocus::Roles)
             } else {
                 None
@@ -577,7 +553,6 @@ const fn point_in(mouse: MouseEvent, area: Rect) -> bool {
 struct ScrollArea {
     area: Rect,
     content_width: usize,
-    content_height: usize,
 }
 
 fn drag_scrollbar(value: &mut u16, mouse: MouseEvent, area: Rect, content_width: usize) -> bool {
@@ -818,10 +793,6 @@ fn list_scroll_areas(
     let roles_y = body_y + 3 + mounts_h + global_h + role_global_h;
     let roles_content_w =
         super::super::render::list::agents_block_content_width(Some(workspace), config);
-    let workspace_mounts_content_h = workspace_mounts_content_height(workspace.mounts.as_slice());
-    let global_content_h = global_mounts_content_height(global_mounts.as_slice());
-    let role_global_content_h = global_mounts_content_height(role_global_mounts.as_slice());
-    let roles_content_h = 2 + agent_count;
     Some(ListScrollAreas {
         workspace: ScrollArea {
             area: Rect {
@@ -831,7 +802,6 @@ fn list_scroll_areas(
                 height: mounts_h,
             },
             content_width: workspace_mounts_content_width(workspace.mounts.as_slice()),
-            content_height: workspace_mounts_content_h,
         },
         global: ScrollArea {
             area: Rect {
@@ -841,7 +811,6 @@ fn list_scroll_areas(
                 height: global_h,
             },
             content_width: global_mounts_content_width(global_mounts.as_slice()),
-            content_height: global_content_h,
         },
         role_global: (role_global_h > 0).then(|| ScrollArea {
             area: Rect {
@@ -851,7 +820,6 @@ fn list_scroll_areas(
                 height: role_global_h,
             },
             content_width: global_mounts_content_width(role_global_mounts.as_slice()),
-            content_height: role_global_content_h,
         }),
         roles: (roles_h > 0).then_some(ScrollArea {
             area: Rect {
@@ -861,7 +829,6 @@ fn list_scroll_areas(
                 height: roles_h,
             },
             content_width: roles_content_w,
-            content_height: roles_content_h,
         }),
     })
 }
@@ -879,8 +846,6 @@ fn current_dir_scroll_areas(
     let roles_h = super::super::render::list::agents_block_height(agent_count);
     let roles_y = body_y + 3 + mounts_h;
     let roles_content_w = super::super::render::list::agents_block_content_width(None, config);
-    let workspace_content_h = workspace_mounts_content_height(&mounts);
-    let roles_content_h = 2 + agent_count;
     ListScrollAreas {
         workspace: ScrollArea {
             area: Rect {
@@ -890,7 +855,6 @@ fn current_dir_scroll_areas(
                 height: mounts_h,
             },
             content_width: workspace_mounts_content_width(&mounts),
-            content_height: workspace_content_h,
         },
         global: ScrollArea {
             area: Rect {
@@ -900,7 +864,6 @@ fn current_dir_scroll_areas(
                 height: 0,
             },
             content_width: 0,
-            content_height: 0,
         },
         role_global: None,
         roles: (roles_h > 0).then_some(ScrollArea {
@@ -911,7 +874,6 @@ fn current_dir_scroll_areas(
                 height: roles_h,
             },
             content_width: roles_content_w,
-            content_height: roles_content_h,
         }),
     }
 }
@@ -953,7 +915,6 @@ fn editor_scroll_area(
             height: (rows as u16 + 2).min(body_h.max(4)),
         },
         content_width: workspace_mounts_content_width(editor.pending.mounts.as_slice()),
-        content_height: rows,
     }
 }
 
