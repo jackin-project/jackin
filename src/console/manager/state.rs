@@ -461,6 +461,9 @@ pub struct EditorState<'a> {
     pub pending_auth_form_return: Option<AuthFormReturnPath>,
     pub workspace_mounts_scroll_x: u16,
     pub workspace_mounts_scroll_focused: bool,
+    /// Horizontal scroll offset shared across non-Mounts editor content tabs.
+    /// Reset to 0 on every tab change so each tab starts at the left edge.
+    pub tab_scroll_x: u16,
     /// Vertical scroll offset shared across all editor content tabs.
     /// Reset to 0 on every tab change so each tab starts at the top.
     pub tab_scroll_y: u16,
@@ -470,6 +473,7 @@ pub struct EditorState<'a> {
     /// Last rendered line count for the active non-Mounts tab content block.
     /// Written by the render function; read by `update_scroll_focus` to
     /// determine whether the block is actually scrollable.
+    pub tab_content_width: usize,
     pub tab_content_height: usize,
 }
 
@@ -1505,8 +1509,10 @@ impl EditorState<'_> {
             pending_auth_form_return: None,
             workspace_mounts_scroll_x: 0,
             workspace_mounts_scroll_focused: false,
+            tab_scroll_x: 0,
             tab_scroll_y: 0,
             tab_content_scroll_focused: false,
+            tab_content_width: 0,
             tab_content_height: 0,
         }
     }
@@ -1534,8 +1540,10 @@ impl EditorState<'_> {
             pending_auth_form_return: None,
             workspace_mounts_scroll_x: 0,
             workspace_mounts_scroll_focused: false,
+            tab_scroll_x: 0,
             tab_scroll_y: 0,
             tab_content_scroll_focused: false,
+            tab_content_width: 0,
             tab_content_height: 0,
         }
     }

@@ -55,6 +55,7 @@ pub(super) fn handle_editor_key(
                     if let ManagerStage::Editor(editor) = &mut state.stage {
                         editor.auth_selected_kind = None;
                         editor.active_field = FieldFocus::Row(0);
+                        editor.tab_scroll_x = 0;
                         editor.tab_scroll_y = 0;
                     }
                     return Ok(InputOutcome::Continue);
@@ -101,6 +102,14 @@ pub(super) fn handle_editor_key(
             editor.workspace_mounts_scroll_focused = true;
             apply_scroll_delta(&mut editor.workspace_mounts_scroll_x, 8);
         }
+        KeyCode::Char('h' | 'H') => {
+            editor.tab_content_scroll_focused = true;
+            apply_scroll_delta(&mut editor.tab_scroll_x, -8);
+        }
+        KeyCode::Char('l' | 'L') => {
+            editor.tab_content_scroll_focused = true;
+            apply_scroll_delta(&mut editor.tab_scroll_x, 8);
+        }
         // W3C ARIA Tabs: Left/BackTab cycle backward, Right cycles forward when
         // the tab bar has focus. Tab and Down enter the content area.
         KeyCode::Left | KeyCode::BackTab if editor.tab_bar_focused => {
@@ -113,6 +122,7 @@ pub(super) fn handle_editor_key(
                 EditorTab::Auth => EditorTab::Secrets,
             };
             editor.active_field = FieldFocus::Row(0);
+            editor.tab_scroll_x = 0;
             editor.tab_scroll_y = 0;
             if editor.active_tab != EditorTab::Auth {
                 editor.auth_selected_kind = None;
@@ -131,6 +141,7 @@ pub(super) fn handle_editor_key(
                 EditorTab::Auth => EditorTab::General,
             };
             editor.active_field = FieldFocus::Row(0);
+            editor.tab_scroll_x = 0;
             editor.tab_scroll_y = 0;
             if editor.active_tab != EditorTab::Auth {
                 editor.auth_selected_kind = None;
@@ -154,6 +165,7 @@ pub(super) fn handle_editor_key(
             };
             editor.tab_bar_focused = true;
             editor.active_field = FieldFocus::Row(0);
+            editor.tab_scroll_x = 0;
             editor.tab_scroll_y = 0;
             if editor.active_tab != EditorTab::Auth {
                 editor.auth_selected_kind = None;
@@ -309,6 +321,7 @@ pub(super) fn handle_editor_key(
                     Some(super::super::render::editor::AuthRow::AuthKindRow { kind }) => {
                         editor.auth_selected_kind = Some(*kind);
                         editor.active_field = FieldFocus::Row(0);
+                        editor.tab_scroll_x = 0;
                         editor.tab_scroll_y = 0;
                     }
                     Some(super::super::render::editor::AuthRow::AddSentinel { .. }) => {

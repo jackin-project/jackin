@@ -402,15 +402,28 @@ fn try_drag_horizontal_scrollbar(
             false
         }
         ManagerStage::Editor(editor) => {
-            let workspace = editor_scroll_area(editor, term_size);
-            let dragged = drag_scrollbar(
-                &mut editor.workspace_mounts_scroll_x,
-                mouse,
-                workspace.area,
-                workspace.content_width,
-            );
+            let dragged = if editor.active_tab == EditorTab::Mounts {
+                let workspace = editor_scroll_area(editor, term_size);
+                drag_scrollbar(
+                    &mut editor.workspace_mounts_scroll_x,
+                    mouse,
+                    workspace.area,
+                    workspace.content_width,
+                )
+            } else {
+                drag_scrollbar(
+                    &mut editor.tab_scroll_x,
+                    mouse,
+                    editor_content_area(term_size),
+                    editor.tab_content_width,
+                )
+            };
             if dragged {
-                editor.workspace_mounts_scroll_focused = true;
+                if editor.active_tab == EditorTab::Mounts {
+                    editor.workspace_mounts_scroll_focused = true;
+                } else {
+                    editor.tab_content_scroll_focused = true;
+                }
             }
             dragged
         }
@@ -517,11 +530,13 @@ fn update_scroll_focus(
                 if editor.modal.is_some() {
                     editor.tab_content_scroll_focused = false;
                 } else {
-                    let content_area = settings_content_area(term_size);
+                    let content_area = editor_content_area(term_size);
                     let in_content = point_in(mouse, content_area);
                     let viewport_h = scroll_viewport_height(content_area);
-                    editor.tab_content_scroll_focused =
-                        in_content && is_scrollable(editor.tab_content_height, viewport_h);
+                    let viewport_w = scroll_viewport_width(content_area);
+                    editor.tab_content_scroll_focused = in_content
+                        && (is_scrollable(editor.tab_content_width, viewport_w)
+                            || is_scrollable(editor.tab_content_height, viewport_h));
                 }
             }
         }
@@ -620,6 +635,20 @@ fn scroll_active_panel(
         ManagerStage::Editor(editor) => {
             if editor.active_tab != EditorTab::Mounts {
                 editor.workspace_mounts_scroll_focused = false;
+                let area = editor_content_area(term_size);
+                if point_in(mouse, area)
+                    && is_scrollable(editor.tab_content_width, scroll_viewport_width(area))
+                {
+                    editor.tab_content_scroll_focused = true;
+                    apply_horizontal_scroll(
+                        &mut editor.tab_scroll_x,
+                        delta,
+                        area,
+                        editor.tab_content_width,
+                    );
+                } else {
+                    editor.tab_content_scroll_focused = false;
+                }
                 return;
             }
             let area = editor_scroll_area(editor, term_size);
@@ -889,6 +918,17 @@ fn current_dir_mount(state: &ManagerState<'_>) -> crate::workspace::MountConfig 
         dst: state.current_dir.clone(),
         readonly: false,
         isolation: crate::isolation::MountIsolation::Shared,
+    }
+}
+
+const fn editor_content_area(term_size: Rect) -> Rect {
+    Rect {
+        x: 0,
+        y: EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT,
+        width: term_size.width,
+        height: term_size
+            .height
+            .saturating_sub(EDITOR_HEADER_HEIGHT + EDITOR_TAB_STRIP_HEIGHT + LIST_FOOTER_HEIGHT),
     }
 }
 
@@ -1925,6 +1965,36 @@ mod mouse_drag_tests {
             editor.workspace_mounts_scroll_x,
             MOUSE_HORIZONTAL_SCROLL_STEP
         );
+    }
+
+    #[test]
+    fn editor_non_mounts_tab_click_focuses_horizontal_scroll_block() {
+        let mut state = list_state();
+        let mut editor = EditorState::new_edit("x".into(), WorkspaceConfig::default());
+        editor.active_tab = EditorTab::Roles;
+        editor.tab_content_width = 80;
+        editor.tab_content_height = 4;
+        state.stage = ManagerStage::Editor(editor);
+
+        handle_mouse_with_config(&mut state, mouse_at(10, 6), term(42), None);
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert!(editor.tab_content_scroll_focused);
+
+        handle_mouse_with_config(
+            &mut state,
+            mouse_kind_at(MouseEventKind::ScrollRight, 10, 6),
+            term(42),
+            None,
+        );
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("editor stage expected");
+        };
+        assert_eq!(editor.tab_scroll_x, MOUSE_HORIZONTAL_SCROLL_STEP);
+        assert!(editor.tab_content_scroll_focused);
     }
 
     #[test]

@@ -9,7 +9,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
 };
 use std::cmp::Ordering;
 
@@ -19,8 +19,7 @@ use super::list::{
     render_mount_header,
 };
 use super::{
-    FooterItem, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, footer_height, render_footer,
-    render_header,
+    FooterItem, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE, footer_height, render_footer, render_header,
 };
 use crate::config::AppConfig;
 use crate::operator_env::EnvValue;
@@ -468,11 +467,7 @@ pub(in crate::console::manager) fn render_tab_strip(
     );
 }
 
-fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK));
-
+fn render_general_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>) {
     let FieldFocus::Row(cursor) = state.active_field;
 
     let name_value = match &state.mode {
@@ -527,7 +522,17 @@ fn render_general_tab(frame: &mut Frame, area: Rect, state: &EditorState<'_>) {
     };
     rows.push(render_editor_row(3, cursor, "Git pull", git_pull_display));
 
-    frame.render_widget(Paragraph::new(rows).block(block), area);
+    state.tab_content_width = super::max_line_width(&rows);
+    state.tab_content_height = rows.len();
+    super::render_scrollable_block(
+        frame,
+        area,
+        rows,
+        &mut state.tab_scroll_x,
+        &mut state.tab_scroll_y,
+        state.tab_content_scroll_focused,
+        None,
+    );
 }
 
 /// Render a field row with cursor highlight when `row == cursor`.
@@ -707,12 +712,12 @@ fn render_roles_tab(
         action_row_style(sentinel_selected),
     )));
     state.tab_content_height = lines.len();
-    let mut no_scroll_x = 0u16;
+    state.tab_content_width = super::max_line_width(&lines);
     super::render_scrollable_block(
         frame,
         area,
         lines,
-        &mut no_scroll_x,
+        &mut state.tab_scroll_x,
         &mut state.tab_scroll_y,
         state.tab_content_scroll_focused,
         None,
@@ -1046,6 +1051,7 @@ fn render_secrets_tab(
     }
 
     state.tab_content_height = lines.len();
+    state.tab_content_width = super::max_line_width(&lines);
     let mut no_scroll_x = 0u16;
     super::render_scrollable_block(
         frame,
@@ -1261,6 +1267,7 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>, c
         .collect();
 
     state.tab_content_height = lines.len();
+    state.tab_content_width = super::max_line_width(&lines);
     let title = state.auth_selected_kind.map(|k| format!(" {} ", k.label()));
     let mut no_scroll_x = 0u16;
     super::render_scrollable_block(
@@ -1820,6 +1827,42 @@ mod contextual_row_items_tests {
 }
 
 #[cfg(test)]
+mod general_tab_render_tests {
+    use super::render_general_tab;
+    use crate::console::manager::state::{EditorState, FieldFocus};
+    use crate::workspace::WorkspaceConfig;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+
+    #[test]
+    fn general_tab_clamps_horizontal_scroll_with_shared_scrollable_block() {
+        let ws = WorkspaceConfig {
+            workdir: "/workspace/path/that/is/long/enough/to/require/horizontal/scrolling".into(),
+            ..Default::default()
+        };
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_field = FieldFocus::Row(1);
+        editor.tab_content_scroll_focused = true;
+        editor.tab_scroll_x = u16::MAX;
+
+        let backend = TestBackend::new(42, 8);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            render_general_tab(f, Rect::new(0, 0, 42, 8), &mut editor);
+        })
+        .unwrap();
+
+        let viewport = super::super::scroll_viewport_width(Rect::new(0, 0, 42, 8));
+        assert_eq!(
+            editor.tab_scroll_x,
+            super::super::max_scroll_offset(editor.tab_content_width, viewport)
+        );
+        assert!(editor.tab_scroll_x > 0);
+    }
+}
+
+#[cfg(test)]
 mod agents_tab_render_tests {
     //! Pins `[x]`/`[ ]` to the *effectively allowed* state — empty
     //! `allowed_roles` is the "all allowed" shorthand.
@@ -1891,6 +1934,32 @@ mod agents_tab_render_tests {
                 "in 'all' mode role `{name}` must not render `[ ]`; got `{line}`"
             );
         }
+    }
+
+    #[test]
+    fn roles_tab_clamps_horizontal_scroll_with_shared_state() {
+        let cfg =
+            config_with_agents(&["chainargos/agent-brown-with-extra-long-role-name-for-scroll"]);
+        let ws = ws_with_allowed(&[]);
+        let mut editor = EditorState::new_edit("ws".into(), ws);
+        editor.active_tab = EditorTab::Roles;
+        editor.active_field = FieldFocus::Row(0);
+        editor.tab_content_scroll_focused = true;
+        editor.tab_scroll_x = u16::MAX;
+        let backend = TestBackend::new(42, 8);
+        let mut term = Terminal::new(backend).unwrap();
+
+        term.draw(|f| {
+            render_roles_tab(f, Rect::new(0, 0, 42, 8), &mut editor, &cfg);
+        })
+        .unwrap();
+
+        let viewport = super::super::scroll_viewport_width(Rect::new(0, 0, 42, 8));
+        assert_eq!(
+            editor.tab_scroll_x,
+            super::super::max_scroll_offset(editor.tab_content_width, viewport)
+        );
+        assert!(editor.tab_scroll_x > 0);
     }
 
     /// The default-role row carries the `★` marker; non-default rows

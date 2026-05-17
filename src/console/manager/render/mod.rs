@@ -628,7 +628,7 @@ fn clamp_list_scroll_for_area(
     if left_viewport_w == 0 {
         state.list_names_scroll_x = 0;
     } else {
-        let name_content_w = list_names_content_width(state);
+        let name_content_w = list::list_names_content_width(state, left_viewport_w);
         if is_scrollable(name_content_w, left_viewport_w) {
             let max = max_scroll_offset(name_content_w, left_viewport_w);
             if state.list_names_scroll_x > max {
@@ -639,20 +639,6 @@ fn clamp_list_scroll_for_area(
             state.list_names_focused = false;
         }
     }
-}
-
-/// Compute the maximum content width of the left-pane workspace name list.
-fn list_names_content_width(state: &ManagerState<'_>) -> usize {
-    // Each row: "▸ " (2) + name. "Current directory" = 17, "+ New workspace" = 15.
-    let cwd_w = 2 + "Current directory".len();
-    let sentinel_w = 2 + "+ New workspace".len();
-    let max_ws = state
-        .workspaces
-        .iter()
-        .map(|w| 2 + w.name.len())
-        .max()
-        .unwrap_or(0);
-    cwd_w.max(sentinel_w).max(max_ws)
 }
 
 fn workspace_mounts_scrollable(
