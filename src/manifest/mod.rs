@@ -34,6 +34,8 @@ pub struct RoleManifest {
     #[serde(default)]
     pub amp: Option<AmpConfig>,
     #[serde(default)]
+    pub kimi: Option<KimiConfig>,
+    #[serde(default)]
     pub opencode: Option<OpencodeConfig>,
     #[serde(default)]
     pub hooks: Option<HooksConfig>,
@@ -58,6 +60,17 @@ pub struct CodexConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AmpConfig {}
+
+/// Per-role Kimi configuration.
+///
+/// `model` is passed to Kimi with `--model` when present, otherwise
+/// Kimi's own default model selection is used.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KimiConfig {
+    #[serde(default)]
+    pub model: Option<String>,
+}
 
 /// Per-role `OpenCode` configuration.
 ///
@@ -234,8 +247,9 @@ fn validate_feature_versions(
     manifest_version: &crate::config::migrations::SchemaVersion,
     role_name: &str,
 ) -> anyhow::Result<()> {
-    let opencode_version = crate::config::migrations::parse_version("v1alpha3")?;
-    if manifest_version < &opencode_version
+    let v1alpha3 = crate::config::migrations::parse_version("v1alpha3")?;
+    let v1alpha4 = crate::config::migrations::parse_version("v1alpha4")?;
+    if manifest_version < &v1alpha3
         && (manifest
             .agents
             .as_ref()
@@ -243,7 +257,18 @@ fn validate_feature_versions(
             || manifest.opencode.is_some())
     {
         anyhow::bail!(
-            "role \"{role_name}\" manifest is at {manifest_version} but uses opencode, which requires v1alpha3; run \"jackin role migrate <role-repo-path>\" to upgrade the local copy"
+            "role \"{role_name}\" manifest is at {manifest_version} but uses v1alpha3 agent fields, which requires v1alpha3; run \"jackin role migrate <role-repo-path>\" to upgrade the local copy"
+        );
+    }
+    if manifest_version < &v1alpha4
+        && (manifest
+            .agents
+            .as_ref()
+            .is_some_and(|agents| agents.contains(&crate::agent::Agent::Kimi))
+            || manifest.kimi.is_some())
+    {
+        anyhow::bail!(
+            "role \"{role_name}\" manifest is at {manifest_version} but uses v1alpha4 agent fields, which requires v1alpha4; run \"jackin role migrate <role-repo-path>\" to upgrade the local copy"
         );
     }
     Ok(())
@@ -408,7 +433,7 @@ plugins = []
 
         let err = RoleManifest::load(temp.path()).unwrap_err();
         let chain = format!("{err:#}");
-        assert!(chain.contains("only understands up to v1alpha3"), "{chain}");
+        assert!(chain.contains("only understands up to v1alpha4"), "{chain}");
     }
 
     #[test]
@@ -450,6 +475,47 @@ plugins = []
         let err = RoleManifest::load(temp.path()).unwrap_err();
         let chain = format!("{err:#}");
         assert!(chain.contains("requires v1alpha3"), "{chain}");
+    }
+
+    #[test]
+    fn rejects_v1alpha3_manifest_using_kimi_agent() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["kimi"]
+
+[kimi]
+"#,
+        )
+        .unwrap();
+
+        let err = RoleManifest::load(temp.path()).unwrap_err();
+        let chain = format!("{err:#}");
+        assert!(chain.contains("requires v1alpha4"), "{chain}");
+        assert!(chain.contains("jackin role migrate"), "{chain}");
+    }
+
+    #[test]
+    fn rejects_v1alpha3_manifest_with_kimi_table() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[kimi]
+"#,
+        )
+        .unwrap();
+
+        let err = RoleManifest::load(temp.path()).unwrap_err();
+        let chain = format!("{err:#}");
+        assert!(chain.contains("requires v1alpha4"), "{chain}");
     }
 
     #[test]

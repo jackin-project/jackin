@@ -658,6 +658,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     claude: None,
                     codex: None,
                     amp: None,
+                    kimi: None,
                     opencode: None,
                     github: None,
                     git_pull_on_entry: git_pull,
@@ -1969,10 +1970,14 @@ fn render_auth_show(config: &AppConfig) -> String {
     let claude_mode = crate::config::resolve_mode(config, crate::agent::Agent::Claude, "", "");
     let codex_mode = crate::config::resolve_mode(config, crate::agent::Agent::Codex, "", "");
     let amp_mode = crate::config::resolve_mode(config, crate::agent::Agent::Amp, "", "");
+    let kimi_mode = crate::config::resolve_mode(config, crate::agent::Agent::Kimi, "", "");
+    let opencode_mode = crate::config::resolve_mode(config, crate::agent::Agent::Opencode, "", "");
     let mut out = String::new();
     let _ = writeln!(out, "claude: {claude_mode}");
     let _ = writeln!(out, "codex:  {codex_mode}");
     let _ = writeln!(out, "amp:    {amp_mode}");
+    let _ = writeln!(out, "kimi:   {kimi_mode}");
+    let _ = writeln!(out, "opencode: {opencode_mode}");
     out
 }
 
@@ -2566,6 +2571,7 @@ mod auth_set_tests {
             claude: None,
             codex: None,
             amp: None,
+            kimi: None,
             opencode: None,
             github: None,
             git_pull_on_entry: false,

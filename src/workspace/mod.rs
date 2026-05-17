@@ -55,7 +55,7 @@ pub struct WorkspaceConfig {
     pub allowed_roles: Vec<String>,
     #[serde(default)]
     pub default_role: Option<String>,
-    /// Workspace-level default agent (claude, codex, amp, or opencode). When unset,
+    /// Workspace-level default agent (claude, codex, amp, kimi, or opencode). When unset,
     /// `resolved_agent()` falls back to Claude. The field is omitted
     /// from serialized output when `None` so legacy config files stay
     /// byte-for-byte stable.
@@ -102,6 +102,10 @@ pub struct WorkspaceConfig {
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub amp: Option<crate::config::AmpAuthConfig>,
+    /// Workspace-level Kimi auth configuration. See `claude` above —
+    /// same role in the resolver, parallel field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kimi: Option<crate::config::KimiAuthConfig>,
     /// Workspace-level `OpenCode` auth configuration. See `claude` above —
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -134,6 +138,7 @@ impl Default for WorkspaceConfig {
             claude: None,
             codex: None,
             amp: None,
+            kimi: None,
             opencode: None,
             github: None,
             git_pull_on_entry: false,
@@ -201,6 +206,10 @@ pub struct WorkspaceRoleOverride {
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub amp: Option<crate::config::AmpAuthConfig>,
+    /// Per-(workspace × role) Kimi auth override. See `claude` above —
+    /// same role in the resolver, parallel field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kimi: Option<crate::config::KimiAuthConfig>,
     /// Per-(workspace × role) `OpenCode` auth override. See `claude` above —
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -815,6 +824,7 @@ isolation = "clone"
             claude: None,
             codex: None,
             amp: None,
+            kimi: None,
             opencode: None,
             github: None,
             git_pull_on_entry: false,

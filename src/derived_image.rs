@@ -82,7 +82,8 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
     }
 
     // Concatenate per-agent install blocks in a stable order (Claude
-    // first when present, Codex second, Amp third, OpenCode fourth). Each block declares
+    // first when present, Codex second, Amp third, Kimi fourth,
+    // OpenCode fifth). Each block declares
     // its own `ARG JACKIN_CACHE_BUST=0` (see the per-agent blocks returned
     // by `Agent::install_block`), so layer cache keys advance
     // independently when `--build-arg JACKIN_CACHE_BUST=<ts>` is
@@ -95,7 +96,8 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
         crate::agent::Agent::Claude => 0,
         crate::agent::Agent::Codex => 1,
         crate::agent::Agent::Amp => 2,
-        crate::agent::Agent::Opencode => 3,
+        crate::agent::Agent::Kimi => 3,
+        crate::agent::Agent::Opencode => 4,
     });
     for h in sorted {
         install_blocks.push_str(h.install_block());
@@ -121,10 +123,11 @@ RUN current_gid=\"$(id -g agent)\" \
        fi \
     && chown -R agent:agent /home/agent
 {install_blocks}{hook_section}USER root
-RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/default-home/.local/share/amp /jackin/default-home/.local/share/opencode \
+RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/default-home/.local/share/amp /jackin/default-home/.kimi /jackin/default-home/.local/share/opencode \
     && ( cp -a /home/agent/.claude/. /jackin/default-home/.claude/ 2>/dev/null || true ) \
     && ( cp -a /home/agent/.codex/. /jackin/default-home/.codex/ 2>/dev/null || true ) \
     && ( cp -a /home/agent/.local/share/amp/. /jackin/default-home/.local/share/amp/ 2>/dev/null || true ) \
+    && ( cp -a /home/agent/.kimi/. /jackin/default-home/.kimi/ 2>/dev/null || true ) \
     && ( cp -a /home/agent/.local/share/opencode/. /jackin/default-home/.local/share/opencode/ 2>/dev/null || true ) \
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
@@ -458,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_codex_install_as_root_without_extracting_directly_to_bin() {
+    fn renders_codex_install_as_agent_without_extracting_directly_to_bin() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             None,
@@ -468,12 +471,12 @@ mod tests {
 
         let codex_block_pos = dockerfile.find("ASSET=\"codex-${ARCH}\"").unwrap();
         // rfind finds the most recent USER directive before the Codex install
-        // block — must be root, not agent.
-        let root_pos = dockerfile[..codex_block_pos].rfind("USER root\n").unwrap();
-        assert!(root_pos < codex_block_pos);
+        // block; it must be agent, not root.
+        let agent_pos = dockerfile[..codex_block_pos].rfind("USER agent\n").unwrap();
+        assert!(agent_pos < codex_block_pos);
         assert!(dockerfile.contains("set -euxo pipefail"));
-        assert!(dockerfile.contains("tar -xzf - -O \"${ASSET}\" > /tmp/codex.bin"));
-        assert!(dockerfile.contains("mv /tmp/codex.bin /usr/local/bin/codex"));
+        assert!(dockerfile.contains("tar -xzf - -O \"${ASSET}\" > \"${HOME}/.local/bin/codex\""));
+        assert!(dockerfile.contains("chmod 0755 \"${HOME}/.local/bin/codex\""));
         assert!(!dockerfile.contains("tar -xz -C /usr/local/bin"));
     }
 
