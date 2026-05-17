@@ -284,6 +284,8 @@ pub struct SettingsAuthState {
     pub modal: Option<SettingsAuthModal<'static>>,
     pub pending_auth_form_return: Option<AuthFormReturnPath>,
     pub error: Option<String>,
+    pub scroll_y: u16,
+    pub scroll_focused: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -833,6 +835,8 @@ impl SettingsAuthState {
             modal: None,
             pending_auth_form_return: None,
             error: None,
+            scroll_y: 0,
+            scroll_focused: false,
         }
     }
 

@@ -547,6 +547,7 @@ fn update_scroll_focus(
                 settings.active_tab == SettingsTab::Mounts && in_content;
             settings.env.scroll_focused =
                 settings.active_tab == SettingsTab::Environments && in_content;
+            settings.auth.scroll_focused = settings.active_tab == SettingsTab::Auth && in_content;
             settings.trust.scroll_focused = settings.active_tab == SettingsTab::Trust && in_content;
         }
         ManagerStage::CreatePrelude(_) | ManagerStage::ConfirmDelete { .. } => {}
@@ -720,8 +721,9 @@ fn scroll_active_panel_vertical(
                 SettingsTab::Trust => {
                     apply_scroll_delta(&mut settings.trust.scroll_y, delta);
                 }
-                // Auth has too few rows to overflow — ignore vertical scroll.
-                SettingsTab::Auth => {}
+                SettingsTab::Auth => {
+                    apply_scroll_delta(&mut settings.auth.scroll_y, delta);
+                }
             }
         }
         ManagerStage::Editor(editor) => {
