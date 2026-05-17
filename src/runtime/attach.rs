@@ -333,8 +333,17 @@ pub fn spawn_agent_session(
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, runner);
     let mut tmux_args = vec![
-        "exec", "-e", "TMUX=", "--workdir", workdir, "-it", container_name,
-        "tmux", "new-session", "-e", &agent_env,
+        "exec",
+        "-e",
+        "TMUX=",
+        "--workdir",
+        workdir,
+        "-it",
+        container_name,
+        "tmux",
+        "new-session",
+        "-e",
+        &agent_env,
     ];
     if let Some(ref env) = git_coauthor_trailer_env {
         tmux_args.extend_from_slice(&["-e", env.as_str()]);
