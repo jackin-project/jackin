@@ -166,6 +166,13 @@ fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
     docker_unavailable_msg(&format!("inspect container `{container_name}`"), reason)
 }
 
+fn set_role_terminal_title(paths: &JackinPaths, container_name: &str) {
+    let title = InstanceManifest::read(&paths.data_dir.join(container_name))
+        .map(|m| m.role_display_name)
+        .unwrap_or_else(|_| container_name.to_string());
+    crate::tui::set_terminal_title(&title);
+}
+
 /// 6-hex-digit session ID from nanoseconds — ~16M distinct values per ms.
 pub(super) fn short_session_id() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -190,6 +197,7 @@ pub(super) fn reconnect_or_create_session(
     container_name: &str,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    set_role_terminal_title(paths, container_name);
     let sessions = inspect_agent_sessions(runner, container_name, &ContainerState::Running);
     let has_sessions = matches!(&sessions, AgentSessionInventory::Sessions(v) if !v.is_empty());
 
@@ -268,6 +276,7 @@ pub fn spawn_shell_session(
         }
     }
 
+    set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, runner);
     let result = runner.run(
         "docker",
@@ -313,6 +322,7 @@ pub fn spawn_agent_session(
         agent.slug()
     );
     let session_name = format!("jackin-{}-{}", agent.slug(), short_session_id());
+    set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, runner);
     let result = runner.run(
         "docker",
