@@ -3579,7 +3579,7 @@ plugins = []
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -3639,7 +3639,7 @@ plugins = []
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -3709,7 +3709,7 @@ plugins = []
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -3761,7 +3761,7 @@ agents = ["codex"]
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -3812,7 +3812,7 @@ agents = ["codex"]
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -3870,7 +3870,7 @@ agents = ["codex"]
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -3917,7 +3917,7 @@ agents = ["amp"]
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -3976,7 +3976,7 @@ agents = ["amp"]
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -4499,7 +4499,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -4598,7 +4598,7 @@ plugins = ["code-review@claude-plugins-official"]
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -4652,7 +4652,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -4734,7 +4734,7 @@ trusted = true
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -4818,7 +4818,7 @@ trusted = true
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -4916,7 +4916,7 @@ trusted = true
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -4972,7 +4972,7 @@ agents = ["codex"]
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5044,7 +5044,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5112,7 +5112,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5159,7 +5159,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5209,7 +5209,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5262,7 +5262,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5321,7 +5321,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5395,7 +5395,7 @@ plugins = ["code-review@claude-plugins-official"]
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5466,7 +5466,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5578,7 +5578,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5688,7 +5688,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5752,7 +5752,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5806,7 +5806,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5866,7 +5866,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5925,7 +5925,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5981,7 +5981,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6040,7 +6040,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6090,7 +6090,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6138,7 +6138,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6187,7 +6187,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6287,7 +6287,7 @@ trusted = true
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6359,7 +6359,7 @@ dst = "/workspace"
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6462,7 +6462,7 @@ trusted = true
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6542,7 +6542,7 @@ trusted = true
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6639,7 +6639,7 @@ trusted = true
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
