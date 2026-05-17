@@ -23,6 +23,7 @@ the configuration model, etc. — go to the docs:
 |---|---|
 | "Where does the code for X live?" | [Codebase Map](https://jackin.tailrocks.com/reference/codebase-map/) (mirrored at `docs/src/content/docs/reference/codebase-map.mdx`) |
 | "How does jackin' orchestrate containers?" | [Architecture](https://jackin.tailrocks.com/reference/architecture/) |
+| "How do instance identity, restore, and parallel sessions work?" | [Runtime Instance Model](https://jackin.tailrocks.com/reference/runtime-instance-model/) |
 | "What does `~/.config/jackin/config.toml` look like?" | [Configuration File](https://jackin.tailrocks.com/reference/configuration/) |
 | "How are role repositories structured?" | [Role Repositories](https://jackin.tailrocks.com/guides/role-repos/) |
 | "What is on the roadmap?" | [Roadmap](https://jackin.tailrocks.com/reference/roadmap/) |
@@ -59,6 +60,7 @@ The CLI source lives under `src/`; supporting files at the repo root:
 |---|---|
 | `Cargo.toml` | Crate manifest — dependencies, lints, MSRV |
 | `Cargo.lock` | Locked dependency versions |
+| `build.rs` | Cargo build script (compile-time codegen / env) |
 | `AGENTS.md` | Shared instructions for all AI agents (testing, pre-commit, security, PR conventions) |
 | `CLAUDE.md` | Claude-specific pointer to `AGENTS.md` |
 | `RULES.md` | Project-wide conventions (docs go in `AGENTS.md`, not tool-specific files) |
@@ -131,9 +133,13 @@ and [Architecture](https://jackin.tailrocks.com/reference/architecture/).
 
 | Workflow | Triggers |
 |---|---|
+| `ci.yml` | Runs fmt, clippy, and the Rust test suite on PRs and pushes |
 | `construct.yml` | Builds and publishes the `construct` base Docker image |
 | `docs.yml` | Builds and deploys the documentation site |
+| `preview.yml` | Publishes the Homebrew preview formula (dispatch-from-main only) |
 | `release.yml` | Creates release artifacts |
+| `renovate.yml` | Self-hosted Renovate dependency update runner |
+| `renovate-validate.yml` | Verifies the upstream sources Renovate's `customManagers` point at still resolve |
 
 ## Code ↔ docs cross-reference
 
@@ -146,9 +152,10 @@ PR for the listed area:
 | `src/cli/**` (command flags or help text) | `docs/src/content/docs/commands/<cmd>.mdx` |
 | `src/workspace/**` (mount logic) | `docs/.../guides/workspaces.mdx`, `docs/.../guides/mounts.mdx` |
 | `src/config/**` (config format) | `docs/.../reference/configuration.mdx` |
-| `src/runtime/**` (container lifecycle) | `docs/.../reference/architecture.mdx` |
+| `src/runtime/**` (container lifecycle) | `docs/.../reference/architecture.mdx`, `docs/.../reference/runtime-instance-model.mdx` |
 | `src/runtime/caffeinate.rs` (keep_awake reconciler) | `docs/.../guides/workspaces.mdx` (keep_awake section) |
 | `src/isolation/**` (per-mount isolation, materialization, finalizer) | `docs/.../guides/workspaces.mdx` (per-mount isolation section), `docs/.../guides/mounts.mdx` (isolation field), `docs/.../reference/configuration.mdx` (`MountConfig.isolation`), `docs/.../reference/architecture.mdx` (materialization + finalizer), `docs/.../commands/load.mdx` (`--force`), `docs/.../commands/workspace.mdx` (`--mount-isolation`, Isolation column), `docs/.../commands/purge.mdx` (running-agent guard + isolated cleanup) |
+| `src/instance/**` (instance identity, manifests, auth state preparation) | `docs/.../reference/runtime-instance-model.mdx`; auth-forward changes also update `docs/.../guides/authentication.mdx` and `docs/.../guides/security-model.mdx` |
 | `src/manifest/**` (`jackin.role.toml` schema or validation) | `docs/.../developing/role-manifest.mdx` |
 | `src/instance/auth.rs` (auth-forward, credential handling) | `docs/.../guides/authentication.mdx`, `docs/.../guides/security-model.mdx` |
 | `src/env_model.rs`, `src/env_resolver.rs` (env policy) | `docs/.../developing/role-manifest.mdx` (env section), `docs/.../guides/environment-variables.mdx` (reserved-name list) |

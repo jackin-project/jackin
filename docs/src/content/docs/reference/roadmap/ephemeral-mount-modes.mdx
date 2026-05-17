@@ -7,7 +7,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-jackin's [per-mount isolation](/reference/roadmap/per-mount-isolation/)
+jackin's [per-mount isolation](/guides/workspaces/#per-mount-isolation)
 vocabulary is `shared | worktree | clone`. These modes describe **git
 semantics** for the mounted path. They don't
 cover a different axis the operator also cares about: **storage kind**.
@@ -88,7 +88,7 @@ multicode lets the operator pick.
 
 ## Recommended Shape
 
-Extend the [per-mount isolation](/reference/roadmap/per-mount-isolation/)
+Extend the [per-mount isolation](/guides/workspaces/#per-mount-isolation)
 enum vocabulary by **two more modes**, plus extend the workspace mount
 schema so they don't all need a host `src`.
 
@@ -164,7 +164,7 @@ gets the right behavior.
 
 ## Scope (V1)
 
-- Extend per-mount-isolation enum to `shared | worktree | tmpfs |
+- Extend the mount isolation enum to `shared | worktree | tmpfs |
   ephemeral`.
 - TOML schema extension for `dst`-only mounts (no `src`).
 - Optional `size` field on `tmpfs`.
@@ -174,8 +174,9 @@ gets the right behavior.
 - Agent-class-level mount defaults via `[[runtime.mounts]]` in
   `jackin.role.toml`; workspace mounts override on `dst`.
 - `purge` cleans up Docker volumes labeled with the instance name.
-- Docs update for [per-mount isolation](/reference/roadmap/per-mount-isolation/)
-  and the architecture reference.
+- Docs update for [mount isolation](/guides/workspaces/#per-mount-isolation),
+  the [Mounts guide](/guides/mounts/#mount-isolation), and the architecture
+  reference.
 
 ## Defer
 
@@ -189,7 +190,7 @@ gets the right behavior.
 - Cross-instance shared ephemeral volumes ("all my Java agents share
   one Gradle daemon dir"). Out of V1; the use case is handled by
   shared-cache mounts under
-  [shared cache pattern](/reference/roadmap/per-mount-isolation/) (a
+  [shared cache pattern](/guides/workspaces/#setting-isolation-from-the-cli) (a
   shared `~/.gradle` mount overlaid on an isolated source tree).
 
 ## Open Questions
@@ -202,15 +203,15 @@ gets the right behavior.
   `/tmp` as tmpfs by default, or stay opt-in? Recommended: *opt-in*
   for V1 — defaults can change downstream after seeing real usage.
 - **Interaction with [worktree
-  isolation](/reference/roadmap/per-mount-isolation/).** A workspace
+  isolation](/guides/workspaces/#per-mount-isolation).** A workspace
   with a worktree-isolated source mount and a sibling ephemeral
   mount should compose cleanly (parent-mount-before-child rule).
   Confirm the existing collapse/ordering logic handles a no-`src`
   child mount correctly.
-- **Is this its own leaf or an extension to per-mount-isolation?**
+- **Is this its own leaf or an extension to mount isolation?**
   This leaf treats it as a Phase 1 standalone item because it ships
   independently and the design doesn't require any per-mount-
-  isolation refactor. The per-mount-isolation doc gets a note
+  isolation refactor. The Workspaces and Mounts guides get notes
   pointing here once this is implemented.
 
 ## Related Files
@@ -230,7 +231,7 @@ gets the right behavior.
 ## See Also
 
 - [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)
-- [Per-mount isolation](/reference/roadmap/per-mount-isolation/) —
+- [Per-mount isolation](/guides/workspaces/#per-mount-isolation) —
   the existing modes; this leaf extends the enum vocabulary
 - [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) —
   cross-backend translation home

@@ -223,8 +223,6 @@ mod tests {
         assert_eq!(AuthKind::Claude.label(), "Claude Code");
         assert_eq!(AuthKind::Codex.label(), "Codex");
         assert_eq!(AuthKind::Amp.label(), "Amp");
-        assert_eq!(AuthKind::Kimi.label(), "Kimi");
-        assert_eq!(AuthKind::Opencode.label(), "OpenCode");
         assert_eq!(AuthKind::Github.label(), "GitHub CLI");
     }
 
@@ -250,20 +248,6 @@ mod tests {
     #[test]
     fn amp_supported_modes_exclude_oauth_token_and_token() {
         let modes = AuthKind::Amp.supported_modes();
-        assert!(!modes.contains(&AuthMode::OAuthToken));
-        assert!(!modes.contains(&AuthMode::Token));
-    }
-
-    #[test]
-    fn kimi_supported_modes_exclude_oauth_token_and_token() {
-        let modes = AuthKind::Kimi.supported_modes();
-        assert!(!modes.contains(&AuthMode::OAuthToken));
-        assert!(!modes.contains(&AuthMode::Token));
-    }
-
-    #[test]
-    fn opencode_supported_modes_exclude_oauth_token_and_token() {
-        let modes = AuthKind::Opencode.supported_modes();
         assert!(!modes.contains(&AuthMode::OAuthToken));
         assert!(!modes.contains(&AuthMode::Token));
     }
@@ -308,37 +292,10 @@ mod tests {
     }
 
     #[test]
-    fn kimi_required_env_vars_match_runtime_table() {
-        assert_eq!(
-            AuthKind::Kimi.required_env_var(AuthMode::ApiKey),
-            Some("KIMI_API_KEY")
-        );
-        assert_eq!(AuthKind::Kimi.required_env_var(AuthMode::Sync), None);
-        assert_eq!(AuthKind::Kimi.required_env_var(AuthMode::Ignore), None);
-        assert_eq!(AuthKind::Kimi.required_env_var(AuthMode::OAuthToken), None);
-    }
-
-    #[test]
-    fn opencode_required_env_vars_match_runtime_table() {
-        assert_eq!(
-            AuthKind::Opencode.required_env_var(AuthMode::ApiKey),
-            Some("OPENCODE_API_KEY")
-        );
-        assert_eq!(AuthKind::Opencode.required_env_var(AuthMode::Sync), None);
-        assert_eq!(AuthKind::Opencode.required_env_var(AuthMode::Ignore), None);
-        assert_eq!(
-            AuthKind::Opencode.required_env_var(AuthMode::OAuthToken),
-            None
-        );
-    }
-
-    #[test]
     fn for_agent_round_trip() {
         assert_eq!(AuthKind::for_agent(Agent::Claude), AuthKind::Claude);
         assert_eq!(AuthKind::for_agent(Agent::Codex), AuthKind::Codex);
         assert_eq!(AuthKind::for_agent(Agent::Amp), AuthKind::Amp);
-        assert_eq!(AuthKind::for_agent(Agent::Kimi), AuthKind::Kimi);
-        assert_eq!(AuthKind::for_agent(Agent::Opencode), AuthKind::Opencode);
     }
 
     #[test]
@@ -347,8 +304,6 @@ mod tests {
         assert_eq!(AuthKind::Claude.agent(), Some(Agent::Claude));
         assert_eq!(AuthKind::Codex.agent(), Some(Agent::Codex));
         assert_eq!(AuthKind::Amp.agent(), Some(Agent::Amp));
-        assert_eq!(AuthKind::Kimi.agent(), Some(Agent::Kimi));
-        assert_eq!(AuthKind::Opencode.agent(), Some(Agent::Opencode));
     }
 
     #[test]
@@ -393,8 +348,6 @@ mod tests {
         assert!(!AuthKind::Claude.role_override_present(&ro));
         assert!(!AuthKind::Codex.role_override_present(&ro));
         assert!(!AuthKind::Amp.role_override_present(&ro));
-        assert!(!AuthKind::Kimi.role_override_present(&ro));
-        assert!(!AuthKind::Opencode.role_override_present(&ro));
         assert!(!AuthKind::Github.role_override_present(&ro));
     }
 
@@ -451,41 +404,7 @@ mod tests {
         assert!(!AuthKind::Claude.role_override_present(&ro));
         assert!(!AuthKind::Codex.role_override_present(&ro));
         assert!(!AuthKind::Amp.role_override_present(&ro));
-        assert!(!AuthKind::Kimi.role_override_present(&ro));
-        assert!(!AuthKind::Opencode.role_override_present(&ro));
         assert!(AuthKind::Github.role_override_present(&ro));
-
-        // Kimi-only override → only Kimi returns true.
-        let ro = crate::config::WorkspaceRoleOverride {
-            kimi: Some(crate::config::KimiAuthConfig(
-                crate::config::AgentAuthConfig {
-                    auth_forward: crate::config::AuthForwardMode::ApiKey,
-                },
-            )),
-            ..crate::config::WorkspaceRoleOverride::default()
-        };
-        assert!(!AuthKind::Claude.role_override_present(&ro));
-        assert!(!AuthKind::Codex.role_override_present(&ro));
-        assert!(!AuthKind::Amp.role_override_present(&ro));
-        assert!(AuthKind::Kimi.role_override_present(&ro));
-        assert!(!AuthKind::Opencode.role_override_present(&ro));
-        assert!(!AuthKind::Github.role_override_present(&ro));
-
-        // Opencode-only override → only Opencode returns true.
-        let ro = crate::config::WorkspaceRoleOverride {
-            opencode: Some(crate::config::OpencodeAuthConfig(
-                crate::config::AgentAuthConfig {
-                    auth_forward: crate::config::AuthForwardMode::ApiKey,
-                },
-            )),
-            ..crate::config::WorkspaceRoleOverride::default()
-        };
-        assert!(!AuthKind::Claude.role_override_present(&ro));
-        assert!(!AuthKind::Codex.role_override_present(&ro));
-        assert!(!AuthKind::Amp.role_override_present(&ro));
-        assert!(!AuthKind::Kimi.role_override_present(&ro));
-        assert!(AuthKind::Opencode.role_override_present(&ro));
-        assert!(!AuthKind::Github.role_override_present(&ro));
     }
 
     #[test]
@@ -504,16 +423,6 @@ mod tests {
                     auth_forward: crate::config::AuthForwardMode::Sync,
                 },
             )),
-            kimi: Some(crate::config::KimiAuthConfig(
-                crate::config::AgentAuthConfig {
-                    auth_forward: crate::config::AuthForwardMode::Sync,
-                },
-            )),
-            opencode: Some(crate::config::OpencodeAuthConfig(
-                crate::config::AgentAuthConfig {
-                    auth_forward: crate::config::AuthForwardMode::Sync,
-                },
-            )),
             github: Some(crate::config::GithubAuthConfig {
                 auth_forward: crate::config::GithubAuthMode::Sync,
                 ..Default::default()
@@ -523,8 +432,6 @@ mod tests {
         assert!(AuthKind::Claude.role_override_present(&ro));
         assert!(AuthKind::Codex.role_override_present(&ro));
         assert!(AuthKind::Amp.role_override_present(&ro));
-        assert!(AuthKind::Kimi.role_override_present(&ro));
-        assert!(AuthKind::Opencode.role_override_present(&ro));
         assert!(AuthKind::Github.role_override_present(&ro));
     }
 }

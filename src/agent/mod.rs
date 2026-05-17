@@ -15,8 +15,13 @@ pub enum Agent {
 impl Agent {
     /// Every variant in declaration order. Iteration sites consult
     /// this instead of hand-rolling their own array.
-    pub const ALL: &'static [Self] =
-        &[Self::Claude, Self::Codex, Self::Amp, Self::Kimi, Self::Opencode];
+    pub const ALL: &'static [Self] = &[
+        Self::Claude,
+        Self::Codex,
+        Self::Amp,
+        Self::Kimi,
+        Self::Opencode,
+    ];
 
     pub const fn slug(self) -> &'static str {
         match self {
@@ -55,9 +60,10 @@ impl Agent {
             (Self::Kimi, M::ApiKey) => Some("KIMI_API_KEY"),
             (Self::Opencode, M::ApiKey) => Some("OPENCODE_API_KEY"),
             (Self::Claude, M::Sync | M::Ignore)
-            | (Self::Codex | Self::Amp | Self::Kimi | Self::Opencode, M::Sync | M::Ignore | M::OAuthToken) => {
-                None
-            }
+            | (
+                Self::Codex | Self::Amp | Self::Kimi | Self::Opencode,
+                M::Sync | M::Ignore | M::OAuthToken,
+            ) => None,
         }
     }
 
@@ -101,11 +107,20 @@ RUN set -euxo pipefail && \\
 ";
 
 const OPENCODE_INSTALL_BLOCK: &str = "\
-USER agent
-ARG JACKIN_CACHE_BUST=0
-RUN : \"${JACKIN_CACHE_BUST}\" && \\
-    curl -fsSL https://opencode.ai/install | bash && \\
-    opencode --version
+USER agent\n\
+ARG JACKIN_CACHE_BUST=0\n\
+RUN set -euo pipefail && \\\n\
+    : \"${JACKIN_CACHE_BUST}\" && \\\n\
+    case \"$(uname -m)\" in \\\n\
+      x86_64)  ARCH=x64 ;; \\\n\
+      aarch64) ARCH=arm64 ;; \\\n\
+      *) echo \"unsupported arch $(uname -m)\"; exit 1 ;; \\\n\
+    esac && \\\n\
+    mkdir -p \"${HOME}/.opencode/bin\" && \\\n\
+    curl -fsSL \"https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-${ARCH}.tar.gz\" \\\n\
+      | tar xz -C \"${HOME}/.opencode/bin\" && \\\n\
+    \"${HOME}/.opencode/bin/opencode\" --version\n\
+ENV PATH=\"/home/agent/.opencode/bin:${PATH}\"\n\
 ";
 
 const CODEX_INSTALL_BLOCK: &str = "\
@@ -248,11 +263,12 @@ mod tests {
     }
 
     #[test]
-    fn opencode_install_block_uses_official_curl_installer() {
+    fn opencode_install_block_downloads_binary_from_github() {
         let block = Agent::Opencode.install_block();
         assert!(block.starts_with("USER agent\n"));
-        assert!(block.contains("https://opencode.ai/install"));
-        assert!(block.contains("opencode --version"));
+        assert!(block.contains("anomalyco/opencode/releases/latest/download"));
+        assert!(block.contains("/opencode\" --version"));
+        assert!(block.contains("ENV PATH"));
     }
 }
 
@@ -311,7 +327,6 @@ mod auth_table_tests {
             Agent::Kimi.required_env_var(AuthForwardMode::ApiKey),
             Some("KIMI_API_KEY")
         );
-        // OAuthToken for Kimi is parser-rejected; method-level safety returns None.
         assert_eq!(
             Agent::Kimi.required_env_var(AuthForwardMode::OAuthToken),
             None
@@ -319,12 +334,14 @@ mod auth_table_tests {
         assert_eq!(Agent::Kimi.required_env_var(AuthForwardMode::Ignore), None);
 
         // Opencode
-        assert_eq!(Agent::Opencode.required_env_var(AuthForwardMode::Sync), None);
+        assert_eq!(
+            Agent::Opencode.required_env_var(AuthForwardMode::Sync),
+            None
+        );
         assert_eq!(
             Agent::Opencode.required_env_var(AuthForwardMode::ApiKey),
             Some("OPENCODE_API_KEY")
         );
-        // OAuthToken for Opencode is parser-rejected; method-level safety returns None.
         assert_eq!(
             Agent::Opencode.required_env_var(AuthForwardMode::OAuthToken),
             None

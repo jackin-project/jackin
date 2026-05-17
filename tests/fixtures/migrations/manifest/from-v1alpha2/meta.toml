@@ -1,4 +1,4 @@
 from_version = "v1alpha2"
 target_version = "v1alpha3"
-target_version_shipped = "2026-05-13"
-summary = "Restamps manifest as v1alpha3 and moves version to the first line."
+target_version_shipped = "2026-05-14"
+summary = "Restamps role manifest as v1alpha3 and moves version to the first line. Formalizes OpenCode agent support: the opencode enum variant and [opencode] table were introduced into the binary without a manifest version bump; this version corrects that oversight."

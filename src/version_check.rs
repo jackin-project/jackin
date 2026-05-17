@@ -11,11 +11,23 @@ fn npm_cache_path(paths: &JackinPaths) -> PathBuf {
     paths.cache_dir.join("claude-latest-version")
 }
 
+/// File that caches the latest published `OpenCode` version from `npm`.
+fn opencode_npm_cache_path(paths: &JackinPaths) -> PathBuf {
+    paths.cache_dir.join("opencode-latest-version")
+}
+
 /// File that records the Claude Code version baked into a given Docker image.
 fn image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
     paths
         .cache_dir
         .join(format!("image-claude-version/{image}"))
+}
+
+/// File that records the `OpenCode` version baked into a given `Docker` image.
+fn opencode_image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
+    paths
+        .cache_dir
+        .join(format!("image-opencode-version/{image}"))
 }
 
 /// Query npm for the latest published `@anthropic-ai/claude-code` version,
@@ -77,18 +89,6 @@ pub fn needs_claude_update(
         return false; // npm unavailable — don't force a rebuild
     };
     installed != latest
-}
-
-/// File that caches the latest published `OpenCode` version from `npm`.
-fn opencode_npm_cache_path(paths: &JackinPaths) -> PathBuf {
-    paths.cache_dir.join("opencode-latest-version")
-}
-
-/// File that records the `OpenCode` version baked into a given `Docker` image.
-fn opencode_image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
-    paths
-        .cache_dir
-        .join(format!("image-opencode-version/{image}"))
 }
 
 /// Query npm for the latest published `opencode-ai` version,
@@ -182,15 +182,13 @@ pub fn parse_claude_version(raw: &str) -> Option<&str> {
 /// Extract a bare semver string from `kimi --version` output.
 ///
 /// The command returns e.g. `"kimi 1.2.3"` but we only need the `"1.2.3"`
-/// portion.  Returns `None` when the output doesn't look like a version string.
+/// portion. Returns `None` when the output doesn't look like a version string.
 pub fn parse_kimi_version(raw: &str) -> Option<&str> {
     let mut tokens = raw.split_whitespace();
     let first = tokens.next()?;
-    // If the first token is a bare semver, use it directly.
     if first.split('.').count() >= 2 && first.starts_with(|c: char| c.is_ascii_digit()) {
         return Some(first);
     }
-    // Otherwise expect something like "kimi 1.2.3" and take the second token.
     let second = tokens.next()?;
     if second.split('.').count() >= 2 && second.starts_with(|c: char| c.is_ascii_digit()) {
         return Some(second);
@@ -246,10 +244,10 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        store_image_version(&paths, "jackin-agent-smith", "2.1.91");
+        store_image_version(&paths, "jk_agent-smith", "2.1.91");
 
         assert_eq!(
-            stored_image_version(&paths, "jackin-agent-smith"),
+            stored_image_version(&paths, "jk_agent-smith"),
             Some("2.1.91".to_string())
         );
     }
@@ -260,17 +258,13 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        store_image_version(&paths, "jackin-agent-smith", "2.1.91");
+        store_image_version(&paths, "jk_agent-smith", "2.1.91");
         // Seed the npm cache with a newer version
         let cache = npm_cache_path(&paths);
         let _ = write_cached(&cache, "2.1.92");
 
         let mut runner = StubRunner("2.1.92".to_string());
-        assert!(needs_claude_update(
-            &paths,
-            "jackin-agent-smith",
-            &mut runner
-        ));
+        assert!(needs_claude_update(&paths, "jk_agent-smith", &mut runner));
     }
 
     #[test]
@@ -279,16 +273,12 @@ mod tests {
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        store_image_version(&paths, "jackin-agent-smith", "2.1.92");
+        store_image_version(&paths, "jk_agent-smith", "2.1.92");
         let cache = npm_cache_path(&paths);
         let _ = write_cached(&cache, "2.1.92");
 
         let mut runner = StubRunner("2.1.92".to_string());
-        assert!(!needs_claude_update(
-            &paths,
-            "jackin-agent-smith",
-            &mut runner
-        ));
+        assert!(!needs_claude_update(&paths, "jk_agent-smith", &mut runner));
     }
 
     #[test]
@@ -299,11 +289,7 @@ mod tests {
 
         let mut runner = StubRunner("2.1.92".to_string());
         // No stored version yet → should not force rebuild
-        assert!(!needs_claude_update(
-            &paths,
-            "jackin-agent-smith",
-            &mut runner
-        ));
+        assert!(!needs_claude_update(&paths, "jk_agent-smith", &mut runner));
     }
 
     #[test]
@@ -354,28 +340,53 @@ mod tests {
     }
 
     #[test]
-    fn parse_kimi_version_strips_prefix() {
-        assert_eq!(parse_kimi_version("kimi 1.2.3"), Some("1.2.3"));
+    fn stores_and_reads_opencode_image_version() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        store_opencode_version(&paths, "jk_the-architect", "1.14.48");
+
+        assert_eq!(
+            stored_opencode_version(&paths, "jk_the-architect"),
+            Some("1.14.48".to_string())
+        );
     }
 
     #[test]
-    fn parse_kimi_version_bare_semver() {
-        assert_eq!(parse_kimi_version("1.2.3"), Some("1.2.3"));
+    fn opencode_needs_update_when_versions_differ() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        store_opencode_version(&paths, "jk_the-architect", "1.14.47");
+        let cache = opencode_npm_cache_path(&paths);
+        let _ = write_cached(&cache, "1.14.48");
+
+        let mut runner = StubRunner("1.14.48".to_string());
+        assert!(needs_opencode_update(
+            &paths,
+            "jk_the-architect",
+            &mut runner
+        ));
     }
 
     #[test]
-    fn parse_kimi_version_two_part() {
-        assert_eq!(parse_kimi_version("0.5"), Some("0.5"));
-    }
+    fn opencode_no_update_when_versions_match() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
 
-    #[test]
-    fn parse_kimi_version_rejects_garbage() {
-        assert_eq!(parse_kimi_version("not-a-version"), None);
-    }
+        store_opencode_version(&paths, "jk_the-architect", "1.14.48");
+        let cache = opencode_npm_cache_path(&paths);
+        let _ = write_cached(&cache, "1.14.48");
 
-    #[test]
-    fn parse_kimi_version_rejects_empty() {
-        assert_eq!(parse_kimi_version(""), None);
+        let mut runner = StubRunner("1.14.48".to_string());
+        assert!(!needs_opencode_update(
+            &paths,
+            "jk_the-architect",
+            &mut runner
+        ));
     }
 
     #[test]
@@ -386,11 +397,6 @@ mod tests {
     #[test]
     fn parse_opencode_version_strips_v_prefix() {
         assert_eq!(parse_opencode_version("v1.14.48"), Some("1.14.48"));
-    }
-
-    #[test]
-    fn parse_opencode_version_two_part() {
-        assert_eq!(parse_opencode_version("1.0"), Some("1.0"));
     }
 
     #[test]

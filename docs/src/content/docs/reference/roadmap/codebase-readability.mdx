@@ -59,7 +59,7 @@ Make AI-generated code verifiable and maintainable. The codebase has grown to ~9
 
 ## Phase 0 — MSRV & toolchain (DONE)
 
-[MSRV & toolchain pin](/reference/roadmap/msrv-toolchain/) — `rust-toolchain.toml` enforced in CI, MSRV floor verified. **Resolved.**
+MSRV & toolchain pin — `rust-toolchain.toml` enforced in CI, MSRV floor verified. **Resolved.**
 
 ## Phase 1 — Documentation & setup (low risk, no structural code changes)
 
@@ -72,7 +72,7 @@ These items require no structural code changes and can be done in any order with
 | [Behavioral spec: op_picker](/reference/roadmap/behavioral-spec-op-picker/) | Invariants for the 1Password picker state machine (2331L) | — |
 | [Per-directory README](/reference/roadmap/per-directory-readme/) | AI-native orientation files + per-crate AGENTS.md | — |
 | [Developer Reference setup](/reference/roadmap/developer-reference-setup/) | `jackin.tailrocks.com/internal/` Starlight section | — |
-| [Update PROJECT_STRUCTURE.md](/reference/roadmap/project-structure-update/) | Refresh the navigation map so it matches the current tree | — |
+| <RepoFile path="PROJECT_STRUCTURE.md" /> refresh | Completed; root map now delegates detailed source navigation to [Codebase Map](/reference/codebase-map/) | — |
 | [CI gate: PROJECT_STRUCTURE.md](/reference/roadmap/ci-project-structure-gate/) | Fail PRs that add modules without updating the map | Project structure update first |
 | [pub(crate) visibility pass](/reference/roadmap/pub-crate-visibility/) | Tighten over-wide visibilities after clarifying the library surface | — |
 | [Architecture Decision Records](/reference/roadmap/architecture-decision-records/) | ADRs for single-crate, toolchain, ratatui decisions | Developer Reference setup |

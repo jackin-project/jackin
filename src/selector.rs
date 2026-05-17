@@ -98,14 +98,6 @@ impl Selector {
             return Ok(Self::Container(input.to_string()));
         }
 
-        if !input.contains('/')
-            && let Some((base, suffix)) = input.rsplit_once("-clone-")
-            && is_valid_role_segment(base)
-            && suffix.chars().all(|ch| ch.is_ascii_digit())
-        {
-            return Ok(Self::Container(format!("jackin-{input}")));
-        }
-
         Ok(Self::Role(RoleSelector::parse(input)?))
     }
 }
@@ -128,19 +120,18 @@ fn is_valid_role_segment(value: &str) -> bool {
 }
 
 fn is_valid_container_name(value: &str) -> bool {
-    value.strip_prefix("jackin-").is_some_and(|suffix| {
-        !suffix.is_empty()
-            && suffix
-                .chars()
-                .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_')
-    })
+    value
+        .strip_prefix(crate::instance::naming::CONTAINER_PREFIX_DASH)
+        .is_some_and(|suffix| {
+            !suffix.is_empty()
+                && suffix.chars().all(|ch| {
+                    ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '_'
+                })
+        })
 }
 
 fn is_reserved_builtin_role_name(value: &str) -> bool {
-    value.starts_with("jackin-")
-        || value.rsplit_once("-clone-").is_some_and(|(base, suffix)| {
-            is_valid_role_segment(base) && suffix.chars().all(|ch| ch.is_ascii_digit())
-        })
+    value.starts_with(crate::instance::naming::CONTAINER_PREFIX_DASH)
 }
 
 #[cfg(test)]
@@ -159,11 +150,7 @@ mod tests {
     #[test]
     fn class_parser_rejects_reserved_builtin_names() {
         assert!(matches!(
-            RoleSelector::parse("jackin-agent-smith"),
-            Err(SelectorError::Invalid(_))
-        ));
-        assert!(matches!(
-            RoleSelector::parse("agent-smith-clone-1"),
+            RoleSelector::parse("jk-agent-smith"),
             Err(SelectorError::Invalid(_))
         ));
     }
@@ -179,28 +166,19 @@ mod tests {
 
     #[test]
     fn parses_container_selector() {
-        let selector = Selector::parse("jackin-chainargos-the-architect-clone-1").unwrap();
+        let selector = Selector::parse("jk-k7p9m2xq-chainargos-thearchitect").unwrap();
         assert_eq!(
             selector,
-            Selector::Container("jackin-chainargos-the-architect-clone-1".to_string())
+            Selector::Container("jk-k7p9m2xq-chainargos-thearchitect".to_string())
         );
     }
 
     #[test]
-    fn parses_container_selector_with_namespace_separator() {
-        let selector = Selector::parse("jackin-chainargos__the-architect").unwrap();
+    fn parses_container_selector_no_workspace() {
+        let selector = Selector::parse("jk-k7p9m2xq-agentsmith").unwrap();
         assert_eq!(
             selector,
-            Selector::Container("jackin-chainargos__the-architect".to_string())
-        );
-    }
-
-    #[test]
-    fn parses_clone_shorthand_selector() {
-        let selector = Selector::parse("agent-smith-clone-1").unwrap();
-        assert_eq!(
-            selector,
-            Selector::Container("jackin-agent-smith-clone-1".to_string())
+            Selector::Container("jk-k7p9m2xq-agentsmith".to_string())
         );
     }
 

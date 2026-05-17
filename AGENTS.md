@@ -25,7 +25,7 @@ Jackin has no released version — it is a proof-of-concept. **Breaking changes 
 4. Re-bake of every existing fixture's `after.toml` so it walks through the new step too. The fixture for the oldest supported `from_version` is the load-bearing test for users delayed by months — its diff is the proof the new chain is composable.
 5. A new entry at the top of the **Timeline** section in `docs/src/content/docs/reference/schema-versions.mdx` with date, predecessor, fixture link, summary, and a before/after example.
 
-Because all versioned structs use `#[serde(deny_unknown_fields)]`, **any change to the serde representation** — adding a field, renaming a field, removing a field, changing a field's type, or restructuring a table — causes previous jackin binaries to fail deserialization when that field is present in the file. The version bump lets an old binary detect the mismatch before parsing and print a clean "upgrade jackin" error instead of exiting with a cryptic serde failure. A change to a versioned serde surface without these five artifacts is incomplete; reviewers block merge until they appear. Operator config and per-workspace files migrate automatically during `AppConfig::load_or_init` at startup; role manifests migrate via `jackin-validate --migrate <role-repo-path>`.
+A non-additive change (renamed field, removed field, type change, added enum variant, restructured table) without these five artifacts is incomplete; reviewers block merge until they appear or the change is reshaped to be additive (new optional field with a serde default). Operator config and per-workspace files migrate automatically during `AppConfig::load_or_init` at startup; role authors migrate local manifests on a desktop with `jackin role migrate <role-repo-path>`, while CI and Renovate-style automation migrate manifests with the small standalone `jackin-validate --migrate <role-repo-path>` binary.
 
 Do not memorialize old shapes in code comments ("formerly named X", "old location was Y") or in documentation files outside the changelog. The git history is the record of what changed; the code should describe only the current shape.
 
@@ -95,6 +95,30 @@ Do this check even when the PR is mostly code, tests, CI, or rule changes. The r
 Run the sidebar and overview audits documented in `docs/AGENTS.md` after any roadmap status or file movement. If a roadmap item is partially shipped, keep it in **Partially implemented** with the remaining phases named; do not duplicate the same item under **Planned**.
 
 Roadmap pages are for planned, researched, designed, deferred, or remaining work. Once behavior ships, move the operator details to normal docs (`guides/`, `commands/`, `reference/`) and replace roadmap detail with a short status plus canonical-doc links. Do not keep long copied implementation walkthroughs in roadmap items after the feature is documented elsewhere.
+
+**Fully-resolved roadmap items must be retired in the same PR that ships the last piece, not left behind as `Status: Resolved` pages.** The full retirement procedure — confirming there is no remaining work, auditing inbound links, splitting page detail between user-facing and contributor-facing docs, replacing the page with a single Completed bullet, and re-running the sidebar / overview / docs verification audits — lives in [`PULL_REQUESTS.md`](PULL_REQUESTS.md) under "Retire fully-resolved roadmap items in the same PR." Read it before deciding to keep or delete a `Resolved` page.
+
+## Documentation as the source of truth (agent-only)
+
+**The published docs site is the spec.** Every feature jackin ships must be described from two angles, and both must be kept current in the same PR that lands the change:
+
+- **User-facing docs** (the *Operator* and *Role Authoring* sidebar groups: `getting-started/`, `guides/`, `commands/`, `developing/`) describe **what jackin does from outside the binary**. They answer "if I run this command or set this config, what will happen?" without naming on-disk paths the operator never edits, internal Rust types, or implementation steps. A reader following only the user-facing docs must be able to use the feature successfully.
+- **Contributor-facing docs** (the *Internals* sidebar group: `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, `reference/claude-token-orchestrator.mdx`, `reference/schema-versions.mdx`, `reference/tui-design-decisions.mdx`, plus active items under `reference/roadmap/`) describe **how jackin is built**. On-disk layout, struct/enum/function names, design decisions, trade-offs, file paths under `src/`, and links into the source tree all live here. This surface is what an agent or contributor reads before changing code, and it is what they update when their change makes the description stale.
+
+Both surfaces are load-bearing. If an operator-visible behaviour ships without an update to the user-facing docs, the feature is not actually shipped — operators have no way to learn it exists or how to invoke it. If an internal change ships without an update to the contributor-facing docs, the next agent reading the internals page is debugging against a stale spec.
+
+**Before marking any PR ready to merge — and again whenever the operator asks to merge it — re-verify every change against the published docs and update both surfaces in the same PR.** Concretely:
+
+1. Walk the diff and ask, for each change: does this change what an operator sees, types, or relies on? If yes, the matching `guides/`, `commands/`, `getting-started/`, or `developing/` page must be updated in this PR.
+2. Walk the diff again and ask: does this change a struct, enum, function name, on-disk path, schema version, design decision, or any other detail an internals page describes? If yes, the matching `reference/` page must be updated in this PR.
+3. Apply the **Roadmap freshness** rule above: status updates, sidebar/overview audits, and retire-when-fully-resolved.
+4. Run `bun run build`, `bun run check:repo-links`, `bunx tsc --noEmit`, and `bun test` from `docs/`. A docs change that doesn't compile or breaks repo-file references is incomplete.
+
+Do not split a feature PR from its docs PR by default. The docs land with the code that makes them true; landing them later means the docs are wrong for the gap, and the gap is exactly when other agents and operators will read them. The exception is the explicit "docs-only follow-up" pattern named in `PULL_REQUESTS.md`, which the operator authorizes per case.
+
+**Audience-correct placement is not optional.** When you find yourself wanting to put a TOML schema fragment, on-disk path, or struct name on a user-facing page, the placement is wrong — that detail goes on the matching internals page, and the user-facing page links to it. When you find yourself wanting to write `jackin foo --bar` operator instructions on an internals page, that block belongs in the `commands/` page, and the internals page links out. The split is what lets each audience trust their surface; mixing them weakens both.
+
+This rule does not retire when jackin ships its first release; the audience split is permanent. The roadmap-retirement portion of this rule and the **Roadmap freshness** rule retire only when there are no roadmap items left to maintain.
 
 ## Pull requests (agent-only) — see `PULL_REQUESTS.md`
 

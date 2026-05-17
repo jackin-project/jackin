@@ -26,7 +26,7 @@ Running `jackin` with no subcommand opens the same console when stdout is attach
 
 The console opens directly to a workspace manager list — no separate workspace-picker stage. From there you can:
 
-- **Launch an agent into a workspace.** Each workspace row launches a container running the workspace's allowed roles and agents. When the workspace has a single eligible role and agent, launch is one keystroke. When there's ambiguity, the console asks you to pick.
+- **Launch an agent into a workspace.** Each workspace row opens the role picker in the sidebar, even when there is only one eligible role. Confirm the highlighted role to launch. If the selected role supports multiple agent runtimes, the console asks for that runtime next.
 - **Use your current directory as a workspace.** A synthetic row at the top of the manager list mounts your `cwd` at the same path inside the container. Useful for quick one-off launches without saving a workspace definition.
 - **Recover active and preserved instances.** Workspace and current-directory detail panes show an Instances panel when jackin-managed local state exists for that scope, with instance ID, status, agent runtime, and role. From that row, `r` reconnects or recovers, `s` starts another foreground agent session in a running instance, `i` prints a read-only state report, and `p` purges local recovery state when the guarded `purge` rules allow it.
 - **Open the workspace editor.** Edit the workspace's roles, environment variables, and authentication settings. Each editor surface lives on its own tab inside the editor.
@@ -40,7 +40,7 @@ For the per-axis details — what each tab manages, what defaults apply, where t
 - **Roles** — which roles may launch in this workspace, and which one (if any) is the default. See [Workspaces](/guides/workspaces/).
 - **Mounts** — host directories made available inside the container, with read-only / read-write and per-mount isolation modes. See [Mounts](/guides/mounts/).
 - **Environments** — workspace-wide and per-role environment variables, sourced from literal values, host env, or `1Password`. See [Environment Variables](/guides/environment-variables/).
-- **Auth** — `Claude Code`, `Codex`, `Amp`, and `GitHub CLI` authentication forwarding modes at workspace and per-role scope. See [Authentication](/guides/authentication/) for the shared pattern across every auth axis.
+- **Auth** — `Claude Code`, `Codex`, `Amp`, `OpenCode`, and `GitHub CLI` authentication forwarding modes at workspace and per-role scope. See [Authentication](/guides/authentication/) for the shared pattern across every auth axis.
 
 Every editor surface is reachable from the workspace manager list — you don't need to know which keystroke opens which panel; the in-app footer shows the available actions for whatever you have focused.
 
@@ -58,3 +58,5 @@ The console intentionally stays narrower. **New niche flags and detail-level opt
 | **Agent selection** | Interactive picker | Explicit argument |
 | **Feature surface** | Simplified — common flows only | Complete — every flag jackin exposes |
 | **Where new niche flags land** | Rarely | First, and sometimes exclusively |
+
+For a deeper operator workflow around fresh instances versus multiple agent sessions inside one running instance, see [Parallel Agents](/guides/parallel-agents/).

@@ -19,7 +19,7 @@ When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspa
 
 | Argument | Required | Description |
 |---|---|---|
-| `SELECTOR` | No | Role selector (e.g., `agent-smith`), instance ID, or full container name (e.g., `jackin-agent-smith-k7p9m2xq`) |
+| `SELECTOR` | No | Role selector (e.g., `agent-smith`), instance ID, or full container name (e.g., `jk-k7p9m2xq-agentsmith`) |
 
 ## Options
 
@@ -27,7 +27,7 @@ When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspa
 |---|---|
 | `--inspect` | Resolve the same target but print the instance manifest, live agent-session inventory, role/DinD Docker state, Docker network state, cert volume name, and mount-state summary without attaching or restarting anything. |
 | `--new` | Start another foreground agent process inside the selected running instance instead of attaching to the original container process. On roles that support multiple agents, omitting `--agent` triggers an interactive prompt so you can choose the runtime; the workspace `default_agent` is used when set and skips the prompt. |
-| `--agent <agent>` | Agent runtime for `--new` (`claude`, `codex`, or `amp`). When omitted on a multi-agent role with no `default_agent` set on the workspace, an interactive prompt asks. |
+| `--agent <agent>` | Agent runtime for `--new` (`claude`, `codex`, `amp`, or `opencode`). When omitted on a multi-agent role with no `default_agent` set on the workspace, an interactive prompt asks. |
 | `--debug` | Print every external command jackin issues (`docker`, `git`, etc.) and their captured output. Also enabled by `JACKIN_DEBUG=1`. |
 
 ## Behavior
@@ -84,7 +84,7 @@ jackin hardline --new
 jackin hardline --new --agent codex k7p9m2xq
 
 # Reconnect to a specific container by name
-jackin hardline jackin-agent-smith-k7p9m2xq
+jackin hardline jk-k7p9m2xq-agentsmith
 
 # Reconnect to a namespaced agent
 jackin hardline chainargos/backend-engineer
@@ -97,3 +97,5 @@ jackin hardline chainargos/backend-engineer
 - You want to check on an agent that's been running autonomously.
 - You want another foreground agent process inside an already-running instance.
 - You accidentally disconnected from a session.
+
+For workflows that intentionally run multiple runtimes together in one instance, see [Parallel Agents](/guides/parallel-agents/).

@@ -3291,9 +3291,9 @@ plugins = []
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
                 kimi: None,
                 opencode: None,
+                github: None,
             },
         );
 
@@ -3577,9 +3577,9 @@ plugins = []
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
                 kimi: None,
                 opencode: None,
+                github: None,
             },
         );
         let mut state = ManagerState::from_config(&config, tmp.path());
@@ -3647,9 +3647,9 @@ plugins = []
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
                 kimi: None,
                 opencode: None,
+                github: None,
             },
         );
 

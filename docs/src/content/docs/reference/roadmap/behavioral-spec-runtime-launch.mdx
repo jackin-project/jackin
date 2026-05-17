@@ -16,8 +16,8 @@ The file has grown significantly due to: instance identity support, Kimi agent r
 | INV | Description | Verify by |
 |---|---|---|
 | INV-1 | Trust confirmation still happens before the image build — an untrusted third-party agent may be cloned/resolved, but not built or launched until confirmed | `confirm_agent_trust` closure runs before `build_agent_image` in `load_agent_with` |
-| INV-2 | Token mode still fails fast before runtime startup work — missing `CLAUDE_CODE_OAUTH_TOKEN` aborts before DinD/network launch | `verify_token_env_present` runs before `AgentState::prepare` / `launch_agent_runtime` |
-| INV-3 | Container slot claim still happens after image build and before runtime launch | `claim_container_name` stays between `build_agent_image` and `launch_agent_runtime` |
+| INV-2 | Token mode still fails fast before auth state preparation and runtime startup — missing `CLAUDE_CODE_OAUTH_TOKEN` aborts before DinD/network launch | `verify_token_env_present` runs before `AgentState::prepare` / `launch_agent_runtime` |
+| INV-3 | Container slot claim happens before the launch summary is printed so the operator-visible container name is the final locked name | `claim_container_name` runs before `build_config_rows` and the claimed name flows through `launch_agent_runtime` |
 | INV-4 | Foreground attach finalization still runs before teardown classification — isolated worktrees are finalized before deciding whether to preserve or clean the container | `finalize_foreground_session` happens before the `inspect_container_state(...)` cleanup match |
 | INV-5 | Cleanup classification still preserves restartable sessions and tears down clean exits | `Running` / crash paths disarm cleanup; clean exit runs cleanup |
 | INV-6 | `render_exit` still runs on both success and error exits from `load_agent_with` | both `Ok(_)` and `Err(error)` arms call `render_exit` |
@@ -27,9 +27,9 @@ The file has grown significantly due to: instance identity support, Kimi agent r
 `load_agent` (public API) → `load_agent_with` (current pipeline):
 
 1. **Resolve source + trust** — resolve repo state, then confirm untrusted agents
-2. **Resolve launch inputs** — manifest env, operator env, auth mode, and diagnostics
-3. **Build + claim slot** — build the image, then claim the container name/slot
-4. **Prepare state + materialize workspace** — auth state, isolated mounts, cache/state dirs
+2. **Resolve/claim instance** — resolve restore candidates, then claim the final container name/slot
+3. **Resolve launch inputs** — print the launch summary with the claimed name, then resolve manifest env, operator env, auth mode, and diagnostics
+4. **Build + prepare state** — build the image, prepare auth state, isolated mounts, cache/state dirs
 5. **Launch + finalize** — start runtime, attach, finalize worktrees, classify teardown/preservation
 
 ## Steps

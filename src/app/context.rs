@@ -764,10 +764,10 @@ mod tests {
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
-                git_pull_on_entry: false,
                 kimi: None,
                 opencode: None,
+                github: None,
+                git_pull_on_entry: false,
             },
         );
 
@@ -816,10 +816,10 @@ mod tests {
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
-                git_pull_on_entry: false,
                 kimi: None,
                 opencode: None,
+                github: None,
+                git_pull_on_entry: false,
             },
         );
 
@@ -867,10 +867,10 @@ mod tests {
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
-                git_pull_on_entry: false,
                 kimi: None,
                 opencode: None,
+                github: None,
+                git_pull_on_entry: false,
             },
         );
 
@@ -926,10 +926,10 @@ mod tests {
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
-                git_pull_on_entry: false,
                 kimi: None,
                 opencode: None,
+                github: None,
+                git_pull_on_entry: false,
             },
         );
         config
@@ -951,7 +951,7 @@ mod tests {
         std::fs::create_dir_all(&nested_dir).unwrap();
 
         let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
-        let running = "jackin-agentsmith-k7p9m2xq";
+        let running = "jk-k7p9m2xq-agentsmith";
         let mut runner = fake_runner_with_running_agents(&[running]);
 
         let paths = paths::JackinPaths::for_tests(temp.path());
@@ -973,8 +973,8 @@ mod tests {
             vec!["agent-smith".to_string(), "the-architect".to_string()],
             Some("the-architect".to_string()),
         );
-        let smith = "jackin-agentsmith-k7p9m2xq";
-        let architect = "jackin-thearchitect-a1b2c3d4";
+        let smith = "jk-k7p9m2xq-agentsmith";
+        let architect = "jk-a1b2c3d4-thearchitect";
         let mut runner = fake_runner_with_running_agents(&[smith, architect]);
 
         let paths = paths::JackinPaths::for_tests(temp.path());
@@ -994,7 +994,7 @@ mod tests {
 
         let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
         let manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
-            container_base: "jackin-myapp-agentsmith-k7p9m2xq",
+            container_base: "jk-k7p9m2xq-myapp-agentsmith",
             workspace_name: Some("my-app"),
             workspace_label: "my-app",
             workdir: "/workspace",
@@ -1004,12 +1004,12 @@ mod tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jackin-agent-smith",
+            image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
-                role_container: "jackin-myapp-agentsmith-k7p9m2xq".to_string(),
-                dind_container: "jackin-myapp-agentsmith-k7p9m2xq-dind".to_string(),
-                network: "jackin-myapp-agentsmith-k7p9m2xq-net".to_string(),
-                certs_volume: "jackin-myapp-agentsmith-k7p9m2xq-dind-certs".to_string(),
+                role_container: "jk-k7p9m2xq-myapp-agentsmith".to_string(),
+                dind_container: "jk-k7p9m2xq-myapp-agentsmith-dind".to_string(),
+                network: "jk-k7p9m2xq-myapp-agentsmith-net".to_string(),
+                certs_volume: "jk-k7p9m2xq-myapp-agentsmith-dind-certs".to_string(),
             },
         });
         let state_dir = paths.data_dir.join(&manifest.container_base);
@@ -1022,7 +1022,7 @@ mod tests {
             resolve_running_container_from_context(&paths, &config, &project_dir, &mut runner)
                 .unwrap();
 
-        assert_eq!(container, "jackin-myapp-agentsmith-k7p9m2xq");
+        assert_eq!(container, "jk-k7p9m2xq-myapp-agentsmith");
     }
 
     #[test]
@@ -1036,7 +1036,7 @@ mod tests {
 
         let config = AppConfig::default();
         let manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
-            container_base: "jackin-agentsmith-k7p9m2xq",
+            container_base: "jk-k7p9m2xq-agentsmith",
             workspace_name: None,
             workspace_label: &project,
             workdir: &project,
@@ -1046,12 +1046,12 @@ mod tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jackin-agent-smith",
+            image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
-                role_container: "jackin-agentsmith-k7p9m2xq".to_string(),
-                dind_container: "jackin-agentsmith-k7p9m2xq-dind".to_string(),
-                network: "jackin-agentsmith-k7p9m2xq-net".to_string(),
-                certs_volume: "jackin-agentsmith-k7p9m2xq-dind-certs".to_string(),
+                role_container: "jk-k7p9m2xq-agentsmith".to_string(),
+                dind_container: "jk-k7p9m2xq-agentsmith-dind".to_string(),
+                network: "jk-k7p9m2xq-agentsmith-net".to_string(),
+                certs_volume: "jk-k7p9m2xq-agentsmith-dind-certs".to_string(),
             },
         });
         let state_dir = paths.data_dir.join(&manifest.container_base);
@@ -1063,14 +1063,14 @@ mod tests {
             resolve_running_container_from_context(&paths, &config, &project_dir, &mut runner)
                 .unwrap();
 
-        assert_eq!(container, "jackin-agentsmith-k7p9m2xq");
+        assert_eq!(container, "jk-k7p9m2xq-agentsmith");
     }
 
     #[test]
     fn hardline_candidate_prompt_label_includes_manifest_and_docker_state() {
         let temp = tempfile::tempdir().unwrap();
         let paths = paths::JackinPaths::for_tests(temp.path());
-        let container = "jackin-myapp-agentsmith-k7p9m2xq";
+        let container = "jk-k7p9m2xq-myapp-agentsmith";
         let mut manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
             container_base: container,
             workspace_name: Some("my-app"),
@@ -1082,7 +1082,7 @@ mod tests {
             agent_runtime: crate::agent::Agent::Claude,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jackin-agent-smith",
+            image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
                 role_container: container.to_string(),
                 dind_container: format!("{container}-dind"),
@@ -1116,7 +1116,7 @@ mod tests {
     fn hardline_candidate_prompt_label_counts_running_agent_sessions() {
         let temp = tempfile::tempdir().unwrap();
         let paths = paths::JackinPaths::for_tests(temp.path());
-        let container = "jackin-myapp-agentsmith-k7p9m2xq";
+        let container = "jk-k7p9m2xq-myapp-agentsmith";
         let manifest = instance::InstanceManifest::new(instance::NewInstanceManifest {
             container_base: container,
             workspace_name: Some("my-app"),
@@ -1128,7 +1128,7 @@ mod tests {
             agent_runtime: crate::agent::Agent::Codex,
             role_source_git: "https://example.invalid/agent-smith.git",
             role_source_ref: None,
-            image_tag: "jackin-agent-smith",
+            image_tag: "jk_agent-smith",
             docker: instance::DockerResources {
                 role_container: container.to_string(),
                 dind_container: format!("{container}-dind"),
@@ -1179,7 +1179,7 @@ mod tests {
 
         let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
         // the-architect is running but not allowed in this workspace.
-        let mut runner = fake_runner_with_running_agents(&["jackin-the-architect"]);
+        let mut runner = fake_runner_with_running_agents(&["jk-the-architect"]);
 
         let paths = paths::JackinPaths::for_tests(temp.path());
         let err =
@@ -1199,7 +1199,7 @@ mod tests {
         let project_dir = temp.path().join("project");
         std::fs::create_dir_all(&project_dir).unwrap();
         let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
-        let mut runner = fake_runner_with_running_agents(&["jackin-agent-smith"]);
+        let mut runner = fake_runner_with_running_agents(&["jk-agent-smith"]);
 
         let paths = paths::JackinPaths::for_tests(temp.path());
         let err = resolve_running_container_from_context(&paths, &config, &unrelated, &mut runner)

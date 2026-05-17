@@ -63,8 +63,8 @@ pub struct AmpConfig {}
 
 /// Per-role Kimi configuration.
 ///
-/// Carries an optional model override; passed to Kimi with `--model`
-/// when present, otherwise Kimi's own default is used.
+/// `model` is passed to Kimi with `--model` when present, otherwise
+/// Kimi's own default model selection is used.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KimiConfig {
@@ -187,10 +187,11 @@ impl ManifestWarning {
 
 impl RoleManifest {
     /// Parse `jackin.role.toml` and pin the load-time invariants other code
-    /// relies on: `version` matches `CURRENT_MANIFEST_VERSION` (operator
-    /// gets a `--migrate` hint on mismatch) and the `agents` / `[<agent>]`
-    /// tables are consistent (so `instance::prepare` can dereference
-    /// `manifest.codex` / `manifest.claude` without re-checking).
+    /// relies on: `version` is not newer than this binary understands,
+    /// version-gated features match the manifest's declared minimum schema,
+    /// and the `agents` / `[<agent>]` tables are consistent (so
+    /// `instance::prepare` can dereference `manifest.codex` /
+    /// `manifest.claude` without re-checking).
     ///
     /// Env-var validation, interpolation cycle detection, and the rest of
     /// `validate()` still need explicit calls — they emit warnings the load
@@ -202,10 +203,13 @@ impl RoleManifest {
         let doc: toml_edit::DocumentMut = contents
             .parse()
             .with_context(|| format!("parsing {}", manifest_path.display()))?;
-        crate::manifest::migrations::validate_manifest_version(&doc, &display_role_name(repo_dir))
+        let role_name = display_role_name(repo_dir);
+        let manifest_version = crate::manifest::migrations::validate_manifest_version(&doc)
             .with_context(|| format!("validating version of {}", manifest_path.display()))?;
         let manifest: Self = toml::from_str(&contents)
             .with_context(|| format!("parsing {} as RoleManifest", manifest_path.display()))?;
+        validate_feature_versions(&manifest, &manifest_version, &role_name)
+            .with_context(|| format!("validating version of {}", manifest_path.display()))?;
         let _warnings = crate::manifest::validate::validate_agent_consistency(&manifest)?;
         Ok(manifest)
     }
@@ -236,6 +240,26 @@ fn display_role_name(repo_dir: &Path) -> String {
         (_, Some(name)) => name.to_string(),
         _ => repo_dir.display().to_string(),
     }
+}
+
+fn validate_feature_versions(
+    manifest: &RoleManifest,
+    manifest_version: &crate::config::migrations::SchemaVersion,
+    role_name: &str,
+) -> anyhow::Result<()> {
+    let v1alpha3 = crate::config::migrations::parse_version("v1alpha3")?;
+    if manifest_version < &v1alpha3
+        && (manifest.agents.as_ref().is_some_and(|agents| {
+            agents.contains(&crate::agent::Agent::Kimi)
+                || agents.contains(&crate::agent::Agent::Opencode)
+        }) || manifest.kimi.is_some()
+            || manifest.opencode.is_some())
+    {
+        anyhow::bail!(
+            "role \"{role_name}\" manifest is at {manifest_version} but uses v1alpha3 agent fields, which requires v1alpha3; run \"jackin role migrate <role-repo-path>\" to upgrade the local copy"
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -280,7 +304,7 @@ plugins = []
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
-            r#"version = "v1alpha3"
+            r#"version = "v1alpha2"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -316,6 +340,29 @@ model = "gpt-5"
     }
 
     #[test]
+    fn loads_opencode_manifest_with_model() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["opencode"]
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
+"#,
+        )
+        .unwrap();
+
+        let m = RoleManifest::load(temp.path()).unwrap();
+        assert_eq!(m.supported_agents(), vec![crate::agent::Agent::Opencode]);
+        assert_eq!(
+            m.opencode.as_ref().unwrap().model.as_deref(),
+            Some("zai-coding-plan/glm-5.1")
+        );
+    }
+
+    #[test]
     fn rejects_unknown_agent_name() {
         let temp = tempdir().unwrap();
         std::fs::write(
@@ -339,7 +386,7 @@ plugins = []
     }
 
     #[test]
-    fn rejects_legacy_manifest_without_migrate() {
+    fn loads_unversioned_manifest_without_newer_features() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
@@ -351,10 +398,11 @@ plugins = []
         )
         .unwrap();
 
-        let err = RoleManifest::load(temp.path()).unwrap_err();
-        let chain = format!("{err:#}");
-        assert!(chain.contains("manifest is at legacy"), "{chain}");
-        assert!(chain.contains("jackin-validate --migrate"), "{chain}");
+        let manifest = RoleManifest::load(temp.path()).unwrap();
+        assert_eq!(
+            manifest.supported_agents(),
+            vec![crate::agent::Agent::Claude]
+        );
     }
 
     #[test]
@@ -374,6 +422,47 @@ plugins = []
         let err = RoleManifest::load(temp.path()).unwrap_err();
         let chain = format!("{err:#}");
         assert!(chain.contains("only understands up to v1alpha3"), "{chain}");
+    }
+
+    #[test]
+    fn rejects_old_manifest_version_using_opencode_agent() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"version = "v1alpha2"
+dockerfile = "Dockerfile"
+agents = ["opencode"]
+
+[opencode]
+"#,
+        )
+        .unwrap();
+
+        let err = RoleManifest::load(temp.path()).unwrap_err();
+        let chain = format!("{err:#}");
+        assert!(chain.contains("requires v1alpha3"), "{chain}");
+        assert!(chain.contains("jackin role migrate"), "{chain}");
+    }
+
+    #[test]
+    fn rejects_old_manifest_version_with_opencode_table() {
+        let temp = tempdir().unwrap();
+        std::fs::write(
+            temp.path().join("jackin.role.toml"),
+            r#"version = "v1alpha2"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+
+[opencode]
+"#,
+        )
+        .unwrap();
+
+        let err = RoleManifest::load(temp.path()).unwrap_err();
+        let chain = format!("{err:#}");
+        assert!(chain.contains("requires v1alpha3"), "{chain}");
     }
 
     #[test]

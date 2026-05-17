@@ -15,8 +15,9 @@ Breaking changes to schemas are expected — that is how the project explores id
 
 - **Each schema file carries its own `version` stamp.** When jackin reads the file, it compares the on-disk version against the binary's `CURRENT_*_VERSION` and applies any pending migration steps before parsing, so operators see a working setup after every upgrade.
 - **Operator-owned files migrate automatically.** `config.toml` and `~/.config/jackin/workspaces/<name>.toml` are rewritten in place on startup; the operator does nothing.
-- **Role-owned files migrate explicitly.** Role authors run `jackin-validate --migrate <role-repo-path>` to rewrite a `jackin.role.toml` against the latest schema, then commit and push the result. Jackin never writes back into a role repo on its own — that would silently mutate someone else's source tree.
-- **Migrations are a hard PR-review rule.** Every change to the serde representation of one of the three versioned files must bump the corresponding `CURRENT_*_VERSION`, add a migration step, and update this page. Because all structs use `#[serde(deny_unknown_fields)]`, previous jackin binaries cannot deserialize files that contain unknown fields. The version stamp is the gate that lets an old binary detect the mismatch and print "upgrade jackin" instead of crashing with a cryptic serde error. The full rule lives in <RepoFile path="AGENTS.md" /> and <RepoFile path="PULL_REQUESTS.md" />.
+- **Role-owned files migrate explicitly.** Role authors run `jackin role migrate <role-repo-path>` on their desktop to rewrite a `jackin.role.toml` against the latest schema, then commit and push the result. Jackin never writes back into a role repo on its own — that would silently mutate someone else's source tree. CI, validation workflows, and Renovate-style migration automation use the standalone `jackin-validate --migrate <role-repo-path>` binary so role repos do not need the full Jackin operator CLI.
+- **Migrations are a hard PR-review rule.** Every change to one of the three versioned files must bump the corresponding `CURRENT_*_VERSION`, add a migration step, and update this page. Adding a new enum variant counts as a schema-breaking change: old binaries cannot parse manifests that use the new variant. The full rule lives in <RepoFile path="AGENTS.md" /> and <RepoFile path="PULL_REQUESTS.md" />.
+- **Version mismatches produce actionable errors.** The version check runs before full TOML deserialization, so old binaries always surface a clear message rather than a cryptic parse error. When a manifest's `version` is newer than what the binary knows about, jackin rejects it with: `role manifest is at {version}, this binary only understands up to {CURRENT_MANIFEST_VERSION}; upgrade jackin`. Current binaries accept older role manifests when the file only uses fields and enum values that existed at that older version. If an older-stamped manifest uses a newer feature, jackin rejects it with a feature-specific `jackin role migrate <role-repo-path>` hint.
 
 The split-workspace layout described in [Configuration File](/reference/configuration/#one-file-per-workspace-by-design) makes per-file migration tractable: legacy global files and per-workspace files migrate independently, so a dotfile repo that is partially old still upgrades cleanly.
 
@@ -24,42 +25,48 @@ The split-workspace layout described in [Configuration File](/reference/configur
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha3` | jackin | Automatic on startup |
-| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha3` | jackin | Automatic on startup |
-| `jackin.role.toml` | `v1alpha3` | Role repository | Explicit `jackin-validate --migrate <role-repo-path>` |
+| `~/.config/jackin/config.toml` | `v1alpha2` | jackin | Automatic on startup |
+| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha2` | jackin | Automatic on startup |
+| `jackin.role.toml` | `v1alpha3` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-validate --migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="tests/migration_fixtures.rs" /> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
 
-### `v1alpha3` — 2026-05-13
+### `v1alpha3` — 2026-05-14
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
-| Config (`config.toml`) | `v1alpha2` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/config/from-v1alpha2/meta.toml" /> |
-| Workspace (`workspaces/<name>.toml`) | `v1alpha2` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/workspace/from-v1alpha2/meta.toml" /> |
-| Manifest (`jackin.role.toml`) | `v1alpha2` | Explicit `jackin-validate --migrate <role-repo-path>` | <RepoFile path="tests/fixtures/migrations/manifest/from-v1alpha2/meta.toml" /> |
+| Manifest (`jackin.role.toml`) | `v1alpha2` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-validate --migrate <role-repo-path>` | <RepoFile path="tests/fixtures/migrations/manifest/from-v1alpha2/meta.toml" /> |
 
-**Summary**: restamps existing `v1alpha2` files as `v1alpha3` and moves `version = "v1alpha3"` to the first line. This sequential migration also expands the agent surface to include the new `kimi` agent.
+**Summary**: formalizes OpenCode agent support. The `opencode` enum variant in `agents` and the `[opencode]` config table require `v1alpha3`; older-stamped manifests still load as long as they do not use OpenCode. The migration is a no-op restamp: no field renames, no data moved.
 
-**Before** (v1alpha2 config file — excerpt):
+**Before** (v1alpha2 manifest with OpenCode):
 
 ```toml
-data_dir = "/tmp/jackin"
 version = "v1alpha2"
+dockerfile = "Dockerfile"
+agents = ["claude", "opencode"]
 
-[roles.agent-smith]
-git = "https://github.com/jackin-project/jackin-agent-smith.git"
+[claude]
+plugins = []
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
 ```
 
 **After** (v1alpha3):
 
 ```toml
 version = "v1alpha3"
-data_dir = "/tmp/jackin"
+dockerfile = "Dockerfile"
+agents = ["claude", "opencode"]
 
-[roles.agent-smith]
-git = "https://github.com/jackin-project/jackin-agent-smith.git"
+[claude]
+plugins = []
+
+[opencode]
+model = "zai-coding-plan/glm-5.1"
 ```
 
 ### `v1alpha2` — 2026-05-11
@@ -68,7 +75,7 @@ git = "https://github.com/jackin-project/jackin-agent-smith.git"
 |---|---|---|---|
 | Config (`config.toml`) | `v1alpha1` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/config/from-v1alpha1/meta.toml" /> |
 | Workspace (`workspaces/<name>.toml`) | `v1alpha1` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/workspace/from-v1alpha1/meta.toml" /> |
-| Manifest (`jackin.role.toml`) | `v1alpha1` | Explicit `jackin-validate --migrate <role-repo-path>` | <RepoFile path="tests/fixtures/migrations/manifest/from-v1alpha1/meta.toml" /> |
+| Manifest (`jackin.role.toml`) | `v1alpha1` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-validate --migrate <role-repo-path>` | <RepoFile path="tests/fixtures/migrations/manifest/from-v1alpha1/meta.toml" /> |
 
 **Summary**: restamps existing `v1alpha1` files as `v1alpha2` and moves `version = "v1alpha2"` to the first line. This is intentionally a sequential migration rather than a silent rewrite of `v1alpha1`: operators already have `v1alpha1` files where the version key may sit below other top-level keys.
 
@@ -96,7 +103,7 @@ last_role = "the-architect"
 |---|---|---|---|
 | Config (`config.toml`) | `legacy` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/config/from-legacy/meta.toml" /> |
 | Workspace (`workspaces/<name>.toml`) | `legacy` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/workspace/from-legacy/meta.toml" /> |
-| Manifest (`jackin.role.toml`) | `legacy` | Explicit `jackin-validate --migrate <role-repo-path>` | <RepoFile path="tests/fixtures/migrations/manifest/from-legacy/meta.toml" /> |
+| Manifest (`jackin.role.toml`) | `legacy` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-validate --migrate <role-repo-path>` | <RepoFile path="tests/fixtures/migrations/manifest/from-legacy/meta.toml" /> |
 
 **Summary**: introduces the top-level `version` field. The migration adds `version = "v1alpha1"` to every file kind and leaves all existing keys, comments, and section ordering untouched. Splitting legacy `[workspaces.<name>]` tables out of `config.toml` runs as a separate startup step (see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design)); the version migration above is independent of that split.
 
@@ -147,15 +154,15 @@ config, jackin migrates this automatically before parsing.
 
 The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs as a separate startup migration alongside the version stamp; see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha3`
+### `v1alpha2`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha3` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha2` |
 | `[claude].auth_forward` | string | No | `legacy` | `sync`, `api_key`, `oauth_token`, or `ignore` |
 | `[codex].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
 | `[amp].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
-| `[kimi].auth_forward` | string | No | `v1alpha3` | `sync`, `api_key`, or `ignore` |
+| `[opencode].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
 | `[github].auth_forward` | string | No | `legacy` | `sync`, `token`, or `ignore` |
 | `[github.env]` | table | No | `legacy` | Operator env values for GitHub token auth |
 | `[env]` | table | No | `legacy` | Global operator env layer |
@@ -187,15 +194,15 @@ a `[workspaces.<name>]` table embedded in legacy `config.toml`.
 
 Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per-workspace files by a separate startup migration; see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha3`
+### `v1alpha2`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha3` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha2` |
 | `workdir` | string | Yes | `legacy` | Container working directory |
 | `allowed_roles` | string array | No | `legacy` | Roles allowed in this workspace |
 | `default_role` | string | No | `legacy` | Preferred role for new sessions |
-| `default_agent` | string | No | `legacy` | `claude`, `codex`, `amp`, or `kimi`; omitted defaults to Claude |
+| `default_agent` | string | No | `legacy` | `claude`, `codex`, `amp`, or `opencode`; omitted defaults to Claude |
 | `last_role` | string | No | `legacy` | Last role selected by the operator |
 | `op_account` | string | No | `legacy` | 1Password account selector |
 | `git_pull_on_entry` | bool | No | `legacy` | Pull mounted repositories on entry |
@@ -209,14 +216,14 @@ Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per
 | `[claude].auth_forward` | string | No | `legacy` | Workspace Claude auth override |
 | `[codex].auth_forward` | string | No | `legacy` | Workspace Codex auth override |
 | `[amp].auth_forward` | string | No | `legacy` | Workspace Amp auth override |
-| `[kimi].auth_forward` | string | No | `v1alpha3` | Workspace Kimi auth override |
+| `[opencode].auth_forward` | string | No | `legacy` | Workspace OpenCode auth override |
 | `[github].auth_forward` | string | No | `legacy` | Workspace GitHub auth override |
 | `[github.env]` | table | No | `legacy` | Workspace GitHub token env values |
 | `[roles.<role>.env]` | table | No | `legacy` | Per-workspace, per-role env override |
 | `[roles.<role>.claude].auth_forward` | string | No | `legacy` | Per-workspace, per-role Claude auth override |
 | `[roles.<role>.codex].auth_forward` | string | No | `legacy` | Per-workspace, per-role Codex auth override |
 | `[roles.<role>.amp].auth_forward` | string | No | `legacy` | Per-workspace, per-role Amp auth override |
-| `[roles.<role>.kimi].auth_forward` | string | No | `v1alpha3` | Per-workspace, per-role Kimi auth override |
+| `[roles.<role>.opencode].auth_forward` | string | No | `legacy` | Per-workspace, per-role OpenCode auth override |
 | `[roles.<role>.github].auth_forward` | string | No | `legacy` | Per-workspace, per-role GitHub auth override |
 | `[roles.<role>.github.env]` | table | No | `legacy` | Per-workspace, per-role GitHub token env values |
 
@@ -226,7 +233,9 @@ Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per
 
 `legacy` means the manifest has no top-level `version` field. Jackin
 does not auto-write role repositories during normal role loading. Run
-`jackin-validate --migrate <role-repo-path>` to rewrite a local copy.
+`jackin role migrate <role-repo-path>` to rewrite a local copy on a
+desktop, or `jackin-validate --migrate <role-repo-path>` in CI and
+automated migration jobs.
 
 | Change to `v1alpha1` | Detail |
 |---|---|
@@ -243,7 +252,7 @@ does not auto-write role repositories during normal role loading. Run
 | `version` | string | Yes | `v1alpha1` | Current value: `v1alpha3` |
 | `dockerfile` | string | Yes | `legacy` | Relative path to role Dockerfile |
 | `published_image` | string | No | `legacy` | Pre-built role image override |
-| `agents` | string array | No | `legacy` | `claude`, `codex`, `amp`, and/or `kimi`; omitted means Claude-only |
+| `agents` | string array | No | `legacy` | `claude`, `codex`, or `amp`; `opencode` added in `v1alpha3`; omitted means Claude-only |
 | `[identity].name` | string | No | `legacy` | Display name |
 | `[claude].model` | string | No | `legacy` | Claude model override |
 | `[claude].plugins` | string array | No | `legacy` | Claude plugin identifiers |
@@ -252,7 +261,7 @@ does not auto-write role repositories during normal role loading. Run
 | `[[claude.marketplaces]].sparse` | string array | No | `legacy` | Sparse checkout paths |
 | `[codex].model` | string | No | `legacy` | Codex model override |
 | `[amp]` | table | No | `legacy` | Empty marker table for Amp support |
-| `[kimi].model` | string | No | `v1alpha3` | Kimi model override |
+| `[opencode].model` | string | No | `v1alpha3` | `OpenCode` model override in `provider/model` format (e.g. `zai-coding-plan/glm-5.1`) |
 | `[hooks].setup_once` | string | No | `legacy` | Relative path to a one-time install script that runs on first launch only |
 | `[hooks].source` | string | No | `legacy` | Relative path to a script dot-sourced into the entrypoint shell so `export` and `PATH` mutations reach the launched agent |
 | `[hooks].preflight` | string | No | `legacy` | Relative path to a per-start preflight script |

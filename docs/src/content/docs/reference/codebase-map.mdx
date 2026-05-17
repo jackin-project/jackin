@@ -43,7 +43,9 @@ Start at <RepoFile path="src/cli/mod.rs" /> — the top-level `Cli` and
 | Subcommand | Module |
 |---|---|
 | `load` / `hardline` / `console` | <RepoFile path="src/cli/role.rs" /> |
+| `role` | <RepoFile path="src/cli/role.rs" /> and <RepoFile path="src/role_authoring.rs" /> |
 | `eject` / `purge` | <RepoFile path="src/cli/cleanup.rs" /> |
+| `prune` | <RepoFile path="src/cli/prune.rs" /> |
 | `workspace` | <RepoFile path="src/cli/workspace.rs" /> |
 | `config` | <RepoFile path="src/cli/config.rs" /> |
 | `exile` (unit variant) | <RepoFile path="src/cli/mod.rs" /> |
@@ -66,7 +68,7 @@ The container lifecycle lives in `src/runtime/`:
 - <RepoFile path="src/runtime/attach.rs" /> — the attach + reconnect path
   (`hardline`).
 - <RepoFile path="src/runtime/cleanup.rs" /> — `eject`, `exile`, `purge`,
-  and orphan GC.
+  `prune` (roles/cache/images/instances), and orphan GC.
 - <RepoFile path="src/runtime/image.rs" /> — `docker build` invocation.
 - <RepoFile path="src/runtime/repo_cache.rs" /> — the role-repo cache lock
   + fetch logic.
@@ -76,12 +78,12 @@ The container lifecycle lives in `src/runtime/`:
 Instance-local state helpers live in `src/instance/`:
 
 - <RepoFile path="src/instance/mod.rs" /> — role state preparation and auth materialization re-exports.
-- <RepoFile path="src/instance/auth.rs" /> — Claude, Codex, Amp, and GitHub auth file provisioning.
-- <RepoFile path="src/instance/naming.rs" /> — role image names, legacy name matching, and DNS-safe unique container names.
+- <RepoFile path="src/instance/auth.rs" /> — Claude, Codex, Amp, OpenCode, and GitHub auth file provisioning.
+- <RepoFile path="src/instance/naming.rs" /> — DNS-safe container name generation (`jk-{id}-{workspace?}-{role}`), instance-ID extraction, and role-family matching. Image tag derivation (`jk_…`) lives in <RepoFile path="src/runtime/naming.rs" />.
 - <RepoFile path="src/instance/manifest.rs" /> — per-instance `instance.json` identity records, lifecycle status, and the rebuildable `instances.json` lookup index.
 
 The end-to-end shape of "what happens when you run `jackin load`" is
-described in [Architecture → Container lifecycle](/reference/architecture/#container-lifecycle).
+described in [Architecture → Container lifecycle](/reference/architecture/#container-lifecycle). The detailed contract for instance names, manifests, lookup indexes, restore decisions, cleanup guards, and parallel sessions lives in [Runtime Instance Model](/reference/runtime-instance-model/).
 
 ### "I want to change workspace or mount behaviour"
 
@@ -127,12 +129,16 @@ stays accurate.
 
 ### "I want to change role-manifest behaviour"
 
-The `jackin.role.toml` schema and validator live in `src/manifest/`:
+The `jackin.role.toml` schema, validator, migration chain, and role-authoring entrypoints live across a small set of files:
 
 - <RepoFile path="src/manifest/mod.rs" /> — schema structs, `load`,
   `display_name`.
 - <RepoFile path="src/manifest/validate.rs" /> — `RoleManifest::validate`
   and `validate_agent_consistency`.
+- <RepoFile path="src/manifest/migrations.rs" /> — manifest version registry and file migration.
+- <RepoFile path="src/repo.rs" /> — role-repo contract validation shared by local commands and runtime repo resolution.
+- <RepoFile path="src/role_authoring.rs" /> — desktop role-authoring commands for creating, validating, and migrating local role repositories.
+- <RepoFile path="src/bin/validate.rs" /> — standalone role-focused validation and migration binary used by GitHub Actions and future Renovate-style automation.
 
 Whenever the manifest schema changes, also update
 [Role Manifest](/developing/role-manifest/).
@@ -181,7 +187,8 @@ page must change in the same PR. The full table lives at the bottom of
 | `src/cli/**` | [Commands](/commands/load/) |
 | `src/workspace/**` (mount logic) | [Workspaces](/guides/workspaces/), [Mounts](/guides/mounts/) |
 | `src/config/**` | [Configuration File](/reference/configuration/) |
-| `src/runtime/**` | [Architecture](/reference/architecture/) |
+| `src/runtime/**` | [Architecture](/reference/architecture/), [Runtime Instance Model](/reference/runtime-instance-model/) |
+| `src/instance/**` | [Runtime Instance Model](/reference/runtime-instance-model/) |
 | `src/isolation/**` | Workspaces (per-mount isolation), Architecture (materialization + finalizer), [Configuration File](/reference/configuration/) |
 | `src/manifest/**` | [Role Manifest](/developing/role-manifest/) |
 | <RepoFile path="src/instance/auth.rs" /> | [Authentication](/guides/authentication/), [Security Model](/guides/security-model/) |

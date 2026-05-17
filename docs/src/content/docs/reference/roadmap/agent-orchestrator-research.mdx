@@ -202,7 +202,7 @@ present in jackin' today; **planned** means a roadmap item already exists;
 | Concern | multicode | jackin' status |
 |---|---|---|
 | Agent isolation | `bwrap` + `systemd-run`; Apple `container` | Have — Docker + DinD; planned — [selectable backends](/reference/roadmap/selectable-sandbox-backends/) |
-| Per-agent working tree | Workspace dir; one repo per workspace | Have — V1 [worktree isolation](/reference/roadmap/per-mount-isolation/); clone planned |
+| Per-agent working tree | Workspace dir; one repo per workspace | Have — [worktree and clone isolation](/guides/workspaces/#per-mount-isolation) |
 | Mount kinds beyond `shared`/`readonly` | `writable`, `readable`, `isolated`, `tmpfs` | Partial — `shared` + `readonly`; *gap on `tmpfs` and ephemeral, see [Ephemeral mount modes](/reference/roadmap/ephemeral-mount-modes/)* |
 | Multi-provider agent runtime | OpenCode + Codex (one per session) | Partial — basic built-in runtime launch shipped; parity work remains in [multi-runtime](/reference/roadmap/multi-runtime-support/) |
 | Resource limits per agent | `memory-high`, `memory-max`, `cpu` (cgroups) | *Gap — see [Declarative resource limits](/reference/roadmap/declarative-resource-limits/)* |
@@ -271,7 +271,7 @@ jackin pretend to be either one.
 | Credential delivery | Host-owned secret store, materialized/brokered per harness | Host proxy injects credentials; values stay outside VM | [Container credential exposure](/reference/roadmap/container-credential-exposure/) and [host bridge](/reference/roadmap/host-bridge/) |
 | Stack ergonomics | Integration manifests with strict "cannot widen trust" rules | Templates/kits and agent-specific setup | [Stack integration contracts](/reference/roadmap/stack-integration-contracts/) plus role repos |
 | Recovery | Pre-session snapshots, restore, formal backup invariants | Persistent VM state; `sbx rm` cleanup | [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/) plus disk/state budgets |
-| Parallel Git work | Not the main product focus | Direct mode plus `.sbx/` branch worktrees | [Per-mount isolation](/reference/roadmap/per-mount-isolation/) with jackin-owned worktree/clone modes |
+| Parallel Git work | Not the main product focus | Direct mode plus `.sbx/` branch worktrees | [Per-mount isolation](/guides/workspaces/#per-mount-isolation) with jackin-owned worktree/clone modes |
 | Proof / governance | TLA+ for setup, policy, backup, launch invariants | Product security docs | ADRs and behavioral specs for host-side effects |
 
 ## Track A phases — Fleet operations
@@ -459,7 +459,7 @@ This is a guide, not a constraint. The tracks are intentionally separable.
   structural reference for phased roadmap programs
 - [Multi-runtime support](/reference/roadmap/multi-runtime-support/) — primary
   upstream dependency for runtime-neutral observability
-- [Per-mount isolation](/reference/roadmap/per-mount-isolation/) — parallel
+- [Per-mount isolation](/guides/workspaces/#per-mount-isolation) — parallel
   agent prerequisite and Docker Sandboxes branch-mode comparison
 - [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) —
   deep Docker Sandboxes and microVM comparison
@@ -510,7 +510,7 @@ Research snapshot: May 9, 2026.
 - [Selectable sandbox backends](/reference/roadmap/selectable-sandbox-backends/) —
   deep Docker Sandboxes, OrbStack, and libkrun/smolvm comparison already
   captured in the jackin roadmap.
-- [Per-mount isolation](/reference/roadmap/per-mount-isolation/) —
+- [Per-mount isolation](/guides/workspaces/#per-mount-isolation) —
   worktree/clone design and Docker Sandboxes branch-mode comparison.
 - [Container credential exposure](/reference/roadmap/container-credential-exposure/) —
   current credential exposure model and proxy/bridge trajectory.

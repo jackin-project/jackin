@@ -2,7 +2,7 @@ use clap::Args;
 
 use super::{BANNER, HELP_STYLES};
 
-/// Stop an role and clean up its container
+/// Stop a role and clean up its container
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
     before_help = BANNER,
@@ -13,12 +13,12 @@ Examples:
   jackin eject agent-smith --all
   jackin eject agent-smith --purge
   jackin eject k7p9m2xq
-  jackin eject jackin-agent-smith-clone-1"
+  jackin eject jk-k7p9m2xq-agentsmith"
 )]
 pub struct EjectArgs {
     /// Role class selector, instance ID, or container name to stop
     pub selector: String,
-    /// Stop every running instance of this role class
+    /// Stop every matching instance (otherwise errors if multiple exist)
     #[arg(long)]
     pub all: bool,
     /// Also delete persisted state after stopping
@@ -26,7 +26,7 @@ pub struct EjectArgs {
     pub purge: bool,
 }
 
-/// Delete persisted state for an role class
+/// Delete persisted state for a role class
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(
     before_help = BANNER,
@@ -41,7 +41,7 @@ Examples:
 pub struct PurgeArgs {
     /// Role class selector, instance ID, or container name
     pub selector: String,
-    /// Delete state for every instance, not just the default
+    /// Delete state for every matching instance (otherwise errors if multiple exist)
     #[arg(long)]
     pub all: bool,
 }
@@ -80,7 +80,7 @@ mod tests {
     #[test]
     fn eject_help_shows_examples() {
         let help = help_text(&["jackin", "eject", "--help"]);
-        assert!(help.contains("Stop an role and clean up its container"));
+        assert!(help.contains("Stop a role and clean up its container"));
         assert!(help.contains("jackin eject agent-smith --all"));
         assert!(help.contains("jackin eject agent-smith --purge"));
     }

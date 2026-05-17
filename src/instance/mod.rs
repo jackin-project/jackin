@@ -10,10 +10,7 @@ pub use manifest::{
     DockerResources, InstanceIndex, InstanceIndexEntry, InstanceManifest, InstanceQuery,
     InstanceStatus, NewInstanceManifest,
 };
-pub use naming::{
-    class_family_matches, container_name_with_id, new_container_name, primary_container_name,
-    runtime_slug,
-};
+pub use naming::{class_family_matches, container_name_with_id, new_container_name, runtime_slug};
 
 /// Outcome of the `.claude.json` provisioning step, so callers can surface
 /// a one-time notice when host credentials are forwarded.
@@ -165,23 +162,11 @@ pub enum GithubProvisionKind {
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum AgentRuntimeState {
-    Claude {
-        /// `[claude].model`; passed to the CLI as `--model` at launch.
-        model: Option<String>,
-    },
-    Codex {
-        /// `[codex].model`; passed to the CLI as `-m` at launch.
-        model: Option<String>,
-    },
+    Claude { model: Option<String> },
+    Codex { model: Option<String> },
     Amp,
-    Kimi {
-        /// `[kimi].model`; passed to the CLI as `--model` at launch.
-        model: Option<String>,
-    },
-    Opencode {
-        /// `[opencode].model`; passed to the CLI as `-m` at launch.
-        model: Option<String>,
-    },
+    Kimi { model: Option<String> },
+    Opencode { model: Option<String> },
 }
 
 /// Claude's provisioned auth slot.
@@ -306,26 +291,6 @@ impl RoleState {
         }
     }
 
-    /// Host path to Codex's `auth.json`. `None` when Codex is not in
-    /// `supported_agents()` or no auth file is available.
-    #[must_use]
-    pub fn codex_auth_json(&self) -> Option<&Path> {
-        self.auth
-            .codex
-            .as_ref()
-            .and_then(|c| c.auth_json.as_deref())
-    }
-
-    /// Host path to Amp's `secrets.json`. `None` when Amp is not in
-    /// `supported_agents()` or no file is available.
-    #[must_use]
-    pub fn amp_secrets_json(&self) -> Option<&Path> {
-        self.auth
-            .amp
-            .as_ref()
-            .and_then(|c| c.secrets_json.as_deref())
-    }
-
     /// `Some` only when the selected runtime is Kimi.
     #[must_use]
     pub fn kimi_model(&self) -> Option<&str> {
@@ -351,9 +316,29 @@ impl RoleState {
             AgentRuntimeState::Opencode { model } => model.as_deref(),
             AgentRuntimeState::Claude { .. }
             | AgentRuntimeState::Codex { .. }
-            | AgentRuntimeState::Amp
-            | AgentRuntimeState::Kimi { .. } => None,
+            | AgentRuntimeState::Kimi { .. }
+            | AgentRuntimeState::Amp => None,
         }
+    }
+
+    /// Host path to Codex's `auth.json`. `None` when Codex is not in
+    /// `supported_agents()` or no auth file is available.
+    #[must_use]
+    pub fn codex_auth_json(&self) -> Option<&Path> {
+        self.auth
+            .codex
+            .as_ref()
+            .and_then(|c| c.auth_json.as_deref())
+    }
+
+    /// Host path to Amp's `secrets.json`. `None` when Amp is not in
+    /// `supported_agents()` or no file is available.
+    #[must_use]
+    pub fn amp_secrets_json(&self) -> Option<&Path> {
+        self.auth
+            .amp
+            .as_ref()
+            .and_then(|c| c.secrets_json.as_deref())
     }
 
     /// Host path to `OpenCode`'s `auth.json`. `None` when `OpenCode` is not
@@ -573,7 +558,7 @@ impl RoleState {
         host_home: &Path,
     ) -> anyhow::Result<(OpencodeAuth, AuthProvisionOutcome)> {
         let opencode_dir = root.join("opencode");
-        let opencode_home_dir = home_dir.join(".opencode");
+        let opencode_home_dir = home_dir.join(".local/share/opencode");
         std::fs::create_dir_all(&opencode_dir)?;
         std::fs::create_dir_all(&opencode_home_dir)?;
         let auth_json_path = opencode_dir.join("auth.json");
@@ -615,7 +600,7 @@ plugins = []
 
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-k7p9m2xq-agentsmith",
             &manifest,
             &|_| AuthForwardMode::Ignore,
             &GithubAuthContext::default(),
@@ -643,7 +628,7 @@ plugins = []
         // above, since they only look up paths through the enum. These
         // assertions verify the actual host paths under
         // `<container>/claude/`.
-        let container_root = paths.data_dir.join("jackin-agent-smith");
+        let container_root = paths.data_dir.join("jk-k7p9m2xq-agentsmith");
         assert_eq!(
             state.claude_account_json().unwrap(),
             container_root.join("claude").join("account.json"),
@@ -686,7 +671,7 @@ model = "gpt-5"
 
         let (state, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-k7p9m2xq-agentsmith",
             &manifest,
             &|_| AuthForwardMode::Ignore,
             &GithubAuthContext::default(),
@@ -700,7 +685,7 @@ model = "gpt-5"
         assert!(
             !paths
                 .data_dir
-                .join("jackin-agent-smith")
+                .join("jk-k7p9m2xq-agentsmith")
                 .join("codex")
                 .join("config.toml")
                 .exists()
@@ -708,7 +693,7 @@ model = "gpt-5"
         assert!(
             paths
                 .data_dir
-                .join("jackin-agent-smith")
+                .join("jk-k7p9m2xq-agentsmith")
                 .join("home/.codex")
                 .is_dir()
         );
@@ -764,7 +749,7 @@ plugins = []
 
         let (state, selected_outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-k7p9m2xq-agentsmith",
             &manifest,
             &auth_modes,
             &GithubAuthContext::default(),

@@ -293,8 +293,8 @@ pub fn agent_outcome_notice(
                     A::Claude => "credentials",
                     A::Codex => "auth.json",
                     A::Amp => "secrets.json",
-                    A::Kimi => "~/.kimi directory",
-                    A::Opencode => "~/.opencode directory",
+                    A::Kimi => "credentials",
+                    A::Opencode => "config.json",
                 };
                 eprintln!(
                     "[jackin] auth_forward=sync but no host {display} {host_file} found; \
@@ -307,7 +307,7 @@ pub fn agent_outcome_notice(
             // are silent. The asymmetry is intentional — Amp's wipe
             // path is the only one where the operator's next launch
             // surfaces interactive-login prompts.
-            if matches!(agent, A::Amp | A::Kimi | A::Opencode) {
+            if matches!(agent, A::Amp) {
                 eprintln!(
                     "[jackin] auth_forward=ignore — wiped any prior synced \
                      secrets.json; agent will require interactive login."

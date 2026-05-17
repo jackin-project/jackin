@@ -686,7 +686,7 @@ fn render_roles_tab(
         let check = if effectively_allowed { "[x]" } else { "[ ]" };
         let star = if is_default { "★" } else { " " };
         let prefix = if selected { "▸ " } else { "  " };
-        let text = format!("{prefix}{check}  {star} {role_name}");
+        let text = format!("{prefix}{check} {star} {role_name}");
         let style = if selected {
             Style::default()
                 .fg(PHOSPHOR_GREEN)
@@ -839,6 +839,9 @@ pub fn auth_flat_rows(editor: &EditorState<'_>, config: &AppConfig) -> Vec<AuthR
                 kind: AuthKind::Amp,
             },
             AuthRow::AuthKindRow {
+                kind: AuthKind::Opencode,
+            },
+            AuthRow::AuthKindRow {
                 kind: AuthKind::Github,
             },
         ];
@@ -922,11 +925,9 @@ fn resolve_panel_mode(
         | AuthKind::Amp
         | AuthKind::Kimi
         | AuthKind::Opencode => {
-            // `kind.agent()` returns `Some` for Claude/Codex/Amp/Kimi/Opencode; the
+            // `kind.agent()` returns `Some` for runtime agent kinds; the
             // GitHub arm below means the unwrap is unreachable here.
-            let agent = kind
-                .agent()
-                .expect("Claude/Codex/Amp/Kimi/Opencode kinds map to an Agent");
+            let agent = kind.agent().expect("runtime auth kinds map to an Agent");
             let mode = crate::config::resolve_mode(cfg, agent, workspace, role);
             AuthMode::from_auth_forward(mode)
         }
@@ -1423,19 +1424,19 @@ fn explicit_workspace_mode(
         AuthKind::Codex => ws
             .codex
             .as_ref()
-            .map(|c| AuthMode::from_auth_forward(c.auth_forward)),
+            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
         AuthKind::Amp => ws
             .amp
             .as_ref()
-            .map(|c| AuthMode::from_auth_forward(c.auth_forward)),
+            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
         AuthKind::Kimi => ws
             .kimi
             .as_ref()
-            .map(|c| AuthMode::from_auth_forward(c.auth_forward)),
+            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
         AuthKind::Opencode => ws
             .opencode
             .as_ref()
-            .map(|c| AuthMode::from_auth_forward(c.auth_forward)),
+            .map(|c| AuthMode::from_auth_forward(c.0.auth_forward)),
         AuthKind::Github => ws
             .github
             .as_ref()
@@ -1460,9 +1461,7 @@ fn auth_source_value<'a>(
         | AuthKind::Codex
         | AuthKind::Amp
         | AuthKind::Kimi
-        | AuthKind::Opencode => {
-            agent_env_source_value(synthesized, workspace_name, role, env_name)
-        }
+        | AuthKind::Opencode => agent_env_source_value(synthesized, workspace_name, role, env_name),
     }
 }
 
@@ -1575,6 +1574,7 @@ pub(in crate::console::manager) fn synthesize_appconfig_for_auth(
         claude: config.claude.clone(),
         codex: config.codex.clone(),
         amp: config.amp.clone(),
+        opencode: config.opencode.clone(),
         github: config.github.clone(),
         env: config.env.clone(),
         roles: config.roles.clone(),
@@ -2000,9 +2000,9 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
                 kimi: None,
                 opencode: None,
+                github: None,
             },
         );
         let ws = WorkspaceConfig {
@@ -2148,9 +2148,9 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
                 kimi: None,
                 opencode: None,
+                github: None,
             },
         );
         roles.insert(
@@ -2160,9 +2160,9 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
                 kimi: None,
                 opencode: None,
+                github: None,
             },
         );
 
@@ -2477,9 +2477,9 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
                 kimi: None,
                 opencode: None,
+                github: None,
             },
         );
         let ws = WorkspaceConfig {
@@ -2517,9 +2517,9 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
                 kimi: None,
                 opencode: None,
+                github: None,
             },
         );
         roles.insert(
@@ -2529,9 +2529,9 @@ mod secrets_tab_render_tests {
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
                 kimi: None,
                 opencode: None,
+                github: None,
             },
         );
         let ws = WorkspaceConfig {
@@ -2841,9 +2841,9 @@ mod eligible_agents_for_override_tests {
                     claude: None,
                     codex: None,
                     amp: None,
-                    github: None,
                     kimi: None,
                     opencode: None,
+                    github: None,
                 },
             );
         }
@@ -3005,6 +3005,9 @@ mod auth_flat_rows_tests {
                 },
                 AuthRow::AuthKindRow {
                     kind: AuthKind::Amp,
+                },
+                AuthRow::AuthKindRow {
+                    kind: AuthKind::Opencode,
                 },
                 AuthRow::AuthKindRow {
                     kind: AuthKind::Github,

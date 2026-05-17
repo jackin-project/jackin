@@ -1,5 +1,5 @@
 use crate::docker::{CommandRunner, RunOptions};
-use crate::instance::primary_container_name;
+use crate::instance::runtime_slug;
 use crate::paths::JackinPaths;
 use crate::repo::{CachedRepo, validate_role_repo};
 use crate::selector::RoleSelector;
@@ -265,7 +265,7 @@ pub(super) fn register_agent_repo(
 
     let lock_path = paths
         .data_dir
-        .join(format!("{}.repo.lock", primary_container_name(selector)));
+        .join(format!("{}.repo.lock", runtime_slug(selector)));
     let lock_file = std::fs::File::create(&lock_path)?;
     lock_file
         .lock_exclusive()
@@ -392,7 +392,7 @@ pub(super) fn resolve_agent_repo_with(
         };
         paths
             .data_dir
-            .join(format!("{}.locks", primary_container_name(selector)))
+            .join(format!("{}.locks", runtime_slug(selector)))
             .join(file_name)
     };
     std::fs::create_dir_all(lock_path.parent().unwrap_or(&paths.data_dir))?;
@@ -482,12 +482,23 @@ pub(super) fn resolve_agent_repo_with(
             None,
             &git_run_opts,
         )?;
-        runner.run(
+        let ff_result = runner.run(
             "git",
             &["-C", &repo_path, "merge", "--ff-only", "FETCH_HEAD"],
             None,
             &git_run_opts,
-        )?;
+        );
+        if ff_result.is_err() {
+            eprintln!(
+                "        cached role branch diverged (remote may have been force-pushed) — resetting to origin/{branch}"
+            );
+            runner.run(
+                "git",
+                &["-C", &repo_path, "reset", "--hard", "FETCH_HEAD"],
+                None,
+                &git_run_opts,
+            )?;
+        }
     } else {
         let clone_args = clone_args(git_url, &repo_path, branch_override);
         runner

@@ -331,6 +331,7 @@ pub(super) fn handle_inline_role_picker(
             scroll_list_horizontal(state, 8);
             InputOutcome::Continue
         }
+        KeyCode::Char('q' | 'Q') => InputOutcome::ExitJackin,
         _ => match picker.handle_key(key) {
             ModalOutcome::Commit(role) => {
                 state.inline_role_picker = None;

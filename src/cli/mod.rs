@@ -2,7 +2,7 @@ use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Parser, Subcommand};
 
 use cleanup::{EjectArgs, PurgeArgs};
-use role::{ConsoleArgs, HardlineArgs, LoadArgs};
+use role::{ConsoleArgs, HardlineArgs, LoadArgs, RoleCommand};
 
 pub(super) const HELP_STYLES: Styles = Styles::styled()
     .header(AnsiColor::BrightGreen.on_default().effects(Effects::BOLD))
@@ -33,10 +33,12 @@ pub mod cleanup;
 pub mod config;
 pub mod dispatch;
 pub mod help;
+pub mod prune;
 pub mod role;
 pub mod workspace;
 
 pub use config::{AuthCommand, ConfigCommand, EnvCommand, MountCommand, TrustCommand};
+pub use prune::PruneCommand;
 pub use workspace::{WorkspaceClaudeTokenCommand, WorkspaceCommand, WorkspaceEnvCommand};
 
 /// Operator's CLI for orchestrating AI coding roles in isolated containers
@@ -98,7 +100,13 @@ pub enum Command {
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Exile,
     Purge(PurgeArgs),
+    /// Delete cached or stale jackin data
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    Prune(PruneCommand),
     Console(ConsoleArgs),
+    /// Validate, migrate, and scaffold role repositories
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    Role(RoleCommand),
     /// Manage saved workspaces
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Workspace(WorkspaceCommand),
@@ -180,7 +188,9 @@ mod tests {
             "eject",
             "exile",
             "purge",
+            "prune",
             "console",
+            "role",
             "workspace",
             "config",
         ] {
@@ -257,6 +267,11 @@ mod tests {
             vec!["jackin", "eject", "--help"],
             vec!["jackin", "exile", "--help"],
             vec!["jackin", "purge", "--help"],
+            vec!["jackin", "prune", "roles", "--help"],
+            vec!["jackin", "prune", "cache", "--help"],
+            vec!["jackin", "prune", "images", "--help"],
+            vec!["jackin", "prune", "instances", "--help"],
+            vec!["jackin", "prune", "all", "--help"],
             vec!["jackin", "console", "--help"],
             vec!["jackin", "workspace", "create", "--help"],
             vec!["jackin", "workspace", "list", "--help"],

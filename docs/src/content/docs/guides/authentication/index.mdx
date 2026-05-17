@@ -4,12 +4,12 @@ description: How jackin' forwards your host logins into agent containers
 ---
 
 
-jackin' starts every agent container with the credentials it needs already in place — your `Claude Code` login, your `Codex` login, your `Amp` login, and your `GitHub CLI` login all flow into the container automatically, so the agent runs from the moment it starts and you never see a `/login` prompt or a `gh auth login` device-flow on first launch.
+jackin' starts every agent container with the credentials it needs already in place — your `Claude Code` login, your `Codex` login, your `Amp` login, your `OpenCode` login, and your `GitHub CLI` login all flow into the container automatically, so the agent runs from the moment it starts and you never see a `/login` prompt or a `gh auth login` device-flow on first launch.
 
 Every authentication axis jackin' supports today follows the same pattern. The pages in this group cover the operator surface for each axis:
 
 **[Agent Authentication](/guides/authentication/agents/)**  
-`Claude Code`, `Codex`, and `Amp` credentials forwarded into the agent container, with optional API-key or OAuth-token alternatives.
+`Claude Code`, `Codex`, `Amp`, and `OpenCode` credentials forwarded into the agent container, with optional API-key or OAuth-token alternatives.
 
 **[GitHub CLI Authentication](/guides/authentication/github-cli/)**  
 The host's `gh` login forwarded so `git push`, `gh` commands, and the in-container GitHub MCP tools authenticate without prompts.
@@ -20,7 +20,7 @@ Each axis has the same three knobs:
 
 - **Three modes.** `sync` is the default — forward the host login as-is. `ignore` opts out entirely. The remaining mode supplies a scoped credential through your operator env-vars layer instead of the broad host login (`api_key` or `oauth_token` for agents; `token` for `gh`).
 - **Three configuration scopes.** Global default, per-workspace override, and per-(workspace × role × agent) override. The most-specific scope wins.
-- **Per-agent dimension where it makes sense.** Agent forwarding has an agent dimension (`Claude`, `Codex`, and `Amp` are configured separately because their credentials and runtime expectations differ). `GitHub CLI` forwarding doesn't — `gh` doesn't care which agent is invoking it, so the same `gh` login is shared by every agent in the container.
+- **Per-agent dimension where it makes sense.** Agent forwarding has an agent dimension (`Claude`, `Codex`, `Amp`, and `OpenCode` are configured separately because their credentials and runtime expectations differ). `GitHub CLI` forwarding doesn't — `gh` doesn't care which agent is invoking it, so the same `gh` login is shared by every agent in the container.
 
 The default everywhere is `sync` so a freshly installed jackin' Just Works on the first launch. You opt into a tighter mode only when you want to bind a specific workspace or role to a scoped, least-privilege credential. The page for each axis explains how to do that and surfaces the launch-summary line that confirms which mode is active on every container start.
 

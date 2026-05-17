@@ -196,7 +196,8 @@ fn finalize_clean_exit(
             eprintln!(
                 "[jackin] preserved isolated worktree for {container_name}:\n         {wt}\n         reason: {reason_str}\n         run `jackin hardline {short}` to return, inspect the path above directly, or `jackin purge {short}` to discard",
                 wt = rec.worktree_path,
-                short = container_name.trim_start_matches("jackin-"),
+                short = crate::instance::naming::instance_id_from_container_base(container_name)
+                    .unwrap_or(container_name),
             );
         }
         return Ok(FinalizeDecision::Preserved);
@@ -231,7 +232,10 @@ fn finalize_clean_exit(
                     eprintln!(
                         "[jackin] warning: force-delete of isolated worktree `{wt}` failed: {e}\n         record retained — re-run `jackin purge {short}` to retry after resolving the underlying issue",
                         wt = rec.worktree_path,
-                        short = container_name.trim_start_matches("jackin-"),
+                        short = crate::instance::naming::instance_id_from_container_base(
+                            container_name
+                        )
+                        .unwrap_or(container_name),
                     );
                     any_preserved_after_prompt = true;
                 }

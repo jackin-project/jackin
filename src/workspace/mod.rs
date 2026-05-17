@@ -55,7 +55,7 @@ pub struct WorkspaceConfig {
     pub allowed_roles: Vec<String>,
     #[serde(default)]
     pub default_role: Option<String>,
-    /// Workspace-level default agent (claude, codex, or amp). When unset,
+    /// Workspace-level default agent (claude, codex, amp, kimi, or opencode). When unset,
     /// `resolved_agent()` falls back to Claude. The field is omitted
     /// from serialized output when `None` so legacy config files stay
     /// byte-for-byte stable.
@@ -106,7 +106,7 @@ pub struct WorkspaceConfig {
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kimi: Option<crate::config::KimiAuthConfig>,
-    /// Workspace-level Opencode auth configuration. See `claude` above —
+    /// Workspace-level `OpenCode` auth configuration. See `claude` above —
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opencode: Option<crate::config::OpencodeAuthConfig>,
@@ -210,7 +210,7 @@ pub struct WorkspaceRoleOverride {
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kimi: Option<crate::config::KimiAuthConfig>,
-    /// Per-(workspace × role) Opencode auth override. See `claude` above —
+    /// Per-(workspace × role) `OpenCode` auth override. See `claude` above —
     /// same role in the resolver, parallel field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opencode: Option<crate::config::OpencodeAuthConfig>,
@@ -824,10 +824,10 @@ isolation = "clone"
             claude: None,
             codex: None,
             amp: None,
-            github: None,
-            git_pull_on_entry: false,
             kimi: None,
             opencode: None,
+            github: None,
+            git_pull_on_entry: false,
         };
         let err = validate_workspace_config("ws", &workspace).unwrap_err();
         let msg = err.to_string();

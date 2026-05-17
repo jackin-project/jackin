@@ -1,8 +1,9 @@
-use clap::Args;
+use clap::{Args, Subcommand};
+use std::path::PathBuf;
 
 use super::{BANNER, HELP_STYLES};
 
-/// Jack an role into an isolated container
+/// Jack a role into an isolated container
 ///
 /// TARGET can be a path (~/Projects/my-app), a path with container
 /// destination (~/Projects/my-app:/app), or a saved workspace name.
@@ -47,7 +48,7 @@ pub struct LoadArgs {
     /// Acknowledge a dirty host working tree for isolated mounts.
     #[arg(long)]
     pub force: bool,
-    /// Agent to launch under (claude, codex, amp, or kimi). Overrides the
+    /// Agent to launch under (claude, codex, amp, kimi, or opencode). Overrides the
     /// workspace's `default_agent` field for this launch only. When
     /// neither is set, defaults to claude.
     #[arg(long, value_parser = parse_agent)]
@@ -83,7 +84,7 @@ Examples:
   jackin hardline --inspect k7p9m2xq
   jackin hardline chainargos/the-architect
   jackin hardline k7p9m2xq
-  jackin hardline jackin-agent-smith-clone-1"
+  jackin hardline jk-k7p9m2xq-agentsmith"
 )]
 pub struct HardlineArgs {
     /// Role class selector, instance ID, or container name to reconnect to.
@@ -95,7 +96,7 @@ pub struct HardlineArgs {
     /// Start a new foreground agent process inside the selected running instance.
     #[arg(long, conflicts_with = "inspect")]
     pub new: bool,
-    /// Agent runtime for `--new` (claude, codex, amp, or kimi). Defaults to the instance manifest.
+    /// Agent runtime for `--new` (claude, codex, amp, kimi, or opencode). Defaults to the instance manifest.
     #[arg(long, value_parser = parse_agent, requires = "new")]
     pub agent: Option<crate::agent::Agent>,
 }
@@ -107,6 +108,38 @@ pub struct HardlineArgs {
 #[derive(Debug, Args, PartialEq, Eq, Default, Clone)]
 #[command(before_help = BANNER, styles = HELP_STYLES)]
 pub struct ConsoleArgs {}
+
+/// Validate, migrate, and scaffold role repositories
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum RoleCommand {
+    /// Validate a role repository's manifest, Dockerfile, hooks, and env declarations
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Validate(RoleRepoPathArgs),
+    /// Migrate a role manifest to the current schema version, then validate it
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Migrate(RoleRepoPathArgs),
+    /// Create a new role repository scaffold
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Create(RoleCreateArgs),
+}
+
+/// Role repository path argument shared by `validate` and `migrate`.
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct RoleRepoPathArgs {
+    /// Role repository path. Defaults to the current directory.
+    #[arg(value_name = "ROLE_REPO_PATH")]
+    pub path: Option<PathBuf>,
+}
+
+/// Arguments for `jackin role create`.
+#[derive(Debug, Args, PartialEq, Eq)]
+pub struct RoleCreateArgs {
+    /// Role name or namespace/name selector, e.g. `docs-writer` or `chainargos/backend-engineer`
+    pub role: String,
+    /// Projects directory where the role repo should be created. Defaults to `JACKIN_PROJECTS_DIR` or ~/Projects.
+    #[arg(value_name = "PROJECTS_DIR")]
+    pub projects_dir: Option<PathBuf>,
+}
 
 #[cfg(test)]
 mod tests {
@@ -349,7 +382,7 @@ mod tests {
     #[test]
     fn load_help_shows_description_and_examples() {
         let help = help_text(&["jackin", "load", "--help"]);
-        assert!(help.contains("Jack an role into an isolated container"));
+        assert!(help.contains("Jack a role into an isolated container"));
         assert!(help.contains("Examples:"));
         assert!(help.contains("jackin load agent-smith"));
         assert!(help.contains("jackin load agent-smith big-monorepo"));
@@ -445,5 +478,42 @@ mod tests {
         let res = Cli::try_parse_from(["jackin", "hardline", "--inspect", "--new"]);
 
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn parses_role_validate_with_default_path() {
+        let cli = Cli::try_parse_from(["jackin", "role", "validate"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Role(super::RoleCommand::Validate(
+                super::RoleRepoPathArgs { path: None }
+            )))
+        ));
+    }
+
+    #[test]
+    fn parses_role_migrate_with_path() {
+        let cli = Cli::try_parse_from(["jackin", "role", "migrate", "/tmp/my-role"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Role(super::RoleCommand::Migrate(
+                super::RoleRepoPathArgs { path: Some(ref path) }
+            ))) if path == std::path::Path::new("/tmp/my-role")
+        ));
+    }
+
+    #[test]
+    fn parses_role_create_with_projects_dir() {
+        let cli =
+            Cli::try_parse_from(["jackin", "role", "create", "ChainArgos/Backend", "."]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Role(super::RoleCommand::Create(
+                super::RoleCreateArgs {
+                    ref role,
+                    projects_dir: Some(ref path),
+                }
+            ))) if role == "ChainArgos/Backend" && path == std::path::Path::new(".")
+        ));
     }
 }

@@ -159,16 +159,20 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     LAUNCH=(kimi --yolo)
     ;;
   opencode)
-    seed_home_dir /jackin/default-home/.opencode /home/agent/.opencode
+    seed_home_dir /jackin/default-home/.local/share/opencode /home/agent/.local/share/opencode
     if [ -f /jackin/opencode/auth.json ]; then
-        echo "[entrypoint] opencode: forwarding host auth.json into ~/.opencode/" >&2
-        cp /jackin/opencode/auth.json /home/agent/.opencode/auth.json
-        chmod 600 /home/agent/.opencode/auth.json
+        echo "[entrypoint] opencode: forwarding host auth.json into ~/.local/share/opencode/" >&2
+        cp /jackin/opencode/auth.json /home/agent/.local/share/opencode/auth.json
+        chmod 600 /home/agent/.local/share/opencode/auth.json
     elif [ -n "${OPENCODE_API_KEY:-}" ]; then
         echo "[entrypoint] opencode: OPENCODE_API_KEY present in env; agent will use api-key auth" >&2
     else
-        rm -f /home/agent/.opencode/auth.json
+        rm -f /home/agent/.local/share/opencode/auth.json
         echo "[entrypoint] opencode: no auth.json mounted and OPENCODE_API_KEY unset — agent will require interactive login" >&2
+    fi
+    mkdir -p /home/agent/.config/opencode
+    if [ ! -f /home/agent/.config/opencode/opencode.json ]; then
+        printf '%s\n' '{"permission":"allow"}' > /home/agent/.config/opencode/opencode.json
     fi
     LAUNCH=(opencode)
     if [ $# -gt 0 ]; then

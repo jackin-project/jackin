@@ -585,24 +585,10 @@ impl RoleState {
     }
 }
 
-/// Remove role-state `secrets.json` so a prior Sync run cannot leak
-/// credentials under env-driven modes (`Ignore`, `ApiKey`).
-fn wipe_amp_state(secrets_json: &Path) -> anyhow::Result<()> {
-    use anyhow::Context;
-    wipe_file_if_present(secrets_json).with_context(|| {
-        format!(
-            "failed to wipe stale Amp secrets.json at {} \
-             (auth_forward switched to ignore/api_key); remove the file \
-             manually if it has unexpected ownership",
-            secrets_json.display()
-        )
-    })
-}
-
 impl RoleState {
     /// Provision Kimi's host-side `~/.kimi` directory per the chosen mode.
     ///
-    /// Sync copies the host directory recursively into the role-state
+    /// Sync copies only auth-essential host files into the role-state
     /// directory so it can be bind-mounted into the container.
     /// `ApiKey` / `Ignore` wipe any prior role-state directory.
     ///
@@ -613,9 +599,6 @@ impl RoleState {
         mode: AuthForwardMode,
         host_home: &Path,
     ) -> anyhow::Result<(AuthProvisionOutcome, bool)> {
-        // Guard against a compromised container replacing the role-state
-        // directory with a symlink between launches. Mirrors the check in
-        // provision_codex_auth and provision_amp_auth.
         reject_symlink(kimi_dir)?;
 
         let host_kimi = host_home.join(".kimi");
@@ -642,20 +625,12 @@ impl RoleState {
                 if host_kimi.exists() {
                     std::fs::create_dir_all(kimi_dir)?;
 
-                    // Selectively copy only auth-essential files.
-                    // Skip logs/, sessions/, telemetry/, user-history/,
-                    // plans/, kimi.json (host-specific paths), and
-                    // latest_version.txt to avoid bloating role state
-                    // and leaking session data between containers.
-
-                    // config.toml — OAuth references and model settings
                     let host_config = host_kimi.join("config.toml");
                     if host_config.exists() {
                         let content = std::fs::read_to_string(&host_config)?;
                         write_private_file(&kimi_dir.join("config.toml"), &content)?;
                     }
 
-                    // credentials/ — OAuth tokens (e.g. kimi-code.json)
                     let host_creds = host_kimi.join("credentials");
                     if host_creds.exists() {
                         let dest_creds = kimi_dir.join("credentials");
@@ -669,7 +644,6 @@ impl RoleState {
                         }
                     }
 
-                    // device_id — linked to OAuth tokens
                     let host_device_id = host_kimi.join("device_id");
                     if host_device_id.exists() {
                         let content = std::fs::read_to_string(&host_device_id)?;
@@ -694,30 +668,14 @@ impl RoleState {
     }
 }
 
-/// Remove the role-state Kimi directory so a prior Sync run cannot leak
-/// credentials under env-driven modes (`Ignore`, `ApiKey`).
-fn wipe_kimi_state(kimi_dir: &Path) -> anyhow::Result<()> {
-    use anyhow::Context;
-    if kimi_dir.exists() {
-        std::fs::remove_dir_all(kimi_dir).with_context(|| {
-            format!(
-                "failed to wipe stale Kimi state at {} \
-                 (auth_forward switched to ignore/api_key); remove the directory \
-                 manually if it has unexpected ownership",
-                kimi_dir.display()
-            )
-        })?;
-    }
-    Ok(())
-}
-
 impl RoleState {
     /// Provision `OpenCode`'s host-side `auth.json` per the chosen mode.
     ///
-    /// Source: `~/.opencode/auth.json`.
-    /// `OpenCode` stores provider credentials in this file.
+    /// Source: `~/.local/share/opencode/auth.json` (`XDG_DATA`).
+    /// `OpenCode` stores provider credentials (e.g. Z.AI Coding Plan API
+    /// keys) in this file.
     ///
-    /// Follows the same semantics as `provision_codex_auth`.
+    /// Follows the same semantics as `provision_amp_auth`.
     pub(super) fn provision_opencode_auth(
         auth_json: &std::path::Path,
         mode: AuthForwardMode,
@@ -727,7 +685,7 @@ impl RoleState {
 
         reject_symlink(auth_json)?;
 
-        let host_auth = host_home.join(".opencode/auth.json");
+        let host_auth = host_home.join(".local/share/opencode/auth.json");
         let outcome = match mode {
             AuthForwardMode::OAuthToken => {
                 eprintln!(
@@ -799,6 +757,20 @@ impl RoleState {
     }
 }
 
+/// Remove role-state `secrets.json` so a prior Sync run cannot leak
+/// credentials under env-driven modes (`Ignore`, `ApiKey`).
+fn wipe_amp_state(secrets_json: &Path) -> anyhow::Result<()> {
+    use anyhow::Context;
+    wipe_file_if_present(secrets_json).with_context(|| {
+        format!(
+            "failed to wipe stale Amp secrets.json at {} \
+             (auth_forward switched to ignore/api_key); remove the file \
+             manually if it has unexpected ownership",
+            secrets_json.display()
+        )
+    })
+}
+
 /// Remove role-state `auth.json` for `OpenCode` so a prior Sync run cannot
 /// leak credentials under env-driven modes.
 fn wipe_opencode_state(auth_json: &Path) -> anyhow::Result<()> {
@@ -811,6 +783,23 @@ fn wipe_opencode_state(auth_json: &Path) -> anyhow::Result<()> {
             auth_json.display()
         )
     })
+}
+
+/// Remove role-state Kimi auth files so a prior Sync run cannot leak
+/// credentials under env-driven modes.
+fn wipe_kimi_state(kimi_dir: &Path) -> anyhow::Result<()> {
+    use anyhow::Context;
+    if kimi_dir.exists() {
+        std::fs::remove_dir_all(kimi_dir).with_context(|| {
+            format!(
+                "failed to wipe stale Kimi state at {} \
+                 (auth_forward switched to ignore/api_key); remove the directory \
+                 manually if it has unexpected ownership",
+                kimi_dir.display()
+            )
+        })?;
+    }
+    Ok(())
 }
 
 /// Copy the host's `.claude.json` into the container state, or write `{}`
@@ -1081,7 +1070,7 @@ plugins = []
 
         let (state, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
@@ -1107,7 +1096,7 @@ plugins = []
 
         let (state, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1137,7 +1126,7 @@ plugins = []
 
         let (state, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1164,7 +1153,7 @@ plugins = []
         seed_host_auth(&temp);
         let (state, outcome1) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1188,7 +1177,7 @@ plugins = []
         // Second run: should overwrite with host content
         let (state2, outcome2) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1216,7 +1205,7 @@ plugins = []
         // First run: sync mode writes credentials
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1229,7 +1218,7 @@ plugins = []
         // Operator switches to ignore — credentials must be wiped
         let (state2, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
@@ -1254,7 +1243,7 @@ plugins = []
 
         let (state, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::OAuthToken,
             &crate::instance::GithubAuthContext::default(),
@@ -1295,7 +1284,7 @@ plugins = []
         // get wiped under api_key.
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1310,7 +1299,7 @@ plugins = []
 
         let (state2, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::ApiKey,
             &crate::instance::GithubAuthContext::default(),
@@ -1341,7 +1330,7 @@ plugins = []
         // First run: sync mode writes credentials
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1356,7 +1345,7 @@ plugins = []
         // wizard and authenticates exclusively via CLAUDE_CODE_OAUTH_TOKEN.
         let (state2, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::OAuthToken,
             &crate::instance::GithubAuthContext::default(),
@@ -1382,7 +1371,7 @@ plugins = []
         // First run: token mode writes the onboarding skeleton
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::OAuthToken,
             &crate::instance::GithubAuthContext::default(),
@@ -1398,7 +1387,7 @@ plugins = []
         // Operator switches to sync — host auth must now be forwarded
         let (state2, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1428,7 +1417,7 @@ plugins = []
         // Token mode seeds an empty state
         let (_, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::OAuthToken,
             &crate::instance::GithubAuthContext::default(),
@@ -1440,7 +1429,7 @@ plugins = []
         // Switching to ignore must keep the empty shape (no .credentials.json)
         let (state2, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
@@ -1466,7 +1455,7 @@ plugins = []
         seed_host_auth(&temp);
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1486,7 +1475,7 @@ plugins = []
         // Second run: host auth missing — container auth must be preserved
         let (state2, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1513,7 +1502,7 @@ plugins = []
 
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1552,7 +1541,7 @@ plugins = []
         // First run: create the file with ignore mode (gets 0600)
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Ignore,
             &crate::instance::GithubAuthContext::default(),
@@ -1576,7 +1565,7 @@ plugins = []
         seed_host_auth(&temp);
         let (state2, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1608,7 +1597,7 @@ plugins = []
         seed_host_auth(&temp);
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1633,7 +1622,7 @@ plugins = []
         // Second run: host auth missing — files preserved but permissions repaired
         let (state2, outcome) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1674,7 +1663,7 @@ plugins = []
         // First run: create the state directory
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1692,7 +1681,7 @@ plugins = []
         // Sync should refuse to write through the symlink
         let err = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1720,7 +1709,7 @@ plugins = []
         // First run: create the state directory with credentials
         let (state, _) = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),
@@ -1739,7 +1728,7 @@ plugins = []
         // Sync should refuse to write through the symlink
         let err = RoleState::prepare(
             &paths,
-            "jackin-agent-smith",
+            "jk-agent-smith",
             &manifest,
             &|_| AuthForwardMode::Sync,
             &crate::instance::GithubAuthContext::default(),

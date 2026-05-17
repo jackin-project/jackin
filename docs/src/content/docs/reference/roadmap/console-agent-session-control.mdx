@@ -34,11 +34,11 @@ Direct testing of `hardline --new` (which already ships) surfaced the critical f
 
 The fix requires decoupling container lifetime from any individual agent session. The container must have a long-lived supervisor as PID 1, and every agent session — primary or secondary — must run as a child process that the operator can attach to and detach from independently.
 
-## Relationship To Unique Container Identity
+## Relationship To Runtime Instances
 
-[Unique container identity and restore](/reference/roadmap/unique-container-identity-restore/) makes Docker names compact, DNS-safe, unique, and less meaningful as an operator API. This item is the operator-facing counterpart: once names are no longer stable human handles, `jackin console` and CLI commands must provide the actions people used raw Docker names for.
+[Runtime Instance Model](/reference/runtime-instance-model/) makes Docker names compact, DNS-safe, unique, and less meaningful as an operator API. This item is the operator-facing counterpart: once names are no longer stable human handles, `jackin console` and CLI commands must provide the actions people used raw Docker names for.
 
-The identity roadmap owns the container base name and restore metadata. This roadmap owns how the operator sees and controls active containers and agent sessions.
+The runtime instance model owns the container base name and restore metadata. This roadmap owns how the operator sees and controls active containers and agent sessions.
 
 ## Session Substrate — tmux
 
@@ -153,7 +153,7 @@ The UI should make it visually clear which scope owns the container, which agent
 
 ## State Model
 
-Extend the instance manifest from [Unique container identity and restore](/reference/roadmap/unique-container-identity-restore/) with session records, or store them in the future persistent storage layer. The manifest already carries `instance_id`, `container_base`, `workspace_name`, `workdir`, `role_key`, `agent_runtime`, and `status`. Session records add a `sessions` array alongside the existing top-level fields.
+Extend the instance manifest described in [Runtime Instance Model](/reference/runtime-instance-model/) with session records, or store them in the future persistent storage layer. The manifest already carries `instance_id`, `container_base`, `workspace_name`, `workdir`, `role_key`, `agent_runtime`, and `status`. Session records add a `sessions` array alongside the existing top-level fields.
 
 Session status reconciliation on every console refresh:
 1. If container is not running → all sessions become `container_missing`.
@@ -235,6 +235,6 @@ This feature does not introduce new host repository mutations. It runs additiona
 - <RepoFile path="src/agent/mod.rs" /> — agent runtime identities for secondary sessions.
 - <RepoFile path="docker/construct/Dockerfile" /> — construct base image where tmux will be added.
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — current entrypoint that will be split into supervisor and session-launch modes.
-- [Unique container identity and restore](/reference/roadmap/unique-container-identity-restore/) — instance IDs, manifests, and restore lookup.
+- [Runtime Instance Model](/reference/runtime-instance-model/) — instance IDs, manifests, and restore lookup.
 - [Agent runtime status](/reference/roadmap/agent-runtime-status/) — future per-session idle/busy/question status.
 - [Console resource panel](/reference/roadmap/console-resource-panel/) — future per-instance resource visibility.

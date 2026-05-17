@@ -131,27 +131,7 @@ pub(super) fn build_agent_image(
         },
     )?;
 
-    // Extract and store the Claude version from the built image when launching
-    // Claude. Codex and Amp use the explicit `--rebuild` path for now.
-    if agent == crate::agent::Agent::Claude
-        && let Ok(version) = runner.capture(
-            "docker",
-            &["run", "--rm", "--entrypoint", "claude", &image, "--version"],
-            None,
-        )
-    {
-        let version = version.trim();
-        if !version.is_empty() {
-            if debug {
-                eprintln!("        Claude {version}");
-            }
-            if let Some(semver) = version_check::parse_claude_version(version) {
-                version_check::store_image_version(paths, &image, semver);
-            } else if debug {
-                eprintln!("warning: unexpected claude --version output: {version:?}");
-            }
-        }
-    }
+    extract_agent_version(paths, &image, agent, debug, runner);
 
     // Extract and store the Kimi CLI version when launching Kimi.
     if agent == crate::agent::Agent::Kimi
@@ -203,4 +183,63 @@ pub(super) fn build_agent_image(
     }
 
     Ok(image)
+}
+
+fn extract_agent_version(
+    paths: &JackinPaths,
+    image: &str,
+    agent: crate::agent::Agent,
+    debug: bool,
+    runner: &mut impl CommandRunner,
+) {
+    match agent {
+        crate::agent::Agent::Claude => {
+            let Ok(version) = runner.capture(
+                "docker",
+                &["run", "--rm", "--entrypoint", "claude", image, "--version"],
+                None,
+            ) else {
+                return;
+            };
+            let version = version.trim();
+            if !version.is_empty() {
+                if debug {
+                    eprintln!("        Claude {version}");
+                }
+                if let Some(semver) = version_check::parse_claude_version(version) {
+                    version_check::store_image_version(paths, image, semver);
+                } else if debug {
+                    eprintln!("warning: unexpected claude --version output: {version:?}");
+                }
+            }
+        }
+        crate::agent::Agent::Opencode => {
+            let Ok(version) = runner.capture(
+                "docker",
+                &[
+                    "run",
+                    "--rm",
+                    "--entrypoint",
+                    "opencode",
+                    image,
+                    "--version",
+                ],
+                None,
+            ) else {
+                return;
+            };
+            let version = version.trim();
+            if !version.is_empty() {
+                if debug {
+                    eprintln!("        OpenCode {version}");
+                }
+                if let Some(semver) = version_check::parse_opencode_version(version) {
+                    version_check::store_opencode_version(paths, image, semver);
+                } else if debug {
+                    eprintln!("warning: unexpected opencode --version output: {version:?}");
+                }
+            }
+        }
+        _ => {}
+    }
 }

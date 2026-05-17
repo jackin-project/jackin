@@ -1794,7 +1794,7 @@ mod tests {
         let paths = crate::paths::JackinPaths::for_tests(tmp.path());
         let mut manifest =
             crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
-                container_base: "jackin-demo-alpha-k7p9m2xq",
+                container_base: "jk-k7p9m2xq-demo-alpha",
                 workspace_name: Some("demo"),
                 workspace_label: "demo",
                 workdir: "/workspace/demo",
@@ -1804,17 +1804,17 @@ mod tests {
                 agent_runtime: crate::agent::Agent::Claude,
                 role_source_git: "https://example.invalid/alpha.git",
                 role_source_ref: None,
-                image_tag: "jackin-alpha",
+                image_tag: "jk_alpha",
                 docker: crate::instance::DockerResources {
-                    role_container: "jackin-demo-alpha-k7p9m2xq".into(),
-                    dind_container: "jackin-demo-alpha-k7p9m2xq-dind".into(),
-                    network: "jackin-demo-alpha-k7p9m2xq-net".into(),
-                    certs_volume: "jackin-demo-alpha-k7p9m2xq-dind-certs".into(),
+                    role_container: "jk-k7p9m2xq-demo-alpha".into(),
+                    dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+                    network: "jk-k7p9m2xq-demo-alpha-net".into(),
+                    certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
                 },
             });
         manifest.mark_status(crate::instance::InstanceStatus::RestoreAvailable);
         manifest
-            .write(&paths.data_dir.join("jackin-demo-alpha-k7p9m2xq"))
+            .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
             .unwrap();
 
         let config = AppConfig::default();
@@ -1840,7 +1840,7 @@ mod tests {
         let paths = crate::paths::JackinPaths::for_tests(tmp.path());
         let mut manifest =
             crate::instance::InstanceManifest::new(crate::instance::NewInstanceManifest {
-                container_base: "jackin-demo-alpha-k7p9m2xq",
+                container_base: "jk-k7p9m2xq-demo-alpha",
                 workspace_name: Some("demo"),
                 workspace_label: "demo",
                 workdir: "/workspace/demo",
@@ -1850,17 +1850,17 @@ mod tests {
                 agent_runtime: crate::agent::Agent::Claude,
                 role_source_git: "https://example.invalid/alpha.git",
                 role_source_ref: None,
-                image_tag: "jackin-alpha",
+                image_tag: "jk_alpha",
                 docker: crate::instance::DockerResources {
-                    role_container: "jackin-demo-alpha-k7p9m2xq".into(),
-                    dind_container: "jackin-demo-alpha-k7p9m2xq-dind".into(),
-                    network: "jackin-demo-alpha-k7p9m2xq-net".into(),
-                    certs_volume: "jackin-demo-alpha-k7p9m2xq-dind-certs".into(),
+                    role_container: "jk-k7p9m2xq-demo-alpha".into(),
+                    dind_container: "jk-k7p9m2xq-demo-alpha-dind".into(),
+                    network: "jk-k7p9m2xq-demo-alpha-net".into(),
+                    certs_volume: "jk-k7p9m2xq-demo-alpha-dind-certs".into(),
                 },
             });
         manifest.mark_status(crate::instance::InstanceStatus::Active);
         manifest
-            .write(&paths.data_dir.join("jackin-demo-alpha-k7p9m2xq"))
+            .write(&paths.data_dir.join("jk-k7p9m2xq-demo-alpha"))
             .unwrap();
 
         let config = AppConfig::default();
@@ -2159,9 +2159,9 @@ mod tests {
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
                 kimi: None,
                 opencode: None,
+                github: None,
             },
         );
         let mut e = EditorState::new_edit("a".into(), ws);
@@ -2213,9 +2213,9 @@ mod tests {
                 claude: None,
                 codex: None,
                 amp: None,
-                github: None,
                 kimi: None,
                 opencode: None,
+                github: None,
             },
         );
         assert!(e2.is_dirty(), "role env set must make state dirty");
@@ -2427,10 +2427,10 @@ mod tests {
             claude: None,
             codex: None,
             amp: None,
-            github: None,
-            git_pull_on_entry: false,
             kimi: None,
             opencode: None,
+            github: None,
+            git_pull_on_entry: false,
         };
         let mut e = EditorState::new_edit("ws".into(), ws);
         e.active_tab = EditorTab::Mounts;

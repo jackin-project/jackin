@@ -252,15 +252,10 @@ impl std::ops::Deref for AmpAuthConfig {
     }
 }
 
-/// Newtype around `AgentAuthConfig` that rejects `oauth_token` at parse time.
-///
-/// Kimi does not support `AuthForwardMode::OAuthToken` — rejecting it at
-/// deserialization time keeps the type system honest.
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
 pub struct KimiAuthConfig(pub(crate) AgentAuthConfig);
 
 impl KimiAuthConfig {
-    /// Construct, rejecting `OAuthToken`. See [`CodexAuthConfig::new`].
     pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
         if cfg.auth_forward == AuthForwardMode::OAuthToken {
             return Err("auth_forward 'oauth_token' is not supported for kimi");
@@ -292,15 +287,10 @@ impl std::ops::Deref for KimiAuthConfig {
     }
 }
 
-/// Newtype around `AgentAuthConfig` that rejects `oauth_token` at parse time.
-///
-/// Opencode does not support `AuthForwardMode::OAuthToken` — rejecting it at
-/// deserialization time keeps the type system honest.
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
 pub struct OpencodeAuthConfig(pub(crate) AgentAuthConfig);
 
 impl OpencodeAuthConfig {
-    /// Construct, rejecting `OAuthToken`. See [`CodexAuthConfig::new`].
     pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
         if cfg.auth_forward == AuthForwardMode::OAuthToken {
             return Err("auth_forward 'oauth_token' is not supported for opencode");
@@ -679,6 +669,10 @@ auth_forward = "ignore"
             "codex must be None when [codex] absent"
         );
         assert!(cfg.amp.is_none(), "amp must be None when [amp] absent");
+        assert!(
+            cfg.opencode.is_none(),
+            "opencode must be None when [opencode] absent"
+        );
     }
 
     #[test]

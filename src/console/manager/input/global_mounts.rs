@@ -361,9 +361,7 @@ fn open_settings_auth_form(
             | crate::console::manager::auth_kind::AuthKind::Codex
             | crate::console::manager::auth_kind::AuthKind::Amp
             | crate::console::manager::auth_kind::AuthKind::Kimi
-            | crate::console::manager::auth_kind::AuthKind::Opencode => {
-                env.pending.env.get(name)
-            }
+            | crate::console::manager::auth_kind::AuthKind::Opencode => env.pending.env.get(name),
         })
         .cloned();
     let form = AuthForm::from_existing(kind, row.mode, existing_credential);

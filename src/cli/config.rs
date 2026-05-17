@@ -181,8 +181,8 @@ Examples:
 pub enum TrustCommand {
     /// Mark a third-party role source as trusted
     ///
-    /// Trust controls whether jackin' will build and run an role without
-    /// prompting.  Untrusted roles require interactive confirmation on
+    /// Trust controls whether jackin will build and run a role without
+    /// prompting. Untrusted roles require interactive confirmation on
     /// every load.
     #[command(
         before_help = BANNER,
