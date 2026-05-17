@@ -82,13 +82,15 @@ This requires a `WorkspaceConfig` schema change: a new `ContainerRegistryConfig`
 
 ## Lifecycle
 
-**Registry container lifecycle:** demand-start, persist until explicit teardown.
+**Registry container lifecycle:** coupled to workspace instance count — starts automatically with the first instance, stops automatically when the last instance exits.
 
-The registry starts when the first role instance in a workspace launches (if `container_registry.enabled = true`). It stays running across role starts and stops — killing it between sessions defeats the cache. It stops when the workspace is explicitly destroyed via `jackin eject` or `jackin prune`, or when the operator runs the future `jackin workspace container-registry stop` subcommand (Phase 2).
+On every role launch (if `container_registry.enabled = true`), `ensure_workspace_registry()` starts the registry if it is not already running. On every role teardown, the cleanup path queries how many role instances for that workspace are still running. If the count reaches zero, the registry container is stopped (but not removed). The next launch restarts it against the same persistent volume, warming from the previous session's cached layers.
 
 **Idempotent startup:** `ensure_workspace_registry()` checks whether `jackin-{ws}-registry` is already running before issuing any Docker commands. Concurrent role launches in the same workspace are safe.
 
-**Volume lifecycle:** `jackin-{ws}-registry-data` is a named Docker volume that persists independently of the container. It survives `docker rm` of the registry container. Explicit operator deletion is required to clear the cache.
+**Volume lifecycle:** `jackin-{ws}-registry-data` is a named Docker volume that persists independently of the container. It survives container stop and `docker rm`. The cache accumulates across sessions; explicit operator deletion is required to clear it.
+
+**No manual start/stop commands.** The registry is fully automatic. The operator enables it in the workspace file and Jackin manages the rest.
 
 ## Implementation
 
@@ -152,23 +154,28 @@ The official `docker:dind` entrypoint passes all extra CMD arguments directly to
 
 Apply the same DinD `--network` and CMD args on the hardline recovery path to keep the two paths in sync.
 
+### Teardown hook
+
+After stopping a role instance, query how many role containers for that workspace are still running (`docker ps --filter label=jackin.workspace={ws}`). If the count is zero and `container_registry.enabled = true`, stop (do not remove) `jackin-{ws}-registry`. The volume survives; the next launch restarts the container against the same cache.
+
 ### DockerResources
 
 Add `registry_container: Option<String>` and `shared_network: Option<String>` to `DockerResources` so teardown and lifecycle queries can track these workspace-level resources alongside the per-role resources.
 
 ## Phase 2 (deferred)
 
-- `jackin workspace container-registry start|stop|status` subcommands — explicit lifecycle management independent of role launches
 - Teardown integration — workspace deletion via `jackin eject --all` / `jackin prune` stops and removes the registry container and shared network (volume deletion opt-in only, to avoid silent cache loss)
 - Additional upstream registries — per-registry mirror entries in DinD `daemon.json` for `ghcr.io`, `quay.io`, and others; zot sync config extended with corresponding upstream entries
 - Storage quota and GC — zot scrub/GC config, size limits, TTL-based eviction
 - Registry auth — optional pull credentials for private upstream registries in zot sync config
+- Diagnostic subcommand — `jackin workspace container-registry status` for inspecting registry health, cache size, and upstream sync state (start/stop not needed; lifecycle is automatic)
 
 ## Related Files
 
 - <RepoFile path="src/runtime/launch.rs" /> — DinD launch, workspace registry ensure call, shared-net attachment
 - <RepoFile path="src/runtime/attach.rs" /> — DinD recovery path, same DinD additions
 - <RepoFile path="src/runtime/naming.rs" /> — naming functions for registry container, volume, shared network
+- <RepoFile path="src/runtime/cleanup.rs" /> — teardown hook, stop registry when last workspace instance exits
 - <RepoFile path="src/config/mod.rs" /> — `ContainerRegistryConfig` struct, `WorkspaceConfig` extension
 - <RepoFile path="src/config/migrations.rs" /> — `CURRENT_WORKSPACE_VERSION` bump, migration step
 - <RepoFile path="src/instance/manifest.rs" /> — `DockerResources` extension
