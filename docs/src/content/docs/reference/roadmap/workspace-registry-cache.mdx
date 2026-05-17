@@ -142,7 +142,7 @@ Docker Hub requires `onDemand: true`. Polling mode will trigger rate limits.
 
 ### Host-side effects
 
-`ensure_workspace_registry()` writes one host-side file: `~/.config/jackin/workspaces/{ws}/registry-config.json`. This is the zot configuration, generated from the workspace's `[container_registry]` settings. The write is a consequence of the operator enabling `container_registry.enabled = true` in their workspace config — the opt-in is explicit. Per the "never mutate the host machine silently" hard rule, the first creation of this file must be surfaced in the launch summary (e.g. "Created container registry config at ~/.config/jackin/workspaces/{ws}/registry-config.json"). Subsequent launches overwrite it silently only if the contents are unchanged; a content change must also be surfaced.
+`ensure_workspace_registry()` writes one host-side file: `~/.config/jackin/workspaces/{ws}/registry-config.json`. This is the zot configuration, generated from the workspace's `[container_registry]` settings. The write is a consequence of the operator enabling `container_registry.enabled = true` in their workspace config — the opt-in is explicit. Per the "never mutate the host machine silently" hard rule, the first creation of this file must be surfaced in the launch summary (e.g. `Created container registry config at ~/.config/jackin/workspaces/<ws>/registry-config.json`). Subsequent launches overwrite it silently only if the contents are unchanged; a content change must also be surfaced.
 
 ### Launch changes
 
