@@ -27,6 +27,7 @@ the same problem:
 - Docker Sandboxes is the strongest commercial benchmark for **microVM
   sandboxing**: per-sandbox VM boundary, private Docker daemon, scoped
   workspace sharing, host-side network policy, and credential proxying.
+- [Herdr](https://github.com/ogulcancelik/herdr) is the strongest reference for **terminal-multiplexer UX for multi-agent workflows**: four-state agent status (Blocked / Working / Done / Idle) detected with zero configuration via PTY heuristics, workspace-level status roll-up, notification suppression when the operator is already looking, sound escalation as opt-in, and blocking `wait` semantics on a Unix socket API. Its architecture (bare host processes, AGPL-3.0) rules out embedding, but its UX decisions directly inform [agent runtime status](/reference/roadmap/agent-runtime-status/), [agent attention prompts](/reference/roadmap/agent-attention-prompts/), and the daemon socket design. See [Herdr research](/reference/roadmap/herdr-research/) for the full evaluation.
 - Conductor, Claude devcontainers, Trail of Bits' devcontainer, and private
   internal tools remain useful comparison points, but they are not the center
   of this program.
