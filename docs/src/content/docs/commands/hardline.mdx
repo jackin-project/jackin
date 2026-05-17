@@ -63,6 +63,10 @@ Closing your terminal tab **does not** shut the container down. The foreground s
 
 To stop an agent, exit it from inside (e.g., `/exit` in Claude Code). That ends the tmux session cleanly. The container keeps running until the foreground session exits cleanly and jackin's post-session teardown runs.
 
+## Terminal tab title
+
+`jackin hardline` sets the terminal tab title to the role's display name (e.g. `jackin' · The Architect`) before connecting, matching the behavior of `jackin load`. This applies to all three paths: reconnect, `--new`, and `--shell`.
+
 ## Examples
 
 ```bash

@@ -65,7 +65,7 @@ Automation stays on the small role-focused binary in <RepoFile path="src/bin/val
 6. **Create a per-agent Docker network**
 7. **Start a privileged `docker:dind` sidecar** with TLS enabled and a shared certificate volume
 8. **Start the agent container detached** (`docker run -d`) with `supervisor.sh` as the entrypoint override — a bash wait loop that becomes PID 1 and keeps the container alive while agent sessions run via `docker exec`
-9. **Start the first agent session** via `docker exec -e TMUX= -it <container> tmux new-session -s jackin-<agent>-<id> -- /jackin/runtime/entrypoint.sh [model-flags]`. `TMUX=` prevents nested-session warnings when the operator's terminal is itself inside tmux.
+9. **Start the first agent session** via `docker exec -e TMUX= -it <container> tmux new-session -e JACKIN_AGENT=<agent> -s jackin-<agent>-<id> -- /jackin/runtime/entrypoint.sh [model-flags]`. `TMUX=` prevents nested-session warnings when the operator's terminal is itself inside tmux. `JACKIN_AGENT` is passed via `tmux new-session -e` rather than as a container-level env var so each session can specify its own agent runtime independently.
 
 The detached-start + exec split decouples the container's lifetime from the foreground session: closing the terminal tab detaches from the tmux session inside the container, but the supervisor (PID 1) and the tmux server keep running. `jackin hardline` reattaches to the most recently used session or creates a new one when no sessions are running. Cleanup distinguishes three post-session states:
 
@@ -96,7 +96,7 @@ Agent model flags (`--model`) are passed as arguments to the tmux session exec, 
 
 Session state is not yet reconciled against the live container on console refresh (Phase 4 of the session control roadmap). The `sessions` field in the instance manifest is written but not populated until reconciliation lands.
 
-Implementation: <RepoFile path="docker/runtime/supervisor.sh" />, <RepoFile path="src/runtime/launch.rs" /> (`launch_role_runtime`), <RepoFile path="src/runtime/attach.rs" /> (`attach_primary_session`, `spawn_agent_session`, `spawn_shell_session`).
+Implementation: <RepoFile path="docker/runtime/supervisor.sh" />, <RepoFile path="src/runtime/launch.rs" /> (`launch_role_runtime`), <RepoFile path="src/runtime/attach.rs" /> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
 
 ### Stopping
 
