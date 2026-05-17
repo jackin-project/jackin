@@ -17,6 +17,7 @@ use ratatui::{
 
 use super::ModalOutcome;
 
+use super::scrollable::{apply_scroll_delta, render_lines_with_offset_in_area};
 use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,7 +43,7 @@ pub struct ConfirmSaveState {
     pub lines: Vec<Line<'static>>,
     pub focus: ConfirmSaveFocus,
     /// Vertical scroll offset — how many lines are hidden above the visible window.
-    pub scroll_offset: usize,
+    pub scroll_offset: u16,
     /// `plan_edit`'s `effective_removals`, forwarded into
     /// `edit_workspace`. Empty for Create flows.
     pub effective_removals: Vec<String>,
@@ -74,12 +75,11 @@ impl ConfirmSaveState {
             KeyCode::Char('c' | 'C') | KeyCode::Esc => ModalOutcome::Cancel,
             // Up/Down/j/k scroll the content preview.
             KeyCode::Up | KeyCode::Char('k' | 'K') => {
-                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                apply_scroll_delta(&mut self.scroll_offset, -1);
                 ModalOutcome::Continue
             }
             KeyCode::Down | KeyCode::Char('j' | 'J') => {
-                self.scroll_offset = self.scroll_offset.saturating_add(1);
-                // Clamped to valid range in render.
+                apply_scroll_delta(&mut self.scroll_offset, 1);
                 ModalOutcome::Continue
             }
             // Tab / BackTab / Right / Left — only two buttons,
@@ -128,41 +128,33 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
     // offset so the operator can page through long diffs.
     let content_rows = inner.height.saturating_sub(3); // blank, blank, buttons
     let content_rows = content_rows.saturating_sub(1); // bottom-of-content blank
-    let visible = content_rows as usize;
-    let total = state.lines.len();
-    let max_offset = total.saturating_sub(visible);
-    let offset = state.scroll_offset.min(max_offset);
-    let clipped: Vec<Line> = state
-        .lines
-        .iter()
-        .skip(offset)
-        .take(visible)
-        .cloned()
-        .collect();
-    let visible_u16 = u16::try_from(clipped.len()).unwrap_or(0);
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // top blank
-            Constraint::Length(visible_u16),
-            Constraint::Length(1), // blank
-            Constraint::Length(1), // buttons
-        ])
-        .split(inner);
+    let content_area_height = content_rows;
 
     // Content indented by SUBPANEL_CONTENT_INDENT (2). The caller is
     // responsible for any deeper indentation; we just add a uniform
     // left gutter so lines don't butt up against the border.
-    let indented: Vec<Line> = clipped
-        .into_iter()
+    let indented: Vec<Line> = state
+        .lines
+        .iter()
+        .cloned()
         .map(|l| {
             let mut spans = vec![Span::raw("  ")];
             spans.extend(l.spans);
             Line::from(spans)
         })
         .collect();
-    frame.render_widget(Paragraph::new(indented), chunks[1]);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // top blank
+            Constraint::Length(content_area_height),
+            Constraint::Length(1), // blank
+            Constraint::Length(1), // buttons
+        ])
+        .split(inner);
+
+    render_lines_with_offset_in_area(frame, chunks[1], indented, state.scroll_offset);
 
     // Buttons — focused choice highlights on white.
     let focused_style = Style::default()

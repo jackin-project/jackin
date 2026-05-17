@@ -6,6 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use super::super::super::widgets::{
     ModalOutcome, confirm::ConfirmState, file_browser::FileBrowserState,
 };
+use super::super::render::apply_scroll_delta;
 use super::super::state::{
     EditorState, FileBrowserTarget, ManagerListRow, ManagerStage, ManagerState, Modal,
     SettingsState, Toast, ToastKind,
@@ -378,13 +379,7 @@ pub(super) fn handle_inline_agent_picker(
 
 const fn scroll_list_horizontal(state: &mut ManagerState<'_>, delta: i16) {
     if state.list_names_focused {
-        state.list_names_scroll_x = if delta.is_negative() {
-            state
-                .list_names_scroll_x
-                .saturating_sub(delta.unsigned_abs())
-        } else {
-            state.list_names_scroll_x.saturating_add(delta as u16)
-        };
+        apply_scroll_delta(&mut state.list_names_scroll_x, delta);
     } else {
         scroll_focused_mount_block(state, delta);
     }
@@ -395,11 +390,7 @@ const fn scroll_focused_mount_block(state: &mut ManagerState<'_>, delta: i16) {
         return;
     };
     let value = state.list_scroll_x_mut(focus);
-    if delta.is_negative() {
-        *value = value.saturating_sub(delta.unsigned_abs());
-    } else {
-        *value = value.saturating_add(delta as u16);
-    }
+    apply_scroll_delta(value, delta);
 }
 
 const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta: i16) {
@@ -407,11 +398,7 @@ const fn scroll_focused_mount_block_vertical(state: &mut ManagerState<'_>, delta
         return;
     };
     let value = state.list_scroll_y_mut(focus);
-    if delta.is_negative() {
-        *value = value.saturating_sub(delta.unsigned_abs());
-    } else {
-        *value = value.saturating_add(delta as u16);
-    }
+    apply_scroll_delta(value, delta);
 }
 
 #[cfg(test)]

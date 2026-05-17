@@ -23,8 +23,6 @@ pub(super) fn render_list_body(
     cwd: &std::path::Path,
 ) {
     // See ManagerListRow docs for row layout.
-    let saved_count = state.workspaces.len();
-
     // Split driven by `state.list_split_pct` (default 30), adjustable via
     // mouse-drag on the seam column. Keeps the right pane visible on every
     // row. Row-specific right-pane renderers:
@@ -64,88 +62,7 @@ pub(super) fn render_list_body(
             .map_or("Current directory", |summary| summary.name.as_str());
         render_role_picker_sidebar(frame, list_area, title, picker);
     } else {
-        // Left: [Current directory] + saved workspaces + blank spacer +
-        // [+ New workspace]. Rendered as a Paragraph so horizontal scroll
-        // works for long workspace names.
-        let visual_selected = state.visual_selected();
-        let has_saved_workspaces = saved_count > 0;
-        // Initialise max_w at the inner viewport width so the selected-row
-        // background always fills the full block width, even when all names
-        // are shorter than the visible area.
-        let inner_w = list_area.width.saturating_sub(2) as usize;
-        let mut max_w: usize = inner_w;
-
-        let mut list_lines: Vec<Line> =
-            Vec::with_capacity(saved_count + 2 + usize::from(has_saved_workspaces));
-
-        // Row 0 — "Current directory"
-        {
-            let selected = visual_selected == 0;
-            let prefix = if selected { "▸ " } else { "  " };
-            let style = if selected {
-                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)
-            } else {
-                Style::default().fg(WHITE)
-            };
-            max_w = max_w.max(2 + "Current directory".len());
-            list_lines.push(Line::from(Span::styled(
-                format!("{prefix}Current directory"),
-                style,
-            )));
-        }
-        // Saved workspace rows
-        for (i, ws) in state.workspaces.iter().enumerate() {
-            let visual_idx = i + 1;
-            let selected = visual_selected == visual_idx;
-            let prefix = if selected { "▸ " } else { "  " };
-            let style = if selected {
-                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)
-            } else {
-                Style::default().fg(PHOSPHOR_GREEN)
-            };
-            max_w = max_w.max(2 + ws.name.chars().count());
-            list_lines.push(Line::from(Span::styled(
-                format!("{prefix}{}", ws.name),
-                style,
-            )));
-        }
-        // Blank spacer before sentinel when there are saved workspaces
-        if has_saved_workspaces {
-            list_lines.push(Line::from(""));
-        }
-        // Sentinel — WHITE when unselected to signal it's an action, not a workspace.
-        {
-            let selected = visual_selected
-                == if has_saved_workspaces {
-                    saved_count + 2
-                } else {
-                    1
-                };
-            let prefix = if selected { "▸ " } else { "  " };
-            let style = if selected {
-                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)
-            } else {
-                Style::default().fg(WHITE)
-            };
-            max_w = max_w.max(2 + "+ New workspace".len());
-            list_lines.push(Line::from(Span::styled(
-                format!("{prefix}+ New workspace"),
-                style,
-            )));
-        }
-
-        // visual_selected maps 1-to-1 to list_lines indices: cwd=0,
-        // workspaces=1..=saved_count, sentinel=last. Pad the selected line
-        // with a bg-colored trailing span so the highlight fills max_w.
-        if let Some(line) = list_lines.get_mut(visual_selected) {
-            let current_w = super::line_width(line);
-            if current_w < max_w {
-                line.spans.push(Span::styled(
-                    " ".repeat(max_w - current_w),
-                    Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
-                ));
-            }
-        }
+        let list_lines = list_name_lines(state, super::scroll_viewport_width(list_area));
 
         let mut scroll_y = 0u16;
         super::render_scrollable_block(
@@ -163,6 +80,92 @@ pub(super) fn render_list_body(
     if let Some(toast) = &state.toast {
         render_toast(frame, area, toast);
     }
+}
+
+pub(in crate::console::manager) fn list_names_content_width(
+    state: &ManagerState<'_>,
+    viewport: usize,
+) -> usize {
+    super::max_line_width(&list_name_lines(state, viewport))
+}
+
+fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'static>> {
+    let saved_count = state.workspaces.len();
+    let visual_selected = state.visual_selected();
+    let has_saved_workspaces = saved_count > 0;
+    let mut max_w = viewport;
+
+    let mut lines = Vec::with_capacity(saved_count + 2 + usize::from(has_saved_workspaces));
+
+    push_list_name_line(
+        &mut lines,
+        "Current directory",
+        visual_selected == 0,
+        WHITE,
+        &mut max_w,
+    );
+
+    for (i, ws) in state.workspaces.iter().enumerate() {
+        push_list_name_line(
+            &mut lines,
+            &ws.name,
+            visual_selected == i + 1,
+            PHOSPHOR_GREEN,
+            &mut max_w,
+        );
+    }
+
+    if has_saved_workspaces {
+        lines.push(Line::from(""));
+    }
+
+    let sentinel_index = if has_saved_workspaces {
+        saved_count + 2
+    } else {
+        1
+    };
+    push_list_name_line(
+        &mut lines,
+        "+ New workspace",
+        visual_selected == sentinel_index,
+        WHITE,
+        &mut max_w,
+    );
+
+    // Unselected rows start with "  " (2 spaces) so add_trailing_padding appends 2
+    // transparent spaces, making content_width = max_w + 2. The selected row starts
+    // with "▸ " (no leading space) so gets no trailing padding and its background
+    // would stop 2 cells short when scrolled. Pad to the full content_width so the
+    // selection highlight fills the entire visible area at every scroll position.
+    let content_w = max_w;
+    if let Some(line) = lines.get_mut(visual_selected) {
+        let current_w = super::line_width(line);
+        if current_w < content_w {
+            line.spans.push(Span::styled(
+                " ".repeat(content_w - current_w),
+                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
+            ));
+        }
+    }
+
+    lines
+}
+
+fn push_list_name_line(
+    lines: &mut Vec<Line<'static>>,
+    name: &str,
+    selected: bool,
+    color: Color,
+    max_w: &mut usize,
+) {
+    let prefix = if selected { "▸ " } else { "  " };
+    let style = if selected {
+        Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)
+    } else {
+        Style::default().fg(color)
+    };
+    *max_w = (*max_w).max(2 + name.chars().count());
+    lines.push(Line::from(Span::styled(format!("{prefix}{name}"), style)));
 }
 
 fn render_role_picker_sidebar(
@@ -553,7 +556,9 @@ fn selected_picker_role(
         .and_then(|idx| picker.filtered.get(idx).cloned())
 }
 
-fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
+pub(in crate::console::manager) fn workspace_has_any_env(
+    ws: &crate::workspace::WorkspaceConfig,
+) -> bool {
     !ws.env.is_empty() || ws.roles.values().any(|o| !o.env.is_empty())
 }
 
@@ -625,7 +630,9 @@ fn split_global_mount_rows(
 
 /// Caller is expected to have gated on `workspace_has_any_env` —
 /// empty case omits the block entirely, not via placeholder.
-fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceConfig>) -> u16 {
+pub(in crate::console::manager) fn env_block_height(
+    ws_config: Option<&crate::workspace::WorkspaceConfig>,
+) -> u16 {
     let Some(ws) = ws_config else {
         return 2;
     };
@@ -664,7 +671,7 @@ pub(in crate::console::manager) fn agents_block_content_width(
     config.roles.keys().map(|k| k.len() + 4).max().unwrap_or(0)
 }
 
-fn instance_block_height(instance_count: usize) -> u16 {
+pub(in crate::console::manager) fn instance_block_height(instance_count: usize) -> u16 {
     (instance_count + 4).min(8) as u16
 }
 
@@ -773,6 +780,25 @@ struct InstanceDisplayRow {
     role: String,
     agent: String,
     status: String,
+}
+
+pub(in crate::console::manager) fn workspace_instance_count(
+    instances: &[crate::instance::InstanceIndexEntry],
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+) -> usize {
+    let query = crate::instance::InstanceQuery {
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key: None,
+        agent_runtime: None,
+    };
+    instances
+        .iter()
+        .filter(|e| e.matches(query) && instance_status_is_operator_relevant(e.status))
+        .count()
 }
 
 fn workspace_instance_rows(
@@ -1170,7 +1196,7 @@ fn render_environments_subpanel(
             })
     });
 
-    let inner_width = area.width.saturating_sub(2) as usize;
+    let inner_width = super::scroll_viewport_width(area);
     let lines: Vec<Line> = rows
         .iter()
         .map(|row| env_row_line(row, inner_width))
@@ -1304,6 +1330,65 @@ fn render_agents_subpanel_scrollable(
         focused,
         Some(" Roles "),
     );
+}
+
+#[cfg(test)]
+mod list_name_scroll_tests {
+    use super::{list_names_content_width, render_list_body};
+    use crate::config::AppConfig;
+    use crate::console::manager::state::ManagerState;
+    use crate::console::widgets::scrollable::max_offset;
+    use crate::workspace::WorkspaceConfig;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
+
+    fn config_with_long_workspace_name() -> AppConfig {
+        let mut config = AppConfig::default();
+        config.workspaces.insert(
+            "chainargos-blockchain-nodes".into(),
+            WorkspaceConfig::default(),
+        );
+        config
+    }
+
+    #[test]
+    fn list_names_content_width_includes_trailing_scroll_padding() {
+        let config = config_with_long_workspace_name();
+        let tmp = tempfile::tempdir().unwrap();
+        let state = ManagerState::from_config(&config, tmp.path());
+
+        let width = list_names_content_width(&state, 19);
+
+        assert_eq!(width, 31);
+        assert_eq!(max_offset(width, 19), 12);
+    }
+
+    #[test]
+    fn list_name_render_clamps_scroll_to_rendered_width() {
+        let config = config_with_long_workspace_name();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        state.list_names_scroll_x = u16::MAX;
+        state.list_names_focused = true;
+
+        let backend = TestBackend::new(70, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_list_body(
+                    frame,
+                    Rect::new(0, 0, 70, 24),
+                    &mut state,
+                    &config,
+                    tmp.path(),
+                );
+            })
+            .unwrap();
+
+        assert_eq!(state.list_names_scroll_x, 12);
+    }
 }
 
 #[cfg(test)]

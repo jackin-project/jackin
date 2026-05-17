@@ -10,7 +10,7 @@ use ratatui::{
 
 use crate::operator_env::OpField;
 
-use super::super::scrollable::{is_scrollable, render_vertical_scrollbar_in_area};
+use super::super::scrollable::render_selected_lines_in_area;
 use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use super::{OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState};
 
@@ -63,19 +63,6 @@ fn breadcrumb_title(
             }
         }
     }
-}
-
-/// Cursor-follows scrolling — anchors selected at top until cursor
-/// moves below the window, then anchors at bottom (clamped to
-/// `total - height`). Stateless: recomputed each frame.
-fn viewport_offset(selected: usize, height: usize, total: usize) -> usize {
-    if height == 0 || total <= height {
-        return 0;
-    }
-    if selected < height {
-        return 0;
-    }
-    selected.saturating_sub(height - 1).min(total - height)
 }
 
 fn modal_block<'a>(title: impl Into<String>) -> Block<'a> {
@@ -165,13 +152,13 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         OpPickerStage::Item => render_item_lines(state),
         OpPickerStage::Field => render_field_lines(state),
     };
-    let (list_para, scroll_info) = if list_lines.is_empty() {
+    if list_lines.is_empty() {
         let para = Paragraph::new(Line::from(Span::styled(
             "(no matches)",
             Style::default().fg(PHOSPHOR_DIM),
         )))
         .alignment(Alignment::Center);
-        (para, None)
+        frame.render_widget(para, rows[3]);
     } else {
         let selected = match state.stage {
             OpPickerStage::Account => state.account_list_state.selected,
@@ -179,32 +166,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
             OpPickerStage::Item => state.item_list_state.selected,
             OpPickerStage::Field => state.field_list_state.selected,
         };
-        let height = rows[3].height as usize;
-        let total = list_lines.len();
-        let offset = viewport_offset(selected.unwrap_or(0), height, total);
-        let take = height.min(total.saturating_sub(offset));
-        let visible: Vec<Line<'static>> = list_lines.into_iter().skip(offset).take(take).collect();
-        (Paragraph::new(visible), Some((total, offset, height)))
-    };
-    frame.render_widget(list_para, rows[3]);
-
-    // Vertical scrollbar on the right edge of the list area.
-    if let Some((total, position, viewport)) = scroll_info
-        && is_scrollable(total, viewport)
-    {
-        let sb_area = Rect {
-            x: rows[3].x + rows[3].width.saturating_sub(1),
-            y: rows[3].y,
-            width: 1,
-            height: rows[3].height,
-        };
-        render_vertical_scrollbar_in_area(
-            frame,
-            sb_area,
-            total,
-            viewport,
-            position.min(usize::from(u16::MAX)) as u16,
-        );
+        render_selected_lines_in_area(frame, rows[3], list_lines, selected);
     }
 }
 
@@ -487,7 +449,7 @@ fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
 
 #[cfg(test)]
 mod tests {
-    use super::{OpPickerStage, breadcrumb_title, viewport_offset};
+    use super::{OpPickerStage, breadcrumb_title};
 
     // ── Breadcrumb formatting ─────────────────────────────────────────
 
@@ -548,50 +510,6 @@ mod tests {
         // Account pane never has an email prefix (it lists accounts).
         let title = breadcrumb_title(OpPickerStage::Account, true, "ignored", "", "");
         assert_eq!(title, "1Password");
-    }
-
-    // ── Viewport scrolling ────────────────────────────────────────────
-
-    #[test]
-    fn viewport_offset_returns_zero_when_list_fits() {
-        // 5 items, 10-row viewport — no scroll regardless of selection.
-        assert_eq!(viewport_offset(0, 10, 5), 0);
-        assert_eq!(viewport_offset(4, 10, 5), 0);
-    }
-
-    #[test]
-    fn viewport_offset_anchors_top_until_cursor_falls_below_window() {
-        // 20 items, 5-row viewport. Cursor in rows 0..5 → no scroll.
-        assert_eq!(viewport_offset(0, 5, 20), 0);
-        assert_eq!(viewport_offset(4, 5, 20), 0);
-    }
-
-    #[test]
-    fn viewport_offset_pins_cursor_to_bottom_when_below_initial_window() {
-        // 20 items, 5-row viewport. Cursor at row 5 → offset 1 (cursor
-        // sits on the last visible row, rows[1..6] → 1,2,3,4,5).
-        assert_eq!(viewport_offset(5, 5, 20), 1);
-        // Cursor at row 10 → offset 6 (rows 6..11; cursor at end).
-        assert_eq!(viewport_offset(10, 5, 20), 6);
-    }
-
-    #[test]
-    fn viewport_offset_clamps_at_end() {
-        // Cursor at the last row of a 20-item list with a 5-row
-        // viewport must produce offset 15 — the last visible window
-        // shows rows 15..20.
-        assert_eq!(viewport_offset(19, 5, 20), 15);
-        // Even past the end (defensive), we don't scroll past
-        // total - height.
-        assert_eq!(viewport_offset(99, 5, 20), 15);
-    }
-
-    #[test]
-    fn viewport_offset_is_zero_when_height_is_zero() {
-        // Defensive: `Constraint::Min(1)` could collapse to 0 if the
-        // modal is squeezed down to a single border row. Treat that
-        // as "no viewport" and return 0.
-        assert_eq!(viewport_offset(7, 0, 20), 0);
     }
 
     // ── Loading-panel breadcrumb ──────────────────────────────────────

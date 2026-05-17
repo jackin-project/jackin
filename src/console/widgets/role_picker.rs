@@ -107,6 +107,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
+use super::scrollable::render_selected_lines_in_area;
 use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &RolePickerState) {
@@ -174,7 +175,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &RolePickerState) {
             Line::from(vec![Span::styled(format!("{prefix}{}", role.key()), style)])
         })
         .collect();
-    frame.render_widget(Paragraph::new(lines), rows[2]);
+    render_selected_lines_in_area(frame, rows[2], lines, state.list_state.selected);
 }
 
 #[cfg(test)]

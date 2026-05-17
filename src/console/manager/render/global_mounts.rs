@@ -19,7 +19,9 @@ use crate::console::manager::state::{
 };
 use crate::operator_env::EnvValue;
 
-pub(super) fn global_mounts_content_width(rows: &[crate::config::GlobalMountRow]) -> usize {
+pub(in crate::console::manager) fn global_mounts_content_width(
+    rows: &[crate::config::GlobalMountRow],
+) -> usize {
     let lines = global_mount_lines(rows, None, false);
     super::max_line_width(&lines)
 }
@@ -112,12 +114,12 @@ fn render_env_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: ratatu
         lines,
         &mut no_scroll_x,
         &mut state.env.scroll_y,
-        false,
+        state.env.scroll_focused,
         None,
     );
 }
 
-fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
+fn render_auth_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: ratatui::layout::Rect) {
     let title = state.auth.selected_kind.map(|k| format!(" {} ", k.label()));
     let mut lines = auth_lines(state);
     if let Some(err) = &state.auth.error {
@@ -128,14 +130,13 @@ fn render_auth_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::
         )));
     }
     let mut no_scroll_x = 0u16;
-    let mut no_scroll_y = 0u16;
     super::render_scrollable_block(
         frame,
         area,
         lines,
         &mut no_scroll_x,
-        &mut no_scroll_y,
-        false,
+        &mut state.auth.scroll_y,
+        state.auth.scroll_focused,
         title.as_deref(),
     );
 }
