@@ -214,7 +214,8 @@ pub(super) fn reconnect_or_create_session(
                 .ok()
                 .and_then(|m| m.agent().ok())
                 .map_or_else(|| "agent".to_string(), |a| a.slug().to_string());
-        let session_name = format!("jackin-{}-{}", agent_slug, short_session_id());
+        let agent_env = format!("{}={agent_slug}", crate::env_model::JACKIN_AGENT_ENV_NAME);
+        let session_name = format!("jackin-{agent_slug}-{}", short_session_id());
         runner.run(
             "docker",
             &[
@@ -225,6 +226,8 @@ pub(super) fn reconnect_or_create_session(
                 container_name,
                 "tmux",
                 "new-session",
+                "-e",
+                &agent_env,
                 "-s",
                 &session_name,
                 "--",

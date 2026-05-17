@@ -1018,8 +1018,6 @@ fn launch_role_runtime(
     }
     run_args.extend_from_slice(&[
         "-e",
-        &jackin_agent_env,
-        "-e",
         &jackin_role_env,
         "-v",
         &certs_agent_mount,
@@ -1097,6 +1095,8 @@ fn launch_role_runtime(
         container_name,
         "tmux",
         "new-session",
+        "-e",
+        &jackin_agent_env,
         "-s",
         &first_session_name,
         "--",
@@ -4859,14 +4859,15 @@ model = "gpt-5"
             .iter()
             .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
-        assert!(run_cmd.contains("-e JACKIN_AGENT=codex"));
+        assert!(!run_cmd.contains("JACKIN_AGENT"), "JACKIN_AGENT must not be in docker run");
         assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"));
-        // Model flag is forwarded to the tmux session, not the docker run CMD.
+        // Model flag and JACKIN_AGENT are forwarded to the tmux session, not the docker run CMD.
         let session_cmd = runner
             .recorded
             .iter()
             .find(|call| call.contains("tmux new-session") && call.contains("entrypoint.sh"))
             .unwrap();
+        assert!(session_cmd.contains("JACKIN_AGENT=codex"));
         assert!(session_cmd.contains(" -m gpt-5"));
         assert!(run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"));
         assert!(!run_cmd.contains("/jackin/codex/config.toml"));
@@ -4941,7 +4942,7 @@ agents = ["codex"]
             .iter()
             .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .expect("role docker run should fire even without OPENAI_API_KEY");
-        assert!(run_cmd.contains("-e JACKIN_AGENT=codex"));
+        assert!(!run_cmd.contains("JACKIN_AGENT"), "JACKIN_AGENT must not be in docker run");
         assert!(!run_cmd.contains("-e OPENAI_API_KEY="));
     }
 
