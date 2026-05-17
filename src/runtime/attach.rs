@@ -7,8 +7,6 @@ use crate::tui;
 
 use super::naming::{LABEL_KIND_DIND, LABEL_MANAGED, dind_certs_volume};
 
-pub const PRIMARY_SESSION_NAME: &str = "jackin-primary";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainerState {
     NotFound,
@@ -168,37 +166,75 @@ fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
     docker_unavailable_msg(&format!("inspect container `{container_name}`"), reason)
 }
 
-/// Attach to or create the primary tmux session in a running container.
+/// 6-hex-digit session ID from nanoseconds — ~16M distinct values per ms.
+pub(super) fn short_session_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos());
+    format!("{:06x}", ts & 0x00ff_ffff)
+}
+
+/// Reconnect to an existing tmux session in a running container, or create a
+/// new one when none are running.
 ///
-/// Uses `tmux new-session -A` which attaches if `jackin-primary` already
-/// exists, or creates it running `entrypoint.sh` when the session is absent
-/// (primary agent exited cleanly while the supervisor kept the container up).
+/// If one or more sessions exist, attaches to the most recently used one via
+/// `tmux attach-session` (no `-t`). If no sessions are running, reads the
+/// agent from the instance manifest and starts a new `jackin-<agent>-<id>`
+/// session via `entrypoint.sh`.
 ///
-/// `TMUX=` is unset on the exec so a host tmux session does not cause
-/// "sessions should be nested with care" errors inside the container.
-pub(super) fn attach_primary_session(
+/// `TMUX=` prevents nested-session warnings when the operator's host terminal
+/// is itself inside tmux.
+pub(super) fn reconnect_or_create_session(
+    paths: &JackinPaths,
     container_name: &str,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    runner.run(
-        "docker",
-        &[
-            "exec",
-            "-e",
-            "TMUX=",
-            "-it",
-            container_name,
-            "tmux",
-            "new-session",
-            "-A",
-            "-s",
-            PRIMARY_SESSION_NAME,
-            "--",
-            "/jackin/runtime/entrypoint.sh",
-        ],
-        None,
-        &RunOptions::default(),
-    )
+    let sessions = inspect_agent_sessions(runner, container_name, &ContainerState::Running);
+    let has_sessions = matches!(&sessions, AgentSessionInventory::Sessions(v) if !v.is_empty());
+
+    if has_sessions {
+        runner.run(
+            "docker",
+            &[
+                "exec",
+                "-e",
+                "TMUX=",
+                "-it",
+                container_name,
+                "tmux",
+                "attach-session",
+            ],
+            None,
+            &RunOptions::default(),
+        )
+    } else {
+        let agent_slug =
+            crate::instance::InstanceManifest::read(&paths.data_dir.join(container_name))
+                .ok()
+                .and_then(|m| m.agent().ok())
+                .map(|a| a.slug().to_string())
+                .unwrap_or_else(|| "agent".to_string());
+        let session_name = format!("jackin-{}-{}", agent_slug, short_session_id());
+        runner.run(
+            "docker",
+            &[
+                "exec",
+                "-e",
+                "TMUX=",
+                "-it",
+                container_name,
+                "tmux",
+                "new-session",
+                "-s",
+                &session_name,
+                "--",
+                "/jackin/runtime/entrypoint.sh",
+            ],
+            None,
+            &RunOptions::default(),
+        )
+    }
 }
 
 /// Open a one-shot interactive zsh shell in a running container.
@@ -274,18 +310,7 @@ pub fn spawn_agent_session(
         crate::env_model::JACKIN_AGENT_ENV_NAME,
         agent.slug()
     );
-    // Generate a short unique suffix so two sessions of the same agent don't
-    // collide on their tmux session name. Using nanoseconds gives ~16M
-    // distinct values per millisecond, making same-millisecond collisions
-    // negligible compared to the 1000-value subsecond-millis window.
-    let short_id: String = {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.subsec_nanos());
-        format!("{:06x}", ts & 0x00ff_ffff)
-    };
-    let session_name = format!("jackin-{}-{short_id}", agent.slug());
+    let session_name = format!("jackin-{}-{}", agent.slug(), short_session_id());
     super::caffeinate::reconcile(paths, runner);
     let result = runner.run(
         "docker",
@@ -322,15 +347,15 @@ pub fn hardline_agent(
     container_name: &str,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    // Reconcile keep_awake right before each `attach_primary_session` call.
-    // `attach_primary_session` blocks on the tmux exec until the session ends,
+    // Reconcile keep_awake right before each `reconnect_or_create_session` call.
+    // `reconnect_or_create_session` blocks on the tmux exec until the session ends,
     // so the post-hardline reconcile in `app::Command::Hardline` would fire
     // too late. Firing here, while the container is observably running, ensures
     // caffeinate spawns for the duration of the re-attached session.
     let attach_outcome = match inspect_container_state(runner, container_name) {
         ContainerState::Running => {
             super::caffeinate::reconcile(paths, runner);
-            attach_primary_session(container_name, runner)
+            reconnect_or_create_session(paths, container_name, runner)
         }
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
@@ -385,7 +410,7 @@ pub fn hardline_agent(
                 &RunOptions::default(),
             )?;
             super::caffeinate::reconcile(paths, runner);
-            attach_primary_session(container_name, runner)
+            reconnect_or_create_session(paths, container_name, runner)
         }
     };
     attach_outcome?;
@@ -706,7 +731,7 @@ mod tests {
                     && c.contains("TMUX=")
                     && c.contains("jk-agent-smith")
                     && c.contains("tmux new-session")
-                    && c.contains(PRIMARY_SESSION_NAME)
+                    && c.contains("jackin-")
             }),
             "expected tmux new-session exec in recorded commands; got: {:?}",
             runner.recorded
@@ -981,7 +1006,7 @@ mod tests {
             .unwrap();
         let mut runner = FakeRunner::with_capture_queue([
             "true 0 false".to_string(),
-            "jackin-primary\njackin-codex-abc".to_string(),
+            "jackin-claude-abc123\njackin-codex-abc".to_string(),
             "false 137 false".to_string(),
             "[]".to_string(),
         ]);
@@ -995,7 +1020,7 @@ mod tests {
         assert!(report.contains("Status: preserved_dirty"), "{report}");
         assert!(report.contains("Last attach outcome: exit:137"), "{report}");
         assert!(
-            report.contains("Agent sessions: jackin-primary; jackin-codex-abc"),
+            report.contains("Agent sessions: jackin-claude-abc123; jackin-codex-abc"),
             "{report}"
         );
         assert!(report.contains("Role container: jk-k7p9m2xq-workspace-agentsmith (running)"));
@@ -1016,7 +1041,7 @@ mod tests {
     #[test]
     fn inspect_agent_sessions_lists_tmux_sessions() {
         let mut runner =
-            FakeRunner::with_capture_queue(["jackin-primary\njackin-codex-abc".to_string()]);
+            FakeRunner::with_capture_queue(["jackin-claude-abc123\njackin-codex-abc".to_string()]);
 
         let sessions =
             inspect_agent_sessions(&mut runner, "jk-agent-smith", &ContainerState::Running);
@@ -1025,7 +1050,7 @@ mod tests {
             panic!("expected sessions");
         };
         assert_eq!(sessions.len(), 2);
-        assert_eq!(sessions[0].command, "jackin-primary");
+        assert_eq!(sessions[0].command, "jackin-claude-abc123");
         assert_eq!(sessions[1].command, "jackin-codex-abc");
     }
 
@@ -1151,7 +1176,7 @@ mod tests {
         let attach_idx = runner
             .recorded
             .iter()
-            .position(|c| c.contains("tmux new-session") && c.contains(PRIMARY_SESSION_NAME))
+            .position(|c| c.contains("tmux new-session") && c.contains("jackin-"))
             .unwrap();
         assert!(start_idx < attach_idx, "start must precede tmux session");
     }
@@ -1208,7 +1233,7 @@ mod tests {
         let attach_idx = runner
             .recorded
             .iter()
-            .position(|c| c.contains("tmux new-session") && c.contains(PRIMARY_SESSION_NAME))
+            .position(|c| c.contains("tmux new-session") && c.contains("jackin-"))
             .expect("expected tmux session start");
         assert!(network_create_idx < network_connect_idx);
         assert!(network_connect_idx < dind_run_idx);
@@ -1267,7 +1292,7 @@ mod tests {
         let attach_idx = runner
             .recorded
             .iter()
-            .position(|c| c.contains("tmux new-session") && c.contains(PRIMARY_SESSION_NAME))
+            .position(|c| c.contains("tmux new-session") && c.contains("jackin-"))
             .expect("expected tmux session start");
         assert!(dind_start_idx < dind_ready_idx);
         assert!(dind_ready_idx < role_start_idx);

@@ -87,18 +87,18 @@ Response:
 ```json
 {
   "sessions": [
-    {"name": "jackin-primary",       "agent": "claude",  "created_at": "2026-05-17T13:00:00Z", "status": "running"},
-    {"name": "jackin-codex-1a2b3c",  "agent": "codex",   "created_at": "2026-05-17T13:04:11Z", "status": "running"}
+    {"name": "jackin-claude-1a2b3c",  "agent": "claude",  "created_at": "2026-05-17T13:00:00Z", "status": "running"},
+    {"name": "jackin-codex-4d5e6f",  "agent": "codex",   "created_at": "2026-05-17T13:04:11Z", "status": "running"}
   ],
   "container_uptime_secs": 3721
 }
 ```
 
-`agent` is derived from the session name prefix (`jackin-<agent>-<id>` → `<agent>`; `jackin-primary` → the instance manifest's default agent).
+`agent` is derived from the session name prefix (`jackin-<agent>-<id>` → `<agent>`).
 
 **Future commands (deferred — daemon phase):**
 
-- `attach {"session": "jackin-primary"}` — instruct the binary to run the attach command on behalf of the daemon
+- `attach {"session": "jackin-claude-1a2b3c"}` — instruct the binary to run the attach command on behalf of the daemon
 - `events` — upgrade connection to an event stream: `session-started`, `session-ended`, `all-sessions-ended`
 
 ### Host side changes

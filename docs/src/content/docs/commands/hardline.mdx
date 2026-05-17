@@ -37,7 +37,7 @@ When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspa
 
 | Container state | Action |
 |---|---|
-| Running | Attach to the primary tmux session (`jackin-primary`). `--new` creates a named secondary tmux session inside the container. `--shell` opens an ephemeral zsh session without a tmux session. |
+| Running | Attach to the most recently used tmux session, or create a new `jackin-<agent>-<id>` session when none are running. `--new` creates a new named tmux session inside the container. `--shell` opens an ephemeral zsh session without a tmux session. |
 | Stopped, exit code `0` (clean `/exit`) | Error. The previous session ended normally — use `jackin load` to start a new one. |
 | Stopped, non-zero exit or OOM-killed | Restart the existing container in place and attach. If the DinD sidecar (`<container>-dind`) is stopped, restart it first; if it is missing, recreate the derived jackin network/DinD sidecar and wait for TLS readiness. |
 | Not found with indexed state | Rebuild the jackin-managed runtime for that instance when the saved workspace, original ad-hoc directory, or a confirmed moved ad-hoc directory can be resolved. |
@@ -59,9 +59,9 @@ When `jackin hardline` resolves an instance from the current directory without a
 
 ## Terminal close vs. exit
 
-Closing your terminal tab **does not** shut the container down. The foreground session connects via `docker exec tmux new-session -A`, so closing the terminal detaches from the tmux session while the container (and the tmux server inside it) keeps running. `jackin hardline` reattaches to the same `jackin-primary` tmux session.
+Closing your terminal tab **does not** shut the container down. The foreground session connects via `docker exec`, so closing the terminal detaches from the tmux session while the container (and the tmux server inside it) keeps running. `jackin hardline` reconnects to the most recently used session.
 
-To stop an agent, exit it from inside (e.g., `/exit` in Claude Code). That ends the tmux session cleanly. The container keeps running until the primary session exits cleanly and jackin's post-session teardown runs.
+To stop an agent, exit it from inside (e.g., `/exit` in Claude Code). That ends the tmux session cleanly. The container keeps running until the foreground session exits cleanly and jackin's post-session teardown runs.
 
 ## Examples
 

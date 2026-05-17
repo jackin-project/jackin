@@ -2268,13 +2268,13 @@ mod auth_set_tests {
         ));
         assert!(!has_multiple_agent_sessions(
             &runtime::AgentSessionInventory::Sessions(vec![runtime::AgentSession {
-                command: "jackin-primary".to_string(),
+                command: "jackin-claude-abc123".to_string(),
             }])
         ));
         assert!(has_multiple_agent_sessions(
             &runtime::AgentSessionInventory::Sessions(vec![
                 runtime::AgentSession {
-                    command: "jackin-primary".to_string(),
+                    command: "jackin-claude-abc123".to_string(),
                 },
                 runtime::AgentSession {
                     command: "jackin-codex-abc123".to_string(),

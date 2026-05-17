@@ -1140,7 +1140,7 @@ mod tests {
         let mut runner = runtime::FakeRunner::default();
         runner
             .capture_queue
-            .push_back("jackin-primary\njackin-codex-abc".to_string());
+            .push_back("jackin-claude-abc123\njackin-codex-abc".to_string());
         let candidate = HardlineCandidate {
             name: container.to_string(),
             state: runtime::ContainerState::Running,

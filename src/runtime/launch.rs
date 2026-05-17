@@ -1079,11 +1079,16 @@ fn launch_role_runtime(
         return Err(err);
     }
 
-    // Start the primary agent session inside the running container. Using
-    // `tmux new-session -A` attaches if jackin-primary already exists (e.g.
-    // after a `hardline` that left the container alive), or creates it fresh.
+    // Start the first agent session inside the running container. Named
+    // jackin-<agent>-<id> using the same convention as secondary sessions —
+    // there is no primary/secondary distinction; all sessions are equal.
     // TMUX= prevents nested-session warnings when the operator's host
     // terminal is itself inside a tmux session.
+    let first_session_name = format!(
+        "jackin-{}-{}",
+        agent.slug(),
+        super::attach::short_session_id()
+    );
     let mut exec_args: Vec<&str> = vec![
         "exec",
         "-e",
@@ -1092,9 +1097,8 @@ fn launch_role_runtime(
         container_name,
         "tmux",
         "new-session",
-        "-A",
         "-s",
-        super::attach::PRIMARY_SESSION_NAME,
+        &first_session_name,
         "--",
         "/jackin/runtime/entrypoint.sh",
     ];
