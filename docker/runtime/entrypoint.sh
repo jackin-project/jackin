@@ -106,31 +106,31 @@ case "${2:-}" in
   commit|squash|merge) exit 0 ;;
 esac
 
+# Append $2 trailer to commit-msg file $1 unless it is already present.
+_append_trailer() {
+    if ! grep -qF "$2" "$1"; then
+        printf '\n%s\n' "$2" >> "$1" || {
+            echo "[jackin prepare-commit-msg] ERROR: failed to append $3 to $1" >&2
+            exit 1
+        }
+    fi
+}
+
 # ── Co-authored-by (agent-specific, only if JACKIN_GIT_COAUTHOR_TRAILER=1) ──
 if [ "${JACKIN_GIT_COAUTHOR_TRAILER:-0}" = "1" ]; then
     _agent="${JACKIN_AGENT:-}"
-    _coauthor_email=""
     _coauthor_trailer=""
     if [ "$_agent" = "claude" ]; then
-        _coauthor_email="noreply@anthropic.com"
-        _coauthor_trailer="Co-authored-by: Claude <${_coauthor_email}>"
+        _coauthor_trailer="Co-authored-by: Claude <noreply@anthropic.com>"
     elif [ "$_agent" = "codex" ]; then
-        _coauthor_email="codex@openai.com"
-        _coauthor_trailer="Co-authored-by: Codex <${_coauthor_email}>"
+        _coauthor_trailer="Co-authored-by: Codex <codex@openai.com>"
     elif [ "$_agent" = "amp" ]; then
-        _coauthor_email="amp@ampcode.com"
-        _coauthor_trailer="Co-authored-by: Amp <${_coauthor_email}>"
+        _coauthor_trailer="Co-authored-by: Amp <amp@ampcode.com>"
     elif [ "$_agent" = "opencode" ]; then
-        _coauthor_email="opencode-agent[bot]@users.noreply.github.com"
-        _coauthor_trailer="Co-authored-by: opencode-agent[bot] <${_coauthor_email}>"
+        _coauthor_trailer="Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>"
     fi
     if [ -n "$_coauthor_trailer" ]; then
-        if ! grep -qF "$_coauthor_email" "$1"; then
-            printf '\n%s\n' "$_coauthor_trailer" >> "$1" || {
-                echo "[jackin prepare-commit-msg] ERROR: failed to append Co-authored-by to $1" >&2
-                exit 1
-            }
-        fi
+        _append_trailer "$1" "$_coauthor_trailer" "Co-authored-by"
     else
         echo "[jackin prepare-commit-msg] WARNING: JACKIN_GIT_COAUTHOR_TRAILER=1 but JACKIN_AGENT='${_agent}' is not a recognized agent slug; no Co-authored-by trailer written" >&2
     fi
@@ -141,13 +141,7 @@ if [ "${JACKIN_GIT_DCO:-0}" = "1" ]; then
     _dco_name="$(git config user.name 2>/dev/null || true)"
     _dco_email="$(git config user.email 2>/dev/null || true)"
     if [ -n "$_dco_name" ] && [ -n "$_dco_email" ]; then
-        _dco_trailer="Signed-off-by: ${_dco_name} <${_dco_email}>"
-        if ! grep -qF "Signed-off-by: ${_dco_name} <${_dco_email}>" "$1"; then
-            printf '\n%s\n' "$_dco_trailer" >> "$1" || {
-                echo "[jackin prepare-commit-msg] ERROR: failed to append Signed-off-by to $1" >&2
-                exit 1
-            }
-        fi
+        _append_trailer "$1" "Signed-off-by: ${_dco_name} <${_dco_email}>" "Signed-off-by"
     else
         echo "[jackin prepare-commit-msg] WARNING: JACKIN_GIT_DCO=1 but git identity is not configured (user.name='${_dco_name}' user.email='${_dco_email}'); no Signed-off-by trailer written" >&2
     fi

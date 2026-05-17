@@ -291,28 +291,18 @@ impl ConfigEditor {
     }
 
     pub fn set_git_coauthor_trailer(&mut self, enabled: bool) {
-        let git_path = ["git".to_string()];
-        if enabled {
-            let table = table_path_mut(&mut self.doc, &git_path);
-            table.insert("coauthor_trailer", toml_edit::value(true));
-        } else {
-            if let Some(git_table) = self
-                .doc
-                .as_table_mut()
-                .get_mut("git")
-                .and_then(|t| t.as_table_mut())
-            {
-                git_table.remove("coauthor_trailer");
-            }
-            prune_empty_trailing_tables(&mut self.doc, &git_path, 1);
-        }
+        self.set_git_bool_field("coauthor_trailer", enabled);
     }
 
     pub fn set_git_dco(&mut self, enabled: bool) {
+        self.set_git_bool_field("dco", enabled);
+    }
+
+    fn set_git_bool_field(&mut self, field: &str, enabled: bool) {
         let git_path = ["git".to_string()];
         if enabled {
             let table = table_path_mut(&mut self.doc, &git_path);
-            table.insert("dco", toml_edit::value(true));
+            table.insert(field, toml_edit::value(true));
         } else {
             if let Some(git_table) = self
                 .doc
@@ -320,7 +310,7 @@ impl ConfigEditor {
                 .get_mut("git")
                 .and_then(|t| t.as_table_mut())
             {
-                git_table.remove("dco");
+                git_table.remove(field);
             }
             prune_empty_trailing_tables(&mut self.doc, &git_path, 1);
         }
