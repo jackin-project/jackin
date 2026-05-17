@@ -80,7 +80,6 @@ impl ConfirmSaveState {
             }
             KeyCode::Down | KeyCode::Char('j' | 'J') => {
                 apply_scroll_delta(&mut self.scroll_offset, 1);
-                // Clamped to valid range in render.
                 ModalOutcome::Continue
             }
             // Tab / BackTab / Right / Left — only two buttons,
@@ -129,7 +128,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
     // offset so the operator can page through long diffs.
     let content_rows = inner.height.saturating_sub(3); // blank, blank, buttons
     let content_rows = content_rows.saturating_sub(1); // bottom-of-content blank
-    let visible_u16 = content_rows;
+    let content_area_height = content_rows;
 
     // Content indented by SUBPANEL_CONTENT_INDENT (2). The caller is
     // responsible for any deeper indentation; we just add a uniform
@@ -149,7 +148,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // top blank
-            Constraint::Length(visible_u16),
+            Constraint::Length(content_area_height),
             Constraint::Length(1), // blank
             Constraint::Length(1), // buttons
         ])

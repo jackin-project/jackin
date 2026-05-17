@@ -281,7 +281,10 @@ pub(super) fn cursor_scroll_for_panel(
     scroll_y: u16,
     term: ratatui::layout::Rect,
 ) -> u16 {
+    // 9 = header(3) + tab-strip(2) + block-borders(2) + footer(≈2)
     let viewport_h = (term.height.saturating_sub(9) as usize).max(1);
+    // content_height - viewport_h = u16::MAX exactly: max_offset returns u16::MAX without
+    // tripping its debug_assert, while the upper clamp on cursor rows stays unreachable.
     let content_height = usize::from(u16::MAX).saturating_add(viewport_h);
     follow_cursor_y(cursor, content_height, viewport_h, scroll_y)
 }
