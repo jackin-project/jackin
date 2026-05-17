@@ -954,9 +954,10 @@ fn editor_scroll_area(
 }
 
 fn global_mount_rows_content_width(rows: &[crate::config::GlobalMountRow]) -> usize {
-    let mounts: Vec<crate::workspace::MountConfig> =
-        rows.iter().map(|row| row.mount.clone()).collect();
-    global_mounts_content_width(&mounts)
+    // Settings renders with global_mount_lines (Destination + Mode + Type columns).
+    // list.rs::global_mounts_content_width only covers Destination + Mode — using it
+    // here would underestimate content_width, clamping scroll before the right edge.
+    super::super::render::global_mounts::global_mounts_content_width(rows)
 }
 
 /// If the `Editor` or `CreatePrelude` stage has an open `FileBrowser`

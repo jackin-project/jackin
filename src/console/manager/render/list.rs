@@ -132,11 +132,17 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
         &mut max_w,
     );
 
+    // Unselected rows start with "  " (2 spaces) so add_trailing_padding appends 2
+    // transparent spaces, making content_width = max_w + 2. The selected row starts
+    // with "▸ " (no leading space) so gets no trailing padding and its background
+    // would stop 2 cells short when scrolled. Pad to the full content_width so the
+    // selection highlight fills the entire visible area at every scroll position.
+    let content_w = super::max_line_width(&lines);
     if let Some(line) = lines.get_mut(visual_selected) {
         let current_w = super::line_width(line);
-        if current_w < max_w {
+        if current_w < content_w {
             line.spans.push(Span::styled(
-                " ".repeat(max_w - current_w),
+                " ".repeat(content_w - current_w),
                 Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
             ));
         }

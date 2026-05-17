@@ -19,7 +19,9 @@ use crate::console::manager::state::{
 };
 use crate::operator_env::EnvValue;
 
-pub(super) fn global_mounts_content_width(rows: &[crate::config::GlobalMountRow]) -> usize {
+pub(in crate::console::manager) fn global_mounts_content_width(
+    rows: &[crate::config::GlobalMountRow],
+) -> usize {
     let lines = global_mount_lines(rows, None, false);
     super::max_line_width(&lines)
 }
