@@ -23,19 +23,31 @@ pub enum PruneCommand {
     /// Images still used by a role container are skipped.
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Images,
-    /// Purge on-disk state for terminated instances
+    /// Purge on-disk state for instances
     ///
-    /// Removes state directories and index entries for instances in terminal
-    /// statuses: `clean_exited`, `superseded`, `failed_setup`, and `purged`
-    /// tombstones. Crashed, preserved, and recoverable instances are skipped
-    /// — use `jackin hardline <selector>` to return or `jackin eject <selector> --purge` to discard.
+    /// By default removes state directories and index entries for instances
+    /// in terminal statuses: `clean_exited`, `superseded`, `failed_setup`,
+    /// and `purged` tombstones. Running and recoverable instances are skipped.
+    ///
+    /// Pass `--all` to also stop and remove running instances (equivalent to
+    /// `jackin eject <selector> --purge` for every instance).
     #[command(before_help = BANNER, styles = HELP_STYLES)]
-    Instances,
+    Instances(PruneInstancesArgs),
     /// Remove all prunable data
     ///
     /// Runs in order: prune instances, prune images, prune roles, prune cache.
+    /// By default skips running instances; pass `--all` to stop and remove them too.
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     All(PruneAllArgs),
+}
+
+/// Arguments for `jackin prune instances`
+#[derive(Debug, Args, PartialEq, Eq)]
+#[command(before_help = BANNER, styles = HELP_STYLES)]
+pub struct PruneInstancesArgs {
+    /// Also stop and remove running or recoverable instances
+    #[arg(long, short = 'a')]
+    pub all: bool,
 }
 
 /// Arguments for `jackin prune all`
@@ -45,6 +57,9 @@ pub struct PruneAllArgs {
     /// Skip the confirmation prompt
     #[arg(long, short = 'y')]
     pub yes: bool,
+    /// Also stop and remove running or recoverable instances
+    #[arg(long, short = 'a')]
+    pub all: bool,
 }
 
 #[cfg(test)]
@@ -115,17 +130,30 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "prune", "instances"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(crate::cli::Command::Prune(PruneCommand::Instances))
+            Some(crate::cli::Command::Prune(PruneCommand::Instances(
+                PruneInstancesArgs { all: false }
+            )))
         ));
     }
 
     #[test]
-    fn prune_all_defaults_yes_false() {
+    fn prune_instances_all_flag_parses() {
+        let cli = Cli::try_parse_from(["jackin", "prune", "instances", "--all"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(crate::cli::Command::Prune(PruneCommand::Instances(
+                PruneInstancesArgs { all: true }
+            )))
+        ));
+    }
+
+    #[test]
+    fn prune_all_defaults_yes_false_all_false() {
         let cli = Cli::try_parse_from(["jackin", "prune", "all"]).unwrap();
         assert!(matches!(
             cli.command,
             Some(crate::cli::Command::Prune(PruneCommand::All(
-                PruneAllArgs { yes: false }
+                PruneAllArgs { yes: false, all: false }
             )))
         ));
     }
@@ -136,7 +164,7 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(crate::cli::Command::Prune(PruneCommand::All(
-                PruneAllArgs { yes: true }
+                PruneAllArgs { yes: true, all: false }
             )))
         ));
     }
@@ -147,7 +175,18 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(crate::cli::Command::Prune(PruneCommand::All(
-                PruneAllArgs { yes: true }
+                PruneAllArgs { yes: true, all: false }
+            )))
+        ));
+    }
+
+    #[test]
+    fn prune_all_all_flag_parses() {
+        let cli = Cli::try_parse_from(["jackin", "prune", "all", "--all"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(crate::cli::Command::Prune(PruneCommand::All(
+                PruneAllArgs { yes: false, all: true }
             )))
         ));
     }

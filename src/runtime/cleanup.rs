@@ -408,7 +408,13 @@ pub fn prune_images(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
 /// tombstones. Any instance whose filesystem teardown fails — typically because
 /// Docker resources are still present — is skipped; use
 /// `jackin hardline <selector>` to return or `jackin eject <selector> --purge` to discard.
-pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
+/// Remove instances with terminal statuses (clean-exited, superseded,
+/// failed setup, purged). Does not touch running or restore-available
+/// instances. Used by `jackin prune instances`.
+pub fn prune_instances(
+    paths: &JackinPaths,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
 
     let prunable = [
@@ -441,8 +447,6 @@ pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> 
     }
 
     if !removed.is_empty() {
-        // Stale index entries with no state dir are harmless — purge_container_filesystem
-        // tolerates NotFound, so the next prune run retries unless the index is corrupt.
         let refs: Vec<&str> = removed.iter().map(String::as_str).collect();
         let index_updated = match InstanceIndex::remove_many(&paths.data_dir, &refs) {
             Ok(()) => true,
@@ -483,19 +487,13 @@ pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> 
     Ok(())
 }
 
-/// Force-remove all managed Docker resources then purge every instance's
+/// Force-eject all managed Docker resources then purge every instance's
 /// state directory and index entry, regardless of status.
-///
-/// Used by `prune all` where the operator has explicitly asked to wipe
-/// everything. Unlike `prune_instances`, this does not skip `Active` or
-/// `RestoreAvailable` instances.
+/// Used by `jackin prune all`.
 pub fn prune_all_instances(
     paths: &JackinPaths,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    // Eject all managed containers (running or stopped) before touching
-    // state dirs. eject_role uses `docker rm -f` which handles both states.
-    // Containers not in the index (orphaned) are also caught here.
     exile_all(runner)?;
 
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
@@ -523,12 +521,10 @@ pub fn prune_all_instances(
     if !removed.is_empty() {
         let refs: Vec<&str> = removed.iter().map(String::as_str).collect();
         match InstanceIndex::remove_many(&paths.data_dir, &refs) {
-            Ok(()) => {
-                println!("Pruned {} instance(s):", removed.len());
-            }
+            Ok(()) => println!("Pruned {} instance(s):", removed.len()),
             Err(err) => {
                 eprintln!(
-                    "{} instance index could not be updated: {err:#}",
+                    "{} instance index could not be updated: {err:#}; run `jackin prune instances` again to retry",
                     "warning:".yellow().bold()
                 );
                 println!(
@@ -543,8 +539,7 @@ pub fn prune_all_instances(
     }
 
     for (name, error) in &skipped {
-        eprintln!("  {}: {}", "warning:".yellow().bold(), error);
-        eprintln!("    failed to purge state for {name}");
+        eprintln!("{} failed to purge state for {name}: {error}", "warning:".yellow().bold());
     }
 
     Ok(())

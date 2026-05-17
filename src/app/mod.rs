@@ -1186,7 +1186,13 @@ pub fn run(cli: Cli) -> Result<()> {
             PruneCommand::Roles => runtime::prune_roles(&paths),
             PruneCommand::Cache => runtime::prune_cache(&paths),
             PruneCommand::Images => runtime::prune_images(&mut runner),
-            PruneCommand::Instances => runtime::prune_instances(&paths, &mut runner),
+            PruneCommand::Instances(args) => {
+                if args.all {
+                    runtime::prune_all_instances(&paths, &mut runner)
+                } else {
+                    runtime::prune_instances(&paths, &mut runner)
+                }
+            }
             PruneCommand::All(args) => {
                 if !args.yes {
                     let confirmed = dialoguer::Confirm::new()
@@ -1199,11 +1205,16 @@ pub fn run(cli: Cli) -> Result<()> {
                         anyhow::bail!("aborted by operator");
                     }
                 }
+                let prune_instances_fn: fn(&_, &mut _) -> _ = if args.all {
+                    runtime::prune_all_instances
+                } else {
+                    runtime::prune_instances
+                };
                 // Run every step regardless of individual failures so a single
                 // Docker error doesn't leave the role cache and shared cache
                 // untouched.
                 let results = [
-                    runtime::prune_all_instances(&paths, &mut runner).context("prune instances"),
+                    prune_instances_fn(&paths, &mut runner).context("prune instances"),
                     runtime::prune_images(&mut runner).context("prune images"),
                     runtime::prune_roles(&paths).context("prune roles"),
                     runtime::prune_cache(&paths).context("prune cache"),
