@@ -461,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_codex_install_as_root_without_extracting_directly_to_bin() {
+    fn renders_codex_install_as_agent_without_extracting_directly_to_bin() {
         let dockerfile = render_derived_dockerfile(
             "FROM projectjackin/construct:trixie\n",
             None,
@@ -471,12 +471,12 @@ mod tests {
 
         let codex_block_pos = dockerfile.find("ASSET=\"codex-${ARCH}\"").unwrap();
         // rfind finds the most recent USER directive before the Codex install
-        // block — must be root, not agent.
-        let root_pos = dockerfile[..codex_block_pos].rfind("USER root\n").unwrap();
-        assert!(root_pos < codex_block_pos);
+        // block; it must be agent, not root.
+        let agent_pos = dockerfile[..codex_block_pos].rfind("USER agent\n").unwrap();
+        assert!(agent_pos < codex_block_pos);
         assert!(dockerfile.contains("set -euxo pipefail"));
-        assert!(dockerfile.contains("tar -xzf - -O \"${ASSET}\" > /tmp/codex.bin"));
-        assert!(dockerfile.contains("mv /tmp/codex.bin /usr/local/bin/codex"));
+        assert!(dockerfile.contains("tar -xzf - -O \"${ASSET}\" > \"${HOME}/.local/bin/codex\""));
+        assert!(dockerfile.contains("chmod 0755 \"${HOME}/.local/bin/codex\""));
         assert!(!dockerfile.contains("tar -xz -C /usr/local/bin"));
     }
 

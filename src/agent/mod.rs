@@ -98,12 +98,14 @@ RUN amp --version
 ";
 
 const KIMI_INSTALL_BLOCK: &str = "\
-USER root
+USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN set -euxo pipefail && \\
     : \"${JACKIN_CACHE_BUST}\" && \\
+    export PATH=\"${HOME}/.local/bin:${PATH}\" && \\
     curl -fsSL https://code.kimi.com/install.sh | bash && \\
     kimi --version
+ENV PATH=\"/home/agent/.local/bin:${PATH}\"
 ";
 
 const OPENCODE_INSTALL_BLOCK: &str = "\
@@ -124,7 +126,7 @@ ENV PATH=\"/home/agent/.opencode/bin:${PATH}\"\n\
 ";
 
 const CODEX_INSTALL_BLOCK: &str = "\
-USER root
+USER agent
 ARG JACKIN_CACHE_BUST=0
 ARG TARGETARCH
 RUN set -euxo pipefail && \\
@@ -146,11 +148,12 @@ RUN set -euxo pipefail && \\
       *) echo \"unexpected codex release tag format: ${TAG}\"; exit 1 ;; \\
     esac && \\
     ASSET=\"codex-${ARCH}\" && \\
+    mkdir -p \"${HOME}/.local/bin\" && \\
     curl -fsSL \"https://github.com/openai/codex/releases/download/${TAG}/${ASSET}.tar.gz\" \\
-      | tar -xzf - -O \"${ASSET}\" > /tmp/codex.bin && \\
-    chmod 0755 /tmp/codex.bin && \\
-    mv /tmp/codex.bin /usr/local/bin/codex && \\
-    mkdir -p /etc/jackin && codex --version > /etc/jackin/codex.version
+      | tar -xzf - -O \"${ASSET}\" > \"${HOME}/.local/bin/codex\" && \\
+    chmod 0755 \"${HOME}/.local/bin/codex\" && \\
+    \"${HOME}/.local/bin/codex\" --version
+ENV PATH=\"/home/agent/.local/bin:${PATH}\"
 ";
 
 impl fmt::Display for Agent {
@@ -223,18 +226,19 @@ mod tests {
     }
 
     #[test]
-    fn codex_install_block_installs_cli_as_root_with_current_archive_layout() {
+    fn codex_install_block_installs_cli_as_agent_with_current_archive_layout() {
         let block = Agent::Codex.install_block();
-        assert!(block.starts_with("USER root\n"));
+        assert!(block.starts_with("USER agent\n"));
         assert!(block.contains("set -euxo pipefail"));
         assert!(block.contains("${TARGETARCH:-amd64}"));
         assert!(block.contains("x86_64-unknown-linux-musl"));
         assert!(block.contains("aarch64-unknown-linux-musl"));
         assert!(block.contains("ASSET=\"codex-${ARCH}\""));
-        assert!(block.contains("tar -xzf - -O \"${ASSET}\" > /tmp/codex.bin"));
-        assert!(block.contains("chmod 0755 /tmp/codex.bin"));
-        assert!(block.contains("mv /tmp/codex.bin /usr/local/bin/codex"));
-        assert!(block.contains("/etc/jackin/codex.version"));
+        assert!(block.contains("mkdir -p \"${HOME}/.local/bin\""));
+        assert!(block.contains("tar -xzf - -O \"${ASSET}\" > \"${HOME}/.local/bin/codex\""));
+        assert!(block.contains("chmod 0755 \"${HOME}/.local/bin/codex\""));
+        assert!(block.contains("\"${HOME}/.local/bin/codex\" --version"));
+        assert!(block.contains("ENV PATH=\"/home/agent/.local/bin:${PATH}\""));
         assert!(block.contains("openai/codex/releases"));
     }
 
@@ -257,9 +261,11 @@ mod tests {
     #[test]
     fn kimi_install_block_uses_official_curl_installer() {
         let block = Agent::Kimi.install_block();
-        assert!(block.starts_with("USER root\n"));
+        assert!(block.starts_with("USER agent\n"));
+        assert!(block.contains("export PATH=\"${HOME}/.local/bin:${PATH}\""));
         assert!(block.contains("curl -fsSL https://code.kimi.com/install.sh | bash"));
         assert!(block.contains("kimi --version"));
+        assert!(block.contains("ENV PATH=\"/home/agent/.local/bin:${PATH}\""));
     }
 
     #[test]
