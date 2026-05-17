@@ -78,14 +78,11 @@ fn scrollbar_thumb_geometry(
     let max_start = track_len.saturating_sub(thumb_len);
     let max_offset = content_length.saturating_sub(viewport);
     let offset = offset.min(max_offset);
-    let thumb_start = if max_offset == 0 {
-        0
-    } else {
-        offset
-            .saturating_mul(max_start)
-            .saturating_add(max_offset / 2)
-            / max_offset
-    };
+    let thumb_start = offset
+        .saturating_mul(max_start)
+        .saturating_add(max_offset / 2)
+        .checked_div(max_offset)
+        .unwrap_or(0);
 
     (thumb_start, thumb_len)
 }
