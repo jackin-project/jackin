@@ -2,10 +2,11 @@
 
 use ratatui::{
     Frame,
+    buffer::Buffer,
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{Block, Borders, Paragraph, Widget},
 };
 
 use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
@@ -58,15 +59,35 @@ pub(crate) fn scrollbar_position_for_offset(
     }
 }
 
-const fn scrollbar_content_length(content_length: usize, viewport: usize) -> usize {
-    // Ratatui sizes the thumb as viewport / scrollbar_content_length. Passing raw
-    // content_length produces a thumb that is too small for moderate overflows.
-    // The correct value is the number of distinct scroll positions: overflow + 1.
-    if is_scrollable(content_length, viewport) {
-        content_length.saturating_sub(viewport).saturating_add(1)
-    } else {
-        0
+fn scrollbar_thumb_geometry(
+    content_length: usize,
+    viewport: usize,
+    track_len: usize,
+    offset: usize,
+) -> (usize, usize) {
+    if !is_scrollable(content_length, viewport) || track_len == 0 {
+        return (0, 0);
     }
+
+    let thumb_len = track_len
+        .saturating_mul(viewport)
+        .checked_div(content_length)
+        .unwrap_or(0)
+        .max(1)
+        .min(track_len);
+    let max_start = track_len.saturating_sub(thumb_len);
+    let max_offset = content_length.saturating_sub(viewport);
+    let offset = offset.min(max_offset);
+    let thumb_start = if max_offset == 0 {
+        0
+    } else {
+        offset
+            .saturating_mul(max_start)
+            .saturating_add(max_offset / 2)
+            / max_offset
+    };
+
+    (thumb_start, thumb_len)
 }
 
 pub(crate) fn line_width(line: &Line<'_>) -> usize {
@@ -123,23 +144,21 @@ pub(crate) fn render_horizontal_scrollbar(
         return;
     }
     let position = scrollbar_position_for_offset(content_width, viewport, usize::from(scroll_x));
-    let mut state = ScrollbarState::new(scrollbar_content_length(content_width, viewport))
-        .position(position)
-        .viewport_content_length(viewport);
-    let scrollbar = Scrollbar::new(ScrollbarOrientation::HorizontalBottom)
-        .begin_symbol(None)
-        .end_symbol(None)
-        .track_symbol(Some("·"))
-        .thumb_symbol("━")
-        .track_style(Style::default().fg(PHOSPHOR_DARK))
-        .thumb_style(Style::default().fg(PHOSPHOR_DIM));
     let area = Rect {
         x: block_area.x + 1,
         y: block_area.y + block_area.height.saturating_sub(1),
         width: block_area.width.saturating_sub(2),
         height: 1,
     };
-    frame.render_stateful_widget(scrollbar, area, &mut state);
+    frame.render_widget(
+        FixedScrollbar {
+            content_length: content_width,
+            viewport,
+            position,
+            orientation: FixedScrollbarOrientation::Horizontal,
+        },
+        area,
+    );
 }
 
 pub(crate) fn render_vertical_scrollbar(
@@ -172,17 +191,77 @@ pub(crate) fn render_vertical_scrollbar_in_area(
         return;
     }
     let position = scrollbar_position_for_offset(content_height, viewport, usize::from(scroll_y));
-    let mut state = ScrollbarState::new(scrollbar_content_length(content_height, viewport))
-        .position(position)
-        .viewport_content_length(viewport);
-    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-        .begin_symbol(None)
-        .end_symbol(None)
-        .track_symbol(Some("·"))
-        .thumb_symbol("█")
-        .track_style(Style::default().fg(PHOSPHOR_DARK))
-        .thumb_style(Style::default().fg(PHOSPHOR_DIM));
-    frame.render_stateful_widget(scrollbar, area, &mut state);
+    frame.render_widget(
+        FixedScrollbar {
+            content_length: content_height,
+            viewport,
+            position,
+            orientation: FixedScrollbarOrientation::Vertical,
+        },
+        area,
+    );
+}
+
+#[derive(Clone, Copy)]
+enum FixedScrollbarOrientation {
+    Horizontal,
+    Vertical,
+}
+
+struct FixedScrollbar {
+    content_length: usize,
+    viewport: usize,
+    position: usize,
+    orientation: FixedScrollbarOrientation,
+}
+
+impl Widget for FixedScrollbar {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let track_len = match self.orientation {
+            FixedScrollbarOrientation::Horizontal => usize::from(area.width),
+            FixedScrollbarOrientation::Vertical => usize::from(area.height),
+        };
+        if track_len == 0 {
+            return;
+        }
+
+        let (thumb_start, thumb_len) =
+            scrollbar_thumb_geometry(self.content_length, self.viewport, track_len, self.position);
+        let thumb_end = thumb_start.saturating_add(thumb_len);
+        for idx in 0..track_len {
+            let (x, y, symbol, style) = match self.orientation {
+                FixedScrollbarOrientation::Horizontal => (
+                    area.x.saturating_add(idx as u16),
+                    area.y,
+                    if (thumb_start..thumb_end).contains(&idx) {
+                        "━"
+                    } else {
+                        "·"
+                    },
+                    if (thumb_start..thumb_end).contains(&idx) {
+                        Style::default().fg(PHOSPHOR_DIM)
+                    } else {
+                        Style::default().fg(PHOSPHOR_DARK)
+                    },
+                ),
+                FixedScrollbarOrientation::Vertical => (
+                    area.x,
+                    area.y.saturating_add(idx as u16),
+                    if (thumb_start..thumb_end).contains(&idx) {
+                        "█"
+                    } else {
+                        "·"
+                    },
+                    if (thumb_start..thumb_end).contains(&idx) {
+                        Style::default().fg(PHOSPHOR_DIM)
+                    } else {
+                        Style::default().fg(PHOSPHOR_DARK)
+                    },
+                ),
+            };
+            buf.set_string(x, y, symbol, style);
+        }
+    }
 }
 
 pub(crate) fn render_scrollable_block(
@@ -225,4 +304,46 @@ pub(crate) fn render_scrollable_block(
     );
     render_horizontal_scrollbar(frame, area, content_width, eff_x);
     render_vertical_scrollbar(frame, area, content_height, eff_y);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{render_vertical_scrollbar_in_area, scrollbar_thumb_geometry};
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+
+    #[test]
+    fn scrollbar_thumb_length_is_offset_invariant() {
+        let lengths: Vec<usize> = (0..=2)
+            .map(|offset| scrollbar_thumb_geometry(12, 10, 10, offset).1)
+            .collect();
+
+        assert_eq!(lengths, vec![8, 8, 8]);
+    }
+
+    #[test]
+    fn vertical_scrollbar_thumb_moves_without_resizing() {
+        fn rendered_thumb_len(scroll_y: u16) -> usize {
+            let backend = TestBackend::new(1, 10);
+            let mut terminal = Terminal::new(backend).unwrap();
+
+            terminal
+                .draw(|frame| {
+                    render_vertical_scrollbar_in_area(
+                        frame,
+                        Rect::new(0, 0, 1, 10),
+                        12,
+                        10,
+                        scroll_y,
+                    );
+                })
+                .unwrap();
+
+            let buffer = terminal.backend().buffer();
+            (0..10).filter(|y| buffer[(0, *y)].symbol() == "█").count()
+        }
+
+        assert_eq!(rendered_thumb_len(0), 8);
+        assert_eq!(rendered_thumb_len(1), 8);
+        assert_eq!(rendered_thumb_len(2), 8);
+    }
 }
