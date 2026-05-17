@@ -3,15 +3,13 @@ use std::process::ExitCode;
 
 use jackin::repo::validate_role_repo;
 
-// Hand-rolled argv: pulling clap for one flag + one positional is not worth
-// the build cost. Switch to clap if a third option lands.
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
-    let (migrate, repo_arg) = match parse_args(&args[1..]) {
+    let (migrate, print_construct_version, repo_arg) = match parse_args(&args[1..]) {
         Ok(parsed) => parsed,
         Err(err) => {
             eprintln!("error: {err}");
-            eprintln!("Usage: jackin-validate [--migrate] <role-repo-path>");
+            eprintln!("Usage: jackin-validate [--migrate] [--print-construct-version] <role-repo-path>");
             return ExitCode::FAILURE;
         }
     };
@@ -46,8 +44,12 @@ fn main() -> ExitCode {
     }
 
     match validate_role_repo(&repo_dir) {
-        Ok(_) => {
-            println!("All checks passed");
+        Ok(validated) => {
+            if print_construct_version {
+                println!("{}", validated.dockerfile.construct_version);
+            } else {
+                println!("All checks passed");
+            }
             ExitCode::SUCCESS
         }
         Err(error) => {
@@ -57,26 +59,32 @@ fn main() -> ExitCode {
     }
 }
 
-// Accept `--migrate` in any position so `jackin-validate <path> --migrate`
-// works as well as `jackin-validate --migrate <path>`. Errors return plain
-// messages; main prepends a single `error:` prefix at print time.
-fn parse_args(args: &[String]) -> Result<(bool, &str), String> {
+// Accept flags in any position so `jackin-validate <path> --migrate` works as
+// well as `jackin-validate --migrate <path>`. Errors return plain messages;
+// main prepends a single `error:` prefix at print time.
+fn parse_args(args: &[String]) -> Result<(bool, bool, &str), String> {
     let mut migrate = false;
+    let mut print_construct_version = false;
     let mut repo: Option<&str> = None;
     for arg in args {
-        if arg == "--migrate" {
-            if migrate {
-                return Err("--migrate specified twice".into());
+        match arg.as_str() {
+            "--migrate" => {
+                if migrate {
+                    return Err("--migrate specified twice".into());
+                }
+                migrate = true;
             }
-            migrate = true;
-        } else if arg.starts_with("--") {
-            return Err(format!("unknown flag {arg}"));
-        } else if repo.is_some() {
-            return Err("too many positional arguments".into());
-        } else {
-            repo = Some(arg);
+            "--print-construct-version" => {
+                if print_construct_version {
+                    return Err("--print-construct-version specified twice".into());
+                }
+                print_construct_version = true;
+            }
+            _ if arg.starts_with("--") => return Err(format!("unknown flag {arg}")),
+            _ if repo.is_some() => return Err("too many positional arguments".into()),
+            _ => repo = Some(arg),
         }
     }
     let repo = repo.ok_or_else(|| "missing role-repo-path".to_string())?;
-    Ok((migrate, repo))
+    Ok((migrate, print_construct_version, repo))
 }
