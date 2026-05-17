@@ -83,33 +83,20 @@ fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatu
 }
 
 fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
-    let header = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let on_style = Style::default()
+    let label_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let value_style = Style::default()
         .fg(PHOSPHOR_GREEN)
         .add_modifier(Modifier::BOLD);
-    let off_style = Style::default().fg(PHOSPHOR_DIM);
-    let label_style = Style::default().fg(WHITE);
     let value = if state.general.pending {
         "enabled"
     } else {
         "disabled"
     };
-    let value_style = if state.general.pending {
-        on_style
-    } else {
-        off_style
-    };
-    vec![
-        Line::from(Span::styled(
-            "  Setting                        Value",
-            header,
-        )),
-        Line::from(vec![
-            Span::styled("\u{25b8} ", on_style),
-            Span::styled("Auto co-author trailer           ", label_style),
-            Span::styled(value, value_style),
-        ]),
-    ]
+    vec![Line::from(vec![
+        Span::styled("\u{25b8} ", label_style),
+        Span::styled(format!("{:<26}", "Auto co-author trailer"), label_style),
+        Span::styled(value, value_style),
+    ])]
 }
 
 fn render_mounts_tab(
