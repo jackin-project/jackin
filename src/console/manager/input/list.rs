@@ -652,6 +652,107 @@ mod tests {
     }
 
     #[test]
+    fn a_key_starts_new_session_in_running_instance() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-123456",
+            InstanceStatus::Active,
+            workdir,
+        )];
+
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('a')),
+        )
+        .unwrap();
+        match outcome {
+            InputOutcome::InstanceAction { container, action } => {
+                assert_eq!(container, "jackin-demo-architect-123456");
+                assert_eq!(action, crate::console::ConsoleInstanceAction::NewSession);
+            }
+            other => panic!("expected NewSession action; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn x_key_opens_shell_in_running_instance() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-123456",
+            InstanceStatus::Active,
+            workdir,
+        )];
+
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('x')),
+        )
+        .unwrap();
+        match outcome {
+            InputOutcome::InstanceAction { container, action } => {
+                assert_eq!(container, "jackin-demo-architect-123456");
+                assert_eq!(action, crate::console::ConsoleInstanceAction::Shell);
+            }
+            other => panic!("expected Shell action; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_and_x_produce_toast_for_non_running_instance() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        // RestoreAvailable instance — not active/running, so a/x must toast.
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-123456",
+            InstanceStatus::RestoreAvailable,
+            workdir,
+        )];
+
+        for key_char in ['a', 'x'] {
+            state.toast = None;
+            let outcome = handle_key(
+                &mut state,
+                &mut config,
+                &paths,
+                tmp.path(),
+                key(KeyCode::Char(key_char)),
+            )
+            .unwrap();
+            assert!(
+                matches!(outcome, InputOutcome::Continue),
+                "'{key_char}' on non-running instance must return Continue (toast path); got {outcome:?}",
+            );
+            assert!(
+                state.toast.is_some(),
+                "'{key_char}' on non-running instance must set a toast",
+            );
+        }
+    }
+
+    #[test]
     fn moving_selection_resets_mount_scroll_state() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());

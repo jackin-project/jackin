@@ -2268,19 +2268,16 @@ mod auth_set_tests {
         ));
         assert!(!has_multiple_agent_sessions(
             &runtime::AgentSessionInventory::Sessions(vec![runtime::AgentSession {
-                pid: "1".to_string(),
-                command: "claude".to_string(),
+                command: "jackin-primary".to_string(),
             }])
         ));
         assert!(has_multiple_agent_sessions(
             &runtime::AgentSessionInventory::Sessions(vec![
                 runtime::AgentSession {
-                    pid: "1".to_string(),
-                    command: "claude".to_string(),
+                    command: "jackin-primary".to_string(),
                 },
                 runtime::AgentSession {
-                    pid: "2".to_string(),
-                    command: "codex".to_string(),
+                    command: "jackin-codex-abc123".to_string(),
                 },
             ])
         ));

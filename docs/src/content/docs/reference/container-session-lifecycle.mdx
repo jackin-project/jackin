@@ -1,0 +1,115 @@
+---
+title: Container Session Lifecycle
+description: Technical reference for how jackin creates, manages, and tears down container sessions — from supervisor startup through tmux session exit
+---
+import RepoFile from '../../../components/RepoFile.astro'
+
+## Overview
+
+Every jackin container runs a supervisor as PID 1. Sessions are tmux sessions inside the container — not processes attached directly to the container's stdio. Three session types exist: primary (the initial agent session), secondary (additional agent sessions started later), and shell (ephemeral one-shot zsh access). Closing the operator's terminal does not stop the container; it detaches from the tmux session, which keeps running inside the container alongside the supervisor.
+
+## Container startup (`jackin load`)
+
+When `jackin load` provisions a new instance, the container launch happens in two distinct steps:
+
+1. `docker run -d --entrypoint /jackin/runtime/supervisor.sh <image>` starts the container detached. The supervisor loop begins immediately as PID 1. No agent runs yet — the container is alive but idle.
+2. jackin immediately checks that the supervisor did not exit before the exec step (the `diagnose_premature_exit` check). If the supervisor exited, jackin captures the last 40 lines of container logs and surfaces an actionable error.
+3. jackin then runs `docker exec -e TMUX= -it <container> tmux new-session -A -s jackin-primary -- /jackin/runtime/entrypoint.sh [model-flags]`. This call blocks the operator's terminal for the duration of the session.
+
+Two details about the exec command deserve attention:
+
+- `TMUX=` (empty string, not unset) prevents tmux's nested-session warning when the operator's host terminal is itself inside tmux. Setting it to empty rather than unset works because tmux checks `*getenv("TMUX") != '\0'` — an empty value satisfies that check as "no parent tmux session."
+- The `-A` flag on `tmux new-session` means "attach if the session already exists, otherwise create it." On a fresh `jackin load` the session is always created; on a re-invoked `jackin load` against a running container, it attaches.
+
+Implementation: <RepoFile path="src/runtime/launch.rs" /> (`launch_role_runtime`, `diagnose_premature_exit`).
+
+## The primary session
+
+The primary session is named `jackin-primary` and runs `/jackin/runtime/entrypoint.sh` optionally followed by model flags (`--model sonnet`, `-m gpt-5`, etc.). It is the session the operator is connected to after `jackin load`.
+
+The session is reconnectable. If the operator closes the terminal, the tmux session keeps running inside the container. `jackin hardline` creates or reattaches to `jackin-primary` using the same `tmux new-session -A` call — the `-A` flag makes this idempotent: if the session is still alive the operator is attached to it; if it was removed a fresh session is created.
+
+When the agent exits cleanly (operator types `/exit`, agent finishes normally): the tmux session is removed. The supervisor keeps the container running. The container only stops when the primary session exits with code 0 AND jackin's post-session teardown runs — which stops the container, DinD, network, and certs volume.
+
+When the agent crashes (non-zero exit): the tmux session is removed. The supervisor is still alive, so the container keeps running. `jackin hardline` can create a fresh primary session inside the still-running container.
+
+## Reconnecting to the primary session (`jackin hardline`)
+
+`jackin hardline` inspects the target container and chooses the reconnect path:
+
+- **Container is running**: `jackin hardline` runs `docker exec -e TMUX= -it <container> tmux new-session -A -s jackin-primary -- /jackin/runtime/entrypoint.sh`. The `-A` flag reattaches to the existing session if it is still alive, or creates a fresh primary session if the previous agent had already exited.
+- **Container is stopped (crashed, non-zero exit or OOM)**: `jackin hardline` restarts the container (`docker start`), then runs the same `tmux new-session -A` exec.
+- **Container is gone (removed)**: `jackin hardline` can rebuild the runtime around jackin-managed local state (workspace mounts, per-instance durable home, isolation records) when the workspace or ad-hoc directory can be resolved.
+
+Implementation: <RepoFile path="src/runtime/attach.rs" /> (`attach_primary_session`).
+
+## Secondary agent sessions (`hardline --new` / console `a`/`A`)
+
+Secondary agent sessions allow a second (or third) agent runtime to run inside the same container simultaneously, sharing the same mounted workspace, DinD sidecar, in-container state, and credentials.
+
+Each secondary session gets a unique name: `jackin-<agent>-<id>` where `<id>` is a 6-hex-digit suffix derived from the current nanosecond count (`subsec_nanos() & 0xffffff`). This gives ~16 million distinct values per millisecond, making same-millisecond collisions negligible. Example: `jackin-codex-1a2b3c`.
+
+The session runs `/jackin/runtime/entrypoint.sh` with `JACKIN_AGENT=<agent>` set and `--workdir` pointing at the workspace working directory inside the container.
+
+Secondary sessions are independently reconnectable. Another `hardline --new` or console `a` from the same instance creates a fresh secondary session — or, with the `-A` flag, reattaches to any live session matching the name if it still exists. The primary session is unaffected by secondary session creation or exit.
+
+When a secondary session exits cleanly: the tmux session is removed. The container keeps running. The primary session (if still alive) is unaffected. There is currently no way to reattach to a specific previously-created secondary session by name without knowing the `<id>` suffix — that capability requires the Phase 4 session reconciliation, which will surface live session names in the console.
+
+Implementation: <RepoFile path="src/runtime/attach.rs" /> (`spawn_agent_session`).
+
+## Shell sessions (`hardline --shell` / console `x`/`X`)
+
+A shell session opens `docker exec -e TMUX= -it <container> /bin/zsh` directly — no tmux wrapper. It is completely ephemeral: when the shell exits, nothing is left behind. There is no reconnect path.
+
+The container and all other sessions (primary, secondary) are unaffected by shell session entry and exit. Shell sessions are useful for inspecting the in-container filesystem, running one-off commands, checking installed tooling, or debugging the agent environment without starting another full agent.
+
+Requires the container to be running. If the container is stopped, use `jackin hardline` first (without `--shell`) to restart it, then open a shell.
+
+Implementation: <RepoFile path="src/runtime/attach.rs" /> (`spawn_shell_session`).
+
+## Session inventory (`hardline --inspect` / console `i`)
+
+jackin queries `tmux list-sessions -F '#{session_name}'` inside the running container via `docker exec`. The command is run as `sh -c 'tmux list-sessions -F "#{session_name}" 2>/dev/null || true'` so that "no sessions" (tmux exits 1 when there are no sessions) maps to empty output rather than a Docker exec error.
+
+Output: newline-separated tmux session names. Empty output means no sessions are running. If the container is not running, the inventory is reported as `sessions:not_running` without contacting Docker.
+
+Implementation: <RepoFile path="src/runtime/attach.rs" /> (`inspect_agent_sessions`).
+
+## Container shutdown
+
+`docker stop <container>` sends SIGTERM to PID 1 (the supervisor). The trap in <RepoFile path="docker/runtime/supervisor.sh" /> kills the background sleep and calls `exit 0`. The container exits cleanly.
+
+One important caveat: SIGTERM is **not forwarded** to processes started via `docker exec` (the tmux server and agent processes inside it). They are killed when the PID namespace tears down after the supervisor exits. Agents that flush state on SIGTERM do not receive that signal when `docker stop` runs — they are killed directly by the kernel as the namespace closes.
+
+`jackin load` teardown (after the primary session exits cleanly with code 0): stops the container, stops and removes the DinD sidecar, removes the network and certs volume.
+
+## What persists across session exit
+
+| Thing | Persists? | Notes |
+|---|---|---|
+| Agent conversation history | Yes | Stored in the per-instance durable home mount on the host |
+| Agent auth tokens | Yes (per auth mode) | Depends on the configured auth forwarding mode |
+| Files written in the mounted workspace | Yes | Host-side mount |
+| In-container packages installed ad hoc | No | Writable layer lost on container stop/removal |
+| DinD images | No | DinD volume is recreated on rebuild |
+| Tmux session state | No | Removed when session exits or container stops |
+| `jackin-primary` session | No | Removed when agent exits; recreated by `hardline` or next `load` |
+
+## Interaction diagram
+
+```
+jackin load
+  └─ docker run -d (supervisor as PID 1)
+  └─ docker exec tmux new-session -A -s jackin-primary → [PRIMARY SESSION]
+       │
+       ├─ operator closes terminal → session paused in tmux, container running
+       │     └─ jackin hardline → docker exec tmux new-session -A → reattach
+       │
+       ├─ jackin hardline --new → docker exec tmux new-session -s jackin-codex-abc123
+       │     └─ [SECONDARY SESSION] — independent lifecycle
+       │
+       ├─ jackin hardline --shell → docker exec /bin/zsh → [SHELL SESSION, no tmux]
+       │
+       └─ agent exits cleanly (exit 0) → tmux session removed
+             └─ jackin teardown: stop container, remove DinD/network/certs
+```

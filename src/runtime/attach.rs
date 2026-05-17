@@ -47,7 +47,6 @@ impl ContainerState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentSession {
-    pub pid: String,
     pub command: String,
 }
 
@@ -120,15 +119,18 @@ pub fn inspect_agent_sessions(
         return AgentSessionInventory::NotRunning;
     }
 
+    // `tmux list-sessions` exits 1 when no sessions exist, which docker exec
+    // surfaces as an error. Running via `sh -c '... || true'` maps both "zero
+    // sessions" and "sessions found" to exit 0; only a real infrastructure
+    // failure (container stopped mid-call, docker unavailable) reaches `Err`.
     match runner.capture(
         "docker",
         &[
             "exec",
             container_name,
-            "tmux",
-            "list-sessions",
-            "-F",
-            "#{session_name}",
+            "sh",
+            "-c",
+            "tmux list-sessions -F '#{session_name}' 2>/dev/null || true",
         ],
         None,
     ) {
@@ -146,7 +148,6 @@ fn parse_tmux_sessions(output: &str) -> Vec<AgentSession> {
                 return None;
             }
             Some(AgentSession {
-                pid: String::new(),
                 command: name.to_string(),
             })
         })
@@ -274,13 +275,15 @@ pub fn spawn_agent_session(
         agent.slug()
     );
     // Generate a short unique suffix so two sessions of the same agent don't
-    // collide on their tmux session name.
+    // collide on their tmux session name. Using nanoseconds gives ~16M
+    // distinct values per millisecond, making same-millisecond collisions
+    // negligible compared to the 1000-value subsecond-millis window.
     let short_id: String = {
         use std::time::{SystemTime, UNIX_EPOCH};
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.subsec_millis());
-        format!("{ts:03x}")
+            .map_or(0, |d| d.subsec_nanos());
+        format!("{:06x}", ts & 0x00ff_ffff)
     };
     let session_name = format!("jackin-{}-{short_id}", agent.slug());
     super::caffeinate::reconcile(paths, runner);
@@ -788,6 +791,69 @@ mod tests {
     }
 
     #[test]
+    fn spawn_shell_session_execs_zsh_in_running_container() {
+        let (_tmp, paths) = test_paths();
+        // inspect returns Running; capture queue for caffeinate inspect.
+        let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
+
+        spawn_shell_session(&paths, "jk-agent-smith", &mut runner).unwrap();
+
+        assert!(
+            runner.recorded.iter().any(|c| {
+                c.contains("docker exec")
+                    && c.contains("TMUX=")
+                    && c.contains("jk-agent-smith")
+                    && c.contains("/bin/zsh")
+            }),
+            "expected docker exec with /bin/zsh; got: {:?}",
+            runner.recorded
+        );
+    }
+
+    #[test]
+    fn spawn_shell_session_sets_tmux_env_to_empty() {
+        let (_tmp, paths) = test_paths();
+        let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
+
+        spawn_shell_session(&paths, "jk-agent-smith", &mut runner).unwrap();
+
+        let exec_call = runner
+            .recorded
+            .iter()
+            .find(|c| c.contains("docker exec") && c.contains("/bin/zsh"))
+            .expect("expected exec call");
+        assert!(
+            exec_call.contains("TMUX="),
+            "TMUX= must clear nested-session env"
+        );
+    }
+
+    #[test]
+    fn spawn_shell_session_errors_on_stopped_container() {
+        let (_tmp, paths) = test_paths();
+        let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
+
+        let err = spawn_shell_session(&paths, "jk-agent-smith", &mut runner).unwrap_err();
+
+        assert!(err.to_string().contains("is stopped"));
+        assert!(
+            !runner.recorded.iter().any(|c| c.contains("docker exec")),
+            "exec must not fire against a stopped container"
+        );
+    }
+
+    #[test]
+    fn spawn_shell_session_errors_on_not_found() {
+        let (_tmp, paths) = test_paths();
+        let mut runner = FakeRunner::default(); // empty inspect → NotFound
+
+        let err = spawn_shell_session(&paths, "jk-agent-smith", &mut runner).unwrap_err();
+
+        assert!(err.to_string().contains("not found"));
+        assert!(!runner.recorded.iter().any(|c| c.contains("docker exec")));
+    }
+
+    #[test]
     fn hardline_errors_when_container_not_found() {
         let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::default();
@@ -961,6 +1027,18 @@ mod tests {
         assert_eq!(sessions.len(), 2);
         assert_eq!(sessions[0].command, "jackin-primary");
         assert_eq!(sessions[1].command, "jackin-codex-abc");
+    }
+
+    #[test]
+    fn inspect_agent_sessions_returns_empty_when_no_sessions_running() {
+        // tmux list-sessions exits 1 when no sessions exist; the sh wrapper
+        // converts that to exit 0 with empty output → empty sessions list.
+        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+
+        let sessions =
+            inspect_agent_sessions(&mut runner, "jk-agent-smith", &ContainerState::Running);
+
+        assert_eq!(sessions, AgentSessionInventory::Sessions(vec![]));
     }
 
     #[test]

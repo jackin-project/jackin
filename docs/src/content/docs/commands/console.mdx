@@ -7,7 +7,7 @@ import { Aside } from '@astrojs/starlight/components'
 <Aside type="tip">
 The operator console is the **simplest and most convenient way to use jackin'** day-to-day, and the surface most operators stay on. The CLI is for the **advanced and very specific cases**: scripted one-liners, niche flags, automation, and behaviours the console deliberately does not expose.
 
-Today the console covers launching agents (the `load` flow), managing workspaces (`workspace`), editing per-workspace auth and env tables (`config` for those scopes), managing operator-level config through Settings, and common recovery actions for visible instances. The remaining CLI subcommands — `hardline`, `eject`, `exile`, multi-session preview — are **not in the console yet** and live on the CLI for now; they will land in the console as the TUI grows feature by feature. There is no feature parity by design: niche flags continue to land on the CLI first.
+Today the console covers launching agents (the `load` flow), managing workspaces (`workspace`), editing per-workspace auth and env tables (`config` for those scopes), managing operator-level config through Settings, and common recovery actions for visible instances including shell access and new-session actions via `x` and `a`. The remaining CLI subcommands — `eject`, `exile`, and niche flags — are **not in the console yet** and live on the CLI for now; they will land in the console as the TUI grows feature by feature. There is no feature parity by design: niche flags continue to land on the CLI first.
 
 The expectation is **most people use the TUI, and reach for the CLI only when they need it.**
 </Aside>
@@ -28,7 +28,7 @@ The console opens directly to a workspace manager list — no separate workspace
 
 - **Launch an agent into a workspace.** Each workspace row opens the role picker in the sidebar, even when there is only one eligible role. Confirm the highlighted role to launch. If the selected role supports multiple agent runtimes, the console asks for that runtime next.
 - **Use your current directory as a workspace.** A synthetic row at the top of the manager list mounts your `cwd` at the same path inside the container. Useful for quick one-off launches without saving a workspace definition.
-- **Recover active and preserved instances.** Workspace and current-directory detail panes show an Instances panel when jackin-managed local state exists for that scope, with instance ID, status, agent runtime, and role. From that row, `r` reconnects or recovers, `s` starts another foreground agent session in a running instance, `i` prints a read-only state report, and `p` purges local recovery state when the guarded `purge` rules allow it.
+- **Recover active and preserved instances.** Workspace and current-directory detail panes show an Instances panel when jackin-managed local state exists for that scope, with instance ID, status, agent runtime, and role. From that row, `r` reconnects or recovers, `a` starts another agent session in a running instance, `x` opens an ephemeral zsh shell in a running instance, `i` prints a read-only state report, and `p` purges local recovery state when the guarded `purge` rules allow it.
 - **Open the workspace editor.** Edit the workspace's roles, environment variables, and authentication settings. Each editor surface lives on its own tab inside the editor.
 - **Open Settings.** Manage operator-level `jackin config` surfaces from the `Mounts`, `Environments`, `Auth`, and `Trust` tabs.
 
