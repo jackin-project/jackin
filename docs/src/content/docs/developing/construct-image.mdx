@@ -91,7 +91,15 @@ just construct-build-local
 
 By default, local validation loads the image into your Docker daemon as `jackin-local/construct:trixie`, so it does not silently replace the canonical `projectjackin/construct:trixie` base image that normal `jackin` workflows consume.
 
-If you intentionally want to test `jackin` against your local construct build, rerun the build with `LOCAL_REGISTRY_IMAGE=projectjackin/construct just construct-build-local`.
+To test `jackin load` against your local construct build, set `JACKIN_CONSTRUCT_IMAGE` after building:
+
+```bash
+just construct-init-buildx
+just construct-build-local
+export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
+```
+
+With `JACKIN_CONSTRUCT_IMAGE` set, jackin validates role Dockerfiles against the canonical image name as usual (role repos always reference `projectjackin/construct:trixie`), but substitutes your local image at derived-build time so `docker build` uses `jackin-local/construct:trixie` as the actual base.
 
 Use `just construct-inspect` to print the fully resolved Bake config without building the image.
 
