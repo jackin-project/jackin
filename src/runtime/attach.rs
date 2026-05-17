@@ -168,8 +168,7 @@ fn inspect_unavailable_message(container_name: &str, reason: &str) -> String {
 
 fn set_role_terminal_title(paths: &JackinPaths, container_name: &str) {
     let title = InstanceManifest::read(&paths.data_dir.join(container_name))
-        .map(|m| m.role_display_name)
-        .unwrap_or_else(|_| container_name.to_string());
+        .map_or_else(|_| container_name.to_string(), |m| m.role_display_name);
     crate::tui::set_terminal_title(&title);
 }
 
