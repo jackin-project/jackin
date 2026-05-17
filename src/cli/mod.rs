@@ -37,7 +37,10 @@ pub mod prune;
 pub mod role;
 pub mod workspace;
 
-pub use config::{AuthCommand, ConfigCommand, EnvCommand, MountCommand, TrustCommand};
+pub use config::{
+    AuthCommand, CoauthorTrailerCommand, ConfigCommand, DcoCommand, EnvCommand, GitCommand,
+    MountCommand, TrustCommand,
+};
 pub use prune::PruneCommand;
 pub use workspace::{WorkspaceClaudeTokenCommand, WorkspaceCommand, WorkspaceEnvCommand};
 

@@ -9,12 +9,6 @@
 //!   strings.  Both manifest validation and runtime env resolution consume
 //!   this helper so that they agree on what constitutes a reference.
 //!
-//! Previously these definitions lived in two places (`manifest::RESERVED_RUNTIME_ENV_VARS`
-//! and `runtime::RUNTIME_OWNED_ENV_VARS`) with the runtime list being a
-//! subset of the manifest list plus two inline `JACKIN_*` checks.  The list
-//! here is the union — identical in membership to the previous manifest
-//! constant — and the runtime now consults it through
-//! [`is_reserved`] instead of maintaining its own.
 
 /// Env var injected by jackin into every role container so that child
 /// processes can detect they are running inside a jackin-managed runtime.
@@ -45,6 +39,16 @@ pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
 /// `chainargos/agent-brown`) into the role container so in-container
 /// scripts can identify which role they are running as.
 pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
+
+/// Env var that signals the entrypoint to install a `prepare-commit-msg`
+/// hook via `core.hooksPath` so the running agent's `Co-authored-by`
+/// trailer is appended automatically to every non-amend commit.
+pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAILER";
+
+/// Env var that signals the entrypoint to append a `Signed-off-by` DCO trailer.
+///
+/// Independent of the coauthor flag — either or both may be set.
+pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
 
 // ── GitHub CLI / GitHub-tooling env-var names ──────────────────────
 //
@@ -92,6 +96,8 @@ pub(crate) const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     (JACKIN_DIND_HOSTNAME_ENV_NAME, None),
     (JACKIN_AGENT_ENV_NAME, None),
     (JACKIN_ROLE_ENV_NAME, None),
+    (JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, None),
+    (JACKIN_GIT_DCO_ENV_NAME, None),
     // Docker TLS vars injected by jackin — must not be overridden by manifests.
     ("DOCKER_HOST", None),
     ("DOCKER_TLS_VERIFY", None),
@@ -220,6 +226,8 @@ mod tests {
             "JACKIN_DIND_HOSTNAME", // was manifest JACKIN_DIND_HOSTNAME_ENV_NAME value
             "JACKIN_AGENT",         // injected by runtime — agent slug (claude/codex/amp)
             "JACKIN_ROLE",          // injected by runtime — role selector key
+            "JACKIN_GIT_COAUTHOR_TRAILER",
+            "JACKIN_GIT_DCO",
             "DOCKER_HOST",
             "DOCKER_TLS_VERIFY",
             "DOCKER_CERT_PATH",
@@ -239,6 +247,8 @@ mod tests {
             "JACKIN_DIND_HOSTNAME",
             "JACKIN_AGENT",
             "JACKIN_ROLE",
+            "JACKIN_GIT_COAUTHOR_TRAILER",
+            "JACKIN_GIT_DCO",
             "DOCKER_HOST",
             "DOCKER_TLS_VERIFY",
             "DOCKER_CERT_PATH",
@@ -256,6 +266,14 @@ mod tests {
         assert!(!is_reserved("MY_USER_VAR"));
         assert!(!is_reserved("PATH"));
         assert!(!is_reserved(""));
+    }
+
+    #[test]
+    fn jackin_git_dco_is_reserved() {
+        assert!(
+            is_reserved(JACKIN_GIT_DCO_ENV_NAME),
+            "JACKIN_GIT_DCO must be reserved so manifests cannot override the DCO hook signal"
+        );
     }
 
     #[test]

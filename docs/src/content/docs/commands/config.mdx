@@ -188,3 +188,56 @@ Show the env vars registered at the chosen scope as a table with `Key` and `Valu
 jackin config env list
 jackin config env list --role agent-smith
 ```
+
+## `config git`
+
+Manage git-related global settings.
+
+### `config git coauthor-trailer enable|disable`
+
+```bash
+jackin config git coauthor-trailer enable
+jackin config git coauthor-trailer disable
+```
+
+Enable or disable automatic `Co-authored-by` trailer injection for agent commits. When enabled, jackin installs a `prepare-commit-msg` hook inside every container at launch. The hook appends a `Co-authored-by` trailer to every non-amend, non-merge, non-squash commit, deduplicating it so it appears at most once.
+
+Supported agents and their trailers:
+
+| Agent | Trailer |
+|---|---|
+| Claude (Claude Code) | `Co-authored-by: Claude <noreply@anthropic.com>` |
+| Codex | `Co-authored-by: Codex <codex@openai.com>` |
+| Amp | `Co-authored-by: Amp <amp@ampcode.com>` |
+| OpenCode | `Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>` |
+
+This setting can also be toggled in `jackin console` via the **General** tab in the Settings panel (`S` from the workspace list).
+
+```bash
+jackin config git coauthor-trailer enable
+# → coauthor_trailer: enabled
+
+jackin config git coauthor-trailer disable
+# → coauthor_trailer: disabled
+```
+
+### `config git dco enable|disable`
+
+```bash
+jackin config git dco enable
+jackin config git dco disable
+```
+
+Enable or disable automatic `Signed-off-by` (DCO) trailer injection for agent commits. When enabled, the same `prepare-commit-msg` hook that [`config git coauthor-trailer`](#config-git-coauthor-trailer-enabledisable) installs also appends a `Signed-off-by` trailer to every non-amend, non-merge, non-squash commit, deduplicating it so it appears at most once. The trailer uses the git identity (`user.name` and `user.email`) forwarded from the host by jackin. If either is unset inside the container at commit time, the trailer is skipped with a warning.
+
+The two flags are independent — you can enable either or both.
+
+This setting can also be toggled in `jackin console` via the **General** tab in the Settings panel (`S` from the workspace list).
+
+```bash
+jackin config git dco enable
+# → dco: enabled
+
+jackin config git dco disable
+# → dco: disabled
+```

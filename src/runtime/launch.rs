@@ -693,6 +693,8 @@ struct LaunchContext<'a> {
     state: &'a RoleState,
     git: &'a GitIdentity,
     debug: bool,
+    git_coauthor_trailer: bool,
+    git_dco: bool,
     agent: crate::agent::Agent,
     resolved_env: &'a crate::env_resolver::ResolvedEnv,
     /// Resolved `[…github.env]` map (post `op://` + `$NAME`
@@ -730,6 +732,8 @@ fn launch_role_runtime(
         state,
         git,
         debug,
+        git_coauthor_trailer,
+        git_dco,
         agent,
         resolved_env,
         github_env,
@@ -910,6 +914,19 @@ fn launch_role_runtime(
     ]);
     if *debug {
         run_args.extend_from_slice(&["-e", "JACKIN_DEBUG=1"]);
+    }
+    let git_coauthor_trailer_env = git_coauthor_trailer.then(|| {
+        format!(
+            "{}=1",
+            crate::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME
+        )
+    });
+    if let Some(ref env) = git_coauthor_trailer_env {
+        run_args.extend_from_slice(&["-e", env.as_str()]);
+    }
+    let git_dco_env = git_dco.then(|| format!("{}=1", crate::env_model::JACKIN_GIT_DCO_ENV_NAME));
+    if let Some(ref env) = git_dco_env {
+        run_args.extend_from_slice(&["-e", env.as_str()]);
     }
 
     // Forward JACKIN_DISABLE_* env vars from the host so the operator can
@@ -1900,6 +1917,8 @@ fn load_role_with(
             state: &state,
             git: &git,
             debug: opts.debug,
+            git_coauthor_trailer: config.git.coauthor_trailer,
+            git_dco: config.git.dco,
             agent,
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,
@@ -6056,6 +6075,149 @@ plugins = []
             .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(run_cmd.contains("-e JACKIN_DEBUG=1"));
+    }
+
+    #[test]
+    fn load_agent_injects_coauthor_trailer_env_when_enabled() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        config.git.coauthor_trailer = true;
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .unwrap();
+        assert!(
+            run_cmd.contains("-e JACKIN_GIT_COAUTHOR_TRAILER=1"),
+            "{run_cmd}"
+        );
+    }
+
+    #[test]
+    fn load_agent_omits_coauthor_trailer_env_when_disabled() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .unwrap();
+        assert!(
+            !run_cmd.contains("JACKIN_GIT_COAUTHOR_TRAILER"),
+            "{run_cmd}"
+        );
+    }
+
+    #[test]
+    fn load_agent_injects_dco_env_when_enabled() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        config.git.dco = true;
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .unwrap();
+        assert!(run_cmd.contains("-e JACKIN_GIT_DCO=1"), "{run_cmd}");
     }
 
     #[test]

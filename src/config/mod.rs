@@ -240,6 +240,21 @@ pub struct DockerConfig {
     pub mounts: DockerMounts,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GitConfig {
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub coauthor_trailer: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub dco: bool,
+}
+
+impl GitConfig {
+    fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default = "migrations::current_config_version", rename = "version")]
@@ -267,6 +282,8 @@ pub struct AppConfig {
     pub roles: BTreeMap<String, RoleSource>,
     #[serde(default)]
     pub docker: DockerConfig,
+    #[serde(default, skip_serializing_if = "GitConfig::is_default")]
+    pub git: GitConfig,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub workspaces: BTreeMap<String, WorkspaceConfig>,
 }
@@ -284,6 +301,7 @@ impl Default for AppConfig {
             env: BTreeMap::new(),
             roles: BTreeMap::new(),
             docker: DockerConfig::default(),
+            git: GitConfig::default(),
             workspaces: BTreeMap::new(),
         }
     }
@@ -1382,5 +1400,28 @@ OPENAI_API_KEY = "op://Work/big-monorepo/OpenAI"
                 .as_persisted_str(),
             "op://Work/big-monorepo/OpenAI"
         );
+    }
+
+    #[test]
+    fn git_config_coauthor_trailer_round_trips() {
+        let toml_str = "[git]\ncoauthor_trailer = true\n";
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert!(config.git.coauthor_trailer);
+        let serialized = toml::to_string(&config).unwrap();
+        assert!(
+            serialized.contains("coauthor_trailer = true"),
+            "{serialized}"
+        );
+    }
+
+    #[test]
+    fn git_config_default_omits_git_table_from_serialized_output() {
+        let config = AppConfig::default();
+        assert!(!config.git.coauthor_trailer);
+        assert!(!config.git.dco);
+        let serialized = toml::to_string(&config).unwrap();
+        assert!(!serialized.contains("[git]"), "{serialized}");
+        assert!(!serialized.contains("coauthor_trailer"), "{serialized}");
+        assert!(!serialized.contains("dco"), "{serialized}");
     }
 }
