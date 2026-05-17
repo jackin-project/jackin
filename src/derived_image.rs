@@ -220,14 +220,11 @@ pub fn create_derived_build_context(
 
     let base_dockerfile = base_image_override.map_or_else(
         || {
-            let override_image = crate::repo_contract::construct_image();
-            // When no local override is set, construct_image() returns the
-            // floating stable tag. The Dockerfile already has a versioned tag
-            // (e.g. 0.1-trixie); leave it untouched so Docker uses the pinned
-            // version.
-            if override_image == crate::repo_contract::CONSTRUCT_IMAGE {
+            // When JACKIN_CONSTRUCT_IMAGE is not set, leave the Dockerfile
+            // untouched so Docker uses whatever versioned tag the role pins.
+            let Some(override_image) = std::env::var("JACKIN_CONSTRUCT_IMAGE").ok() else {
                 return validated.dockerfile.dockerfile_contents.clone();
-            }
+            };
             // Local construct override (JACKIN_CONSTRUCT_IMAGE is set): replace
             // "FROM projectjackin/construct:<any-tag> [AS alias]" with
             // "FROM local-override [AS alias]".
