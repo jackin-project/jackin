@@ -95,13 +95,15 @@ record of what was reviewed and when.
 13. **Cleanup tolerance still string-matches Docker CLI stderr.**
     Missing-resource cleanup is still detected by checking stderr text
     such as `No such container`, `No such volume`, and
-    `No such network`.
+    `No such network`. Scoped for the
+    [Bollard migration](/reference/roadmap/bollard-migration/) Phase 1.
 
 14. **Container-state probing still collapses Docker failures into "not
     found."** `inspect_container_state()` still treats any
     `docker inspect` failure as a missing container, which hides
     daemon or context failures behind misleading not-found behavior in
-    flows such as `hardline`.
+    flows such as `hardline`. Scoped for the
+    [Bollard migration](/reference/roadmap/bollard-migration/) Phase 1.
 
 15. **Command execution timeouts are currently absent.** Timeout
     handling that earlier security notes marked as resolved is no
