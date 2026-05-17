@@ -1187,7 +1187,7 @@ pub fn run(cli: Cli) -> Result<()> {
             PruneCommand::Cache => runtime::prune_cache(&paths),
             PruneCommand::Images => runtime::prune_images(&mut runner),
             PruneCommand::Instances(args) => {
-                if args.all {
+                if args.active {
                     runtime::prune_all_instances(&paths, &mut runner)
                 } else {
                     runtime::prune_instances(&paths, &mut runner)
@@ -1205,7 +1205,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         anyhow::bail!("aborted by operator");
                     }
                 }
-                let prune_instances_fn: fn(&_, &mut _) -> _ = if args.all {
+                let prune_instances_fn: fn(&_, &mut _) -> _ = if args.active {
                     runtime::prune_all_instances
                 } else {
                     runtime::prune_instances
