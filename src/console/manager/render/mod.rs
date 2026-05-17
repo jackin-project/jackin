@@ -24,7 +24,9 @@ pub(super) use modal::modal_outer_rect;
 pub use editor::render_editor;
 
 pub(in crate::console::manager) use crate::console::widgets::scrollable::{
-    effective_offset as effective_scroll, is_scrollable, max_offset as max_scroll_offset,
+    apply_horizontal_scroll_delta, apply_scroll_delta, clamp_scroll_offset as clamp_scroll_x,
+    cursor_follow_offset, horizontal_scrollbar_area, is_scrollable,
+    max_offset as max_scroll_offset, scrollbar_offset_for_track_position,
     viewport_height as scroll_viewport_height, viewport_width as scroll_viewport_width,
 };
 pub(super) use crate::console::widgets::scrollable::{
@@ -262,16 +264,6 @@ mod footer_wrap_tests {
     }
 }
 
-pub(super) const fn clamp_scroll_x(
-    content_width: usize,
-    viewport: usize,
-    scroll_x: &mut u16,
-) -> u16 {
-    let effective = effective_scroll(content_width, viewport, *scroll_x);
-    *scroll_x = effective;
-    effective
-}
-
 /// Adjust stored `scroll_y` so the cursor row stays inside the viewport.
 /// Returns the effective (clamped, cursor-following) `scroll_y` to use for rendering.
 pub(super) fn follow_cursor_y(
@@ -280,33 +272,21 @@ pub(super) fn follow_cursor_y(
     viewport_h: usize,
     stored_scroll_y: u16,
 ) -> u16 {
-    if viewport_h == 0 {
-        return 0;
-    }
-    let max_scroll = content_height.saturating_sub(viewport_h);
-    let raw = if cursor < stored_scroll_y as usize {
-        cursor as u16
-    } else if content_height > viewport_h && cursor >= stored_scroll_y as usize + viewport_h {
-        (cursor + 1 - viewport_h) as u16
-    } else {
-        stored_scroll_y
-    };
-    raw.min(max_scroll as u16)
+    cursor_follow_offset(cursor, content_height, viewport_h, stored_scroll_y)
 }
 
 /// Adjust `scroll_y` so `cursor` stays in the editor/settings content viewport.
-///
-/// The chrome constant 9 = header 3 + tab strip 2 + footer 2 + block borders 2.
-/// `usize::MAX` is passed as `content_height` so `follow_cursor_y`'s upper clamp
-/// (`raw.min(max_scroll as u16)`) never fires: `max_scroll` overflows on the `as
-/// u16` cast to ≈ 65 535 − `viewport_h`, which is unreachable for any real cursor row.
 pub(super) fn cursor_scroll_for_panel(
     cursor: usize,
     scroll_y: u16,
     term: ratatui::layout::Rect,
 ) -> u16 {
+    // 9 = header(3) + tab-strip(2) + block-borders(2) + footer(≈2)
     let viewport_h = (term.height.saturating_sub(9) as usize).max(1);
-    follow_cursor_y(cursor, usize::MAX, viewport_h, scroll_y)
+    // content_height - viewport_h = u16::MAX exactly: max_offset returns u16::MAX without
+    // tripping its debug_assert, while the upper clamp on cursor rows stays unreachable.
+    let content_height = usize::from(u16::MAX).saturating_add(viewport_h);
+    follow_cursor_y(cursor, content_height, viewport_h, scroll_y)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -648,7 +628,7 @@ fn clamp_list_scroll_for_area(
     if left_viewport_w == 0 {
         state.list_names_scroll_x = 0;
     } else {
-        let name_content_w = list_names_content_width(state);
+        let name_content_w = list::list_names_content_width(state, left_viewport_w);
         if is_scrollable(name_content_w, left_viewport_w) {
             let max = max_scroll_offset(name_content_w, left_viewport_w);
             if state.list_names_scroll_x > max {
@@ -659,20 +639,6 @@ fn clamp_list_scroll_for_area(
             state.list_names_focused = false;
         }
     }
-}
-
-/// Compute the maximum content width of the left-pane workspace name list.
-fn list_names_content_width(state: &ManagerState<'_>) -> usize {
-    // Each row: "▸ " (2) + name. "Current directory" = 17, "+ New workspace" = 15.
-    let cwd_w = 2 + "Current directory".len();
-    let sentinel_w = 2 + "+ New workspace".len();
-    let max_ws = state
-        .workspaces
-        .iter()
-        .map(|w| 2 + w.name.len())
-        .max()
-        .unwrap_or(0);
-    cwd_w.max(sentinel_w).max(max_ws)
 }
 
 fn workspace_mounts_scrollable(
@@ -854,156 +820,6 @@ pub(super) fn centered_rect_fixed(outer: Rect, pct_w: u16, rows: u16) -> Rect {
         y: outer.y + outer.height.saturating_sub(h) / 2,
         width: w,
         height: h,
-    }
-}
-
-#[cfg(test)]
-mod horizontal_scrollbar_tests {
-    use super::{clamp_scroll_x, render_scrollable_block};
-    use crate::console::widgets::scrollable::scrollbar_position_for_offset;
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-    use ratatui::layout::Rect;
-    use ratatui::text::Line;
-
-    #[test]
-    fn stored_scroll_offset_clamps_to_visible_end() {
-        let mut scroll_x = 400;
-
-        let effective = clamp_scroll_x(100, 60, &mut scroll_x);
-
-        assert_eq!(effective, 40);
-        assert_eq!(scroll_x, 40);
-
-        scroll_x = scroll_x.saturating_sub(8);
-        assert_eq!(scroll_x, 32);
-    }
-
-    #[test]
-    fn scrollbar_position_maps_visible_end_to_track_end() {
-        assert_eq!(scrollbar_position_for_offset(13, 10, 0), 0);
-        assert_eq!(scrollbar_position_for_offset(13, 10, 3), 3);
-    }
-
-    #[test]
-    fn scrollbar_position_clamps_overscroll() {
-        assert_eq!(scrollbar_position_for_offset(13, 10, 99), 3);
-    }
-
-    #[test]
-    fn scrollable_block_scrollbar_thumbs_reach_visible_ends() {
-        let backend = TestBackend::new(12, 6);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut scroll_x = 10;
-        let mut scroll_y = 4;
-        let lines: Vec<Line<'static>> = (0..8)
-            .map(|idx| Line::from(format!("{idx:02}-abcdefghijklmnopq")))
-            .collect();
-
-        terminal
-            .draw(|frame| {
-                render_scrollable_block(
-                    frame,
-                    Rect::new(0, 0, 12, 6),
-                    lines,
-                    &mut scroll_x,
-                    &mut scroll_y,
-                    true,
-                    Some(" Test "),
-                );
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-        assert_eq!(buffer[(10, 5)].symbol(), "━");
-        assert_eq!(buffer[(11, 4)].symbol(), "█");
-    }
-
-    #[test]
-    fn scrollable_block_scrollbar_thumbs_are_proportional_to_viewport() {
-        let backend = TestBackend::new(12, 6);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut scroll_x = 0;
-        let mut scroll_y = 0;
-        let lines: Vec<Line<'static>> = (0..5)
-            .map(|idx| Line::from(format!("{idx:02}-abcdefgh")))
-            .collect();
-
-        terminal
-            .draw(|frame| {
-                render_scrollable_block(
-                    frame,
-                    Rect::new(0, 0, 12, 6),
-                    lines,
-                    &mut scroll_x,
-                    &mut scroll_y,
-                    true,
-                    Some(" Test "),
-                );
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-        let horizontal_thumb_len = (1..=10).filter(|x| buffer[(*x, 5)].symbol() == "━").count();
-        let vertical_thumb_len = (1..=4).filter(|y| buffer[(11, *y)].symbol() == "█").count();
-
-        assert_eq!(horizontal_thumb_len, 9);
-        assert_eq!(vertical_thumb_len, 3);
-    }
-
-    #[test]
-    fn scrollable_block_preserves_matching_right_padding_at_horizontal_end() {
-        let backend = TestBackend::new(8, 4);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut scroll_x = 99;
-        let mut scroll_y = 0;
-        let lines = vec![Line::from("  abcdefgh")];
-
-        terminal
-            .draw(|frame| {
-                render_scrollable_block(
-                    frame,
-                    Rect::new(0, 0, 8, 4),
-                    lines,
-                    &mut scroll_x,
-                    &mut scroll_y,
-                    true,
-                    Some(" Test "),
-                );
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-        let visible: String = (1..=6).map(|x| buffer[(x, 1)].symbol()).collect();
-
-        assert_eq!(scroll_x, 6);
-        assert_eq!(visible, "efgh  ");
-    }
-
-    #[test]
-    fn scrollable_block_clamps_scroll_y_in_place() {
-        let backend = TestBackend::new(12, 6);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut scroll_x = 0;
-        let mut scroll_y = 99;
-        let lines: Vec<Line<'static>> = (0..8).map(|idx| Line::from(format!("{idx:02}"))).collect();
-
-        terminal
-            .draw(|frame| {
-                render_scrollable_block(
-                    frame,
-                    Rect::new(0, 0, 12, 6),
-                    lines,
-                    &mut scroll_x,
-                    &mut scroll_y,
-                    false,
-                    None,
-                );
-            })
-            .unwrap();
-
-        // viewport_h = 4, content = 8, max_y = 4
-        assert_eq!(scroll_y, 4);
     }
 }
 

@@ -1,5 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use super::super::render::apply_scroll_delta;
 use super::super::render::global_mounts::{SettingsEnvRow, settings_env_flat_rows};
 use super::super::state::{
     AuthFormFocus, AuthFormReturnPath, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft,
@@ -123,10 +124,10 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             }
         }
         KeyCode::Char('h' | 'H') => {
-            global.scroll_x = global.scroll_x.saturating_sub(8);
+            apply_scroll_delta(&mut global.scroll_x, -8);
         }
         KeyCode::Char('l' | 'L') => {
-            global.scroll_x = global.scroll_x.saturating_add(8);
+            apply_scroll_delta(&mut global.scroll_x, 8);
         }
         KeyCode::Up | KeyCode::Char('k' | 'K') => {
             global.selected = global.selected.saturating_sub(1);
@@ -675,10 +676,10 @@ fn handle_trust_key(state: &mut ManagerState<'_>, key: KeyEvent) {
             );
         }
         KeyCode::Char('h' | 'H') => {
-            trust.scroll_x = trust.scroll_x.saturating_sub(8);
+            apply_scroll_delta(&mut trust.scroll_x, -8);
         }
         KeyCode::Char('l' | 'L') => {
-            trust.scroll_x = trust.scroll_x.saturating_add(8);
+            apply_scroll_delta(&mut trust.scroll_x, 8);
         }
         // Space is the W3C toggle key (checkbox/switch pattern). Enter is for actions.
         KeyCode::Char(' ') => {

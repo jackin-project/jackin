@@ -110,9 +110,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders},
 };
 
+use super::scrollable::render_selected_lines_in_area;
 use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, WHITE};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
@@ -152,10 +153,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
         .unwrap_or(0)
         .max(10);
 
-    // Scroll so the selected row is always in view.
-    let visible = rows[1].height as usize;
-    let selected = state.list_state.selected.unwrap_or(0);
-    let offset = selected.saturating_sub(visible.saturating_sub(1));
     let lines: Vec<Line> = state
         .choices
         .iter()
@@ -179,10 +176,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &WorkdirPickState) {
                 ),
             ])
         })
-        .skip(offset)
-        .take(visible)
         .collect();
-    frame.render_widget(Paragraph::new(lines), rows[1]);
+    render_selected_lines_in_area(frame, rows[1], lines, state.list_state.selected);
 }
 
 #[cfg(test)]

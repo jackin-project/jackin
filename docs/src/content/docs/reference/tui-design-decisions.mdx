@@ -94,19 +94,38 @@ Enforcement:
 
 **A block is focusable only when its content overflows the visible area in at least one axis (horizontal or vertical).**
 
-When a block's content fits entirely within its viewport, clicking it must not activate it (green border must not appear) and keyboard scroll keys must not change its scroll offset.
+When a block's content fits entirely within its viewport, clicking it must not show the green border and keyboard scroll keys must not change its scroll offset. A block that is not scrollable in any direction has nothing to communicate with a focus highlight, so showing one is actively misleading — the green border tells the operator "you can scroll here" and the operator will try, get no response, and lose trust in the UI.
 
-This rule exists because a focused non-scrollable block gives the user false affordance — the green border implies "you can scroll here" but nothing moves. Operators are confused when they click a block, see it highlight, and then H/L/scroll wheel does nothing.
+### Why this matters
+
+The green border is the affordance for scroll. Operators use it as a signal: click to focus, then use H/L/Up/Down/scroll-wheel to navigate content that doesn't fit. If a block highlights green but has no overflow, the signal is a lie. Every interaction after that — pressing scroll keys, watching nothing happen — erodes trust in the UI conventions.
 
 ### Implementation
 
-The scrollability check runs in two places and must agree:
+`render_scrollable_block` enforces the rule automatically: it computes `content_width`, `content_height`, `viewport_w`, and `viewport_h` from the lines it is about to render, checks `is_scrollable(content_width, viewport_w) || is_scrollable(content_height, viewport_h)`, and ignores the `focused` flag when the result is false. Callers pass `focused = true` or `false` from their state; the renderer suppresses the green border if the content currently fits.
 
-1. **`update_scroll_focus` (mouse click)** — `is_scrollable(area, content_width) || is_scrollable_v(area, content_height)` must be `true` before setting focus. If false, click in that block clears focus (sets `list_scroll_focus = None`).
+This means the rule is **impossible to accidentally violate** through the shared renderer. What callers must still ensure:
 
-2. **`focused_block_still_scrollable` (resize guard, every render frame)** — returns `false` when content fits after a terminal resize, which clears `list_scroll_focus = None` so the green border disappears.
+1. **Mouse click handler (`update_scroll_focus`)** — set the `focused` / `scroll_focused` state field for any block whose hit-test rect contains the click, **regardless of whether the block is currently scrollable**. The renderer already suppresses the green border when content fits; the state field only needs to be accurate for keyboard scroll dispatch (if the block isn't scrollable, scroll keys are no-ops anyway). Do NOT add `is_scrollable` guards in the click handler — that causes a different bug where clicking a non-scrollable block silently clears focus from the previously focused block without giving it to the clicked one.
 
-Both checks must use the **same content height and width values** as `render_scrollable_block` uses for the actual rendered lines. Any mismatch causes the bug where the block looks scrollable (green border, scrollbar visible) but scrolling does nothing, or looks non-scrollable but is still focused.
+2. **Resize guard** — when the terminal shrinks and content that previously overflowed now fits, `list_scroll_focus` (list view) is cleared by `focused_block_still_scrollable`. Similar guards must exist for any persistent focus state that a terminal resize can invalidate.
+
+Both checks must use the **same content height and width values** as `render_scrollable_block` uses for the actual rendered lines. Any mismatch causes the bug where the input handler clamps scroll to the wrong maximum — the scrollbar thumb stops short of the track end even though the operator has not reached the actual content limit.
+
+### Click hit-test area must cover the full rendered block
+
+**The mouse hit-test rect for a scrollable block must exactly match (or be a superset of) the `area` passed to `render_scrollable_block`.** Never compute the hit-test area from content dimensions or row counts — use the full rendered block height.
+
+**Why this matters:** A block that holds N content rows plus an empty trailing area is still one block. The empty rows are inside the border; they are visually part of the same scrollable surface. Operators intuitively click anywhere inside the block — including blank space below the last row — and expect focus to switch. If the hit-test rect is computed from content height alone (e.g. `height = rows + 2`), clicks in the empty trailing area fall outside the rect and silently do nothing. The operator sees their click ignored and infers the UI is broken.
+
+**Implementation rule:** Every `point_in(mouse, area)` check in `update_scroll_focus` must use the same `area` that the renderer passes to `render_scrollable_block`. In practice this means:
+
+- For full-body blocks (editor Mounts tab, editor other tabs, settings content): use `editor_content_area(term_size)` — the full body rect below header + tab strip. Do not shrink this to content height.
+- For per-block sub-areas in the list view right pane (Workspace mounts, Global mounts, Roles): use the height computed by the same block-height function the renderer's `Constraint::Length(...)` uses.
+
+In `mouse.rs`, `editor_scroll_area` wraps `editor_content_area` to guarantee they stay in sync — `editor_scroll_area` must never compute its own area dimensions independently.
+
+A violated hit-test rect is a silent bug: no compile error, no test failure, and no obvious visual artifact — the block just refuses to focus when clicked in the empty trailing area.
 
 ### Content height formula for each block type
 
@@ -133,9 +152,10 @@ The workspace mounts formula uses `.max(1)` because an empty mount list renders 
 - Vertical scrollbar rendered only when content overflows vertically.
 - `*scroll_x` and `*scroll_y` clamped to valid range in-place every frame (eliminates stale overshoot).
 - Scrollbar thumbs are proportional to visible content in both axes, so small overflow produces a long thumb and large overflow produces a short thumb, while a block scrolled to its maximum offset still shows the thumb at the visible end of the track.
+- Scrollbar thumb length is invariant for a fixed `content_length` + `viewport` + track length. Scrolling moves the thumb; it must never resize by one cell because of offset-dependent rounding.
 - Horizontal scrolling preserves matching trailing padding for each row's leading padding, so two-space-indented tables do not pin their final visible character against the right border or scrollbar column at maximum horizontal offset.
 
-Input hit-testing, focusability, scrollbar dragging, wheel/key max-offset math, right-padding content width, and Ratatui scrollbar state construction must use the shared scroll helpers in <RepoFile path="src/console/widgets/scrollable.rs" /> (`viewport_width`, `viewport_height`, `is_scrollable`, `max_offset`, `effective_offset`, `scrollbar_position_for_offset`, and the private `scrollbar_content_length` via the existing `render_*_scrollbar` helpers). Do not reimplement `area.width - 2`, `area.height - 2`, `content - viewport`, proportional thumb sizing, trailing scroll padding, or Ratatui scrollbar-position formulas in input handlers or widget renderers; drift between input geometry and renderer geometry is a scroll bug. In particular, do not pass raw `content_length` to `ScrollbarState::new()` — the correct argument is `content_length - viewport + 1` (the number of distinct scroll positions), which `scrollbar_content_length` computes; passing the raw length produces a thumb that is too small for moderate overflows.
+Input hit-testing, focusability, cursor-follow scrolling, selected-list windowing, scrollbar dragging, wheel/key max-offset math, right-padding content width, and scrollbar rendering must use the shared scroll helpers in <RepoFile path="src/console/widgets/scrollable.rs" /> (`viewport_width`, `viewport_height`, `is_scrollable`, `max_offset`, `effective_offset`, `cursor_follow_offset`, `render_selected_lines_in_area`, `render_lines_with_offset_in_area`, `horizontal_scrollbar_area`, `vertical_scrollbar_area`, `scrollbar_position_for_offset`, `scrollbar_offset_for_track_position`, `apply_scroll_delta`, and `apply_horizontal_scroll_delta`). Do not reimplement `area.width - 2`, `area.height - 2`, `content - viewport`, cursor-follow viewport offsets, selected-list slicing, proportional thumb sizing, trailing scroll padding, scrollbar hit areas, track-position formulas, or wheel/key offset math in input handlers or widget renderers; drift between input geometry and renderer geometry is a scroll bug. Do not delegate scrollbar thumb geometry to Ratatui's `ScrollbarState`: its thumb size is computed via floating-point division from `content_length`, so passing a wrong `content_length` produces an offset-dependent size; and even with the correct argument, independent rounding of thumb start and end can still produce a one-cell resize at the boundaries.
 
 Signature:
 ```rust
@@ -196,9 +216,11 @@ Canonical definitions live in <RepoFile path="src/console/widgets/mod.rs" />. Al
 
 ## Block Border Colors
 
-- **Focused block**: `PHOSPHOR_GREEN` border.
-- **Unfocused block**: `PHOSPHOR_DARK` border (or no border where layout dictates).
-- Border color is controlled exclusively through the `focused` parameter to `render_scrollable_block`. Never set border style separately.
+- **Focused and scrollable**: `PHOSPHOR_GREEN` border — both `focused = true` AND content overflows in at least one axis.
+- **Focused but not scrollable**: `PHOSPHOR_DARK` border — `focused = true` is ignored when content fits; no false affordance.
+- **Unfocused**: `PHOSPHOR_DARK` border regardless of scrollability.
+
+`render_scrollable_block` enforces this logic internally. Callers only supply `focused: bool` from state; the renderer decides whether to use green. Never set border style outside `render_scrollable_block`.
 
 ---
 
@@ -259,6 +281,37 @@ The hints update dynamically based on which block is focused and which axes over
 Role-level sentinels (`RoleAddSentinel`) and role section headers keep their `"     "` (5-space) indentation to visually group them under the role section.
 
 ---
+
+## Settings ↔ Workspace Editor Parity
+
+The **settings panel** (`ManagerStage::Settings`, global config) and the **workspace editor** (`ManagerStage::Editor`, per-workspace config) are parallel tabbed surfaces. Their tabs mirror each other:
+
+| Settings tab | Workspace editor analog |
+|---|---|
+| Mounts | Mounts |
+| Environments | Secrets |
+| Auth | Auth |
+| Trust | (no direct analog) |
+
+They share the same visual language, the same tab-bar interaction pattern, and the same scrollable-block conventions. Operators move between them constantly and expect consistent behavior.
+
+**Rule: every fix or addition that lands in one panel must immediately be audited against the other panel.** If the same issue exists there, fix it in the same PR. This is not optional polish — inconsistent behavior between the two panels is a bug.
+
+### What to check on every change
+
+When modifying settings tabs, verify the workspace editor tabs (and vice versa):
+
+- **Scroll focus wiring**: every tab must have a `scroll_focused` field (or use a shared field like `tab_content_scroll_focused`) that is set by the mouse click handler and passed as `focused` to `render_scrollable_block`. No tab may hardcode `focused = false`.
+- **Vertical scroll state**: every tab that can overflow vertically must have a `scroll_y` state field that `render_scrollable_block` mutates in-place. Never use a throwaway local `no_scroll_y = 0u16` unless the tab is genuinely designed to be non-scrollable vertically (and even then, verify the counterpart tab makes the same choice intentionally).
+- **Content width agreement**: the content width used by the mouse wheel and drag handlers must be computed from the same line-building function the renderer uses. Mismatched width computations make the scrollbar thumb stop short of the track end.
+- **Mouse wheel vertical dispatch**: `scroll_active_panel_vertical` must route to the correct `scroll_y` field for every tab in both panels. A missing branch silently drops scroll events.
+- **Focus highlight**: the green border must appear when and only when the block is focused and scrollable, in both panels identically.
+
+### Why this rule exists
+
+Operators use both surfaces regularly. When Settings Auth scrolls but workspace editor Auth does not (or vice versa), the UI feels broken even if each panel works correctly in isolation. The two panels look alike; they must act alike. Divergence accumulates invisibly until a new operator encounters it and files a bug.
+
+The **shared renderer** (`render_scrollable_block`, `render_scrollable_block_focused`) and **shared scroll helpers** (`scrollable.rs`) enforce visual consistency automatically. The state wiring and mouse handlers are the remaining surface where inconsistency can creep in — which is why this explicit audit rule exists.
 
 ## Component Reuse — Strict Rule
 
