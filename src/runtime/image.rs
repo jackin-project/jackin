@@ -46,7 +46,6 @@ pub(super) fn build_agent_image(
     let mut use_prebuilt =
         published_image.is_some() && !rebuild && branch_override.is_none() && !custom_construct;
     let mut base_image_override = use_prebuilt.then(|| published_image.unwrap());
-    let mut rebuild = rebuild;
 
     // When using the pre-built published image, verify it was built from the
     // same construct version the Dockerfile now pins. A mismatch means the
@@ -54,46 +53,19 @@ pub(super) fn build_agent_image(
     // bumped to a newer construct version but CI has not yet rebuilt the
     // published image). Fall back to workspace mode so the role's workspace
     // Dockerfile — which carries the new pinned version — is used directly.
-    if use_prebuilt {
-        let published = published_image.unwrap();
-        // Pull to refresh the local cache; fast no-op when digest unchanged.
-        if let Err(e) = runner.run(
-            "docker",
-            &["pull", "--quiet", published],
-            None,
-            &RunOptions::default(),
+    let rebuild = if use_prebuilt
+        && construct_version_is_stale(
+            published_image.unwrap(),
+            &validated_repo.dockerfile.construct_version,
+            debug,
+            runner,
         ) {
-            if debug {
-                eprintln!("{}", format!("[debug] docker pull {published} failed ({e}); staleness check will use cached digest").dimmed());
-            }
-        }
-        let label_stored = runner
-            .capture(
-                "docker",
-                &[
-                    "inspect",
-                    "--format",
-                    &format!(
-                        "{{{{index .Config.Labels \"{}\"}}}}",
-                        LABEL_IMAGE_CONSTRUCT_VERSION
-                    ),
-                    published,
-                ],
-                None,
-            )
-            .ok()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
-        if let Some(stored) = label_stored {
-            if stored != validated_repo.dockerfile.construct_version {
-                use_prebuilt = false;
-                base_image_override = None;
-                rebuild = true;
-            }
-        }
-        // If the label is absent the published image predates this tracking
-        // feature; allow prebuilt mode so existing images keep working.
-    }
+        use_prebuilt = false;
+        base_image_override = None;
+        true
+    } else {
+        rebuild
+    };
 
     // create_derived_build_context copies the repo into a temp directory,
     // creating an immutable snapshot.  After this point the shared cached
@@ -215,6 +187,46 @@ pub(super) fn build_agent_image(
     extract_agent_version(paths, &image, agent, debug, runner);
 
     Ok(image)
+}
+
+/// Returns true when the published image's construct version label differs from
+/// the Dockerfile's pinned version, meaning the published image pre-dates a
+/// Renovate bump. If the label is absent the image predates this tracking
+/// feature — treat as fresh so existing published images keep working.
+fn construct_version_is_stale(
+    published: &str,
+    dockerfile_version: &str,
+    debug: bool,
+    runner: &mut impl CommandRunner,
+) -> bool {
+    if let Err(e) = runner.run(
+        "docker",
+        &["pull", "--quiet", published],
+        None,
+        &RunOptions::default(),
+    ) && debug
+    {
+        eprintln!(
+            "{}",
+            format!("[debug] docker pull {published} failed ({e}); staleness check will use cached digest")
+                .dimmed()
+        );
+    }
+    let label_stored = runner
+        .capture(
+            "docker",
+            &[
+                "inspect",
+                "--format",
+                &format!("{{{{index .Config.Labels \"{LABEL_IMAGE_CONSTRUCT_VERSION}\"}}}}"),
+                published,
+            ],
+            None,
+        )
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    label_stored.is_some_and(|stored| stored != dockerfile_version)
 }
 
 fn extract_agent_version(

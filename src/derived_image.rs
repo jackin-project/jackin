@@ -243,8 +243,7 @@ pub fn create_derived_build_context(
                         let after_prefix = &line[construct_from_prefix.len()..];
                         let alias = after_prefix
                             .find(' ')
-                            .map(|i| &after_prefix[i..])
-                            .unwrap_or("")
+                            .map_or("", |i| &after_prefix[i..])
                             .to_string();
                         format!("{from_override}{alias}")
                     } else {

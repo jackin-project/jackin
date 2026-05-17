@@ -7,7 +7,7 @@ use crate::repo::RoleRepoValidationError;
 
 pub const CONSTRUCT_REGISTRY_IMAGE: &str = "projectjackin/construct";
 pub const CONSTRUCT_STABLE_TAG: &str = "trixie";
-/// Floating tag — kept for the JACKIN_CONSTRUCT_IMAGE default and error messages.
+/// Floating tag — kept for the `JACKIN_CONSTRUCT_IMAGE` default and error messages.
 pub const CONSTRUCT_IMAGE: &str = "projectjackin/construct:trixie";
 
 pub fn construct_image() -> String {
