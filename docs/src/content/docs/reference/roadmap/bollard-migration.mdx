@@ -4,7 +4,7 @@ title: "Migrate Docker CLI to Bollard API Client"
 import RepoFile from '../../../../components/RepoFile.astro'
 
 
-**Status**: Deferred — incremental migration is the pragmatic path
+**Status**: Partially scoped — Phase 1 (lifecycle / inspect via Bollard) is the next concrete step; full migration of `docker build` / `docker run -it` remains deferred
 
 ## Problem
 
@@ -16,17 +16,39 @@ All Docker operations use `ShellRunner` which shells out to the `docker` CLI. Er
 - No structured error codes from CLI — only exit code 1 for most failures
 - The `bollard` crate provides a typed Rust Docker API client over Unix socket/TCP with proper HTTP status codes (e.g., 404 for "not found" vs 500 for real errors)
 
-## Open Security Finding
+## Open Review Findings This Resolves
 
-The [Open review findings](/reference/roadmap/open-review-findings/)
-catalog still tracks `is_missing_cleanup_error()` string-matching
-Docker error messages. This migration would resolve that finding.
+The [Open review findings](/reference/roadmap/open-review-findings/) catalog tracks two Medium findings that the full Bollard migration would close, but that *also* admit a smaller targeted fix that doesn't require touching `docker build` or `docker run -it`:
 
-## Options
+- **#13 — Cleanup tolerance still string-matches Docker CLI stderr.** Detection of `"No such container"` / `"No such volume"` / `"No such network"` in `is_missing_cleanup_error()` is the literal example in the finding.
+- **#14 — Container-state probing collapses Docker failures into "not found."** `inspect_container_state()` treats every `docker inspect` failure as a missing container, hiding daemon / context failures.
 
-1. **Full migration to `bollard`**: Replace all `ShellRunner` Docker calls with `bollard` API calls. Significant refactor.
+Both findings touch *only* lifecycle, cleanup, and inspect call sites. They do not depend on migrating image build or interactive `docker run -it`, which are the parts of this roadmap that are genuinely hard. Leaving both findings open while the parent migration is fully deferred is a contradiction this page now resolves by carving out a Phase 1 scope.
 
-2. **Incremental migration**: Start with cleanup/lifecycle operations (where string matching is most problematic), keep CLI for `docker build` and `docker run -it` (where interactive TTY is needed).
+## Phased Plan
+
+### Phase 1 — Lifecycle, cleanup, and inspect via Bollard (the next concrete PR)
+
+In scope:
+
+- `is_missing_cleanup_error()` in <RepoFile path="src/runtime/cleanup.rs" /> replaced by Bollard's typed `404` for `remove_container` / `remove_network` / `remove_volume`. Closes open finding #13.
+- `inspect_container_state()` in <RepoFile path="src/runtime/attach.rs" /> distinguishing Bollard's `404` (genuinely not found) from any other transport / daemon error. Closes open finding #14.
+- Orphaned-DinD GC and the `jackin prune` / `jackin eject` paths that today shell out to `docker ps` / `docker rm` / `docker network rm` / `docker volume rm`.
+
+Out of scope for Phase 1 (kept on the CLI path):
+
+- `docker build` — Bollard's build API streams a tarball over HTTP and is meaningfully different to integrate; deferred to Phase 2.
+- `docker run -it` (foreground agent attach with TTY) — `attach` via the API is doable but the TTY/raw-mode handling is non-trivial; deferred to Phase 2.
+
+Acceptance criteria for Phase 1:
+
+- `is_missing_cleanup_error()` and any equivalent stderr-string detector are deleted.
+- Open findings #13 and #14 are removed from the [Open review findings](/reference/roadmap/open-review-findings/) catalog in the same PR.
+- All cleanup / inspect tests pass with a non-English `LC_MESSAGES` shimmed Docker stderr.
+
+### Phase 2 — Build and interactive attach (still deferred)
+
+Migrate `docker build` and the interactive `docker run -it` foreground attach to Bollard. This remains deferred under the original "incremental is pragmatic" rationale — the value-per-effort is much lower than Phase 1 because the CLI shape is well-understood for these calls and the bugs Bollard would fix are smaller. Pick this up only when a concrete review finding or operational pain motivates it.
 
 ## Related Files
 

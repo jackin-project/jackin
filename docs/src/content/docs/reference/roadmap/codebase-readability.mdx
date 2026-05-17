@@ -4,17 +4,21 @@ title: "Codebase readability & restructuring"
 import RepoFile from '../../../../components/RepoFile.astro'
 import { Aside } from '@astrojs/starlight/components'
 
-**Status**: Open — active program (deep audit May 2026)
+**Status**: Open — active program (deep audit May 2026, re-baked 2026-05-17)
 
 ## Goal
 
-Make AI-generated code verifiable and maintainable. The codebase has grown to ~91K lines of production Rust (116 files in `src/`) with significant AI-assisted development. The core problems are:
+Make AI-generated code verifiable and maintainable. The codebase has grown to ~93K lines of production Rust (119 files in `src/`) with significant AI-assisted development. The core problems are:
 
-1. **Files have outgrown their module boundaries** — 21 files exceed 1000 lines; the largest is 7575L. 18 additional files over 800L are not yet tracked for splitting.
-2. **Pervasive copy-paste duplication** — 231 `Style::default()` chains across 21 files, 82 identical Dockerfile FROM literals, 123 inline manifest filename strings, 10 independent mount helper definitions, 4 byte-for-byte-identical `config_with_agents` test functions, 7+ agent match-arm dispatch blocks that all need updating when a new agent is added.
-3. **Mega-functions** — 25 functions carry `#[allow(clippy::too_many_lines)]` suppressions; the worst (`fn run` in `app/mod.rs`) is 1141 lines. These make PR review nearly impossible.
-4. **Weak module contracts** — 51 of 116 files (44%) still lack `//!` orientation docs; no behavioral specs exist; no snapshot tests exist.
-5. **DRY violations in constants** — `"jackin.role.toml"` appears 123 times, `"Dockerfile"` 230 times, `"FROM projectjackin/construct:trixie\n"` 82 times — all should be shared constants.
+1. **Files have outgrown their module boundaries** — 25 files exceed 1000 lines; the largest is 7593L. 33 files now exceed 800L (up from 18 untracked at the original audit), so the Phase 2 backlog is wider than the original tier list shows.
+2. **Pervasive copy-paste duplication** — 296 `Style::default()` chains across 22 files, 83 identical Dockerfile FROM literals, 146 inline manifest filename strings, 10 independent mount helper definitions, 4 byte-for-byte-identical `config_with_agents` test functions, 7+ agent match-arm dispatch blocks that all need updating when a new agent is added.
+3. **Mega-functions** — 35 functions carry `#[allow(clippy::too_many_lines)]` suppressions; the worst (`fn run` in `app/mod.rs`) is 1186 lines. These make PR review nearly impossible.
+4. **Weak module contracts** — 65 of 119 files (55%) still lack `//!` orientation docs; no behavioral specs exist; no snapshot tests exist.
+5. **DRY violations in constants** — `"jackin.role.toml"` appears 146 times, `"Dockerfile"` 206 times, `"FROM projectjackin/construct:trixie\n"` 83 times — all should be shared constants.
+
+<Aside type="caution">
+**Trend since the original May 2026 audit (re-baked 2026-05-17):** every duplication / mega-function metric grew except `"Dockerfile"` literals (230 → 206). LOC grew from ~91K to ~93.4K (+2.6%), files > 1000 grew from 21 to 25, `#[allow(clippy::too_many_lines)]` suppressions grew from 25 to 35, and `//!` coverage regressed from 56% to 45%. The codebase is moving faster than this program is reducing entropy, so refreshing these baselines without scheduling actual extraction work understates the gap. Treat the numbers below as inputs for the *next* DRY/contracts PR, not as a steady state.
+</Aside>
 
 ## Codebase Maintainability Assessment
 
@@ -24,38 +28,38 @@ Make AI-generated code verifiable and maintainable. The codebase has grown to ~9
 - **Instance identity system** — `instance/naming.rs` provides centralized container name generation
 - **Migration framework** — `config/migrations.rs` and `manifest/migrations.rs` provide versioned schema upgrades with fixture-tested chains
 - **Isolation boundary** — `isolation/materialize.rs` ↔ `isolation/finalize.rs` have clean complementary responsibilities
-- **Wildcard imports** — zero wildcard `use` in production code; all 91 wildcard imports are properly scoped to `#[cfg(test)]` modules
+- **Wildcard imports** — zero wildcard `use` in production code; all 94 wildcard imports are properly scoped to `#[cfg(test)]` modules
 
 ### Weakest parts (highest duplication / entropy risk)
 
-- **TUI render layer** — `console/manager/render/` and all widget files: 231 `Style::default().fg()` calls, 347 `Span::styled()` calls, 19 `Block::default()` chains, inline color constants duplicated across 10+ files instead of using the centralized palette in `console/widgets/mod.rs`
+- **TUI render layer** — `console/manager/render/` and all widget files: 296 `Style::default().fg()` calls, 357 `Span::styled()` calls, 27 `Block::default()` chains, inline color constants duplicated across 10+ files instead of using the centralized palette in `console/widgets/mod.rs`
 - **Auth provisioning** — `instance/auth.rs` contains 5 near-identical provision functions; 7+ agent match-arm dispatch blocks across the codebase mean adding a new agent requires touching 7+ files
-- **String literal duplication** — `"FROM projectjackin/construct:trixie\n"` (82 occurrences in 8 files), `"jackin.role.toml"` (123 in 12 files), `"Dockerfile"` (230 in 15 files) — all inline instead of shared constants
+- **String literal duplication** — `"FROM projectjackin/construct:trixie\n"` (83 occurrences), `"jackin.role.toml"` (146), `"Dockerfile"` (206) — all inline instead of shared constants
 - **Test infrastructure** — 11 separate mock/fake struct definitions; 10 independent mount helper functions in 7 files; 4 byte-for-byte-identical `config_with_agents` test helpers; 20 inline `ResolvedWorkspace` constructions
-- **Mega-functions** — `fn run` (1141L), `fn load_role_with` (695L), `fn entrypoint_dispatches_on_jackin_agent` (446L) are the top 3; 25 total functions have `too_many_lines` suppressions
+- **Mega-functions** — `fn run` (1186L), `fn load_role_with` (731L), `fn entrypoint_dispatches_on_jackin_agent` (446L) are the top 3; 35 total functions have `too_many_lines` suppressions
 
 ### Biggest long-term risks
 
 - Agent-generated entropy accelerating: each new agent runtime duplicates auth provision patterns, TUI tab handling, and match-arm dispatch across 7+ files
 - The "clean console/runtime boundary" claim was never enforced and now has 2 production dependencies — the window for a clean Cargo workspace split is narrowing
 - No snapshot tests exist, so Phase 2 file splits risk silent render regressions
-- `console/` is 42% of the entire codebase (38,499L across 49 files) but has the best `//!` coverage (90%); `instance/`, `isolation/`, `manifest/`, and `tui/` all have 0% doc coverage
+- `console/` is 42% of the entire codebase (38,902L across 50 files) but has the best `//!` coverage (90%); `instance/`, `isolation/`, `manifest/`, `app/`, `tui/`, and `agent/` all have 0% doc coverage
 
 ### Per-module health
 
 | Module | Files | Lines | `//!` coverage | Biggest risk |
 |---|---|---|---|---|
-| `console/` | 49 | 38,499 | 90% | Render duplication; deep nesting (5-6 levels) |
-| `runtime/` | 11 | 11,831 | 18% | `launch.rs` at 7575L; `attach.rs` duplicates DinD logic |
-| `config/` | 7 | 7,421 | 14% | `editor.rs` at 2260L; 51 `JackinPaths::for_tests()` calls |
-| `isolation/` | 6 | 5,375 | 0% | `materialize.rs` at 2392L; deep nesting |
-| `workspace/` | 7 | 4,591 | 29% | `token_setup.rs` at 1610L |
-| `instance/` | 4 | 4,388 | 0% | `auth.rs` at 2607L; 5 copy-pasted provision functions |
-| `app/` | 2 | 4,233 | 0% | `mod.rs` at 2767L with 1141L `fn run` |
-| `manifest/` | 3 | 2,259 | 0% | `validate.rs` at 1222L |
-| `cli/` | 7 | 2,464 | 14% | `workspace.rs` at 861L |
-| `tui/` | 4 | 1,682 | 0% | `animation.rs` has 12+ magic-number millisecond values |
-| `agent/` | 1 | 289 | 0% | Small but undocumented |
+| `console/` | 50 | 38,902 | 90% | Render duplication; deep nesting (5-6 levels) |
+| `runtime/` | 11 | 12,605 | 18% | `launch.rs` at 7593L; `attach.rs` duplicates DinD logic |
+| `config/` | 7 | 7,474 | 14% | `editor.rs` at 2260L; 51 `JackinPaths::for_tests()` calls |
+| `isolation/` | 6 | 5,376 | 0% | `materialize.rs` at 2392L; deep nesting |
+| `workspace/` | 7 | 4,601 | 28% | `token_setup.rs` at 1610L |
+| `instance/` | 4 | 4,634 | 0% | `auth.rs` at 2710L; 5 copy-pasted provision functions |
+| `app/` | 2 | 4,342 | 0% | `mod.rs` at 2872L with 1186L `fn run` |
+| `manifest/` | 3 | 2,368 | 0% | `validate.rs` at 1227L |
+| `cli/` | 8 | 2,703 | 12% | `workspace.rs` at 861L |
+| `tui/` | 4 | 1,684 | 0% | `animation.rs` has 12+ magic-number millisecond values |
+| `agent/` | 1 | 353 | 0% | Small but undocumented |
 
 ## Phase 0 — MSRV & toolchain (DONE)
 
@@ -67,8 +71,8 @@ These items require no structural code changes and can be done in any order with
 
 | Item | Purpose | Depends on |
 |---|---|---|
-| [Module contracts](/reference/roadmap/module-contracts/) | Write `//!` docs for priority files (51 of 116 missing) | — |
-| [Behavioral spec: runtime/launch.rs](/reference/roadmap/behavioral-spec-runtime-launch/) | Verified invariants for the `jackin load` critical path (7575L) | Module contracts first |
+| [Module contracts](/reference/roadmap/module-contracts/) | Write `//!` docs for priority files (65 of 119 missing) | — |
+| [Behavioral spec: runtime/launch.rs](/reference/roadmap/behavioral-spec-runtime-launch/) | Verified invariants for the `jackin load` critical path (7593L) | Module contracts first |
 | [Behavioral spec: op_picker](/reference/roadmap/behavioral-spec-op-picker/) | Invariants for the 1Password picker state machine (2331L) | — |
 | [Per-directory README](/reference/roadmap/per-directory-readme/) | AI-native orientation files + per-crate AGENTS.md | — |
 | [Developer Reference setup](/reference/roadmap/developer-reference-setup/) | `jackin.tailrocks.com/internal/` Starlight section | — |
@@ -92,16 +96,16 @@ Before splitting files in Phase 2, reduce the duplication within them. This phas
 
 | Constant | Current duplication | Occurrences | Files |
 |---|---|---|---|
-| `const BASE_DOCKERFILE_FROM: &str` | `"FROM projectjackin/construct:trixie\n"` inline | 82 in 8 files | `launch.rs`, `derived_image.rs`, `repo_cache.rs`, `repo.rs`, `instance/mod.rs`, `editor.rs`, `repo_contract.rs`, `auth.rs` |
-| `const MANIFEST_FILENAME: &str` | `"jackin.role.toml"` inline | 123 in 12 files | `launch.rs`, `validate.rs`, `mod.rs`, `repo.rs`, `repo_cache.rs`, `derived_image.rs`, `migrations.rs`, `instance/mod.rs`, `editor.rs`, `context.rs`, `auth.rs`, `validate.rs` |
-| `const DOCKERFILE_NAME: &str` | `"Dockerfile"` inline | 230 in 15 files | `launch.rs`, `validate.rs`, `mod.rs`, `repo.rs`, `repo_cache.rs`, `derived_image.rs`, `repo_contract.rs`, `image.rs`, `instance/mod.rs`, `migrations.rs`, `context.rs`, `editor.rs`, `auth.rs`, `confirm.rs`, `role.rs` |
+| `const BASE_DOCKERFILE_FROM: &str` | `"FROM projectjackin/construct:trixie\n"` inline | 83 occurrences | `launch.rs`, `derived_image.rs`, `repo_cache.rs`, `repo.rs`, `instance/mod.rs`, `editor.rs`, `repo_contract.rs`, `auth.rs` |
+| `const MANIFEST_FILENAME: &str` | `"jackin.role.toml"` inline | 146 occurrences | `launch.rs`, `validate.rs`, `mod.rs`, `repo.rs`, `repo_cache.rs`, `derived_image.rs`, `migrations.rs`, `instance/mod.rs`, `editor.rs`, `context.rs`, `auth.rs`, `validate.rs` |
+| `const DOCKERFILE_NAME: &str` | `"Dockerfile"` inline | 206 occurrences | `launch.rs`, `validate.rs`, `mod.rs`, `repo.rs`, `repo_cache.rs`, `derived_image.rs`, `repo_contract.rs`, `image.rs`, `instance/mod.rs`, `migrations.rs`, `context.rs`, `editor.rs`, `auth.rs`, `confirm.rs`, `role.rs` |
 
 ### 2. TUI rendering deduplication
 
 | Extraction | Current duplication | Files affected | Impact |
 |---|---|---|---|
 | `fn titled_block(title, focused) -> Block` | 18 `Block::default().borders(ALL)` + 15 border_style chains + 13 title constructions (78 total sites) | `render/editor.rs`, `render/list.rs`, `render/global_mounts.rs` | Collapses 78 boilerplate chains |
-| Named style constants (`BOLD_WHITE`, `DIM`, `GREEN`, `BORDER`, `DANGER`) | 231 `Style::default().fg(...)` chains across 21 files; `Style::default().fg(WHITE).add_modifier(BOLD)` alone appears 26 times | All render files + all widget files + `input/save.rs` | Eliminates 231 inline style constructions |
+| Named style constants (`BOLD_WHITE`, `DIM`, `GREEN`, `BORDER`, `DANGER`) | 296 `Style::default().fg(...)` chains across 22 files; `Style::default().fg(WHITE).add_modifier(BOLD)` alone appears 26+ times | All render files + all widget files + `input/save.rs` | Eliminates 296 inline style constructions |
 | Centralized color palette import | Inline `Color::Rgb(...)` values duplicated in `input/save.rs`, `scope_picker.rs`, `save_discard.rs`, `mount_dst_choice.rs`, `source_picker.rs`, `file_browser/render.rs` instead of importing from `console/widgets/mod.rs` | 6+ files | Removes ~20 inline magic color values |
 | `fn app_layout(area) -> Rc<[Rect]>` for header/body/footer | 4 identical `Layout::default()` splits with `[Length(3), Min(..), Length(2)]` | `render/mod.rs`, `render/global_mounts.rs` | Removes 4 duplicate layout constructions |
 | Deduplicate breadcrumb logic | `push_op_breadcrumb_spans()` at `render/editor.rs:1427` is fully duplicated inline at lines 1058–1091 | `render/editor.rs` | One call replaces ~30 duplicated lines |
@@ -111,7 +115,7 @@ Before splitting files in Phase 2, reduce the duplication within them. This phas
 
 | Extraction | Current duplication | Files affected |
 |---|---|---|
-| Generic `fn provision_file_credential(target, host_path, mode)` | The Sync arm (read host file → write to role-state → `HostMissing` on `NotFound`) is copy-pasted across Codex, Amp, and GitHub provisioners in <RepoFile path="src/instance/auth.rs" />. The wipe-then-return for `ApiKey`/`Ignore` is identical across 4 agents. | <RepoFile path="src/instance/auth.rs" /> (2607L) |
+| Generic `fn provision_file_credential(target, host_path, mode)` | The Sync arm (read host file → write to role-state → `HostMissing` on `NotFound`) is copy-pasted across Codex, Amp, and GitHub provisioners in <RepoFile path="src/instance/auth.rs" />. The wipe-then-return for `ApiKey`/`Ignore` is identical across 4 agents. | <RepoFile path="src/instance/auth.rs" /> (2710L) |
 | `AgentRuntimeState::model()` accessor | 3 identical match-body methods (`claude_model()`, `codex_model()`, `kimi_model()`) in <RepoFile path="src/instance/mod.rs" /> | <RepoFile path="src/instance/mod.rs" /> |
 | Agent match-arm macro or trait dispatch | 7+ sites with `Agent::Claude => ..., Agent::Codex => ..., Agent::Amp => ...` match arms (`config/roles.rs` has three identical blocks, `instance/mod.rs` has 2, `launch.rs` has 4, `auth_kind.rs` 1, `agent_choice/mod.rs` 1, `derived_image.rs` 1). Adding a new agent requires touching all 7. | 7 files across config, runtime, instance, console, derived_image |
 
@@ -151,73 +155,73 @@ Before splitting files in Phase 2, reduce the duplication within them. This phas
 
 Split the largest files. Snapshot tests (Phase 1) and DRY extractions (Phase 1.5) must land first.
 
-The original Phase 2 listed 4 files. The deep audit found **31 files exceed 800 lines**, with **21 files exceeding 1000 lines**.
+The original Phase 2 listed 4 files. The deep audit found **33 files exceed 800 lines**, with **25 files exceeding 1000 lines** (re-baked 2026-05-17).
 
 ### Tier A — files over 2000 lines (13 files, highest priority)
 
 | File | LOC | Key risk | Mega-functions inside |
 |---|---|---|---|
-| <RepoFile path="src/runtime/launch.rs" /> | **7575** | Hardest file in the codebase. `fn load_role_with` is 695L. | `load_role_with` (695L), `launch_role_runtime` (374L), `resolve_restore_candidate` (125L) |
-| <RepoFile path="src/console/manager/input/editor.rs" /> | **3955** | 61-arm match on modal, 53-arm match on key.code. Deep nesting to 36+ spaces. | `role_input_resolves_then_persists...` (135L) |
+| <RepoFile path="src/runtime/launch.rs" /> | **7593** | Hardest file in the codebase. `fn load_role_with` is 731L. | `load_role_with` (731L), `launch_role_runtime` (378L), `resolve_restore_candidate` (118L) |
+| <RepoFile path="src/console/manager/input/editor.rs" /> | **3958** | 61-arm match on modal, 53-arm match on key.code. Deep nesting to 36+ spaces. | `role_input_resolves_then_persists...` (135L) |
 | <RepoFile path="src/operator_env.rs" /> | **3573** | Cross-cutting; 4 production `unwrap()` calls. | `resolve_op_uri_with_dollar_var_errors` (401L), `item_create` (145L) |
-| <RepoFile path="src/console/manager/render/editor.rs" /> | **3231** | 25-arm match on tab. | `contextual_row_items` (205L), `render_secrets_tab` (104L) |
-| <RepoFile path="src/console/manager/render/list.rs" /> | **2816** | 41 `TestBackend::new()` calls. | `render_details_pane` (116L) |
-| <RepoFile path="src/app/mod.rs" /> | **2767** | `fn run` is 1141L with a 51-arm match. | `fn run` (1141L), `render_workspace_show` (147L), `handle_claude_token` (117L) |
-| <RepoFile path="src/console/manager/input/save.rs" /> | **2734** | Deep nesting to 36+ spaces. Inline color re-declarations. | `build_confirm_save_lines` (245L) |
-| <RepoFile path="src/instance/auth.rs" /> | **2607** | 5 copy-pasted provision functions. 132 deeply nested lines. | — |
-| <RepoFile path="src/console/manager/state.rs" /> | **2477** | State machine + modal definitions mixed. | — |
+| <RepoFile path="src/console/manager/render/editor.rs" /> | **3249** | 25-arm match on tab. | `contextual_row_items` (205L), `render_secrets_tab` (104L) |
+| <RepoFile path="src/console/manager/render/list.rs" /> | **2868** | 41 `TestBackend::new()` calls. | `render_details_pane` (116L) |
+| <RepoFile path="src/app/mod.rs" /> | **2872** | `fn run` is 1186L with a 51-arm match. | `fn run` (1186L), `render_workspace_show` (147L), `handle_claude_token` (117L) |
+| <RepoFile path="src/console/manager/input/save.rs" /> | **2764** | Deep nesting to 36+ spaces. Inline color re-declarations. | `build_confirm_save_lines` (245L) |
+| <RepoFile path="src/instance/auth.rs" /> | **2710** | 5 copy-pasted provision functions. 132 deeply nested lines. | — |
+| <RepoFile path="src/console/manager/state.rs" /> | **2483** | State machine + modal definitions mixed. | — |
 | <RepoFile path="src/isolation/materialize.rs" /> | **2392** | `materialize_one` (245L), `materialize_clone` (210L). | `materialize_one` (245L), `materialize_clone` (210L) |
 | <RepoFile path="src/console/widgets/op_picker/mod.rs" /> | **2331** | 4-level state machine + loader + key handler. | — |
 | <RepoFile path="src/config/editor.rs" /> | **2260** | 51 `JackinPaths::for_tests()` calls. | — |
-| <RepoFile path="src/console/manager/input/mouse.rs" /> | **2033** | `handle_mouse_with_config` is 129L. Mouse + seam drag logic. | `handle_mouse_with_config` (129L) |
+| <RepoFile path="src/console/manager/input/mouse.rs" /> | **2027** | `handle_mouse_with_config` is 129L. Mouse + seam drag logic. | `handle_mouse_with_config` (129L) |
 
 ### Tier B — files 1000–2000 lines (8 files, address after Tier A)
 
 | File | LOC | Key risk |
 |---|---|---|
-| <RepoFile path="src/console/manager/input/global_mounts.rs" /> | **1984** | 42-arm + 31-arm + 29-arm matches on modal. Deep nesting. |
-| <RepoFile path="src/isolation/finalize.rs" /> | **1819** | `assess_cleanup` is 204L. |
-| <RepoFile path="src/console/manager/input/auth.rs" /> | **1767** | Auth tab form/modal handling. |
+| <RepoFile path="src/console/manager/input/global_mounts.rs" /> | **1987** | 42-arm + 31-arm + 29-arm matches on modal. Deep nesting. |
+| <RepoFile path="src/isolation/finalize.rs" /> | **1823** | `assess_cleanup` is 204L. |
+| <RepoFile path="src/console/manager/input/auth.rs" /> | **1801** | Auth tab form/modal handling. |
 | <RepoFile path="src/workspace/token_setup.rs" /> | **1610** | `run_setup_with_runner` is 126L. |
-| <RepoFile path="src/app/context.rs" /> | **1466** | Instance management, workspace resolution. |
-| <RepoFile path="src/config/mod.rs" /> | **1407** | Main config schema, auth/source policy. |
-| <RepoFile path="src/manifest/validate.rs" /> | **1222** | 36 `v1alpha` version strings in tests. |
-| <RepoFile path="src/console/manager/render/mod.rs" /> | **1165** | `fn render` is 201L. Central render orchestrator. |
+| <RepoFile path="src/app/context.rs" /> | **1470** | Instance management, workspace resolution. |
+| <RepoFile path="src/config/mod.rs" /> | **1449** | Main config schema, auth/source policy. |
+| <RepoFile path="src/manifest/validate.rs" /> | **1227** | 36 `v1alpha` version strings in tests. |
+| <RepoFile path="src/console/manager/render/mod.rs" /> | **1199** | `fn render` is 201L. Central render orchestrator. |
 
 ### Tier C — files 800–1000 lines (10 files, lower priority)
 
 | File | LOC | Note |
 |---|---|---|
-| <RepoFile path="src/runtime/repo_cache.rs" /> | **1145** | Cache + clone logic |
-| <RepoFile path="src/runtime/attach.rs" /> | **1130** | Duplicates DinD sidecar launch from launch.rs |
-| <RepoFile path="src/workspace/mod.rs" /> | **1056** | Core workspace types |
-| <RepoFile path="src/derived_image.rs" /> | **983** | `entrypoint_dispatches_on_jackin_agent` is 446L |
-| <RepoFile path="src/console/manager/input/list.rs" /> | **939** | List-stage key handling |
-| <RepoFile path="src/manifest/mod.rs" /> | **878** | Manifest loading |
+| <RepoFile path="src/runtime/repo_cache.rs" /> | **1156** | Cache + clone logic |
+| <RepoFile path="src/runtime/attach.rs" /> | **1127** | Duplicates DinD sidecar launch from launch.rs |
+| <RepoFile path="src/workspace/mod.rs" /> | **1066** | Core workspace types |
+| <RepoFile path="src/derived_image.rs" /> | **990** | `entrypoint_dispatches_on_jackin_agent` is 446L |
+| <RepoFile path="src/manifest/mod.rs" /> | **981** | Manifest loading (grew from 878 since the original audit) |
+| <RepoFile path="src/console/manager/input/list.rs" /> | **940** | List-stage key handling |
+| <RepoFile path="src/instance/manifest.rs" /> | **921** | Per-instance manifest (grew from 851 since the original audit) |
 | <RepoFile path="src/cli/workspace.rs" /> | **861** | Workspace CLI commands |
-| <RepoFile path="src/instance/manifest.rs" /> | **851** | Per-instance manifest |
 | <RepoFile path="src/console/manager/render/global_mounts.rs" /> | **839** | Global mounts rendering |
-| <RepoFile path="src/console/widgets/op_picker/render.rs" /> | **814** | `render_pane` is 124L |
+| <RepoFile path="src/console/widgets/op_picker/render.rs" /> | **807** | `render_pane` is 124L |
 
 ### Recommended split order
 
-1. **`app/mod.rs`** (2767L) — highest growth (+123%); pure dispatch, lowest risk; contains the 1141L `fn run`
-2. **`instance/auth.rs`** (2607L) — after Phase 1.5 DRY extraction reduces it significantly
+1. **`app/mod.rs`** (2872L) — highest growth (+131%); pure dispatch, lowest risk; contains the 1186L `fn run`
+2. **`instance/auth.rs`** (2710L) — after Phase 1.5 DRY extraction reduces it significantly
 3. **`operator_env.rs`** (3573L) — cross-cutting but well-understood dependency graph
-4. **`input/editor.rs` + `render/editor.rs`** (3955L + 3231L) — paired split; do together
+4. **`input/editor.rs` + `render/editor.rs`** (3958L + 3249L) — paired split; do together
 5. **`isolation/materialize.rs`** (2392L) — clean internal seams already identified
 6. **`config/editor.rs`** (2260L) — after the editor split patterns are established
-7. **`input/mouse.rs`** (2033L) — extract seam drag from click handling
-8. **`input/global_mounts.rs`** (1984L) — per-subtab handler extraction
+7. **`input/mouse.rs`** (2027L) — extract seam drag from click handling
+8. **`input/global_mounts.rs`** (1987L) — per-subtab handler extraction
 9. **Tier B remaining** — `state.rs`, `render/list.rs`, `input/save.rs`, `finalize.rs`, `input/auth.rs`, `token_setup.rs`, `context.rs`, `config/mod.rs`, `validate.rs`, `render/mod.rs`
 10. **Tier C** — address as part of normal development or when specific files become review blockers
-11. **`runtime/launch.rs`** (7575L) — **LAST**; hardest file, most complex test suite, behavioral spec must exist
+11. **`runtime/launch.rs`** (7593L) — **LAST**; hardest file, most complex test suite, behavioral spec must exist
 
 ## Phase 3 — Future (deferred)
 
 | Item | Trigger |
 |---|---|
-| [Cargo workspace split](/reference/roadmap/cargo-workspace-split/) | LOC > 150K or external consumers (currently ~91K production Rust) |
+| [Cargo workspace split](/reference/roadmap/cargo-workspace-split/) | LOC > 150K or external consumers (currently ~93K production Rust) |
 | [rustdoc JSON → Starlight pipeline](/reference/roadmap/rustdoc-json-starlight/) | After `//!` coverage sprint |
 
 ## Execution order (recommended)
@@ -237,30 +241,30 @@ The original Phase 2 listed 4 files. The deep audit found **31 files exceed 800 
 
 The re-analysis found 2 production-code dependencies from `console/` into `runtime/`:
 
-1. `src/console/manager/input/editor.rs:1445` — calls `crate::runtime::register_agent_repo(...)` when the operator types a role selector in the TUI editor
-2. `src/console/manager/input/editor.rs:1536-1547` — references `crate::runtime::RepoError` variants in `friendly_role_resolution_error()`
+1. `src/console/manager/input/editor.rs:1504` — calls `crate::runtime::register_agent_repo(...)` when the operator types a role selector in the TUI editor
+2. `src/console/manager/input/editor.rs:1595-1606` — references `crate::runtime::RepoError` variants in `friendly_role_resolution_error()`
 
 The Cargo workspace split will need these 2 sites addressed first.
 
-## Current metrics (May 2026)
+## Current metrics (re-baked 2026-05-17)
 
-| Metric | Value | Original analysis |
-|---|---|---|
-| Production Rust (`src/`) | **90,949L** (116 files) | ~49,754L |
-| Test code (`tests/`) | **6,758L** (15 files) | — |
-| Total Rust | **97,707L** | — |
-| Files > 2000 lines | **13** | 4 |
-| Files > 1000 lines | **21** | — |
-| Files > 800 lines | **31** | — |
-| Files with `//!` docs | **65 of 116** (56%) | ~47% |
-| Files missing `//!` docs | **51** (44%) | ~53% |
-| `too_many_lines` suppressions | **25** | — |
-| `pub fn` vs `pub(crate) fn` | 383 vs 42 (9.9% `pub(crate)`) | — |
-| Wildcard imports in production | **0** (all 91 are test-only) | — |
-| Snapshot test infrastructure | **None** | — |
-| ADR directory | **None** | — |
-| Per-directory README/AGENTS.md | **None** | — |
-| Production `unwrap()` calls | **4** (2 in operator_env.rs should use `expect()`) | — |
+| Metric | Value | Original analysis (May 2026) | Original (pre-audit) |
+|---|---|---|---|
+| Production Rust (`src/`) | **93,390L** (119 files) | 90,949L (116 files) | ~49,754L |
+| Test code (`tests/`) | **6,901L** (16 files) | 6,758L (15 files) | — |
+| Total Rust | **100,291L** | 97,707L | — |
+| Files > 2000 lines | **13** | 13 | 4 |
+| Files > 1000 lines | **25** | 21 | — |
+| Files > 800 lines | **33** | 31 | — |
+| Files with `//!` docs | **54 of 119** (45%) | 65 of 116 (56%) | ~47% |
+| Files missing `//!` docs | **65** (55%) | 51 (44%) | ~53% |
+| `too_many_lines` suppressions | **35** | 25 | — |
+| `pub fn` vs `pub(crate) fn` | 414 vs 49 (10.6% `pub(crate)`) | 383 vs 42 (9.9%) | — |
+| Wildcard imports in production | **0** (all 94 are test-only) | 0 (all 91 are test-only) | — |
+| Snapshot test infrastructure | **None** | None | — |
+| ADR directory | **None** | None | — |
+| Per-directory README/AGENTS.md | **None** | None | — |
+| Production `unwrap()` calls | **4** (2 in operator_env.rs should use `expect()`) | 4 | — |
 
 ## Research archive
 
