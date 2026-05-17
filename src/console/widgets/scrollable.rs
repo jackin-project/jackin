@@ -134,18 +134,17 @@ pub(crate) fn scrollbar_offset_for_track_position(
         return 0;
     }
 
-    let (_, thumb_len) = scrollbar_thumb_geometry(content_length, viewport, track_len, 0);
-    let max_thumb_start = track_len.saturating_sub(thumb_len);
     let max_scroll = content_length.saturating_sub(viewport);
-    if max_thumb_start == 0 {
+    let max_position = track_len.saturating_sub(1);
+    if max_position == 0 {
         return 0;
     }
 
-    let thumb_start = track_position.min(max_thumb_start);
-    let offset = thumb_start
+    let position = track_position.min(max_position);
+    let offset = position
         .saturating_mul(max_scroll)
-        .saturating_add(max_thumb_start / 2)
-        .checked_div(max_thumb_start)
+        .saturating_add(max_position / 2)
+        .checked_div(max_position)
         .unwrap_or(0);
     offset.min(usize::from(u16::MAX)) as u16
 }
@@ -525,6 +524,13 @@ mod tests {
     fn track_position_maps_to_scrollbar_thumb_range() {
         assert_eq!(scrollbar_offset_for_track_position(20, 5, 10, 0), 0);
         assert_eq!(scrollbar_offset_for_track_position(20, 5, 10, 9), 15);
+    }
+
+    #[test]
+    fn track_position_does_not_snap_long_thumb_to_end() {
+        assert_eq!(scrollbar_offset_for_track_position(12, 10, 10, 2), 0);
+        assert_eq!(scrollbar_offset_for_track_position(12, 10, 10, 5), 1);
+        assert_eq!(scrollbar_offset_for_track_position(12, 10, 10, 9), 2);
     }
 
     #[test]
