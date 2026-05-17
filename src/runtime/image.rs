@@ -7,7 +7,7 @@ use crate::version_check;
 use owo_colors::OwoColorize;
 
 use super::identity::HostIdentity;
-use super::naming::image_name;
+use super::naming::{LABEL_IMAGE_CONSTRUCT, image_name};
 
 /// Build the Docker image for the role. Returns the image name.
 #[allow(clippy::similar_names, clippy::too_many_arguments)]
@@ -84,6 +84,31 @@ pub(super) fn build_agent_image(
     // Docker resolves the Dockerfile default `JACKIN_CACHE_BUST=0` and hits
     // the original pre-bust layer, causing the installed agent version to
     // ping-pong between old and new on alternate launches.
+    // If a derived image already exists locally, check whether it was built
+    // against the same construct image as the current invocation. A mismatch
+    // means the cached image is tainted — e.g. built with a local construct
+    // override while this invocation uses the canonical one, or vice versa —
+    // and must be rebuilt from scratch rather than reused.
+    let current_construct = crate::repo_contract::construct_image();
+    let cached_construct_label = runner
+        .capture(
+            "docker",
+            &[
+                "inspect",
+                "--format",
+                &format!("{{{{index .Config.Labels \"{LABEL_IMAGE_CONSTRUCT}\"}}}}"),
+                &image,
+            ],
+            None,
+        )
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let construct_mismatch = cached_construct_label
+        .as_deref()
+        .is_some_and(|cached| cached != current_construct);
+    let rebuild = rebuild || construct_mismatch;
+
     let cache_bust_value = if rebuild || agent_update {
         // System clock before UNIX_EPOCH is essentially impossible, but if it
         // happens we must not silently fall back to 0 — that collapses to the
@@ -122,9 +147,11 @@ pub(super) fn build_agent_image(
         build_args.push("--pull");
     }
 
+    let construct_label = format!("{LABEL_IMAGE_CONSTRUCT}={current_construct}");
     build_args.extend(["--build-arg", &build_arg_uid]);
     build_args.extend(["--build-arg", &build_arg_gid]);
     build_args.extend(["--build-arg", &cache_bust]);
+    build_args.extend(["--label", &construct_label]);
     build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
 
     runner.run(

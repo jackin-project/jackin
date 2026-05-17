@@ -5230,8 +5230,11 @@ plugins = []
             build_cmd.contains("--pull"),
             "pre-built image mode must pass --pull to check for registry updates"
         );
-        // DerivedDockerfile must use the published image, not the workspace FROM
-        assert!(!build_cmd.contains("projectjackin/construct:trixie"));
+        // Derived image must carry the construct image label.
+        assert!(
+            build_cmd.contains("jackin.construct_image=projectjackin/construct:trixie"),
+            "build must label the construct image used; got: {build_cmd}"
+        );
     }
 
     #[test]
