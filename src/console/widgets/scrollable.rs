@@ -59,6 +59,33 @@ pub(crate) fn scrollbar_position_for_offset(
     }
 }
 
+pub(crate) fn cursor_follow_offset(
+    cursor: usize,
+    content_length: usize,
+    viewport: usize,
+    stored_offset: u16,
+) -> u16 {
+    if viewport == 0 {
+        return 0;
+    }
+
+    let max = max_offset(content_length, viewport);
+    let stored = stored_offset.min(max);
+    let raw = if cursor < usize::from(stored) {
+        cursor.min(usize::from(u16::MAX)) as u16
+    } else if is_scrollable(content_length, viewport)
+        && cursor >= usize::from(stored).saturating_add(viewport)
+    {
+        cursor
+            .saturating_add(1)
+            .saturating_sub(viewport)
+            .min(usize::from(u16::MAX)) as u16
+    } else {
+        stored
+    };
+    raw.min(max)
+}
+
 fn scrollbar_thumb_geometry(
     content_length: usize,
     viewport: usize,
@@ -85,6 +112,56 @@ fn scrollbar_thumb_geometry(
         .unwrap_or(0);
 
     (thumb_start, thumb_len)
+}
+
+pub(crate) fn scrollbar_offset_for_track_position(
+    content_length: usize,
+    viewport: usize,
+    track_len: usize,
+    track_position: usize,
+) -> u16 {
+    if !is_scrollable(content_length, viewport) || track_len == 0 {
+        return 0;
+    }
+
+    let (_, thumb_len) = scrollbar_thumb_geometry(content_length, viewport, track_len, 0);
+    let max_thumb_start = track_len.saturating_sub(thumb_len);
+    let max_scroll = content_length.saturating_sub(viewport);
+    if max_thumb_start == 0 {
+        return 0;
+    }
+
+    let thumb_start = track_position.min(max_thumb_start);
+    let offset = thumb_start
+        .saturating_mul(max_scroll)
+        .saturating_add(max_thumb_start / 2)
+        .checked_div(max_thumb_start)
+        .unwrap_or(0);
+    offset.min(usize::from(u16::MAX)) as u16
+}
+
+pub(crate) const fn apply_scroll_delta(value: &mut u16, delta: i16) {
+    *value = if delta.is_negative() {
+        value.saturating_sub(delta.unsigned_abs())
+    } else {
+        value.saturating_add(delta as u16)
+    };
+}
+
+pub(crate) fn apply_horizontal_scroll_delta(
+    value: &mut u16,
+    delta: i16,
+    viewport: usize,
+    content_width: usize,
+) {
+    let max = max_offset(content_width, viewport);
+    let current = (*value).min(max);
+    let next = if delta.is_negative() {
+        current.saturating_sub(delta.unsigned_abs())
+    } else {
+        current.saturating_add(delta as u16)
+    };
+    *value = next.min(max);
 }
 
 pub(crate) fn line_width(line: &Line<'_>) -> usize {
@@ -130,6 +207,24 @@ fn add_trailing_padding(mut lines: Vec<Line<'_>>) -> Vec<Line<'_>> {
     lines
 }
 
+pub(crate) const fn horizontal_scrollbar_area(block_area: Rect) -> Rect {
+    Rect {
+        x: block_area.x + 1,
+        y: block_area.y + block_area.height.saturating_sub(1),
+        width: block_area.width.saturating_sub(2),
+        height: 1,
+    }
+}
+
+pub(crate) const fn vertical_scrollbar_area(block_area: Rect) -> Rect {
+    Rect {
+        x: block_area.x + block_area.width.saturating_sub(1),
+        y: block_area.y + 1,
+        width: 1,
+        height: block_area.height.saturating_sub(2),
+    }
+}
+
 pub(crate) fn render_horizontal_scrollbar(
     frame: &mut Frame,
     block_area: Rect,
@@ -141,12 +236,7 @@ pub(crate) fn render_horizontal_scrollbar(
         return;
     }
     let position = scrollbar_position_for_offset(content_width, viewport, usize::from(scroll_x));
-    let area = Rect {
-        x: block_area.x + 1,
-        y: block_area.y + block_area.height.saturating_sub(1),
-        width: block_area.width.saturating_sub(2),
-        height: 1,
-    };
+    let area = horizontal_scrollbar_area(block_area);
     frame.render_widget(
         FixedScrollbar {
             content_length: content_width,
@@ -168,12 +258,7 @@ pub(crate) fn render_vertical_scrollbar(
     if !is_scrollable(content_height, viewport) {
         return;
     }
-    let area = Rect {
-        x: block_area.x + block_area.width.saturating_sub(1),
-        y: block_area.y + 1,
-        width: 1,
-        height: block_area.height.saturating_sub(2),
-    };
+    let area = vertical_scrollbar_area(block_area);
     render_vertical_scrollbar_in_area(frame, area, content_height, viewport, scroll_y);
 }
 
@@ -305,7 +390,10 @@ pub(crate) fn render_scrollable_block(
 
 #[cfg(test)]
 mod tests {
-    use super::{render_vertical_scrollbar_in_area, scrollbar_thumb_geometry};
+    use super::{
+        cursor_follow_offset, render_vertical_scrollbar_in_area,
+        scrollbar_offset_for_track_position, scrollbar_thumb_geometry,
+    };
     use ratatui::{Terminal, backend::TestBackend, layout::Rect};
 
     #[test]
@@ -342,5 +430,22 @@ mod tests {
         assert_eq!(rendered_thumb_len(0), 8);
         assert_eq!(rendered_thumb_len(1), 8);
         assert_eq!(rendered_thumb_len(2), 8);
+    }
+
+    #[test]
+    fn cursor_follow_offset_keeps_cursor_in_view() {
+        assert_eq!(cursor_follow_offset(0, 20, 5, 0), 0);
+        assert_eq!(cursor_follow_offset(4, 20, 5, 0), 0);
+        assert_eq!(cursor_follow_offset(5, 20, 5, 0), 1);
+        assert_eq!(cursor_follow_offset(10, 20, 5, 0), 6);
+        assert_eq!(cursor_follow_offset(19, 20, 5, 0), 15);
+        assert_eq!(cursor_follow_offset(99, 20, 5, 0), 15);
+        assert_eq!(cursor_follow_offset(7, 20, 0, 0), 0);
+    }
+
+    #[test]
+    fn track_position_maps_to_scrollbar_thumb_range() {
+        assert_eq!(scrollbar_offset_for_track_position(20, 5, 10, 0), 0);
+        assert_eq!(scrollbar_offset_for_track_position(20, 5, 10, 9), 15);
     }
 }

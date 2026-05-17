@@ -10,8 +10,11 @@ use super::super::render::list::{
     global_mounts_block_height, global_mounts_content_height, global_mounts_content_width,
     mount_block_height, workspace_mounts_content_height, workspace_mounts_content_width,
 };
+#[cfg(test)]
+use super::super::render::max_scroll_offset;
 use super::super::render::{
-    is_scrollable, max_scroll_offset, scroll_viewport_height, scroll_viewport_width,
+    apply_horizontal_scroll_delta, apply_scroll_delta, horizontal_scrollbar_area, is_scrollable,
+    scroll_viewport_height, scroll_viewport_width, scrollbar_offset_for_track_position,
 };
 use super::super::state::{
     DragState, EditorTab, FieldFocus, ManagerListRow, ManagerStage, ManagerState, Modal,
@@ -564,16 +567,16 @@ fn drag_scrollbar(value: &mut u16, mouse: MouseEvent, area: Rect, content_width:
     if !is_scrollable(content_width, viewport) {
         return false;
     }
-    let scrollbar_y = area.y + area.height.saturating_sub(1);
-    let start_x = area.x + 1;
-    let end_x = area.x + area.width.saturating_sub(2);
-    if mouse.row != scrollbar_y || mouse.column < start_x || mouse.column > end_x {
+    let scrollbar = horizontal_scrollbar_area(area);
+    if !point_in(mouse, scrollbar) {
         return false;
     }
-    let max_position = usize::from(max_scroll_offset(content_width, viewport));
-    let track = usize::from(end_x.saturating_sub(start_x)).max(1);
-    let rel = usize::from(mouse.column.saturating_sub(start_x));
-    *value = ((max_position * rel) / track).min(usize::from(u16::MAX)) as u16;
+    *value = scrollbar_offset_for_track_position(
+        content_width,
+        viewport,
+        usize::from(scrollbar.width),
+        usize::from(mouse.column.saturating_sub(scrollbar.x)),
+    );
     true
 }
 
@@ -722,24 +725,8 @@ fn scroll_active_panel_vertical(
     }
 }
 
-/// The render frame clamps stored values each draw, so no max is needed here.
-const fn apply_scroll_delta(value: &mut u16, delta: i16) {
-    *value = if delta.is_negative() {
-        value.saturating_sub(delta.unsigned_abs())
-    } else {
-        value.saturating_add(delta as u16)
-    };
-}
-
 fn apply_horizontal_scroll(value: &mut u16, delta: i16, area: Rect, content_width: usize) {
-    let max = max_scroll_offset(content_width, scroll_viewport_width(area));
-    let current = (*value).min(max);
-    let next = if delta.is_negative() {
-        current.saturating_sub(delta.unsigned_abs())
-    } else {
-        current.saturating_add(delta as u16)
-    };
-    *value = next.min(max);
+    apply_horizontal_scroll_delta(value, delta, scroll_viewport_width(area), content_width);
 }
 
 struct ListScrollAreas {

@@ -10,7 +10,9 @@ use ratatui::{
 
 use crate::operator_env::OpField;
 
-use super::super::scrollable::{is_scrollable, render_vertical_scrollbar_in_area};
+use super::super::scrollable::{
+    cursor_follow_offset, is_scrollable, render_vertical_scrollbar_in_area,
+};
 use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use super::{OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState};
 
@@ -63,19 +65,6 @@ fn breadcrumb_title(
             }
         }
     }
-}
-
-/// Cursor-follows scrolling — anchors selected at top until cursor
-/// moves below the window, then anchors at bottom (clamped to
-/// `total - height`). Stateless: recomputed each frame.
-fn viewport_offset(selected: usize, height: usize, total: usize) -> usize {
-    if height == 0 || total <= height {
-        return 0;
-    }
-    if selected < height {
-        return 0;
-    }
-    selected.saturating_sub(height - 1).min(total - height)
 }
 
 fn modal_block<'a>(title: impl Into<String>) -> Block<'a> {
@@ -181,7 +170,12 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         };
         let height = rows[3].height as usize;
         let total = list_lines.len();
-        let offset = viewport_offset(selected.unwrap_or(0), height, total);
+        let offset = usize::from(cursor_follow_offset(
+            selected.unwrap_or(0),
+            total,
+            height,
+            0,
+        ));
         let take = height.min(total.saturating_sub(offset));
         let visible: Vec<Line<'static>> = list_lines.into_iter().skip(offset).take(take).collect();
         (Paragraph::new(visible), Some((total, offset, height)))
@@ -487,7 +481,8 @@ fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
 
 #[cfg(test)]
 mod tests {
-    use super::{OpPickerStage, breadcrumb_title, viewport_offset};
+    use super::{OpPickerStage, breadcrumb_title};
+    use crate::console::widgets::scrollable::cursor_follow_offset;
 
     // ── Breadcrumb formatting ─────────────────────────────────────────
 
@@ -555,24 +550,24 @@ mod tests {
     #[test]
     fn viewport_offset_returns_zero_when_list_fits() {
         // 5 items, 10-row viewport — no scroll regardless of selection.
-        assert_eq!(viewport_offset(0, 10, 5), 0);
-        assert_eq!(viewport_offset(4, 10, 5), 0);
+        assert_eq!(cursor_follow_offset(0, 5, 10, 0), 0);
+        assert_eq!(cursor_follow_offset(4, 5, 10, 0), 0);
     }
 
     #[test]
     fn viewport_offset_anchors_top_until_cursor_falls_below_window() {
         // 20 items, 5-row viewport. Cursor in rows 0..5 → no scroll.
-        assert_eq!(viewport_offset(0, 5, 20), 0);
-        assert_eq!(viewport_offset(4, 5, 20), 0);
+        assert_eq!(cursor_follow_offset(0, 20, 5, 0), 0);
+        assert_eq!(cursor_follow_offset(4, 20, 5, 0), 0);
     }
 
     #[test]
     fn viewport_offset_pins_cursor_to_bottom_when_below_initial_window() {
         // 20 items, 5-row viewport. Cursor at row 5 → offset 1 (cursor
         // sits on the last visible row, rows[1..6] → 1,2,3,4,5).
-        assert_eq!(viewport_offset(5, 5, 20), 1);
+        assert_eq!(cursor_follow_offset(5, 20, 5, 0), 1);
         // Cursor at row 10 → offset 6 (rows 6..11; cursor at end).
-        assert_eq!(viewport_offset(10, 5, 20), 6);
+        assert_eq!(cursor_follow_offset(10, 20, 5, 0), 6);
     }
 
     #[test]
@@ -580,10 +575,10 @@ mod tests {
         // Cursor at the last row of a 20-item list with a 5-row
         // viewport must produce offset 15 — the last visible window
         // shows rows 15..20.
-        assert_eq!(viewport_offset(19, 5, 20), 15);
+        assert_eq!(cursor_follow_offset(19, 20, 5, 0), 15);
         // Even past the end (defensive), we don't scroll past
         // total - height.
-        assert_eq!(viewport_offset(99, 5, 20), 15);
+        assert_eq!(cursor_follow_offset(99, 20, 5, 0), 15);
     }
 
     #[test]
@@ -591,7 +586,7 @@ mod tests {
         // Defensive: `Constraint::Min(1)` could collapse to 0 if the
         // modal is squeezed down to a single border row. Treat that
         // as "no viewport" and return 0.
-        assert_eq!(viewport_offset(7, 0, 20), 0);
+        assert_eq!(cursor_follow_offset(7, 20, 0, 0), 0);
     }
 
     // ── Loading-panel breadcrumb ──────────────────────────────────────

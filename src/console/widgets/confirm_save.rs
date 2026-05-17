@@ -17,6 +17,7 @@ use ratatui::{
 
 use super::ModalOutcome;
 
+use super::scrollable::{effective_offset, is_scrollable, render_vertical_scrollbar_in_area};
 use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,7 +43,7 @@ pub struct ConfirmSaveState {
     pub lines: Vec<Line<'static>>,
     pub focus: ConfirmSaveFocus,
     /// Vertical scroll offset — how many lines are hidden above the visible window.
-    pub scroll_offset: usize,
+    pub scroll_offset: u16,
     /// `plan_edit`'s `effective_removals`, forwarded into
     /// `edit_workspace`. Empty for Create flows.
     pub effective_removals: Vec<String>,
@@ -130,8 +131,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
     let content_rows = content_rows.saturating_sub(1); // bottom-of-content blank
     let visible = content_rows as usize;
     let total = state.lines.len();
-    let max_offset = total.saturating_sub(visible);
-    let offset = state.scroll_offset.min(max_offset);
+    let offset = usize::from(effective_offset(total, visible, state.scroll_offset));
     let clipped: Vec<Line> = state
         .lines
         .iter()
@@ -163,6 +163,21 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
         })
         .collect();
     frame.render_widget(Paragraph::new(indented), chunks[1]);
+    if is_scrollable(total, visible) {
+        let scrollbar_area = Rect {
+            x: chunks[1].x + chunks[1].width.saturating_sub(1),
+            y: chunks[1].y,
+            width: 1,
+            height: chunks[1].height,
+        };
+        render_vertical_scrollbar_in_area(
+            frame,
+            scrollbar_area,
+            total,
+            visible,
+            state.scroll_offset,
+        );
+    }
 
     // Buttons — focused choice highlights on white.
     let focused_style = Style::default()

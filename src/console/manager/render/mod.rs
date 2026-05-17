@@ -24,7 +24,9 @@ pub(super) use modal::modal_outer_rect;
 pub use editor::render_editor;
 
 pub(in crate::console::manager) use crate::console::widgets::scrollable::{
-    effective_offset as effective_scroll, is_scrollable, max_offset as max_scroll_offset,
+    apply_horizontal_scroll_delta, apply_scroll_delta, cursor_follow_offset,
+    effective_offset as effective_scroll, horizontal_scrollbar_area, is_scrollable,
+    max_offset as max_scroll_offset, scrollbar_offset_for_track_position,
     viewport_height as scroll_viewport_height, viewport_width as scroll_viewport_width,
 };
 pub(super) use crate::console::widgets::scrollable::{
@@ -280,33 +282,18 @@ pub(super) fn follow_cursor_y(
     viewport_h: usize,
     stored_scroll_y: u16,
 ) -> u16 {
-    if viewport_h == 0 {
-        return 0;
-    }
-    let max_scroll = content_height.saturating_sub(viewport_h);
-    let raw = if cursor < stored_scroll_y as usize {
-        cursor as u16
-    } else if content_height > viewport_h && cursor >= stored_scroll_y as usize + viewport_h {
-        (cursor + 1 - viewport_h) as u16
-    } else {
-        stored_scroll_y
-    };
-    raw.min(max_scroll as u16)
+    cursor_follow_offset(cursor, content_height, viewport_h, stored_scroll_y)
 }
 
 /// Adjust `scroll_y` so `cursor` stays in the editor/settings content viewport.
-///
-/// The chrome constant 9 = header 3 + tab strip 2 + footer 2 + block borders 2.
-/// `usize::MAX` is passed as `content_height` so `follow_cursor_y`'s upper clamp
-/// (`raw.min(max_scroll as u16)`) never fires: `max_scroll` overflows on the `as
-/// u16` cast to ≈ 65 535 − `viewport_h`, which is unreachable for any real cursor row.
 pub(super) fn cursor_scroll_for_panel(
     cursor: usize,
     scroll_y: u16,
     term: ratatui::layout::Rect,
 ) -> u16 {
     let viewport_h = (term.height.saturating_sub(9) as usize).max(1);
-    follow_cursor_y(cursor, usize::MAX, viewport_h, scroll_y)
+    let content_height = usize::from(u16::MAX).saturating_add(viewport_h);
+    follow_cursor_y(cursor, content_height, viewport_h, scroll_y)
 }
 
 #[allow(clippy::too_many_lines)]

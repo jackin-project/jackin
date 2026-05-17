@@ -72,7 +72,7 @@ pub(super) fn render_list_body(
         // Initialise max_w at the inner viewport width so the selected-row
         // background always fills the full block width, even when all names
         // are shorter than the visible area.
-        let inner_w = list_area.width.saturating_sub(2) as usize;
+        let inner_w = super::scroll_viewport_width(list_area);
         let mut max_w: usize = inner_w;
 
         let mut list_lines: Vec<Line> =
@@ -1170,7 +1170,7 @@ fn render_environments_subpanel(
             })
     });
 
-    let inner_width = area.width.saturating_sub(2) as usize;
+    let inner_width = super::scroll_viewport_width(area);
     let lines: Vec<Line> = rows
         .iter()
         .map(|row| env_row_line(row, inner_width))
