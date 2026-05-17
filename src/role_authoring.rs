@@ -12,6 +12,7 @@ pub fn run(command: RoleCommand) -> anyhow::Result<()> {
         RoleCommand::Validate(args) => validate(args),
         RoleCommand::Migrate(args) => migrate(args),
         RoleCommand::Create(args) => create(&args),
+        RoleCommand::ConstructVersion(args) => construct_version(args),
     }
 }
 
@@ -19,6 +20,13 @@ fn validate(args: RoleRepoPathArgs) -> anyhow::Result<()> {
     let repo_dir = resolve_repo_path(args.path)?;
     validate_role_repo(&repo_dir)?;
     println!("Role repository is valid: {}", repo_dir.display());
+    Ok(())
+}
+
+fn construct_version(args: RoleRepoPathArgs) -> anyhow::Result<()> {
+    let repo_dir = resolve_repo_path(args.path)?;
+    let validated = validate_role_repo(&repo_dir)?;
+    println!("{}", validated.dockerfile.construct_version);
     Ok(())
 }
 

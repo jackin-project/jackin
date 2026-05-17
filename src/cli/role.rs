@@ -125,6 +125,9 @@ pub enum RoleCommand {
     /// Create a new role repository scaffold
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Create(RoleCreateArgs),
+    /// Print the construct image version tag pinned in the role Dockerfile
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    ConstructVersion(RoleRepoPathArgs),
 }
 
 /// Role repository path argument shared by `validate` and `migrate`.

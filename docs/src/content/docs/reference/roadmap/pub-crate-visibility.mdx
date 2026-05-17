@@ -34,7 +34,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 ## Steps
 
 1. Re-run `RUSTFLAGS='-W unreachable_pub' cargo check` to get the current warning set.
-2. Decide the intended library surface in <RepoFile path="src/lib.rs" /> first: what truly needs to stay `pub` for `main.rs`, `jackin-validate`, and tests?
+2. Decide the intended library surface in <RepoFile path="src/lib.rs" /> first: what truly needs to stay `pub` for `main.rs`, `jackin-role`, and tests?
 3. Add to <RepoFile path="Cargo.toml" /> `[lints.rust]` section:
    ```toml
    [lints.rust]

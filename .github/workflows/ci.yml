@@ -157,23 +157,23 @@ jobs:
       - name: Build validator
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --locked --bin jackin-validate --target ${{ matrix.target }}
+            cross build --release --locked --bin jackin-role --target ${{ matrix.target }}
           else
-            cargo build --release --locked --bin jackin-validate --target ${{ matrix.target }}
+            cargo build --release --locked --bin jackin-role --target ${{ matrix.target }}
           fi
 
       - name: Package validator
         run: |
-          archive="jackin-validate-${{ matrix.target }}.tar.gz"
-          tar -czf "$archive" -C "target/${{ matrix.target }}/release" jackin-validate
+          archive="jackin-role-${{ matrix.target }}.tar.gz"
+          tar -czf "$archive" -C "target/${{ matrix.target }}/release" jackin-role
           sha256sum "$archive" > "$archive.sha256"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: jackin-validate-${{ matrix.target }}
+          name: jackin-role-${{ matrix.target }}
           path: |
-            jackin-validate-${{ matrix.target }}.tar.gz
-            jackin-validate-${{ matrix.target }}.tar.gz.sha256
+            jackin-role-${{ matrix.target }}.tar.gz
+            jackin-role-${{ matrix.target }}.tar.gz.sha256
           retention-days: 7
 
   # Single stable check name for branch-protection required-status,
