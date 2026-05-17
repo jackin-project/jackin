@@ -290,10 +290,9 @@ pub fn agent_outcome_notice(
         O::HostMissing => {
             if matches!(auth_mode, M::Sync) {
                 let host_file = match agent {
-                    A::Claude => "credentials",
+                    A::Claude | A::Kimi => "credentials",
                     A::Codex => "auth.json",
                     A::Amp => "secrets.json",
-                    A::Kimi => "credentials",
                     A::Opencode => "config.json",
                 };
                 eprintln!(
