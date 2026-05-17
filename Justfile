@@ -20,6 +20,10 @@ LOCAL_REGISTRY_IMAGE := env_var_or_default("LOCAL_REGISTRY_IMAGE", "jackin-local
 STABLE_TAG := env_var_or_default("STABLE_TAG", "trixie")
 GIT_SHA := env_var_or_default("GIT_SHA", _default_git_sha)
 SHA_TAG := STABLE_TAG + "-" + GIT_SHA
+# Manually-bumped version tag read from docker/construct/VERSION (e.g. "0.1-trixie").
+# Bump this before any breaking construct change; Renovate tracks it in role Dockerfiles.
+_default_version_tag := `cat docker/construct/VERSION 2>/dev/null | tr -d '[:space:]' || echo "unknown"`
+VERSION_TAG := env_var_or_default("CONSTRUCT_VERSION_TAG", _default_version_tag)
 LOCAL_PLATFORM := env_var_or_default("LOCAL_PLATFORM", _default_local_platform)
 TIRITH_VERSION := env_var_or_default("TIRITH_VERSION", _default_tirith_version)
 SHELLFIRM_VERSION := env_var_or_default("SHELLFIRM_VERSION", _default_shellfirm_version)
@@ -157,11 +161,18 @@ construct-publish-manifest:
       fi
       refs+=("${REGISTRY_IMAGE}@${digest}")
     done
+    # Refuse to overwrite an existing version tag — bump docker/construct/VERSION instead.
+    if docker buildx imagetools inspect "${REGISTRY_IMAGE}:${VERSION_TAG}" >/dev/null 2>&1; then
+      printf "Error: %s:%s already exists in the registry.\n" "${REGISTRY_IMAGE}" "${VERSION_TAG}" >&2
+      printf "Bump docker/construct/VERSION before publishing a new construct version.\n" >&2
+      exit 1
+    fi
     docker buildx imagetools create \
       --tag "${REGISTRY_IMAGE}:${STABLE_TAG}" \
       --tag "${REGISTRY_IMAGE}:${SHA_TAG}" \
+      --tag "${REGISTRY_IMAGE}:${VERSION_TAG}" \
       "${refs[@]}"
-    docker buildx imagetools inspect "${REGISTRY_IMAGE}:${SHA_TAG}"
+    docker buildx imagetools inspect "${REGISTRY_IMAGE}:${VERSION_TAG}"
 
 # Print the resolved Bake configuration (dry-run inspection)
 construct-inspect:

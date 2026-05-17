@@ -7,7 +7,7 @@ use crate::version_check;
 use owo_colors::OwoColorize;
 
 use super::identity::HostIdentity;
-use super::naming::{LABEL_IMAGE_CONSTRUCT, image_name};
+use super::naming::{LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, image_name};
 
 /// Build the Docker image for the role. Returns the image name.
 #[allow(clippy::similar_names, clippy::too_many_arguments)]
@@ -43,9 +43,53 @@ pub(super) fn build_agent_image(
     // using it as base would silently ignore the local construct override.
     let custom_construct =
         crate::repo_contract::construct_image() != crate::repo_contract::CONSTRUCT_IMAGE;
-    let use_prebuilt =
+    let mut use_prebuilt =
         published_image.is_some() && !rebuild && branch_override.is_none() && !custom_construct;
-    let base_image_override = use_prebuilt.then(|| published_image.unwrap());
+    let mut base_image_override = use_prebuilt.then(|| published_image.unwrap());
+    let mut rebuild = rebuild;
+
+    // When using the pre-built published image, verify it was built from the
+    // same construct version the Dockerfile now pins. A mismatch means the
+    // published image pre-dates a Renovate update (the role Dockerfile was
+    // bumped to a newer construct version but CI has not yet rebuilt the
+    // published image). Fall back to workspace mode so the role's workspace
+    // Dockerfile — which carries the new pinned version — is used directly.
+    if use_prebuilt {
+        let published = published_image.unwrap();
+        // Pull to refresh the local cache; fast no-op when digest unchanged.
+        let _ = runner.run(
+            "docker",
+            &["pull", "--quiet", published],
+            None,
+            &RunOptions::default(),
+        );
+        let label_stored = runner
+            .capture(
+                "docker",
+                &[
+                    "inspect",
+                    "--format",
+                    &format!(
+                        "{{{{index .Config.Labels \"{}\"}}}}",
+                        LABEL_IMAGE_CONSTRUCT_VERSION
+                    ),
+                    published,
+                ],
+                None,
+            )
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        if let Some(stored) = label_stored {
+            if stored != validated_repo.dockerfile.construct_version {
+                use_prebuilt = false;
+                base_image_override = None;
+                rebuild = true;
+            }
+        }
+        // If the label is absent the published image predates this tracking
+        // feature; allow prebuilt mode so existing images keep working.
+    }
 
     // create_derived_build_context copies the repo into a temp directory,
     // creating an immutable snapshot.  After this point the shared cached

@@ -78,7 +78,7 @@ trusted = true
     std::fs::create_dir_all(&repo_dir).unwrap();
     std::fs::write(
         repo_dir.join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
+        "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
     std::fs::write(
@@ -179,7 +179,7 @@ trusted = true
     std::fs::create_dir_all(&repo_dir).unwrap();
     std::fs::write(
         repo_dir.join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
+        "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
     std::fs::write(

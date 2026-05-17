@@ -5,6 +5,9 @@ use dockerfile_parser_rs::{Dockerfile, Instruction};
 
 use crate::repo::RoleRepoValidationError;
 
+pub const CONSTRUCT_REGISTRY_IMAGE: &str = "projectjackin/construct";
+pub const CONSTRUCT_STABLE_TAG: &str = "trixie";
+/// Floating tag — kept for the JACKIN_CONSTRUCT_IMAGE default and error messages.
 pub const CONSTRUCT_IMAGE: &str = "projectjackin/construct:trixie";
 
 pub fn construct_image() -> String {
@@ -15,8 +18,12 @@ pub fn construct_image() -> String {
 pub struct ValidatedDockerfile {
     pub dockerfile_path: PathBuf,
     pub dockerfile_contents: String,
+    /// Full versioned image tag (e.g. `projectjackin/construct:trixie-800`).
     pub final_stage_image: String,
     pub final_stage_alias: Option<String>,
+    /// The versioned tag component (e.g. `trixie-800`). Stored in the
+    /// published image label so jackin can detect staleness at launch time.
+    pub construct_version: String,
 }
 
 pub fn validate_agent_dockerfile(
@@ -47,19 +54,34 @@ pub fn validate_agent_dockerfile(
         return Err(RoleRepoValidationError::DockerfileMissingFrom);
     };
 
-    // Validate against the canonical image name regardless of any local
-    // override — role Dockerfiles reference the published image, and
-    // JACKIN_CONSTRUCT_IMAGE is substituted at derived-build time.
+    let image_str = image.as_str();
+    // "projectjackin/construct:trixie-800" → ("projectjackin/construct", "trixie-800")
+    let (registry_image, tag) = image_str
+        .rsplit_once(':')
+        .unwrap_or((image_str, ""));
+
     let expected = CONSTRUCT_IMAGE.to_owned();
-    if platform.is_some() || image.as_str() != CONSTRUCT_IMAGE {
+    if platform.is_some() || registry_image != CONSTRUCT_REGISTRY_IMAGE {
         return Err(RoleRepoValidationError::DockerfileNonConstruct { expected });
+    }
+
+    // The floating stable tag is not allowed — role Dockerfiles must pin to a
+    // versioned release (e.g. "0.1-trixie") so Renovate can track updates and
+    // jackin can detect published-image staleness at launch time.
+    let version_suffix = format!("-{CONSTRUCT_STABLE_TAG}");
+    if tag == CONSTRUCT_STABLE_TAG || !tag.ends_with(&version_suffix) {
+        return Err(RoleRepoValidationError::DockerfileMissingVersionPin {
+            image: CONSTRUCT_REGISTRY_IMAGE.to_owned(),
+            stable_tag: CONSTRUCT_STABLE_TAG.to_owned(),
+        });
     }
 
     Ok(ValidatedDockerfile {
         dockerfile_path: dockerfile_path.to_path_buf(),
         dockerfile_contents,
-        final_stage_image: image.clone(),
+        final_stage_image: image_str.to_string(),
         final_stage_alias: alias.clone(),
+        construct_version: tag.to_string(),
     })
 }
 
@@ -69,24 +91,51 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn accepts_final_stage_on_construct_image() {
+    fn accepts_versioned_construct_with_alias() {
         let temp = tempdir().unwrap();
         let dockerfile = temp.path().join("Dockerfile");
         std::fs::write(
             &dockerfile,
-            r"FROM rust:1.95.0 AS builder
-RUN cargo build
-
-FROM projectjackin/construct:trixie AS runtime
-COPY --from=builder /app /workspace/app
-",
+            "FROM rust:1.95.0 AS builder\nRUN cargo build\n\n\
+             FROM projectjackin/construct:0.1-trixie AS runtime\n\
+             COPY --from=builder /app /workspace/app\n",
         )
         .unwrap();
 
         let validated = validate_agent_dockerfile(&dockerfile).unwrap();
 
-        assert_eq!(validated.final_stage_image, CONSTRUCT_IMAGE);
+        assert_eq!(
+            validated.final_stage_image,
+            "projectjackin/construct:0.1-trixie"
+        );
         assert_eq!(validated.final_stage_alias.as_deref(), Some("runtime"));
+        assert_eq!(validated.construct_version, "0.1-trixie");
+    }
+
+    #[test]
+    fn accepts_versioned_construct_without_alias() {
+        let temp = tempdir().unwrap();
+        let dockerfile = temp.path().join("Dockerfile");
+        std::fs::write(&dockerfile, "FROM projectjackin/construct:0.2-trixie\n").unwrap();
+
+        let validated = validate_agent_dockerfile(&dockerfile).unwrap();
+
+        assert_eq!(validated.construct_version, "0.2-trixie");
+    }
+
+    #[test]
+    fn rejects_floating_stable_tag() {
+        let temp = tempdir().unwrap();
+        let dockerfile = temp.path().join("Dockerfile");
+        std::fs::write(&dockerfile, format!("FROM {CONSTRUCT_IMAGE}\n")).unwrap();
+
+        let error = validate_agent_dockerfile(&dockerfile).unwrap_err();
+
+        assert!(matches!(
+            error,
+            RoleRepoValidationError::DockerfileMissingVersionPin { .. }
+        ));
+        assert!(error.to_string().contains("floating tag"));
     }
 
     #[test]

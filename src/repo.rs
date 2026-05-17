@@ -78,6 +78,12 @@ pub enum RoleRepoValidationError {
     DockerfileMissingFrom,
     #[error("final Dockerfile stage must use literal FROM {expected}")]
     DockerfileNonConstruct { expected: String },
+    #[error(
+        "Dockerfile FROM {image}:{stable_tag} uses the floating tag — pin to a versioned release \
+         like FROM {image}:0.1-{stable_tag}.\n\
+         Configure Renovate with a regex versioning rule to track version bumps automatically."
+    )]
+    DockerfileMissingVersionPin { image: String, stable_tag: String },
     /// Catch-all for non-structural failures (TOML parse, IO, manifest
     /// semantic validation). The friendly translator renders these as
     /// the generic "not a valid Jackin role" message.
@@ -288,7 +294,7 @@ plugins = []
         std::fs::create_dir_all(temp.path().join("docker")).unwrap();
         std::fs::write(
             temp.path().join("docker/role.Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -326,7 +332,7 @@ echo hello
         .unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -369,7 +375,7 @@ preflight = "hooks/preflight.sh"
         }
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -401,7 +407,7 @@ preflight = "hooks/preflight.sh"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -428,7 +434,7 @@ preflight = "../escape.sh"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -455,7 +461,7 @@ preflight = "hooks/missing.sh"
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -501,7 +507,7 @@ preflight = "/etc/evil.sh"
         std::fs::write(temp.path().join(path), "").unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -536,7 +542,7 @@ plugins = []
         .unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(

@@ -7,7 +7,7 @@ fn validate_passes_for_valid_agent_repo() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\nRUN echo hello\n",
+        "FROM projectjackin/construct:0.1-trixie\nRUN echo hello\n",
     )
     .unwrap();
     std::fs::write(
@@ -65,7 +65,7 @@ fn validate_allows_missing_dockerignore() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
+        "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
     std::fs::write(
@@ -93,7 +93,7 @@ fn validate_fails_for_invalid_manifest() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
+        "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
     std::fs::write(
@@ -124,7 +124,7 @@ fn validate_passes_when_manifest_uses_dockerfile_in_subdirectory() {
     std::fs::create_dir_all(temp.path().join("docker")).unwrap();
     std::fs::write(
         temp.path().join("docker/role.Dockerfile"),
-        "FROM projectjackin/construct:trixie\nRUN echo hello\n",
+        "FROM projectjackin/construct:0.1-trixie\nRUN echo hello\n",
     )
     .unwrap();
     std::fs::write(
@@ -151,7 +151,7 @@ fn validate_fails_for_invalid_preflight_hook() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
+        "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
     std::fs::write(
@@ -191,7 +191,7 @@ fn validate_migrate_accepts_flag_after_path() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
+        "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
     std::fs::write(
@@ -215,7 +215,7 @@ fn validate_migrate_is_noop_for_current_manifest() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
+        "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
     std::fs::write(
@@ -239,7 +239,7 @@ fn validate_migrate_rejects_newer_manifest_version() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
+        "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
     std::fs::write(
@@ -308,7 +308,7 @@ fn validate_migrate_updates_legacy_manifest() {
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
+        "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
     std::fs::write(
