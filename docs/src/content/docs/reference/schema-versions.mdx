@@ -25,8 +25,8 @@ The split-workspace layout described in [Configuration File](/reference/configur
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha2` | jackin | Automatic on startup |
-| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha2` | jackin | Automatic on startup |
+| `~/.config/jackin/config.toml` | `v1alpha3` | jackin | Automatic on startup |
+| `~/.config/jackin/workspaces/<name>.toml` | `v1alpha3` | jackin | Automatic on startup |
 | `jackin.role.toml` | `v1alpha3` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-validate --migrate <role-repo-path>` |
 
 ## Timeline
@@ -37,19 +37,24 @@ Each entry is one upgrade path the current binary applies. <RepoFile path="tests
 
 | File kind | Predecessor | Migration mode | Fixture |
 |---|---|---|---|
+| Config (`config.toml`) | `v1alpha2` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/config/from-v1alpha2/meta.toml" /> |
+| Workspace (`workspaces/<name>.toml`) | `v1alpha2` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/workspace/from-v1alpha2/meta.toml" /> |
 | Manifest (`jackin.role.toml`) | `v1alpha2` | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-validate --migrate <role-repo-path>` | <RepoFile path="tests/fixtures/migrations/manifest/from-v1alpha2/meta.toml" /> |
 
-**Summary**: formalizes OpenCode agent support. The `opencode` enum variant in `agents` and the `[opencode]` config table require `v1alpha3`; older-stamped manifests still load as long as they do not use OpenCode. The migration is a no-op restamp: no field renames, no data moved.
+**Summary**: formalizes Kimi and OpenCode agent support. The `kimi` and `opencode` enum variants in `agents`, the `[kimi]` / `[opencode]` manifest tables, and the `[kimi]` / `[opencode]` auth config tables require `v1alpha3`; older-stamped files still load as long as they do not use those newer agent-specific fields. The migration is a no-op restamp: no field renames, no data moved.
 
-**Before** (v1alpha2 manifest with OpenCode):
+**Before** (v1alpha2 manifest with Kimi and OpenCode):
 
 ```toml
 version = "v1alpha2"
 dockerfile = "Dockerfile"
-agents = ["claude", "opencode"]
+agents = ["claude", "kimi", "opencode"]
 
 [claude]
 plugins = []
+
+[kimi]
+model = "kimi-k2"
 
 [opencode]
 model = "zai-coding-plan/glm-5.1"
@@ -60,10 +65,13 @@ model = "zai-coding-plan/glm-5.1"
 ```toml
 version = "v1alpha3"
 dockerfile = "Dockerfile"
-agents = ["claude", "opencode"]
+agents = ["claude", "kimi", "opencode"]
 
 [claude]
 plugins = []
+
+[kimi]
+model = "kimi-k2"
 
 [opencode]
 model = "zai-coding-plan/glm-5.1"
@@ -154,15 +162,16 @@ config, jackin migrates this automatically before parsing.
 
 The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs as a separate startup migration alongside the version stamp; see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha2`
+### `v1alpha3`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha2` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha3` |
 | `[claude].auth_forward` | string | No | `legacy` | `sync`, `api_key`, `oauth_token`, or `ignore` |
 | `[codex].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
 | `[amp].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
-| `[opencode].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
+| `[kimi].auth_forward` | string | No | `v1alpha3` | `sync`, `api_key`, or `ignore` |
+| `[opencode].auth_forward` | string | No | `v1alpha3` | `sync`, `api_key`, or `ignore` |
 | `[github].auth_forward` | string | No | `legacy` | `sync`, `token`, or `ignore` |
 | `[github.env]` | table | No | `legacy` | Operator env values for GitHub token auth |
 | `[env]` | table | No | `legacy` | Global operator env layer |
@@ -194,15 +203,15 @@ a `[workspaces.<name>]` table embedded in legacy `config.toml`.
 
 Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per-workspace files by a separate startup migration; see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha2`
+### `v1alpha3`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha2` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha3` |
 | `workdir` | string | Yes | `legacy` | Container working directory |
 | `allowed_roles` | string array | No | `legacy` | Roles allowed in this workspace |
 | `default_role` | string | No | `legacy` | Preferred role for new sessions |
-| `default_agent` | string | No | `legacy` | `claude`, `codex`, `amp`, or `opencode`; omitted defaults to Claude |
+| `default_agent` | string | No | `legacy` | `claude`, `codex`, `amp`, `kimi`, or `opencode`; omitted defaults to Claude |
 | `last_role` | string | No | `legacy` | Last role selected by the operator |
 | `op_account` | string | No | `legacy` | 1Password account selector |
 | `git_pull_on_entry` | bool | No | `legacy` | Pull mounted repositories on entry |
@@ -216,14 +225,16 @@ Legacy embedded `[workspaces.<name>]` tables in `config.toml` are split into per
 | `[claude].auth_forward` | string | No | `legacy` | Workspace Claude auth override |
 | `[codex].auth_forward` | string | No | `legacy` | Workspace Codex auth override |
 | `[amp].auth_forward` | string | No | `legacy` | Workspace Amp auth override |
-| `[opencode].auth_forward` | string | No | `legacy` | Workspace OpenCode auth override |
+| `[kimi].auth_forward` | string | No | `v1alpha3` | Workspace Kimi auth override |
+| `[opencode].auth_forward` | string | No | `v1alpha3` | Workspace OpenCode auth override |
 | `[github].auth_forward` | string | No | `legacy` | Workspace GitHub auth override |
 | `[github.env]` | table | No | `legacy` | Workspace GitHub token env values |
 | `[roles.<role>.env]` | table | No | `legacy` | Per-workspace, per-role env override |
 | `[roles.<role>.claude].auth_forward` | string | No | `legacy` | Per-workspace, per-role Claude auth override |
 | `[roles.<role>.codex].auth_forward` | string | No | `legacy` | Per-workspace, per-role Codex auth override |
 | `[roles.<role>.amp].auth_forward` | string | No | `legacy` | Per-workspace, per-role Amp auth override |
-| `[roles.<role>.opencode].auth_forward` | string | No | `legacy` | Per-workspace, per-role OpenCode auth override |
+| `[roles.<role>.kimi].auth_forward` | string | No | `v1alpha3` | Per-workspace, per-role Kimi auth override |
+| `[roles.<role>.opencode].auth_forward` | string | No | `v1alpha3` | Per-workspace, per-role OpenCode auth override |
 | `[roles.<role>.github].auth_forward` | string | No | `legacy` | Per-workspace, per-role GitHub auth override |
 | `[roles.<role>.github.env]` | table | No | `legacy` | Per-workspace, per-role GitHub token env values |
 
@@ -252,7 +263,7 @@ automated migration jobs.
 | `version` | string | Yes | `v1alpha1` | Current value: `v1alpha3` |
 | `dockerfile` | string | Yes | `legacy` | Relative path to role Dockerfile |
 | `published_image` | string | No | `legacy` | Pre-built role image override |
-| `agents` | string array | No | `legacy` | `claude`, `codex`, or `amp`; `opencode` added in `v1alpha3`; omitted means Claude-only |
+| `agents` | string array | No | `legacy` | `claude`, `codex`, or `amp`; `kimi` and `opencode` added in `v1alpha3`; omitted means Claude-only |
 | `[identity].name` | string | No | `legacy` | Display name |
 | `[claude].model` | string | No | `legacy` | Claude model override |
 | `[claude].plugins` | string array | No | `legacy` | Claude plugin identifiers |
@@ -261,6 +272,7 @@ automated migration jobs.
 | `[[claude.marketplaces]].sparse` | string array | No | `legacy` | Sparse checkout paths |
 | `[codex].model` | string | No | `legacy` | Codex model override |
 | `[amp]` | table | No | `legacy` | Empty marker table for Amp support |
+| `[kimi].model` | string | No | `v1alpha3` | Kimi model override passed to `kimi --model` |
 | `[opencode].model` | string | No | `v1alpha3` | `OpenCode` model override in `provider/model` format (e.g. `zai-coding-plan/glm-5.1`) |
 | `[hooks].setup_once` | string | No | `legacy` | Relative path to a one-time install script that runs on first launch only |
 | `[hooks].source` | string | No | `legacy` | Relative path to a script dot-sourced into the entrypoint shell so `export` and `PATH` mutations reach the launched agent |

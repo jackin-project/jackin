@@ -89,7 +89,7 @@ jackin config auth set <MODE>
 ```
 
 Set the global auth-forwarding mode. Without `--agent`, this targets
-`Claude Code`; use `--agent codex`, `--agent amp`, or `--agent opencode`
+`Claude Code`; use `--agent codex`, `--agent amp`, `--agent kimi`, or `--agent opencode`
 for the other built-in agents. GitHub CLI auth is managed in `jackin console` today;
 the dedicated `--target github` CLI is still planned.
 
@@ -107,6 +107,7 @@ jackin config auth set oauth_token
 jackin config auth set api_key
 jackin config auth set api_key --agent codex
 jackin config auth set sync --agent amp
+jackin config auth set sync --agent kimi
 ```
 
 ### `config auth show`
@@ -116,7 +117,7 @@ jackin config auth show
 ```
 
 Show the current global auth-forwarding modes for Claude Code, Codex,
-and Amp.
+Amp, Kimi, and OpenCode.
 
 ```bash
 jackin config auth show

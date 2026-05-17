@@ -23,7 +23,7 @@ jackin' enforces **strict parsing** — unknown fields are rejected with an erro
 ```toml title="jackin.role.toml"
 version = "v1alpha3"
 dockerfile = "Dockerfile"
-agents = ["claude", "codex", "amp", "opencode"]
+agents = ["claude", "codex", "amp", "kimi", "opencode"]
 
 [identity]
 name = "The Architect"
@@ -48,6 +48,9 @@ source = "jackin-project/jackin-marketplace"
 model = "gpt-5"
 
 [amp]
+
+[kimi]
+model = "kimi-k2"
 
 [opencode]
 
@@ -74,7 +77,7 @@ default = "feature/${env.PROJECT}"
 |---|---|---|
 | `version` | Yes | Manifest schema version. Current value is `v1alpha3`. |
 | `dockerfile` | Yes | Relative path to the Dockerfile within the repo |
-| `agents` | No | Non-empty list of agent slugs this role supports: `"claude"`, `"codex"`, `"amp"`, or `"opencode"`. When omitted, jackin treats the manifest as Claude-only. |
+| `agents` | No | Non-empty list of agent slugs this role supports: `"claude"`, `"codex"`, `"amp"`, `"kimi"`, or `"opencode"`. When omitted, jackin treats the manifest as Claude-only. |
 
 The Dockerfile path must:
 
@@ -83,12 +86,12 @@ The Dockerfile path must:
 - Point to a valid Dockerfile
 - Have a final stage that starts with `FROM projectjackin/construct:trixie`
 
-Every agent listed in `agents` must have a matching `[<agent>]` table, even when that table is empty. A manifest with `agents = ["claude", "codex", "amp", "opencode"]` needs `[claude]`, `[codex]`, `[amp]`, and `[opencode]`.
+Every agent listed in `agents` must have a matching `[<agent>]` table, even when that table is empty. A manifest with `agents = ["claude", "codex", "amp", "kimi", "opencode"]` needs `[claude]`, `[codex]`, `[amp]`, `[kimi]`, and `[opencode]`.
 
 ```toml title="jackin.role.toml"
 version = "v1alpha3"
 dockerfile = "Dockerfile"
-agents = ["claude", "codex", "amp", "opencode"]
+agents = ["claude", "codex", "amp", "kimi", "opencode"]
 
 [claude]
 plugins = []
@@ -97,6 +100,9 @@ plugins = []
 model = "gpt-5"
 
 [amp]
+
+[kimi]
+model = "kimi-k2"
 
 [opencode]
 ```
@@ -161,6 +167,25 @@ dockerfile = "Dockerfile"
 agents = ["amp"]
 
 [amp]
+```
+
+## `[kimi]`
+
+The `[kimi]` table is required when `"kimi"` appears in `agents`.
+
+| Field | Required | Description |
+|---|---|---|
+| `model` | No | Optional Kimi model passed to `kimi --model` at launch |
+
+Kimi authenticates via host `~/.kimi` state in `sync` mode. jackin forwards `~/.kimi/config.toml`, files under `~/.kimi/credentials/`, and `~/.kimi/device_id` into the container before Kimi starts. `api_key` mode uses `KIMI_API_KEY`; `oauth_token` is not supported.
+
+```toml title="jackin.role.toml"
+version = "v1alpha3"
+dockerfile = "Dockerfile"
+agents = ["kimi"]
+
+[kimi]
+model = "kimi-k2"
 ```
 
 ## `[opencode]`

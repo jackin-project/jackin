@@ -2,11 +2,11 @@
 
 Jack your AI coding agents in. Isolated worlds, scoped access, full autonomy. You're the Operator. They're already inside.
 
-jackin' is the **ecosystem layer around** AI coding agents — not another agent itself. It runs many agents in parallel, each in its own container, with its own file access, tool profile, and credentials. Every agent runtime ([Claude Code](https://docs.anthropic.com/en/docs/claude-code) `--dangerously-skip-permissions`, [Codex](https://github.com/openai/codex) YOLO, [Amp](https://ampcode.com), and the next ones to come) is most productive at full speed — and full speed against your host machine is risky. jackin' moves the boundary off the host, so the runtime can stay fast.
+jackin' is the **ecosystem layer around** AI coding agents — not another agent itself. It runs many agents in parallel, each in its own container, with its own file access, tool profile, and credentials. Every agent runtime ([Claude Code](https://docs.anthropic.com/en/docs/claude-code) `--dangerously-skip-permissions`, [Codex](https://github.com/openai/codex) YOLO, [Amp](https://ampcode.com), Kimi, OpenCode, and the next ones to come) is most productive at full speed — and full speed against your host machine is risky. jackin' moves the boundary off the host, so the runtime can stay fast.
 
 Documentation: <https://jackin.tailrocks.com/>
 
-> **Current status:** jackin' is experimental preview software. It has not reached a stable release yet, and breaking changes are expected while the core design and basic functionality settle. The docs track the rolling preview channel, which is the best way to see what the project is today. [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Codex](https://github.com/openai/codex) ship today as fully integrated agent runtimes. [Amp](https://ampcode.com) is under active development and will join them; full feature parity across all three is tracked on the [roadmap](https://jackin.tailrocks.com/reference/roadmap/).
+> **Current status:** jackin' is experimental preview software. It has not reached a stable release yet, and breaking changes are expected while the core design and basic functionality settle. The docs track the rolling preview channel, which is the best way to see what the project is today. [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), [Amp](https://ampcode.com), Kimi, and OpenCode ship today as built-in agent runtimes; full feature parity across them is tracked on the [roadmap](https://jackin.tailrocks.com/reference/roadmap/).
 
 ## Install
 
