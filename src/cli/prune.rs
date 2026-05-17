@@ -38,7 +38,7 @@ pub enum PruneCommand {
     /// Runs in order: prune instances, prune images, prune roles, prune cache.
     /// By default skips running instances; pass `--all` to stop and remove them too.
     #[command(before_help = BANNER, styles = HELP_STYLES)]
-    All(PruneAllArgs),
+    System(PruneSystemArgs),
 }
 
 /// Arguments for `jackin prune instances`
@@ -46,20 +46,20 @@ pub enum PruneCommand {
 #[command(before_help = BANNER, styles = HELP_STYLES)]
 pub struct PruneInstancesArgs {
     /// Also stop and remove running or recoverable instances
-    #[arg(long)]
-    pub active: bool,
+    #[arg(long, short = 'a')]
+    pub all: bool,
 }
 
-/// Arguments for `jackin prune all`
+/// Arguments for `jackin prune system`
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(before_help = BANNER, styles = HELP_STYLES)]
-pub struct PruneAllArgs {
+pub struct PruneSystemArgs {
     /// Skip the confirmation prompt
     #[arg(long, short = 'y')]
     pub yes: bool,
     /// Also stop and remove running or recoverable instances
-    #[arg(long)]
-    pub active: bool,
+    #[arg(long, short = 'a')]
+    pub all: bool,
 }
 
 #[cfg(test)]
@@ -93,7 +93,7 @@ mod tests {
     #[test]
     fn prune_help_lists_subcommands() {
         let help = help_text(&["jackin", "prune", "--help"]);
-        for sub in ["roles", "cache", "images", "instances", "all"] {
+        for sub in ["roles", "cache", "images", "instances", "system"] {
             assert!(help.contains(sub), "missing subcommand: {sub}");
         }
     }
@@ -131,62 +131,62 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(crate::cli::Command::Prune(PruneCommand::Instances(
-                PruneInstancesArgs { active: false }
+                PruneInstancesArgs { all: false }
             )))
         ));
     }
 
     #[test]
     fn prune_instances_all_flag_parses() {
-        let cli = Cli::try_parse_from(["jackin", "prune", "instances", "--active"]).unwrap();
+        let cli = Cli::try_parse_from(["jackin", "prune", "instances", "--all"]).unwrap();
         assert!(matches!(
             cli.command,
             Some(crate::cli::Command::Prune(PruneCommand::Instances(
-                PruneInstancesArgs { active: true }
+                PruneInstancesArgs { all: true }
             )))
         ));
     }
 
     #[test]
-    fn prune_all_defaults_yes_false_all_false() {
-        let cli = Cli::try_parse_from(["jackin", "prune", "all"]).unwrap();
+    fn prune_system_defaults_yes_false_all_false() {
+        let cli = Cli::try_parse_from(["jackin", "prune", "system"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(crate::cli::Command::Prune(PruneCommand::All(
-                PruneAllArgs { yes: false, active: false }
+            Some(crate::cli::Command::Prune(PruneCommand::System(
+                PruneSystemArgs { yes: false, all: false }
             )))
         ));
     }
 
     #[test]
-    fn prune_all_yes_flag_parses() {
-        let cli = Cli::try_parse_from(["jackin", "prune", "all", "--yes"]).unwrap();
+    fn prune_system_yes_flag_parses() {
+        let cli = Cli::try_parse_from(["jackin", "prune", "system", "--yes"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(crate::cli::Command::Prune(PruneCommand::All(
-                PruneAllArgs { yes: true, active: false }
+            Some(crate::cli::Command::Prune(PruneCommand::System(
+                PruneSystemArgs { yes: true, all: false }
             )))
         ));
     }
 
     #[test]
-    fn prune_all_short_y_flag_parses() {
-        let cli = Cli::try_parse_from(["jackin", "prune", "all", "-y"]).unwrap();
+    fn prune_system_short_y_flag_parses() {
+        let cli = Cli::try_parse_from(["jackin", "prune", "system", "-y"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(crate::cli::Command::Prune(PruneCommand::All(
-                PruneAllArgs { yes: true, active: false }
+            Some(crate::cli::Command::Prune(PruneCommand::System(
+                PruneSystemArgs { yes: true, all: false }
             )))
         ));
     }
 
     #[test]
-    fn prune_all_all_flag_parses() {
-        let cli = Cli::try_parse_from(["jackin", "prune", "all", "--active"]).unwrap();
+    fn prune_system_all_flag_parses() {
+        let cli = Cli::try_parse_from(["jackin", "prune", "system", "--all"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(crate::cli::Command::Prune(PruneCommand::All(
-                PruneAllArgs { yes: false, active: true }
+            Some(crate::cli::Command::Prune(PruneCommand::System(
+                PruneSystemArgs { yes: false, all: true }
             )))
         ));
     }

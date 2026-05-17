@@ -1187,13 +1187,13 @@ pub fn run(cli: Cli) -> Result<()> {
             PruneCommand::Cache => runtime::prune_cache(&paths),
             PruneCommand::Images => runtime::prune_images(&mut runner),
             PruneCommand::Instances(args) => {
-                if args.active {
+                if args.all {
                     runtime::prune_all_instances(&paths, &mut runner)
                 } else {
                     runtime::prune_instances(&paths, &mut runner)
                 }
             }
-            PruneCommand::All(args) => {
+            PruneCommand::System(args) => {
                 if !args.yes {
                     let confirmed = dialoguer::Confirm::new()
                         .with_prompt(
@@ -1205,7 +1205,7 @@ pub fn run(cli: Cli) -> Result<()> {
                         anyhow::bail!("aborted by operator");
                     }
                 }
-                let prune_instances_fn: fn(&_, &mut _) -> _ = if args.active {
+                let prune_instances_fn: fn(&_, &mut _) -> _ = if args.all {
                     runtime::prune_all_instances
                 } else {
                     runtime::prune_instances
