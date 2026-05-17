@@ -21,7 +21,7 @@ Jackin has no released version — it is a proof-of-concept. **Breaking changes 
 
 1. Bump of the relevant `CURRENT_*_VERSION`.
 2. A migration step in the corresponding registry (`CONFIG_MIGRATIONS`, `WORKSPACE_MIGRATIONS`, `MANIFEST_MIGRATIONS`).
-3. A new fixture directory under `tests/fixtures/migrations/<file-kind>/from-<predecessor-version>/` containing `meta.toml`, `before.toml`, and `after.toml`. The fixture harness in `tests/migration_fixtures.rs` walks every supported `from_version` on every CI run and asserts byte-equal output, so a delayed operator landing on the new schema after several version bumps still upgrades cleanly.
+3. A new fixture directory under `tests/fixtures/migrations/<file-kind>/from-<predecessor-version>/` containing `meta.toml`, `before.toml`, and `after.toml`. The fixture harness in `tests/migration_fixtures.rs` walks every supported `from_version` on every CI run and asserts that the migrated output (a) parses successfully against the current serde schema, (b) carries the declared `target_version` stamp, and (c) that `after.toml` itself parses and carries the same stamp. This guarantees a delayed operator landing on the current version after several bumps can still load their config — the chain is the regression guard.
 4. Re-bake of every existing fixture's `after.toml` so it walks through the new step too. The fixture for the oldest supported `from_version` is the load-bearing test for users delayed by months — its diff is the proof the new chain is composable.
 5. A new entry at the top of the **Timeline** section in `docs/src/content/docs/reference/schema-versions.mdx` with date, predecessor, fixture link, summary, and a before/after example.
 

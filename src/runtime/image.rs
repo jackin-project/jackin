@@ -205,7 +205,7 @@ fn extract_agent_version(
                     eprintln!("        Kimi {version}");
                 }
                 if let Some(semver) = version_check::parse_kimi_version(version) {
-                    version_check::store_image_version(paths, image, semver);
+                    version_check::store_kimi_version(paths, image, semver);
                 } else if debug {
                     eprintln!("warning: unexpected kimi --version output: {version:?}");
                 }

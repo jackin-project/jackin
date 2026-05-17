@@ -24,7 +24,7 @@ impl RoleState {
     ///     would let it silently fall back to OAuth credentials the
     ///     operator chose to bypass), return `TokenMode`.
     ///   * **`OAuthToken`** → unreachable in production: parser-rejected
-    ///     for Codex (Task 6). Defensive arm returns `TokenMode` without
+    ///     for Codex. Defensive arm returns `TokenMode` without
     ///     touching role-state files.
     ///   * **Ignore** → delete the role-state `auth.json` if present,
     ///     return `Skipped`.
@@ -52,8 +52,8 @@ impl RoleState {
 
         let host_auth_json = host_home.join(".codex/auth.json");
         let outcome = match mode {
-            // OAuthToken is parser-rejected for Codex (Task 6), so this arm
-            // is unreachable in production — kept for match exhaustiveness
+            // OAuthToken is parser-rejected for Codex, so this arm is
+            // unreachable in production — kept for match exhaustiveness
             // and to preserve historical no-wipe behavior if a config ever
             // bypasses the parser. Treated as TokenMode without touching
             // role-state files.
@@ -65,11 +65,11 @@ impl RoleState {
             // bypass. Wipe role-state auth.json identically to Ignore,
             // and surface the env-driven nature via TokenMode.
             AuthForwardMode::ApiKey => {
-                wipe_codex_state(auth_json)?;
+                wipe_agent_file_state(auth_json, "Codex auth.json")?;
                 AuthProvisionOutcome::TokenMode
             }
             AuthForwardMode::Ignore => {
-                wipe_codex_state(auth_json)?;
+                wipe_agent_file_state(auth_json, "Codex auth.json")?;
                 AuthProvisionOutcome::Skipped
             }
             AuthForwardMode::Sync => match std::fs::read_to_string(&host_auth_json) {
@@ -514,15 +514,15 @@ impl RoleState {
                      OAuthToken mode for Amp — parser invariant bypassed; \
                      wiping role state and falling back to token-mode."
                 );
-                wipe_amp_state(secrets_json)?;
+                wipe_agent_file_state(secrets_json, "Amp secrets.json")?;
                 AuthProvisionOutcome::TokenMode
             }
             AuthForwardMode::ApiKey => {
-                wipe_amp_state(secrets_json)?;
+                wipe_agent_file_state(secrets_json, "Amp secrets.json")?;
                 AuthProvisionOutcome::TokenMode
             }
             AuthForwardMode::Ignore => {
-                wipe_amp_state(secrets_json)?;
+                wipe_agent_file_state(secrets_json, "Amp secrets.json")?;
                 AuthProvisionOutcome::Skipped
             }
             AuthForwardMode::Sync => match std::fs::read_to_string(&host_secrets) {
@@ -594,8 +594,24 @@ impl RoleState {
     /// OAuth-backed provider/model references created by login.
     /// `ApiKey` / `Ignore` wipe any prior role-state directory.
     ///
-    /// Returns `(outcome, forward_auth)` where `forward_auth` controls
-    /// whether the launcher bind-mounts the directory.
+    ///   * **Sync** + `~/.kimi` present → copy `config.toml`, each file
+    ///     under `credentials/` (binary-safe), and `device_id` at `0600`
+    ///     perms; return `(Synced, true)`.
+    ///   * **Sync** + `~/.kimi` absent → return `(HostMissing, true)`.
+    ///     Unlike Codex and Amp, no prior role-state files are preserved;
+    ///     the role-state dir is still created so the bind-mount exists for
+    ///     in-container login state to accumulate.
+    ///   * **`ApiKey`** → wipe the role-state directory; return
+    ///     `(TokenMode, false)`. Agent authenticates via `KIMI_API_KEY`.
+    ///   * **`OAuthToken`** → parser-rejected for Kimi; defensive arm
+    ///     wipes role-state and logs loudly, returns `(TokenMode, false)`.
+    ///   * **Ignore** → wipe the role-state directory; return
+    ///     `(Skipped, false)`.
+    ///
+    /// Kimi syncs a directory rather than a single file, so the second
+    /// return value is `bool` rather than `Option<PathBuf>`. `true` when
+    /// `Synced` or `HostMissing` (mount the role-state dir); `false` for
+    /// `TokenMode` / `Skipped` (dir was wiped, do not mount).
     pub(super) fn provision_kimi_auth(
         kimi_dir: &Path,
         mode: AuthForwardMode,
@@ -624,12 +640,14 @@ impl RoleState {
                 AuthProvisionOutcome::Skipped
             }
             AuthForwardMode::Sync => {
-                if host_kimi.exists() {
-                    std::fs::create_dir_all(kimi_dir)?;
+                use anyhow::Context;
+                std::fs::create_dir_all(kimi_dir)?;
 
+                if host_kimi.exists() {
                     let host_config = host_kimi.join("config.toml");
                     if host_config.exists() {
-                        let content = std::fs::read_to_string(&host_config)?;
+                        let content = std::fs::read_to_string(&host_config)
+                            .with_context(|| format!("reading {}", host_config.display()))?;
                         write_private_file(&kimi_dir.join("config.toml"), &content)?;
                     }
 
@@ -639,24 +657,37 @@ impl RoleState {
                         std::fs::create_dir_all(&dest_creds)?;
                         for entry in std::fs::read_dir(&host_creds)? {
                             let entry = entry?;
-                            if entry.file_type()?.is_file() {
-                                let content = std::fs::read_to_string(entry.path())?;
-                                write_private_file(&dest_creds.join(entry.file_name()), &content)?;
+                            let ft = entry.file_type()?;
+                            if ft.is_file() {
+                                let path = entry.path();
+                                let bytes = std::fs::read(&path)
+                                    .with_context(|| format!("reading {}", path.display()))?;
+                                write_private_bytes(&dest_creds.join(entry.file_name()), &bytes)?;
+                            } else if ft.is_dir() {
+                                eprintln!(
+                                    "[jackin] warning: skipping subdirectory {} under \
+                                     ~/.kimi/credentials/ — only top-level files are synced",
+                                    entry.file_name().to_string_lossy()
+                                );
+                            } else if ft.is_symlink() {
+                                eprintln!(
+                                    "[jackin] warning: skipping symlink {} under \
+                                     ~/.kimi/credentials/ — only regular files are synced",
+                                    entry.file_name().to_string_lossy()
+                                );
                             }
                         }
                     }
 
                     let host_device_id = host_kimi.join("device_id");
                     if host_device_id.exists() {
-                        let content = std::fs::read_to_string(&host_device_id)?;
+                        let content = std::fs::read_to_string(&host_device_id)
+                            .with_context(|| format!("reading {}", host_device_id.display()))?;
                         write_private_file(&kimi_dir.join("device_id"), &content)?;
                     }
 
                     AuthProvisionOutcome::Synced
                 } else {
-                    if !kimi_dir.exists() {
-                        std::fs::create_dir_all(kimi_dir)?;
-                    }
                     AuthProvisionOutcome::HostMissing
                 }
             }
@@ -695,15 +726,15 @@ impl RoleState {
                      OAuthToken mode for OpenCode — parser invariant bypassed; \
                      wiping role state and falling back to token-mode."
                 );
-                wipe_opencode_state(auth_json)?;
+                wipe_agent_file_state(auth_json, "OpenCode auth.json")?;
                 AuthProvisionOutcome::TokenMode
             }
             AuthForwardMode::ApiKey => {
-                wipe_opencode_state(auth_json)?;
+                wipe_agent_file_state(auth_json, "OpenCode auth.json")?;
                 AuthProvisionOutcome::TokenMode
             }
             AuthForwardMode::Ignore => {
-                wipe_opencode_state(auth_json)?;
+                wipe_agent_file_state(auth_json, "OpenCode auth.json")?;
                 AuthProvisionOutcome::Skipped
             }
             AuthForwardMode::Sync => match std::fs::read_to_string(&host_auth) {
@@ -759,30 +790,18 @@ impl RoleState {
     }
 }
 
-/// Remove role-state `secrets.json` so a prior Sync run cannot leak
-/// credentials under env-driven modes (`Ignore`, `ApiKey`).
-fn wipe_amp_state(secrets_json: &Path) -> anyhow::Result<()> {
+/// Wipe a single credential file from role state.
+///
+/// `label` names the agent + file for the operator-visible error message
+/// (e.g. `"Amp secrets.json"`, `"OpenCode auth.json"`).
+fn wipe_agent_file_state(path: &Path, label: &str) -> anyhow::Result<()> {
     use anyhow::Context;
-    wipe_file_if_present(secrets_json).with_context(|| {
+    wipe_file_if_present(path).with_context(|| {
         format!(
-            "failed to wipe stale Amp secrets.json at {} \
+            "failed to wipe stale {label} at {} \
              (auth_forward switched to ignore/api_key); remove the file \
              manually if it has unexpected ownership",
-            secrets_json.display()
-        )
-    })
-}
-
-/// Remove role-state `auth.json` for `OpenCode` so a prior Sync run cannot
-/// leak credentials under env-driven modes.
-fn wipe_opencode_state(auth_json: &Path) -> anyhow::Result<()> {
-    use anyhow::Context;
-    wipe_file_if_present(auth_json).with_context(|| {
-        format!(
-            "failed to wipe stale OpenCode auth.json at {} \
-             (auth_forward switched to ignore/api_key); remove the file \
-             manually if it has unexpected ownership",
-            auth_json.display()
+            path.display()
         )
     })
 }
@@ -828,26 +847,6 @@ fn wipe_claude_state(account_json: &Path, credentials_json: &Path) -> anyhow::Re
     }
     if credentials_json.exists() {
         std::fs::remove_file(credentials_json)?;
-    }
-    Ok(())
-}
-
-/// Wipe the container's Codex auth state to a clean empty shape.
-///
-/// Used by every non-Sync mode that owns the file (`Ignore`, `ApiKey`)
-/// — they must guarantee no stale `auth.json` from a prior Sync run
-/// survives so the agent inside the container authenticates exclusively
-/// via env vars (or fresh `codex login`) rather than re-using forwarded
-/// credentials.
-///
-/// Unlike `wipe_claude_state`, there is no companion "account" file to
-/// reset — Codex's role-state surface is just `auth.json`. Removing it
-/// is sufficient because the launcher only bind-mounts `auth.json` when
-/// `provision_codex_auth` reports it exists post-call (see
-/// `mounted_auth_json` in the caller).
-fn wipe_codex_state(auth_json: &Path) -> anyhow::Result<()> {
-    if auth_json.exists() {
-        std::fs::remove_file(auth_json)?;
     }
     Ok(())
 }
@@ -924,6 +923,11 @@ fn reject_symlink(path: &Path) -> anyhow::Result<()> {
 /// pre-planted symlink at the temp path is impossible), then renames
 /// it to the destination — closing the TOCTOU window entirely.
 fn write_private_file(path: &Path, content: &str) -> anyhow::Result<()> {
+    write_private_bytes(path, content.as_bytes())
+}
+
+/// Write raw bytes to `path` with `0o600` permissions, symlink-safe and atomic.
+fn write_private_bytes(path: &Path, content: &[u8]) -> anyhow::Result<()> {
     reject_symlink(path)?;
 
     #[cfg(unix)]
@@ -939,7 +943,7 @@ fn write_private_file(path: &Path, content: &str) -> anyhow::Result<()> {
         // a pre-planted symlink.  The random suffix makes the path
         // unpredictable.
         let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-        tmp.write_all(content.as_bytes())?;
+        tmp.write_all(content)?;
         std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o600))?;
         tmp.persist(path)?;
     }
@@ -1830,7 +1834,7 @@ mod codex_auth_tests {
         assert!(!auth_json.exists());
     }
 
-    /// `OAuthToken` is parser-rejected for Codex (Task 6) so this arm is
+    /// `OAuthToken` is parser-rejected for Codex so this arm is
     /// unreachable from operator config in production. The test pins the
     /// defensive no-wipe behavior of the `OAuthToken` arm anyway: if a
     /// parser bypass ever lands a Codex+OAuthToken config at this layer,
@@ -2807,6 +2811,396 @@ mod amp_auth_tests {
         assert!(
             !secrets_json.exists(),
             "empty host file must not produce a role-state copy"
+        );
+    }
+}
+
+#[cfg(test)]
+mod kimi_auth_tests {
+    use crate::config::AuthForwardMode;
+    use crate::instance::{AuthProvisionOutcome, RoleState};
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    fn stage_host_kimi_dir(
+        temp: &tempfile::TempDir,
+        config_content: Option<&str>,
+        cred_files: &[(&str, &str)],
+        device_id: Option<&str>,
+    ) -> std::path::PathBuf {
+        let host_home = temp.path().join("host_home");
+        let kimi_dir = host_home.join(".kimi");
+        std::fs::create_dir_all(&kimi_dir).unwrap();
+        if let Some(content) = config_content {
+            std::fs::write(kimi_dir.join("config.toml"), content).unwrap();
+        }
+        if !cred_files.is_empty() {
+            let creds_dir = kimi_dir.join("credentials");
+            std::fs::create_dir_all(&creds_dir).unwrap();
+            for (name, content) in cred_files {
+                std::fs::write(creds_dir.join(name), content).unwrap();
+            }
+        }
+        if let Some(content) = device_id {
+            std::fs::write(kimi_dir.join("device_id"), content).unwrap();
+        }
+        host_home
+    }
+
+    #[test]
+    fn sync_copies_config_toml_when_present() {
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = stage_host_kimi_dir(&temp, Some("[profile]\nname = \"test\""), &[], None);
+
+        let (outcome, forward_auth) =
+            RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert!(forward_auth);
+        assert_eq!(
+            std::fs::read_to_string(kimi_dir.join("config.toml")).unwrap(),
+            "[profile]\nname = \"test\""
+        );
+    }
+
+    #[test]
+    fn sync_copies_credentials_files_when_present() {
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = stage_host_kimi_dir(&temp, None, &[("token_main", "tok_abc123")], None);
+
+        let (outcome, forward_auth) =
+            RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert!(forward_auth);
+        assert_eq!(
+            std::fs::read_to_string(kimi_dir.join("credentials").join("token_main")).unwrap(),
+            "tok_abc123"
+        );
+    }
+
+    #[test]
+    fn sync_copies_device_id_when_present() {
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = stage_host_kimi_dir(&temp, None, &[], Some("device-xyz-9999"));
+
+        let (outcome, forward_auth) =
+            RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert!(forward_auth);
+        assert_eq!(
+            std::fs::read_to_string(kimi_dir.join("device_id")).unwrap(),
+            "device-xyz-9999"
+        );
+    }
+
+    #[test]
+    fn sync_with_empty_kimi_dir_creates_role_state_dir() {
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = stage_host_kimi_dir(&temp, None, &[], None);
+
+        let (outcome, forward_auth) =
+            RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert!(forward_auth);
+        assert!(kimi_dir.is_dir(), "role-state kimi dir must be created");
+    }
+
+    #[test]
+    fn sync_with_no_host_kimi_dir_returns_host_missing_with_forward_auth_true() {
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = temp.path().join("empty_host_home");
+
+        let (outcome, forward_auth) =
+            RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+        assert!(forward_auth);
+    }
+
+    #[test]
+    fn sync_host_missing_still_creates_kimi_dir() {
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = temp.path().join("empty_host_home");
+
+        RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+
+        assert!(
+            kimi_dir.is_dir(),
+            "role-state kimi dir must exist even when host is absent"
+        );
+    }
+
+    #[test]
+    fn api_key_mode_wipes_prior_kimi_dir() {
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        std::fs::create_dir_all(&kimi_dir).unwrap();
+        std::fs::write(kimi_dir.join("config.toml"), "stale").unwrap();
+        let host_home = stage_host_kimi_dir(&temp, Some("[profile]\nname=\"test\""), &[], None);
+
+        let (outcome, forward_auth) =
+            RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::ApiKey, &host_home).unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
+        assert!(!forward_auth);
+        assert!(!kimi_dir.exists(), "api_key mode must wipe the kimi dir");
+    }
+
+    #[test]
+    fn ignore_mode_wipes_prior_kimi_dir() {
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        std::fs::create_dir_all(&kimi_dir).unwrap();
+        std::fs::write(kimi_dir.join("device_id"), "old_device").unwrap();
+
+        let (outcome, forward_auth) = RoleState::provision_kimi_auth(
+            &kimi_dir,
+            AuthForwardMode::Ignore,
+            Path::new("/nonexistent"),
+        )
+        .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Skipped);
+        assert!(!forward_auth);
+        assert!(!kimi_dir.exists(), "ignore mode must wipe the kimi dir");
+    }
+
+    #[test]
+    fn oauth_token_defensive_arm_wipes_kimi_dir() {
+        // OAuthToken is parser-rejected for Kimi; the defensive arm wipes
+        // any prior Sync's role-state dir so a config bypass cannot leak
+        // forwarded credentials into the container.
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        std::fs::create_dir_all(&kimi_dir).unwrap();
+        std::fs::write(kimi_dir.join("config.toml"), "prior_sync = true").unwrap();
+
+        let (outcome, forward_auth) = RoleState::provision_kimi_auth(
+            &kimi_dir,
+            AuthForwardMode::OAuthToken,
+            Path::new("/nonexistent"),
+        )
+        .unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
+        assert!(!forward_auth, "bypass arm must not set forward_auth");
+        assert!(
+            !kimi_dir.exists(),
+            "bypass arm must wipe the prior Sync residue"
+        );
+    }
+
+    #[test]
+    fn forward_auth_true_for_synced() {
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = stage_host_kimi_dir(&temp, Some("[x]"), &[], None);
+
+        let (outcome, forward_auth) =
+            RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert!(forward_auth, "forward_auth must be true for Synced");
+    }
+
+    #[test]
+    fn forward_auth_true_for_host_missing() {
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = temp.path().join("no_host");
+
+        let (outcome, forward_auth) =
+            RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::HostMissing);
+        assert!(forward_auth, "forward_auth must be true for HostMissing");
+    }
+
+    #[test]
+    fn forward_auth_false_for_api_key() {
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = temp.path().join("host_home");
+
+        let (outcome, forward_auth) =
+            RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::ApiKey, &host_home).unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::TokenMode);
+        assert!(!forward_auth, "forward_auth must be false for TokenMode");
+    }
+
+    #[test]
+    fn forward_auth_false_for_ignore() {
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = temp.path().join("host_home");
+
+        let (outcome, forward_auth) =
+            RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Ignore, &host_home).unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Skipped);
+        assert!(!forward_auth, "forward_auth must be false for Skipped");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_at_kimi_dir_under_every_mode() {
+        // The symlink check is hoisted above the mode match; verify all
+        // four arms are protected so a future refactor cannot regress the
+        // Sync arm (highest blast radius).
+        for mode in [
+            AuthForwardMode::Sync,
+            AuthForwardMode::ApiKey,
+            AuthForwardMode::OAuthToken,
+            AuthForwardMode::Ignore,
+        ] {
+            let temp = tempdir().unwrap();
+            let kimi_dir = temp.path().join("kimi_state");
+            let decoy = temp.path().join("decoy_dir");
+            std::fs::create_dir_all(&decoy).unwrap();
+            std::os::unix::fs::symlink(&decoy, &kimi_dir).unwrap();
+
+            let err = RoleState::provision_kimi_auth(&kimi_dir, mode, Path::new("/nonexistent"))
+                .unwrap_err();
+
+            assert!(
+                err.to_string().contains("symlink"),
+                "mode={mode:?}: expected symlink rejection, got: {err}"
+            );
+            assert!(decoy.exists(), "mode={mode:?}: decoy dir must survive");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn synced_credential_files_have_0600_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = stage_host_kimi_dir(
+            &temp,
+            Some("[profile]"),
+            &[("access_token", "tok_secret_xyz")],
+            Some("dev-001"),
+        );
+
+        RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+
+        for rel in &["config.toml", "credentials/access_token", "device_id"] {
+            let path = kimi_dir.join(rel);
+            let mode = std::fs::metadata(&path)
+                .unwrap_or_else(|e| panic!("missing synced file {rel}: {e}"))
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o600, "synced file {rel} must be 0o600, got {mode:o}");
+        }
+    }
+
+    #[test]
+    fn credentials_subdir_skips_directory_entries() {
+        // A subdirectory inside credentials/ must be skipped; only plain
+        // files are forwarded so a nested dir cannot corrupt the sync.
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = temp.path().join("host_home");
+        let host_creds = host_home.join(".kimi/credentials");
+        std::fs::create_dir_all(&host_creds).unwrap();
+        std::fs::write(host_creds.join("real_token"), "real_tok_value").unwrap();
+        let nested = host_creds.join("nested_subdir");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("inner_file"), "should_not_copy").unwrap();
+
+        let (outcome, forward_auth) =
+            RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home).unwrap();
+
+        assert_eq!(outcome, AuthProvisionOutcome::Synced);
+        assert!(forward_auth);
+        assert!(
+            kimi_dir.join("credentials/real_token").exists(),
+            "real_token must be copied"
+        );
+        assert!(
+            !kimi_dir.join("credentials/nested_subdir").exists(),
+            "nested subdir must be skipped"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn surfaces_unreadable_credential_file_as_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = stage_host_kimi_dir(&temp, None, &[("access_token", "secret")], None);
+
+        let cred = host_home.join(".kimi/credentials/access_token");
+        std::fs::set_permissions(&cred, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let result = RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home);
+
+        let _ = std::fs::set_permissions(&cred, std::fs::Permissions::from_mode(0o600));
+
+        let err = result.expect_err("unreadable credential file must surface as error");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("access_token"),
+            "error must name the unreadable file: {msg}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn surfaces_unreadable_config_toml_as_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = stage_host_kimi_dir(&temp, Some("[profile]\nname=\"x\""), &[], None);
+
+        let cfg = host_home.join(".kimi/config.toml");
+        std::fs::set_permissions(&cfg, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let result = RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home);
+
+        let _ = std::fs::set_permissions(&cfg, std::fs::Permissions::from_mode(0o600));
+
+        let err = result.expect_err("unreadable config.toml must surface as error");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("config.toml"),
+            "error must name the unreadable file: {msg}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn surfaces_unreadable_device_id_as_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempdir().unwrap();
+        let kimi_dir = temp.path().join("kimi_state");
+        let host_home = stage_host_kimi_dir(&temp, None, &[], Some("dev-abc-123"));
+
+        let dev = host_home.join(".kimi/device_id");
+        std::fs::set_permissions(&dev, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let result = RoleState::provision_kimi_auth(&kimi_dir, AuthForwardMode::Sync, &host_home);
+
+        let _ = std::fs::set_permissions(&dev, std::fs::Permissions::from_mode(0o600));
+
+        let err = result.expect_err("unreadable device_id must surface as error");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("device_id"),
+            "error must name the unreadable file: {msg}"
         );
     }
 }

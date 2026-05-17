@@ -168,159 +168,58 @@ pub struct GithubAuthConfig {
     pub env: BTreeMap<String, crate::operator_env::EnvValue>,
 }
 
-/// Newtype around `AgentAuthConfig` that rejects `oauth_token` mode at parse time.
-///
-/// Codex does not support `AuthForwardMode::OAuthToken` — rejecting it at
-/// deserialization time keeps the type system honest so downstream code
-/// never has to handle the impossible combination.
-#[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
-pub struct CodexAuthConfig(pub(crate) AgentAuthConfig);
+/// Generate an `AgentAuthConfig` newtype that rejects `OAuthToken` at both
+/// parse time (serde) and construction time (`new`). Used for agents that do
+/// not support OAuth token forwarding: Codex, Amp, Kimi, `OpenCode`.
+macro_rules! agent_auth_config_no_oauth {
+    ($name:ident, $agent:literal) => {
+        #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
+        pub struct $name(pub(crate) AgentAuthConfig);
 
-impl CodexAuthConfig {
-    /// Construct, rejecting `OAuthToken`. The only public path to
-    /// build the newtype, so the parse-time invariant survives
-    /// post-deserialize.
-    pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
-        if cfg.auth_forward == AuthForwardMode::OAuthToken {
-            return Err("auth_forward 'oauth_token' is not supported for codex");
+        impl $name {
+            /// Construct, rejecting `OAuthToken`. The only public path to build
+            /// the newtype outside of serde, so the invariant holds end-to-end.
+            pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
+                if cfg.auth_forward == AuthForwardMode::OAuthToken {
+                    return Err(concat!(
+                        "auth_forward 'oauth_token' is not supported for ",
+                        $agent
+                    ));
+                }
+                Ok(Self(cfg))
+            }
         }
-        Ok(Self(cfg))
-    }
-}
 
-impl<'de> serde::Deserialize<'de> for CodexAuthConfig {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let cfg = AgentAuthConfig::deserialize(deserializer)?;
-        if cfg.auth_forward == AuthForwardMode::OAuthToken {
-            return Err(serde::de::Error::custom(
-                "auth_forward 'oauth_token' is not supported for codex; \
-                 supported modes: sync, api_key, ignore",
-            ));
+        impl<'de> serde::Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                let cfg = AgentAuthConfig::deserialize(deserializer)?;
+                if cfg.auth_forward == AuthForwardMode::OAuthToken {
+                    return Err(serde::de::Error::custom(concat!(
+                        "auth_forward 'oauth_token' is not supported for ",
+                        $agent,
+                        "; supported modes: sync, api_key, ignore"
+                    )));
+                }
+                Ok(Self(cfg))
+            }
         }
-        Ok(Self(cfg))
-    }
-}
 
-impl std::ops::Deref for CodexAuthConfig {
-    type Target = AgentAuthConfig;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-/// Newtype around `AgentAuthConfig` that rejects `oauth_token` at parse time.
-///
-/// Amp does not support `AuthForwardMode::OAuthToken` (the CLI authenticates
-/// via an `AMP_API_KEY` or its own settings file); rejecting it at
-/// deserialization time keeps the type system honest.
-#[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
-pub struct AmpAuthConfig(pub(crate) AgentAuthConfig);
-
-impl AmpAuthConfig {
-    /// Construct, rejecting `OAuthToken`. See [`CodexAuthConfig::new`].
-    pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
-        if cfg.auth_forward == AuthForwardMode::OAuthToken {
-            return Err("auth_forward 'oauth_token' is not supported for amp");
+        impl std::ops::Deref for $name {
+            type Target = AgentAuthConfig;
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
         }
-        Ok(Self(cfg))
-    }
+    };
 }
 
-impl<'de> serde::Deserialize<'de> for AmpAuthConfig {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let cfg = AgentAuthConfig::deserialize(deserializer)?;
-        if cfg.auth_forward == AuthForwardMode::OAuthToken {
-            return Err(serde::de::Error::custom(
-                "auth_forward 'oauth_token' is not supported for amp; \
-                 supported modes: sync, api_key, ignore",
-            ));
-        }
-        Ok(Self(cfg))
-    }
-}
-
-impl std::ops::Deref for AmpAuthConfig {
-    type Target = AgentAuthConfig;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-#[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
-pub struct KimiAuthConfig(pub(crate) AgentAuthConfig);
-
-impl KimiAuthConfig {
-    pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
-        if cfg.auth_forward == AuthForwardMode::OAuthToken {
-            return Err("auth_forward 'oauth_token' is not supported for kimi");
-        }
-        Ok(Self(cfg))
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for KimiAuthConfig {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let cfg = AgentAuthConfig::deserialize(deserializer)?;
-        if cfg.auth_forward == AuthForwardMode::OAuthToken {
-            return Err(serde::de::Error::custom(
-                "auth_forward 'oauth_token' is not supported for kimi; \
-                 supported modes: sync, api_key, ignore",
-            ));
-        }
-        Ok(Self(cfg))
-    }
-}
-
-impl std::ops::Deref for KimiAuthConfig {
-    type Target = AgentAuthConfig;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-#[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
-pub struct OpencodeAuthConfig(pub(crate) AgentAuthConfig);
-
-impl OpencodeAuthConfig {
-    pub fn new(cfg: AgentAuthConfig) -> Result<Self, &'static str> {
-        if cfg.auth_forward == AuthForwardMode::OAuthToken {
-            return Err("auth_forward 'oauth_token' is not supported for opencode");
-        }
-        Ok(Self(cfg))
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for OpencodeAuthConfig {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let cfg = AgentAuthConfig::deserialize(deserializer)?;
-        if cfg.auth_forward == AuthForwardMode::OAuthToken {
-            return Err(serde::de::Error::custom(
-                "auth_forward 'oauth_token' is not supported for opencode; \
-                 supported modes: sync, api_key, ignore",
-            ));
-        }
-        Ok(Self(cfg))
-    }
-}
-
-impl std::ops::Deref for OpencodeAuthConfig {
-    type Target = AgentAuthConfig;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+agent_auth_config_no_oauth!(CodexAuthConfig, "codex");
+agent_auth_config_no_oauth!(AmpAuthConfig, "amp");
+agent_auth_config_no_oauth!(KimiAuthConfig, "kimi");
+agent_auth_config_no_oauth!(OpencodeAuthConfig, "opencode");
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

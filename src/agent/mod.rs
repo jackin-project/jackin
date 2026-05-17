@@ -69,9 +69,9 @@ impl Agent {
 
     /// Modes this agent supports. UI surfaces should consult this when
     /// listing options to the user. The TOML parser uses agent-specific
-    /// newtypes around `AgentAuthConfig` (`CodexAuthConfig`,
-    /// `AmpAuthConfig`) to reject unsupported modes at parse time —
-    /// this method is the runtime/UI parallel.
+    /// newtypes around `AgentAuthConfig` (`CodexAuthConfig`, `AmpAuthConfig`,
+    /// `KimiAuthConfig`, `OpencodeAuthConfig`) to reject unsupported modes
+    /// at parse time — this method is the runtime/UI parallel.
     pub const fn supported_modes(self) -> &'static [crate::config::AuthForwardMode] {
         use crate::config::AuthForwardMode as M;
         match self {
@@ -306,7 +306,7 @@ mod auth_table_tests {
             Agent::Codex.required_env_var(AuthForwardMode::ApiKey),
             Some("OPENAI_API_KEY")
         );
-        // OAuthToken for Codex is parser-rejected (Task 6); behavior at the
+        // OAuthToken for Codex is parser-rejected; behavior at the
         // method level is "no env var" (None) for safety.
         assert_eq!(
             Agent::Codex.required_env_var(AuthForwardMode::OAuthToken),
