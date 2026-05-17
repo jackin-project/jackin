@@ -213,8 +213,7 @@ pub(super) fn reconnect_or_create_session(
             crate::instance::InstanceManifest::read(&paths.data_dir.join(container_name))
                 .ok()
                 .and_then(|m| m.agent().ok())
-                .map(|a| a.slug().to_string())
-                .unwrap_or_else(|| "agent".to_string());
+                .map_or_else(|| "agent".to_string(), |a| a.slug().to_string());
         let session_name = format!("jackin-{}-{}", agent_slug, short_session_id());
         runner.run(
             "docker",
