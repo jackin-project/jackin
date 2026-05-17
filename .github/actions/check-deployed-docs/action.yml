@@ -1,11 +1,12 @@
 name: Check deployed docs links
 description: |
-  Cache-restore lychee, dump the live sitemap into a URL list, and run
-  a lychee link check against that list with the standard remap rules
-  for github.com edit/blob URLs. Used by docs.yml's `deploy` job (after
-  publishing to GitHub Pages) and `check-deployed` job (scheduled live
-  validation) to keep a single source of truth for the deployed
-  link-check contract.
+  Dump the live sitemap into a URL list, and run a lychee link check
+  against that list with the standard remap rules for github.com
+  edit/blob URLs. Used by docs.yml's `deploy` job (after publishing to
+  GitHub Pages) and `check-deployed` job (scheduled live validation) to
+  keep a single source of truth for the deployed link-check contract.
+  No lychee cache is restored here — deployed checks always hit live
+  URLs so that stale 503s from a previous run never poison the results.
 inputs:
   lychee-version:
     description: Pinned lychee version (must match docs.yml LYCHEE_VERSION).
@@ -51,18 +52,13 @@ runs:
           fi
         done
 
-    - name: Restore lychee cache
-      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-      with:
-        path: .lycheecache
-        key: lychee-deployed-${{ runner.os }}-${{ hashFiles('docs/lychee.toml') }}
-        restore-keys: |
-          lychee-deployed-${{ runner.os }}-
-          lychee-${{ runner.os }}-${{ github.workflow }}-
-
     - name: Prepare deployed link check
       shell: bash
       run: mkdir -p lychee
+
+    - name: Wait for CDN propagation
+      shell: bash
+      run: sleep 10
 
     - name: Collect deployed docs URLs
       uses: lycheeverse/lychee-action@faea714062690f6c2e6f7f388469ec4fa6d9c4e1 # master, post-v2.8.0 (subfolder-aware install)
@@ -80,6 +76,7 @@ runs:
         lycheeVersion: ${{ inputs.lychee-version }}
         args: >-
           --config docs/lychee.toml
+          --no-cache
           --include-fragments
           --remap
           "${{ inputs.edit-url }}/(.*) file://${{ github.workspace }}/\$1"
