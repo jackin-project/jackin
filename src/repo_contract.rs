@@ -47,8 +47,11 @@ pub fn validate_agent_dockerfile(
         return Err(RoleRepoValidationError::DockerfileMissingFrom);
     };
 
-    let expected = construct_image();
-    if platform.is_some() || image.as_str() != expected {
+    // Validate against the canonical image name regardless of any local
+    // override — role Dockerfiles reference the published image, and
+    // JACKIN_CONSTRUCT_IMAGE is substituted at derived-build time.
+    let expected = CONSTRUCT_IMAGE.to_owned();
+    if platform.is_some() || image.as_str() != CONSTRUCT_IMAGE {
         return Err(RoleRepoValidationError::DockerfileNonConstruct { expected });
     }
 

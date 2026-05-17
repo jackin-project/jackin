@@ -31,7 +31,7 @@ Three environment variables redirect these default storage roots without touchin
 |---|---|---|
 | `JACKIN_CONFIG_DIR` | `~/.config/jackin` | Config root — `config.toml`, `workspaces/` |
 | `JACKIN_HOME_DIR` | `~/.jackin` | Jackin home root — `data/`, `roles/`, `cache/` |
-| `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | Construct base image used for Dockerfile validation and role builds; set to a locally built image when developing the construct image |
+| `JACKIN_CONSTRUCT_IMAGE` | `projectjackin/construct:trixie` | Override the construct base image used at derived-build time. Role Dockerfiles always reference the canonical name; this substitutes it during `docker build`. Set to `jackin-local/construct:trixie` after `just construct-build-local` to test against a local construct build. See [The Construct Image](/developing/construct-image/) for the full workflow. |
 
 Setting `JACKIN_CONFIG_DIR` and `JACKIN_HOME_DIR` to fresh directories before running jackin means every command reads and writes only those directories, leaving the live operator state completely untouched. Unset behavior is identical to not setting the variables — jackin falls back to the defaults above.
 

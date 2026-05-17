@@ -271,7 +271,7 @@ mod tests {
             vec!["jackin", "prune", "cache", "--help"],
             vec!["jackin", "prune", "images", "--help"],
             vec!["jackin", "prune", "instances", "--help"],
-            vec!["jackin", "prune", "all", "--help"],
+            vec!["jackin", "prune", "system", "--help"],
             vec!["jackin", "console", "--help"],
             vec!["jackin", "workspace", "create", "--help"],
             vec!["jackin", "workspace", "list", "--help"],

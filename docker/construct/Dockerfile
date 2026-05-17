@@ -31,6 +31,7 @@ RUN apt-get update && \
     openssh-client \
     ripgrep \
     sudo \
+    tmux \
     tree \
     yq \
     zsh && \

@@ -408,6 +408,9 @@ pub fn prune_images(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
 /// tombstones. Any instance whose filesystem teardown fails — typically because
 /// Docker resources are still present — is skipped; use
 /// `jackin hardline <selector>` to return or `jackin eject <selector> --purge` to discard.
+/// Remove instances with terminal statuses (clean-exited, superseded,
+/// failed setup, purged). Does not touch running or restore-available
+/// instances. Used by `jackin prune instances`.
 pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
 
@@ -441,8 +444,6 @@ pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> 
     }
 
     if !removed.is_empty() {
-        // Stale index entries with no state dir are harmless — purge_container_filesystem
-        // tolerates NotFound, so the next prune run retries unless the index is corrupt.
         let refs: Vec<&str> = removed.iter().map(String::as_str).collect();
         let index_updated = match InstanceIndex::remove_many(&paths.data_dir, &refs) {
             Ok(()) => true,
@@ -477,6 +478,67 @@ pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> 
         }
         eprintln!(
             "Use `jackin eject <selector> --purge` to remove Docker resources and state together."
+        );
+    }
+
+    Ok(())
+}
+
+/// Force-eject all managed Docker resources then purge every instance's
+/// state directory and index entry, regardless of status.
+/// Used by `jackin prune all`.
+pub fn prune_all_instances(
+    paths: &JackinPaths,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    exile_all(runner)?;
+
+    let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
+    if index.instances.is_empty() {
+        println!("No instances to prune.");
+        return Ok(());
+    }
+
+    let containers: Vec<String> = index
+        .instances
+        .iter()
+        .map(|e| e.container_base.clone())
+        .collect();
+
+    let mut removed: Vec<String> = Vec::new();
+    let mut skipped: Vec<(String, anyhow::Error)> = Vec::new();
+
+    for container_base in containers {
+        match purge_container_filesystem(paths, &container_base, runner) {
+            Ok(()) => removed.push(container_base),
+            Err(error) => skipped.push((container_base, error)),
+        }
+    }
+
+    if !removed.is_empty() {
+        let refs: Vec<&str> = removed.iter().map(String::as_str).collect();
+        match InstanceIndex::remove_many(&paths.data_dir, &refs) {
+            Ok(()) => println!("Pruned {} instance(s):", removed.len()),
+            Err(err) => {
+                eprintln!(
+                    "{} instance index could not be updated: {err:#}; run `jackin prune instances` again to retry",
+                    "warning:".yellow().bold()
+                );
+                println!(
+                    "Removed state for {} instance(s) (index not updated):",
+                    removed.len()
+                );
+            }
+        }
+        for name in &removed {
+            println!("  {name}");
+        }
+    }
+
+    for (name, error) in &skipped {
+        eprintln!(
+            "{} failed to purge state for {name}: {error}",
+            "warning:".yellow().bold()
         );
     }
 

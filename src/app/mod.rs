@@ -187,9 +187,10 @@ pub fn run(cli: Cli) -> Result<()> {
             inspect,
             new,
             agent,
+            shell,
         }) => {
-            // `--inspect` / `--new` mutual exclusion is enforced by clap
-            // `conflicts_with` on `HardlineArgs::new`; no runtime guard needed.
+            // `--inspect` / `--new` / `--shell` mutual exclusion is enforced by
+            // clap `conflicts_with_all` on `HardlineArgs`; no runtime guard needed.
             let explicit_selector = selector.is_some();
             let container = if let Some(sel) = selector {
                 if let Some(container) = resolve_instance_reference(&paths, &sel)? {
@@ -204,6 +205,9 @@ pub fn run(cli: Cli) -> Result<()> {
                 let cwd = std::env::current_dir()?;
                 resolve_running_container_from_context(&paths, &config, &cwd, &mut runner)?
             };
+            if shell {
+                return runtime::spawn_shell_session(&paths, &container, &mut runner);
+            }
             let action = if inspect {
                 HardlineAction::Inspect
             } else if new {
@@ -1182,8 +1186,14 @@ pub fn run(cli: Cli) -> Result<()> {
             PruneCommand::Roles => runtime::prune_roles(&paths),
             PruneCommand::Cache => runtime::prune_cache(&paths),
             PruneCommand::Images => runtime::prune_images(&mut runner),
-            PruneCommand::Instances => runtime::prune_instances(&paths, &mut runner),
-            PruneCommand::All(args) => {
+            PruneCommand::Instances(args) => {
+                if args.all {
+                    runtime::prune_all_instances(&paths, &mut runner)
+                } else {
+                    runtime::prune_instances(&paths, &mut runner)
+                }
+            }
+            PruneCommand::System(args) => {
                 if !args.yes {
                     let confirmed = dialoguer::Confirm::new()
                         .with_prompt(
@@ -1195,11 +1205,16 @@ pub fn run(cli: Cli) -> Result<()> {
                         anyhow::bail!("aborted by operator");
                     }
                 }
+                let prune_instances_fn: fn(&_, &mut _) -> _ = if args.all {
+                    runtime::prune_all_instances
+                } else {
+                    runtime::prune_instances
+                };
                 // Run every step regardless of individual failures so a single
                 // Docker error doesn't leave the role cache and shared cache
                 // untouched.
                 let results = [
-                    runtime::prune_instances(&paths, &mut runner).context("prune instances"),
+                    prune_instances_fn(&paths, &mut runner).context("prune instances"),
                     runtime::prune_images(&mut runner).context("prune images"),
                     runtime::prune_roles(&paths).context("prune roles"),
                     runtime::prune_cache(&paths).context("prune cache"),
@@ -1604,6 +1619,9 @@ fn handle_console_instance_action(
             );
             runtime::reconcile_keep_awake(paths, runner);
             result
+        }
+        console::ConsoleInstanceAction::Shell => {
+            runtime::spawn_shell_session(paths, &container, runner)
         }
         console::ConsoleInstanceAction::Inspect => {
             println!(
@@ -2261,19 +2279,16 @@ mod auth_set_tests {
         ));
         assert!(!has_multiple_agent_sessions(
             &runtime::AgentSessionInventory::Sessions(vec![runtime::AgentSession {
-                pid: "1".to_string(),
-                command: "claude".to_string(),
+                command: "jackin-claude-abc123".to_string(),
             }])
         ));
         assert!(has_multiple_agent_sessions(
             &runtime::AgentSessionInventory::Sessions(vec![
                 runtime::AgentSession {
-                    pid: "1".to_string(),
-                    command: "claude".to_string(),
+                    command: "jackin-claude-abc123".to_string(),
                 },
                 runtime::AgentSession {
-                    pid: "2".to_string(),
-                    command: "codex".to_string(),
+                    command: "jackin-codex-abc123".to_string(),
                 },
             ])
         ));

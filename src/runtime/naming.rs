@@ -35,6 +35,13 @@ pub(super) const FILTER_KEEP_AWAKE: &str = "label=jackin.keep_awake=true";
 /// to decide whether to keep `caffeinate` running.
 pub(super) const LABEL_KEEP_AWAKE: &str = "jackin.keep_awake=true";
 
+/// Image label key recording which construct image was used to build a
+/// derived image. Checked at load time: a mismatch between this label and
+/// `JACKIN_CONSTRUCT_IMAGE` (or the canonical default) forces a rebuild so a
+/// derived image built against a local construct is never reused by a standard
+/// jackin invocation (and vice versa).
+pub(super) const LABEL_IMAGE_CONSTRUCT: &str = "jackin.construct_image";
+
 /// Format a human-friendly role name from a container name and its display label.
 ///
 /// Examples:
