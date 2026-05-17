@@ -414,14 +414,17 @@ fn global_mount_lines(
     let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
     let display_rows = format_mount_rows(&mounts);
     let path_w = mount_path_width(&display_rows);
-    let mut lines = vec![Line::from(Span::styled(
-        format!(
-            "  {path:<path_w$}  {mode:<MOUNT_MODE_COL_WIDTH$}  Type",
-            path = "Destination",
-            mode = "Mode"
-        ),
-        Style::default().fg(WHITE),
-    ))];
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    if !display_rows.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "  {path:<path_w$}  {mode:<MOUNT_MODE_COL_WIDTH$}  Type",
+                path = "Destination",
+                mode = "Mode"
+            ),
+            Style::default().fg(WHITE),
+        )));
+    }
     for (i, row) in display_rows.iter().enumerate() {
         let is_selected = selected == Some(i);
         let prefix = if is_selected { "▸ " } else { "  " };
