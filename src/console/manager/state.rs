@@ -160,6 +160,7 @@ pub struct GlobalMountsState<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct SettingsGeneralState {
     pub pending_coauthor_trailer: bool,
     pub(super) original_coauthor_trailer: bool,
@@ -169,7 +170,7 @@ pub struct SettingsGeneralState {
 }
 
 impl SettingsGeneralState {
-    pub fn from_config(config: &AppConfig) -> Self {
+    pub const fn from_config(config: &AppConfig) -> Self {
         Self {
             pending_coauthor_trailer: config.git.coauthor_trailer,
             original_coauthor_trailer: config.git.coauthor_trailer,
@@ -180,12 +181,12 @@ impl SettingsGeneralState {
     }
 
     #[must_use]
-    pub fn is_dirty(&self) -> bool {
+    pub const fn is_dirty(&self) -> bool {
         self.pending_coauthor_trailer != self.original_coauthor_trailer
             || self.pending_dco != self.original_dco
     }
 
-    pub fn discard(&mut self) {
+    pub const fn discard(&mut self) {
         self.pending_coauthor_trailer = self.original_coauthor_trailer;
         self.pending_dco = self.original_dco;
     }

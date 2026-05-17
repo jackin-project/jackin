@@ -51,10 +51,10 @@ pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
 /// trailer is appended automatically to every non-amend commit.
 pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAILER";
 
-/// Env var that signals the entrypoint to append a `Signed-off-by` DCO
-/// trailer to every non-amend commit via the same `prepare-commit-msg`
-/// hook as `JACKIN_GIT_COAUTHOR_TRAILER`. Independent of the coauthor flag
-/// — either or both may be set.
+/// Env var that signals the entrypoint to append a `Signed-off-by` DCO trailer.
+///
+/// Uses the same `prepare-commit-msg` hook as `JACKIN_GIT_COAUTHOR_TRAILER`.
+/// Independent of the coauthor flag — either or both may be set.
 pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
 
 // ── GitHub CLI / GitHub-tooling env-var names ──────────────────────

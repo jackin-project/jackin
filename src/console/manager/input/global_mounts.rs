@@ -659,15 +659,11 @@ fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 state.stage = ManagerStage::List;
             }
         }
-        KeyCode::Up => {
-            if settings.general.selected > 0 {
-                settings.general.selected -= 1;
-            }
+        KeyCode::Up if settings.general.selected > 0 => {
+            settings.general.selected -= 1;
         }
-        KeyCode::Down => {
-            if settings.general.selected < 1 {
-                settings.general.selected += 1;
-            }
+        KeyCode::Down if settings.general.selected < 1 => {
+            settings.general.selected += 1;
         }
         // Space is the W3C toggle key (switch pattern).
         KeyCode::Char(' ') => match settings.general.selected {

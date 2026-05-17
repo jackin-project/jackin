@@ -108,7 +108,7 @@ fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
             let value = if *pending { "enabled" } else { "disabled" };
             Line::from(vec![
                 Span::styled(prefix, ls),
-                Span::styled(format!("{:<26}", label), ls),
+                Span::styled(format!("{label:<26}"), ls),
                 Span::styled(value, vs),
             ])
         })
