@@ -23,28 +23,43 @@ pub enum PruneCommand {
     /// Images still used by a role container are skipped.
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Images,
-    /// Purge on-disk state for terminated instances
+    /// Purge on-disk state for instances
     ///
-    /// Removes state directories and index entries for instances in terminal
-    /// statuses: `clean_exited`, `superseded`, `failed_setup`, and `purged`
-    /// tombstones. Crashed, preserved, and recoverable instances are skipped
-    /// — use `jackin hardline <selector>` to return or `jackin eject <selector> --purge` to discard.
+    /// By default removes state directories and index entries for instances
+    /// in terminal statuses: `clean_exited`, `superseded`, `failed_setup`,
+    /// and `purged` tombstones. Running and recoverable instances are skipped.
+    ///
+    /// Pass `--all` to also stop and remove running instances (equivalent to
+    /// `jackin eject <selector> --purge` for every instance).
     #[command(before_help = BANNER, styles = HELP_STYLES)]
-    Instances,
+    Instances(PruneInstancesArgs),
     /// Remove all prunable data
     ///
     /// Runs in order: prune instances, prune images, prune roles, prune cache.
+    /// By default skips running instances; pass `--all` to stop and remove them too.
     #[command(before_help = BANNER, styles = HELP_STYLES)]
-    All(PruneAllArgs),
+    System(PruneSystemArgs),
 }
 
-/// Arguments for `jackin prune all`
+/// Arguments for `jackin prune instances`
 #[derive(Debug, Args, PartialEq, Eq)]
 #[command(before_help = BANNER, styles = HELP_STYLES)]
-pub struct PruneAllArgs {
+pub struct PruneInstancesArgs {
+    /// Also stop and remove running or recoverable instances
+    #[arg(long, short = 'a')]
+    pub all: bool,
+}
+
+/// Arguments for `jackin prune system`
+#[derive(Debug, Args, PartialEq, Eq)]
+#[command(before_help = BANNER, styles = HELP_STYLES)]
+pub struct PruneSystemArgs {
     /// Skip the confirmation prompt
     #[arg(long, short = 'y')]
     pub yes: bool,
+    /// Also stop and remove running or recoverable instances
+    #[arg(long, short = 'a')]
+    pub all: bool,
 }
 
 #[cfg(test)]
@@ -78,7 +93,7 @@ mod tests {
     #[test]
     fn prune_help_lists_subcommands() {
         let help = help_text(&["jackin", "prune", "--help"]);
-        for sub in ["roles", "cache", "images", "instances", "all"] {
+        for sub in ["roles", "cache", "images", "instances", "system"] {
             assert!(help.contains(sub), "missing subcommand: {sub}");
         }
     }
@@ -115,39 +130,75 @@ mod tests {
         let cli = Cli::try_parse_from(["jackin", "prune", "instances"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(crate::cli::Command::Prune(PruneCommand::Instances))
-        ));
-    }
-
-    #[test]
-    fn prune_all_defaults_yes_false() {
-        let cli = Cli::try_parse_from(["jackin", "prune", "all"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Some(crate::cli::Command::Prune(PruneCommand::All(
-                PruneAllArgs { yes: false }
+            Some(crate::cli::Command::Prune(PruneCommand::Instances(
+                PruneInstancesArgs { all: false }
             )))
         ));
     }
 
     #[test]
-    fn prune_all_yes_flag_parses() {
-        let cli = Cli::try_parse_from(["jackin", "prune", "all", "--yes"]).unwrap();
+    fn prune_instances_all_flag_parses() {
+        let cli = Cli::try_parse_from(["jackin", "prune", "instances", "--all"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(crate::cli::Command::Prune(PruneCommand::All(
-                PruneAllArgs { yes: true }
+            Some(crate::cli::Command::Prune(PruneCommand::Instances(
+                PruneInstancesArgs { all: true }
             )))
         ));
     }
 
     #[test]
-    fn prune_all_short_y_flag_parses() {
-        let cli = Cli::try_parse_from(["jackin", "prune", "all", "-y"]).unwrap();
+    fn prune_system_defaults_yes_false_all_false() {
+        let cli = Cli::try_parse_from(["jackin", "prune", "system"]).unwrap();
         assert!(matches!(
             cli.command,
-            Some(crate::cli::Command::Prune(PruneCommand::All(
-                PruneAllArgs { yes: true }
+            Some(crate::cli::Command::Prune(PruneCommand::System(
+                PruneSystemArgs {
+                    yes: false,
+                    all: false
+                }
+            )))
+        ));
+    }
+
+    #[test]
+    fn prune_system_yes_flag_parses() {
+        let cli = Cli::try_parse_from(["jackin", "prune", "system", "--yes"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(crate::cli::Command::Prune(PruneCommand::System(
+                PruneSystemArgs {
+                    yes: true,
+                    all: false
+                }
+            )))
+        ));
+    }
+
+    #[test]
+    fn prune_system_short_y_flag_parses() {
+        let cli = Cli::try_parse_from(["jackin", "prune", "system", "-y"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(crate::cli::Command::Prune(PruneCommand::System(
+                PruneSystemArgs {
+                    yes: true,
+                    all: false
+                }
+            )))
+        ));
+    }
+
+    #[test]
+    fn prune_system_all_flag_parses() {
+        let cli = Cli::try_parse_from(["jackin", "prune", "system", "--all"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(crate::cli::Command::Prune(PruneCommand::System(
+                PruneSystemArgs {
+                    yes: false,
+                    all: true
+                }
             )))
         ));
     }

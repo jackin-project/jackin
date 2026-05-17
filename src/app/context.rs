@@ -1140,7 +1140,7 @@ mod tests {
         let mut runner = runtime::FakeRunner::default();
         runner
             .capture_queue
-            .push_back("PID COMMAND\n1 /jackin/runtime/entrypoint.sh\n42 codex exec".to_string());
+            .push_back("jackin-claude-abc123\njackin-codex-abc".to_string());
         let candidate = HardlineCandidate {
             name: container.to_string(),
             state: runtime::ContainerState::Running,

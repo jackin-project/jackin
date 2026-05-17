@@ -138,6 +138,7 @@ export default defineConfig({
           label: "Behind jackin' — Internals",
           items: [
             { label: 'Architecture', slug: 'reference/architecture' },
+            { label: 'Container Session Lifecycle', slug: 'reference/container-session-lifecycle' },
             { label: 'Runtime Instance Model', slug: 'reference/runtime-instance-model' },
             { label: 'Instance and Resource Naming', slug: 'reference/instance-resource-naming' },
             { label: 'Configuration File', slug: 'reference/configuration' },
@@ -332,6 +333,7 @@ export default defineConfig({
                   items: [
                     { label: 'Bollard migration', slug: 'reference/roadmap/bollard-migration' },
                     { label: 'Construct user creation', slug: 'reference/roadmap/construct-user-creation' },
+                    { label: 'jackin-container: in-container supervisor binary', slug: 'reference/roadmap/jackin-container-binary' },
                     { label: 'Workspace registry cache', slug: 'reference/roadmap/workspace-registry-cache' },
                   ],
                 },

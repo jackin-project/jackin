@@ -80,6 +80,7 @@ Examples:
   jackin hardline --inspect                    # inspect detected instance state without attaching
   jackin hardline --new                        # start another agent session in the detected instance
   jackin hardline --new --agent codex          # start a specific runtime in the selected instance
+  jackin hardline --shell                      # open a one-shot zsh shell in the detected instance
   jackin hardline agent-smith
   jackin hardline --inspect k7p9m2xq
   jackin hardline chainargos/the-architect
@@ -99,6 +100,9 @@ pub struct HardlineArgs {
     /// Agent runtime for `--new` (claude, codex, amp, kimi, or opencode). Defaults to the instance manifest.
     #[arg(long, value_parser = parse_agent, requires = "new")]
     pub agent: Option<crate::agent::Agent>,
+    /// Open a one-shot zsh shell in the selected running instance without a named tmux session.
+    #[arg(long, conflicts_with_all = ["inspect", "new"])]
+    pub shell: bool,
 }
 
 /// Open the operator console to manage workspaces, launch roles, and more
@@ -420,6 +424,7 @@ mod tests {
                 inspect: false,
                 new: false,
                 agent: None,
+                shell: false,
             }))
         ));
     }
@@ -434,6 +439,7 @@ mod tests {
                 inspect: false,
                 new: false,
                 agent: None,
+                shell: false,
             })) if s == "agent-smith"
         ));
     }
@@ -448,6 +454,7 @@ mod tests {
                 inspect: true,
                 new: false,
                 agent: None,
+                shell: false,
             })) if s == "k7p9m2xq"
         ));
     }
@@ -462,8 +469,36 @@ mod tests {
                 inspect: false,
                 new: true,
                 agent: Some(crate::agent::Agent::Codex),
+                shell: false,
             }))
         ));
+    }
+
+    #[test]
+    fn parses_hardline_shell_flag() {
+        let cli = Cli::try_parse_from(["jackin", "hardline", "--shell"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Hardline(super::HardlineArgs {
+                selector: None,
+                inspect: false,
+                new: false,
+                agent: None,
+                shell: true,
+            }))
+        ));
+    }
+
+    #[test]
+    fn rejects_hardline_shell_with_new() {
+        let res = Cli::try_parse_from(["jackin", "hardline", "--shell", "--new"]);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn rejects_hardline_shell_with_inspect() {
+        let res = Cli::try_parse_from(["jackin", "hardline", "--shell", "--inspect"]);
+        assert!(res.is_err());
     }
 
     #[test]

@@ -64,10 +64,10 @@ Automation stays on the small role-focused binary in <RepoFile path="src/bin/val
 5. **Build the image on the host Docker engine** — reusing host-side Docker cache where possible
 6. **Create a per-agent Docker network**
 7. **Start a privileged `docker:dind` sidecar** with TLS enabled and a shared certificate volume
-8. **Start the agent container detached** with a persistent TTY (`docker run -d -it`) — mounts, resolved env vars, TLS client certs, labels, and `DOCKER_HOST` all point at the sidecar
-9. **Attach the foreground session** with `docker attach --detach-keys= --sig-proxy=false`, then **run the selected agent with full permissions inside that boundary**
+8. **Start the agent container detached** (`docker run -d`) with `supervisor.sh` as the entrypoint override — a bash wait loop that becomes PID 1 and keeps the container alive while agent sessions run via `docker exec`
+9. **Start the first agent session** via `docker exec -e TMUX= -it <container> tmux new-session -e JACKIN_AGENT=<agent> -s jackin-<agent>-<id> -- /jackin/runtime/entrypoint.sh [model-flags]`. `TMUX=` prevents nested-session warnings when the operator's terminal is itself inside tmux. `JACKIN_AGENT` is passed via `tmux new-session -e` rather than as a container-level env var so each session can specify its own agent runtime independently.
 
-The detached-start + attach split decouples the container's lifetime from the foreground session: closing the terminal tab drops the attach, but the container keeps running with its own TTY. `--sig-proxy=false` stops SIGHUP (terminal close) from being forwarded to the container. Cleanup distinguishes three post-attach states:
+The detached-start + exec split decouples the container's lifetime from the foreground session: closing the terminal tab detaches from the tmux session inside the container, but the supervisor (PID 1) and the tmux server keep running. `jackin hardline` reattaches to the most recently used session or creates a new one when no sessions are running. Cleanup distinguishes three post-session states:
 
 - **running** → terminal was closed; preserve the container for `jackin hardline` to reconnect
 - **stopped with exit 0** → the user exited cleanly; tear down container, DinD, network, and certs volume
@@ -77,7 +77,26 @@ Every fresh launch gets a unique DNS-safe instance identity. Existing running or
 
 ### Reconnecting
 
-`jackin hardline` inspects the target container. If it's running, it attaches. If it's stopped with a non-zero exit (crash / OOM), it restores the required DinD sidecar/network/certs when needed, restarts the role container, and attaches. If the role container itself is missing but indexed recoverable state exists, hardline can rebuild the runtime around jackin-managed local state. Clean exits (exit code 0) are treated as completed sessions — use `jackin load` to start a fresh instance.
+`jackin hardline` inspects the target container. If it's running, it attaches to the most recently used tmux session via `docker exec ... tmux attach-session`, or creates a fresh `jackin-<agent>-<id>` session when none are running. If it's stopped with a non-zero exit (crash / OOM), it restores the required DinD sidecar/network/certs when needed, restarts the role container, and attaches. If the role container itself is missing but indexed recoverable state exists, hardline can rebuild the runtime around jackin-managed local state. Clean exits (exit code 0) are treated as completed sessions — use `jackin load` to start a fresh instance.
+
+### Container supervisor and session model
+
+Every role container runs <RepoFile path="docker/runtime/supervisor.sh" /> as PID 1. The supervisor is a bash wait loop (`while true; do sleep 3600 & wait $! || true; done`) that traps SIGTERM/SIGINT and exits cleanly on `docker stop`. Its sole job is to keep the container alive while agent sessions run via `docker exec`.
+
+Sessions are tmux sessions inside the running container. All agent sessions are equal — there is no "primary" or "secondary" distinction.
+
+| Session type | tmux name | Created by | Reconnectable |
+|---|---|---|---|
+| Agent session | `jackin-<agent>-<id>` | `jackin load`, `jackin hardline`, or console `a`/`A` | Yes — `jackin hardline` attaches to the most recent session or creates a new one |
+| Shell | (no session) | `hardline --shell` or console `x`/`X` | No — ephemeral `docker exec /bin/zsh` |
+
+When an agent session exits cleanly (the operator types `/exit` or the agent finishes), the tmux session is removed but the container and supervisor keep running. The container only stops when the operator explicitly stops it, or when `jackin load` teardown runs after the foreground session ends cleanly (exit code 0).
+
+Agent model flags (`--model`) are passed as arguments to the tmux session exec, not as CMD args to `docker run`. This means model overrides from `jackin load --model` apply to the initial session only. Secondary sessions started via `hardline --new` use the role's default agent configuration unless the operator selects a different runtime.
+
+Session state is not yet reconciled against the live container on console refresh (Phase 4 of the session control roadmap). The `sessions` field in the instance manifest is written but not populated until reconciliation lands.
+
+Implementation: <RepoFile path="docker/runtime/supervisor.sh" />, <RepoFile path="src/runtime/launch.rs" /> (`launch_role_runtime`), <RepoFile path="src/runtime/attach.rs" /> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
 
 ### Stopping
 
@@ -160,7 +179,7 @@ Successful cleanup removes the corresponding record rather than keeping a histor
 
 ### Foreground session finalization
 
-Every command that opens or reopens an agent foreground session — `jackin load`, `jackin hardline`, the operator console — funnels through the same post-attach finalizer. After `docker attach` returns, jackin' inspects the container and decides:
+Every command that opens or reopens an agent foreground session — `jackin load`, `jackin hardline`, the operator console — funnels through the same post-session finalizer. After the `docker exec tmux new-session` call returns, jackin' inspects the container and decides:
 
 - **Container is still running** → preserve everything for `jackin hardline` to reconnect later. No isolated-worktree action.
 - **Stopped, non-zero exit or OOM** → preserve the container, DinD, and isolated worktrees so `jackin hardline` can restart in place.

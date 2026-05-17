@@ -138,22 +138,31 @@ model = "gpt-5"
     let run_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker run -d -it"))
+        .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
         .expect("role docker run should run");
-    assert!(run_cmd.contains("-e JACKIN_AGENT=codex"), "{run_cmd}");
+    assert!(
+        !run_cmd.contains("JACKIN_AGENT"),
+        "JACKIN_AGENT must not be in docker run; got: {run_cmd}"
+    );
     assert!(run_cmd.contains("-e JACKIN_ROLE=agent-smith"), "{run_cmd}");
     assert!(
         run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"),
         "{run_cmd}"
     );
-    assert!(run_cmd.contains(" -m gpt-5"), "{run_cmd}");
     assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"), "{run_cmd}");
+    // JACKIN_AGENT and model flag are forwarded to the tmux session, not the docker run CMD.
+    let session_cmd = runner
+        .recorded
+        .iter()
+        .find(|call| call.contains("tmux new-session") && call.contains("entrypoint.sh"))
+        .expect("tmux primary session should start");
+    assert!(session_cmd.contains("JACKIN_AGENT=codex"), "{session_cmd}");
+    assert!(session_cmd.contains(" -m gpt-5"), "{session_cmd}");
     assert!(!run_cmd.contains("/jackin/codex/config.toml"), "{run_cmd}");
     // Multi-agent role (`agents = ["claude", "codex"]`) provisions
     // every supported agent's home state so `hardline --new --agent
     // claude` can switch agents without re-authentication. Both
-    // agents' mount blocks must appear; the selected agent is Codex
-    // (`JACKIN_AGENT=codex`, `-m gpt-5` for the model override).
+    // agents' mount blocks must appear; the selected agent is Codex.
     assert!(run_cmd.contains("/home/agent/.claude"), "{run_cmd}");
     assert!(run_cmd.contains("/home/agent/.codex"), "{run_cmd}");
     assert!(!run_cmd.contains("/home/agent/.jackin"), "{run_cmd}");
@@ -231,7 +240,10 @@ plugins = []
     let run_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker run -d -it"))
+        .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
         .expect("role docker run should run");
-    assert!(run_cmd.contains("-e JACKIN_AGENT=codex"), "{run_cmd}");
+    assert!(
+        !run_cmd.contains("JACKIN_AGENT"),
+        "JACKIN_AGENT must not be in docker run; got: {run_cmd}"
+    );
 }

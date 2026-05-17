@@ -247,4 +247,8 @@ fi
 
 printf '\033[2J\033[H'
 
+# Hide the tmux status bar — jackin containers are single-purpose so the bar
+# adds no value and clutters the agent's full-screen UI.
+tmux set-option -g status off 2>/dev/null || true
+
 exec "${LAUNCH[@]}"

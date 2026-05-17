@@ -77,14 +77,15 @@ jackin load the-architect --role-branch feat/my-pr
 2. Validates the role repo contract (`jackin.role.toml` + Dockerfile) with strict manifest parsing
 3. **If the agent source has never been trusted**, prompts the operator to review and confirm before proceeding (see [Agent source trust](/guides/security-model#4-agent-source-trust))
 4. **If `--role-branch` is set**, always prompts to confirm the branch is safe to build, regardless of the role's trust status (see [Branch trust gate](/guides/security-model#branch-trust-gate))
-5. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
-6. Prompts for interactive environment variables declared in the manifest
-7. Generates and builds a derived Docker image, including declared Claude plugins (cached if unchanged; branch builds ignore `published_image` and always build from source)
-8. Checks the local instance index for missing recoverable work in the same workspace or directory before creating a fresh runtime; matching-role restore candidates can be rebuilt from the prompt, and related role instances whose containers are gone can be recovered or rebuilt in place from the saved manifest source/ref. Running or stopped instances do not block a fresh launch.
-9. Creates a per-agent Docker network and DinD sidecar
-10. Launches the agent container with all resolved mounts and environment variables
-11. Runs runtime hooks if declared (`setup_once`, `source`, then `preflight`)
-12. Starts the selected agent CLI
+5. **If the role supports multiple agents** and neither `--agent` nor a workspace `default_agent` is set, prompts to choose the agent runtime
+6. Checks resolved mounts for sensitive host paths (`~/.ssh`, `~/.aws`, etc.) and prompts for confirmation if any are detected
+7. Prompts for interactive environment variables declared in the manifest
+8. Generates and builds a derived Docker image, including declared Claude plugins (cached if unchanged; branch builds ignore `published_image` and always build from source)
+9. Checks the local instance index for missing recoverable work in the same workspace or directory before creating a fresh runtime; matching-role restore candidates can be rebuilt from the prompt, and related role instances whose containers are gone can be recovered or rebuilt in place from the saved manifest source/ref. Running or stopped instances do not block a fresh launch.
+10. Creates a per-agent Docker network and DinD sidecar
+11. Launches the agent container with all resolved mounts and environment variables
+12. Runs runtime hooks if declared (`setup_once`, `source`, then `preflight`)
+13. Starts the selected agent CLI
 
 <Aside type="note">
 If the agent manifest declares interactive environment variables, `jackin load` prompts for their values before building the Docker image. This ensures no build time is wasted if you cancel.
