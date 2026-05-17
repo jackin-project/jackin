@@ -107,17 +107,6 @@ impl Default for LoadOptions {
     }
 }
 
-/// Resolve which agent to launch under. CLI flag wins; falls back
-/// to the workspace's `default_agent` field; otherwise defaults to Claude.
-fn resolve_agent(
-    cli_override: Option<crate::agent::Agent>,
-    workspace_agent: Option<crate::agent::Agent>,
-) -> crate::agent::Agent {
-    cli_override
-        .or(workspace_agent)
-        .unwrap_or(crate::agent::Agent::Claude)
-}
-
 fn validate_agent_supported(
     selector: &RoleSelector,
     manifest: &crate::manifest::RoleManifest,
@@ -1423,7 +1412,25 @@ fn load_role_with(
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
     steps.role_name.clone_from(&agent_display_name);
 
-    let agent = resolve_agent(opts.agent, workspace.default_agent);
+    let agent = match opts.agent.or(workspace.default_agent) {
+        Some(a) => a,
+        None if std::io::stdin().is_terminal()
+            && validated_repo.manifest.supported_agents().len() >= 2 =>
+        {
+            let supported = validated_repo.manifest.supported_agents();
+            let labels: Vec<String> = supported.iter().map(|a| a.slug().to_string()).collect();
+            let selection = dialoguer::Select::new()
+                .with_prompt(format!(
+                    "Role \"{}\" supports multiple agents. Choose one",
+                    selector.key()
+                ))
+                .items(&labels)
+                .default(0)
+                .interact()?;
+            supported[selection]
+        }
+        None => crate::agent::Agent::Claude,
+    };
     validate_agent_supported(selector, &validated_repo.manifest, agent)?;
 
     // Branch trust gate: fires even for already-trusted roles because the
@@ -4363,30 +4370,6 @@ echo "pulled $2"
             .find_map(|arg| arg.strip_prefix("JACKIN_DIND_HOSTNAME="))
             .expect("expected JACKIN_DIND_HOSTNAME env")
             .to_string()
-    }
-
-    #[test]
-    fn resolve_agent_cli_override_wins() {
-        assert_eq!(
-            resolve_agent(
-                Some(crate::agent::Agent::Codex),
-                Some(crate::agent::Agent::Claude),
-            ),
-            crate::agent::Agent::Codex
-        );
-    }
-
-    #[test]
-    fn resolve_agent_uses_workspace_when_cli_absent() {
-        assert_eq!(
-            resolve_agent(None, Some(crate::agent::Agent::Codex)),
-            crate::agent::Agent::Codex
-        );
-    }
-
-    #[test]
-    fn resolve_agent_defaults_to_claude() {
-        assert_eq!(resolve_agent(None, None), crate::agent::Agent::Claude);
     }
 
     #[test]
