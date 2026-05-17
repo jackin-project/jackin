@@ -110,7 +110,7 @@ workspace_shared_network(workspace: &str) → String
 2. `docker network create jackin-{ws}-shared-net` if not exists (idempotent — ignore "already exists" error)
 3. Check if `jackin-{ws}-registry` container exists and is running — return if yes
 4. `docker volume create jackin-{ws}-registry-data` if not exists
-5. Write zot `config.json` to `~/.config/jackin/workspaces/{ws}/registry-config.json`
+5. Write zot `config.json` to `~/.config/jackin/workspaces/{ws}/registry-config.json` — this is a host-side write that must be surfaced in the launch summary the first time it is created (see "Host-side effects" below)
 6. `docker run -d --name jackin-{ws}-registry --network jackin-{ws}-shared-net -v jackin-{ws}-registry-data:/var/lib/registry -v {config_path}:/etc/zot/config.json:ro ghcr.io/project-zot/zot:latest`
 7. Brief health-poll on `http://jackin-{ws}-registry:5000/v2/` before returning
 
@@ -140,6 +140,10 @@ workspace_shared_network(workspace: &str) → String
 
 Docker Hub requires `onDemand: true`. Polling mode will trigger rate limits.
 
+### Host-side effects
+
+`ensure_workspace_registry()` writes one host-side file: `~/.config/jackin/workspaces/{ws}/registry-config.json`. This is the zot configuration, generated from the workspace's `[container_registry]` settings. The write is a consequence of the operator enabling `container_registry.enabled = true` in their workspace config — the opt-in is explicit. Per the "never mutate the host machine silently" hard rule, the first creation of this file must be surfaced in the launch summary (e.g. "Created container registry config at ~/.config/jackin/workspaces/{ws}/registry-config.json"). Subsequent launches overwrite it silently only if the contents are unchanged; a content change must also be surfaced.
+
 ### Launch changes
 
 Before launching DinD: call `ensure_workspace_registry()`.
@@ -156,15 +160,15 @@ Apply the same DinD `--network` and CMD args on the hardline recovery path to ke
 
 ### Teardown hook
 
-After stopping a role instance, query how many role containers for that workspace are still running (`docker ps --filter label=jackin.workspace={ws}`). If the count is zero and `container_registry.enabled = true`, stop (do not remove) `jackin-{ws}-registry`. The volume survives; the next launch restarts the container against the same cache.
+After stopping a role instance, query how many role containers for that workspace are still running. The implementation must apply a `jackin.workspace={ws}` label to every role container at launch (a new label — not yet present in the codebase) so the teardown path can filter by workspace: `docker ps --filter label=jackin.workspace={ws} --filter label=jackin.kind=role`. If the count reaches zero and `container_registry.enabled = true`, stop (do not remove) `jackin-{ws}-registry`. The volume survives; the next launch restarts the container against the same cache.
 
-### DockerResources
+### Workspace-level resource tracking
 
-Add `registry_container: Option<String>` and `shared_network: Option<String>` to `DockerResources` so teardown and lifecycle queries can track these workspace-level resources alongside the per-role resources.
+`DockerResources` (in <RepoFile path="src/instance/manifest.rs" />) is a per-instance struct serialized into each instance's manifest — it is the wrong location for workspace-level resources shared across instances. The registry container and shared network must be tracked separately. The implementation should introduce a `WorkspaceResources` struct (or equivalent) that records `registry_container` and `shared_network` at the workspace level, keyed by workspace name, so teardown and lifecycle queries can locate these resources without coupling them to any single instance.
 
 ## Phase 2 (deferred)
 
-- Teardown integration — workspace deletion via `jackin eject --all` / `jackin prune` stops and removes the registry container and shared network (volume deletion opt-in only, to avoid silent cache loss)
+- Workspace-deletion teardown — `jackin eject --all` / `jackin prune` integration to stop and remove the registry container and shared network when the whole workspace is destroyed (complements Phase 1 per-instance teardown; volume deletion opt-in only, to avoid silent cache loss)
 - Additional upstream registries — per-registry mirror entries in DinD `daemon.json` for `ghcr.io`, `quay.io`, and others; zot sync config extended with corresponding upstream entries
 - Storage quota and GC — zot scrub/GC config, size limits, TTL-based eviction
 - Registry auth — optional pull credentials for private upstream registries in zot sync config
@@ -176,9 +180,8 @@ Add `registry_container: Option<String>` and `shared_network: Option<String>` to
 - <RepoFile path="src/runtime/attach.rs" /> — DinD recovery path, same DinD additions
 - <RepoFile path="src/runtime/naming.rs" /> — naming functions for registry container, volume, shared network
 - <RepoFile path="src/runtime/cleanup.rs" /> — teardown hook, stop registry when last workspace instance exits
-- <RepoFile path="src/config/mod.rs" /> — `ContainerRegistryConfig` struct, `WorkspaceConfig` extension
+- <RepoFile path="src/workspace/mod.rs" /> — `ContainerRegistryConfig` struct, `WorkspaceConfig` extension, new `WorkspaceResources` struct for workspace-level resource tracking
 - <RepoFile path="src/config/migrations.rs" /> — `CURRENT_WORKSPACE_VERSION` bump, migration step
-- <RepoFile path="src/instance/manifest.rs" /> — `DockerResources` extension
 - <RepoFile path="docs/src/content/docs/reference/schema-versions.mdx" /> — new timeline entry
 
 ## See Also
