@@ -588,8 +588,10 @@ impl RoleState {
 impl RoleState {
     /// Provision Kimi's host-side `~/.kimi` directory per the chosen mode.
     ///
-    /// Sync copies only auth-essential host files into the role-state
-    /// directory so it can be bind-mounted into the container.
+    /// Sync copies only launch-essential host files into the role-state
+    /// directory so it can be bind-mounted into the container. Kimi stores
+    /// OAuth tokens under `credentials/`, but `config.toml` carries the
+    /// OAuth-backed provider/model references created by login.
     /// `ApiKey` / `Ignore` wipe any prior role-state directory.
     ///
     /// Returns `(outcome, forward_auth)` where `forward_auth` controls

@@ -4,7 +4,7 @@ description: How jackin' forwards your Kimi login into agent containers
 ---
 
 
-Kimi authenticates from `~/.kimi` on your host. In `sync` mode (the default), jackin' copies the Kimi auth files it needs into the container on every launch, so Kimi inside the container sees the same account and model access you have on the host.
+Kimi authenticates from `~/.kimi` on your host. In `sync` mode (the default), jackin' copies the minimum Kimi state needed to make the container use the same account and model access you have on the host.
 
 ## Logging in on the host
 
@@ -20,13 +20,13 @@ Then verify that Kimi can start from the host shell:
 kimi --version
 ```
 
-Kimi writes its host-side auth state under `~/.kimi`. jackin' reads these files when `sync` is active:
+Kimi writes its host-side state under `~/.kimi`. jackin' reads these files when `sync` is active:
 
 | Host path | How jackin' uses it |
 |---|---|
-| `~/.kimi/config.toml` | Copied into the container's `/home/agent/.kimi/config.toml` before Kimi starts |
-| `~/.kimi/credentials/` | Copied into the container's `/home/agent/.kimi/credentials/` before Kimi starts |
-| `~/.kimi/device_id` | Copied into the container's `/home/agent/.kimi/device_id` before Kimi starts |
+| `~/.kimi/config.toml` | Copied into the container's `/home/agent/.kimi/config.toml` before Kimi starts. This is not the OAuth token store, but Kimi's login flow writes the OAuth-backed provider, model, and service references here. A newly generated default config is empty and would not know which logged-in provider to use. |
+| `~/.kimi/credentials/` | Copied into the container's `/home/agent/.kimi/credentials/` before Kimi starts. This directory contains the OAuth token files. |
+| `~/.kimi/device_id` | Copied into the container's `/home/agent/.kimi/device_id` before Kimi starts. Kimi includes this device id in OAuth/device headers. |
 
 jackin' reads those host files but does not write back to them. If Kimi rotates or creates auth state inside the container, that state stays in jackin-managed instance storage for that container.
 
@@ -45,7 +45,7 @@ When a model is set, jackin' passes it to Kimi with `--model` at launch time. If
 
 | Mode | Supported |
 |---|---|
-| `sync` (default) | Yes — forwards `~/.kimi/config.toml`, `~/.kimi/credentials/`, and `~/.kimi/device_id` |
+| `sync` (default) | Yes — forwards the Kimi config, OAuth credentials directory, and device id |
 | `api_key` | Yes — injects `KIMI_API_KEY` |
 | `oauth_token` | No — rejected at config time |
 | `ignore` | Yes — no forwarding |
