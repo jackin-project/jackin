@@ -39,7 +39,7 @@ Each entry is one upgrade path the current binary applies. <RepoFile path="tests
 |---|---|---|---|
 | Config (`config.toml`) | `v1alpha4` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/config/from-v1alpha4/meta.toml" /> |
 
-**Summary**: introduces the `[git]` table with `auto_coauthor_trailer` (boolean, default `false`). When enabled, jackin installs a `prepare-commit-msg` hook inside agent containers via `core.hooksPath` that appends two trailers to every non-amend, non-squash, non-merge commit: a `Co-authored-by` line identifying the running agent, and a `Signed-off-by` DCO line read from the container's `git config user.name` / `user.email`. Both are deduplicated. The migration is a no-op restamp.
+**Summary**: Introduces the `[git]` table with two independent boolean fields (both default `false`): `coauthor_trailer` enables `Co-authored-by` agent trailer injection, and `dco` enables `Signed-off-by` DCO injection. When either flag is enabled, jackin installs a `prepare-commit-msg` hook inside containers via `core.hooksPath`; each trailer is injected only when its corresponding flag is set, and both are deduplicated. The migration is a no-op restamp.
 
 **Before** (v1alpha4 config):
 
@@ -246,7 +246,8 @@ The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs a
 | `[roles.<role>].trusted` | bool | No | `legacy` | Trust-on-first-use state |
 | `[roles.<role>.env]` | table | No | `legacy` | Per-role operator env layer |
 | `[docker.mounts]` | table | No | `legacy` | Global and scoped Docker mount config |
-| `[git].auto_coauthor_trailer` | bool | No | `v1alpha5` | Install `prepare-commit-msg` hook that appends `Co-authored-by` (agent) and `Signed-off-by` (DCO) trailers; omitted when `false` |
+| `[git].coauthor_trailer` | bool | No | `v1alpha5` | Enable `Co-authored-by` agent trailer via `prepare-commit-msg` hook; omitted when `false` |
+| `[git].dco` | bool | No | `v1alpha5` | Enable `Signed-off-by` DCO trailer via `prepare-commit-msg` hook; omitted when `false` |
 | `[workspaces]` | table | No | `legacy` | Legacy read-only compatibility location; migrated into workspace files |
 
 Full operator configuration examples live in

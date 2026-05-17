@@ -302,11 +302,14 @@ Global mounts are stored by name. Unscoped mounts live directly under `[docker.m
 
 ### Git co-author trailer
 
-When `auto_coauthor_trailer` is `true`, jackin installs a `prepare-commit-msg` hook inside every role container on launch. The hook reads which agent is running and appends the correct `Co-authored-by` trailer to every new commit message automatically. Amend operations are skipped so the trailer is not added twice.
+When `coauthor_trailer` is `true`, jackin installs a `prepare-commit-msg` hook inside every role container on launch. The hook reads which agent is running and appends the correct `Co-authored-by` trailer to every new commit message automatically. Amend operations are skipped so the trailer is not added twice.
+
+When `dco` is `true`, the same hook also appends a `Signed-off-by` DCO trailer read from `git config user.name` and `git config user.email` inside the container. The two fields are independent: enable either or both.
 
 ```toml
 [git]
-auto_coauthor_trailer = true
+coauthor_trailer = true  # enable Co-authored-by agent trailer
+dco = true               # enable Signed-off-by DCO trailer
 ```
 
 The `[git]` table is omitted from `config.toml` when all fields are at their defaults (the table is not written unless the operator sets it). See [Schema Versions](/reference/schema-versions/#v1alpha5) for the field-level reference.

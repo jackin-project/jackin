@@ -245,7 +245,8 @@ pub fn run(cli: Cli) -> Result<()> {
                     &container,
                     Some(&manifest),
                     selected_agent,
-                    config.git.auto_coauthor_trailer,
+                    config.git.coauthor_trailer,
+                    config.git.dco,
                     &mut runner,
                 );
                 runtime::reconcile_keep_awake(&paths, &mut runner);
@@ -614,12 +615,27 @@ pub fn run(cli: Cli) -> Result<()> {
                         cli::CoauthorTrailerCommand::Disable => false,
                     };
                     let mut editor = config::ConfigEditor::open(&paths)?;
-                    editor.set_git_auto_coauthor_trailer(enable);
+                    editor.set_git_coauthor_trailer(enable);
                     let saved = editor.save()?;
-                    if saved.git.auto_coauthor_trailer {
-                        println!("auto_coauthor_trailer: enabled");
+                    if saved.git.coauthor_trailer {
+                        println!("coauthor_trailer: enabled");
                     } else {
-                        println!("auto_coauthor_trailer: disabled");
+                        println!("coauthor_trailer: disabled");
+                    }
+                    Ok(())
+                }
+                cli::GitCommand::Dco(cmd) => {
+                    let enable = match cmd {
+                        cli::DcoCommand::Enable => true,
+                        cli::DcoCommand::Disable => false,
+                    };
+                    let mut editor = config::ConfigEditor::open(&paths)?;
+                    editor.set_git_dco(enable);
+                    let saved = editor.save()?;
+                    if saved.git.dco {
+                        println!("dco: enabled");
+                    } else {
+                        println!("dco: disabled");
                     }
                     Ok(())
                 }
@@ -1633,7 +1649,8 @@ fn handle_console_instance_action(
                 &container,
                 Some(&manifest),
                 selected_agent,
-                config.git.auto_coauthor_trailer,
+                config.git.coauthor_trailer,
+                config.git.dco,
                 runner,
             );
             runtime::reconcile_keep_awake(paths, runner);

@@ -83,20 +83,36 @@ fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatu
 }
 
 fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
-    let label_style = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let value_style = Style::default()
+    let label_bold = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let label_normal = Style::default().fg(WHITE);
+    let value_bold = Style::default()
         .fg(PHOSPHOR_GREEN)
         .add_modifier(Modifier::BOLD);
-    let value = if state.general.pending {
-        "enabled"
-    } else {
-        "disabled"
-    };
-    vec![Line::from(vec![
-        Span::styled("\u{25b8} ", label_style),
-        Span::styled(format!("{:<26}", "Auto co-author trailer"), label_style),
-        Span::styled(value, value_style),
-    ])]
+    let value_normal = Style::default().fg(PHOSPHOR_GREEN);
+
+    let rows: [(usize, &str, bool); 2] = [
+        (
+            0,
+            "Co-author trailer",
+            state.general.pending_coauthor_trailer,
+        ),
+        (1, "DCO sign-off", state.general.pending_dco),
+    ];
+
+    rows.iter()
+        .map(|(i, label, pending)| {
+            let selected = state.general.selected == *i;
+            let prefix = if selected { "\u{25b8} " } else { "  " };
+            let ls = if selected { label_bold } else { label_normal };
+            let vs = if selected { value_bold } else { value_normal };
+            let value = if *pending { "enabled" } else { "disabled" };
+            Line::from(vec![
+                Span::styled(prefix, ls),
+                Span::styled(format!("{:<26}", label), ls),
+                Span::styled(value, vs),
+            ])
+        })
+        .collect()
 }
 
 fn render_mounts_tab(
@@ -257,7 +273,13 @@ fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<FooterItem
 fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<FooterItem> {
     match state.active_tab {
         SettingsTab::General => {
-            vec![FooterItem::Key("Space"), FooterItem::Text("toggle")]
+            vec![
+                FooterItem::Key("\u{2191}\u{2193}"),
+                FooterItem::Text("navigate"),
+                FooterItem::Sep,
+                FooterItem::Key("Space"),
+                FooterItem::Text("toggle"),
+            ]
         }
         SettingsTab::Mounts => {
             let cursor = state.mounts.selected;

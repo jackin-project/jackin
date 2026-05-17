@@ -29,6 +29,8 @@ A non-additive change (renamed field, removed field, type change, added enum var
 
 Do not memorialize old shapes in code comments ("formerly named X", "old location was Y") or in documentation files outside the changelog. The git history is the record of what changed; the code should describe only the current shape.
 
+**One schema version bump per PR, targeting the next version after `main`.** A PR that touches versioned schemas must introduce exactly one version bump — the version immediately following the current `CURRENT_*_VERSION` on `main` at the time the PR is opened. A single PR may add multiple fields, rename multiple fields, and affect multiple file kinds (config, workspace, manifest), but all of those changes land under that one version bump. Adding a second bump inside the same PR is a sign the changes should be in separate PRs, not stacked versions. If `main` advances while the PR is in flight and claims the PR's target version, the PR must rebase to use the new next version — never introduce a gap or a skip. This rule prevents the pattern where a PR introduces `v1alpha5` (with partial changes) and `v1alpha6` (with the remainder): that forces operators through two sequential migrations for what is logically one PR's worth of work and creates a stale intermediate version that no one ever ships at.
+
 This rule retires when jackin ships its first tagged release.
 
 ## Never mutate the host machine silently (hard rule)

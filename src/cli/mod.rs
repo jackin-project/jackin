@@ -38,8 +38,8 @@ pub mod role;
 pub mod workspace;
 
 pub use config::{
-    AuthCommand, CoauthorTrailerCommand, ConfigCommand, EnvCommand, GitCommand, MountCommand,
-    TrustCommand,
+    AuthCommand, CoauthorTrailerCommand, ConfigCommand, DcoCommand, EnvCommand, GitCommand,
+    MountCommand, TrustCommand,
 };
 pub use prune::PruneCommand;
 pub use workspace::{WorkspaceClaudeTokenCommand, WorkspaceCommand, WorkspaceEnvCommand};

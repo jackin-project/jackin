@@ -78,19 +78,20 @@ else
 fi
 
 # ── git co-author + DCO trailer hook ──────────────────────────────
-# When JACKIN_GIT_COAUTHOR_TRAILER=1, write a prepare-commit-msg hook
-# that appends two trailers to every non-amend commit:
-#   1. Co-authored-by: <agent>  — identifies the AI agent that made the commit
-#   2. Signed-off-by: <user>    — DCO sign-off from git user.name / user.email
-# Both are deduplicated: the hook is a no-op for a trailer already present.
+# When JACKIN_GIT_COAUTHOR_TRAILER=1, the hook appends a Co-authored-by
+# trailer for the running agent to every non-amend commit.
+# When JACKIN_GIT_DCO=1, the hook appends a Signed-off-by trailer from the
+# git user identity. Either or both flags may be set independently.
+# Both trailers are deduplicated: the hook is a no-op for a trailer already
+# present.
 # core.hooksPath is a global git config write inside the container only —
 # the host's git config is never touched (per the hard rule in AGENTS.md).
 #
 # NOTE: git's core.hooksPath replaces the per-repo .git/hooks/ lookup
 # globally. A role whose setup-once.sh also sets core.hooksPath will
 # overwrite this path; per-repo .git/hooks/ hooks are bypassed while
-# auto_coauthor_trailer is enabled.
-if [ "${JACKIN_GIT_COAUTHOR_TRAILER:-0}" = "1" ]; then
+# either flag is enabled.
+if [ "${JACKIN_GIT_COAUTHOR_TRAILER:-0}" = "1" ] || [ "${JACKIN_GIT_DCO:-0}" = "1" ]; then
     _hooks_dir="/jackin/runtime/git-hooks"
     mkdir -p "$_hooks_dir" || {
         echo "[entrypoint] ERROR: failed to create git-hooks dir $_hooks_dir (is /jackin mounted read-only?)" >&2
@@ -105,40 +106,44 @@ case "${2:-}" in
   commit|squash|merge) exit 0 ;;
 esac
 
-# ── Co-authored-by (agent-specific) ───────────────────────────────
-_agent="${JACKIN_AGENT:-}"
-_coauthor_email=""
-_coauthor_trailer=""
-if [ "$_agent" = "claude" ]; then
-    _coauthor_email="noreply@anthropic.com"
-    _coauthor_trailer="Co-authored-by: Claude <${_coauthor_email}>"
-elif [ "$_agent" = "codex" ]; then
-    _coauthor_email="codex@openai.com"
-    _coauthor_trailer="Co-authored-by: Codex <${_coauthor_email}>"
-elif [ "$_agent" = "amp" ]; then
-    _coauthor_email="amp@ampcode.com"
-    _coauthor_trailer="Co-authored-by: Amp <${_coauthor_email}>"
-elif [ "$_agent" = "opencode" ]; then
-    _coauthor_email="opencode-agent[bot]@users.noreply.github.com"
-    _coauthor_trailer="Co-authored-by: opencode-agent[bot] <${_coauthor_email}>"
-fi
-if [ -n "$_coauthor_trailer" ] && ! grep -qF "$_coauthor_email" "$1"; then
-    printf '\n%s\n' "$_coauthor_trailer" >> "$1" || {
-        echo "[jackin prepare-commit-msg] ERROR: failed to append Co-authored-by to $1" >&2
-        exit 1
-    }
-fi
-
-# ── Signed-off-by / DCO (from git identity) ───────────────────────
-_dco_name="$(git config user.name 2>/dev/null || true)"
-_dco_email="$(git config user.email 2>/dev/null || true)"
-if [ -n "$_dco_name" ] && [ -n "$_dco_email" ]; then
-    _dco_trailer="Signed-off-by: ${_dco_name} <${_dco_email}>"
-    if ! grep -qF "Signed-off-by: ${_dco_name} <${_dco_email}>" "$1"; then
-        printf '\n%s\n' "$_dco_trailer" >> "$1" || {
-            echo "[jackin prepare-commit-msg] ERROR: failed to append Signed-off-by to $1" >&2
+# ── Co-authored-by (agent-specific, only if JACKIN_GIT_COAUTHOR_TRAILER=1) ──
+if [ "${JACKIN_GIT_COAUTHOR_TRAILER:-0}" = "1" ]; then
+    _agent="${JACKIN_AGENT:-}"
+    _coauthor_email=""
+    _coauthor_trailer=""
+    if [ "$_agent" = "claude" ]; then
+        _coauthor_email="noreply@anthropic.com"
+        _coauthor_trailer="Co-authored-by: Claude <${_coauthor_email}>"
+    elif [ "$_agent" = "codex" ]; then
+        _coauthor_email="codex@openai.com"
+        _coauthor_trailer="Co-authored-by: Codex <${_coauthor_email}>"
+    elif [ "$_agent" = "amp" ]; then
+        _coauthor_email="amp@ampcode.com"
+        _coauthor_trailer="Co-authored-by: Amp <${_coauthor_email}>"
+    elif [ "$_agent" = "opencode" ]; then
+        _coauthor_email="opencode-agent[bot]@users.noreply.github.com"
+        _coauthor_trailer="Co-authored-by: opencode-agent[bot] <${_coauthor_email}>"
+    fi
+    if [ -n "$_coauthor_trailer" ] && ! grep -qF "$_coauthor_email" "$1"; then
+        printf '\n%s\n' "$_coauthor_trailer" >> "$1" || {
+            echo "[jackin prepare-commit-msg] ERROR: failed to append Co-authored-by to $1" >&2
             exit 1
         }
+    fi
+fi
+
+# ── Signed-off-by / DCO (from git identity, only if JACKIN_GIT_DCO=1) ────────
+if [ "${JACKIN_GIT_DCO:-0}" = "1" ]; then
+    _dco_name="$(git config user.name 2>/dev/null || true)"
+    _dco_email="$(git config user.email 2>/dev/null || true)"
+    if [ -n "$_dco_name" ] && [ -n "$_dco_email" ]; then
+        _dco_trailer="Signed-off-by: ${_dco_name} <${_dco_email}>"
+        if ! grep -qF "Signed-off-by: ${_dco_name} <${_dco_email}>" "$1"; then
+            printf '\n%s\n' "$_dco_trailer" >> "$1" || {
+                echo "[jackin prepare-commit-msg] ERROR: failed to append Signed-off-by to $1" >&2
+                exit 1
+            }
+        fi
     fi
 fi
 HOOK_EOF
@@ -150,7 +155,10 @@ HOOK_EOF
         echo "[entrypoint] ERROR: failed to set core.hooksPath (git not on PATH or global config unwritable?)" >&2
         exit 1
     }
-    echo "[entrypoint] git co-author + DCO trailer hook installed (agent: ${JACKIN_AGENT:-unknown})"
+    _active_flags=""
+    [ "${JACKIN_GIT_COAUTHOR_TRAILER:-0}" = "1" ] && _active_flags="${_active_flags}coauthor_trailer "
+    [ "${JACKIN_GIT_DCO:-0}" = "1" ] && _active_flags="${_active_flags}dco "
+    echo "[entrypoint] git trailer hook installed (agent: ${JACKIN_AGENT:-unknown}, active: ${_active_flags% })"
 fi
 
 # ── agent-specific setup ───────────────────────────────────────────

@@ -51,6 +51,12 @@ pub const JACKIN_ROLE_ENV_NAME: &str = "JACKIN_ROLE";
 /// trailer is appended automatically to every non-amend commit.
 pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAILER";
 
+/// Env var that signals the entrypoint to append a `Signed-off-by` DCO
+/// trailer to every non-amend commit via the same `prepare-commit-msg`
+/// hook as `JACKIN_GIT_COAUTHOR_TRAILER`. Independent of the coauthor flag
+/// — either or both may be set.
+pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
+
 // ── GitHub CLI / GitHub-tooling env-var names ──────────────────────
 //
 // jackin reads / forwards these names in the `[github]` auth-forward
@@ -98,6 +104,7 @@ pub(crate) const RESERVED_RUNTIME_ENV_VARS: &[(&str, Option<&str>)] = &[
     (JACKIN_AGENT_ENV_NAME, None),
     (JACKIN_ROLE_ENV_NAME, None),
     (JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME, None),
+    (JACKIN_GIT_DCO_ENV_NAME, None),
     // Docker TLS vars injected by jackin — must not be overridden by manifests.
     ("DOCKER_HOST", None),
     ("DOCKER_TLS_VERIFY", None),
@@ -264,6 +271,14 @@ mod tests {
         assert!(!is_reserved("MY_USER_VAR"));
         assert!(!is_reserved("PATH"));
         assert!(!is_reserved(""));
+    }
+
+    #[test]
+    fn jackin_git_dco_is_reserved() {
+        assert!(
+            is_reserved(JACKIN_GIT_DCO_ENV_NAME),
+            "JACKIN_GIT_DCO must be reserved so manifests cannot override the DCO hook signal"
+        );
     }
 
     #[test]

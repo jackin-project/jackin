@@ -659,10 +659,27 @@ fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {
                 state.stage = ManagerStage::List;
             }
         }
-        // Space is the W3C toggle key (switch pattern).
-        KeyCode::Char(' ') => {
-            settings.general.pending = !settings.general.pending;
+        KeyCode::Up => {
+            if settings.general.selected > 0 {
+                settings.general.selected -= 1;
+            }
         }
+        KeyCode::Down => {
+            if settings.general.selected < 1 {
+                settings.general.selected += 1;
+            }
+        }
+        // Space is the W3C toggle key (switch pattern).
+        KeyCode::Char(' ') => match settings.general.selected {
+            0 => {
+                settings.general.pending_coauthor_trailer =
+                    !settings.general.pending_coauthor_trailer;
+            }
+            1 => {
+                settings.general.pending_dco = !settings.general.pending_dco;
+            }
+            _ => {}
+        },
         KeyCode::Char('s' | 'S') => {
             open_settings_save_preview(settings);
         }
@@ -1863,7 +1880,7 @@ mod tests {
     }
 
     #[test]
-    fn general_tab_space_toggles_auto_coauthor_trailer() {
+    fn general_tab_space_toggles_both_rows() {
         let tmp = tempfile::tempdir().unwrap();
         let config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
@@ -1872,23 +1889,51 @@ mod tests {
         settings.tab_bar_focused = false;
         state.stage = ManagerStage::Settings(settings);
 
-        // default is false
+        // row 0 (coauthor_trailer) — default is false
         let ManagerStage::Settings(settings) = &state.stage else {
             panic!("expected settings stage");
         };
-        assert!(!settings.general.pending);
+        assert_eq!(settings.general.selected, 0);
+        assert!(!settings.general.pending_coauthor_trailer);
 
         handle_settings_key(&mut state, key(KeyCode::Char(' ')));
         let ManagerStage::Settings(settings) = &state.stage else {
             panic!("expected settings stage");
         };
-        assert!(settings.general.pending);
+        assert!(settings.general.pending_coauthor_trailer);
 
         handle_settings_key(&mut state, key(KeyCode::Char(' ')));
         let ManagerStage::Settings(settings) = &state.stage else {
             panic!("expected settings stage");
         };
-        assert!(!settings.general.pending);
+        assert!(!settings.general.pending_coauthor_trailer);
+
+        // navigate to row 1 (dco)
+        handle_settings_key(&mut state, key(KeyCode::Down));
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.general.selected, 1);
+        assert!(!settings.general.pending_dco);
+
+        handle_settings_key(&mut state, key(KeyCode::Char(' ')));
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(settings.general.pending_dco);
+
+        handle_settings_key(&mut state, key(KeyCode::Char(' ')));
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(!settings.general.pending_dco);
+
+        // navigate back to row 0
+        handle_settings_key(&mut state, key(KeyCode::Up));
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.general.selected, 0);
     }
 
     #[test]

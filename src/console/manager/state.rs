@@ -161,30 +161,39 @@ pub struct GlobalMountsState<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsGeneralState {
-    pub pending: bool,
-    pub(super) original: bool,
+    pub pending_coauthor_trailer: bool,
+    pub(super) original_coauthor_trailer: bool,
+    pub pending_dco: bool,
+    pub(super) original_dco: bool,
+    pub selected: usize,
 }
 
 impl SettingsGeneralState {
     pub fn from_config(config: &AppConfig) -> Self {
         Self {
-            pending: config.git.auto_coauthor_trailer,
-            original: config.git.auto_coauthor_trailer,
+            pending_coauthor_trailer: config.git.coauthor_trailer,
+            original_coauthor_trailer: config.git.coauthor_trailer,
+            pending_dco: config.git.dco,
+            original_dco: config.git.dco,
+            selected: 0,
         }
     }
 
     #[must_use]
     pub fn is_dirty(&self) -> bool {
-        self.pending != self.original
+        self.pending_coauthor_trailer != self.original_coauthor_trailer
+            || self.pending_dco != self.original_dco
     }
 
     pub fn discard(&mut self) {
-        self.pending = self.original;
+        self.pending_coauthor_trailer = self.original_coauthor_trailer;
+        self.pending_dco = self.original_dco;
     }
 
     #[must_use]
     pub fn change_count(&self) -> usize {
-        usize::from(self.pending != self.original)
+        usize::from(self.pending_coauthor_trailer != self.original_coauthor_trailer)
+            + usize::from(self.pending_dco != self.original_dco)
     }
 }
 
@@ -744,10 +753,12 @@ impl SettingsState<'_> {
             editor.set_agent_trust(&row.role, row.trusted);
         }
 
-        editor.set_git_auto_coauthor_trailer(self.general.pending);
+        editor.set_git_coauthor_trailer(self.general.pending_coauthor_trailer);
+        editor.set_git_dco(self.general.pending_dco);
 
         let config = editor.save()?;
-        self.general.original = self.general.pending;
+        self.general.original_coauthor_trailer = self.general.pending_coauthor_trailer;
+        self.general.original_dco = self.general.pending_dco;
         self.mounts.original = self.mounts.pending.clone();
         self.env.original = self.env.pending.clone();
         self.auth.original = self.auth.pending.clone();

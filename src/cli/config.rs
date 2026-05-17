@@ -26,6 +26,19 @@ pub enum GitCommand {
     /// Configure automatic Co-authored-by trailer injection for agent commits
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     CoauthorTrailer(CoauthorTrailerCommand),
+    /// Configure DCO Signed-off-by trailer injection for agent commits
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    Dco(DcoCommand),
+}
+
+#[derive(Debug, clap::Subcommand, PartialEq, Eq)]
+pub enum DcoCommand {
+    /// Enable DCO Signed-off-by injection
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Enable,
+    /// Disable DCO Signed-off-by injection
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Disable,
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]

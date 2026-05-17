@@ -293,6 +293,7 @@ pub fn spawn_agent_session(
     manifest: Option<&InstanceManifest>,
     agent: crate::agent::Agent,
     git_coauthor_trailer: bool,
+    git_dco: bool,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     match inspect_container_state(runner, container_name) {
@@ -327,6 +328,7 @@ pub fn spawn_agent_session(
             crate::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME
         )
     });
+    let git_dco_env = git_dco.then(|| format!("{}=1", crate::env_model::JACKIN_GIT_DCO_ENV_NAME));
     let session_name = format!("jackin-{}-{}", agent.slug(), short_session_id());
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, runner);
@@ -335,6 +337,9 @@ pub fn spawn_agent_session(
         "tmux", "new-session", "-e", &agent_env,
     ];
     if let Some(ref env) = git_coauthor_trailer_env {
+        tmux_args.extend_from_slice(&["-e", env.as_str()]);
+    }
+    if let Some(ref env) = git_dco_env {
         tmux_args.extend_from_slice(&["-e", env.as_str()]);
     }
     tmux_args.extend_from_slice(&["-s", &session_name, "--", "/jackin/runtime/entrypoint.sh"]);
@@ -675,6 +680,7 @@ mod tests {
             Some(&manifest),
             crate::agent::Agent::Codex,
             false,
+            false,
             &mut runner,
         )
         .unwrap();
@@ -730,6 +736,7 @@ mod tests {
             Some(&manifest),
             crate::agent::Agent::Claude,
             true,
+            false,
             &mut runner,
         )
         .unwrap();
@@ -754,6 +761,7 @@ mod tests {
             "jk-agent-smith",
             None,
             crate::agent::Agent::Claude,
+            false,
             false,
             &mut runner,
         )

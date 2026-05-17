@@ -290,11 +290,11 @@ impl ConfigEditor {
         self.remove_env_var(&EnvScope::GlobalGithub, key)
     }
 
-    pub fn set_git_auto_coauthor_trailer(&mut self, enabled: bool) {
+    pub fn set_git_coauthor_trailer(&mut self, enabled: bool) {
         let git_path = ["git".to_string()];
         if enabled {
             let table = table_path_mut(&mut self.doc, &git_path);
-            table.insert("auto_coauthor_trailer", toml_edit::value(true));
+            table.insert("coauthor_trailer", toml_edit::value(true));
         } else {
             if let Some(git_table) = self
                 .doc
@@ -302,7 +302,25 @@ impl ConfigEditor {
                 .get_mut("git")
                 .and_then(|t| t.as_table_mut())
             {
-                git_table.remove("auto_coauthor_trailer");
+                git_table.remove("coauthor_trailer");
+            }
+            prune_empty_trailing_tables(&mut self.doc, &git_path, 1);
+        }
+    }
+
+    pub fn set_git_dco(&mut self, enabled: bool) {
+        let git_path = ["git".to_string()];
+        if enabled {
+            let table = table_path_mut(&mut self.doc, &git_path);
+            table.insert("dco", toml_edit::value(true));
+        } else {
+            if let Some(git_table) = self
+                .doc
+                .as_table_mut()
+                .get_mut("git")
+                .and_then(|t| t.as_table_mut())
+            {
+                git_table.remove("dco");
             }
             prune_empty_trailing_tables(&mut self.doc, &git_path, 1);
         }
@@ -2277,30 +2295,30 @@ auth_forward = "ignore"
     }
 
     #[test]
-    fn set_git_auto_coauthor_trailer_enable_writes_git_table() {
+    fn set_git_coauthor_trailer_enable_writes_git_table() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
         std::fs::write(&paths.config_file, "").unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_git_auto_coauthor_trailer(true);
+        editor.set_git_coauthor_trailer(true);
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
-        assert!(out.contains("auto_coauthor_trailer = true"), "{out}");
+        assert!(out.contains("coauthor_trailer = true"), "{out}");
         assert!(out.contains("[git]"), "{out}");
     }
 
     #[test]
-    fn set_git_auto_coauthor_trailer_disable_prunes_git_table() {
+    fn set_git_coauthor_trailer_disable_prunes_git_table() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
-        std::fs::write(&paths.config_file, "[git]\nauto_coauthor_trailer = true\n").unwrap();
+        std::fs::write(&paths.config_file, "[git]\ncoauthor_trailer = true\n").unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_git_auto_coauthor_trailer(false);
+        editor.set_git_coauthor_trailer(false);
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
@@ -2308,22 +2326,73 @@ auth_forward = "ignore"
             !out.contains("[git]"),
             "empty [git] table should be pruned: {out}"
         );
-        assert!(!out.contains("auto_coauthor_trailer"), "{out}");
+        assert!(!out.contains("coauthor_trailer"), "{out}");
     }
 
     #[test]
-    fn set_git_auto_coauthor_trailer_disable_when_absent_is_noop() {
+    fn set_git_coauthor_trailer_disable_when_absent_is_noop() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
         std::fs::write(&paths.config_file, "").unwrap();
 
         let mut editor = ConfigEditor::open(&paths).unwrap();
-        editor.set_git_auto_coauthor_trailer(false);
+        editor.set_git_coauthor_trailer(false);
         editor.save().unwrap();
 
         let out = std::fs::read_to_string(&paths.config_file).unwrap();
         assert!(!out.contains("[git]"), "{out}");
-        assert!(!out.contains("auto_coauthor_trailer"), "{out}");
+        assert!(!out.contains("coauthor_trailer"), "{out}");
+    }
+
+    #[test]
+    fn set_git_dco_enable_writes_git_table() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_git_dco(true);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("dco = true"), "{out}");
+        assert!(out.contains("[git]"), "{out}");
+    }
+
+    #[test]
+    fn set_git_dco_disable_prunes_git_table() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "[git]\ndco = true\n").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_git_dco(false);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            !out.contains("[git]"),
+            "empty [git] table should be pruned: {out}"
+        );
+        assert!(!out.contains("dco"), "{out}");
+    }
+
+    #[test]
+    fn set_git_dco_disable_when_absent_is_noop() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_git_dco(false);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!out.contains("[git]"), "{out}");
+        assert!(!out.contains("dco"), "{out}");
     }
 }

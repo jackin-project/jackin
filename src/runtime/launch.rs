@@ -694,6 +694,7 @@ struct LaunchContext<'a> {
     git: &'a GitIdentity,
     debug: bool,
     git_coauthor_trailer: bool,
+    git_dco: bool,
     agent: crate::agent::Agent,
     resolved_env: &'a crate::env_resolver::ResolvedEnv,
     /// Resolved `[…github.env]` map (post `op://` + `$NAME`
@@ -732,6 +733,7 @@ fn launch_role_runtime(
         git,
         debug,
         git_coauthor_trailer,
+        git_dco,
         agent,
         resolved_env,
         github_env,
@@ -920,6 +922,11 @@ fn launch_role_runtime(
         )
     });
     if let Some(ref env) = git_coauthor_trailer_env {
+        run_args.extend_from_slice(&["-e", env.as_str()]);
+    }
+    let git_dco_env =
+        (*git_dco).then(|| format!("{}=1", crate::env_model::JACKIN_GIT_DCO_ENV_NAME));
+    if let Some(ref env) = git_dco_env {
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
 
@@ -1911,7 +1918,8 @@ fn load_role_with(
             state: &state,
             git: &git,
             debug: opts.debug,
-            git_coauthor_trailer: config.git.auto_coauthor_trailer,
+            git_coauthor_trailer: config.git.coauthor_trailer,
+            git_dco: config.git.dco,
             agent,
             resolved_env: &resolved_env,
             github_env: &github_resolved_env,
@@ -6075,7 +6083,7 @@ plugins = []
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
-        config.git.auto_coauthor_trailer = true;
+        config.git.coauthor_trailer = true;
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner::for_load_agent([
             String::new(),
