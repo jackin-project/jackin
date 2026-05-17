@@ -556,7 +556,9 @@ fn selected_picker_role(
         .and_then(|idx| picker.filtered.get(idx).cloned())
 }
 
-fn workspace_has_any_env(ws: &crate::workspace::WorkspaceConfig) -> bool {
+pub(in crate::console::manager) fn workspace_has_any_env(
+    ws: &crate::workspace::WorkspaceConfig,
+) -> bool {
     !ws.env.is_empty() || ws.roles.values().any(|o| !o.env.is_empty())
 }
 
@@ -628,7 +630,9 @@ fn split_global_mount_rows(
 
 /// Caller is expected to have gated on `workspace_has_any_env` —
 /// empty case omits the block entirely, not via placeholder.
-fn env_block_height(ws_config: Option<&crate::workspace::WorkspaceConfig>) -> u16 {
+pub(in crate::console::manager) fn env_block_height(
+    ws_config: Option<&crate::workspace::WorkspaceConfig>,
+) -> u16 {
     let Some(ws) = ws_config else {
         return 2;
     };
@@ -667,7 +671,7 @@ pub(in crate::console::manager) fn agents_block_content_width(
     config.roles.keys().map(|k| k.len() + 4).max().unwrap_or(0)
 }
 
-fn instance_block_height(instance_count: usize) -> u16 {
+pub(in crate::console::manager) fn instance_block_height(instance_count: usize) -> u16 {
     (instance_count + 4).min(8) as u16
 }
 
@@ -776,6 +780,15 @@ struct InstanceDisplayRow {
     role: String,
     agent: String,
     status: String,
+}
+
+pub(in crate::console::manager) fn workspace_instance_count(
+    instances: &[crate::instance::InstanceIndexEntry],
+    workspace_name: Option<&str>,
+    workspace_label: &str,
+    workdir: &str,
+) -> usize {
+    workspace_instance_rows(instances, workspace_name, workspace_label, workdir).len()
 }
 
 fn workspace_instance_rows(
