@@ -5,7 +5,7 @@ use crate::instance::{InstanceIndex, InstanceStatus};
 use crate::paths::JackinPaths;
 use crate::tui;
 
-use super::naming::{LABEL_KIND_DIND, LABEL_MANAGED, dind_certs_volume};
+use super::naming::dind_certs_volume;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainerState {
@@ -393,36 +393,15 @@ pub fn hardline_agent(
             exit_code,
             oom_killed,
         } => {
-            let dind = format!("{container_name}-dind");
-            match inspect_container_state(runner, &dind) {
-                ContainerState::Running => {}
-                ContainerState::NotFound => {
-                    restore_missing_dind_sidecar(container_name, &dind, runner)?;
-                }
-                ContainerState::InspectUnavailable(reason) => {
-                    anyhow::bail!("{}", inspect_unavailable_message(&dind, &reason))
-                }
-                ContainerState::Stopped { .. } => {
-                    eprintln!("Restarting stopped DinD sidecar '{dind}'...");
-                    runner.run("docker", &["start", &dind], None, &RunOptions::default())?;
-                    let certs_volume = dind_certs_volume(container_name);
-                    wait_for_dind(&dind, &certs_volume, runner, false)?;
-                }
-            }
             let reason = if oom_killed {
                 "OOM killed".to_string()
             } else {
                 format!("exit {exit_code}")
             };
-            eprintln!("Restarting crashed container '{container_name}' ({reason})\u{2026}");
-            runner.run(
-                "docker",
-                &["start", container_name],
-                None,
-                &RunOptions::default(),
-            )?;
-            super::caffeinate::reconcile(paths, runner);
-            reconnect_or_create_session(paths, container_name, runner)
+            anyhow::bail!(
+                "container '{container_name}' stopped ({reason}); \
+                 use `jackin load` to start a new session or recover saved state"
+            )
         }
     };
     attach_outcome?;
@@ -556,87 +535,6 @@ fn describe_mount_state(state_dir: &std::path::Path) -> String {
     )
 }
 
-fn restore_missing_dind_sidecar(
-    container_name: &str,
-    dind: &str,
-    runner: &mut impl CommandRunner,
-) -> anyhow::Result<()> {
-    let network = format!("{container_name}-net");
-    let certs_volume = dind_certs_volume(container_name);
-    let role_label = format!("jackin.role={container_name}");
-    ensure_hardline_network(container_name, &network, &role_label, runner)?;
-
-    eprintln!("Recreating missing DinD sidecar '{dind}'...");
-    let certs_dind_mount = format!("{certs_volume}:/certs/client");
-    let dind_tls_san = format!("DOCKER_TLS_SAN=DNS:{dind}");
-    runner.run(
-        "docker",
-        &[
-            "run",
-            "-d",
-            "--name",
-            dind,
-            "--network",
-            &network,
-            "--privileged",
-            "--label",
-            LABEL_MANAGED,
-            "--label",
-            LABEL_KIND_DIND,
-            "--label",
-            &role_label,
-            "-e",
-            "DOCKER_TLS_CERTDIR=/certs",
-            "-e",
-            &dind_tls_san,
-            "-v",
-            &certs_dind_mount,
-            "docker:dind",
-        ],
-        None,
-        &RunOptions::default(),
-    )?;
-    wait_for_dind(dind, &certs_volume, runner, false)
-}
-
-fn ensure_hardline_network(
-    container_name: &str,
-    network: &str,
-    role_label: &str,
-    runner: &mut impl CommandRunner,
-) -> anyhow::Result<()> {
-    match inspect_docker_network(runner, network) {
-        DockerNetworkState::Present => Ok(()),
-        DockerNetworkState::InspectUnavailable(reason) => {
-            anyhow::bail!(
-                "cannot inspect Docker network '{network}' while rebuilding DinD sidecar: {reason}"
-            );
-        }
-        DockerNetworkState::NotFound => {
-            eprintln!("Recreating missing Docker network '{network}'...");
-            runner.run(
-                "docker",
-                &[
-                    "network",
-                    "create",
-                    "--label",
-                    LABEL_MANAGED,
-                    "--label",
-                    role_label,
-                    network,
-                ],
-                None,
-                &RunOptions::default(),
-            )?;
-            runner.run(
-                "docker",
-                &["network", "connect", network, container_name],
-                None,
-                &RunOptions::default(),
-            )
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum DockerNetworkState {
@@ -1163,151 +1061,35 @@ mod tests {
     }
 
     #[test]
-    fn hardline_restarts_crashed_container_when_dind_running() {
-        let (_tmp, paths) = test_paths();
-        // Inspect calls: container stopped w/ exit 137, then dind running.
-        let mut runner = FakeRunner::with_capture_queue([
-            "false 137 false".to_string(),
-            "true 0 false".to_string(),
-        ]);
-
-        hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap();
-
-        assert!(
-            runner
-                .recorded
-                .iter()
-                .any(|c| c == "docker start jk-agent-smith"),
-            "expected docker start before tmux session"
-        );
-        let start_idx = runner
-            .recorded
-            .iter()
-            .position(|c| c == "docker start jk-agent-smith")
-            .unwrap();
-        let attach_idx = runner
-            .recorded
-            .iter()
-            .position(|c| c.contains("tmux new-session") && c.contains("jackin-"))
-            .unwrap();
-        assert!(start_idx < attach_idx, "start must precede tmux session");
-    }
-
-    #[test]
-    fn hardline_recreates_missing_dind_and_network() {
-        let (_tmp, paths) = test_paths();
-        let mut runner = FakeRunner::with_capture_queue([
-            "false 137 false".to_string(),
-            String::new(),
-            String::new(),
-        ]);
-        runner.fail_with.push((
-            "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jk-agent-smith-dind".to_string(),
-            "Error: No such object: jk-agent-smith-dind".to_string(),
-        ));
-        runner.fail_with.push((
-            "docker network inspect jk-agent-smith-net".to_string(),
-            "Error: No such network: jk-agent-smith-net".to_string(),
-        ));
-
-        hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap();
-
-        let network_create_idx = runner
-            .recorded
-            .iter()
-            .position(|c| c == "docker network create --label jackin.managed=true --label jackin.role=jk-agent-smith jk-agent-smith-net")
-            .expect("expected missing network recreation");
-        let network_connect_idx = runner
-            .recorded
-            .iter()
-            .position(|c| c == "docker network connect jk-agent-smith-net jk-agent-smith")
-            .expect("expected role container network reconnect");
-        let dind_run_idx = runner
-            .recorded
-            .iter()
-            .position(|c| {
-                c.contains("docker run -d --name jk-agent-smith-dind")
-                    && c.contains("--network jk-agent-smith-net")
-                    && c.contains("DOCKER_TLS_SAN=DNS:jk-agent-smith-dind")
-                    && c.contains("jk-agent-smith-dind-certs:/certs/client")
-            })
-            .expect("expected missing DinD sidecar recreation");
-        let dind_ready_idx = runner
-            .recorded
-            .iter()
-            .position(|c| c == "docker exec jk-agent-smith-dind docker info")
-            .expect("expected DinD readiness check");
-        let role_start_idx = runner
-            .recorded
-            .iter()
-            .position(|c| c == "docker start jk-agent-smith")
-            .expect("expected role restart");
-        let attach_idx = runner
-            .recorded
-            .iter()
-            .position(|c| c.contains("tmux new-session") && c.contains("jackin-"))
-            .expect("expected tmux session start");
-        assert!(network_create_idx < network_connect_idx);
-        assert!(network_connect_idx < dind_run_idx);
-        assert!(dind_run_idx < dind_ready_idx);
-        assert!(dind_ready_idx < role_start_idx);
-        assert!(role_start_idx < attach_idx);
-    }
-
-    #[test]
-    fn hardline_refuses_when_dind_inspect_is_unavailable() {
+    fn hardline_refuses_crashed_container() {
         let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
-        runner.fail_with.push((
-            "docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jk-agent-smith-dind".to_string(),
-            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
-        ));
 
         let err = hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap_err();
 
-        assert!(err.to_string().contains("Docker is unavailable"));
+        assert!(
+            err.to_string().contains("stopped") && err.to_string().contains("jackin load"),
+            "expected error directing to jackin load; got: {err}"
+        );
         assert!(
             !runner
                 .recorded
                 .iter()
-                .any(|c| c.contains("docker start") || c.contains("tmux new-session"))
+                .any(|c| c.contains("docker start") || c.contains("tmux")),
+            "hardline must not restart or attach stopped containers"
         );
     }
 
     #[test]
-    fn hardline_restarts_dind_when_sidecar_is_stopped() {
+    fn hardline_refuses_oom_killed_container() {
         let (_tmp, paths) = test_paths();
-        let mut runner = FakeRunner::with_capture_queue([
-            "false 137 false".to_string(),
-            "false 0 false".to_string(),
-            String::new(),
-            String::new(),
-        ]);
+        let mut runner = FakeRunner::with_capture_queue(["false 0 true".to_string()]);
 
-        hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap();
+        let err = hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap_err();
 
-        let dind_start_idx = runner
-            .recorded
-            .iter()
-            .position(|c| c == "docker start jk-agent-smith-dind")
-            .expect("expected stopped DinD sidecar restart");
-        let dind_ready_idx = runner
-            .recorded
-            .iter()
-            .position(|c| c == "docker exec jk-agent-smith-dind docker info")
-            .expect("expected DinD readiness check");
-        let role_start_idx = runner
-            .recorded
-            .iter()
-            .position(|c| c == "docker start jk-agent-smith")
-            .expect("expected role restart");
-        let attach_idx = runner
-            .recorded
-            .iter()
-            .position(|c| c.contains("tmux new-session") && c.contains("jackin-"))
-            .expect("expected tmux session start");
-        assert!(dind_start_idx < dind_ready_idx);
-        assert!(dind_ready_idx < role_start_idx);
-        assert!(role_start_idx < attach_idx);
+        assert!(
+            err.to_string().contains("OOM") && err.to_string().contains("jackin load"),
+            "expected OOM error directing to jackin load; got: {err}"
+        );
     }
 }

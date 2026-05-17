@@ -32,7 +32,7 @@ All agent sessions use the same naming convention: `jackin-<agent>-<id>` where `
 
 - **Container is running, sessions exist**: `jackin hardline` runs `docker exec -e TMUX= -it <container> tmux attach-session`. tmux attaches to the most recently used session.
 - **Container is running, no sessions**: `jackin hardline` creates a new `jackin-<agent>-<id>` session via `docker exec -e TMUX= -it <container> tmux new-session -e JACKIN_AGENT=<agent> -s jackin-<agent>-<id> -- /jackin/runtime/entrypoint.sh`. The agent slug is read from the instance manifest.
-- **Container is stopped (crashed, non-zero exit or OOM)**: `jackin hardline` restarts the container (`docker start`), then applies the same running-container logic above.
+- **Container is stopped (crashed, non-zero exit or OOM)**: Error. Use `jackin load` to start a new session or recover saved state.
 - **Container is gone (removed)**: `jackin hardline` can rebuild the runtime around jackin-managed local state (workspace mounts, per-instance durable home, isolation records) when the workspace or ad-hoc directory can be resolved.
 
 Implementation: <RepoFile path="src/runtime/attach.rs" /> (`reconnect_or_create_session`, `hardline_agent`).
