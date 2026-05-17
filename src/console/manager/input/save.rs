@@ -2330,6 +2330,94 @@ mod tests {
             "UUID URI must NOT appear in pre-save diff; got: {joined}"
         );
     }
+
+    #[test]
+    fn settings_save_general_dirty_shows_summary_and_diff() {
+        use crate::config::AppConfig;
+        use crate::console::manager::state::{SettingsState, SettingsTab};
+
+        let config = AppConfig::default();
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = SettingsTab::General;
+        // Toggle coauthor_trailer: disabled → enabled
+        settings.general.pending_coauthor_trailer = true;
+
+        let lines = super::build_settings_save_lines(&settings);
+        let joined: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+            .collect();
+
+        assert!(
+            joined.contains("General"),
+            "summary must mention General: {joined}"
+        );
+        assert!(
+            joined.contains("co-author trailer"),
+            "diff must show field name: {joined}"
+        );
+        assert!(
+            joined.contains("disabled"),
+            "diff must show old value: {joined}"
+        );
+        assert!(
+            joined.contains("enabled"),
+            "diff must show new value: {joined}"
+        );
+    }
+
+    #[test]
+    fn settings_save_general_dco_dirty_shows_diff() {
+        use crate::config::AppConfig;
+        use crate::console::manager::state::{SettingsState, SettingsTab};
+
+        let config = AppConfig::default();
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = SettingsTab::General;
+        // Toggle dco: disabled → enabled
+        settings.general.pending_dco = true;
+
+        let lines = super::build_settings_save_lines(&settings);
+        let joined: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+            .collect();
+
+        assert!(
+            joined.contains("General"),
+            "summary must mention General: {joined}"
+        );
+        assert!(
+            joined.contains("dco"),
+            "diff must show dco field name: {joined}"
+        );
+    }
+
+    #[test]
+    fn settings_save_general_clean_shows_no_general_section() {
+        use crate::config::AppConfig;
+        use crate::console::manager::state::SettingsState;
+
+        let config = AppConfig::default();
+        let settings = SettingsState::from_config(&config);
+        // pending == original → not dirty
+
+        let lines = super::build_settings_save_lines(&settings);
+        let joined: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+            .collect();
+
+        // When nothing changed, neither the summary row nor the detail row appears.
+        assert!(
+            !joined.contains("co-author trailer"),
+            "clean state must not render co-author trailer field: {joined}"
+        );
+        assert!(
+            !joined.contains("dco"),
+            "clean state must not render dco field: {joined}"
+        );
+    }
 }
 
 // ── Settings save preview ─────────────────────────────────────────────────────
@@ -2359,6 +2447,7 @@ pub(super) fn build_settings_save_lines(
     out.push(Line::from(Span::styled("Save settings", heading)));
     out.push(Line::raw(""));
 
+    let general_stats = settings_general_stats(&settings.general);
     let mount_stats = settings_mount_stats(&settings.mounts.original, &settings.mounts.pending);
     let env_stats = settings_env_stats(&settings.env.original, &settings.env.pending);
     let auth_stats = settings_auth_stats(
@@ -2369,6 +2458,12 @@ pub(super) fn build_settings_save_lines(
     );
     let trust_stats = settings_trust_stats(&settings.trust.original, &settings.trust.pending);
 
+    if let Some(s) = general_stats.as_deref() {
+        out.push(Line::from(vec![
+            Span::styled("  General:      ", heading),
+            Span::styled(s.to_owned(), add_style),
+        ]));
+    }
     if let Some(s) = mount_stats.as_deref() {
         out.push(Line::from(vec![
             Span::styled("  Mounts:       ", heading),
@@ -2398,6 +2493,52 @@ pub(super) fn build_settings_save_lines(
     out.push(Line::raw(""));
     out.push(Line::from(Span::styled("  \u{2500}".repeat(30), sep_style)));
     out.push(Line::raw(""));
+
+    // ── General details ───────────────────────────────────────────────
+    if general_stats.is_some() {
+        out.push(Line::from(Span::styled("General:", heading)));
+        let arrow = "\u{2192}";
+
+        if settings.general.pending_coauthor_trailer != settings.general.original_coauthor_trailer {
+            let from = if settings.general.original_coauthor_trailer {
+                "enabled"
+            } else {
+                "disabled"
+            };
+            let to = if settings.general.pending_coauthor_trailer {
+                "enabled"
+            } else {
+                "disabled"
+            };
+            out.push(Line::from(vec![
+                Span::styled("  co-author trailer: ", heading),
+                Span::styled(from, remove_style),
+                Span::styled(format!(" {arrow} "), Style::default()),
+                Span::styled(to, add_style),
+            ]));
+        }
+
+        if settings.general.pending_dco != settings.general.original_dco {
+            let from = if settings.general.original_dco {
+                "enabled"
+            } else {
+                "disabled"
+            };
+            let to = if settings.general.pending_dco {
+                "enabled"
+            } else {
+                "disabled"
+            };
+            out.push(Line::from(vec![
+                Span::styled("  dco: ", heading),
+                Span::styled(from, remove_style),
+                Span::styled(format!(" {arrow} "), Style::default()),
+                Span::styled(to, add_style),
+            ]));
+        }
+
+        out.push(Line::raw(""));
+    }
 
     // ── Mount details ─────────────────────────────────────────────────
     let mount_lines = settings_mount_diff_lines(
@@ -2505,6 +2646,18 @@ fn settings_env_stats(
         parts.push(format!("{modified} modified"));
     }
     Some(parts.join(", "))
+}
+
+fn settings_general_stats(state: &super::super::state::SettingsGeneralState) -> Option<String> {
+    let count = state.change_count();
+    if count == 0 {
+        return None;
+    }
+    Some(if count == 1 {
+        "1 change".to_string()
+    } else {
+        format!("{count} changes")
+    })
 }
 
 fn settings_auth_stats(

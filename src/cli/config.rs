@@ -16,6 +16,43 @@ pub enum ConfigCommand {
     /// Manage operator env vars at global and per-role scope
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Env(EnvCommand),
+    /// Manage global git settings
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    Git(GitCommand),
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum GitCommand {
+    /// Configure automatic Co-authored-by trailer injection for agent commits
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    CoauthorTrailer(CoauthorTrailerCommand),
+    /// Configure DCO Signed-off-by trailer injection for agent commits
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    Dco(DcoCommand),
+}
+
+#[derive(Debug, clap::Subcommand, PartialEq, Eq)]
+pub enum DcoCommand {
+    /// Enable DCO Signed-off-by injection
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Enable,
+    /// Disable DCO Signed-off-by injection
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Disable,
+}
+
+#[derive(Debug, Subcommand, PartialEq, Eq)]
+pub enum CoauthorTrailerCommand {
+    /// Enable automatic Co-authored-by trailer injection inside agent containers
+    ///
+    /// When enabled, jackin installs a prepare-commit-msg hook inside every
+    /// launched container via core.hooksPath. The hook appends the correct
+    /// Co-authored-by trailer for the running agent on every non-amend commit.
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Enable,
+    /// Disable automatic Co-authored-by trailer injection (default)
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    Disable,
 }
 
 #[derive(Debug, Subcommand, PartialEq, Eq)]

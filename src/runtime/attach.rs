@@ -292,6 +292,8 @@ pub fn spawn_agent_session(
     container_name: &str,
     manifest: Option<&InstanceManifest>,
     agent: crate::agent::Agent,
+    git_coauthor_trailer: bool,
+    git_dco: bool,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     match inspect_container_state(runner, container_name) {
@@ -320,31 +322,37 @@ pub fn spawn_agent_session(
         crate::env_model::JACKIN_AGENT_ENV_NAME,
         agent.slug()
     );
+    let git_coauthor_trailer_env = git_coauthor_trailer.then(|| {
+        format!(
+            "{}=1",
+            crate::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME
+        )
+    });
+    let git_dco_env = git_dco.then(|| format!("{}=1", crate::env_model::JACKIN_GIT_DCO_ENV_NAME));
     let session_name = format!("jackin-{}-{}", agent.slug(), short_session_id());
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, runner);
-    let result = runner.run(
-        "docker",
-        &[
-            "exec",
-            "-e",
-            "TMUX=",
-            "--workdir",
-            workdir,
-            "-it",
-            container_name,
-            "tmux",
-            "new-session",
-            "-e",
-            &agent_env,
-            "-s",
-            &session_name,
-            "--",
-            "/jackin/runtime/entrypoint.sh",
-        ],
-        None,
-        &RunOptions::default(),
-    );
+    let mut tmux_args = vec![
+        "exec",
+        "-e",
+        "TMUX=",
+        "--workdir",
+        workdir,
+        "-it",
+        container_name,
+        "tmux",
+        "new-session",
+        "-e",
+        &agent_env,
+    ];
+    if let Some(ref env) = git_coauthor_trailer_env {
+        tmux_args.extend_from_slice(&["-e", env.as_str()]);
+    }
+    if let Some(ref env) = git_dco_env {
+        tmux_args.extend_from_slice(&["-e", env.as_str()]);
+    }
+    tmux_args.extend_from_slice(&["-s", &session_name, "--", "/jackin/runtime/entrypoint.sh"]);
+    let result = runner.run("docker", &tmux_args, None, &RunOptions::default());
     eprintln!();
     result?;
 
@@ -680,6 +688,8 @@ mod tests {
             container_name,
             Some(&manifest),
             crate::agent::Agent::Codex,
+            false,
+            false,
             &mut runner,
         )
         .unwrap();
@@ -701,6 +711,114 @@ mod tests {
     }
 
     #[test]
+    fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
+        let (_tmp, paths) = test_paths();
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+        let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace/project",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jk-agent-smith",
+            docker: crate::instance::DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        let mut runner = FakeRunner::with_capture_queue([
+            "true 0 false".to_string(),
+            "true 0 false".to_string(),
+            "true 0 false".to_string(),
+        ]);
+
+        spawn_agent_session(
+            &paths,
+            container_name,
+            Some(&manifest),
+            crate::agent::Agent::Claude,
+            true,
+            false,
+            &mut runner,
+        )
+        .unwrap();
+
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("-e JACKIN_GIT_COAUTHOR_TRAILER=1")),
+            "coauthor trailer env must be present when enabled; recorded: {:?}",
+            runner.recorded
+        );
+    }
+
+    #[test]
+    fn hardline_new_session_forwards_dco_env_when_enabled() {
+        let (_tmp, paths) = test_paths();
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+        let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace/project",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jk-agent-smith",
+            docker: crate::instance::DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        let mut runner = FakeRunner::with_capture_queue([
+            "true 0 false".to_string(),
+            "true 0 false".to_string(),
+            "true 0 false".to_string(),
+        ]);
+
+        spawn_agent_session(
+            &paths,
+            container_name,
+            Some(&manifest),
+            crate::agent::Agent::Claude,
+            false,
+            true,
+            &mut runner,
+        )
+        .unwrap();
+
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("-e JACKIN_GIT_DCO=1")),
+            "DCO env must be present when enabled; recorded: {:?}",
+            runner.recorded
+        );
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("JACKIN_GIT_COAUTHOR_TRAILER")),
+            "coauthor trailer env must be absent when disabled; recorded: {:?}",
+            runner.recorded
+        );
+    }
+
+    #[test]
     fn hardline_new_session_requires_running_container() {
         let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
@@ -710,6 +828,8 @@ mod tests {
             "jk-agent-smith",
             None,
             crate::agent::Agent::Claude,
+            false,
+            false,
             &mut runner,
         )
         .unwrap_err();

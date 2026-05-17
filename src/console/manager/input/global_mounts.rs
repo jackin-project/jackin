@@ -88,6 +88,7 @@ pub(super) fn handle_settings_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         _ => {}
     }
     match settings.active_tab {
+        SettingsTab::General => handle_general_key(state, key),
         SettingsTab::Mounts => handle_global_mounts_key(state, key),
         SettingsTab::Environments => handle_env_key(state, key),
         SettingsTab::Auth => handle_auth_key(state, key),
@@ -643,6 +644,42 @@ fn clear_settings_auth_kind(
                 }
             }
         }
+    }
+}
+
+fn handle_general_key(state: &mut ManagerState<'_>, key: KeyEvent) {
+    let ManagerStage::Settings(settings) = &mut state.stage else {
+        return;
+    };
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q' | 'Q') => {
+            if settings.is_dirty() {
+                settings.mounts.modal = Some(confirm_modal(GlobalMountConfirm::Discard));
+            } else {
+                state.stage = ManagerStage::List;
+            }
+        }
+        KeyCode::Up if settings.general.selected > 0 => {
+            settings.general.selected -= 1;
+        }
+        KeyCode::Down if settings.general.selected < 1 => {
+            settings.general.selected += 1;
+        }
+        // Space is the W3C toggle key (switch pattern).
+        KeyCode::Char(' ') => match settings.general.selected {
+            0 => {
+                settings.general.pending_coauthor_trailer =
+                    !settings.general.pending_coauthor_trailer;
+            }
+            1 => {
+                settings.general.pending_dco = !settings.general.pending_dco;
+            }
+            _ => {}
+        },
+        KeyCode::Char('s' | 'S') => {
+            open_settings_save_preview(settings);
+        }
+        _ => {}
     }
 }
 
@@ -1697,7 +1734,9 @@ mod tests {
         paths.ensure_base_dirs().unwrap();
         let mut config = AppConfig::default();
         let mut state = ManagerState::from_config(&config, tmp.path());
-        state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = SettingsTab::Mounts;
+        state.stage = ManagerStage::Settings(settings);
 
         handle_settings_key(&mut state, key(KeyCode::Char('a')));
         let ManagerStage::Settings(settings) = &mut state.stage else {
@@ -1730,7 +1769,9 @@ mod tests {
             },
         );
         let mut state = ManagerState::from_config(&config, tmp.path());
-        state.stage = ManagerStage::Settings(SettingsState::from_config(&config));
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = SettingsTab::Mounts;
+        state.stage = ManagerStage::Settings(settings);
 
         handle_settings_key(&mut state, key(KeyCode::Char('a')));
         let ManagerStage::Settings(settings) = &mut state.stage else {
@@ -1775,6 +1816,11 @@ mod tests {
             "must start on tab bar"
         );
 
+        // Settings opens on General (first tab); Right cycles: General → Mounts → Environments → Auth → Trust → General
+        handle_settings_key(&mut state, key(KeyCode::Right));
+        assert!(
+            matches!(&state.stage, ManagerStage::Settings(settings) if settings.active_tab == SettingsTab::Mounts)
+        );
         handle_settings_key(&mut state, key(KeyCode::Right));
         assert!(
             matches!(&state.stage, ManagerStage::Settings(settings) if settings.active_tab == SettingsTab::Environments)
@@ -1789,7 +1835,7 @@ mod tests {
         );
         handle_settings_key(&mut state, key(KeyCode::Right));
         assert!(
-            matches!(&state.stage, ManagerStage::Settings(settings) if settings.active_tab == SettingsTab::Mounts)
+            matches!(&state.stage, ManagerStage::Settings(settings) if settings.active_tab == SettingsTab::General)
         );
     }
 
@@ -1827,6 +1873,63 @@ mod tests {
             panic!("expected settings stage");
         };
         assert!(settings.trust.pending[0].trusted);
+    }
+
+    #[test]
+    fn general_tab_space_toggles_both_rows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = SettingsTab::General;
+        settings.tab_bar_focused = false;
+        state.stage = ManagerStage::Settings(settings);
+
+        // row 0 (coauthor_trailer) — default is false
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.general.selected, 0);
+        assert!(!settings.general.pending_coauthor_trailer);
+
+        handle_settings_key(&mut state, key(KeyCode::Char(' ')));
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(settings.general.pending_coauthor_trailer);
+
+        handle_settings_key(&mut state, key(KeyCode::Char(' ')));
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(!settings.general.pending_coauthor_trailer);
+
+        // navigate to row 1 (dco)
+        handle_settings_key(&mut state, key(KeyCode::Down));
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.general.selected, 1);
+        assert!(!settings.general.pending_dco);
+
+        handle_settings_key(&mut state, key(KeyCode::Char(' ')));
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(settings.general.pending_dco);
+
+        handle_settings_key(&mut state, key(KeyCode::Char(' ')));
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(!settings.general.pending_dco);
+
+        // navigate back to row 0
+        handle_settings_key(&mut state, key(KeyCode::Up));
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert_eq!(settings.general.selected, 0);
     }
 
     #[test]

@@ -25,13 +25,41 @@ The split-workspace layout described in [Configuration File](/reference/configur
 
 | File | Current version | Owner | Migration mode |
 |---|---|---|---|
-| `~/.config/jackin/config.toml` | `v1alpha4` | jackin | Automatic on startup |
+| `~/.config/jackin/config.toml` | `v1alpha5` | jackin | Automatic on startup |
 | `~/.config/jackin/workspaces/<name>.toml` | `v1alpha4` | jackin | Automatic on startup |
 | `jackin.role.toml` | `v1alpha4` | Role repository | Desktop: `jackin role migrate <role-repo-path>`; CI/automation: `jackin-validate --migrate <role-repo-path>` |
 
 ## Timeline
 
 Each entry is one upgrade path the current binary applies. <RepoFile path="tests/migration_fixtures.rs" /> walks every fixture on every CI run, so a regression breaks here before it breaks on a delayed operator's machine. Newest first; append, never edit.
+
+### `v1alpha5` — 2026-05-17
+
+| File kind | Predecessor | Migration mode | Fixture |
+|---|---|---|---|
+| Config (`config.toml`) | `v1alpha4` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/config/from-v1alpha4/meta.toml" /> |
+
+**Summary**: Introduces the `[git]` table with two independent boolean fields (both default `false`): `coauthor_trailer` enables `Co-authored-by` agent trailer injection, and `dco` enables `Signed-off-by` DCO injection. When either flag is enabled, jackin installs a `prepare-commit-msg` hook inside containers via `core.hooksPath`; each trailer is injected only when its corresponding flag is set, and both are deduplicated. The migration is a no-op restamp.
+
+**Before** (v1alpha4 config):
+
+```toml
+version = "v1alpha4"
+
+[roles.the-architect]
+git = "https://github.com/jackin-project/jackin-the-architect.git"
+trusted = true
+```
+
+**After** (v1alpha5):
+
+```toml
+version = "v1alpha5"
+
+[roles.the-architect]
+git = "https://github.com/jackin-project/jackin-the-architect.git"
+trusted = true
+```
 
 ### `v1alpha4` — 2026-05-17
 
@@ -200,11 +228,11 @@ config, jackin migrates this automatically before parsing.
 
 The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs as a separate startup migration alongside the version stamp; see [Configuration File](/reference/configuration/#one-file-per-workspace-by-design).
 
-### `v1alpha4`
+### `v1alpha5`
 
 | Field | Type | Required | Since | Notes |
 |---|---|---|---|---|
-| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha4` |
+| `version` | string | Yes | `v1alpha1` | Current value: `v1alpha5` |
 | `[claude].auth_forward` | string | No | `legacy` | `sync`, `api_key`, `oauth_token`, or `ignore` |
 | `[codex].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
 | `[amp].auth_forward` | string | No | `legacy` | `sync`, `api_key`, or `ignore` |
@@ -218,6 +246,8 @@ The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs a
 | `[roles.<role>].trusted` | bool | No | `legacy` | Trust-on-first-use state |
 | `[roles.<role>.env]` | table | No | `legacy` | Per-role operator env layer |
 | `[docker.mounts]` | table | No | `legacy` | Global and scoped Docker mount config |
+| `[git].coauthor_trailer` | bool | No | `v1alpha5` | Enable `Co-authored-by` agent trailer via `prepare-commit-msg` hook; omitted when `false` |
+| `[git].dco` | bool | No | `v1alpha5` | Enable `Signed-off-by` DCO trailer via `prepare-commit-msg` hook; omitted when `false` |
 | `[workspaces]` | table | No | `legacy` | Legacy read-only compatibility location; migrated into workspace files |
 
 Full operator configuration examples live in

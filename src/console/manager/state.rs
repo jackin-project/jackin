@@ -159,12 +159,52 @@ pub struct GlobalMountsState<'a> {
     pub exit_requested: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct SettingsGeneralState {
+    pub pending_coauthor_trailer: bool,
+    pub(super) original_coauthor_trailer: bool,
+    pub pending_dco: bool,
+    pub(super) original_dco: bool,
+    pub selected: usize,
+}
+
+impl SettingsGeneralState {
+    pub const fn from_config(config: &AppConfig) -> Self {
+        Self {
+            pending_coauthor_trailer: config.git.coauthor_trailer,
+            original_coauthor_trailer: config.git.coauthor_trailer,
+            pending_dco: config.git.dco,
+            original_dco: config.git.dco,
+            selected: 0,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_dirty(&self) -> bool {
+        self.pending_coauthor_trailer != self.original_coauthor_trailer
+            || self.pending_dco != self.original_dco
+    }
+
+    pub const fn discard(&mut self) {
+        self.pending_coauthor_trailer = self.original_coauthor_trailer;
+        self.pending_dco = self.original_dco;
+    }
+
+    #[must_use]
+    pub fn change_count(&self) -> usize {
+        usize::from(self.pending_coauthor_trailer != self.original_coauthor_trailer)
+            + usize::from(self.pending_dco != self.original_dco)
+    }
+}
+
 #[derive(Debug)]
 pub struct SettingsState<'a> {
     pub active_tab: SettingsTab,
     /// W3C ARIA Tabs: when true, focus is on the tab list (←/→ cycle tabs,
     /// Tab/↓ enters content); when false, focus is in the tab panel.
     pub tab_bar_focused: bool,
+    pub general: SettingsGeneralState,
     pub mounts: GlobalMountsState<'a>,
     pub env: SettingsEnvState<'a>,
     pub auth: SettingsAuthState,
@@ -173,6 +213,7 @@ pub struct SettingsState<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
+    General,
     Mounts,
     Environments,
     Auth,
@@ -180,11 +221,18 @@ pub enum SettingsTab {
 }
 
 impl SettingsTab {
-    pub const ALL: [Self; 4] = [Self::Mounts, Self::Environments, Self::Auth, Self::Trust];
+    pub const ALL: [Self; 5] = [
+        Self::General,
+        Self::Mounts,
+        Self::Environments,
+        Self::Auth,
+        Self::Trust,
+    ];
 
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
+            Self::General => "General",
             Self::Mounts => "Mounts",
             Self::Environments => "Environments",
             Self::Auth => "Auth",
@@ -587,8 +635,9 @@ impl GlobalMountsState<'_> {
 impl SettingsState<'_> {
     pub fn from_config(config: &AppConfig) -> Self {
         Self {
-            active_tab: SettingsTab::Mounts,
+            active_tab: SettingsTab::General,
             tab_bar_focused: true,
+            general: SettingsGeneralState::from_config(config),
             mounts: GlobalMountsState::from_config(config),
             env: SettingsEnvState::from_config(config),
             auth: SettingsAuthState::from_config(config),
@@ -598,7 +647,8 @@ impl SettingsState<'_> {
 
     #[must_use]
     pub fn is_dirty(&self) -> bool {
-        self.mounts.is_dirty()
+        self.general.is_dirty()
+            || self.mounts.is_dirty()
             || self.env.is_dirty()
             || self.auth.is_dirty()
             || self.trust.is_dirty()
@@ -606,7 +656,8 @@ impl SettingsState<'_> {
 
     #[must_use]
     pub fn change_count(&self) -> usize {
-        self.mounts_change_count()
+        self.general.change_count()
+            + self.mounts_change_count()
             + self.env.change_count()
             + settings_vec_change_count(&self.auth.original, &self.auth.pending)
             + env_change_count(&self.auth.original_github_env, &self.auth.github_env)
@@ -618,6 +669,7 @@ impl SettingsState<'_> {
     }
 
     pub fn discard(&mut self) {
+        self.general.discard();
         self.mounts.discard();
         self.env.discard();
         self.auth.discard();
@@ -702,7 +754,12 @@ impl SettingsState<'_> {
             editor.set_agent_trust(&row.role, row.trusted);
         }
 
+        editor.set_git_coauthor_trailer(self.general.pending_coauthor_trailer);
+        editor.set_git_dco(self.general.pending_dco);
+
         let config = editor.save()?;
+        self.general.original_coauthor_trailer = self.general.pending_coauthor_trailer;
+        self.general.original_dco = self.general.pending_dco;
         self.mounts.original = self.mounts.pending.clone();
         self.env.original = self.env.pending.clone();
         self.auth.original = self.auth.pending.clone();

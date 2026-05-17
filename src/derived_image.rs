@@ -1009,4 +1009,23 @@ plugins = []
         assert!(error.to_string().contains("symlink"));
         assert!(error.to_string().contains("linked.txt"));
     }
+
+    #[test]
+    fn entrypoint_coauthor_hook_uses_canonical_agent_emails() {
+        // Guards against the shell trailer mapping drifting from AGENTS.md.
+        assert!(ENTRYPOINT_SH.contains("noreply@anthropic.com"));
+        assert!(ENTRYPOINT_SH.contains("codex@openai.com"));
+        assert!(ENTRYPOINT_SH.contains("amp@ampcode.com"));
+        assert!(ENTRYPOINT_SH.contains("opencode-agent[bot]@users.noreply.github.com"));
+    }
+
+    #[test]
+    fn entrypoint_hook_injects_dco_signed_off_by() {
+        // Guards that the DCO path is conditional on JACKIN_GIT_DCO and reads
+        // from git identity.
+        assert!(ENTRYPOINT_SH.contains("JACKIN_GIT_DCO"));
+        assert!(ENTRYPOINT_SH.contains("Signed-off-by:"));
+        assert!(ENTRYPOINT_SH.contains("git config user.name"));
+        assert!(ENTRYPOINT_SH.contains("git config user.email"));
+    }
 }

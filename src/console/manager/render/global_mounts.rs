@@ -65,6 +65,7 @@ pub(super) fn render_settings(
     super::editor::render_tab_strip(frame, chunks[1], &labels, state.tab_bar_focused);
 
     match state.active_tab {
+        SettingsTab::General => render_general_tab(frame, state, chunks[2]),
         SettingsTab::Mounts => render_mounts_tab(frame, state, chunks[2]),
         SettingsTab::Environments => render_env_tab(frame, state, chunks[2]),
         SettingsTab::Auth => render_auth_tab(frame, state, chunks[2]),
@@ -72,6 +73,46 @@ pub(super) fn render_settings(
     }
 
     render_footer(frame, chunks[3], &footer);
+}
+
+fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
+    let lines = general_lines(state);
+    let mut sx = 0u16;
+    let mut sy = 0u16;
+    super::render_scrollable_block(frame, area, lines, &mut sx, &mut sy, false, None);
+}
+
+fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
+    let label_bold = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
+    let label_normal = Style::default().fg(WHITE);
+    let value_bold = Style::default()
+        .fg(PHOSPHOR_GREEN)
+        .add_modifier(Modifier::BOLD);
+    let value_normal = Style::default().fg(PHOSPHOR_GREEN);
+
+    let rows: [(usize, &str, bool); 2] = [
+        (
+            0,
+            "Co-author trailer",
+            state.general.pending_coauthor_trailer,
+        ),
+        (1, "DCO sign-off", state.general.pending_dco),
+    ];
+
+    rows.iter()
+        .map(|(i, label, pending)| {
+            let selected = state.general.selected == *i;
+            let prefix = if selected { "\u{25b8} " } else { "  " };
+            let ls = if selected { label_bold } else { label_normal };
+            let vs = if selected { value_bold } else { value_normal };
+            let value = if *pending { "enabled" } else { "disabled" };
+            Line::from(vec![
+                Span::styled(prefix, ls),
+                Span::styled(format!("{label:<26}"), ls),
+                Span::styled(value, vs),
+            ])
+        })
+        .collect()
 }
 
 fn render_mounts_tab(
@@ -231,6 +272,15 @@ fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<FooterItem
 #[allow(clippy::too_many_lines)]
 fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<FooterItem> {
     match state.active_tab {
+        SettingsTab::General => {
+            vec![
+                FooterItem::Key("\u{2191}\u{2193}"),
+                FooterItem::Text("navigate"),
+                FooterItem::Sep,
+                FooterItem::Key("Space"),
+                FooterItem::Text("toggle"),
+            ]
+        }
         SettingsTab::Mounts => {
             let cursor = state.mounts.selected;
             let mount_count = state.mounts.pending.len();
@@ -386,14 +436,17 @@ fn global_mount_lines(
     let mounts = rows.iter().map(|row| row.mount.clone()).collect::<Vec<_>>();
     let display_rows = format_mount_rows(&mounts);
     let path_w = mount_path_width(&display_rows);
-    let mut lines = vec![Line::from(Span::styled(
-        format!(
-            "  {path:<path_w$}  {mode:<MOUNT_MODE_COL_WIDTH$}  Type",
-            path = "Destination",
-            mode = "Mode"
-        ),
-        Style::default().fg(WHITE),
-    ))];
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    if !display_rows.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "  {path:<path_w$}  {mode:<MOUNT_MODE_COL_WIDTH$}  Type",
+                path = "Destination",
+                mode = "Mode"
+            ),
+            Style::default().fg(WHITE),
+        )));
+    }
     for (i, row) in display_rows.iter().enumerate() {
         let is_selected = selected == Some(i);
         let prefix = if is_selected { "▸ " } else { "  " };
