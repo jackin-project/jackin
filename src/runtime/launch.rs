@@ -6085,13 +6085,7 @@ plugins = []
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         config.git.coauthor_trailer = true;
         let selector = RoleSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::for_load_agent([
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            "jk-agent-smith".to_string(),
-        ]);
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
@@ -6125,7 +6119,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(
             run_cmd.contains("-e JACKIN_GIT_COAUTHOR_TRAILER=1"),
@@ -6139,13 +6133,7 @@ plugins = []
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::for_load_agent([
-            String::new(),
-            String::new(),
-            String::new(),
-            String::new(),
-            "jk-agent-smith".to_string(),
-        ]);
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
         std::fs::create_dir_all(&repo_dir).unwrap();
@@ -6179,7 +6167,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d -it"))
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
             .unwrap();
         assert!(
             !run_cmd.contains("JACKIN_GIT_COAUTHOR_TRAILER"),
