@@ -30,9 +30,7 @@ fn main() -> ExitCode {
     let result = match cli.command {
         Command::Validate(args) => role_authoring::run(RoleCommand::Validate(args)),
         Command::Migrate(args) => role_authoring::run(RoleCommand::Migrate(args)),
-        Command::ConstructVersion(args) => {
-            role_authoring::run(RoleCommand::ConstructVersion(args))
-        }
+        Command::ConstructVersion(args) => role_authoring::run(RoleCommand::ConstructVersion(args)),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

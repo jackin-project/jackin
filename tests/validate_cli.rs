@@ -183,7 +183,9 @@ fn migrate_is_noop_for_current_manifest() {
         .args(["migrate", temp.path().to_str().unwrap()])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Manifest already at current version"));
+        .stdout(predicate::str::contains(
+            "Manifest already at current version",
+        ));
 }
 
 #[test]

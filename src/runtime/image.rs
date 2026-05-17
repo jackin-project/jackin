@@ -57,7 +57,12 @@ pub(super) fn build_agent_image(
     if use_prebuilt {
         let published = published_image.unwrap();
         // Pull to refresh the local cache; fast no-op when digest unchanged.
-        if let Err(e) = runner.run("docker", &["pull", "--quiet", published], None, &RunOptions::default()) {
+        if let Err(e) = runner.run(
+            "docker",
+            &["pull", "--quiet", published],
+            None,
+            &RunOptions::default(),
+        ) {
             if debug {
                 eprintln!("{}", format!("[debug] docker pull {published} failed ({e}); staleness check will use cached digest").dimmed());
             }

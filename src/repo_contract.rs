@@ -62,9 +62,7 @@ pub fn validate_agent_dockerfile(
         .split_once('@')
         .map_or(image_str, |(base, _)| base);
     // "projectjackin/construct:0.1-trixie" → ("projectjackin/construct", "0.1-trixie")
-    let (registry_image, tag) = base_ref
-        .rsplit_once(':')
-        .unwrap_or((base_ref, ""));
+    let (registry_image, tag) = base_ref.rsplit_once(':').unwrap_or((base_ref, ""));
 
     let expected = CONSTRUCT_IMAGE.to_owned();
     if platform.is_some() || registry_image != CONSTRUCT_REGISTRY_IMAGE {

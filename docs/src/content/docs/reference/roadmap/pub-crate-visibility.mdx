@@ -7,7 +7,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-`jackin` has a real library surface: <RepoFile path="src/lib.rs" /> publicly exports most top-level modules and <RepoFile path="src/bin/validate.rs" /> consumes the library. That means a blanket "binary crate ⇒ convert everything to `pub(crate)`" pass would be wrong. The actual readability problem is narrower: some items are still wider than needed.
+`jackin` has a real library surface: <RepoFile path="src/lib.rs" /> publicly exports most top-level modules and <RepoFile path="src/bin/role.rs" /> consumes the library. That means a blanket "binary crate ⇒ convert everything to `pub(crate)`" pass would be wrong. The actual readability problem is narrower: some items are still wider than needed.
 
 ## Verified numbers (May 2026)
 
@@ -48,7 +48,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 ## What stays `pub`
 
 - `pub fn run` and other intentionally exported library entrypoints used by sibling binaries
-- validation helpers consumed by <RepoFile path="src/bin/validate.rs" />
+- validation helpers consumed by <RepoFile path="src/bin/role.rs" />
 - any types that are deliberately part of the internal library boundary exposed from <RepoFile path="src/lib.rs" />
 
 ## Caveats

@@ -51,7 +51,7 @@ That means an role defines the tools and conventions, while jackin' injects the 
 
 Role repositories are normal source repositories, so jackin keeps role maintenance split between two surfaces. The main operator CLI owns desktop ergonomics: its role-authoring dispatch validates checked-out role repositories, applies manifest migrations to local copies, and writes small starter repositories for authors. That path lives in <RepoFile path="src/role_authoring.rs" /> and reuses the same manifest migration registry and repository contract checks used by runtime launch.
 
-Automation stays on the small role-focused binary in <RepoFile path="src/bin/validate.rs" />. CI workflows and future Renovate-style migration jobs should not depend on the full operator CLI just to validate a role repo or restamp a manifest; they call the standalone validator, which shares <RepoFile path="src/repo.rs" /> and <RepoFile path="src/manifest/migrations.rs" /> with the desktop path.
+Automation stays on the small role-focused binary in <RepoFile path="src/bin/role.rs" />. CI workflows and future Renovate-style migration jobs should not depend on the full operator CLI just to validate a role repo or restamp a manifest; they call the standalone validator, which shares <RepoFile path="src/repo.rs" /> and <RepoFile path="src/manifest/migrations.rs" /> with the desktop path.
 
 ## Container lifecycle
 
