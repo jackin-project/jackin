@@ -55,10 +55,16 @@ pub fn validate_agent_dockerfile(
     };
 
     let image_str = image.as_str();
-    // "projectjackin/construct:trixie-800" → ("projectjackin/construct", "trixie-800")
-    let (registry_image, tag) = image_str
+    // Strip optional digest pin: "image:tag@sha256:..." → "image:tag"
+    // Renovate's docker:pinDigests preset appends @sha256:... after the tag;
+    // validation must look through it to reach the version tag.
+    let base_ref = image_str
+        .split_once('@')
+        .map_or(image_str, |(base, _)| base);
+    // "projectjackin/construct:0.1-trixie" → ("projectjackin/construct", "0.1-trixie")
+    let (registry_image, tag) = base_ref
         .rsplit_once(':')
-        .unwrap_or((image_str, ""));
+        .unwrap_or((base_ref, ""));
 
     let expected = CONSTRUCT_IMAGE.to_owned();
     if platform.is_some() || registry_image != CONSTRUCT_REGISTRY_IMAGE {
@@ -121,6 +127,22 @@ mod tests {
         let validated = validate_agent_dockerfile(&dockerfile).unwrap();
 
         assert_eq!(validated.construct_version, "0.2-trixie");
+    }
+
+    #[test]
+    fn accepts_digest_pinned_versioned_construct() {
+        let temp = tempdir().unwrap();
+        let dockerfile = temp.path().join("Dockerfile");
+        std::fs::write(
+            &dockerfile,
+            "FROM projectjackin/construct:0.1-trixie@sha256:0b076bfbc53d36794fe54b1a9cab670f85f831af86d78426b1a88a8ac192d445\n",
+        )
+        .unwrap();
+
+        let validated = validate_agent_dockerfile(&dockerfile).unwrap();
+
+        // construct_version carries only the version tag, not the digest
+        assert_eq!(validated.construct_version, "0.1-trixie");
     }
 
     #[test]
