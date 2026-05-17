@@ -39,7 +39,7 @@ Each entry is one upgrade path the current binary applies. <RepoFile path="tests
 |---|---|---|---|
 | Config (`config.toml`) | `v1alpha4` | Automatic on startup | <RepoFile path="tests/fixtures/migrations/config/from-v1alpha4/meta.toml" /> |
 
-**Summary**: introduces the `[git]` table with `auto_coauthor_trailer` (boolean, default `false`). When enabled, jackin installs a `prepare-commit-msg` hook inside agent containers via `core.hooksPath` that appends the correct `Co-authored-by` trailer for the running agent on every non-amend, non-merge commit. The migration is a no-op restamp.
+**Summary**: introduces the `[git]` table with `auto_coauthor_trailer` (boolean, default `false`). When enabled, jackin installs a `prepare-commit-msg` hook inside agent containers via `core.hooksPath` that appends two trailers to every non-amend, non-squash, non-merge commit: a `Co-authored-by` line identifying the running agent, and a `Signed-off-by` DCO line read from the container's `git config user.name` / `user.email`. Both are deduplicated. The migration is a no-op restamp.
 
 **Before** (v1alpha4 config):
 
@@ -246,7 +246,7 @@ The split-from-`config.toml` work for legacy `[workspaces.<name>]` tables runs a
 | `[roles.<role>].trusted` | bool | No | `legacy` | Trust-on-first-use state |
 | `[roles.<role>.env]` | table | No | `legacy` | Per-role operator env layer |
 | `[docker.mounts]` | table | No | `legacy` | Global and scoped Docker mount config |
-| `[git].auto_coauthor_trailer` | bool | No | `v1alpha5` | Install agent `Co-authored-by` trailer hook inside containers; omitted when `false` |
+| `[git].auto_coauthor_trailer` | bool | No | `v1alpha5` | Install `prepare-commit-msg` hook that appends `Co-authored-by` (agent) and `Signed-off-by` (DCO) trailers; omitted when `false` |
 | `[workspaces]` | table | No | `legacy` | Legacy read-only compatibility location; migrated into workspace files |
 
 Full operator configuration examples live in

@@ -1018,4 +1018,12 @@ plugins = []
         assert!(ENTRYPOINT_SH.contains("amp@ampcode.com"));
         assert!(ENTRYPOINT_SH.contains("opencode-agent[bot]@users.noreply.github.com"));
     }
+
+    #[test]
+    fn entrypoint_hook_injects_dco_signed_off_by() {
+        // Guards that the DCO path is present and reads from git identity.
+        assert!(ENTRYPOINT_SH.contains("Signed-off-by:"));
+        assert!(ENTRYPOINT_SH.contains("git config user.name"));
+        assert!(ENTRYPOINT_SH.contains("git config user.email"));
+    }
 }

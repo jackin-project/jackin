@@ -200,9 +200,12 @@ jackin config git coauthor-trailer enable
 jackin config git coauthor-trailer disable
 ```
 
-Enable or disable automatic `Co-authored-by` trailer injection for agent commits. When enabled, jackin installs a `prepare-commit-msg` hook inside every container at launch. The hook appends the correct `Co-authored-by` trailer for the running agent on every non-amend, non-merge commit, deduplicating by agent email address so the trailer appears at most once.
+Enable or disable automatic trailer injection for agent commits. When enabled, jackin installs a `prepare-commit-msg` hook inside every container at launch. The hook appends two trailers to every non-amend, non-merge, non-squash commit, deduplicating each so it appears at most once:
 
-Supported agents and their trailers:
+1. **`Co-authored-by`** — identifies the AI agent that produced the commit.
+2. **`Signed-off-by`** — DCO sign-off read from `git config user.name` and `git config user.email` inside the container.
+
+Supported agents and their `Co-authored-by` trailers:
 
 | Agent | Trailer |
 |---|---|
@@ -210,6 +213,8 @@ Supported agents and their trailers:
 | Codex | `Co-authored-by: Codex <codex@openai.com>` |
 | Amp | `Co-authored-by: Amp <amp@ampcode.com>` |
 | OpenCode | `Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>` |
+
+The `Signed-off-by` trailer uses whatever identity `git config user.name` and `git config user.email` resolve to inside the container at commit time (forwarded from the host by jackin). If either is unset, the DCO trailer is skipped.
 
 This setting can also be toggled in `jackin console` via the **General** tab in the Settings panel (`S` from the workspace list).
 
