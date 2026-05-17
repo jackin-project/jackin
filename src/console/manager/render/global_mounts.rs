@@ -114,7 +114,7 @@ fn render_env_tab(frame: &mut Frame, state: &mut SettingsState<'_>, area: ratatu
         lines,
         &mut no_scroll_x,
         &mut state.env.scroll_y,
-        false,
+        state.env.scroll_focused,
         None,
     );
 }

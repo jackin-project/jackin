@@ -218,6 +218,7 @@ pub struct SettingsEnvState<'a> {
     pub expanded: BTreeSet<String>,
     pub error: Option<String>,
     pub scroll_y: u16,
+    pub scroll_focused: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -739,6 +740,7 @@ impl SettingsEnvState<'_> {
             expanded: BTreeSet::default(),
             error: None,
             scroll_y: 0,
+            scroll_focused: false,
         }
     }
 

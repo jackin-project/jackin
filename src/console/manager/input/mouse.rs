@@ -545,6 +545,8 @@ fn update_scroll_focus(
             let in_content = point_in(mouse, content_area);
             settings.mounts.scroll_focused =
                 settings.active_tab == SettingsTab::Mounts && in_content;
+            settings.env.scroll_focused =
+                settings.active_tab == SettingsTab::Environments && in_content;
             settings.trust.scroll_focused = settings.active_tab == SettingsTab::Trust && in_content;
         }
         ManagerStage::CreatePrelude(_) | ManagerStage::ConfirmDelete { .. } => {}
