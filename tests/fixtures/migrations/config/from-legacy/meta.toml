@@ -1,4 +1,4 @@
 from_version = "legacy"
-target_version = "v1alpha3"
+target_version = "v1alpha4"
 target_version_shipped = "2026-05-11"
-summary = "Migrates legacy config through v1alpha1 to v1alpha3. Comments and existing keys are preserved, with version written first."
+summary = "Migrates legacy config through v1alpha1 to v1alpha4. Comments and existing keys are preserved, with version written first."

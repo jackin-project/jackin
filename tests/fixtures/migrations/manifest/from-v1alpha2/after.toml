@@ -1,12 +1,9 @@
-version = "v1alpha3"
+version = "v1alpha4"
 dockerfile = "Dockerfile"
-agents = ["claude", "kimi", "opencode"]
+agents = ["claude", "opencode"]
 
 [claude]
 plugins = []
-
-[kimi]
-model = "kimi-k2"
 
 [opencode]
 model = "zai-coding-plan/glm-5.1"

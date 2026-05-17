@@ -51,12 +51,12 @@ agents = ["opencode"]
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "Migrated manifest v1alpha2 -> v1alpha3",
+            "Migrated manifest v1alpha2 -> v1alpha4",
         ))
         .stdout(predicate::str::contains("Role repository is valid"));
 
     let manifest = std::fs::read_to_string(temp.path().join("jackin.role.toml")).unwrap();
-    assert!(manifest.starts_with("version = \"v1alpha3\""), "{manifest}");
+    assert!(manifest.starts_with("version = \"v1alpha4\""), "{manifest}");
 }
 
 #[test]

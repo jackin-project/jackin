@@ -206,7 +206,7 @@ fn validate_migrate_accepts_flag_after_path() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "Migrated manifest legacy -> v1alpha3",
+            "Migrated manifest legacy -> v1alpha4",
         ));
 }
 
@@ -220,7 +220,7 @@ fn validate_migrate_is_noop_for_current_manifest() {
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        "version = \"v1alpha3\"\ndockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+        "version = \"v1alpha4\"\ndockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
     )
     .unwrap();
 
@@ -253,7 +253,7 @@ fn validate_migrate_rejects_newer_manifest_version() {
         .args(["--migrate", temp.path().to_str().unwrap()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("only understands up to v1alpha3"));
+        .stderr(predicate::str::contains("only understands up to v1alpha4"));
 }
 
 #[test]
@@ -323,10 +323,10 @@ fn validate_migrate_updates_legacy_manifest() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "Migrated manifest legacy -> v1alpha3",
+            "Migrated manifest legacy -> v1alpha4",
         ))
         .stdout(predicate::str::contains("All checks passed"));
 
     let out = std::fs::read_to_string(temp.path().join("jackin.role.toml")).unwrap();
-    assert!(out.contains(r#"version = "v1alpha3""#), "{out}");
+    assert!(out.contains(r#"version = "v1alpha4""#), "{out}");
 }

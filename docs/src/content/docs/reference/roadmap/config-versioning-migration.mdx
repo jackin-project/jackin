@@ -30,7 +30,7 @@ A file with no `version` is ambiguous: it could be a file that was never created
 `config.toml` and every per-workspace file use a top-level Kubernetes-style `version` field:
 
 ```toml
-version = "v1alpha3"
+version = "v1alpha4"
 
 [claude]
 auth_forward = "sync"
@@ -46,7 +46,7 @@ The main config file and workspace files are versioned independently. A workspac
 `jackin.role.toml` uses the same top-level Kubernetes-style `version` field:
 
 ```toml
-version = "v1alpha3"
+version = "v1alpha4"
 
 dockerfile = "Dockerfile"
 agents = ["claude", "codex"]
@@ -88,7 +88,7 @@ Migration is **always automatic for config files** — operators do not need to 
 Role manifests live in role repos that jackin does not own. The policy is:
 
 - **Version is current or older**: jackin loads the role when the manifest only uses fields and enum values available at that version.
-- **Older-stamped manifest uses a newer feature**: jackin refuses to use the role and emits a feature-specific error with `jackin role migrate <role-repo-path>`. For example, `kimi` and `opencode` require `v1alpha3`; a `v1alpha2` manifest that declares either agent must be migrated before launch.
+- **Older-stamped manifest uses a newer feature**: jackin refuses to use the role and emits a feature-specific error with `jackin role migrate <role-repo-path>`. For example, `opencode` requires `v1alpha3` and `kimi` requires `v1alpha4`; an older-stamped manifest that declares either agent must be migrated before launch.
 - **Version newer than expected**: jackin refuses and emits: `role manifest is at {new}, this binary only understands up to {current}; upgrade jackin`.
 
 The `jackin role migrate <role-repo-path>` command applies the manifest migration chain to a desktop local role clone and writes the result back. The operator can then inspect the diff, commit, and push. CI, validation workflows, and Renovate-style automation use the standalone `jackin-validate --migrate <role-repo-path>` binary instead of the full Jackin operator CLI.
