@@ -928,18 +928,8 @@ fn editor_scroll_area(
     editor: &super::super::state::EditorState<'_>,
     term_size: Rect,
 ) -> ScrollArea {
-    let body_y = 5;
-    let body_h = term_size.height.saturating_sub(7);
-    let rows = editor.pending.mounts.iter().fold(1usize, |acc, mount| {
-        acc + if mount.src == mount.dst { 1 } else { 2 }
-    }) + 2;
     ScrollArea {
-        area: Rect {
-            x: 0,
-            y: body_y,
-            width: term_size.width,
-            height: (rows as u16 + 2).min(body_h.max(4)),
-        },
+        area: editor_content_area(term_size),
         content_width: workspace_mounts_content_width(editor.pending.mounts.as_slice()),
     }
 }

@@ -106,11 +106,26 @@ The green border is the affordance for scroll. Operators use it as a signal: cli
 
 This means the rule is **impossible to accidentally violate** through the shared renderer. What callers must still ensure:
 
-1. **Mouse click handler (`update_scroll_focus`)** — for blocks that store focus state (e.g. `scroll_focused: bool` on individual state structs), the handler should also check scrollability before setting `scroll_focused = true`, so the state field accurately reflects whether the block is interactive. If the state field is `true` but `render_scrollable_block` shows no green border because content fits, there is no visible inconsistency — but the state is misleading for keyboard dispatch. For scrollable blocks whose focus is driven by `tab_content_scroll_focused` (the workspace editor non-Mounts tabs), the check is already built into the mouse handler.
+1. **Mouse click handler (`update_scroll_focus`)** — set the `focused` / `scroll_focused` state field for any block whose hit-test rect contains the click, **regardless of whether the block is currently scrollable**. The renderer already suppresses the green border when content fits; the state field only needs to be accurate for keyboard scroll dispatch (if the block isn't scrollable, scroll keys are no-ops anyway). Do NOT add `is_scrollable` guards in the click handler — that causes a different bug where clicking a non-scrollable block silently clears focus from the previously focused block without giving it to the clicked one.
 
 2. **Resize guard** — when the terminal shrinks and content that previously overflowed now fits, `list_scroll_focus` (list view) is cleared by `focused_block_still_scrollable`. Similar guards must exist for any persistent focus state that a terminal resize can invalidate.
 
 Both checks must use the **same content height and width values** as `render_scrollable_block` uses for the actual rendered lines. Any mismatch causes the bug where the input handler clamps scroll to the wrong maximum — the scrollbar thumb stops short of the track end even though the operator has not reached the actual content limit.
+
+### Click hit-test area must cover the full rendered block
+
+**The mouse hit-test rect for a scrollable block must exactly match (or be a superset of) the `area` passed to `render_scrollable_block`.** Never compute the hit-test area from content dimensions or row counts — use the full rendered block height.
+
+**Why this matters:** A block that holds N content rows plus an empty trailing area is still one block. The empty rows are inside the border; they are visually part of the same scrollable surface. Operators intuitively click anywhere inside the block — including blank space below the last row — and expect focus to switch. If the hit-test rect is computed from content height alone (e.g. `height = rows + 2`), clicks in the empty trailing area fall outside the rect and silently do nothing. The operator sees their click ignored and infers the UI is broken.
+
+**Implementation rule:** Every `point_in(mouse, area)` check in `update_scroll_focus` must use the same `area` that the renderer passes to `render_scrollable_block`. In practice this means:
+
+- For full-body blocks (editor Mounts tab, editor other tabs, settings content): use `editor_content_area(term_size)` — the full body rect below header + tab strip. Do not shrink this to content height.
+- For per-block sub-areas in the list view right pane (Workspace mounts, Global mounts, Roles): use the height computed by the same block-height function the renderer's `Constraint::Length(...)` uses.
+
+In `mouse.rs`, `editor_scroll_area` wraps `editor_content_area` to guarantee they stay in sync — `editor_scroll_area` must never compute its own area dimensions independently.
+
+A violated hit-test rect is a silent bug: no compile error, no test failure, and no obvious visual artifact — the block just refuses to focus when clicked in the empty trailing area.
 
 ### Content height formula for each block type
 
