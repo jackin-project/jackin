@@ -22,16 +22,19 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.dispatch.outputs.rust || steps.filter.outputs.rust }}
+      construct: ${{ steps.dispatch.outputs.construct || steps.filter.outputs.construct }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
 
-      - name: Force rust=true on workflow_dispatch
+      - name: Force rust=true construct=true on workflow_dispatch
         id: dispatch
         if: github.event_name == 'workflow_dispatch'
         shell: bash
-        run: echo "rust=true" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "rust=true" >> "$GITHUB_OUTPUT"
+          echo "construct=true" >> "$GITHUB_OUTPUT"
 
       # build.rs supplies compile-time version metadata and
       # docker/runtime/entrypoint.sh is include_str!'d by
@@ -52,6 +55,11 @@ jobs:
               - 'src/**'
               - 'tests/**'
               - 'docker/runtime/**'
+            construct:
+              - '.github/workflows/construct.yml'
+              - 'Justfile'
+              - 'docker-bake.hcl'
+              - 'docker/construct/**'
 
   check:
     needs: changes
@@ -71,6 +79,14 @@ jobs:
           tool: cargo-nextest
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
+      # When docker/construct/** changes, the published construct:trixie image
+      # on Docker Hub is stale for the lifetime of the PR — it is only
+      # republished after merge to main. Build the construct image locally and
+      # tag it as projectjackin/construct:trixie so the E2E test uses the
+      # updated image rather than pulling the outdated one from the registry.
+      - name: Build construct image for E2E
+        if: needs.changes.outputs.construct == 'true'
+        run: docker build -t projectjackin/construct:trixie docker/construct/
       # Verify the default-features compile path. Clippy above runs with
       # --all-features, so without this step the default build is otherwise
       # untouched in CI. The `e2e` feature is purely additive (empty `e2e
