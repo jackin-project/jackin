@@ -134,9 +134,9 @@ Implementation lives in <RepoFile path="src/runtime/launch.rs" /> (`resolve_rest
 | Missing with indexed state | Rebuild the runtime around jackin-managed local state when the workspace or ad-hoc directory can be resolved. |
 | Missing without indexed state | Fail with a clear "nothing to reconnect to" path. |
 
-`hardline --inspect` is read-only and should report manifest state even when Docker is unavailable. When Docker can inspect a running role container, it also reports live agent-session inventory from `docker top`.
+`hardline --inspect` is read-only and should report manifest state even when Docker is unavailable. When Docker can inspect a running role container, it also reports live agent-session inventory from `tmux list-sessions` inside the running container.
 
-`hardline --new` starts another foreground agent process inside a running indexed instance. Today this is not a reconnectable named secondary session; [Console agent session control](/reference/roadmap/console-agent-session-control/) owns the tmux-backed session substrate that will make secondary sessions independently reconnectable.
+`hardline --new` creates a named secondary tmux session (`jackin-<agent>-<id>`) inside the running container. Secondary sessions are independently reconnectable — a second `jackin hardline --new` or console `a` from the same instance reattaches to any live session or creates a fresh one. `hardline --shell` opens an ephemeral one-shot zsh session without a tmux session.
 
 Implementation lives in <RepoFile path="src/runtime/attach.rs" /> and the hardline dispatch paths in <RepoFile path="src/app/mod.rs" />.
 
@@ -144,10 +144,11 @@ Implementation lives in <RepoFile path="src/runtime/attach.rs" /> and the hardli
 
 The console reads the instance index and shows active/recoverable instances for the selected workspace or current directory. Instance rows expose:
 
-- reconnect/recover
-- new foreground agent session
-- read-only inspect
-- guarded purge
+- reconnect/recover (`r`)
+- new agent session (`a`/`A`) — starts a secondary tmux session inside the running container
+- ephemeral shell (`x`/`X`) — opens a one-shot zsh session without a tmux session
+- read-only inspect (`i`)
+- guarded purge (`p`)
 
 The console should treat the index as a discoverability source, not as proof that Docker resources still exist. Refresh paths reconcile local state with Docker when an action needs live container data.
 

@@ -137,6 +137,7 @@ export default defineConfig({
           label: "Behind jackin' — Internals",
           items: [
             { label: 'Architecture', slug: 'reference/architecture' },
+            { label: 'Container Session Lifecycle', slug: 'reference/container-session-lifecycle' },
             { label: 'Runtime Instance Model', slug: 'reference/runtime-instance-model' },
             { label: 'Instance and Resource Naming', slug: 'reference/instance-resource-naming' },
             { label: 'Configuration File', slug: 'reference/configuration' },

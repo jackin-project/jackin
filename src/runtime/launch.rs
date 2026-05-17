@@ -1097,18 +1097,17 @@ fn launch_role_runtime(
     Ok(())
 }
 
-/// Detect a container that exited before (or during) the foreground attach
+/// Detect a container that exited before (or during) the foreground session
 /// and return an actionable error including the captured `docker logs`.
 ///
-/// `docker attach` against a stopped container prints the opaque
-/// "cannot attach to a stopped container, start it first" with no hint
-/// at the underlying entrypoint failure (auth wiring crash, agent CLI
-/// startup error, missing mount, …). This wraps the inspect + log
-/// fetch so the surfaced error names the exit code, OOM flag, and the
-/// last lines of the container's combined stdout/stderr.
+/// `docker exec` against a stopped container returns "container is not
+/// running" with no hint at the underlying supervisor failure (bad
+/// entrypoint script, auth crash, missing mount, …). This wraps the
+/// inspect + log fetch so the surfaced error names the exit code, OOM
+/// flag, and the last lines of the container's combined stdout/stderr.
 ///
 /// Returns `None` when the container is still running (the normal
-/// happy path) so the caller can proceed to attach.
+/// happy path) so the caller can proceed to the session exec.
 fn diagnose_premature_exit(
     runner: &mut impl crate::docker::CommandRunner,
     container_name: &str,
@@ -1116,7 +1115,7 @@ fn diagnose_premature_exit(
     use super::attach::{ContainerState, inspect_container_state};
 
     match inspect_container_state(runner, container_name) {
-        // Default to letting `docker attach` proceed when state is
+        // Default to letting the `docker exec` attempt proceed when state is
         // ambiguous: the daemon's own error from a true `NotFound`
         // (`No such container`) is just as actionable as anything we
         // could synthesize, and a transient inspect hiccup must not
@@ -3472,7 +3471,6 @@ mod tests {
     #[test]
     fn diagnose_premature_exit_passes_through_when_inspect_returns_notfound() {
         // Empty inspect output maps to `ContainerState::NotFound`. We
-        // Empty inspect output maps to `ContainerState::NotFound`. We
         // intentionally defer to the exec error rather than synthesize a
         // less-helpful diagnostic — and a transient inspect hiccup must not
         // abort an otherwise-healthy launch.
@@ -4726,9 +4724,11 @@ plugins = ["code-review@claude-plugins-official"]
             call.contains("docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jk-")
                 && call.contains("agentsmith")
         }));
-        assert!(runner.recorded.iter().any(
-            |call| call.contains("docker run -d --name jk-") && call.contains("agentsmith")
-        ));
+        assert!(
+            runner.recorded.iter().any(
+                |call| call.contains("docker run -d --name jk-") && call.contains("agentsmith")
+            )
+        );
         assert!(
             !runner
                 .recorded
