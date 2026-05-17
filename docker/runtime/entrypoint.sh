@@ -129,6 +129,7 @@ if [ "${JACKIN_GIT_COAUTHOR_TRAILER:-0}" = "1" ]; then
     elif [ "$_agent" = "opencode" ]; then
         _coauthor_trailer="Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>"
     fi
+    # kimi intentionally absent: no canonical GitHub App identity in AGENTS.md.
     if [ -n "$_coauthor_trailer" ]; then
         _append_trailer "$1" "$_coauthor_trailer" "Co-authored-by"
     else

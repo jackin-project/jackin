@@ -915,7 +915,7 @@ fn launch_role_runtime(
     if *debug {
         run_args.extend_from_slice(&["-e", "JACKIN_DEBUG=1"]);
     }
-    let git_coauthor_trailer_env = (*git_coauthor_trailer).then(|| {
+    let git_coauthor_trailer_env = git_coauthor_trailer.then(|| {
         format!(
             "{}=1",
             crate::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME
@@ -924,8 +924,7 @@ fn launch_role_runtime(
     if let Some(ref env) = git_coauthor_trailer_env {
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
-    let git_dco_env =
-        (*git_dco).then(|| format!("{}=1", crate::env_model::JACKIN_GIT_DCO_ENV_NAME));
+    let git_dco_env = git_dco.then(|| format!("{}=1", crate::env_model::JACKIN_GIT_DCO_ENV_NAME));
     if let Some(ref env) = git_dco_env {
         run_args.extend_from_slice(&["-e", env.as_str()]);
     }
