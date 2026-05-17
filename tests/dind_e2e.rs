@@ -238,7 +238,7 @@ NO_PROXY = "localhost,127.0.0.1"
 }
 
 const fn role_dockerfile() -> &'static str {
-    r"FROM projectjackin/construct:trixie
+    r"FROM projectjackin/construct:0.1-trixie
 USER root
 RUN apt-get update && \
     apt-get install -y --no-install-recommends default-jdk-headless maven && \
