@@ -5,7 +5,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Modifier, Style},
-    text::{Line, Span},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph, Widget},
 };
 
@@ -317,7 +317,7 @@ pub(crate) fn render_lines_with_offset_in_area(
     let viewport = usize::from(area.height);
     let total = lines.len();
     let clamped = effective_offset(total, viewport, offset);
-    let visible: Vec<Line<'_>> = lines
+    let visible: Text<'_> = lines
         .into_iter()
         .skip(usize::from(clamped))
         .take(viewport)
@@ -380,17 +380,15 @@ impl Widget for FixedScrollbar {
                 FixedScrollbarOrientation::Horizontal => ("━", "·", area.x, area.y, 1, 0),
                 FixedScrollbarOrientation::Vertical => ("█", "·", area.x, area.y, 0, 1),
             };
+        let thumb_style = Style::default().fg(PHOSPHOR_DIM);
+        let track_style = Style::default().fg(PHOSPHOR_DARK);
         for idx in 0..track_len {
             let in_thumb = (thumb_start..thumb_end).contains(&idx);
             let i = idx as u16;
             let x = base_x.saturating_add(i * dx);
             let y = base_y.saturating_add(i * dy);
             let symbol = if in_thumb { thumb_sym } else { track_sym };
-            let style = if in_thumb {
-                Style::default().fg(PHOSPHOR_DIM)
-            } else {
-                Style::default().fg(PHOSPHOR_DARK)
-            };
+            let style = if in_thumb { thumb_style } else { track_style };
             buf.set_string(x, y, symbol, style);
         }
     }

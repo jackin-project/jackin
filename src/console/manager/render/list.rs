@@ -137,7 +137,7 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
     // with "▸ " (no leading space) so gets no trailing padding and its background
     // would stop 2 cells short when scrolled. Pad to the full content_width so the
     // selection highlight fills the entire visible area at every scroll position.
-    let content_w = super::max_line_width(&lines);
+    let content_w = max_w;
     if let Some(line) = lines.get_mut(visual_selected) {
         let current_w = super::line_width(line);
         if current_w < content_w {
@@ -788,7 +788,17 @@ pub(in crate::console::manager) fn workspace_instance_count(
     workspace_label: &str,
     workdir: &str,
 ) -> usize {
-    workspace_instance_rows(instances, workspace_name, workspace_label, workdir).len()
+    let query = crate::instance::InstanceQuery {
+        workspace_name,
+        workspace_label,
+        workdir,
+        role_key: None,
+        agent_runtime: None,
+    };
+    instances
+        .iter()
+        .filter(|e| e.matches(query) && instance_status_is_operator_relevant(e.status))
+        .count()
 }
 
 fn workspace_instance_rows(

@@ -1054,12 +1054,11 @@ fn render_secrets_tab(
 
     state.tab_content_height = lines.len();
     state.tab_content_width = super::max_line_width(&lines);
-    let mut no_scroll_x = 0u16;
     super::render_scrollable_block(
         frame,
         area,
         lines,
-        &mut no_scroll_x,
+        &mut state.tab_scroll_x,
         &mut state.tab_scroll_y,
         state.tab_content_scroll_focused,
         None,
@@ -1271,12 +1270,11 @@ fn render_auth_tab(frame: &mut Frame, area: Rect, state: &mut EditorState<'_>, c
     state.tab_content_height = lines.len();
     state.tab_content_width = super::max_line_width(&lines);
     let title = state.auth_selected_kind.map(|k| format!(" {} ", k.label()));
-    let mut no_scroll_x = 0u16;
     super::render_scrollable_block(
         frame,
         area,
         lines,
-        &mut no_scroll_x,
+        &mut state.tab_scroll_x,
         &mut state.tab_scroll_y,
         state.tab_content_scroll_focused,
         title.as_deref(),
