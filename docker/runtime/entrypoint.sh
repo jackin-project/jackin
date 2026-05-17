@@ -82,13 +82,25 @@ fi
 # that appends the correct Co-authored-by trailer for the running agent.
 # core.hooksPath is a global git config write inside the container only —
 # the host's git config is never touched (per the hard rule in AGENTS.md).
+#
+# NOTE: git's core.hooksPath replaces the per-repo .git/hooks/ lookup
+# globally. A role whose setup-once.sh also sets core.hooksPath will
+# overwrite this path; per-repo .git/hooks/ hooks are bypassed while
+# auto_coauthor_trailer is enabled.
 if [ "${JACKIN_GIT_COAUTHOR_TRAILER:-0}" = "1" ]; then
     _hooks_dir="/jackin/runtime/git-hooks"
-    mkdir -p "$_hooks_dir"
-    cat > "$_hooks_dir/prepare-commit-msg" << 'HOOK_EOF'
+    mkdir -p "$_hooks_dir" || {
+        echo "[entrypoint] ERROR: failed to create git-hooks dir $_hooks_dir (is /jackin mounted read-only?)" >&2
+        exit 1
+    }
+    cat > "$_hooks_dir/prepare-commit-msg" <<'HOOK_EOF' || { echo "[entrypoint] ERROR: failed to write prepare-commit-msg hook" >&2; exit 1; }
 #!/bin/bash
-# Skip --amend: the original commit already has the trailer.
-[ "${2:-}" = "commit" ] && exit 0
+set -euo pipefail
+# Skip amend, squash, and merge: the original or consolidated message
+# already has the trailer.
+case "${2:-}" in
+  commit|squash|merge) exit 0 ;;
+esac
 _agent="${JACKIN_AGENT:-}"
 if [ "$_agent" = "claude" ]; then
     _email="noreply@anthropic.com"
@@ -106,10 +118,19 @@ else
     exit 0
 fi
 grep -qF "$_email" "$1" && exit 0
-printf '\n%s\n' "$_trailer" >> "$1"
+printf '\n%s\n' "$_trailer" >> "$1" || {
+    echo "[jackin prepare-commit-msg] ERROR: failed to append trailer to $1" >&2
+    exit 1
+}
 HOOK_EOF
-    chmod +x "$_hooks_dir/prepare-commit-msg"
-    git config --global core.hooksPath "$_hooks_dir"
+    chmod +x "$_hooks_dir/prepare-commit-msg" || {
+        echo "[entrypoint] ERROR: failed to mark prepare-commit-msg executable (noexec filesystem?)" >&2
+        exit 1
+    }
+    git config --global core.hooksPath "$_hooks_dir" || {
+        echo "[entrypoint] ERROR: failed to set core.hooksPath (git not on PATH or global config unwritable?)" >&2
+        exit 1
+    }
     echo "[entrypoint] git co-author trailer hook installed (agent: ${JACKIN_AGENT:-unknown})"
 fi
 

@@ -162,7 +162,7 @@ pub struct GlobalMountsState<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsGeneralState {
     pub pending: bool,
-    pub original: bool,
+    pub(super) original: bool,
 }
 
 impl SettingsGeneralState {

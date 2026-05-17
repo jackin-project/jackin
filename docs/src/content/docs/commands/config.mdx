@@ -188,3 +188,35 @@ Show the env vars registered at the chosen scope as a table with `Key` and `Valu
 jackin config env list
 jackin config env list --role agent-smith
 ```
+
+## `config git`
+
+Manage git-related global settings.
+
+### `config git coauthor-trailer enable|disable`
+
+```bash
+jackin config git coauthor-trailer enable
+jackin config git coauthor-trailer disable
+```
+
+Enable or disable automatic `Co-authored-by` trailer injection for agent commits. When enabled, jackin installs a `prepare-commit-msg` hook inside every container at launch. The hook appends the correct `Co-authored-by` trailer for the running agent on every non-amend, non-merge commit, deduplicating by agent email address so the trailer appears at most once.
+
+Supported agents and their trailers:
+
+| Agent | Trailer |
+|---|---|
+| Claude (Claude Code) | `Co-authored-by: Claude <noreply@anthropic.com>` |
+| Codex | `Co-authored-by: Codex <codex@openai.com>` |
+| Amp | `Co-authored-by: Amp <amp@ampcode.com>` |
+| OpenCode | `Co-authored-by: opencode-agent[bot] <opencode-agent[bot]@users.noreply.github.com>` |
+
+This setting can also be toggled in `jackin console` via the **General** tab in the Settings panel (`S` from the workspace list).
+
+```bash
+jackin config git coauthor-trailer enable
+# → auto_coauthor_trailer: enabled
+
+jackin config git coauthor-trailer disable
+# → auto_coauthor_trailer: disabled
+```

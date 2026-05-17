@@ -2275,4 +2275,55 @@ auth_forward = "ignore"
             "workdir on workspace 'github' must survive:\n{cleaned}"
         );
     }
+
+    #[test]
+    fn set_git_auto_coauthor_trailer_enable_writes_git_table() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_git_auto_coauthor_trailer(true);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(out.contains("auto_coauthor_trailer = true"), "{out}");
+        assert!(out.contains("[git]"), "{out}");
+    }
+
+    #[test]
+    fn set_git_auto_coauthor_trailer_disable_prunes_git_table() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "[git]\nauto_coauthor_trailer = true\n").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_git_auto_coauthor_trailer(false);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            !out.contains("[git]"),
+            "empty [git] table should be pruned: {out}"
+        );
+        assert!(!out.contains("auto_coauthor_trailer"), "{out}");
+    }
+
+    #[test]
+    fn set_git_auto_coauthor_trailer_disable_when_absent_is_noop() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(&paths.config_file, "").unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_git_auto_coauthor_trailer(false);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(!out.contains("[git]"), "{out}");
+        assert!(!out.contains("auto_coauthor_trailer"), "{out}");
+    }
 }

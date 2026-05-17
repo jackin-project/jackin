@@ -913,10 +913,14 @@ fn launch_role_runtime(
     if *debug {
         run_args.extend_from_slice(&["-e", "JACKIN_DEBUG=1"]);
     }
-    let git_coauthor_trailer_env =
-        format!("{}=1", crate::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME);
-    if *git_coauthor_trailer {
-        run_args.extend_from_slice(&["-e", &git_coauthor_trailer_env]);
+    let git_coauthor_trailer_env = (*git_coauthor_trailer).then(|| {
+        format!(
+            "{}=1",
+            crate::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME
+        )
+    });
+    if let Some(ref env) = git_coauthor_trailer_env {
+        run_args.extend_from_slice(&["-e", env.as_str()]);
     }
 
     // Forward JACKIN_DISABLE_* env vars from the host so the operator can
@@ -6115,7 +6119,10 @@ plugins = []
             .iter()
             .find(|call| call.contains("docker run -d -it"))
             .unwrap();
-        assert!(run_cmd.contains("-e JACKIN_GIT_COAUTHOR_TRAILER=1"), "{run_cmd}");
+        assert!(
+            run_cmd.contains("-e JACKIN_GIT_COAUTHOR_TRAILER=1"),
+            "{run_cmd}"
+        );
     }
 
     #[test]
@@ -6166,7 +6173,10 @@ plugins = []
             .iter()
             .find(|call| call.contains("docker run -d -it"))
             .unwrap();
-        assert!(!run_cmd.contains("JACKIN_GIT_COAUTHOR_TRAILER"), "{run_cmd}");
+        assert!(
+            !run_cmd.contains("JACKIN_GIT_COAUTHOR_TRAILER"),
+            "{run_cmd}"
+        );
     }
 
     #[test]

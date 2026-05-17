@@ -2330,6 +2330,63 @@ mod tests {
             "UUID URI must NOT appear in pre-save diff; got: {joined}"
         );
     }
+
+    #[test]
+    fn settings_save_general_dirty_shows_summary_and_diff() {
+        use crate::config::AppConfig;
+        use crate::console::manager::state::{SettingsState, SettingsTab};
+
+        let config = AppConfig::default();
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = SettingsTab::General;
+        // Toggle: disabled → enabled
+        settings.general.pending = true;
+
+        let lines = super::build_settings_save_lines(&settings);
+        let joined: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+            .collect();
+
+        assert!(
+            joined.contains("General"),
+            "summary must mention General: {joined}"
+        );
+        assert!(
+            joined.contains("auto_coauthor_trailer"),
+            "diff must show field name: {joined}"
+        );
+        assert!(
+            joined.contains("disabled"),
+            "diff must show old value: {joined}"
+        );
+        assert!(
+            joined.contains("enabled"),
+            "diff must show new value: {joined}"
+        );
+    }
+
+    #[test]
+    fn settings_save_general_clean_shows_no_general_section() {
+        use crate::config::AppConfig;
+        use crate::console::manager::state::SettingsState;
+
+        let config = AppConfig::default();
+        let settings = SettingsState::from_config(&config);
+        // pending == original → not dirty
+
+        let lines = super::build_settings_save_lines(&settings);
+        let joined: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref().to_string()))
+            .collect();
+
+        // When nothing changed, neither the summary row nor the detail row appears.
+        assert!(
+            !joined.contains("auto_coauthor_trailer"),
+            "clean state must not render field: {joined}"
+        );
+    }
 }
 
 // ── Settings save preview ─────────────────────────────────────────────────────
@@ -2359,8 +2416,7 @@ pub(super) fn build_settings_save_lines(
     out.push(Line::from(Span::styled("Save settings", heading)));
     out.push(Line::raw(""));
 
-    let general_stats =
-        settings_general_stats(settings.general.original, settings.general.pending);
+    let general_stats = settings_general_stats(settings.general.original, settings.general.pending);
     let mount_stats = settings_mount_stats(&settings.mounts.original, &settings.mounts.pending);
     let env_stats = settings_env_stats(&settings.env.original, &settings.env.pending);
     let auth_stats = settings_auth_stats(
@@ -2411,12 +2467,20 @@ pub(super) fn build_settings_save_lines(
     if general_stats.is_some() {
         out.push(Line::from(Span::styled("General:", heading)));
         let arrow = "\u{2192}";
-        let from = if settings.general.original { "enabled" } else { "disabled" };
-        let to = if settings.general.pending { "enabled" } else { "disabled" };
+        let from = if settings.general.original {
+            "enabled"
+        } else {
+            "disabled"
+        };
+        let to = if settings.general.pending {
+            "enabled"
+        } else {
+            "disabled"
+        };
         out.push(Line::from(vec![
-            Span::styled("  auto_coauthor_trailer: ", remove_style),
+            Span::styled("  auto_coauthor_trailer: ", heading),
             Span::styled(from, remove_style),
-            Span::styled(format!(" {arrow} "), remove_style),
+            Span::styled(format!(" {arrow} "), Style::default()),
             Span::styled(to, add_style),
         ]));
         out.push(Line::raw(""));
@@ -2531,7 +2595,11 @@ fn settings_env_stats(
 }
 
 fn settings_general_stats(original: bool, pending: bool) -> Option<&'static str> {
-    if original == pending { None } else { Some("1 change") }
+    if original == pending {
+        None
+    } else {
+        Some("1 change")
+    }
 }
 
 fn settings_auth_stats(

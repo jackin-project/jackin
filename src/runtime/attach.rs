@@ -321,10 +321,12 @@ pub fn spawn_agent_session(
         crate::env_model::JACKIN_AGENT_ENV_NAME,
         agent.slug()
     );
-    let git_coauthor_trailer_env = format!(
-        "{}=1",
-        crate::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME
-    );
+    let git_coauthor_trailer_env = git_coauthor_trailer.then(|| {
+        format!(
+            "{}=1",
+            crate::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME
+        )
+    });
     let session_name = format!("jackin-{}-{}", agent.slug(), short_session_id());
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, runner);
@@ -332,16 +334,11 @@ pub fn spawn_agent_session(
         "exec", "-e", "TMUX=", "--workdir", workdir, "-it", container_name,
         "tmux", "new-session", "-e", &agent_env,
     ];
-    if git_coauthor_trailer {
-        tmux_args.extend_from_slice(&["-e", &git_coauthor_trailer_env]);
+    if let Some(ref env) = git_coauthor_trailer_env {
+        tmux_args.extend_from_slice(&["-e", env.as_str()]);
     }
     tmux_args.extend_from_slice(&["-s", &session_name, "--", "/jackin/runtime/entrypoint.sh"]);
-    let result = runner.run(
-        "docker",
-        &tmux_args,
-        None,
-        &RunOptions::default(),
-    );
+    let result = runner.run("docker", &tmux_args, None, &RunOptions::default());
     eprintln!();
     result?;
 
@@ -738,7 +735,10 @@ mod tests {
         .unwrap();
 
         assert!(
-            runner.recorded.iter().any(|call| call.contains("-e JACKIN_GIT_COAUTHOR_TRAILER=1")),
+            runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("-e JACKIN_GIT_COAUTHOR_TRAILER=1")),
             "coauthor trailer env must be present when enabled; recorded: {:?}",
             runner.recorded
         );

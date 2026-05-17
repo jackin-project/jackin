@@ -609,11 +609,14 @@ pub fn run(cli: Cli) -> Result<()> {
             },
             cli::ConfigCommand::Git(git_cmd) => match git_cmd {
                 cli::GitCommand::CoauthorTrailer(cmd) => {
-                    let enable = matches!(cmd, cli::CoauthorTrailerCommand::Enable);
+                    let enable = match cmd {
+                        cli::CoauthorTrailerCommand::Enable => true,
+                        cli::CoauthorTrailerCommand::Disable => false,
+                    };
                     let mut editor = config::ConfigEditor::open(&paths)?;
                     editor.set_git_auto_coauthor_trailer(enable);
-                    editor.save()?;
-                    if enable {
+                    let saved = editor.save()?;
+                    if saved.git.auto_coauthor_trailer {
                         println!("auto_coauthor_trailer: enabled");
                     } else {
                         println!("auto_coauthor_trailer: disabled");

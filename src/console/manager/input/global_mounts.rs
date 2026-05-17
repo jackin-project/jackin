@@ -1863,6 +1863,35 @@ mod tests {
     }
 
     #[test]
+    fn general_tab_space_toggles_auto_coauthor_trailer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = SettingsState::from_config(&config);
+        settings.active_tab = SettingsTab::General;
+        settings.tab_bar_focused = false;
+        state.stage = ManagerStage::Settings(settings);
+
+        // default is false
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(!settings.general.pending);
+
+        handle_settings_key(&mut state, key(KeyCode::Char(' ')));
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(settings.general.pending);
+
+        handle_settings_key(&mut state, key(KeyCode::Char(' ')));
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("expected settings stage");
+        };
+        assert!(!settings.general.pending);
+    }
+
+    #[test]
     fn auth_tab_mode_row_ignores_space_and_enter_opens_form() {
         let tmp = tempfile::tempdir().unwrap();
         let config = AppConfig::default();

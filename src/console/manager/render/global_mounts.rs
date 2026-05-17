@@ -75,11 +75,7 @@ pub(super) fn render_settings(
     render_footer(frame, chunks[3], &footer);
 }
 
-fn render_general_tab(
-    frame: &mut Frame,
-    state: &SettingsState<'_>,
-    area: ratatui::layout::Rect,
-) {
+fn render_general_tab(frame: &mut Frame, state: &SettingsState<'_>, area: ratatui::layout::Rect) {
     let lines = general_lines(state);
     let mut sx = 0u16;
     let mut sy = 0u16;
@@ -88,7 +84,9 @@ fn render_general_tab(
 
 fn general_lines(state: &SettingsState<'_>) -> Vec<Line<'static>> {
     let header = Style::default().fg(WHITE).add_modifier(Modifier::BOLD);
-    let on_style = Style::default().fg(PHOSPHOR_GREEN).add_modifier(Modifier::BOLD);
+    let on_style = Style::default()
+        .fg(PHOSPHOR_GREEN)
+        .add_modifier(Modifier::BOLD);
     let off_style = Style::default().fg(PHOSPHOR_DIM);
     let label_style = Style::default().fg(WHITE);
     let value = if state.general.pending {
@@ -272,10 +270,7 @@ fn footer_items(state: &SettingsState<'_>, op_available: bool) -> Vec<FooterItem
 fn contextual_row_items(state: &SettingsState<'_>, op_available: bool) -> Vec<FooterItem> {
     match state.active_tab {
         SettingsTab::General => {
-            vec![
-                FooterItem::Key("Space"),
-                FooterItem::Text("toggle"),
-            ]
+            vec![FooterItem::Key("Space"), FooterItem::Text("toggle")]
         }
         SettingsTab::Mounts => {
             let cursor = state.mounts.selected;
