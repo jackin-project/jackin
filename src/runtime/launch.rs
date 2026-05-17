@@ -6176,6 +6176,52 @@ plugins = []
     }
 
     #[test]
+    fn load_agent_injects_dco_env_when_enabled() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        config.git.dco = true;
+        let selector = RoleSelector::new(None, "agent-smith");
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        let workspace = repo_workspace(&repo_dir);
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &workspace,
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let run_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+            .unwrap();
+        assert!(run_cmd.contains("-e JACKIN_GIT_DCO=1"), "{run_cmd}");
+    }
+
+    #[test]
     fn load_options_debug_disables_intro_for_load() {
         let opts = LoadOptions::for_load(false, true, false);
         assert!(opts.no_intro, "debug mode must disable intro for load");

@@ -100,8 +100,8 @@ if [ "${JACKIN_GIT_COAUTHOR_TRAILER:-0}" = "1" ] || [ "${JACKIN_GIT_DCO:-0}" = "
     cat > "$_hooks_dir/prepare-commit-msg" <<'HOOK_EOF' || { echo "[entrypoint] ERROR: failed to write prepare-commit-msg hook" >&2; exit 1; }
 #!/bin/bash
 set -euo pipefail
-# Skip amend, squash, and merge: the original or consolidated message
-# already has the trailers.
+# Skip amend (-c/-C/--amend all pass $2=commit), squash, and merge:
+# the original or consolidated message already has the trailers.
 case "${2:-}" in
   commit|squash|merge) exit 0 ;;
 esac

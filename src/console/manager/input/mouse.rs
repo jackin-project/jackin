@@ -688,7 +688,7 @@ fn scroll_active_panel_vertical(
                 return;
             }
             match settings.active_tab {
-                // General has one row — no vertical scroll needed.
+                // General has no scrollable content; empty arm is intentional.
                 SettingsTab::General => {}
                 SettingsTab::Mounts => {
                     apply_scroll_delta(&mut settings.mounts.scroll_y, delta);

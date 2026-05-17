@@ -9,12 +9,6 @@
 //!   strings.  Both manifest validation and runtime env resolution consume
 //!   this helper so that they agree on what constitutes a reference.
 //!
-//! Previously these definitions lived in two places (`manifest::RESERVED_RUNTIME_ENV_VARS`
-//! and `runtime::RUNTIME_OWNED_ENV_VARS`) with the runtime list being a
-//! subset of the manifest list plus two inline `JACKIN_*` checks.  The list
-//! here is the union — identical in membership to the previous manifest
-//! constant — and the runtime now consults it through
-//! [`is_reserved`] instead of maintaining its own.
 
 /// Env var injected by jackin into every role container so that child
 /// processes can detect they are running inside a jackin-managed runtime.
@@ -53,7 +47,6 @@ pub const JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME: &str = "JACKIN_GIT_COAUTHOR_TRAI
 
 /// Env var that signals the entrypoint to append a `Signed-off-by` DCO trailer.
 ///
-/// Uses the same `prepare-commit-msg` hook as `JACKIN_GIT_COAUTHOR_TRAILER`.
 /// Independent of the coauthor flag — either or both may be set.
 pub const JACKIN_GIT_DCO_ENV_NAME: &str = "JACKIN_GIT_DCO";
 

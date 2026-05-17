@@ -2385,4 +2385,28 @@ auth_forward = "ignore"
         assert!(!out.contains("[git]"), "{out}");
         assert!(!out.contains("dco"), "{out}");
     }
+
+    #[test]
+    fn disabling_one_git_field_preserves_the_other() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+        std::fs::write(
+            &paths.config_file,
+            "[git]\ncoauthor_trailer = true\ndco = true\n",
+        )
+        .unwrap();
+
+        let mut editor = ConfigEditor::open(&paths).unwrap();
+        editor.set_git_coauthor_trailer(false);
+        editor.save().unwrap();
+
+        let out = std::fs::read_to_string(&paths.config_file).unwrap();
+        assert!(
+            out.contains("[git]"),
+            "[git] table must not be pruned when dco is still set: {out}"
+        );
+        assert!(!out.contains("coauthor_trailer"), "{out}");
+        assert!(out.contains("dco = true"), "{out}");
+    }
 }

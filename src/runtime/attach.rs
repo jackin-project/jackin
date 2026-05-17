@@ -761,6 +761,64 @@ mod tests {
     }
 
     #[test]
+    fn hardline_new_session_forwards_dco_env_when_enabled() {
+        let (_tmp, paths) = test_paths();
+        let container_name = "jk-k7p9m2xq-workspace-agentsmith";
+        let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
+            container_base: container_name,
+            workspace_name: Some("workspace"),
+            workspace_label: "workspace",
+            workdir: "/workspace/project",
+            host_workdir_fingerprint: "sha256:test",
+            role_key: "agent-smith",
+            role_display_name: "Agent Smith",
+            agent_runtime: crate::agent::Agent::Claude,
+            role_source_git: "https://example.invalid/agent-smith.git",
+            role_source_ref: None,
+            image_tag: "jk-agent-smith",
+            docker: crate::instance::DockerResources {
+                role_container: container_name.to_string(),
+                dind_container: format!("{container_name}-dind"),
+                network: format!("{container_name}-net"),
+                certs_volume: format!("{container_name}-dind-certs"),
+            },
+        });
+        let mut runner = FakeRunner::with_capture_queue([
+            "true 0 false".to_string(),
+            "true 0 false".to_string(),
+            "true 0 false".to_string(),
+        ]);
+
+        spawn_agent_session(
+            &paths,
+            container_name,
+            Some(&manifest),
+            crate::agent::Agent::Claude,
+            false,
+            true,
+            &mut runner,
+        )
+        .unwrap();
+
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("-e JACKIN_GIT_DCO=1")),
+            "DCO env must be present when enabled; recorded: {:?}",
+            runner.recorded
+        );
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|call| call.contains("JACKIN_GIT_COAUTHOR_TRAILER")),
+            "coauthor trailer env must be absent when disabled; recorded: {:?}",
+            runner.recorded
+        );
+    }
+
+    #[test]
     fn hardline_new_session_requires_running_container() {
         let (_tmp, paths) = test_paths();
         let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
