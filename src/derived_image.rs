@@ -223,7 +223,7 @@ pub fn create_derived_build_context(
             let override_image = crate::repo_contract::construct_image();
             // When no local override is set, construct_image() returns the
             // floating stable tag. The Dockerfile already has a versioned tag
-            // (e.g. trixie-800); leave it untouched so Docker uses the pinned
+            // (e.g. 0.1-trixie); leave it untouched so Docker uses the pinned
             // version.
             if override_image == crate::repo_contract::CONSTRUCT_IMAGE {
                 return validated.dockerfile.dockerfile_contents.clone();

@@ -18,10 +18,10 @@ pub fn construct_image() -> String {
 pub struct ValidatedDockerfile {
     pub dockerfile_path: PathBuf,
     pub dockerfile_contents: String,
-    /// Full versioned image tag (e.g. `projectjackin/construct:trixie-800`).
+    /// Full versioned image tag (e.g. `projectjackin/construct:0.1-trixie`).
     pub final_stage_image: String,
     pub final_stage_alias: Option<String>,
-    /// The versioned tag component (e.g. `trixie-800`). Stored in the
+    /// The versioned tag component (e.g. `0.1-trixie`). Stored in the
     /// published image label so jackin can detect staleness at launch time.
     pub construct_version: String,
 }
