@@ -66,13 +66,13 @@ Services created inside DinD (UserService, microservices, etc.) live on DinD's i
 Registry support is **opt-in and disabled by default**. The operator enables it in the workspace configuration file.
 
 ```toml
-[registry]
+[container_registry]
 enabled = true
 ```
 
 No other configuration is required for Phase 1. Phase 2 adds optional fields for extra upstream registries and storage quotas.
 
-This requires a `WorkspaceConfig` schema change: a new `RegistryConfig` struct under the `registry` key. Because `WorkspaceConfig` is a versioned schema, the change requires:
+This requires a `WorkspaceConfig` schema change: a new `ContainerRegistryConfig` struct under the `container_registry` key. Because `WorkspaceConfig` is a versioned schema, the change requires:
 
 1. Bump `CURRENT_WORKSPACE_VERSION` in <RepoFile path="src/config/migrations.rs" />
 2. A migration step in `WORKSPACE_MIGRATIONS` (trivially additive — new table with serde default `enabled = false`)
@@ -84,7 +84,7 @@ This requires a `WorkspaceConfig` schema change: a new `RegistryConfig` struct u
 
 **Registry container lifecycle:** demand-start, persist until explicit teardown.
 
-The registry starts when the first role instance in a workspace launches (if `registry.enabled = true`). It stays running across role starts and stops — killing it between sessions defeats the cache. It stops when the workspace is explicitly destroyed via `jackin eject` or `jackin prune`, or when the operator runs the future `jackin workspace registry stop` subcommand (Phase 2).
+The registry starts when the first role instance in a workspace launches (if `container_registry.enabled = true`). It stays running across role starts and stops — killing it between sessions defeats the cache. It stops when the workspace is explicitly destroyed via `jackin eject` or `jackin prune`, or when the operator runs the future `jackin workspace container-registry stop` subcommand (Phase 2).
 
 **Idempotent startup:** `ensure_workspace_registry()` checks whether `jackin-{ws}-registry` is already running before issuing any Docker commands. Concurrent role launches in the same workspace are safe.
 
@@ -102,7 +102,7 @@ workspace_shared_network(workspace: &str) → String
 
 ### New module — `src/runtime/registry.rs`
 
-`ensure_workspace_registry(workspace: &str, config: &RegistryConfig)` performs:
+`ensure_workspace_registry(workspace: &str, config: &ContainerRegistryConfig)` performs:
 
 1. Early return if `config.enabled` is false
 2. `docker network create jackin-{ws}-shared-net` if not exists (idempotent — ignore "already exists" error)
@@ -158,7 +158,7 @@ Add `registry_container: Option<String>` and `shared_network: Option<String>` to
 
 ## Phase 2 (deferred)
 
-- `jackin workspace registry start|stop|status` subcommands — explicit lifecycle management independent of role launches
+- `jackin workspace container-registry start|stop|status` subcommands — explicit lifecycle management independent of role launches
 - Teardown integration — workspace deletion via `jackin eject --all` / `jackin prune` stops and removes the registry container and shared network (volume deletion opt-in only, to avoid silent cache loss)
 - Additional upstream registries — per-registry mirror entries in DinD `daemon.json` for `ghcr.io`, `quay.io`, and others; zot sync config extended with corresponding upstream entries
 - Storage quota and GC — zot scrub/GC config, size limits, TTL-based eviction
@@ -169,7 +169,7 @@ Add `registry_container: Option<String>` and `shared_network: Option<String>` to
 - <RepoFile path="src/runtime/launch.rs" /> — DinD launch, workspace registry ensure call, shared-net attachment
 - <RepoFile path="src/runtime/attach.rs" /> — DinD recovery path, same DinD additions
 - <RepoFile path="src/runtime/naming.rs" /> — naming functions for registry container, volume, shared network
-- <RepoFile path="src/config/mod.rs" /> — `RegistryConfig` struct, `WorkspaceConfig` extension
+- <RepoFile path="src/config/mod.rs" /> — `ContainerRegistryConfig` struct, `WorkspaceConfig` extension
 - <RepoFile path="src/config/migrations.rs" /> — `CURRENT_WORKSPACE_VERSION` bump, migration step
 - <RepoFile path="src/instance/manifest.rs" /> — `DockerResources` extension
 - <RepoFile path="docs/src/content/docs/reference/schema-versions.mdx" /> — new timeline entry
