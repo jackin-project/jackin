@@ -30,6 +30,7 @@ RUN apt-get update && \
     jq \
     openssh-client \
     ripgrep \
+    socat \
     sudo \
     tree \
     yq \
@@ -125,3 +126,4 @@ RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master
 RUN curl -sS https://starship.rs/install.sh | sh -s -- -y
 
 COPY --chown=agent:agent zshrc /home/agent/.zshrc
+COPY --chmod=0755 jackin-notify /usr/local/bin/jackin-notify

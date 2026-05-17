@@ -5,7 +5,7 @@ import { Aside } from '@astrojs/starlight/components'
 import RepoFile from '../../../../components/RepoFile.astro'
 
 
-**Status**: Open — design proposal
+**Status**: Implemented — phase 1 base daemon landed
 
 ## Problem
 
@@ -20,7 +20,21 @@ A handful of these features have already accumulated:
 
 The pattern: each new feature that wants to **react to events instead of waiting for the next command** independently invents its own "what if jackin had a daemon" workaround. That doesn't scale.
 
-This roadmap item proposes introducing **the jackin daemon** as a first-class concept the rest of the project can compose on. It is deliberately written before any one of the dependent features picks an implementation path, so the daemon's lifecycle, install method, security posture, and CLI surface are designed *once* and reused.
+This roadmap item introduced **the jackin daemon** as a first-class concept the rest of the project can compose on. The initial implementation ships the daemon bones and the first host adapters:
+
+- `jackin daemon serve` / `start` / `stop` / `restart` / `status` / `logs` / `install` / `uninstall`.
+- A per-user Unix domain socket at `~/.jackin/run/jackin-daemon.sock`.
+- A singleton lock at `~/.jackin/run/jackin-daemon.lock`.
+- Auto-start from `jackin load` and `jackin console`, with version skew detection. If the CLI version differs from the running daemon version, the CLI stops the old daemon and starts the current binary.
+- Daemon-owned keep-awake reconciliation, using the existing `caffeinate` state machine.
+- Periodic cache warmup for the construct image, `docker:dind`, and any cached role manifest `published_image`.
+- macOS Notification Center notifications through the daemon via `jackin daemon notify` and the in-container `jackin-notify` helper. High urgency requests the native `Glass` sound.
+- A container bridge: running roles receive `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock` and the host daemon socket bind-mounted at that path when the daemon is available.
+
+The daemon draft PR remains the right place to adjust the base contract while
+Desktop is being designed. The [Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/)
+roadmap depends on this daemon, so daemon API gaps discovered there should be
+fixed here instead of papered over in the macOS app.
 
 The daemon draft PR remains the right place to adjust the base contract while
 Desktop is being designed. The [Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/)
@@ -50,43 +64,66 @@ To keep the surface manageable and the security posture reviewable:
 - It does **not** survive operator logout. Lifecycle is tied to the operator's session (launchd LaunchAgent on macOS, systemd user unit on Linux), not a system-level service.
 - It does **not** hold credentials in persistent storage of its own. Anything the daemon needs at rest lives in the per-feature shared store (e.g. `~/.jackin/auth-shared/<axis>/` for live auth sync), not in a daemon-owned database.
 
-## Open design questions
-
-This is a design proposal, not a spec. Each question needs an explicit answer before implementation lands.
+## Design decisions
 
 ### Lifecycle
 
-- **Start trigger.** Auto-start on first `jackin` invocation? Auto-start on operator login (launchd / systemd)? Both, with the launchd / systemd unit as the canonical and the CLI auto-spawn as a fallback?
-- **Restart policy.** When the daemon crashes, who restarts it? launchd / systemd handle it natively; the CLI fallback needs a watchdog or accept-and-restart-from-the-next-command policy.
-- **Stop semantics.** `jackin daemon stop` for explicit shutdown? Auto-stop on operator logout? What happens to in-flight reactive work (live auth sync watchers, caffeinate locks) when the daemon shuts down?
-- **Upgrade across jackin versions.** When the operator runs `brew upgrade jackin` (or equivalent), the running daemon binary is the old version while a new CLI lives on disk. Do CLI commands force a daemon restart? Run a version-mismatch check at every connect?
+- **Start trigger.** `jackin load` and `jackin console` auto-start the daemon. `jackin daemon install` additionally registers it with the host's per-user service manager so it starts on login.
+- **Restart policy.** launchd / systemd own crash restart when installed. CLI fallback restarts on the next daemon-aware command.
+- **Stop semantics.** `jackin daemon stop` sends a protocol shutdown over the socket. If the socket is stale, it falls back to the recorded pid file and cleans stale runtime files.
+- **Upgrade across jackin versions.** Every daemon start/status path checks the daemon's reported `JACKIN_VERSION`. A mismatch causes the CLI to stop the old daemon and start the current executable, so the first command after `brew upgrade jackin` moves the daemon forward.
 
 ### Install method
 
-- **macOS.** launchd LaunchAgent under `~/Library/LaunchAgents/`. Survives reboot. Auto-installed by `jackin daemon install` or by Homebrew formula post-install hook?
-- **Linux.** systemd user unit under `~/.config/systemd/user/`. Same install-flow question.
-- **Fallback for systems without launchd / systemd.** `nohup jackin daemon serve &` with a pidfile in `~/.jackin/run/`. Watchdog written by the CLI on each connect.
-- **Container / CI environments.** Detect non-interactive environments and short-circuit daemon use entirely — those flows don't benefit from a long-running process.
+- **macOS.** `jackin daemon install` writes `~/Library/LaunchAgents/com.jackin.daemon.plist` and loads it with `launchctl load -w`.
+- **Linux.** `jackin daemon install` writes `~/.config/systemd/user/jackin-daemon.service` and enables it with `systemctl --user enable --now`.
+- **Fallback for systems without launchd / systemd.** `jackin daemon start` backgrounds `jackin daemon serve`, writes a pid file, and logs to `~/.jackin/run/jackin-daemon.log`.
+- **Container / CI environments.** The daemon is per-user and host-scoped. CI can avoid `load`/`console` or explicitly stop it; future CI detection can make this silent.
 
 ### CLI surface
 
-Proposed subcommands under `jackin daemon`:
+Implemented subcommands under `jackin daemon`:
 
-- `jackin daemon install` — write the launchd / systemd unit, start the daemon.
+- `jackin daemon install` — write the launchd / systemd unit and start the daemon.
 - `jackin daemon uninstall` — stop and remove the unit.
 - `jackin daemon start` / `stop` / `restart` — manual lifecycle controls.
-- `jackin daemon status` — running / not running, version, uptime, registered watchers, recent reconcile activity.
-- `jackin daemon logs` — tail or stream daemon log output.
-- `jackin daemon serve` — run the daemon in the foreground (used by the launchd / systemd unit).
+- `jackin daemon status` — running state, version, pid, uptime, socket, log, keep-awake adapter, cache warmup adapter.
+- `jackin daemon logs [-n N]` — print recent daemon log lines.
+- `jackin daemon serve` — run the daemon in the foreground.
+- `jackin daemon warm` — ask the daemon to warm Docker cache inputs immediately.
+- `jackin daemon notify --title ... --body ... [--urgency low|normal|high]` — send a host macOS Notification Center notification.
 
 The console / TUI gets a one-line daemon-status indicator in its footer, mirroring the launch-summary pattern the auth axes use today.
 
 ### Control protocol
 
 - **Transport.** Unix domain socket. Path per-operator: `~/.jackin/run/jackin-daemon.sock`.
-- **Wire format.** JSON Lines — one JSON object per line, request/response. Avoids gRPC dependency footprint at this scale.
-- **Authentication.** Filesystem permissions on the socket (`0700` directory, `0600` socket). Same UID. No additional auth layer.
-- **Versioning.** Each request carries a protocol version; daemon rejects mismatches with a clear "client / daemon version skew" error, suggesting `jackin daemon restart` to pick up the matching daemon binary.
+- **Wire format.** JSON Lines — one JSON object per line, request/response.
+- **Authentication.** Filesystem permissions on the runtime directory (`0700`) and same-UID Unix socket access. No TCP listener and no root daemon.
+- **Versioning.** Each request carries a protocol version. The daemon rejects protocol mismatches and the CLI restarts daemon binary version mismatches. The `daemon/hello` request is the compatibility handshake Desktop and future daemon clients must call first: it returns the jackin binary version, supported protocol range, and the daemon capabilities currently available on that socket.
+- **Container bridge.** Role containers receive the socket as `/jackin/daemon.sock` and can use `jackin-notify --title ... --body ...` from hooks or agent-created scripts.
+- **Notifications.** macOS is the v1 target. The daemon shells out to `/usr/bin/osascript` with `display notification`, so notifications are native Notification Center toasts but do not require a bundled `.app`, Apple Developer account, certificate, or notarization for local developer-machine use. Linux and Windows adapters are deferred.
+
+Initial protocol capabilities:
+
+| Method | Purpose |
+|---|---|
+| `daemon/hello` | Return jackin version, supported protocol range, and capability list. |
+| `daemon/status` | Return daemon pid, uptime, socket/log paths, keep-awake, cache warmup, and notification adapter status. |
+| `daemon/shutdown` | Stop the daemon cleanly. |
+| `daemon/warm_cache` | Ask the daemon to warm construct, DinD, and cached role images. |
+| `workspace/list` | Return saved workspace summaries for launch-only Desktop surfaces: name, workdir, mount counts, default/last role, default agent, and keep-awake state. |
+| `session/list` | Return running role containers with Docker-label metadata for workspace, role, agent, branch, primary repo, display name, and container status. |
+| `github/my_open_prs` | Return open pull requests authored by the operator, sorted newest first. |
+| `github/project_inbox` | Return the operator's open pull requests filtered by owner and/or repository. |
+| `github/repository_prs` | Return open pull requests for one repository, sorted newest first. |
+| `workspace/launch` | Open Ghostty and run `jackin load` against a saved workspace, with optional role and agent override. |
+| `desktop/open` | Open a browser URL through macOS `open`, or open Ghostty and run `jackin hardline` for a running session. |
+| `account/status` | Return cached Claude, Codex, and Amp credential-source presence without exposing token values; `refresh` bypasses the daemon cache. |
+| `event/subscribe` | Return the first Desktop event contract. Streaming is explicitly disabled for now; the response names the poll methods and click-route target fields Desktop should use for attention and ready-for-review routing. |
+| `notification/send` | Dispatch a host macOS Notification Center notification. |
+
+Most Desktop-specific methods are deliberately absent until their slices land. The next phase turns the event subscription placeholder into a real stream.
 
 ### Security posture
 
@@ -97,7 +134,7 @@ The console / TUI gets a one-line daemon-status indicator in its footer, mirrori
 
 ### Migration of today's reconcilers
 
-- **Keep-awake `caffeinate`.** Today's per-command reconciler (see <RepoFile path="src/runtime/caffeinate.rs" />) becomes a daemon-owned watcher: the daemon subscribes to "any role from a keep-awake workspace running" via Docker events and holds the caffeinate lock. CLI commands no longer reconcile.
+- **Keep-awake `caffeinate`.** The daemon runs the existing reconciler every five seconds. CLI command-boundary reconciliation remains as a compatibility fallback for now; once daemon install confidence is high, those call sites can be removed.
 - **Live auth sync.** First feature designed to require the daemon — see the [live-auth-sync roadmap item](/reference/roadmap/live-auth-sync/) for the per-axis adapter plan. The daemon hosts the shared store flocks and the host-side watchers.
 - **Desktop Agent Hub.** The native macOS app depends on daemon state rather
   than scraping Jackin config or Docker directly. The daemon is the primary
@@ -118,12 +155,12 @@ The daemon's bones (lifecycle, install, control socket, security model, logs) ne
 
 Rough order of operations — not committed; to be confirmed during the design pass:
 
-1. **Phase 0 — design.** Answer every "Open design questions" subsection. Pick lifecycle, install, control protocol, security posture. Land an updated version of this roadmap item with answers.
-2. **Phase 1 — empty daemon.** Ship `jackin daemon serve` / `start` / `stop` / `status` / `logs` with no watchers. Just the lifecycle, install, control socket, log redaction. No feature uses it yet.
-3. **Phase 2 — Desktop-ready daemon API.** Add the small versioned endpoints that Desktop needs first: `daemon/hello`, workspace/session discovery, GitHub PR lookup, account status, event subscription, and Ghostty/browser open actions.
-4. **Phase 3 — caffeinate migration.** Move keep-awake reconciler from per-command into the daemon. Smallest migration target with clearest existing behaviour to compare against.
-5. **Phase 4 — live auth sync.** Add the per-axis watcher adapters. First reactive feature.
-6. **Phase 5+ — container event watcher and beyond.** Each new reactive feature is an adapter against the daemon's stable plug-in surface.
+1. **Phase 0 — design.** Complete.
+2. **Phase 1 — daemon base.** Complete: lifecycle, install, singleton, socket protocol, logs, version skew restart.
+3. **Phase 2 — first adapters.** Started: keep-awake reconciliation, cache warmup, and host notification dispatch are daemon-owned.
+4. **Phase 3 — Desktop-ready daemon API.** Started: `daemon/hello` now provides a versioned capability handshake; read-only workspace/session discovery is available through `workspace/list` and `session/list`; initial GitHub PR lookup is available through `github/my_open_prs`, `github/project_inbox`, and `github/repository_prs`; Ghostty/browser actions are available through `workspace/launch` and `desktop/open`; Claude/Codex/Amp credential-source presence is available through `account/status`; the first `event/subscribe` response publishes the poll and click-routing contract. Next, replace the placeholder with a real event stream.
+5. **Phase 4 — live auth sync.** Not started. Add per-axis host watchers and shared-store flocks on top of this daemon.
+6. **Phase 5+ — container event watcher and beyond.** Add Docker event subscriptions, attention prompt MCP integration, click-to-focus, and richer host actions.
 
 ## Related work
 

@@ -31,6 +31,7 @@ pub(super) const BANNER: &str = concat!(
 
 pub mod cleanup;
 pub mod config;
+pub mod daemon;
 pub mod dispatch;
 pub mod help;
 pub mod prune;
@@ -38,6 +39,7 @@ pub mod role;
 pub mod workspace;
 
 pub use config::{AuthCommand, ConfigCommand, EnvCommand, MountCommand, TrustCommand};
+pub use daemon::DaemonCommand;
 pub use prune::PruneCommand;
 pub use workspace::{WorkspaceClaudeTokenCommand, WorkspaceCommand, WorkspaceEnvCommand};
 
@@ -113,6 +115,9 @@ pub enum Command {
     /// View and modify operator configuration
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Config(ConfigCommand),
+    /// Manage the per-user jackin daemon
+    #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
+    Daemon(DaemonCommand),
     /// Print help documentation for a jackin command
     ///
     /// With no arguments, displays the jackin manual.
@@ -193,6 +198,7 @@ mod tests {
             "role",
             "workspace",
             "config",
+            "daemon",
         ] {
             assert!(help.contains(cmd), "missing command: {cmd}");
         }

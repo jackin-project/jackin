@@ -5,7 +5,7 @@ import { Aside } from '@astrojs/starlight/components'
 import RepoFile from '../../../../components/RepoFile.astro'
 
 
-**Status**: Open — implementation program (daemon, native macOS status bar, desktop app, notifications)
+**Status**: Open — design proposal (Reactive daemon program / operator surface)
 
 ## Problem
 
@@ -22,11 +22,6 @@ control surface around those agents: start workspaces, see active containers,
 jump to pull requests, monitor token/account state, and receive attention
 prompts when an agent is blocked or finished.
 
-This roadmap targets the complete Desktop Agent Hub experience: daemon-backed
-state, native macOS status bar, native desktop window, Ghostty workspace
-launch/focus, GitHub PR inbox, account/token status, and notification/attention
-routing. The phased plan below is the review strategy, not a reduced scope.
-
 ## Existing local foundation
 
 - The proposal is intentionally layered on the roadmap items that motivated it:
@@ -36,14 +31,34 @@ routing. The phased plan below is the review strategy, not a reduced scope.
   [Host bridge — secrets and approved host actions](/reference/roadmap/host-bridge/).
   Those documents define the backend responsibilities Desktop should surface
   rather than reimplement.
-- PR 283 implements the first daemon shape: per-user Unix socket, singleton
-  lock, lifecycle commands, launchd / systemd install, keep-awake
-  reconciliation, cache warmup, and macOS notification dispatch.
+- <RepoFile path="src/daemon.rs" /> from PR 283 implements the first daemon
+  shape: per-user Unix socket, singleton lock, lifecycle commands, launchd /
+  systemd install, keep-awake reconciliation, cache warmup, and macOS
+  notification dispatch. The Desktop-ready protocol work has started with a
+  `daemon/hello` handshake that reports the jackin version, supported protocol
+  range, and currently available daemon capabilities. Read-only
+  `workspace/list` and `session/list` discovery now expose saved workspace
+  summaries and running role-container labels without requiring the Desktop app
+  to parse Jackin TOML or Docker state directly. GitHub PR lookup starts with
+  `github/my_open_prs`, `github/project_inbox`, and `github/repository_prs`,
+  using the operator's `gh` authentication and newest-first open PR results.
+  Ghostty/browser actions start with `workspace/launch` and `desktop/open` so
+  Desktop can launch saved workspaces, reconnect to running sessions, and open
+  PR links without owning terminal or browser command construction. Account
+  cards start with `account/status`, which reports cached Claude, Codex, and Amp
+  credential-source presence without exposing token values.
+- `desktop/macos/` contains the first native macOS SwiftUI/AppKit package:
+  a `MenuBarExtra` status item, daemon-health view, refresh action, and
+  Unix-socket daemon client. The status item now reads `daemon/hello`,
+  `workspace/list`, `session/list`, and `github/my_open_prs` so the menu can
+  show daemon health, saved workspaces, running-agent counts, and newest-first
+  operator-authored PRs with daemon-owned browser open actions. This is still a
+  compact menu surface, not the full Desktop window.
 - <RepoFile path="src/runtime/launch.rs" /> already bind-mounts the daemon
   socket into role containers as `/jackin/daemon.sock` and injects
   `JACKIN_DAEMON_SOCKET=/jackin/daemon.sock` when available.
-- The daemon draft also proves the minimal container-to-host notification path
-  over JSON Lines through `jackin-notify`.
+- <RepoFile path="docker/construct/jackin-notify" /> proves the minimal
+  container-to-host notification path over JSON Lines.
 - <RepoFile path="src/console/manager/state.rs" /> is the current TUI workspace
   manager model. It exposes the same concepts the desktop app needs: workspace
   list, General / Mounts / Roles / Secrets / Auth tabs, dirty-save flow, modal
@@ -156,7 +171,7 @@ Proposed states:
 - Waiting: at least one agent has called `attention.waiting` or inferred idle
   waiting. This should visually dominate running state.
 - Ready for review: an agent has pushed or reported a PR as ready.
-- Auth/account warning: Claude, Codex, Amp, or OpenCode account status requires operator
+- Auth/account warning: Claude, Codex, or Amp account status requires operator
   action.
 - Daemon disconnected: Desktop cannot reach the Jackin daemon.
 
@@ -270,6 +285,14 @@ Recommended layout:
 - Workspaces: saved Jackin workspaces with a launch button, active/running badge, number of running agents, primary repositories, and last activity. No create/edit form in v1.
 - Running Agents: current role containers grouped by workspace/project, with agent runtime, role, branch, PR, attention state, and stop/hardline/open actions.
 - Accounts: Claude/Codex/Amp account cards with source, plan/quota, reset time, and repair/login actions.
+
+The first window slice now adds this `NavigationSplitView` shell and wires the
+sidebar destinations to the same daemon-backed menu model. The Pull Requests
+and Projects panes now include first-pass organization, project, and draft/open
+filters over daemon-provided PR state. The Workspaces and Running Agents panes
+now add launch-only Ghostty actions through `workspace/launch` and reconnect
+actions through `desktop/open`. Account cards and attention actions remain in
+focused follow-up PRs.
 
 Launching a workspace from the app should always use Ghostty in v1. The app can open a new Ghostty tab or new Ghostty window and run the appropriate `jackin load` / `jackin hardline` flow with `--debug` only for operator-requested smoke validation, not normal app launches. Other terminal adapters are out of scope until the Ghostty path proves the product shape.
 
@@ -461,19 +484,10 @@ not as one large feature branch. The agent running the goal should keep building
 without asking for step-by-step approval, but every externally reviewed unit
 must be a small pull request.
 
-The phases are delivery slices for review, not optional scope reductions. The
-long-running goal should continue through daemon APIs, menu bar, desktop window,
-notifications, and attention routing unless blocked by a documented design issue
-or repository constraint that must be resolved first.
-
 Delivery rules:
 
 - Create sequential pull requests, not one large PR. Each PR should be
   reviewable on its own and should leave the repo in a useful state.
-- The implementation track is complete only when all major stages have been
-  delivered as separate reviewable PRs: daemon contract, daemon data endpoints,
-  native status bar, PR/project inbox, account status, Ghostty actions, desktop
-  window, notifications, and attention routing.
 - Implement all PRs without waiting for operator approval, but do not merge any
   of them. The operator owns merge decisions and will explicitly ask for fixes
   when a reviewed PR needs changes.
@@ -521,29 +535,52 @@ Delivery rules:
 ### Phase 1 — Menu bar MVP
 
 - PR 1: Native `Jackin.app` skeleton with menu bar extra and daemon connection
-  health only.
+  health only. Started with the SwiftUI/AppKit package and daemon-health menu.
 - PR 2: Add active workspaces and running-agent counts.
+  Started with daemon-backed saved workspace rows and per-workspace running
+  agent counts in the menu.
 - PR 3: Add My open PRs newest-first and active projects.
+  Started with a daemon-backed My open PRs menu section and direct browser open
+  actions through `desktop/open`; project grouping remains for the next PR
+  slice.
 - PR 4: Add open actions for hardline / Ghostty, repository, and PR.
 - PR 5: Add Claude/Codex/Amp account cards using daemon-provided status.
 
 ### Phase 2 — Simple desktop window
 
 - PR 1: Add the simple native window shell with `NavigationSplitView`.
+  Started with a shared-model `WindowGroup`, sidebar destinations, and basic
+  Pull Requests, Projects, Workspaces, Running Agents, Accounts, and Settings
+  panes.
 - PR 2: Add the inbox-style Pull Requests view with organization/project
   filters.
+  Started with shared filters for organization, project/repository, and
+  draft/open state over the daemon-backed PR list.
 - PR 3: Add the Projects view for recently active Jackin repositories.
+  Started with repository grouping from the daemon-backed PR list and an
+  organization filter.
 - PR 4: Add the Workspaces view for saved workspace visibility and launch-only
   actions.
+  Started with saved workspace rows, running counts, and Ghostty launch buttons
+  through `workspace/launch`.
 - PR 5: Add the Running Agents view with per-workspace agent counts and Ghostty
   open/hardline actions.
+  Started with daemon-backed session rows and Ghostty hardline buttons through
+  `desktop/open`.
 - Keep workspace creation/editing in `jackin console` across all Phase 2 PRs.
 
 ### Phase 3 — Attention and PR readiness loop
 
 - Implement `jackin-attention` MCP server and richer daemon attention events.
 - Promote "waiting" and "ready for review" states in the menu bar.
+  Started with menu-bar promotion for non-draft operator-authored PRs and a
+  daemon `event/subscribe` poll-contract response that names attention and
+  ready-for-review click routes.
 - Notification click opens the exact Ghostty session or PR.
+  Started with explicit route metadata: attention events target
+  `container_name` through `desktop/open`, and ready-for-review PR events target
+  `url` through `desktop/open`. Native Notification Center activation still
+  needs the later app delegate/event-stream implementation.
 
 ### Phase 4 — Live auth sync and host bridge UI
 

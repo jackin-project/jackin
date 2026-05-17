@@ -21,18 +21,12 @@ Source of truth:
 ## Goal prompt
 
 ```text
-/goal Implement the Jackin Desktop Agent Hub end to end as a long-running staged program.
+/goal Research and design the Jackin Desktop Agent Hub, then implement the first safe slice.
 
 Context:
-- Build the full desktop experience described in the roadmap: daemon APIs,
-  native macOS status bar, native desktop app/window, Ghostty workspace
-  launch/focus actions, GitHub PR inbox, account/token status for
-  Claude/Codex/Amp, and notification/attention support.
-- Work in the jackin repo. PR 283 is an editable daemon draft: if the Desktop
-  goal reveals daemon API changes that should land there, update that PR
-  directly before stacking later Desktop PRs. New agent-created PRs still target
-  `main` unless the operator explicitly names a different base branch; follow
-  PULL_REQUESTS.md for the base-branch rule.
+- Work in the jackin repo on the daemon PR branch. PR 283 is an editable draft:
+  if the Desktop goal reveals daemon API changes that should land there, update
+  that PR directly before stacking later Desktop PRs.
 - Read the roadmap source of truth first. If implementation details conflict
   with these docs, update the relevant roadmap doc in the same PR or an earlier
   stacked PR before coding around the conflict:
@@ -55,14 +49,13 @@ Context:
   organization, local git status caching.
 
 Product goal:
-Build the complete native macOS desktop companion while keeping the agent TUI as
-the primary agent UI. Desktop must be an operator control surface with
-daemon-backed state, native status bar, native desktop window, active Jackin
+Build Jackin toward a native macOS desktop companion that keeps the agent TUI as
+the primary agent UI. Desktop must be an operator control surface: active Jackin
 workspaces, simple Ghostty launches, recently active GitHub projects, workspace
 repositories, running isolated agents, PR jump links, newest-first open PRs
 authored by the operator, org/project-filtered PR inbox views, account/quota
-status for Claude/Codex/Amp, and daemon-driven notifications plus
-attention/ready-for-review events.
+status for Claude/Codex/Amp, and daemon-driven attention/ready-for-review
+events.
 
 Constraints:
 - Native macOS only for the app: SwiftUI/AppKit, MenuBarExtra or NSStatusItem,
@@ -89,11 +82,6 @@ Constraints:
 - Do not create one huge pull request. Implement the goal as small sequential
   PRs. Each PR must be reviewable, tested, and mergeable before the next PR
   becomes the main review target.
-- Keep implementing the full staged plan until every Desktop Agent Hub stage is
-  represented by reviewable PRs: daemon, status bar, desktop window, GitHub PR
-  views, account status, Ghostty actions, notifications, and attention routing.
-  Do not stop after the first slice unless blocked by CI, credentials, conflicts,
-  or a roadmap contradiction that must be resolved first.
 - Open every planned PR without waiting for operator approval, but never merge
   any PR. The operator will review and merge gradually.
 - Stack each next PR by branching from the previous PR branch. If an earlier PR
@@ -119,7 +107,7 @@ Sequential PR plan:
 11. Desktop Workspaces launch-only view and Running Agents view.
 12. Attention/ready-for-review promotion and notification click routing.
 
-Start with this implementation slice:
+First implementation slice:
 1. Strengthen PR 283 daemon protocol with a hello/capabilities response.
 2. Add the smallest endpoint scaffolding needed to prove versioned requests and
    responses without implementing the whole Desktop backend in one PR.
