@@ -5,6 +5,10 @@
 # Forwards SIGTERM and SIGINT so `docker stop` / `docker kill` terminate
 # cleanly without a 10-second timeout.
 #
+# Interim placeholder: this script will be replaced by the `jackin-container`
+# Rust binary (see reference/roadmap/jackin-container-binary) which adds
+# last-session detection via inotify and a Unix socket status interface.
+#
 # No `set -e`: `wait` returns the exit code of the child it waited on;
 # a signal-killed sleep exits non-zero, and `set -e` would misread that
 # as a supervisor failure on every clean `docker stop`.

@@ -333,6 +333,7 @@ export default defineConfig({
                   items: [
                     { label: 'Bollard migration', slug: 'reference/roadmap/bollard-migration' },
                     { label: 'Construct user creation', slug: 'reference/roadmap/construct-user-creation' },
+                    { label: 'jackin-container: in-container supervisor binary', slug: 'reference/roadmap/jackin-container-binary' },
                     { label: 'Workspace registry cache', slug: 'reference/roadmap/workspace-registry-cache' },
                   ],
                 },
