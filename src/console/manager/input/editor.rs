@@ -7,6 +7,7 @@ use super::super::super::widgets::{
     ModalOutcome, file_browser::FileBrowserState, op_picker::OpPickerState,
     workdir_pick::WorkdirPickState,
 };
+use super::super::render::apply_scroll_delta;
 use super::super::render::editor::{SecretsRow, secrets_flat_rows};
 use super::super::state::{
     ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
@@ -94,11 +95,11 @@ pub(super) fn handle_editor_key(
     match key.code {
         KeyCode::Char('h' | 'H') if editor.active_tab == EditorTab::Mounts => {
             editor.workspace_mounts_scroll_focused = true;
-            editor.workspace_mounts_scroll_x = editor.workspace_mounts_scroll_x.saturating_sub(8);
+            apply_scroll_delta(&mut editor.workspace_mounts_scroll_x, -8);
         }
         KeyCode::Char('l' | 'L') if editor.active_tab == EditorTab::Mounts => {
             editor.workspace_mounts_scroll_focused = true;
-            editor.workspace_mounts_scroll_x = editor.workspace_mounts_scroll_x.saturating_add(8);
+            apply_scroll_delta(&mut editor.workspace_mounts_scroll_x, 8);
         }
         // W3C ARIA Tabs: Left/BackTab cycle backward, Right cycles forward when
         // the tab bar has focus. Tab and Down enter the content area.

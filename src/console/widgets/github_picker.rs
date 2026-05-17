@@ -67,9 +67,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders},
 };
 
+use super::scrollable::render_selected_lines_in_area;
 use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, WHITE};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
@@ -135,7 +136,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &GithubPickerState) {
         })
         .collect();
 
-    frame.render_widget(Paragraph::new(lines), rows[1]);
+    render_selected_lines_in_area(frame, rows[1], lines, state.list_state.selected);
 }
 
 #[cfg(test)]

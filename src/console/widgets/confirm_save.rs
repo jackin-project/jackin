@@ -17,7 +17,7 @@ use ratatui::{
 
 use super::ModalOutcome;
 
-use super::scrollable::{effective_offset, is_scrollable, render_vertical_scrollbar_in_area};
+use super::scrollable::render_lines_with_offset_in_area;
 use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,17 +129,21 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
     // offset so the operator can page through long diffs.
     let content_rows = inner.height.saturating_sub(3); // blank, blank, buttons
     let content_rows = content_rows.saturating_sub(1); // bottom-of-content blank
-    let visible = content_rows as usize;
-    let total = state.lines.len();
-    let offset = usize::from(effective_offset(total, visible, state.scroll_offset));
-    let clipped: Vec<Line> = state
+    let visible_u16 = content_rows;
+
+    // Content indented by SUBPANEL_CONTENT_INDENT (2). The caller is
+    // responsible for any deeper indentation; we just add a uniform
+    // left gutter so lines don't butt up against the border.
+    let indented: Vec<Line> = state
         .lines
         .iter()
-        .skip(offset)
-        .take(visible)
         .cloned()
+        .map(|l| {
+            let mut spans = vec![Span::raw("  ")];
+            spans.extend(l.spans);
+            Line::from(spans)
+        })
         .collect();
-    let visible_u16 = u16::try_from(clipped.len()).unwrap_or(0);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -151,33 +155,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &ConfirmSaveState) {
         ])
         .split(inner);
 
-    // Content indented by SUBPANEL_CONTENT_INDENT (2). The caller is
-    // responsible for any deeper indentation; we just add a uniform
-    // left gutter so lines don't butt up against the border.
-    let indented: Vec<Line> = clipped
-        .into_iter()
-        .map(|l| {
-            let mut spans = vec![Span::raw("  ")];
-            spans.extend(l.spans);
-            Line::from(spans)
-        })
-        .collect();
-    frame.render_widget(Paragraph::new(indented), chunks[1]);
-    if is_scrollable(total, visible) {
-        let scrollbar_area = Rect {
-            x: chunks[1].x + chunks[1].width.saturating_sub(1),
-            y: chunks[1].y,
-            width: 1,
-            height: chunks[1].height,
-        };
-        render_vertical_scrollbar_in_area(
-            frame,
-            scrollbar_area,
-            total,
-            visible,
-            state.scroll_offset,
-        );
-    }
+    render_lines_with_offset_in_area(frame, chunks[1], indented, state.scroll_offset);
 
     // Buttons — focused choice highlights on white.
     let focused_style = Style::default()

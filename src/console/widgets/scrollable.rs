@@ -284,6 +284,54 @@ pub(crate) fn render_vertical_scrollbar_in_area(
     );
 }
 
+pub(crate) fn render_selected_lines_in_area(
+    frame: &mut Frame,
+    area: Rect,
+    lines: Vec<Line<'_>>,
+    selected: Option<usize>,
+) {
+    let viewport = usize::from(area.height);
+    let total = lines.len();
+    let offset = usize::from(cursor_follow_offset(
+        selected.unwrap_or(0),
+        total,
+        viewport,
+        0,
+    ));
+    render_lines_with_offset_in_area(frame, area, lines, offset.min(usize::from(u16::MAX)) as u16);
+}
+
+pub(crate) fn render_lines_with_offset_in_area(
+    frame: &mut Frame,
+    area: Rect,
+    lines: Vec<Line<'_>>,
+    offset: u16,
+) {
+    let viewport = usize::from(area.height);
+    let total = lines.len();
+    let offset = usize::from(effective_offset(total, viewport, offset));
+    let visible: Vec<Line<'_>> = lines.into_iter().skip(offset).take(viewport).collect();
+    frame.render_widget(Paragraph::new(visible), area);
+    if is_scrollable(total, viewport) {
+        render_vertical_scrollbar_in_area(
+            frame,
+            vertical_list_scrollbar_area(area),
+            total,
+            viewport,
+            offset.min(usize::from(u16::MAX)) as u16,
+        );
+    }
+}
+
+const fn vertical_list_scrollbar_area(area: Rect) -> Rect {
+    Rect {
+        x: area.x + area.width.saturating_sub(1),
+        y: area.y,
+        width: 1,
+        height: area.height,
+    }
+}
+
 #[derive(Clone, Copy)]
 enum FixedScrollbarOrientation {
     Horizontal,

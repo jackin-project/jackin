@@ -10,9 +10,7 @@ use ratatui::{
 
 use crate::operator_env::OpField;
 
-use super::super::scrollable::{
-    cursor_follow_offset, is_scrollable, render_vertical_scrollbar_in_area,
-};
+use super::super::scrollable::render_selected_lines_in_area;
 use super::super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use super::{OpLoadState, OpPickerError, OpPickerFatalState, OpPickerStage, OpPickerState};
 
@@ -154,13 +152,13 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
         OpPickerStage::Item => render_item_lines(state),
         OpPickerStage::Field => render_field_lines(state),
     };
-    let (list_para, scroll_info) = if list_lines.is_empty() {
+    if list_lines.is_empty() {
         let para = Paragraph::new(Line::from(Span::styled(
             "(no matches)",
             Style::default().fg(PHOSPHOR_DIM),
         )))
         .alignment(Alignment::Center);
-        (para, None)
+        frame.render_widget(para, rows[3]);
     } else {
         let selected = match state.stage {
             OpPickerStage::Account => state.account_list_state.selected,
@@ -168,37 +166,7 @@ fn render_pane(frame: &mut Frame, area: Rect, state: &OpPickerState) {
             OpPickerStage::Item => state.item_list_state.selected,
             OpPickerStage::Field => state.field_list_state.selected,
         };
-        let height = rows[3].height as usize;
-        let total = list_lines.len();
-        let offset = usize::from(cursor_follow_offset(
-            selected.unwrap_or(0),
-            total,
-            height,
-            0,
-        ));
-        let take = height.min(total.saturating_sub(offset));
-        let visible: Vec<Line<'static>> = list_lines.into_iter().skip(offset).take(take).collect();
-        (Paragraph::new(visible), Some((total, offset, height)))
-    };
-    frame.render_widget(list_para, rows[3]);
-
-    // Vertical scrollbar on the right edge of the list area.
-    if let Some((total, position, viewport)) = scroll_info
-        && is_scrollable(total, viewport)
-    {
-        let sb_area = Rect {
-            x: rows[3].x + rows[3].width.saturating_sub(1),
-            y: rows[3].y,
-            width: 1,
-            height: rows[3].height,
-        };
-        render_vertical_scrollbar_in_area(
-            frame,
-            sb_area,
-            total,
-            viewport,
-            position.min(usize::from(u16::MAX)) as u16,
-        );
+        render_selected_lines_in_area(frame, rows[3], list_lines, selected);
     }
 }
 
@@ -548,21 +516,21 @@ mod tests {
     // ── Viewport scrolling ────────────────────────────────────────────
 
     #[test]
-    fn viewport_offset_returns_zero_when_list_fits() {
+    fn cursor_follow_offset_returns_zero_when_list_fits() {
         // 5 items, 10-row viewport — no scroll regardless of selection.
         assert_eq!(cursor_follow_offset(0, 5, 10, 0), 0);
         assert_eq!(cursor_follow_offset(4, 5, 10, 0), 0);
     }
 
     #[test]
-    fn viewport_offset_anchors_top_until_cursor_falls_below_window() {
+    fn cursor_follow_offset_anchors_top_until_cursor_falls_below_window() {
         // 20 items, 5-row viewport. Cursor in rows 0..5 → no scroll.
         assert_eq!(cursor_follow_offset(0, 20, 5, 0), 0);
         assert_eq!(cursor_follow_offset(4, 20, 5, 0), 0);
     }
 
     #[test]
-    fn viewport_offset_pins_cursor_to_bottom_when_below_initial_window() {
+    fn cursor_follow_offset_pins_cursor_to_bottom_when_below_initial_window() {
         // 20 items, 5-row viewport. Cursor at row 5 → offset 1 (cursor
         // sits on the last visible row, rows[1..6] → 1,2,3,4,5).
         assert_eq!(cursor_follow_offset(5, 20, 5, 0), 1);
@@ -571,7 +539,7 @@ mod tests {
     }
 
     #[test]
-    fn viewport_offset_clamps_at_end() {
+    fn cursor_follow_offset_clamps_at_end() {
         // Cursor at the last row of a 20-item list with a 5-row
         // viewport must produce offset 15 — the last visible window
         // shows rows 15..20.
@@ -582,7 +550,7 @@ mod tests {
     }
 
     #[test]
-    fn viewport_offset_is_zero_when_height_is_zero() {
+    fn cursor_follow_offset_is_zero_when_height_is_zero() {
         // Defensive: `Constraint::Min(1)` could collapse to 0 if the
         // modal is squeezed down to a single border row. Treat that
         // as "no viewport" and return 0.
