@@ -1412,12 +1412,16 @@ fn load_role_with(
     let agent_display_name = validated_repo.manifest.display_name(&selector.name);
     steps.role_name.clone_from(&agent_display_name);
 
-    let agent = match opts.agent.or(workspace.default_agent) {
+    let agent = match opts.agent {
         Some(a) => a,
         None if std::io::stdin().is_terminal()
             && validated_repo.manifest.supported_agents().len() >= 2 =>
         {
             let supported = validated_repo.manifest.supported_agents();
+            let default_idx = workspace
+                .default_agent
+                .and_then(|d| supported.iter().position(|a| *a == d))
+                .unwrap_or(0);
             let labels: Vec<String> = supported.iter().map(|a| a.slug().to_string()).collect();
             let selection = dialoguer::Select::new()
                 .with_prompt(format!(
@@ -1425,11 +1429,11 @@ fn load_role_with(
                     selector.key()
                 ))
                 .items(&labels)
-                .default(0)
+                .default(default_idx)
                 .interact()?;
             supported[selection]
         }
-        None => crate::agent::Agent::Claude,
+        None => workspace.default_agent.unwrap_or(crate::agent::Agent::Claude),
     };
     validate_agent_supported(selector, &validated_repo.manifest, agent)?;
 
