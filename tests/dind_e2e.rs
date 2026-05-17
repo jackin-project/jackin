@@ -186,7 +186,10 @@ fn run_in_pty(
     for (k, v) in extra_env {
         command.env(k, v);
     }
-    command.current_dir(cwd).output().expect("script must spawn")
+    command
+        .current_dir(cwd)
+        .output()
+        .expect("script must spawn")
 }
 
 fn seed_agent_smith_role_repo(path: &Path) {
