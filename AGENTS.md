@@ -120,6 +120,14 @@ Do not split a feature PR from its docs PR by default. The docs land with the co
 
 This rule does not retire when jackin ships its first release; the audience split is permanent. The roadmap-retirement portion of this rule and the **Roadmap freshness** rule retire only when there are no roadmap items left to maintain.
 
+## Push every commit immediately (hard rule)
+
+**After creating any commit on a feature branch, push to the remote in the same turn.** Do not leave commits local-only. The operator checks progress via the GitHub PR, not via a local checkout they may not have. A commit that exists only on the agent's local clone is invisible to CI, invisible to the operator, and lost if the session ends.
+
+The single exception is a chain of rapid fixup commits made in one turn — push once after the last commit in the chain, not after every intermediate one. But the push must still happen before the turn ends.
+
+This rule applies even when the operator did not explicitly ask to push — finishing the work includes making it visible.
+
 ## Pull requests (agent-only) — see `PULL_REQUESTS.md`
 
 All rules for opening, iterating on, refreshing, reviewing, and merging pull requests live in [`PULL_REQUESTS.md`](PULL_REQUESTS.md). **Read that file before opening any PR.** It covers:
