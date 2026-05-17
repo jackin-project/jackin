@@ -8,19 +8,27 @@ pub enum Agent {
     Claude,
     Codex,
     Amp,
+    Kimi,
     Opencode,
 }
 
 impl Agent {
     /// Every variant in declaration order. Iteration sites consult
     /// this instead of hand-rolling their own array.
-    pub const ALL: &'static [Self] = &[Self::Claude, Self::Codex, Self::Amp, Self::Opencode];
+    pub const ALL: &'static [Self] = &[
+        Self::Claude,
+        Self::Codex,
+        Self::Amp,
+        Self::Kimi,
+        Self::Opencode,
+    ];
 
     pub const fn slug(self) -> &'static str {
         match self {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::Amp => "amp",
+            Self::Kimi => "kimi",
             Self::Opencode => "opencode",
         }
     }
@@ -30,6 +38,7 @@ impl Agent {
             Self::Claude => CLAUDE_INSTALL_BLOCK,
             Self::Codex => CODEX_INSTALL_BLOCK,
             Self::Amp => AMP_INSTALL_BLOCK,
+            Self::Kimi => KIMI_INSTALL_BLOCK,
             Self::Opencode => OPENCODE_INSTALL_BLOCK,
         }
     }
@@ -48,24 +57,28 @@ impl Agent {
             (Self::Claude, M::OAuthToken) => Some(crate::operator_env::CLAUDE_OAUTH_TOKEN_ENV),
             (Self::Codex, M::ApiKey) => Some("OPENAI_API_KEY"),
             (Self::Amp, M::ApiKey) => Some("AMP_API_KEY"),
+            (Self::Kimi, M::ApiKey) => Some("KIMI_API_KEY"),
             (Self::Opencode, M::ApiKey) => Some("OPENCODE_API_KEY"),
             (Self::Claude, M::Sync | M::Ignore)
-            | (Self::Codex | Self::Amp | Self::Opencode, M::Sync | M::Ignore | M::OAuthToken) => {
-                None
-            }
+            | (
+                Self::Codex | Self::Amp | Self::Kimi | Self::Opencode,
+                M::Sync | M::Ignore | M::OAuthToken,
+            ) => None,
         }
     }
 
     /// Modes this agent supports. UI surfaces should consult this when
     /// listing options to the user. The TOML parser uses agent-specific
-    /// newtypes around `AgentAuthConfig` (`CodexAuthConfig`,
-    /// `AmpAuthConfig`) to reject unsupported modes at parse time —
-    /// this method is the runtime/UI parallel.
+    /// newtypes around `AgentAuthConfig` (`CodexAuthConfig`, `AmpAuthConfig`,
+    /// `KimiAuthConfig`, `OpencodeAuthConfig`) to reject unsupported modes
+    /// at parse time — this method is the runtime/UI parallel.
     pub const fn supported_modes(self) -> &'static [crate::config::AuthForwardMode] {
         use crate::config::AuthForwardMode as M;
         match self {
             Self::Claude => &[M::Sync, M::ApiKey, M::OAuthToken, M::Ignore],
-            Self::Codex | Self::Amp | Self::Opencode => &[M::Sync, M::ApiKey, M::Ignore],
+            Self::Codex | Self::Amp | Self::Kimi | Self::Opencode => {
+                &[M::Sync, M::ApiKey, M::Ignore]
+            }
         }
     }
 }
@@ -82,6 +95,17 @@ USER agent
 ARG JACKIN_CACHE_BUST=0
 RUN curl -fsSL https://ampcode.com/install.sh | bash
 RUN amp --version
+";
+
+const KIMI_INSTALL_BLOCK: &str = "\
+USER agent
+ARG JACKIN_CACHE_BUST=0
+RUN set -euxo pipefail && \\
+    : \"${JACKIN_CACHE_BUST}\" && \\
+    export PATH=\"${HOME}/.local/bin:${PATH}\" && \\
+    curl -fsSL https://code.kimi.com/install.sh | bash && \\
+    kimi --version
+ENV PATH=\"/home/agent/.local/bin:${PATH}\"
 ";
 
 const OPENCODE_INSTALL_BLOCK: &str = "\
@@ -102,7 +126,7 @@ ENV PATH=\"/home/agent/.opencode/bin:${PATH}\"\n\
 ";
 
 const CODEX_INSTALL_BLOCK: &str = "\
-USER root
+USER agent
 ARG JACKIN_CACHE_BUST=0
 ARG TARGETARCH
 RUN set -euxo pipefail && \\
@@ -124,11 +148,12 @@ RUN set -euxo pipefail && \\
       *) echo \"unexpected codex release tag format: ${TAG}\"; exit 1 ;; \\
     esac && \\
     ASSET=\"codex-${ARCH}\" && \\
+    mkdir -p \"${HOME}/.local/bin\" && \\
     curl -fsSL \"https://github.com/openai/codex/releases/download/${TAG}/${ASSET}.tar.gz\" \\
-      | tar -xzf - -O \"${ASSET}\" > /tmp/codex.bin && \\
-    chmod 0755 /tmp/codex.bin && \\
-    mv /tmp/codex.bin /usr/local/bin/codex && \\
-    mkdir -p /etc/jackin && codex --version > /etc/jackin/codex.version
+      | tar -xzf - -O \"${ASSET}\" > \"${HOME}/.local/bin/codex\" && \\
+    chmod 0755 \"${HOME}/.local/bin/codex\" && \\
+    \"${HOME}/.local/bin/codex\" --version
+ENV PATH=\"/home/agent/.local/bin:${PATH}\"
 ";
 
 impl fmt::Display for Agent {
@@ -138,7 +163,7 @@ impl fmt::Display for Agent {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("unknown agent: {got:?}; supported: claude, codex, amp, opencode")]
+#[error("unknown agent: {got:?}; supported: claude, codex, amp, kimi, opencode")]
 pub struct ParseAgentError {
     got: String,
 }
@@ -150,6 +175,7 @@ impl FromStr for Agent {
             "claude" => Ok(Self::Claude),
             "codex" => Ok(Self::Codex),
             "amp" => Ok(Self::Amp),
+            "kimi" => Ok(Self::Kimi),
             "opencode" => Ok(Self::Opencode),
             other => Err(ParseAgentError {
                 got: other.to_string(),
@@ -164,8 +190,8 @@ mod tests {
 
     #[test]
     fn slug_round_trip() {
-        for h in [Agent::Claude, Agent::Codex, Agent::Amp, Agent::Opencode] {
-            assert_eq!(Agent::from_str(h.slug()).unwrap(), h);
+        for h in Agent::ALL {
+            assert_eq!(Agent::from_str(h.slug()).unwrap(), *h);
         }
     }
 
@@ -174,6 +200,7 @@ mod tests {
         assert_eq!(format!("{}", Agent::Claude), "claude");
         assert_eq!(format!("{}", Agent::Codex), "codex");
         assert_eq!(format!("{}", Agent::Amp), "amp");
+        assert_eq!(format!("{}", Agent::Kimi), "kimi");
         assert_eq!(format!("{}", Agent::Opencode), "opencode");
     }
 
@@ -182,6 +209,8 @@ mod tests {
         let err = Agent::from_str("foo").unwrap_err();
         assert!(err.to_string().contains("foo"));
         assert!(err.to_string().contains("claude"));
+        assert!(err.to_string().contains("kimi"));
+        assert!(err.to_string().contains("opencode"));
     }
 
     #[test]
@@ -197,18 +226,19 @@ mod tests {
     }
 
     #[test]
-    fn codex_install_block_installs_cli_as_root_with_current_archive_layout() {
+    fn codex_install_block_installs_cli_as_agent_with_current_archive_layout() {
         let block = Agent::Codex.install_block();
-        assert!(block.starts_with("USER root\n"));
+        assert!(block.starts_with("USER agent\n"));
         assert!(block.contains("set -euxo pipefail"));
         assert!(block.contains("${TARGETARCH:-amd64}"));
         assert!(block.contains("x86_64-unknown-linux-musl"));
         assert!(block.contains("aarch64-unknown-linux-musl"));
         assert!(block.contains("ASSET=\"codex-${ARCH}\""));
-        assert!(block.contains("tar -xzf - -O \"${ASSET}\" > /tmp/codex.bin"));
-        assert!(block.contains("chmod 0755 /tmp/codex.bin"));
-        assert!(block.contains("mv /tmp/codex.bin /usr/local/bin/codex"));
-        assert!(block.contains("/etc/jackin/codex.version"));
+        assert!(block.contains("mkdir -p \"${HOME}/.local/bin\""));
+        assert!(block.contains("tar -xzf - -O \"${ASSET}\" > \"${HOME}/.local/bin/codex\""));
+        assert!(block.contains("chmod 0755 \"${HOME}/.local/bin/codex\""));
+        assert!(block.contains("\"${HOME}/.local/bin/codex\" --version"));
+        assert!(block.contains("ENV PATH=\"/home/agent/.local/bin:${PATH}\""));
         assert!(block.contains("openai/codex/releases"));
     }
 
@@ -226,6 +256,16 @@ mod tests {
         assert!(block.starts_with("USER agent\n"));
         assert!(block.contains("ampcode.com/install.sh"));
         assert!(block.contains("amp --version"));
+    }
+
+    #[test]
+    fn kimi_install_block_uses_official_curl_installer() {
+        let block = Agent::Kimi.install_block();
+        assert!(block.starts_with("USER agent\n"));
+        assert!(block.contains("export PATH=\"${HOME}/.local/bin:${PATH}\""));
+        assert!(block.contains("curl -fsSL https://code.kimi.com/install.sh | bash"));
+        assert!(block.contains("kimi --version"));
+        assert!(block.contains("ENV PATH=\"/home/agent/.local/bin:${PATH}\""));
     }
 
     #[test]
@@ -266,7 +306,7 @@ mod auth_table_tests {
             Agent::Codex.required_env_var(AuthForwardMode::ApiKey),
             Some("OPENAI_API_KEY")
         );
-        // OAuthToken for Codex is parser-rejected (Task 6); behavior at the
+        // OAuthToken for Codex is parser-rejected; behavior at the
         // method level is "no env var" (None) for safety.
         assert_eq!(
             Agent::Codex.required_env_var(AuthForwardMode::OAuthToken),
@@ -286,6 +326,18 @@ mod auth_table_tests {
             None
         );
         assert_eq!(Agent::Amp.required_env_var(AuthForwardMode::Ignore), None);
+
+        // Kimi
+        assert_eq!(Agent::Kimi.required_env_var(AuthForwardMode::Sync), None);
+        assert_eq!(
+            Agent::Kimi.required_env_var(AuthForwardMode::ApiKey),
+            Some("KIMI_API_KEY")
+        );
+        assert_eq!(
+            Agent::Kimi.required_env_var(AuthForwardMode::OAuthToken),
+            None
+        );
+        assert_eq!(Agent::Kimi.required_env_var(AuthForwardMode::Ignore), None);
 
         // Opencode
         assert_eq!(
@@ -335,6 +387,18 @@ mod auth_table_tests {
         assert!(
             !modes.contains(&AuthForwardMode::OAuthToken),
             "amp must not advertise oauth_token"
+        );
+        assert!(modes.contains(&AuthForwardMode::Ignore));
+    }
+
+    #[test]
+    fn supported_modes_kimi_excludes_oauth_token() {
+        let modes = Agent::Kimi.supported_modes();
+        assert!(modes.contains(&AuthForwardMode::Sync));
+        assert!(modes.contains(&AuthForwardMode::ApiKey));
+        assert!(
+            !modes.contains(&AuthForwardMode::OAuthToken),
+            "kimi must not advertise oauth_token"
         );
         assert!(modes.contains(&AuthForwardMode::Ignore));
     }

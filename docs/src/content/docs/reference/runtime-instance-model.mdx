@@ -17,7 +17,7 @@ The runtime instance model is the source of truth for how jackin names container
 |---|---|
 | Role | The reusable tool profile selected by a role key such as `agent-smith` or `chainargos/backend-engineer`. A role repo owns the Dockerfile, manifest, tools, runtime support, and plugins. |
 | Instance | One jackin-managed runtime environment created from a role for a workspace or ad-hoc directory. In the Docker backend, the instance is represented by a role container, a DinD sidecar, a network, a cert volume, and jackin-managed state. |
-| Agent runtime | One supported CLI runtime: `claude`, `codex`, `amp`, or `opencode`. |
+| Agent runtime | One supported CLI runtime: `claude`, `codex`, `amp`, `kimi`, or `opencode`. |
 | Agent session | One foreground agent process inside an instance. The initial session is created by `load`; additional sessions are created by `hardline --new`. |
 | Durable agent home | The per-instance home/state tree mounted into the role container so agent history, runtime-local config, and auth handoff survive container recreation. |
 | Recoverable state | Local jackin-managed state that can rebuild or reconnect an instance after Docker resources disappear. Container writable-layer changes are not recoverable. |
@@ -72,6 +72,7 @@ data/
     ├── claude/
     ├── codex/
     ├── amp/
+    ├── kimi/
     ├── opencode/
     ├── .config/gh/
     └── .jackin/

@@ -45,7 +45,7 @@ jackin's architecture is shaped by a few explicit decisions:
 
 The role repo owns the environment layer. jackin' owns the derived agent layer.
 
-That means an role defines the tools and conventions, while jackin' injects the agent-specific pieces such as Claude or Codex installation, the entrypoint, and UID/GID remapping.
+That means an role defines the tools and conventions, while jackin' injects the agent-specific pieces such as Claude, Codex, Kimi, or OpenCode installation, the entrypoint, and UID/GID remapping.
 
 ## Role repository tooling
 
@@ -190,6 +190,10 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 │       │   └── auth.json          # ChatGPT OAuth tokens (synced from host ~/.codex/auth.json under auth_forward=sync)
 │       ├── amp/                   # Amp auth handoff (provisioned when Amp is a supported agent)
 │       │   └── secrets.json       # Amp API key or OAuth token (synced from host ~/.local/share/amp/secrets.json under auth_forward=sync)
+│       ├── kimi/                  # Kimi auth handoff (provisioned when Kimi is a supported agent)
+│       │   ├── config.toml        # Kimi config (synced from host ~/.kimi/config.toml under auth_forward=sync)
+│       │   ├── credentials/       # Kimi credentials (synced from host ~/.kimi/credentials under auth_forward=sync)
+│       │   └── device_id          # Kimi device id (synced from host ~/.kimi/device_id under auth_forward=sync)
 │       ├── opencode/              # OpenCode auth handoff (provisioned when OpenCode is a supported agent)
 │       │   └── auth.json          # OpenCode provider credentials (synced from host ~/.local/share/opencode/auth.json under auth_forward=sync)
 │       ├── home/                  # Durable agent home state mounted into the container
@@ -197,6 +201,7 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 │       │   ├── .claude.json       # Claude Code account metadata inside the durable home
 │       │   ├── .codex/            # Codex conversation history, runtime-local config, login state
 │       │   ├── .local/share/amp/  # Amp conversation history, runtime-local config, login state
+│       │   ├── .kimi/             # Kimi runtime-local config and login state
 │       │   └── .local/share/opencode/  # OpenCode provider credentials, model preferences
 │       ├── state/                 # jackin runtime markers mounted at /jackin/state
 │       ├── .config/gh/            # GitHub CLI authentication (agent-neutral)
@@ -207,7 +212,7 @@ The same finalizer runs after `hardline` attaches, so the cleanup decision is in
 
 This is what persists across sessions:
 
-- Claude/Codex/Amp/OpenCode history, runtime-local settings, plugins, and authentication state stored under the per-instance durable home
+- Claude/Codex/Amp/Kimi/OpenCode history, runtime-local settings, plugins, and authentication state stored under the per-instance durable home
 - jackin' plugin metadata
 - `gh` state acquired inside the agent container
 

@@ -1,4 +1,4 @@
-version = "v1alpha2"
+version = "v1alpha4"
 # Sample per-workspace file carried through the legacy migration chain.
 
 workdir = "/workspace/prod"

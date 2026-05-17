@@ -191,6 +191,26 @@ fn extract_agent_version(
                 }
             }
         }
+        crate::agent::Agent::Kimi => {
+            let Ok(version) = runner.capture(
+                "docker",
+                &["run", "--rm", "--entrypoint", "kimi", image, "--version"],
+                None,
+            ) else {
+                return;
+            };
+            let version = version.trim();
+            if !version.is_empty() {
+                if debug {
+                    eprintln!("        Kimi {version}");
+                }
+                if let Some(semver) = version_check::parse_kimi_version(version) {
+                    version_check::store_kimi_version(paths, image, semver);
+                } else if debug {
+                    eprintln!("warning: unexpected kimi --version output: {version:?}");
+                }
+            }
+        }
         _ => {}
     }
 }

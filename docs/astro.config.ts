@@ -83,6 +83,7 @@ export default defineConfig({
                     { label: 'Claude Code', slug: 'guides/authentication/agents/claude-code' },
                     { label: 'Codex', slug: 'guides/authentication/agents/codex' },
                     { label: 'Amp', slug: 'guides/authentication/agents/amp' },
+                    { label: 'Kimi', slug: 'guides/authentication/agents/kimi' },
                     { label: 'OpenCode', slug: 'guides/authentication/agents/opencode' },
                   ],
                 },
@@ -305,7 +306,7 @@ export default defineConfig({
                   label: 'Agent runtimes & authentication',
                   collapsed: true,
                   items: [
-                    { label: 'Multi-runtime support (Codex & Amp)', slug: 'reference/roadmap/multi-runtime-support' },
+                    { label: 'Multi-runtime support', slug: 'reference/roadmap/multi-runtime-support' },
                     { label: 'Reliable Claude authentication strategy', slug: 'reference/roadmap/claude-auth-strategy' },
                     { label: 'Workspace Claude token setup', slug: 'reference/roadmap/workspace-claude-token-setup' },
                     { label: 'GitHub CLI authentication strategy', slug: 'reference/roadmap/github-cli-auth-strategy' },

@@ -1208,7 +1208,7 @@ workdir = "/b"
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
-        let original = r#"version = "v1alpha2"
+        let original = r#"version = "v1alpha3"
 # Top-of-file note about this config
 [claude]
 auth_forward = "sync"

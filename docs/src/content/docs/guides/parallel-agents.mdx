@@ -9,7 +9,7 @@ jackin' gives you two different ways to run agents in parallel:
 - **Separate instances** — each `jackin load` creates a new isolated container with its own Docker-in-Docker sidecar and agent home. Mounted project files are shared or isolated according to the workspace mount mode.
 - **Multiple sessions in one instance** — `jackin hardline --new` starts another agent process inside an already-running instance, sharing the same container state: mounted files, branch, tools, credentials, environment, and Docker-in-Docker sidecar.
 
-Think of a role instance as an isolated collaboration room. The role defines the room: toolchain, shell setup, plugins, supported agent runtimes, credentials, and workspace mounts. The agent sessions are the people working inside it. If the role supports `Claude Code`, `Codex`, `Amp`, and `OpenCode`, you can start any of those runtimes inside the same running instance.
+Think of a role instance as an isolated collaboration room. The role defines the room: toolchain, shell setup, plugins, supported agent runtimes, credentials, and workspace mounts. The agent sessions are the people working inside it. If the role supports `Claude Code`, `Codex`, `Amp`, `Kimi`, and `OpenCode`, you can start any of those runtimes inside the same running instance.
 
 ## Two Parallel Shapes
 

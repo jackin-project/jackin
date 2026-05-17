@@ -1,4 +1,4 @@
 from_version = "legacy"
-target_version = "v1alpha2"
+target_version = "v1alpha4"
 target_version_shipped = "2026-05-11"
-summary = "Migrates legacy role manifest through v1alpha1 to v1alpha2. Comments and existing keys are preserved, with version written first. Run `jackin-validate --migrate <role-repo-path>` to apply."
+summary = "Migrates legacy role manifest through v1alpha1 to v1alpha4. Comments and existing keys are preserved, with version written first. Run `jackin-validate --migrate <role-repo-path>` to apply."

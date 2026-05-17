@@ -360,6 +360,7 @@ fn open_settings_auth_form(
             crate::console::manager::auth_kind::AuthKind::Claude
             | crate::console::manager::auth_kind::AuthKind::Codex
             | crate::console::manager::auth_kind::AuthKind::Amp
+            | crate::console::manager::auth_kind::AuthKind::Kimi
             | crate::console::manager::auth_kind::AuthKind::Opencode => env.pending.env.get(name),
         })
         .cloned();
@@ -604,6 +605,7 @@ fn persist_settings_auth_form(
             crate::console::manager::auth_kind::AuthKind::Claude
             | crate::console::manager::auth_kind::AuthKind::Codex
             | crate::console::manager::auth_kind::AuthKind::Amp
+            | crate::console::manager::auth_kind::AuthKind::Kimi
             | crate::console::manager::auth_kind::AuthKind::Opencode => {
                 env.pending.env.insert(name.to_string(), value);
             }
@@ -634,6 +636,7 @@ fn clear_settings_auth_kind(
                 crate::console::manager::auth_kind::AuthKind::Claude
                 | crate::console::manager::auth_kind::AuthKind::Codex
                 | crate::console::manager::auth_kind::AuthKind::Amp
+                | crate::console::manager::auth_kind::AuthKind::Kimi
                 | crate::console::manager::auth_kind::AuthKind::Opencode => {
                     env.pending.env.remove(env_var);
                 }

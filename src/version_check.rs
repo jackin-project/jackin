@@ -30,6 +30,11 @@ fn opencode_image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
         .join(format!("image-opencode-version/{image}"))
 }
 
+/// File that records the Kimi version baked into a given Docker image.
+fn kimi_image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
+    paths.cache_dir.join(format!("image-kimi-version/{image}"))
+}
+
 /// Query npm for the latest published `@anthropic-ai/claude-code` version,
 /// returning a cached value when the cache is still fresh.
 pub fn latest_claude_version(
@@ -145,6 +150,20 @@ pub fn needs_opencode_update(
     installed != latest
 }
 
+/// Read the Kimi version we stored for a previously-built image.
+pub fn stored_kimi_version(paths: &JackinPaths, image: &str) -> Option<String> {
+    let path = kimi_image_version_path(paths, image);
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
+/// Persist the Kimi version that was just installed into an image.
+pub fn store_kimi_version(paths: &JackinPaths, image: &str, version: &str) {
+    let path = kimi_image_version_path(paths, image);
+    let _ = write_cached(&path, version);
+}
+
 /// File that records the last `JACKIN_CACHE_BUST` value used to build an image.
 fn cache_bust_path(paths: &JackinPaths, image: &str) -> PathBuf {
     paths.cache_dir.join(format!("image-cache-bust/{image}"))
@@ -177,6 +196,23 @@ pub fn parse_claude_version(raw: &str) -> Option<&str> {
         return None;
     }
     Some(token)
+}
+
+/// Extract a bare semver string from `kimi --version` output.
+///
+/// The command returns e.g. `"kimi 1.2.3"` but we only need the `"1.2.3"`
+/// portion. Returns `None` when the output doesn't look like a version string.
+pub fn parse_kimi_version(raw: &str) -> Option<&str> {
+    let mut tokens = raw.split_whitespace();
+    let first = tokens.next()?;
+    if first.split('.').count() >= 2 && first.starts_with(|c: char| c.is_ascii_digit()) {
+        return Some(first);
+    }
+    let second = tokens.next()?;
+    if second.split('.').count() >= 2 && second.starts_with(|c: char| c.is_ascii_digit()) {
+        return Some(second);
+    }
+    None
 }
 
 /// Extract a bare semver string from `opencode --version` output.
@@ -370,6 +406,69 @@ mod tests {
             "jk_the-architect",
             &mut runner
         ));
+    }
+
+    #[test]
+    fn stores_and_reads_kimi_image_version() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        store_kimi_version(&paths, "jk_the-architect", "1.2.3");
+
+        assert_eq!(
+            stored_kimi_version(&paths, "jk_the-architect"),
+            Some("1.2.3".to_string())
+        );
+    }
+
+    #[test]
+    fn kimi_version_stored_separately_from_claude_version() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        paths.ensure_base_dirs().unwrap();
+
+        store_image_version(&paths, "jk_test", "2.0.0");
+        store_kimi_version(&paths, "jk_test", "1.0.0");
+
+        assert_eq!(
+            stored_image_version(&paths, "jk_test"),
+            Some("2.0.0".to_string())
+        );
+        assert_eq!(
+            stored_kimi_version(&paths, "jk_test"),
+            Some("1.0.0".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_kimi_version_prefixed_with_kimi() {
+        assert_eq!(parse_kimi_version("kimi 1.2.3"), Some("1.2.3"));
+    }
+
+    #[test]
+    fn parse_kimi_version_bare_semver() {
+        assert_eq!(parse_kimi_version("1.2.3"), Some("1.2.3"));
+    }
+
+    #[test]
+    fn parse_kimi_version_two_part() {
+        assert_eq!(parse_kimi_version("kimi 1.0"), Some("1.0"));
+    }
+
+    #[test]
+    fn parse_kimi_version_rejects_v_prefix() {
+        assert_eq!(parse_kimi_version("kimi v1.2.3"), None);
+    }
+
+    #[test]
+    fn parse_kimi_version_rejects_garbage() {
+        assert_eq!(parse_kimi_version("not-a-version"), None);
+    }
+
+    #[test]
+    fn parse_kimi_version_rejects_empty() {
+        assert_eq!(parse_kimi_version(""), None);
     }
 
     #[test]
