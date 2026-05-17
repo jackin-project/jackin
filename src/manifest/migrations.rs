@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::bail;
 use toml_edit::DocumentMut;
 
-pub const CURRENT_MANIFEST_VERSION: &str = "v1alpha3";
+pub const CURRENT_MANIFEST_VERSION: &str = "v1alpha4";
 
 const MANIFEST_MIGRATIONS: &[crate::config::migrations::MigrationStep] = &[
     crate::config::migrations::MigrationStep {
@@ -18,6 +18,11 @@ const MANIFEST_MIGRATIONS: &[crate::config::migrations::MigrationStep] = &[
     },
     crate::config::migrations::MigrationStep {
         from: "v1alpha2",
+        to: "v1alpha3",
+        migrate: crate::config::migrations::noop_migration,
+    },
+    crate::config::migrations::MigrationStep {
+        from: "v1alpha3",
         to: CURRENT_MANIFEST_VERSION,
         migrate: crate::config::migrations::noop_migration,
     },
@@ -73,9 +78,9 @@ mod tests {
         let parsed: toml::Value = toml::from_str(&out).unwrap();
 
         assert_eq!(old, "legacy");
-        assert_eq!(new, "v1alpha3");
-        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha3");
-        assert!(out.starts_with("version = \"v1alpha3\""), "{out}");
+        assert_eq!(new, "v1alpha4");
+        assert_eq!(parsed["version"].as_str().unwrap(), "v1alpha4");
+        assert!(out.starts_with("version = \"v1alpha4\""), "{out}");
         assert!(out.contains("# keep me"), "{out}");
     }
 
@@ -93,15 +98,15 @@ mod tests {
         let out = std::fs::read_to_string(&path).unwrap();
 
         assert_eq!(old, "v1alpha1");
-        assert_eq!(new, "v1alpha3");
-        assert!(out.starts_with("version = \"v1alpha3\""), "{out}");
+        assert_eq!(new, "v1alpha4");
+        assert!(out.starts_with("version = \"v1alpha4\""), "{out}");
     }
 
     #[test]
     fn current_manifest_migration_is_noop() {
         let temp = tempdir().unwrap();
         let path = temp.path().join("jackin.role.toml");
-        let manifest = "version = \"v1alpha3\"\ndockerfile = \"Dockerfile\"\n";
+        let manifest = "version = \"v1alpha4\"\ndockerfile = \"Dockerfile\"\n";
         std::fs::write(&path, manifest).unwrap();
 
         assert!(migrate_manifest_file(&path).unwrap().is_none());
@@ -120,14 +125,14 @@ mod tests {
 
         let err = migrate_manifest_file(&path).unwrap_err();
         assert!(
-            err.to_string().contains("only understands up to v1alpha3"),
+            err.to_string().contains("only understands up to v1alpha4"),
             "{err}"
         );
     }
 
     #[test]
     fn validate_manifest_version_accepts_current() {
-        let doc: DocumentMut = "version = \"v1alpha3\"\n".parse().unwrap();
+        let doc: DocumentMut = "version = \"v1alpha4\"\n".parse().unwrap();
         validate_manifest_version(&doc).unwrap();
     }
 
@@ -143,7 +148,7 @@ mod tests {
         let doc: DocumentMut = "version = \"v2alpha1\"\n".parse().unwrap();
         let err = validate_manifest_version(&doc).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("only understands up to v1alpha3"), "{msg}");
+        assert!(msg.contains("only understands up to v1alpha4"), "{msg}");
     }
 
     #[test]

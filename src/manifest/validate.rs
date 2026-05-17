@@ -63,6 +63,11 @@ pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec
                     anyhow::bail!("[amp] table required when amp is in `agents`");
                 }
             }
+            Agent::Kimi => {
+                if manifest.kimi.is_none() {
+                    anyhow::bail!("[kimi] table required when kimi is in `agents`");
+                }
+            }
             Agent::Opencode => {
                 if manifest.opencode.is_none() {
                     anyhow::bail!("[opencode] table required when opencode is in `agents`");
@@ -93,6 +98,18 @@ pub fn validate_agent_consistency(manifest: &RoleManifest) -> anyhow::Result<Vec
             warnings.push(ManifestWarning::new(
                 "[amp] table is present but `agents` does not include amp; \
                  the table is ignored — add amp to `agents` to enable it.",
+            ));
+        }
+        if manifest.kimi.is_some() && !supported.contains(&Agent::Kimi) {
+            warnings.push(ManifestWarning::new(
+                "[kimi] table is present but `agents` does not include kimi; \
+                 the table is ignored — add kimi to `agents` to enable it.",
+            ));
+        }
+        if manifest.opencode.is_some() && !supported.contains(&Agent::Opencode) {
+            warnings.push(ManifestWarning::new(
+                "[opencode] table is present but `agents` does not include opencode; \
+                 the table is ignored — add opencode to `agents` to enable it.",
             ));
         }
     }

@@ -146,6 +146,20 @@ case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in
     # doesn't write to the operator's XDG_CONFIG.
     LAUNCH=(amp --dangerously-allow-all)
     ;;
+  kimi)
+    seed_home_dir /jackin/default-home/.kimi /home/agent/.kimi
+    if [ -d /jackin/kimi ] && [ "$(ls -A /jackin/kimi 2>/dev/null)" ]; then
+        echo "[entrypoint] kimi: copying provisioned credentials into ~/.kimi/" >&2
+        cp -a /jackin/kimi/. /home/agent/.kimi/
+    elif [ -d /jackin/kimi ]; then
+        echo "[entrypoint] kimi: sync mode active but host ~/.kimi was absent at provision time — Kimi will start without forwarded auth" >&2
+    elif [ -n "${KIMI_API_KEY:-}" ]; then
+        echo "[entrypoint] kimi: KIMI_API_KEY present in env; agent will use api-key auth" >&2
+    else
+        echo "[entrypoint] kimi: KIMI_API_KEY unset — agent will require interactive login or config" >&2
+    fi
+    LAUNCH=(kimi --yolo)
+    ;;
   opencode)
     seed_home_dir /jackin/default-home/.local/share/opencode /home/agent/.local/share/opencode
     if [ -f /jackin/opencode/auth.json ]; then

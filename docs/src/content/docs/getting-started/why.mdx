@@ -7,7 +7,7 @@ import { Aside, Steps } from '@astrojs/starlight/components'
 
 ## The problem
 
-AI coding agents are transforming software development. Tools like [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), [Amp Code](https://ampcode.com), and [OpenCode](https://github.com/opencode-ai/opencode) can read your codebase, write code, run tests, install dependencies, and execute arbitrary shell commands — all autonomously.
+AI coding agents are transforming software development. Tools like [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), [Amp Code](https://ampcode.com), Kimi, and [OpenCode](https://github.com/opencode-ai/opencode) can read your codebase, write code, run tests, install dependencies, and execute arbitrary shell commands — all autonomously.
 
 But there's a catch: **every modern agent runtime is most productive when it runs without guardrails.**
 
@@ -108,7 +108,7 @@ That's exactly what jackin' does:
 | **Operator** | You — the developer running jackin' |
 | **The `Construct`** | The base `Docker` image with system tools |
 | **Jacking in** | `jackin load agent-smith` |
-| **The agent inside** | Whatever runtime you load (`Claude Code`, `Codex`, `Amp`, or `OpenCode` today), running at full speed |
+| **The agent inside** | Whatever runtime you load (`Claude Code`, `Codex`, `Amp`, `Kimi`, or `OpenCode` today), running at full speed |
 | **The real world** | Your host machine, untouched |
 | **Hardline** | `jackin hardline` — reconnecting to a running agent |
 | **Pulling out** | `jackin eject` — stopping an agent |
@@ -170,7 +170,7 @@ jackin' is built in Rust for three reasons:
 ## Current status
 
 <Aside type="note">
-jackin' is currently a proof of concept. `Claude Code`, `Codex`, `Amp`, and `OpenCode` ship today as built-in agent runtimes; full feature parity across all four is tracked on the [Roadmap](/reference/roadmap/). The isolation model is runtime-agnostic by design — adding a new runtime is a matter of teaching jackin' how to install and start it inside the `construct`, not redesigning the boundary.
+jackin' is currently a proof of concept. `Claude Code`, `Codex`, `Amp`, `Kimi`, and `OpenCode` ship today as built-in agent runtimes; full feature parity across all five is tracked on the [Roadmap](/reference/roadmap/). The isolation model is runtime-agnostic by design — adding a new runtime is a matter of teaching jackin' how to install and start it inside the `construct`, not redesigning the boundary.
 </Aside>
 The core isolation model works, workspaces and mounts are configurable, the interactive operator console is functional, and the role system supports namespaced, team-shareable environments. It's licensed under Apache 2.0.
 

@@ -21,9 +21,9 @@ jackin' enforces **strict parsing** — unknown fields are rejected with an erro
 ## Full schema
 
 ```toml title="jackin.role.toml"
-version = "v1alpha3"
+version = "v1alpha4"
 dockerfile = "Dockerfile"
-agents = ["claude", "codex", "amp", "opencode"]
+agents = ["claude", "codex", "amp", "kimi", "opencode"]
 
 [identity]
 name = "The Architect"
@@ -49,6 +49,9 @@ model = "gpt-5"
 
 [amp]
 
+[kimi]
+model = "kimi-k2"
+
 [opencode]
 
 [hooks]
@@ -72,9 +75,9 @@ default = "feature/${env.PROJECT}"
 
 | Field | Required | Description |
 |---|---|---|
-| `version` | Yes | Manifest schema version. Current value is `v1alpha3`. |
+| `version` | Yes | Manifest schema version. Current value is `v1alpha4`. |
 | `dockerfile` | Yes | Relative path to the Dockerfile within the repo |
-| `agents` | No | Non-empty list of agent slugs this role supports: `"claude"`, `"codex"`, `"amp"`, or `"opencode"`. When omitted, jackin treats the manifest as Claude-only. |
+| `agents` | No | Non-empty list of agent slugs this role supports: `"claude"`, `"codex"`, `"amp"`, `"kimi"`, or `"opencode"`. When omitted, jackin treats the manifest as Claude-only. |
 
 The Dockerfile path must:
 
@@ -83,12 +86,12 @@ The Dockerfile path must:
 - Point to a valid Dockerfile
 - Have a final stage that starts with `FROM projectjackin/construct:trixie`
 
-Every agent listed in `agents` must have a matching `[<agent>]` table, even when that table is empty. A manifest with `agents = ["claude", "codex", "amp", "opencode"]` needs `[claude]`, `[codex]`, `[amp]`, and `[opencode]`.
+Every agent listed in `agents` must have a matching `[<agent>]` table, even when that table is empty. A manifest with `agents = ["claude", "codex", "amp", "kimi", "opencode"]` needs `[claude]`, `[codex]`, `[amp]`, `[kimi]`, and `[opencode]`.
 
 ```toml title="jackin.role.toml"
-version = "v1alpha3"
+version = "v1alpha4"
 dockerfile = "Dockerfile"
-agents = ["claude", "codex", "amp", "opencode"]
+agents = ["claude", "codex", "amp", "kimi", "opencode"]
 
 [claude]
 plugins = []
@@ -97,6 +100,9 @@ plugins = []
 model = "gpt-5"
 
 [amp]
+
+[kimi]
+model = "kimi-k2"
 
 [opencode]
 ```
@@ -112,7 +118,7 @@ model = "gpt-5"
 Example values:
 
 ```toml title="jackin.role.toml"
-version = "v1alpha3"
+version = "v1alpha4"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -143,7 +149,7 @@ The `[codex]` table is required when `"codex"` appears in `agents`.
 | `model` | No | Optional Codex model passed to `codex -m` at launch |
 
 ```toml title="jackin.role.toml"
-version = "v1alpha3"
+version = "v1alpha4"
 dockerfile = "Dockerfile"
 agents = ["codex"]
 
@@ -156,11 +162,30 @@ model = "gpt-5"
 The `[amp]` table is required when `"amp"` appears in `agents`. It is empty today and reserved for future Amp-specific settings.
 
 ```toml title="jackin.role.toml"
-version = "v1alpha3"
+version = "v1alpha4"
 dockerfile = "Dockerfile"
 agents = ["amp"]
 
 [amp]
+```
+
+## `[kimi]`
+
+The `[kimi]` table is required when `"kimi"` appears in `agents`.
+
+| Field | Required | Description |
+|---|---|---|
+| `model` | No | Optional Kimi model passed to `kimi --model` at launch |
+
+Kimi authenticates via host `~/.kimi` state in `sync` mode. jackin forwards `~/.kimi/config.toml`, files under `~/.kimi/credentials/`, and `~/.kimi/device_id` into the container before Kimi starts. `api_key` mode uses `KIMI_API_KEY`; `oauth_token` is not supported.
+
+```toml title="jackin.role.toml"
+version = "v1alpha4"
+dockerfile = "Dockerfile"
+agents = ["kimi"]
+
+[kimi]
+model = "kimi-k2"
 ```
 
 ## `[opencode]`
@@ -174,7 +199,7 @@ The `[opencode]` table is required when `"opencode"` appears in `agents`.
 OpenCode is a terminal-based AI coding agent installed from [GitHub Releases](https://github.com/opencode-ai/opencode/releases). It authenticates via `~/.local/share/opencode/auth.json`, which stores provider-level credentials — for example, a Z.AI Coding Plan subscription (see [z.ai/subscribe](https://z.ai/subscribe)). jackin forwards these credentials into the container using the same `sync` / `api_key` / `ignore` auth-forwarding modes as the other agents. The `OPENCODE_API_KEY` env var is used for `api_key` mode.
 
 ```toml title="jackin.role.toml"
-version = "v1alpha3"
+version = "v1alpha4"
 dockerfile = "Dockerfile"
 agents = ["opencode"]
 
@@ -389,7 +414,7 @@ Interactive prompts happen before the Docker image build, so you won't wait thro
 The smallest valid manifest:
 
 ```toml title="jackin.role.toml"
-version = "v1alpha3"
+version = "v1alpha4"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -399,7 +424,7 @@ plugins = []
 ## Complete example
 
 ```toml title="jackin.role.toml"
-version = "v1alpha3"
+version = "v1alpha4"
 dockerfile = "docker/Dockerfile.agent"
 
 [identity]
