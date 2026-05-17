@@ -153,7 +153,10 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(crate::cli::Command::Prune(PruneCommand::System(
-                PruneSystemArgs { yes: false, all: false }
+                PruneSystemArgs {
+                    yes: false,
+                    all: false
+                }
             )))
         ));
     }
@@ -164,7 +167,10 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(crate::cli::Command::Prune(PruneCommand::System(
-                PruneSystemArgs { yes: true, all: false }
+                PruneSystemArgs {
+                    yes: true,
+                    all: false
+                }
             )))
         ));
     }
@@ -175,7 +181,10 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(crate::cli::Command::Prune(PruneCommand::System(
-                PruneSystemArgs { yes: true, all: false }
+                PruneSystemArgs {
+                    yes: true,
+                    all: false
+                }
             )))
         ));
     }
@@ -186,7 +195,10 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(crate::cli::Command::Prune(PruneCommand::System(
-                PruneSystemArgs { yes: false, all: true }
+                PruneSystemArgs {
+                    yes: false,
+                    all: true
+                }
             )))
         ));
     }

@@ -535,7 +535,6 @@ fn describe_mount_state(state_dir: &std::path::Path) -> String {
     )
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum DockerNetworkState {
     Present,

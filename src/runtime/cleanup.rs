@@ -411,10 +411,7 @@ pub fn prune_images(runner: &mut impl CommandRunner) -> anyhow::Result<()> {
 /// Remove instances with terminal statuses (clean-exited, superseded,
 /// failed setup, purged). Does not touch running or restore-available
 /// instances. Used by `jackin prune instances`.
-pub fn prune_instances(
-    paths: &JackinPaths,
-    runner: &mut impl CommandRunner,
-) -> anyhow::Result<()> {
+pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
 
     let prunable = [
@@ -539,7 +536,10 @@ pub fn prune_all_instances(
     }
 
     for (name, error) in &skipped {
-        eprintln!("{} failed to purge state for {name}: {error}", "warning:".yellow().bold());
+        eprintln!(
+            "{} failed to purge state for {name}: {error}",
+            "warning:".yellow().bold()
+        );
     }
 
     Ok(())

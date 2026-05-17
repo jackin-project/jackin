@@ -130,7 +130,10 @@ agents = ["amp"]
         .iter()
         .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
         .expect("role docker run should run");
-    assert!(!run_cmd.contains("JACKIN_AGENT"), "JACKIN_AGENT must not be in docker run; got: {run_cmd}");
+    assert!(
+        !run_cmd.contains("JACKIN_AGENT"),
+        "JACKIN_AGENT must not be in docker run; got: {run_cmd}"
+    );
     assert!(
         run_cmd.contains("-e JACKIN_ROLE=the-architect"),
         "{run_cmd}"
