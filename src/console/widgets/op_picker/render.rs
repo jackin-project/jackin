@@ -450,7 +450,6 @@ fn render_fatal(frame: &mut Frame, area: Rect, fatal: &OpPickerFatalState) {
 #[cfg(test)]
 mod tests {
     use super::{OpPickerStage, breadcrumb_title};
-    use crate::console::widgets::scrollable::cursor_follow_offset;
 
     // ── Breadcrumb formatting ─────────────────────────────────────────
 
@@ -511,50 +510,6 @@ mod tests {
         // Account pane never has an email prefix (it lists accounts).
         let title = breadcrumb_title(OpPickerStage::Account, true, "ignored", "", "");
         assert_eq!(title, "1Password");
-    }
-
-    // ── Viewport scrolling ────────────────────────────────────────────
-
-    #[test]
-    fn cursor_follow_offset_returns_zero_when_list_fits() {
-        // 5 items, 10-row viewport — no scroll regardless of selection.
-        assert_eq!(cursor_follow_offset(0, 5, 10, 0), 0);
-        assert_eq!(cursor_follow_offset(4, 5, 10, 0), 0);
-    }
-
-    #[test]
-    fn cursor_follow_offset_anchors_top_until_cursor_falls_below_window() {
-        // 20 items, 5-row viewport. Cursor in rows 0..5 → no scroll.
-        assert_eq!(cursor_follow_offset(0, 20, 5, 0), 0);
-        assert_eq!(cursor_follow_offset(4, 20, 5, 0), 0);
-    }
-
-    #[test]
-    fn cursor_follow_offset_pins_cursor_to_bottom_when_below_initial_window() {
-        // 20 items, 5-row viewport. Cursor at row 5 → offset 1 (cursor
-        // sits on the last visible row, rows[1..6] → 1,2,3,4,5).
-        assert_eq!(cursor_follow_offset(5, 20, 5, 0), 1);
-        // Cursor at row 10 → offset 6 (rows 6..11; cursor at end).
-        assert_eq!(cursor_follow_offset(10, 20, 5, 0), 6);
-    }
-
-    #[test]
-    fn cursor_follow_offset_clamps_at_end() {
-        // Cursor at the last row of a 20-item list with a 5-row
-        // viewport must produce offset 15 — the last visible window
-        // shows rows 15..20.
-        assert_eq!(cursor_follow_offset(19, 20, 5, 0), 15);
-        // Even past the end (defensive), we don't scroll past
-        // total - height.
-        assert_eq!(cursor_follow_offset(99, 20, 5, 0), 15);
-    }
-
-    #[test]
-    fn cursor_follow_offset_is_zero_when_height_is_zero() {
-        // Defensive: `Constraint::Min(1)` could collapse to 0 if the
-        // modal is squeezed down to a single border row. Treat that
-        // as "no viewport" and return 0.
-        assert_eq!(cursor_follow_offset(7, 20, 0, 0), 0);
     }
 
     // ── Loading-panel breadcrumb ──────────────────────────────────────

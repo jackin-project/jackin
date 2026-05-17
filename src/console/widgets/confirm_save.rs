@@ -17,7 +17,7 @@ use ratatui::{
 
 use super::ModalOutcome;
 
-use super::scrollable::render_lines_with_offset_in_area;
+use super::scrollable::{apply_scroll_delta, render_lines_with_offset_in_area};
 use super::{PHOSPHOR_DARK, PHOSPHOR_GREEN, WHITE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,11 +75,11 @@ impl ConfirmSaveState {
             KeyCode::Char('c' | 'C') | KeyCode::Esc => ModalOutcome::Cancel,
             // Up/Down/j/k scroll the content preview.
             KeyCode::Up | KeyCode::Char('k' | 'K') => {
-                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+                apply_scroll_delta(&mut self.scroll_offset, -1);
                 ModalOutcome::Continue
             }
             KeyCode::Down | KeyCode::Char('j' | 'J') => {
-                self.scroll_offset = self.scroll_offset.saturating_add(1);
+                apply_scroll_delta(&mut self.scroll_offset, 1);
                 // Clamped to valid range in render.
                 ModalOutcome::Continue
             }

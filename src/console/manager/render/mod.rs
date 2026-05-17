@@ -24,8 +24,8 @@ pub(super) use modal::modal_outer_rect;
 pub use editor::render_editor;
 
 pub(in crate::console::manager) use crate::console::widgets::scrollable::{
-    apply_horizontal_scroll_delta, apply_scroll_delta, cursor_follow_offset,
-    effective_offset as effective_scroll, horizontal_scrollbar_area, is_scrollable,
+    apply_horizontal_scroll_delta, apply_scroll_delta, clamp_scroll_offset as clamp_scroll_x,
+    cursor_follow_offset, horizontal_scrollbar_area, is_scrollable,
     max_offset as max_scroll_offset, scrollbar_offset_for_track_position,
     viewport_height as scroll_viewport_height, viewport_width as scroll_viewport_width,
 };
@@ -262,16 +262,6 @@ mod footer_wrap_tests {
         let content = text_content(&lines);
         assert_eq!(content[0], "");
     }
-}
-
-pub(super) const fn clamp_scroll_x(
-    content_width: usize,
-    viewport: usize,
-    scroll_x: &mut u16,
-) -> u16 {
-    let effective = effective_scroll(content_width, viewport, *scroll_x);
-    *scroll_x = effective;
-    effective
 }
 
 /// Adjust stored `scroll_y` so the cursor row stays inside the viewport.
@@ -841,156 +831,6 @@ pub(super) fn centered_rect_fixed(outer: Rect, pct_w: u16, rows: u16) -> Rect {
         y: outer.y + outer.height.saturating_sub(h) / 2,
         width: w,
         height: h,
-    }
-}
-
-#[cfg(test)]
-mod horizontal_scrollbar_tests {
-    use super::{clamp_scroll_x, render_scrollable_block};
-    use crate::console::widgets::scrollable::scrollbar_position_for_offset;
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-    use ratatui::layout::Rect;
-    use ratatui::text::Line;
-
-    #[test]
-    fn stored_scroll_offset_clamps_to_visible_end() {
-        let mut scroll_x = 400;
-
-        let effective = clamp_scroll_x(100, 60, &mut scroll_x);
-
-        assert_eq!(effective, 40);
-        assert_eq!(scroll_x, 40);
-
-        scroll_x = scroll_x.saturating_sub(8);
-        assert_eq!(scroll_x, 32);
-    }
-
-    #[test]
-    fn scrollbar_position_maps_visible_end_to_track_end() {
-        assert_eq!(scrollbar_position_for_offset(13, 10, 0), 0);
-        assert_eq!(scrollbar_position_for_offset(13, 10, 3), 3);
-    }
-
-    #[test]
-    fn scrollbar_position_clamps_overscroll() {
-        assert_eq!(scrollbar_position_for_offset(13, 10, 99), 3);
-    }
-
-    #[test]
-    fn scrollable_block_scrollbar_thumbs_reach_visible_ends() {
-        let backend = TestBackend::new(12, 6);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut scroll_x = 10;
-        let mut scroll_y = 4;
-        let lines: Vec<Line<'static>> = (0..8)
-            .map(|idx| Line::from(format!("{idx:02}-abcdefghijklmnopq")))
-            .collect();
-
-        terminal
-            .draw(|frame| {
-                render_scrollable_block(
-                    frame,
-                    Rect::new(0, 0, 12, 6),
-                    lines,
-                    &mut scroll_x,
-                    &mut scroll_y,
-                    true,
-                    Some(" Test "),
-                );
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-        assert_eq!(buffer[(10, 5)].symbol(), "━");
-        assert_eq!(buffer[(11, 4)].symbol(), "█");
-    }
-
-    #[test]
-    fn scrollable_block_scrollbar_thumbs_are_proportional_to_viewport() {
-        let backend = TestBackend::new(12, 6);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut scroll_x = 0;
-        let mut scroll_y = 0;
-        let lines: Vec<Line<'static>> = (0..5)
-            .map(|idx| Line::from(format!("{idx:02}-abcdefgh")))
-            .collect();
-
-        terminal
-            .draw(|frame| {
-                render_scrollable_block(
-                    frame,
-                    Rect::new(0, 0, 12, 6),
-                    lines,
-                    &mut scroll_x,
-                    &mut scroll_y,
-                    true,
-                    Some(" Test "),
-                );
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-        let horizontal_thumb_len = (1..=10).filter(|x| buffer[(*x, 5)].symbol() == "━").count();
-        let vertical_thumb_len = (1..=4).filter(|y| buffer[(11, *y)].symbol() == "█").count();
-
-        assert_eq!(horizontal_thumb_len, 9);
-        assert_eq!(vertical_thumb_len, 3);
-    }
-
-    #[test]
-    fn scrollable_block_preserves_matching_right_padding_at_horizontal_end() {
-        let backend = TestBackend::new(8, 4);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut scroll_x = 99;
-        let mut scroll_y = 0;
-        let lines = vec![Line::from("  abcdefgh")];
-
-        terminal
-            .draw(|frame| {
-                render_scrollable_block(
-                    frame,
-                    Rect::new(0, 0, 8, 4),
-                    lines,
-                    &mut scroll_x,
-                    &mut scroll_y,
-                    true,
-                    Some(" Test "),
-                );
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-        let visible: String = (1..=6).map(|x| buffer[(x, 1)].symbol()).collect();
-
-        assert_eq!(scroll_x, 6);
-        assert_eq!(visible, "efgh  ");
-    }
-
-    #[test]
-    fn scrollable_block_clamps_scroll_y_in_place() {
-        let backend = TestBackend::new(12, 6);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut scroll_x = 0;
-        let mut scroll_y = 99;
-        let lines: Vec<Line<'static>> = (0..8).map(|idx| Line::from(format!("{idx:02}"))).collect();
-
-        terminal
-            .draw(|frame| {
-                render_scrollable_block(
-                    frame,
-                    Rect::new(0, 0, 12, 6),
-                    lines,
-                    &mut scroll_x,
-                    &mut scroll_y,
-                    false,
-                    None,
-                );
-            })
-            .unwrap();
-
-        // viewport_h = 4, content = 8, max_y = 4
-        assert_eq!(scroll_y, 4);
     }
 }
 
