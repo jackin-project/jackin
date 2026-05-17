@@ -170,6 +170,7 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Overview', slug: 'reference/roadmap/agent-orchestrator-research' },
+                    { label: 'Herdr research', slug: 'reference/roadmap/herdr-research' },
                     {
                       label: 'Fleet phase 1 — Foundation gaps',
                       collapsed: true,
