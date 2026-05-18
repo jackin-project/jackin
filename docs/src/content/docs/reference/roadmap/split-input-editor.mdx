@@ -7,9 +7,9 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/console/manager/input/editor.rs" /> is **3955L** total (was ~3796L at original analysis). It handles keyboard dispatch for all editor tabs (General, Mounts, Agents, Secrets) and is one of the biggest concentrated editor-state files.
+<RepoFile path="src/console/manager/input/editor.rs" /> is **4002L** total (was ~3796L at original analysis). It handles keyboard dispatch for all editor tabs (General, Mounts, Agents, Secrets) and is one of the biggest concentrated editor-state files.
 
-Its render counterpart <RepoFile path="src/console/manager/render/editor.rs" /> is now **3231L** (was ~1682L — nearly doubled). Both files should be split together as a paired operation.
+Its render counterpart <RepoFile path="src/console/manager/render/editor.rs" /> is now **3331L** (was ~1682L — nearly doubled). Both files should be split together as a paired operation.
 
 ## Proposed split
 

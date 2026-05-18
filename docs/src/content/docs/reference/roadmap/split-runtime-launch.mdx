@@ -7,7 +7,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/runtime/launch.rs" /> is **7575L** total (was 5494L at original analysis — 38% growth). It is the single largest file in the codebase and the hardest to review. It owns: the public load API, trust verification, terminal setup, operator-env / auth handling, container slot claiming, workspace materialization, DinD sidecar launch, Docker network management, launch orchestration, attach/finalizer cleanup, env resolution with trace (duplicated from `config/roles.rs`), and extensive test infrastructure.
+<RepoFile path="src/runtime/launch.rs" /> is **7966L** total (was 5494L at original analysis — 45% growth). It is the single largest file in the codebase and the hardest to review. It owns: the public load API, trust verification, terminal setup, operator-env / auth handling, container slot claiming, workspace materialization, DinD sidecar launch, Docker network management, launch orchestration, attach/finalizer cleanup, env resolution with trace (duplicated from `config/roles.rs`), and extensive test infrastructure.
 
 The file has grown significantly since the original analysis due to new agent runtime support (Kimi), instance identity features, and expanded error reporting.
 

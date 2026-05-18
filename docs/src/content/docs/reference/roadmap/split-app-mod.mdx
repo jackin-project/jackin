@@ -7,9 +7,9 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-<RepoFile path="src/app/mod.rs" /> is now **2767L** total — more than **double** the 1243L at the original analysis (+123% growth). It is the second-largest file in the codebase after `runtime/launch.rs`. Nearly all production code is the `run()` dispatch function with a giant match on CLI commands, but the file has accumulated substantial new command handling, error recovery, and test coverage.
+<RepoFile path="src/app/mod.rs" /> is now **2932L** total — more than **double** the 1243L at the original analysis (+136% growth). It is the sixth-largest file in the codebase after `runtime/launch.rs`, `console/manager/input/editor.rs`, `operator_env.rs`, `console/manager/render/editor.rs`, and `instance/auth.rs`. Nearly all production code is the `run()` dispatch function with a giant match on CLI commands, but the file has accumulated substantial new command handling, error recovery, and test coverage.
 
-<RepoFile path="src/app/context.rs" /> (1466L) has also grown and now contains significant instance management, workspace resolution, and Docker interaction logic.
+<RepoFile path="src/app/context.rs" /> (1474L) has also grown and now contains significant instance management, workspace resolution, and Docker interaction logic.
 
 ## Proposed split
 
