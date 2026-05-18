@@ -513,5 +513,20 @@ mod tests {
         ) -> anyhow::Result<String> {
             Ok(self.0.clone())
         }
+
+        fn capture_secret(
+            &mut self,
+            _program: &str,
+            _args: &[&str],
+            _cwd: Option<&std::path::Path>,
+        ) -> anyhow::Result<String> {
+            // StubRunner is used only by version_check tests which never
+            // exercise code paths that call build_agent_image. Panic here
+            // to surface unexpected calls immediately rather than silently
+            // returning the fixed stub value for a different purpose.
+            panic!(
+                "StubRunner::capture_secret called unexpectedly; version_check tests do not exercise secret-capture paths"
+            )
+        }
     }
 }

@@ -195,6 +195,8 @@ Mounted files are live host files. If the agent edits a mounted path, the host f
 
 By default, jackin' forwards the host's Claude Code OAuth credentials into new agent containers (the `sync` auth-forward mode). This means agents start pre-authenticated, but it also means OAuth tokens land on disk inside the agent's persisted state with owner-only file permissions.
 
+`--debug` output never prints resolved token values. Command-level diagnostic lines show the command name and arguments; env-var values and command stdout that carry credentials are redacted or suppressed at the source before they reach the terminal.
+
 You can control this behaviour at three scopes (global, per workspace, and per workspace × role × agent) — see [Authentication Forwarding](/guides/authentication/). Setting the mode to `ignore` revokes any previously forwarded credentials and falls back to manual in-container login. The `api_key` and `oauth_token` modes inject the credential into the container's process env at launch only — no credential is written to disk inside the agent's persisted state.
 
 ### Credentials obtained inside the runtime remain inside the runtime
