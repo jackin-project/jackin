@@ -107,9 +107,17 @@ case "${2:-}" in
 esac
 
 # Append $2 trailer to commit-msg file $1 unless it is already present.
+# If the last non-empty line is already a trailer (Key: value), append
+# directly so the block stays contiguous. Otherwise prepend a blank line
+# to separate the new trailer from the body.
 _append_trailer() {
     if ! grep -qF "$2" "$1"; then
-        printf '\n%s\n' "$2" >> "$1" || {
+        _last=$(grep -v '^[[:space:]]*$' "$1" | tail -1)
+        if printf '%s' "$_last" | grep -qE '^[A-Za-z-]+: .+'; then
+            printf '%s\n' "$2" >> "$1"
+        else
+            printf '\n%s\n' "$2" >> "$1"
+        fi || {
             echo "[jackin prepare-commit-msg] ERROR: failed to append $3 to $1" >&2
             exit 1
         }
