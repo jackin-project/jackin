@@ -1,0 +1,7 @@
+# DL3004: construct base image is a dev container that intentionally exposes sudo
+# DL3059: per-tool RUN layers are deliberate for Docker layer cache reuse (see Dockerfile comments)
+# SC2016: single-quoted ${HOME} in echo is intentional — zsh expands it at source time, not build time
+ignore:
+  - DL3004
+  - DL3059
+  - SC2016
