@@ -2061,7 +2061,7 @@ fn load_role_with(
                         paths,
                         &container_state,
                         &mut instance_manifest,
-                        decision,
+                        is_preserved,
                         &cleanup,
                         runner,
                     )?;
@@ -2077,7 +2077,7 @@ fn load_role_with(
                     paths,
                     &container_state,
                     &mut instance_manifest,
-                    decision,
+                    is_preserved,
                     &cleanup,
                     runner,
                 )?;
@@ -2111,7 +2111,7 @@ fn load_role_with(
                     paths,
                     &container_state,
                     &mut instance_manifest,
-                    decision,
+                    is_preserved,
                     &cleanup,
                     runner,
                 )?;
@@ -2507,21 +2507,18 @@ fn matching_instance_manifests(
     )
 }
 
-/// Write `CleanExited` status and run container teardown. When `decision` is
-/// `Preserved`, the status write is skipped (isolation wrote it earlier) but
-/// teardown still runs.
+/// Write `CleanExited` status and run container teardown. When `preserved` is
+/// true, the status write is skipped (isolation wrote it earlier) but teardown
+/// still runs.
 fn run_clean_exit_teardown(
     paths: &JackinPaths,
     state_dir: &std::path::Path,
     manifest: &mut InstanceManifest,
-    decision: crate::isolation::finalize::FinalizeDecision,
+    preserved: bool,
     cleanup: &LoadCleanup,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    if !matches!(
-        decision,
-        crate::isolation::finalize::FinalizeDecision::Preserved
-    ) {
+    if !preserved {
         write_instance_status(paths, state_dir, manifest, InstanceStatus::CleanExited)?;
     }
     cleanup.run(runner);
