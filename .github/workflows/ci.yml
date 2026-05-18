@@ -23,6 +23,6 @@ jobs:
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN }}
-      - uses: jackin-project/jackin-role-action@9a36bc65804328cb9907365d08f8cecc24eda325 # latest
+      - uses: jackin-project/jackin-role-action@62dc1f2b0f33333aca9753de0023e0045dc78735 # latest
         with:
           jackin-version: latest-build
