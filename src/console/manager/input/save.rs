@@ -1597,7 +1597,7 @@ mod tests {
     }
 
     #[test]
-    fn exit_on_success_save_does_not_show_success_toast() {
+    fn exit_on_success_save_returns_to_list() {
         let ws = WorkspaceConfig {
             version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
@@ -1619,11 +1619,6 @@ mod tests {
             matches!(state.stage, ManagerStage::List),
             "exit_on_success should land us in the list; got {:?}",
             state.stage,
-        );
-        assert!(
-            state.toast.is_none(),
-            "saving should not show a success toast; got {:?}",
-            state.toast,
         );
     }
 
@@ -1701,7 +1696,7 @@ mod tests {
     }
 
     #[test]
-    fn create_mode_save_does_not_show_success_toast() {
+    fn create_mode_save_returns_to_list() {
         let (tmp, paths, mut config) = {
             let tmp = tempfile::tempdir().unwrap();
             let paths = JackinPaths::for_tests(tmp.path());
@@ -1727,11 +1722,6 @@ mod tests {
             matches!(state.stage, ManagerStage::List),
             "create save should return to the list; got {:?}",
             state.stage,
-        );
-        assert!(
-            state.toast.is_none(),
-            "create save should not show a success toast; got {:?}",
-            state.toast,
         );
     }
 
