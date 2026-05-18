@@ -17,19 +17,10 @@ on:
 
 jobs:
   publish:
-    runs-on: hetzner-sentry
+    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@f79883f57448b81ade0450e7b0fed58fa8bd9bdf # latest
     permissions:
       contents: read
       id-token: write
-      packages: write
-
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: jackin-project/jackin-role-action@f59949f92906655d2c5a1a6747390d4d49b0b9cd # latest
-        with:
-          jackin-version: latest-build
-          push: 'true'
-          image: docker.io/chainargos/jackin-agent-brown
-          registry-username: ${{ secrets.DOCKERHUB_USERNAME }}
-          registry-password: ${{ secrets.DOCKERHUB_TOKEN }}
-          sign: 'true'
+    secrets:
+      registry-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      registry-password: ${{ secrets.DOCKERHUB_TOKEN }}
