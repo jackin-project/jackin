@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct JackinPaths {
     pub home_dir: PathBuf,
+    pub jackin_home: PathBuf,
     pub config_dir: PathBuf,
     pub config_file: PathBuf,
     pub workspaces_dir: PathBuf,
@@ -45,20 +46,23 @@ impl JackinPaths {
             cache_dir: jackin_home.join("cache"),
             home_dir: home_dir.to_path_buf(),
             config_dir,
+            jackin_home,
         }
     }
 
     pub fn for_tests(root: &Path) -> Self {
         let home_dir = root.join("home");
         let config_dir = root.join("config");
+        let jackin_home = home_dir.join(".jackin");
         Self {
             config_file: config_dir.join("config.toml"),
             workspaces_dir: config_dir.join("workspaces"),
-            roles_dir: home_dir.join(".jackin/roles"),
-            data_dir: home_dir.join(".jackin/data"),
-            cache_dir: home_dir.join(".jackin/cache"),
+            roles_dir: jackin_home.join("roles"),
+            data_dir: jackin_home.join("data"),
+            cache_dir: jackin_home.join("cache"),
             home_dir,
             config_dir,
+            jackin_home,
         }
     }
 
@@ -90,6 +94,7 @@ mod env_override_tests {
             None,
         );
 
+        assert_eq!(paths.jackin_home, jackin_root.path());
         assert_eq!(paths.data_dir, jackin_root.path().join("data"));
         assert_eq!(paths.roles_dir, jackin_root.path().join("roles"));
         assert_eq!(paths.cache_dir, jackin_root.path().join("cache"));
