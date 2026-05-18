@@ -173,12 +173,16 @@ construct-publish-manifest:
       printf "Bump docker/construct/VERSION before publishing a new construct version.\n" >&2
       exit 1
     } || {
-      # Non-zero exit from imagetools inspect is expected when the tag does not exist.
-      # Treat any other error (auth, network) as fatal.
-      if echo "${inspect_err}" | grep -qEv "(not found|MANIFEST_UNKNOWN|does not exist|NAME_UNKNOWN)"; then
-        printf "Error: registry check for %s:%s failed unexpectedly:\n%s\n" "${REGISTRY_IMAGE}" "${VERSION_TAG}" "${inspect_err}" >&2
-        exit 1
-      fi
+      # Non-zero exit is expected when the tag does not exist yet. Use case to
+      # match the full stderr string without being tripped up by trailing blank
+      # lines (grep -v would match empty lines even for benign errors).
+      case "${inspect_err}" in
+        *"not found"*|*"MANIFEST_UNKNOWN"*|*"does not exist"*|*"NAME_UNKNOWN"*) ;;
+        *)
+          printf "Error: registry check for %s:%s failed unexpectedly:\n%s\n" "${REGISTRY_IMAGE}" "${VERSION_TAG}" "${inspect_err}" >&2
+          exit 1
+          ;;
+      esac
     }
     docker buildx imagetools create \
       --tag "${REGISTRY_IMAGE}:${STABLE_TAG}" \

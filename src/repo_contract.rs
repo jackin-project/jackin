@@ -77,8 +77,10 @@ pub fn validate_agent_dockerfile(
     // versioned release (e.g. "0.1-trixie") so Renovate can track updates and
     // jackin can detect published-image staleness at launch time.
     let version_suffix = format!("-{CONSTRUCT_STABLE_TAG}");
-    let version_prefix_len = tag.len().saturating_sub(version_suffix.len());
-    if tag == CONSTRUCT_STABLE_TAG || !tag.ends_with(&version_suffix) || version_prefix_len == 0 {
+    if tag
+        .strip_suffix(version_suffix.as_str())
+        .map_or(true, str::is_empty)
+    {
         return Err(RoleRepoValidationError::DockerfileMissingVersionPin);
     }
 
