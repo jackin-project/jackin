@@ -60,3 +60,7 @@ The console intentionally stays narrower. **New niche flags and detail-level opt
 | **Where new niche flags land** | Rarely | First, and sometimes exclusively |
 
 For a deeper operator workflow around fresh instances versus multiple agent sessions inside one running instance, see [Parallel Agents](/guides/parallel-agents/).
+
+## Running inside tmux
+
+If you run `jackin console` from within a tmux session, your host tmux needs a small amount of configuration for agents to receive the correct keyboard and terminal experience — specifically `extended-keys always` so that Shift+Enter is not collapsed to plain Enter before it reaches the agent. See [Running inside tmux](/guides/tmux/) for the required settings and an explanation of each one.
