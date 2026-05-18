@@ -1,4 +1,4 @@
-FROM projectjackin/construct:0.1-trixie@sha256:9c1ed04a20ece37c67c646490feb88eaf5dbabcfa0947b06c196390f143f5e5e
+FROM projectjackin/construct:0.2-trixie@sha256:b6f6ada39797ef32033edb061d473423643df36b1041ca4770b85581a2c7739e
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
