@@ -1,14 +1,78 @@
 use jackin::agent::Agent;
 use jackin::config::AppConfig;
 use jackin::docker::{CommandRunner, RunOptions};
+use jackin::docker_client::{
+    ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
+};
 use jackin::isolation::MountIsolation;
 use jackin::paths::JackinPaths;
 use jackin::runtime::{LoadOptions, load_role};
 use jackin::selector::RoleSelector;
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use tempfile::tempdir;
+
+// Minimal DockerApi stub for integration tests: all GC/inspect calls return
+// empty results so load_role proceeds as if no containers exist.
+struct NoOpDocker;
+
+impl DockerApi for NoOpDocker {
+    async fn inspect_container_state(&self, _name: &str) -> ContainerState {
+        ContainerState::NotFound
+    }
+    async fn remove_container(&self, _name: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn list_containers(
+        &self,
+        _label_filters: &[&str],
+        _all: bool,
+    ) -> anyhow::Result<Vec<ContainerRow>> {
+        Ok(vec![])
+    }
+    async fn create_container(&self, _name: &str, _spec: ContainerSpec) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn start_container(&self, _name: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn remove_volume(&self, _name: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn create_network(
+        &self,
+        _name: &str,
+        _labels: HashMap<String, String>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn remove_network(&self, _name: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn list_networks(&self, _label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>> {
+        Ok(vec![])
+    }
+    async fn list_image_tags(&self, _reference_filter: &str) -> anyhow::Result<Vec<String>> {
+        Ok(vec![])
+    }
+    async fn remove_image(&self, _name: &str) -> anyhow::Result<RemoveImageOutcome> {
+        Ok(RemoveImageOutcome::NotFound)
+    }
+    async fn inspect_image_label(
+        &self,
+        _image: &str,
+        _label: &str,
+    ) -> anyhow::Result<Option<String>> {
+        Ok(None)
+    }
+    async fn pull_image(&self, _image: &str, _debug: bool) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn exec_capture(&self, _container: &str, _cmd: &[&str]) -> anyhow::Result<String> {
+        Ok(String::new())
+    }
+}
 
 #[derive(Default)]
 struct FakeRunner {
@@ -18,8 +82,10 @@ struct FakeRunner {
 
 impl FakeRunner {
     fn for_load_agent(outputs: impl IntoIterator<Item = String>) -> Self {
+        // Preamble: 4 identity lookups (git config user.name, user.email, id -u, id -g).
+        // GC now uses DockerApi, not CommandRunner, so it no longer counts.
         let mut capture_queue = VecDeque::new();
-        for _ in 0..6 {
+        for _ in 0..4 {
             capture_queue.push_back(String::new());
         }
         capture_queue.extend(outputs);
@@ -31,7 +97,7 @@ impl FakeRunner {
 }
 
 impl CommandRunner for FakeRunner {
-    fn run(
+    async fn run(
         &mut self,
         program: &str,
         args: &[&str],
@@ -42,7 +108,7 @@ impl CommandRunner for FakeRunner {
         Ok(())
     }
 
-    fn capture(
+    async fn capture(
         &mut self,
         program: &str,
         args: &[&str],
@@ -52,7 +118,7 @@ impl CommandRunner for FakeRunner {
         Ok(self.capture_queue.pop_front().unwrap_or_default())
     }
 
-    fn capture_secret(
+    async fn capture_secret(
         &mut self,
         program: &str,
         args: &[&str],
@@ -62,12 +128,12 @@ impl CommandRunner for FakeRunner {
         // one entry per expected `capture_secret` call (e.g. `gh auth token`
         // in `resolve_github_token`) and document it above the `for_load_agent`
         // call — same discipline as for `capture` calls.
-        self.capture(program, args, cwd)
+        self.capture(program, args, cwd).await
     }
 }
 
-#[test]
-fn amp_launch_invokes_docker_run_with_amp_agent() {
+#[tokio::test]
+async fn amp_launch_invokes_docker_run_with_amp_agent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -126,18 +192,21 @@ agents = ["amp"]
         keep_awake_enabled: false,
         git_pull_on_entry: false,
     };
-    // Capture queue (role-specific, after 6-slot preamble):
+    // Capture queue (role-specific, after 4-slot preamble):
     //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
+    let docker = NoOpDocker;
 
     load_role(
         &paths,
         &mut config,
         &selector,
         &workspace,
+        &docker,
         &mut runner,
         &LoadOptions::default(),
     )
+    .await
     .unwrap();
 
     let run_cmd = runner
@@ -159,8 +228,8 @@ agents = ["amp"]
     assert!(!run_cmd.contains("/jackin/amp/secrets.json"), "{run_cmd}");
 }
 
-#[test]
-fn amp_launch_under_sync_mounts_secrets_json_in_docker_run() {
+#[tokio::test]
+async fn amp_launch_under_sync_mounts_secrets_json_in_docker_run() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -222,18 +291,21 @@ agents = ["amp"]
         keep_awake_enabled: false,
         git_pull_on_entry: false,
     };
-    // Capture queue (role-specific, after 6-slot preamble):
+    // Capture queue (role-specific, after 4-slot preamble):
     //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
+    let docker = NoOpDocker;
 
     load_role(
         &paths,
         &mut config,
         &selector,
         &workspace,
+        &docker,
         &mut runner,
         &LoadOptions::default(),
     )
+    .await
     .unwrap();
 
     let run_cmd = runner

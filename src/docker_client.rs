@@ -84,7 +84,6 @@ pub struct ContainerSpec {
 
 // ── DockerApi trait ───────────────────────────────────────────────────────
 
-#[allow(async_fn_in_trait)]
 pub trait DockerApi {
     async fn inspect_container_state(&self, name: &str) -> ContainerState;
     async fn remove_container(&self, name: &str) -> anyhow::Result<()>;
@@ -121,7 +120,7 @@ pub struct BollardDockerClient {
 }
 
 impl BollardDockerClient {
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn connect() -> anyhow::Result<Self> {
         let inner = Docker::connect_with_local_defaults()
             .context("failed to connect to Docker daemon")?;
         Ok(Self { inner })
@@ -155,7 +154,7 @@ fn build_label_filter(label_filters: &[&str]) -> Option<HashMap<String, Vec<Stri
     let mut map = HashMap::new();
     map.insert(
         "label".to_string(),
-        label_filters.iter().map(|s| s.to_string()).collect(),
+        label_filters.iter().map(ToString::to_string).collect(),
     );
     Some(map)
 }
@@ -241,10 +240,6 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()> {
-        let labels = spec.labels;
-        let env = spec.env;
-        let binds = spec.binds;
-
         self.inner
             .create_container(
                 Some(CreateContainerOptions {
@@ -254,11 +249,11 @@ impl DockerApi for BollardDockerClient {
                 ContainerCreateBody {
                     image: Some(spec.image),
                     hostname: spec.hostname,
-                    env: Some(env),
-                    labels: Some(labels),
+                    env: Some(spec.env),
+                    labels: Some(spec.labels),
                     host_config: Some(HostConfig {
                         network_mode: Some(spec.network),
-                        binds: Some(binds),
+                        binds: Some(spec.binds),
                         privileged: Some(spec.privileged),
                         ..Default::default()
                     }),
@@ -372,12 +367,12 @@ impl DockerApi for BollardDockerClient {
             Ok(_) => Ok(RemoveImageOutcome::Removed),
             Err(e) if is_404(&e) => Ok(RemoveImageOutcome::NotFound),
             Err(ref e) if is_409(e) => Ok(RemoveImageOutcome::InUse),
-            Err(ref e) => {
+            Err(e) => {
                 let msg = e.to_string().to_ascii_lowercase();
                 if msg.contains("in use") || msg.contains("cannot be forced") {
                     Ok(RemoveImageOutcome::InUse)
                 } else {
-                    Err(anyhow::anyhow!("{e}").context(format!("removing image {name}")))
+                    Err(anyhow::Error::from(e).context(format!("removing image {name}")))
                 }
             }
         }
@@ -427,7 +422,7 @@ impl DockerApi for BollardDockerClient {
             .create_exec(
                 container,
                 CreateExecOptions {
-                    cmd: Some(cmd.iter().map(|s| s.to_string()).collect::<Vec<String>>()),
+                    cmd: Some(cmd.iter().map(ToString::to_string).collect()),
                     attach_stdout: Some(true),
                     attach_stderr: Some(true),
                     ..Default::default()

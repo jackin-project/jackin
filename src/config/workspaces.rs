@@ -581,7 +581,6 @@ mod tests {
         use crate::isolation::MountIsolation;
         use crate::isolation::state::{CleanupStatus, IsolationRecord, write_records};
         use crate::paths::JackinPaths;
-        use crate::runtime::test_support::FakeRunner;
         use crate::docker_client::{ContainerRow, FakeDockerClient};
         use tempfile::TempDir;
 

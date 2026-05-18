@@ -241,7 +241,7 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                         .enable_all()
                         .build()
                         .context("building tokio runtime for drift check")?;
-                    let docker = crate::docker_client::BollardDockerClient::new()?;
+                    let docker = crate::docker_client::BollardDockerClient::connect()?;
                     rt.block_on(crate::config::detect_workspace_edit_drift(
                         paths,
                         original_name,
@@ -339,7 +339,7 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                         .enable_all()
                         .build()
                         .context("building tokio runtime for drift detection")?;
-                    let docker = crate::docker_client::BollardDockerClient::new()?;
+                    let docker = crate::docker_client::BollardDockerClient::connect()?;
                     rt.block_on(crate::config::detect_workspace_edit_drift(
                         paths,
                         original_name,

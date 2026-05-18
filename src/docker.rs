@@ -10,7 +10,6 @@ pub struct RunOptions {
     pub extra_env: Vec<(String, String)>,
 }
 
-#[allow(async_fn_in_trait)]
 pub trait CommandRunner {
     async fn run(
         &mut self,
@@ -397,6 +396,7 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn capture_secret_suppresses_stdout_debug_echo() {
         use std::sync::Mutex;
         static LOCK: Mutex<()> = Mutex::new(());

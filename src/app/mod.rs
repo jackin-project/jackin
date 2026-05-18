@@ -56,8 +56,8 @@ pub async fn run(cli: Cli) -> Result<()> {
 
     let paths = JackinPaths::detect()?;
     let mut config = AppConfig::load_or_init(&paths)?;
-    let docker = BollardDockerClient::new().context("failed to connect to Docker daemon")?;
     let mut runner = ShellRunner { debug };
+    let connect_docker = || BollardDockerClient::connect();
 
     match command {
         Command::Load(LoadArgs {
@@ -70,6 +70,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             agent,
             role_branch,
         }) => {
+            let docker = connect_docker()?;
             let cwd = std::env::current_dir()?;
 
             let (class, workspace_input) = if let Some(sel) = selector {
@@ -154,6 +155,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             // config was consumed by run_console (the manager may have written to
             // disk). Reload so the post-console path sees the latest state.
             let mut config = AppConfig::load_or_init(&paths)?;
+            let docker = connect_docker()?;
             let (class, workspace, selected_agent) = match outcome {
                 console::ConsoleOutcome::Launch(class, workspace, selected_agent) => {
                     (class, workspace, selected_agent)
@@ -193,6 +195,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             agent,
             shell,
         }) => {
+            let docker = connect_docker()?;
             // `--inspect` / `--new` / `--shell` mutual exclusion is enforced by
             // clap `conflicts_with_all` on `HardlineArgs`; no runtime guard needed.
             let explicit_selector = selector.is_some();
@@ -273,6 +276,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             all,
             purge,
         }) => {
+            let docker = connect_docker()?;
             let containers = if let Some(container) = resolve_instance_reference(&paths, &selector)?
             {
                 if all {
@@ -320,6 +324,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             result
         }
         Command::Exile => {
+            let docker = connect_docker()?;
             let names = runtime::list_managed_role_names(&docker).await?;
             let result: anyhow::Result<()> = async {
                 if names.is_empty() {
@@ -969,12 +974,27 @@ pub async fn run(cli: Cli) -> Result<()> {
                         prospective_mounts.push(upsert.clone());
                     }
                 }
-                let detection = crate::config::detect_workspace_edit_drift(
-                    &paths,
+                // Drift detection only needs Docker when isolation records
+                // exist. Connecting first ensures the daemon is reachable
+                // before we query it; skip the connection entirely when there
+                // is nothing to check (common in fresh or test environments).
+                let has_records = crate::isolation::state::list_records_for_workspace(
+                    &paths.data_dir,
                     &name,
-                    &prospective_mounts,
-                    &docker,
-                ).await?;
+                )
+                .is_ok_and(|r| !r.is_empty());
+                let detection = if has_records {
+                    let docker = connect_docker()?;
+                    crate::config::detect_workspace_edit_drift(
+                        &paths,
+                        &name,
+                        &prospective_mounts,
+                        &docker,
+                    )
+                    .await?
+                } else {
+                    crate::config::DriftDetection::default()
+                };
                 if !detection.running_containers.is_empty() {
                     anyhow::bail!(
                         "cannot edit workspace `{name}` while these containers are running with isolated state: {}; eject them first",
@@ -1193,6 +1213,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             }
         },
         Command::Purge(PurgeArgs { selector, all }) => {
+            let docker = connect_docker()?;
             if let Some(container) = resolve_instance_reference(&paths, &selector)? {
                 if all {
                     anyhow::bail!("--all applies only to role selectors, not instance IDs");
@@ -1224,8 +1245,12 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Prune(cmd) => match cmd {
             PruneCommand::Roles => runtime::prune_roles(&paths),
             PruneCommand::Cache => runtime::prune_cache(&paths),
-            PruneCommand::Images => runtime::prune_images(&docker).await,
+            PruneCommand::Images => {
+                let docker = connect_docker()?;
+                runtime::prune_images(&docker).await
+            }
             PruneCommand::Instances(args) => {
+                let docker = connect_docker()?;
                 if args.all {
                     runtime::prune_all_instances(&paths, &docker, &mut runner).await
                 } else {
@@ -1233,6 +1258,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                 }
             }
             PruneCommand::System(args) => {
+                let docker = connect_docker()?;
                 if !args.yes {
                     let confirmed = dialoguer::Confirm::new()
                         .with_prompt(
