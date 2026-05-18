@@ -76,7 +76,7 @@ runs:
         lycheeVersion: ${{ inputs.lychee-version }}
         args: >-
           --config docs/lychee.toml
-          --no-cache
+          --cache=false
           --include-fragments
           --remap
           "${{ inputs.edit-url }}/(.*) file://${{ github.workspace }}/\$1"
