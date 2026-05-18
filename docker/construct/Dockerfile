@@ -29,6 +29,7 @@ RUN apt-get update && \
     git-lfs \
     jq \
     openssh-client \
+    procps \
     ripgrep \
     sudo \
     tmux \
