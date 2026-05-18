@@ -7,7 +7,7 @@ import { Aside, Steps } from '@astrojs/starlight/components'
 
 ## The problem
 
-AI coding agents are transforming software development. Tools like [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), [Amp Code](https://ampcode.com), Kimi, and [OpenCode](https://github.com/opencode-ai/opencode) can read your codebase, write code, run tests, install dependencies, and execute arbitrary shell commands — all autonomously.
+AI coding agents are transforming software development. Tools like [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), [Amp Code](https://ampcode.com), Kimi, and [OpenCode](https://github.com/anomalyco/opencode) can read your codebase, write code, run tests, install dependencies, and execute arbitrary shell commands — all autonomously.
 
 But there's a catch: **every modern agent runtime is most productive when it runs without guardrails.**
 
@@ -142,7 +142,7 @@ For a deeper comparison, including adjacent approaches and where jackin' is weak
 jackin' is not a general-purpose container orchestrator. It's specifically designed for AI coding agents.
 </Aside>
 - **Not a microVM today** — the current proof-of-concept boundary is the `Docker` container, not a hypervisor. If you need hypervisor-level isolation right now, use a microVM-based product such as `Docker Sandboxes`. Stronger boundaries — microVMs, alternative sandbox backends — are research items on the [Roadmap](/reference/roadmap/); the long-term plan is to make the boundary configurable per workspace, not to force a single approach on everyone.
-- **Not a sandbox for untrusted code execution** — it's for running *trusted agent runtimes* (`Claude Code`, `Codex`) in a controlled environment. The agent binary itself is trusted; it's the agent's *actions* you want to contain.
+- **Not a sandbox for untrusted code execution** — it's for running *trusted agent runtimes* (`Claude Code`, `Codex`, `Amp`, `Kimi`, `OpenCode`) in a controlled environment. The agent binary itself is trusted; it's the agent's *actions* you want to contain.
 - **Not Kubernetes** — jackin' runs on a single machine with `Docker`. Kubernetes support is on the roadmap for teams that need multi-node orchestration.
 
 Both "not yet" points above are deliberate. jackin' starts with local `Docker` because that is the shortest path to an operator experience the team can iterate on. Over time, the same operator and workspace model can grow toward stronger sandbox backends and Kubernetes-backed debug workflows, but local development with the boundary we know best is the first job.

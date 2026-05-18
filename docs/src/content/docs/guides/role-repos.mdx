@@ -113,14 +113,14 @@ Every role repo must satisfy a contract:
 6. **No symlinks** — the derived build-context generator currently rejects symlinks
 
 <Aside type="caution">
-Role repos only own their agent-specific environment layer. jackin' owns everything else: validating the contract, generating the derived Dockerfile, installing Claude Code, injecting the entrypoint, mounting workspaces, and wiring Docker-in-Docker.
+Role repos only own their agent-specific environment layer. jackin' owns everything else: validating the contract, generating the derived Dockerfile, installing the agent runtimes declared by the role (Claude Code, Codex, Amp, Kimi, OpenCode), injecting the entrypoint, mounting workspaces, and wiring Docker-in-Docker.
 </Aside>
 ## Example role repo
 
 A minimal role repo for a Node.js development agent:
 
 ```toml title="jackin.role.toml"
-version = "v1alpha3"
+version = "v1alpha4"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -140,4 +140,4 @@ RUN mise install node@22 && mise use --global node@22
 RUN npm install -g typescript tsx prettier eslint
 ```
 
-That's it. jackin' handles the rest — Claude installation, entrypoint, user mapping, state persistence, and DinD setup.
+That's it. jackin' handles the rest — agent runtime installation, entrypoint, user mapping, state persistence, and DinD setup.

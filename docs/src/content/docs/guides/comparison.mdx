@@ -44,7 +44,7 @@ The main difference is what that boundary is.
 | **Workspace model** | Named workspaces with reusable mount layouts, allowed agents, defaults | Named sandboxes with workspace mounts and read-only options |
 | **Credentials** | Credentials acquired inside the runtime live inside that runtime's trust boundary | Supported flows can proxy credentials so the raw key stays outside the sandbox |
 | **Network controls** | Per-agent Docker network isolation only | Outbound HTTP/HTTPS filtering, policies, and network logs |
-| **Persistence** | Mounted workspace files plus Claude and `gh` state | Sandbox-local packages, private Docker state, and sandbox filesystem state persist until removal |
+| **Persistence** | Mounted workspace files plus per-agent state (Claude Code, Codex, Amp, Kimi, OpenCode) and `gh` state | Sandbox-local packages, private Docker state, and sandbox filesystem state persist until removal |
 | **Best fit** | Open, local-first agent orchestration | Stronger local sandboxing with minimal setup |
 
 ### The boundary trade-off
@@ -211,7 +211,7 @@ It is a weakness because ad-hoc runtime setup work disappears when the container
 
 ### 5. Runtime installation is not fully pinned
 
-The current derived image installs Claude Code from the upstream installer. That keeps the runtime current, but it is less reproducible than pinning exact versions and checksums.
+The current derived image installs the agent runtimes (Claude Code, Codex, Amp, Kimi, OpenCode) from their upstream installers. That keeps the runtimes current, but it is less reproducible than pinning exact versions and checksums.
 
 ## Other approaches
 

@@ -129,7 +129,7 @@ Implementation lives in <RepoFile path="src/runtime/launch.rs" /> (`resolve_rest
 
 | Container state | Hardline behavior |
 |---|---|
-| Running | Attach to the live primary foreground session, or start another foreground session when `--new` is supplied. |
+| Running | Attach to the most recently used live foreground session, or start another foreground session when `--new` is supplied. |
 | Stopped, exit `0` | Treat as a completed session; use `load` for a fresh instance. |
 | Stopped, non-zero or OOM | Restart in place and attach. If DinD is stopped, restart it first. If DinD/network/certs are missing, recreate them around the existing role container before restart. |
 | Missing with indexed state | Rebuild the runtime around jackin-managed local state when the workspace or ad-hoc directory can be resolved. |
@@ -137,7 +137,7 @@ Implementation lives in <RepoFile path="src/runtime/launch.rs" /> (`resolve_rest
 
 `hardline --inspect` is read-only and should report manifest state even when Docker is unavailable. When Docker can inspect a running role container, it also reports live agent-session inventory from `tmux list-sessions` inside the running container.
 
-`hardline --new` creates a named secondary tmux session (`jackin-<agent>-<id>`) inside the running container. Secondary sessions are independently reconnectable — a second `jackin hardline --new` or console `a` from the same instance reattaches to any live session or creates a fresh one. `hardline --shell` opens an ephemeral one-shot zsh session without a tmux session.
+`hardline --new` creates a named tmux session (`jackin-<agent>-<id>`) inside the running container. All agent sessions are equal — there is no "primary" or "secondary" distinction; each is independently reconnectable. A subsequent `jackin hardline --new` or console `a` from the same instance reattaches to any live session or creates a fresh one. `hardline --shell` opens an ephemeral one-shot zsh session without a tmux session.
 
 Implementation lives in <RepoFile path="src/runtime/attach.rs" /> and the hardline dispatch paths in <RepoFile path="src/app/mod.rs" />.
 
@@ -146,7 +146,7 @@ Implementation lives in <RepoFile path="src/runtime/attach.rs" /> and the hardli
 The console reads the instance index and shows active/recoverable instances for the selected workspace or current directory. Instance rows expose:
 
 - reconnect/recover (`r`)
-- new agent session (`a`/`A`) — starts a secondary tmux session inside the running container
+- new agent session (`a`/`A`) — starts an additional tmux session inside the running container
 - ephemeral shell (`x`/`X`) — opens a one-shot zsh session without a tmux session
 - read-only inspect (`i`)
 - guarded purge (`p`)

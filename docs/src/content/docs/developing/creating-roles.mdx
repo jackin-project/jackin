@@ -138,7 +138,7 @@ USER agent
 Role repos can declare Claude Code plugins to install. Add them to the `[claude]` section in your manifest:
 
 ```toml title="jackin.role.toml"
-version = "v1alpha3"
+version = "v1alpha4"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -154,7 +154,7 @@ These plugin IDs are written into the agent's runtime state and installed automa
 If you need plugins from a custom marketplace, declare the marketplace separately and keep plugin IDs fully qualified:
 
 ```toml title="jackin.role.toml"
-version = "v1alpha3"
+version = "v1alpha4"
 dockerfile = "Dockerfile"
 
 [claude]
@@ -183,7 +183,7 @@ jackin adds each declared marketplace at container startup, then installs each p
 An role can support more than one agent while keeping one shared Dockerfile:
 
 ```toml title="jackin.role.toml"
-version = "v1alpha3"
+version = "v1alpha4"
 dockerfile = "Dockerfile"
 agents = ["claude", "codex", "amp", "kimi", "opencode"]
 

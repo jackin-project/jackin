@@ -56,7 +56,7 @@ This is the core blast-radius control in jackin'.
 
 ### 3. Read-only enforcement
 
-Mounts marked `:ro` are enforced by Docker and the kernel. The agent cannot write to those paths, regardless of Claude Code permissions.
+Mounts marked `:ro` are enforced by Docker and the kernel. The agent cannot write to those paths, regardless of any per-runtime permission flag.
 
 ### 4. Agent source trust
 
@@ -193,7 +193,7 @@ Mounted files are live host files. If the agent edits a mounted path, the host f
 
 ### Authentication forwarding
 
-By default, jackin' forwards the host's Claude Code OAuth credentials into new agent containers (the `sync` auth-forward mode). This means agents start pre-authenticated, but it also means OAuth tokens land on disk inside the agent's persisted state with owner-only file permissions.
+By default, jackin' forwards the host's agent credentials (Claude Code, Codex, Amp, Kimi, OpenCode, and `gh`) into new agent containers (the `sync` auth-forward mode). This means agents start pre-authenticated, but it also means OAuth tokens and API keys land on disk inside the agent's persisted state with owner-only file permissions.
 
 `--debug` output never prints resolved token values. Command-level diagnostic lines show the command name and arguments; env-var values and command stdout that carry credentials are redacted or suppressed at the source before they reach the terminal.
 
