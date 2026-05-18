@@ -212,7 +212,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: jackin-project/validate-agent-action@main
+      - uses: jackin-project/jackin-role-action@main
 "
 }
 
