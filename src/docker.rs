@@ -58,15 +58,18 @@ pub trait CommandRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String>;
-    /// Like `capture` but suppresses stdout from debug output and omits
-    /// stderr from error messages. Use for commands whose stdout is a secret
-    /// (tokens, passwords). Note: args logged via `log_command` are not
+    /// Like `capture` but omits the `-> …` debug echo so stdout (the secret
+    /// value) is never written to the debug stream. Stderr is also omitted from
+    /// error messages on non-zero exit. Use for commands whose stdout is a
+    /// secret (tokens, passwords). Note: args logged via `log_command` are not
     /// suppressed — callers must not pass secrets as positional arguments.
     ///
     /// # Errors
-    /// Returns an error when the command fails to spawn, exits non-zero, or an
-    /// I/O reader thread panics. When the command exits non-zero, stderr is
-    /// omitted from the error message to avoid leaking secret-adjacent output.
+    /// Returns an error if the command fails to spawn, if the OS does not
+    /// provide a piped stdout or stderr handle after spawn, if waiting for the
+    /// process returns an I/O error, if a reader thread panics, or if the
+    /// command exits non-zero. Stderr is omitted from the error message on
+    /// non-zero exit to avoid leaking secret-adjacent diagnostics.
     fn capture_secret(
         &mut self,
         program: &str,
@@ -136,7 +139,7 @@ pub(crate) fn redact_env_args(args: &[&str]) -> Vec<String> {
     out
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CaptureMode {
     Normal,
     Secret,
@@ -293,19 +296,28 @@ impl ShellRunner {
             .join()
             .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))??;
         if !status.success() {
-            if mode == CaptureMode::Secret {
-                anyhow::bail!("command failed: {} {}", program, args.join(" "));
+            match mode {
+                CaptureMode::Secret => {
+                    anyhow::bail!("command failed: {} {}", program, args.join(" "));
+                }
+                CaptureMode::Normal => {
+                    let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+                    if stderr.is_empty() {
+                        anyhow::bail!("command failed: {} {}", program, args.join(" "));
+                    }
+                    anyhow::bail!("command failed: {} {}: {}", program, args.join(" "), stderr);
+                }
             }
-            let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
-            if stderr.is_empty() {
-                anyhow::bail!("command failed: {} {}", program, args.join(" "));
-            }
-            anyhow::bail!("command failed: {} {}: {}", program, args.join(" "), stderr);
         }
         let stdout = String::from_utf8_lossy(&stdout).trim().to_string();
-        if self.debug && !stdout.is_empty() && mode == CaptureMode::Normal {
-            let first_line = stdout.lines().next().unwrap_or("");
-            crate::tui::emit_debug_line("cmd", &format!("-> {first_line}"));
+        if self.debug && !stdout.is_empty() {
+            match mode {
+                CaptureMode::Normal => {
+                    let first_line = stdout.lines().next().unwrap_or("");
+                    crate::tui::emit_debug_line("cmd", &format!("-> {first_line}"));
+                }
+                CaptureMode::Secret => {}
+            }
         }
         Ok(stdout)
     }
@@ -502,5 +514,61 @@ mod tests {
             "Error response from daemon: No such image: jk-agent-smith:latest"
         ));
         assert!(is_missing_resource_error("no such image: jk-foo"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn capture_secret_omits_stderr_from_error_on_failure() {
+        // Write the sentinel to a temp file so it is not in the script's argv —
+        // the only way it could appear in the error is if do_capture appends
+        // stderr, which it must not in Secret mode.
+        let dir = tempfile::tempdir().unwrap();
+        let secret_file = dir.path().join("s.txt");
+        std::fs::write(&secret_file, "xSECRET_STDERR_CONTENTx").unwrap();
+        let script = format!("cat '{}' >&2; exit 1", secret_file.display());
+        let mut runner = ShellRunner::default();
+        let err = runner
+            .capture_secret("sh", &["-c", &script], None)
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            !msg.contains("xSECRET_STDERR_CONTENTx"),
+            "stderr must not appear in error message: {msg}"
+        );
+        assert!(msg.contains("sh"), "program name must appear: {msg}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn capture_secret_suppresses_stdout_debug_echo() {
+        use std::sync::Mutex;
+        // Serialize tests that mutate global debug state.
+        static LOCK: Mutex<()> = Mutex::new(());
+        let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        // Write the token to a temp file so the secret string is only in the
+        // command's stdout — not in the argv that log_command emits.
+        let dir = tempfile::tempdir().unwrap();
+        let token_file = dir.path().join("t.txt");
+        std::fs::write(&token_file, "gho_token_value\n").unwrap();
+        let script = format!("cat '{}'", token_file.display());
+
+        crate::tui::set_debug_mode(true);
+        crate::tui::begin_debug_buffering();
+        let mut runner = ShellRunner { debug: true };
+        let output = runner.capture_secret("sh", &["-c", &script], None).unwrap();
+        let lines = crate::tui::drain_debug_buffer_for_test();
+        crate::tui::set_debug_mode(false);
+
+        assert_eq!(
+            output, "gho_token_value",
+            "secret value must still be returned"
+        );
+        for line in &lines {
+            assert!(
+                !line.contains("gho_token_value"),
+                "secret must not appear in debug output: {line}"
+            );
+        }
     }
 }

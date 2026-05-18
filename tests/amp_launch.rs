@@ -58,6 +58,10 @@ impl CommandRunner for FakeRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
+        // Delegates to `capture` and consumes one queue slot. Always provision
+        // one entry per expected `capture_secret` call (e.g. `gh auth token`
+        // in `resolve_github_token`) and document it above the `for_load_agent`
+        // call — same discipline as for `capture` calls.
         self.capture(program, args, cwd)
     }
 }
@@ -122,6 +126,8 @@ agents = ["amp"]
         keep_awake_enabled: false,
         git_pull_on_entry: false,
     };
+    // Capture queue (role-specific, after 6-slot preamble):
+    //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
 
     load_role(
@@ -216,6 +222,8 @@ agents = ["amp"]
         keep_awake_enabled: false,
         git_pull_on_entry: false,
     };
+    // Capture queue (role-specific, after 6-slot preamble):
+    //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
 
     load_role(
