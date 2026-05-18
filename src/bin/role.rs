@@ -23,6 +23,8 @@ enum Command {
     Migrate(RoleRepoPathArgs),
     /// Print the construct image version tag pinned in the role Dockerfile
     ConstructVersion(RoleRepoPathArgs),
+    /// Print the published Docker image declared in the role manifest
+    PublishedImage(RoleRepoPathArgs),
 }
 
 fn main() -> ExitCode {
@@ -31,6 +33,7 @@ fn main() -> ExitCode {
         Command::Validate(args) => role_authoring::run(RoleCommand::Validate(args)),
         Command::Migrate(args) => role_authoring::run(RoleCommand::Migrate(args)),
         Command::ConstructVersion(args) => role_authoring::run(RoleCommand::ConstructVersion(args)),
+        Command::PublishedImage(args) => role_authoring::run(RoleCommand::PublishedImage(args)),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

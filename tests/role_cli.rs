@@ -124,3 +124,46 @@ fn role_create_normalizes_namespaced_role_to_lowercase() {
     let readme = std::fs::read_to_string(repo.join("README.md")).unwrap();
     assert!(readme.contains("`chainargos/backend`"), "{readme}");
 }
+
+#[test]
+fn role_published_image_prints_declared_image() {
+    let temp = tempfile::tempdir().unwrap();
+    write_role_repo(
+        temp.path(),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role"
+
+[claude]
+plugins = []
+"#,
+    );
+
+    Command::cargo_bin("jackin")
+        .unwrap()
+        .args(["role", "published-image", temp.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout("docker.io/myorg/my-role\n");
+}
+
+#[test]
+fn role_published_image_errors_when_not_declared() {
+    let temp = tempfile::tempdir().unwrap();
+    write_role_repo(
+        temp.path(),
+        r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+    );
+
+    Command::cargo_bin("jackin")
+        .unwrap()
+        .args(["role", "published-image", temp.path().to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no published_image"));
+}

@@ -13,6 +13,7 @@ pub fn run(command: RoleCommand) -> anyhow::Result<()> {
         RoleCommand::Migrate(args) => migrate(args),
         RoleCommand::Create(args) => create(&args),
         RoleCommand::ConstructVersion(args) => construct_version(args),
+        RoleCommand::PublishedImage(args) => published_image(args),
     }
 }
 
@@ -27,6 +28,17 @@ fn construct_version(args: RoleRepoPathArgs) -> anyhow::Result<()> {
     let repo_dir = resolve_repo_path(args.path)?;
     let validated = validate_role_repo(&repo_dir)?;
     println!("{}", validated.dockerfile.construct_version);
+    Ok(())
+}
+
+fn published_image(args: RoleRepoPathArgs) -> anyhow::Result<()> {
+    let repo_dir = resolve_repo_path(args.path)?;
+    let validated = validate_role_repo(&repo_dir)?;
+    let image = validated
+        .manifest
+        .published_image
+        .ok_or_else(|| anyhow::anyhow!("no published_image declared in jackin.role.toml"))?;
+    println!("{image}");
     Ok(())
 }
 
@@ -272,5 +284,52 @@ mod tests {
     #[test]
     fn display_name_title_cases_slug_words() {
         assert_eq!(display_name("backend-engineer"), "Backend Engineer");
+    }
+
+    #[test]
+    fn published_image_prints_declared_image() {
+        let temp = tempdir().unwrap();
+        write_scaffold_with_manifest(
+            temp.path(),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role"
+
+[claude]
+plugins = []
+"#,
+        );
+        published_image(RoleRepoPathArgs {
+            path: Some(temp.path().to_path_buf()),
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn published_image_errors_when_not_declared() {
+        let temp = tempdir().unwrap();
+        write_scaffold_with_manifest(
+            temp.path(),
+            r#"version = "v1alpha3"
+dockerfile = "Dockerfile"
+
+[claude]
+plugins = []
+"#,
+        );
+        let err = published_image(RoleRepoPathArgs {
+            path: Some(temp.path().to_path_buf()),
+        })
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("no published_image"), "{err:#}");
+    }
+
+    fn write_scaffold_with_manifest(path: &Path, manifest: &str) {
+        std::fs::write(
+            path.join("Dockerfile"),
+            "FROM projectjackin/construct:0.2-trixie\n",
+        )
+        .unwrap();
+        std::fs::write(path.join("jackin.role.toml"), manifest).unwrap();
     }
 }
