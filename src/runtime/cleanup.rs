@@ -593,19 +593,16 @@ fn sweep_stale_artifacts(data_dir: &std::path::Path) {
         }
     };
     for entry in entries.flatten() {
-        let raw_name = entry.file_name();
-        let name = raw_name.to_string_lossy();
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy();
         let Ok(ft) = entry.file_type() else { continue };
         let ext = std::path::Path::new(name.as_ref())
             .extension()
-            .map(std::ffi::OsStr::to_ascii_lowercase);
-        let ext_str = ext
-            .as_deref()
             .and_then(std::ffi::OsStr::to_str)
             .unwrap_or("");
         let path = entry.path();
         if ft.is_file()
-            && (ext_str == "lock" || ext_str == "pid" || name == "instances.json")
+            && (ext == "lock" || ext == "pid" || name == "instances.json")
             && let Err(err) = std::fs::remove_file(&path)
             && err.kind() != std::io::ErrorKind::NotFound
         {
@@ -615,7 +612,7 @@ fn sweep_stale_artifacts(data_dir: &std::path::Path) {
                 path.display()
             );
         } else if ft.is_dir()
-            && ext_str == "locks"
+            && ext == "locks"
             && let Err(err) = std::fs::remove_dir_all(&path)
             && err.kind() != std::io::ErrorKind::NotFound
         {
