@@ -307,6 +307,20 @@ pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
     prune_dir(&paths.cache_dir, "shared cache")
 }
 
+pub fn prune_jackin_home(paths: &JackinPaths) {
+    match std::fs::remove_dir_all(&paths.jackin_home) {
+        Ok(()) => println!("Removed jackin home ({}).", paths.jackin_home.display()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => {
+            eprintln!(
+                "  {} could not remove {}: {err}",
+                "warning:".yellow().bold(),
+                paths.jackin_home.display()
+            );
+        }
+    }
+}
+
 /// Remove jk_* Docker images that have no jackin-managed role containers (running or stopped).
 ///
 /// Per-image `rmi` failures are printed to stderr and counted in the summary but do not
@@ -486,62 +500,51 @@ pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> 
 
 /// Force-eject all managed Docker resources then purge every instance's
 /// state directory and index entry, regardless of status.
-/// Used by `jackin prune all`.
+/// Used by `jackin prune instances --all` and `jackin prune system --all`.
 pub fn prune_all_instances(
     paths: &JackinPaths,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     exile_all(runner)?;
 
+    // reconcile must run before data_dir removal: with all containers gone,
+    // reconcile will attempt to stop any live caffeinate process and remove
+    // its PID file. Removing data_dir first would delete the PID file before
+    // reconcile can read it to stop the live process, orphaning it.
+    super::caffeinate::reconcile(paths, runner);
+
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
     if index.instances.is_empty() {
         println!("No instances to prune.");
-        return Ok(());
-    }
+    } else {
+        let containers: Vec<String> = index
+            .instances
+            .iter()
+            .map(|e| e.container_base.clone())
+            .collect();
 
-    let containers: Vec<String> = index
-        .instances
-        .iter()
-        .map(|e| e.container_base.clone())
-        .collect();
-
-    let mut removed: Vec<String> = Vec::new();
-    let mut skipped: Vec<(String, anyhow::Error)> = Vec::new();
-
-    for container_base in containers {
-        match purge_container_filesystem(paths, &container_base, runner) {
-            Ok(()) => removed.push(container_base),
-            Err(error) => skipped.push((container_base, error)),
+        println!("Pruned {} instance(s):", containers.len());
+        for name in &containers {
+            println!("  {name}");
         }
-    }
-
-    if !removed.is_empty() {
-        let refs: Vec<&str> = removed.iter().map(String::as_str).collect();
-        match InstanceIndex::remove_many(&paths.data_dir, &refs) {
-            Ok(()) => println!("Pruned {} instance(s):", removed.len()),
-            Err(err) => {
+        for container_base in &containers {
+            if let Err(err) = purge_container_filesystem(paths, container_base, runner) {
                 eprintln!(
-                    "{} instance index could not be updated: {err:#}; run `jackin prune instances` again to retry",
+                    "  {} isolation cleanup for {container_base} failed: {err}",
                     "warning:".yellow().bold()
-                );
-                println!(
-                    "Removed state for {} instance(s) (index not updated):",
-                    removed.len()
                 );
             }
         }
-        for name in &removed {
-            println!("  {name}");
-        }
     }
 
-    for (name, error) in &skipped {
-        eprintln!(
-            "{} failed to purge state for {name}: {error}",
-            "warning:".yellow().bold()
-        );
+    if let Err(err) = std::fs::remove_dir_all(&paths.data_dir)
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        return Err(anyhow::Error::from(err).context(format!(
+            "failed to remove instance data at {}",
+            paths.data_dir.display()
+        )));
     }
-
     Ok(())
 }
 
@@ -1401,5 +1404,72 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         let msg = err.to_string();
         assert!(msg.contains("failed to remove test label"), "got: {msg}");
         assert!(msg.contains("child"), "got: {msg}");
+    }
+
+    #[test]
+    fn prune_all_instances_removes_data_dir_entirely() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        std::fs::create_dir_all(&paths.data_dir).unwrap();
+        std::fs::write(paths.data_dir.join("jk-abc123-thearchitect.lock"), b"").unwrap();
+        std::fs::write(paths.data_dir.join("caffeinate.lock"), b"").unwrap();
+        std::fs::write(paths.data_dir.join("caffeinate.pid"), b"99999").unwrap();
+        std::fs::create_dir_all(paths.data_dir.join("the-architect.locks")).unwrap();
+        std::fs::write(
+            paths
+                .data_dir
+                .join("the-architect.locks")
+                .join("default.repo.lock"),
+            b"",
+        )
+        .unwrap();
+
+        let mut runner = FakeRunner::with_capture_queue([
+            String::new(), // exile_all: docker ps -a (no managed containers)
+            String::new(), // caffeinate reconcile: docker ps keep-awake check
+        ]);
+        prune_all_instances(&paths, &mut runner).unwrap();
+
+        assert!(
+            !paths.data_dir.exists(),
+            "data_dir should be completely removed"
+        );
+    }
+
+    #[test]
+    fn prune_all_instances_removes_data_dir_when_index_empty() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        std::fs::create_dir_all(&paths.data_dir).unwrap();
+        std::fs::write(paths.data_dir.join("jk-stale.lock"), b"").unwrap();
+
+        let mut runner = FakeRunner::with_capture_queue([
+            String::new(), // exile_all
+            String::new(), // caffeinate reconcile
+        ]);
+        prune_all_instances(&paths, &mut runner).unwrap();
+
+        assert!(!paths.data_dir.exists(), "data_dir removed");
+    }
+
+    // ── prune_jackin_home ────────────────────────────────────────────────────
+
+    #[test]
+    fn prune_jackin_home_removes_home() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        std::fs::create_dir_all(paths.jackin_home.join("leftover")).unwrap();
+
+        prune_jackin_home(&paths);
+
+        assert!(!paths.jackin_home.exists(), "jackin_home should be removed");
+    }
+
+    #[test]
+    fn prune_jackin_home_is_ok_when_absent() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        // jackin_home never created — must not panic
+        prune_jackin_home(&paths);
     }
 }

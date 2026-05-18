@@ -81,6 +81,8 @@ jackin prune system [--yes] [--all]
 
 Runs all four subcommands in order: `instances` → `images` → `roles` → `cache`. Prompts for confirmation before proceeding unless `--yes` is passed. By default skips running instances; pass `--all` to stop and remove them too.
 
+When `--all` is passed and all steps succeed, jackin removes its runtime home directory entirely, leaving no managed state on disk.
+
 ### Options
 
 | Option | Description |

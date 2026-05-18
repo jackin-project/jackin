@@ -23,7 +23,7 @@ pub use self::attach::{
 pub use self::caffeinate::reconcile as reconcile_keep_awake;
 pub use self::cleanup::{
     eject_role, exile_all, prune_all_instances, prune_cache, prune_images, prune_instances,
-    prune_roles, purge_class_data, purge_container_state,
+    prune_jackin_home, prune_roles, purge_class_data, purge_container_state,
 };
 pub(crate) use self::discovery::list_role_names;
 pub use self::discovery::{
