@@ -35,7 +35,7 @@ Creating a custom agent lets you define a specialized environment for a specific
    Start from the generated file and add the tools your role needs:
 
    ```dockerfile
-   FROM projectjackin/construct:trixie
+   FROM projectjackin/construct:0.1-trixie
 
    # Install Rust via mise
    RUN mise install rust@stable && mise use --global rust@stable
@@ -73,7 +73,7 @@ Creating a custom agent lets you define a specialized environment for a specific
    ```
 </Steps>
 
-Use `jackin role migrate` on your own desktop when you are updating a checked-out role repo. CI workflows should keep using the generated validation workflow and the standalone `jackin-validate` binary instead of the full Jackin operator CLI.
+Use `jackin role migrate` on your own desktop when you are updating a checked-out role repo. CI workflows should keep using the generated validation workflow and the standalone `jackin-role` binary instead of the full Jackin operator CLI.
 
 ## Dockerfile guidelines
 
@@ -82,11 +82,11 @@ Use `jackin role migrate` on your own desktop when you are updating a checked-ou
 Your final stage **must** start from the construct image:
 
 ```dockerfile
-FROM projectjackin/construct:trixie
+FROM projectjackin/construct:0.1-trixie
 ```
 
 <Aside type="caution">
-This is the literal string jackin' checks for. `FROM projectjackin/construct:latest` or any other tag will fail validation.
+The final stage must use a versioned construct tag (e.g. `projectjackin/construct:0.1-trixie`). The floating `:trixie` tag, `:latest`, or any other non-versioned tag fails validation. Renovate can track version bumps automatically — the generated role repo includes a Renovate configuration with a regex versioning rule for construct version pins.
 </Aside>
 ### Multi-stage builds are supported
 
@@ -100,7 +100,7 @@ COPY tools/ .
 RUN cargo build --release
 
 # Final stage — must use the construct
-FROM projectjackin/construct:trixie
+FROM projectjackin/construct:0.1-trixie
 COPY --from=builder /build/target/release/my-tool /usr/local/bin/
 ```
 

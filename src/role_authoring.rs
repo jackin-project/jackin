@@ -12,6 +12,7 @@ pub fn run(command: RoleCommand) -> anyhow::Result<()> {
         RoleCommand::Validate(args) => validate(args),
         RoleCommand::Migrate(args) => migrate(args),
         RoleCommand::Create(args) => create(&args),
+        RoleCommand::ConstructVersion(args) => construct_version(args),
     }
 }
 
@@ -19,6 +20,13 @@ fn validate(args: RoleRepoPathArgs) -> anyhow::Result<()> {
     let repo_dir = resolve_repo_path(args.path)?;
     validate_role_repo(&repo_dir)?;
     println!("Role repository is valid: {}", repo_dir.display());
+    Ok(())
+}
+
+fn construct_version(args: RoleRepoPathArgs) -> anyhow::Result<()> {
+    let repo_dir = resolve_repo_path(args.path)?;
+    let validated = validate_role_repo(&repo_dir)?;
+    println!("{}", validated.dockerfile.construct_version);
     Ok(())
 }
 
@@ -105,6 +113,7 @@ fn write_scaffold(repo_dir: &Path, selector: &RoleSelector) -> anyhow::Result<()
     write_new_file(&repo_dir.join("README.md"), &readme_contents(selector))?;
     write_new_file(&repo_dir.join(".gitignore"), gitignore_contents())?;
     write_new_file(&repo_dir.join(".dockerignore"), dockerignore_contents())?;
+    write_new_file(&repo_dir.join("renovate.json"), renovate_contents())?;
     let workflow_dir = repo_dir.join(".github/workflows");
     std::fs::create_dir_all(&workflow_dir)
         .with_context(|| format!("creating {}", workflow_dir.display()))?;
@@ -141,7 +150,7 @@ name = "{}"
 }
 
 const fn dockerfile_contents() -> &'static str {
-    "FROM projectjackin/construct:trixie\n"
+    "FROM projectjackin/construct:0.1-trixie\n"
 }
 
 fn readme_contents(selector: &RoleSelector) -> String {
@@ -173,6 +182,21 @@ const fn gitignore_contents() -> &'static str {
 
 const fn dockerignore_contents() -> &'static str {
     ".git\n.github\nREADME.md\n"
+}
+
+const fn renovate_contents() -> &'static str {
+    r#"{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices"],
+  "packageRules": [
+    {
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["projectjackin/construct"],
+      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)-trixie$"
+    }
+  ]
+}
+"#
 }
 
 const fn workflow_contents() -> &'static str {

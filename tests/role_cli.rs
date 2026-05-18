@@ -5,7 +5,7 @@ use std::process::Command;
 fn write_role_repo(path: &std::path::Path, manifest: &str) {
     std::fs::write(
         path.join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
+        "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
     std::fs::write(path.join("jackin.role.toml"), manifest).unwrap();

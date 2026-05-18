@@ -23,7 +23,7 @@ and updates the `construct` automatically.
 Every agent Dockerfile starts from the construct:
 
 ```dockerfile
-FROM projectjackin/construct:trixie
+FROM projectjackin/construct:0.1-trixie
 ```
 
 ## What's inside
@@ -99,7 +99,7 @@ just construct-build-local
 export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
 ```
 
-With `JACKIN_CONSTRUCT_IMAGE` set, jackin validates role Dockerfiles against the canonical image name as usual (role repos always reference `projectjackin/construct:trixie`), but substitutes your local image at derived-build time so `docker build` uses `jackin-local/construct:trixie` as the actual base.
+With `JACKIN_CONSTRUCT_IMAGE` set, jackin validates role Dockerfiles against the canonical image name as usual (role repos reference a versioned construct tag such as `projectjackin/construct:0.1-trixie`), but substitutes your local image at derived-build time so `docker build` uses `jackin-local/construct:trixie` as the actual base.
 
 Use `just construct-inspect` to print the fully resolved Bake config without building the image.
 

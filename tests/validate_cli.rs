@@ -2,103 +2,94 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 use tempfile::tempdir;
 
-#[test]
-fn validate_passes_for_valid_agent_repo() {
-    let temp = tempdir().unwrap();
-    std::fs::write(
-        temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\nRUN echo hello\n",
-    )
-    .unwrap();
-    std::fs::write(
-        temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+fn write_role_repo(temp: &tempfile::TempDir, dockerfile: &str, manifest: &str) {
+    std::fs::write(temp.path().join("Dockerfile"), dockerfile).unwrap();
+    std::fs::write(temp.path().join("jackin.role.toml"), manifest).unwrap();
+}
+
+const VALID_MANIFEST: &str = r#"version = "v1alpha4"
 dockerfile = "Dockerfile"
 
 [claude]
 plugins = []
-"#,
-    )
-    .unwrap();
+"#;
+
+const VERSIONED_FROM: &str = "FROM projectjackin/construct:0.1-trixie\n";
+
+// ── validate subcommand ──────────────────────────────────────────────────────
+
+#[test]
+fn validate_passes_for_valid_agent_repo() {
+    let temp = tempdir().unwrap();
+    write_role_repo(&temp, VERSIONED_FROM, VALID_MANIFEST);
     std::fs::write(temp.path().join(".dockerignore"), ".git\n").unwrap();
     std::fs::write(temp.path().join(".gitignore"), "target/\n").unwrap();
 
-    Command::cargo_bin("jackin-validate")
+    Command::cargo_bin("jackin-role")
         .unwrap()
-        .arg(temp.path())
+        .args(["validate", temp.path().to_str().unwrap()])
         .assert()
         .success()
-        .stdout(predicate::str::contains("All checks passed"));
+        .stdout(predicate::str::contains("Role repository is valid"));
 }
 
 #[test]
 fn validate_fails_for_wrong_base_image() {
     let temp = tempdir().unwrap();
-    std::fs::write(
-        temp.path().join("Dockerfile"),
+    write_role_repo(
+        &temp,
         "FROM debian:trixie\nRUN echo hello\n",
-    )
-    .unwrap();
-    std::fs::write(
-        temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
-dockerfile = "Dockerfile"
-
-[claude]
-plugins = []
-"#,
-    )
-    .unwrap();
+        VALID_MANIFEST,
+    );
     std::fs::write(temp.path().join(".dockerignore"), ".git\n").unwrap();
     std::fs::write(temp.path().join(".gitignore"), "target/\n").unwrap();
 
-    Command::cargo_bin("jackin-validate")
+    Command::cargo_bin("jackin-role")
         .unwrap()
-        .arg(temp.path())
+        .args(["validate", temp.path().to_str().unwrap()])
         .assert()
         .failure()
         .stderr(predicate::str::contains("projectjackin/construct:trixie"));
 }
 
 #[test]
+fn validate_rejects_floating_construct_tag() {
+    let temp = tempdir().unwrap();
+    write_role_repo(
+        &temp,
+        "FROM projectjackin/construct:trixie\n",
+        VALID_MANIFEST,
+    );
+
+    Command::cargo_bin("jackin-role")
+        .unwrap()
+        .args(["validate", temp.path().to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("floating tag"));
+}
+
+#[test]
 fn validate_allows_missing_dockerignore() {
     let temp = tempdir().unwrap();
-    std::fs::write(
-        temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
-    )
-    .unwrap();
-    std::fs::write(
-        temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
-dockerfile = "Dockerfile"
-
-[claude]
-plugins = []
-"#,
-    )
-    .unwrap();
+    write_role_repo(&temp, VERSIONED_FROM, VALID_MANIFEST);
     std::fs::write(temp.path().join(".gitignore"), "target/\n").unwrap();
 
-    Command::cargo_bin("jackin-validate")
+    Command::cargo_bin("jackin-role")
         .unwrap()
-        .arg(temp.path())
+        .args(["validate", temp.path().to_str().unwrap()])
         .assert()
         .success()
-        .stdout(predicate::str::contains("All checks passed"));
+        .stdout(predicate::str::contains("Role repository is valid"));
 }
 
 #[test]
 fn validate_fails_for_invalid_manifest() {
     let temp = tempdir().unwrap();
-    std::fs::write(
-        temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
-    )
-    .unwrap();
+    std::fs::write(temp.path().join("Dockerfile"), VERSIONED_FROM).unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+        r#"version = "v1alpha4"
 dockerfile = "Dockerfile"
 unknown_field = true
 
@@ -110,9 +101,9 @@ plugins = []
     std::fs::write(temp.path().join(".dockerignore"), ".git\n").unwrap();
     std::fs::write(temp.path().join(".gitignore"), "target/\n").unwrap();
 
-    Command::cargo_bin("jackin-validate")
+    Command::cargo_bin("jackin-role")
         .unwrap()
-        .arg(temp.path())
+        .args(["validate", temp.path().to_str().unwrap()])
         .assert()
         .failure()
         .stderr(predicate::str::contains("unknown field"));
@@ -124,12 +115,12 @@ fn validate_passes_when_manifest_uses_dockerfile_in_subdirectory() {
     std::fs::create_dir_all(temp.path().join("docker")).unwrap();
     std::fs::write(
         temp.path().join("docker/role.Dockerfile"),
-        "FROM projectjackin/construct:trixie\nRUN echo hello\n",
+        "FROM projectjackin/construct:0.1-trixie\nRUN echo hello\n",
     )
     .unwrap();
     std::fs::write(
         temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+        r#"version = "v1alpha4"
 dockerfile = "docker/role.Dockerfile"
 
 [claude]
@@ -138,25 +129,21 @@ plugins = []
     )
     .unwrap();
 
-    Command::cargo_bin("jackin-validate")
+    Command::cargo_bin("jackin-role")
         .unwrap()
-        .arg(temp.path())
+        .args(["validate", temp.path().to_str().unwrap()])
         .assert()
         .success()
-        .stdout(predicate::str::contains("All checks passed"));
+        .stdout(predicate::str::contains("Role repository is valid"));
 }
 
 #[test]
 fn validate_fails_for_invalid_preflight_hook() {
     let temp = tempdir().unwrap();
-    std::fs::write(
-        temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
-    )
-    .unwrap();
-    std::fs::write(
-        temp.path().join("jackin.role.toml"),
-        r#"version = "v1alpha3"
+    write_role_repo(
+        &temp,
+        VERSIONED_FROM,
+        r#"version = "v1alpha4"
 dockerfile = "Dockerfile"
 
 [hooks]
@@ -165,68 +152,35 @@ preflight = "hooks/preflight.sh"
 [claude]
 plugins = []
 "#,
-    )
-    .unwrap();
+    );
 
-    Command::cargo_bin("jackin-validate")
+    Command::cargo_bin("jackin-role")
         .unwrap()
-        .arg(temp.path())
+        .args(["validate", temp.path().to_str().unwrap()])
         .assert()
         .failure()
         .stderr(predicate::str::contains("hooks/preflight.sh"));
 }
 
 #[test]
-fn validate_fails_with_no_args() {
-    Command::cargo_bin("jackin-validate")
+fn validate_with_no_args_shows_usage() {
+    Command::cargo_bin("jackin-role")
         .unwrap()
         .assert()
         .failure()
         .stderr(predicate::str::contains("Usage"));
 }
 
-#[test]
-fn validate_migrate_accepts_flag_after_path() {
-    // `--migrate` may appear in any position relative to <role-repo-path>.
-    let temp = tempdir().unwrap();
-    std::fs::write(
-        temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
-    )
-    .unwrap();
-    std::fs::write(
-        temp.path().join("jackin.role.toml"),
-        "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
-    )
-    .unwrap();
-
-    Command::cargo_bin("jackin-validate")
-        .unwrap()
-        .args([temp.path().to_str().unwrap(), "--migrate"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "Migrated manifest legacy -> v1alpha4",
-        ));
-}
+// ── migrate subcommand ───────────────────────────────────────────────────────
 
 #[test]
-fn validate_migrate_is_noop_for_current_manifest() {
+fn migrate_is_noop_for_current_manifest() {
     let temp = tempdir().unwrap();
-    std::fs::write(
-        temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
-    )
-    .unwrap();
-    std::fs::write(
-        temp.path().join("jackin.role.toml"),
-        "version = \"v1alpha4\"\ndockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
-    )
-    .unwrap();
+    write_role_repo(&temp, VERSIONED_FROM, VALID_MANIFEST);
 
-    Command::cargo_bin("jackin-validate")
+    Command::cargo_bin("jackin-role")
         .unwrap()
-        .args(["--migrate", temp.path().to_str().unwrap()])
+        .args(["migrate", temp.path().to_str().unwrap()])
         .assert()
         .success()
         .stdout(predicate::str::contains(
@@ -235,34 +189,52 @@ fn validate_migrate_is_noop_for_current_manifest() {
 }
 
 #[test]
-fn validate_migrate_rejects_newer_manifest_version() {
+fn migrate_updates_legacy_manifest() {
     let temp = tempdir().unwrap();
-    std::fs::write(
-        temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
-    )
-    .unwrap();
-    std::fs::write(
-        temp.path().join("jackin.role.toml"),
-        "version = \"v2alpha1\"\ndockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
-    )
-    .unwrap();
+    write_role_repo(
+        &temp,
+        VERSIONED_FROM,
+        "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+    );
 
-    Command::cargo_bin("jackin-validate")
+    Command::cargo_bin("jackin-role")
         .unwrap()
-        .args(["--migrate", temp.path().to_str().unwrap()])
+        .args(["migrate", temp.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Migrated manifest legacy -> v1alpha4",
+        ))
+        .stdout(predicate::str::contains("Role repository is valid"));
+
+    let out = std::fs::read_to_string(temp.path().join("jackin.role.toml")).unwrap();
+    assert!(out.contains(r#"version = "v1alpha4""#), "{out}");
+}
+
+#[test]
+fn migrate_rejects_newer_manifest_version() {
+    let temp = tempdir().unwrap();
+    write_role_repo(
+        &temp,
+        VERSIONED_FROM,
+        "version = \"v2alpha1\"\ndockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
+    );
+
+    Command::cargo_bin("jackin-role")
+        .unwrap()
+        .args(["migrate", temp.path().to_str().unwrap()])
         .assert()
         .failure()
         .stderr(predicate::str::contains("only understands up to v1alpha4"));
 }
 
 #[test]
-fn validate_migrate_reports_missing_manifest() {
+fn migrate_reports_missing_manifest() {
     let temp = tempdir().unwrap();
 
-    Command::cargo_bin("jackin-validate")
+    Command::cargo_bin("jackin-role")
         .unwrap()
-        .args(["--migrate", temp.path().to_str().unwrap()])
+        .args(["migrate", temp.path().to_str().unwrap()])
         .assert()
         .failure()
         .stderr(predicate::str::contains("jackin.role.toml"))
@@ -270,63 +242,64 @@ fn validate_migrate_reports_missing_manifest() {
 }
 
 #[test]
-fn validate_migrate_reports_malformed_manifest() {
+fn migrate_reports_malformed_manifest() {
     let temp = tempdir().unwrap();
     std::fs::write(temp.path().join("jackin.role.toml"), "this = is = invalid").unwrap();
 
-    Command::cargo_bin("jackin-validate")
+    Command::cargo_bin("jackin-role")
         .unwrap()
-        .args(["--migrate", temp.path().to_str().unwrap()])
+        .args(["migrate", temp.path().to_str().unwrap()])
         .assert()
         .failure()
         .stderr(predicate::str::contains("jackin.role.toml"))
         .stderr(predicate::str::contains("parsing"));
 }
 
-#[test]
-fn validate_rejects_unknown_flag() {
-    Command::cargo_bin("jackin-validate")
-        .unwrap()
-        .args(["--unknown", "/tmp"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("unknown flag"));
-}
+// ── construct-version subcommand ─────────────────────────────────────────────
 
 #[test]
-fn validate_rejects_too_many_positional_args() {
-    Command::cargo_bin("jackin-validate")
-        .unwrap()
-        .args(["/tmp/a", "/tmp/b"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("too many positional arguments"));
-}
-
-#[test]
-fn validate_migrate_updates_legacy_manifest() {
+fn construct_version_prints_tag() {
     let temp = tempdir().unwrap();
-    std::fs::write(
-        temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
-    )
-    .unwrap();
-    std::fs::write(
-        temp.path().join("jackin.role.toml"),
-        "dockerfile = \"Dockerfile\"\n\n[claude]\nplugins = []\n",
-    )
-    .unwrap();
+    write_role_repo(&temp, VERSIONED_FROM, VALID_MANIFEST);
 
-    Command::cargo_bin("jackin-validate")
+    Command::cargo_bin("jackin-role")
         .unwrap()
-        .args(["--migrate", temp.path().to_str().unwrap()])
+        .args(["construct-version", temp.path().to_str().unwrap()])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Migrated manifest legacy -> v1alpha4",
-        ))
-        .stdout(predicate::str::contains("All checks passed"));
+        .stdout(predicate::str::contains("0.1-trixie"));
+}
 
-    let out = std::fs::read_to_string(temp.path().join("jackin.role.toml")).unwrap();
-    assert!(out.contains(r#"version = "v1alpha4""#), "{out}");
+#[test]
+fn construct_version_strips_digest_pin() {
+    let temp = tempdir().unwrap();
+    write_role_repo(
+        &temp,
+        "FROM projectjackin/construct:0.2-trixie@sha256:0b076bfbc53d36794fe54b1a9cab670f85f831af86d78426b1a88a8ac192d445\n",
+        VALID_MANIFEST,
+    );
+
+    Command::cargo_bin("jackin-role")
+        .unwrap()
+        .args(["construct-version", temp.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout("0.2-trixie\n");
+}
+
+#[test]
+fn construct_version_fails_for_invalid_repo() {
+    let temp = tempdir().unwrap();
+    write_role_repo(
+        &temp,
+        "FROM projectjackin/construct:trixie\n",
+        VALID_MANIFEST,
+    );
+
+    Command::cargo_bin("jackin-role")
+        .unwrap()
+        .args(["construct-version", temp.path().to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("floating tag"));
 }

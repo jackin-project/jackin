@@ -200,6 +200,33 @@ pub fn shell_quote(value: &str) -> String {
     quoted
 }
 
+/// Replace `FROM projectjackin/construct:<tag>[@<digest>] [AS alias]` lines in
+/// `contents` with `FROM <override_image> [AS alias]`. Digest pins are dropped
+/// because a local override image has no matching digest.
+fn apply_construct_image_override(contents: &str, override_image: &str) -> String {
+    let construct_from_prefix = format!("FROM {}:", crate::repo_contract::CONSTRUCT_REGISTRY_IMAGE);
+    let from_override = format!("FROM {override_image}");
+    let mut result = contents
+        .lines()
+        .map(|line| {
+            if line.starts_with(&construct_from_prefix) {
+                let after_prefix = &line[construct_from_prefix.len()..];
+                let alias = after_prefix
+                    .split_once(' ')
+                    .map_or(String::new(), |(_, rest)| format!(" {rest}"));
+                format!("{from_override}{alias}")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if contents.ends_with('\n') {
+        result.push('\n');
+    }
+    result
+}
+
 pub fn create_derived_build_context(
     repo_dir: &Path,
     validated: &ValidatedRoleRepo,
@@ -220,12 +247,16 @@ pub fn create_derived_build_context(
 
     let base_dockerfile = base_image_override.map_or_else(
         || {
-            // Substitute the canonical construct image with the local override
-            // (JACKIN_CONSTRUCT_IMAGE) when set. String::replace is a no-op
-            // when old == new, so this is always safe to call unconditionally.
-            validated.dockerfile.dockerfile_contents.replace(
-                &format!("FROM {}", crate::repo_contract::CONSTRUCT_IMAGE),
-                &format!("FROM {}", crate::repo_contract::construct_image()),
+            // When JACKIN_CONSTRUCT_IMAGE is not set or empty, leave the
+            // Dockerfile untouched so Docker uses whatever versioned tag the
+            // role pins.
+            let override_image = std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_default();
+            if override_image.trim().is_empty() {
+                return validated.dockerfile.dockerfile_contents.clone();
+            }
+            apply_construct_image_override(
+                &validated.dockerfile.dockerfile_contents,
+                &override_image,
             )
         },
         |image| format!("FROM {image}\n"),
@@ -319,7 +350,7 @@ mod tests {
     #[test]
     fn renders_derived_dockerfile_with_workspace_and_entrypoint() {
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude],
             None,
@@ -339,7 +370,7 @@ mod tests {
     #[test]
     fn renders_derived_dockerfile_installs_claude_as_agent_user() {
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude],
             None,
@@ -360,7 +391,7 @@ mod tests {
     #[test]
     fn renders_derived_dockerfile_rewrites_agent_uid_and_gid() {
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude],
             None,
@@ -376,7 +407,7 @@ mod tests {
     #[test]
     fn renders_derived_dockerfile_with_runtime_hooks() {
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             Some(&HooksConfig {
                 setup_once: Some("hooks/setup-once.sh".to_string()),
                 source: Some("hooks/source.sh".to_string()),
@@ -428,7 +459,7 @@ mod tests {
     #[test]
     fn renders_derived_dockerfile_without_runtime_hooks() {
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude],
             None,
@@ -445,7 +476,7 @@ mod tests {
     #[test]
     fn renders_dockerfile_with_codex_install_when_supported() {
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Amp, Agent::Claude, Agent::Codex],
             None,
@@ -465,7 +496,7 @@ mod tests {
     #[test]
     fn renders_amp_install_as_agent_user() {
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Amp],
             None,
@@ -482,7 +513,7 @@ mod tests {
     #[test]
     fn renders_codex_install_as_agent_without_extracting_directly_to_bin() {
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Codex],
             None,
@@ -502,7 +533,7 @@ mod tests {
     #[test]
     fn renders_codex_only_dockerfile_final_user_is_agent() {
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Codex],
             None,
@@ -517,7 +548,7 @@ mod tests {
     #[test]
     fn renders_codex_only_dockerfile_without_claude_install() {
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Codex],
             None,
@@ -530,7 +561,7 @@ mod tests {
     #[test]
     fn renders_dockerfile_targets_agent_user_not_claude() {
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude],
             None,
@@ -544,7 +575,7 @@ mod tests {
     #[test]
     fn renders_dockerfile_does_not_set_jackin_agent_env() {
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude, Agent::Codex],
             None,
@@ -635,7 +666,7 @@ mod tests {
     #[test]
     fn derived_image_snapshots_agent_home_defaults() {
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude, Agent::Codex, Agent::Amp, Agent::Opencode],
             None,
@@ -662,7 +693,7 @@ mod tests {
             ],
         };
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude],
             Some(&config),
@@ -791,7 +822,7 @@ mod tests {
         // Mixed-presence: only `source` set. Header block + exactly
         // one COPY line; absent hook filenames must not appear.
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             Some(&HooksConfig {
                 setup_once: None,
                 source: Some("hooks/source.sh".to_string()),
@@ -822,7 +853,7 @@ mod tests {
     #[test]
     fn source_hook_zshenv_shim_is_not_rendered_for_non_source_hooks() {
         let dockerfile = render_derived_dockerfile(
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
             Some(&HooksConfig {
                 setup_once: Some("hooks/setup-once.sh".to_string()),
                 source: None,
@@ -849,7 +880,7 @@ mod tests {
         std::fs::write(repo.path().join("hooks/source.sh"), "#!/bin/bash\n").unwrap();
         std::fs::write(
             repo.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -881,7 +912,7 @@ source = "hooks/source.sh"
         let repo = tempdir().unwrap();
         std::fs::write(
             repo.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -913,7 +944,7 @@ plugins = []
         let repo = tempdir().unwrap();
         std::fs::write(
             repo.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -949,7 +980,7 @@ plugins = []
         let repo = tempdir().unwrap();
         std::fs::write(
             repo.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -973,7 +1004,37 @@ plugins = []
 
         let contents = std::fs::read_to_string(&build.dockerfile_path).unwrap();
         assert!(contents.starts_with("FROM docker.io/myorg/my-role:latest\n"));
-        assert!(!contents.contains("projectjackin/construct:trixie"));
+        assert!(!contents.contains("projectjackin/construct:"));
+    }
+
+    #[test]
+    fn jackin_construct_image_override_no_alias() {
+        let input = "FROM projectjackin/construct:0.1-trixie\nUSER agent\n";
+        let result = apply_construct_image_override(input, "jackin-local/construct:trixie");
+        assert!(
+            result.starts_with("FROM jackin-local/construct:trixie\n"),
+            "override without alias must not add trailing space; got:\n{result}"
+        );
+    }
+
+    #[test]
+    fn jackin_construct_image_override_preserves_as_alias() {
+        let input = "FROM projectjackin/construct:0.1-trixie AS runtime\nUSER agent\n";
+        let result = apply_construct_image_override(input, "jackin-local/construct:trixie");
+        assert!(
+            result.starts_with("FROM jackin-local/construct:trixie AS runtime\n"),
+            "override must replace the image but preserve the AS alias; got:\n{result}"
+        );
+    }
+
+    #[test]
+    fn jackin_construct_image_override_handles_digest_pinned_from() {
+        let input = "FROM projectjackin/construct:0.1-trixie@sha256:0b076bfbc53d36794fe54b1a9cab670f85f831af86d78426b1a88a8ac192d445 AS runtime\nUSER agent\n";
+        let result = apply_construct_image_override(input, "jackin-local/construct:trixie");
+        assert!(
+            result.starts_with("FROM jackin-local/construct:trixie AS runtime\n"),
+            "override must replace tag+digest and preserve AS alias; got:\n{result}"
+        );
     }
 
     #[cfg(unix)]
@@ -982,7 +1043,7 @@ plugins = []
         let repo = tempdir().unwrap();
         std::fs::write(
             repo.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(

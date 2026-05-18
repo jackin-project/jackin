@@ -1915,7 +1915,7 @@ mod tests {
         std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -2709,7 +2709,7 @@ plugins = []
                 std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
                 std::fs::write(
                     repo_dir.join("Dockerfile"),
-                    "FROM projectjackin/construct:trixie\n",
+                    "FROM projectjackin/construct:0.1-trixie\n",
                 )
                 .unwrap();
             }),

@@ -16,7 +16,7 @@ roles never edit this file.
 
 Every role repo must contain a `jackin.role.toml` file at the repository root. This manifest tells jackin' how to build, configure, and identify the agent.
 
-jackin' enforces **strict parsing** — unknown fields are rejected with an error. This catches typos and prevents silent misconfiguration. Top-level `version` records the minimum manifest schema the file requires; older stamps remain valid until the manifest uses a newer field or enum value. On a desktop, use `jackin role migrate <role-repo-path>` to update a local manifest before adopting newer schema features. In CI and automated migration workflows, use the standalone `jackin-validate --migrate <role-repo-path>` binary instead of the full Jackin operator CLI. See [Schema Versions](/reference/schema-versions/) for the full version history and migration matrix.
+jackin' enforces **strict parsing** — unknown fields are rejected with an error. This catches typos and prevents silent misconfiguration. Top-level `version` records the minimum manifest schema the file requires; older stamps remain valid until the manifest uses a newer field or enum value. On a desktop, use `jackin role migrate <role-repo-path>` to update a local manifest before adopting newer schema features. In CI and automated migration workflows, use the standalone `jackin-role migrate <role-repo-path>` binary instead of the full Jackin operator CLI. See [Schema Versions](/reference/schema-versions/) for the full version history and migration matrix.
 
 ## Full schema
 
@@ -84,7 +84,7 @@ The Dockerfile path must:
 - Be relative (no absolute paths)
 - Stay inside the repository (no `../` escapes)
 - Point to a valid Dockerfile
-- Have a final stage that starts with `FROM projectjackin/construct:trixie`
+- Have a final stage that starts with `FROM projectjackin/construct:0.1-trixie` (a versioned construct tag — the floating `:trixie` tag fails validation)
 
 Every agent listed in `agents` must have a matching `[<agent>]` table, even when that table is empty. A manifest with `agents = ["claude", "codex", "amp", "kimi", "opencode"]` needs `[claude]`, `[codex]`, `[amp]`, `[kimi]`, and `[opencode]`.
 
