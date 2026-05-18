@@ -336,31 +336,19 @@ printf '\033[2J\033[H'
 # adds no value and clutters the agent's full-screen UI.
 tmux set-option -g status off 2>/dev/null || true
 
-# Agent-friendly tmux settings. All are set unconditionally and all failures are
-# suppressed — an older tmux that doesn't know a flag stays functional, it just
-# lacks that capability.
+# `|| true` keeps startup working on tmux versions that don't recognise a flag.
 #
-# extended-keys always: forward Shift+Enter, Ctrl+Space, and other modified-key
-# sequences (CSI-u / xterm modifyOtherKeys format) to the agent without waiting
-# for the agent to opt in via an activation escape. Without this, the container
-# tmux collapses Shift+Enter to plain Enter before the agent sees it.
+# `always` instead of `on`: agents don't emit the per-app activation escape, so
+# `on` would have no effect — Shift+Enter would still collapse to plain Enter.
 tmux set-option -s extended-keys always 2>/dev/null || true
-# Advertise extkeys capability to panes whose TERM matches xterm* so the
-# agent's terminfo query confirms support.
+# Paired with extended-keys: advertises extkeys to xterm*-TERM panes so their
+# terminfo queries confirm support.
 tmux set-option -as terminal-features 'xterm*:extkeys' 2>/dev/null || true
-# focus-events: emit FocusIn/FocusOut escape sequences to panes so editors
-# (Neovim, Helix, etc.) running alongside an agent can autoread files the
-# agent modified while the editor pane was in the background.
 tmux set-option -g focus-events on 2>/dev/null || true
-# allow-passthrough: let OSC/DCS sequences wrapped in the DCS passthrough
-# envelope reach the outer terminal — covers desktop notifications, progress
-# bars, OSC 52 clipboard writes, and iTerm2/Ghostty inline images from inside
-# the container session.
+# Container panes cannot reach the outer terminal's OSC surface without this;
+# agent desktop notifications and progress bars are silently dropped otherwise.
 tmux set-option -g allow-passthrough on 2>/dev/null || true
-# escape-time 0: eliminate the 500 ms ambiguity window tmux uses to decide
-# whether a bare Escape is a prefix or a standalone key. Agents send Escape
-# frequently (vi-mode, TUI navigation); the default delay makes the UI feel
-# sluggish and can cause misfired key sequences.
+# Default 500 ms Escape disambiguation misfires in agent TUI vi-mode navigation.
 tmux set-option -sg escape-time 0 2>/dev/null || true
 
 exec "${LAUNCH[@]}"
