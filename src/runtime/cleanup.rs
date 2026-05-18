@@ -593,32 +593,36 @@ fn sweep_stale_artifacts(data_dir: &std::path::Path) {
         }
     };
     for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
+        let raw_name = entry.file_name();
+        let name = raw_name.to_string_lossy();
         let Ok(ft) = entry.file_type() else { continue };
-        let has_ext = |s: &str| {
-            std::path::Path::new(&name)
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case(s))
-        };
+        let ext = std::path::Path::new(name.as_ref())
+            .extension()
+            .map(std::ffi::OsStr::to_ascii_lowercase);
+        let ext_str = ext
+            .as_deref()
+            .and_then(std::ffi::OsStr::to_str)
+            .unwrap_or("");
+        let path = entry.path();
         if ft.is_file()
-            && (has_ext("lock") || has_ext("pid") || name == "instances.json")
-            && let Err(err) = std::fs::remove_file(entry.path())
+            && (ext_str == "lock" || ext_str == "pid" || name == "instances.json")
+            && let Err(err) = std::fs::remove_file(&path)
             && err.kind() != std::io::ErrorKind::NotFound
         {
             eprintln!(
                 "  {} could not remove {}: {err}",
                 "warning:".yellow().bold(),
-                entry.path().display()
+                path.display()
             );
         } else if ft.is_dir()
-            && has_ext("locks")
-            && let Err(err) = std::fs::remove_dir_all(entry.path())
+            && ext_str == "locks"
+            && let Err(err) = std::fs::remove_dir_all(&path)
             && err.kind() != std::io::ErrorKind::NotFound
         {
             eprintln!(
                 "  {} could not remove {}: {err}",
                 "warning:".yellow().bold(),
-                entry.path().display()
+                path.display()
             );
         }
     }
