@@ -2027,19 +2027,36 @@ fn load_role_with(
         // tear the container down or preserve it for `jackin hardline` to
         // restart:
         //  - Running + active sessions → terminal closed (user detached). Keep it.
-        //  - Running + no sessions     → agent exited; supervisor will stop the
-        //                                container within ≤1 s but inspect raced
-        //                                ahead. Treat the same as Stopped/0.
+        //  - Running + no sessions + !Preserved → agent exited; supervisor will
+        //                                stop the container within its polling
+        //                                interval but inspect raced ahead. Tear
+        //                                down same as Stopped/0.
+        //  - Running + no sessions + Preserved → agent exited with dirty
+        //                                worktrees. Keep container + DinD alive
+        //                                so `jackin hardline` can reconnect.
         //  - Stopped / 0 → user exited cleanly inside Claude Code.  Tear down.
         //  - Stopped / ≠0 or OOM-killed → crash.  Preserve so `jackin hardline`
         //    can restart the existing container + DinD sidecar.
+        //  - NotFound → container was removed externally. Treat as Stopped/0.
+        //  - InspectUnavailable → Docker unreachable; keep everything alive.
+        let is_preserved = matches!(
+            decision,
+            crate::isolation::finalize::FinalizeDecision::Preserved
+        );
         match inspect_container_state(runner, &container_name) {
             ContainerState::Running => {
                 let sessions =
                     inspect_agent_sessions(runner, &container_name, &ContainerState::Running);
+                if let AgentSessionInventory::Unavailable(ref reason) = sessions {
+                    crate::debug_log!(
+                        "instance",
+                        "inspect_agent_sessions unavailable for {container_name}: {reason}; \
+                         treating as sessions-present (container preserved)",
+                    );
+                }
                 let no_sessions =
                     matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty());
-                if no_sessions {
+                if no_sessions && !is_preserved {
                     run_clean_exit_teardown(
                         paths,
                         &container_state,
@@ -2490,9 +2507,9 @@ fn matching_instance_manifests(
     )
 }
 
-/// Write `CleanExited` status and run container teardown, unless `decision`
-/// is `Preserved` — in that case isolation already handled the worktree and
-/// status tracking, so only teardown runs.
+/// Write `CleanExited` status and run container teardown. When `decision` is
+/// `Preserved`, the status write is skipped (isolation wrote it earlier) but
+/// teardown still runs.
 fn run_clean_exit_teardown(
     paths: &JackinPaths,
     state_dir: &std::path::Path,

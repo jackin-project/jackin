@@ -11,8 +11,8 @@
 # clients have disconnected. Watching the socket file is reliable and
 # requires no tmux hooks or configuration.
 #
-# Will be replaced by the `jackin-container` Rust binary once Phase 2
-# (Unix socket status interface) justifies the build/distribution overhead.
+# Will be removed in Phase 2 when the `jackin-container` Rust binary takes
+# over as PID 1 with inotify-based socket watching.
 # See reference/roadmap/jackin-container-binary for the full plan.
 #
 # No `set -e`: signal-killed `wait` exits non-zero; `set -e` would misread
@@ -39,6 +39,7 @@ done
 # diagnose_premature_exit surfaces the container logs rather than returning
 # a cryptic "container is not running" error.
 if [ ! -S "$TMUX_SOCKET" ]; then
+    echo "supervisor: no tmux socket at ${TMUX_SOCKET} after 60 s; is tmux installed and starting correctly?" >&2
     exit 1
 fi
 
