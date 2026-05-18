@@ -14,6 +14,8 @@ These commands are for desktop/operator workflows. CI, validation workflows, and
 | `jackin role validate [<role-repo-path>]` | Checks the role manifest, Dockerfile, hooks, environment declarations, and agent table consistency. Defaults to the current directory. |
 | `jackin role migrate [<role-repo-path>]` | Updates the role manifest to the current schema version, then validates the repository. Defaults to the current directory. |
 | `jackin role create <role-name-or-namespace/name> [<projects-dir>]` | Creates a starter role repository named `jackin-<role-name>`. When `<projects-dir>` is omitted, jackin' uses `JACKIN_PROJECTS_DIR` or `~/Projects`. |
+| `jackin role construct-version [<role-repo-path>]` | Prints the construct image version tag pinned in the role Dockerfile. Defaults to the current directory. |
+| `jackin role published-image [<role-repo-path>]` | Prints the published Docker image declared in the role manifest. Defaults to the current directory. |
 
 ## Create a role
 

@@ -45,7 +45,7 @@ jackin's architecture is shaped by a few explicit decisions:
 
 The role repo owns the environment layer. jackin' owns the derived agent layer.
 
-That means an role defines the tools and conventions, while jackin' injects the agent-specific pieces such as Claude, Codex, Kimi, or OpenCode installation, the entrypoint, and UID/GID remapping.
+That means a role defines the tools and conventions, while jackin' injects the agent-specific pieces such as Claude, Codex, Amp, Kimi, or OpenCode installation, the entrypoint, and UID/GID remapping.
 
 ## Role repository tooling
 
@@ -92,9 +92,9 @@ Sessions are tmux sessions inside the running container. All agent sessions are 
 
 When an agent session exits cleanly (the operator types `/exit` or the agent finishes), the tmux session is removed but the container and supervisor keep running. The container only stops when the operator explicitly stops it, or when `jackin load` teardown runs after the foreground session ends cleanly (exit code 0).
 
-Agent model flags (`--model`) are passed as arguments to the tmux session exec, not as CMD args to `docker run`. This means model overrides from `jackin load --model` apply to the initial session only. Secondary sessions started via `hardline --new` use the role's default agent configuration unless the operator selects a different runtime.
+Agent model flags (`--model`) are passed as arguments to the tmux session exec, not as CMD args to `docker run`. This means model overrides from `jackin load --model` apply to the initial session only. Additional sessions started via `hardline --new` use the role's default agent configuration unless the operator selects a different runtime.
 
-Session state is not yet reconciled against the live container on console refresh (Phase 4 of the session control roadmap). The `sessions` field in the instance manifest is written but not populated until reconciliation lands.
+Session state is not yet reconciled against the live container on console refresh — Phase 4 of the [Console agent session control](/reference/roadmap/console-agent-session-control/) roadmap covers this work. The `sessions` field in the instance manifest is written but not populated until reconciliation lands.
 
 Implementation: <RepoFile path="docker/runtime/supervisor.sh" />, <RepoFile path="src/runtime/launch.rs" /> (`launch_role_runtime`), <RepoFile path="src/runtime/attach.rs" /> (`reconnect_or_create_session`, `spawn_agent_session`, `spawn_shell_session`).
 

@@ -28,7 +28,7 @@ Context:
   native macOS status bar, native desktop app/window, Ghostty workspace
   launch/focus actions, GitHub PR inbox, account/token status for
   Claude/Codex/Amp, and notification/attention support.
-- Work in the jackin repo. PR 283 is an editable daemon draft: if the Desktop
+- Work in the jackin repo. The daemon implementation is under active development: if the Desktop
   goal reveals daemon API changes that should land there, update that PR
   directly before stacking later Desktop PRs. New agent-created PRs still target
   `main` unless the operator explicitly names a different base branch; follow
@@ -46,7 +46,7 @@ Context:
   - docs/src/content/docs/reference/roadmap/agent-runtime-status.mdx
   - docs/src/content/docs/reference/roadmap/token-cost-telemetry.mdx
   - docs/src/content/docs/reference/roadmap/agent-orchestrator-research.mdx
-- Read the daemon implementation in src/daemon.rs and launch integration in
+- Read launch integration in
   src/runtime/launch.rs.
 - Read the existing workspace manager model/render/input paths under src/console/manager for vocabulary and workspace semantics only. Do not port the full TUI editor into the macOS v1.
 - Research steipete/CodexBar and steipete/RepoBar as prototypes, but do not copy
@@ -120,7 +120,7 @@ Sequential PR plan:
 12. Attention/ready-for-review promotion and notification click routing.
 
 Start with this implementation slice:
-1. Strengthen PR 283 daemon protocol with a hello/capabilities response.
+1. Strengthen the in-flight daemon protocol with a hello/capabilities response.
 2. Add the smallest endpoint scaffolding needed to prove versioned requests and
    responses without implementing the whole Desktop backend in one PR.
 3. Add focused tests for protocol compatibility and failure cases.

@@ -93,6 +93,8 @@ Modify an existing workspace.
 | `--no-keep-awake` | Disable the keep-awake reconciler on this workspace. Mutually exclusive with `--keep-awake`. |
 | `--git-pull` | Enable git pull on entry for this workspace. Mutually exclusive with `--no-git-pull`. |
 | `--no-git-pull` | Disable git pull on entry for this workspace. Mutually exclusive with `--git-pull`. |
+| `--prune` | Also remove pre-existing redundant mounts (rule-C violations) as part of this edit. |
+| `--yes`, `-y` | Skip confirmation prompts for mount collapses. |
 
 ```bash
 jackin workspace edit my-app --workdir ~/new-dir
