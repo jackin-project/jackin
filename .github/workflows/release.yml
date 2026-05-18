@@ -108,7 +108,7 @@ jobs:
       - name: Package
         run: |
           archive="jackin-${VERSION}-${{ matrix.target }}.tar.gz"
-          tar -czf "$archive" -C "target/${{ matrix.target }}/release" jackin jackin-validate
+          tar -czf "$archive" -C "target/${{ matrix.target }}/release" jackin jackin-role
           shasum -a 256 "$archive" > "$archive.sha256"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

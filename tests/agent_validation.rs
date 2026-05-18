@@ -17,7 +17,7 @@ plugins = []
     .unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
+        "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
 
@@ -43,7 +43,7 @@ plugins = []
     .unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
+        "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
 
@@ -66,7 +66,7 @@ agents = ["codex"]
     .unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
+        "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
 
@@ -89,7 +89,7 @@ agents = ["amp"]
     .unwrap();
     std::fs::write(
         temp.path().join("Dockerfile"),
-        "FROM projectjackin/construct:trixie\n",
+        "FROM projectjackin/construct:0.1-trixie\n",
     )
     .unwrap();
 

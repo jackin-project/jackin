@@ -16,8 +16,8 @@ name = "jackin"
 path = "src/main.rs"
 
 [[bin]]
-name = "jackin-validate"
-path = "src/bin/validate.rs"
+name = "jackin-role"
+path = "src/bin/role.rs"
 
 [dependencies]
 anyhow = "1.0"

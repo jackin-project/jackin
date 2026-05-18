@@ -138,7 +138,7 @@ The `jackin.role.toml` schema, validator, migration chain, and role-authoring en
 - <RepoFile path="src/manifest/migrations.rs" /> — manifest version registry and file migration.
 - <RepoFile path="src/repo.rs" /> — role-repo contract validation shared by local commands and runtime repo resolution.
 - <RepoFile path="src/role_authoring.rs" /> — desktop role-authoring commands for creating, validating, and migrating local role repositories.
-- <RepoFile path="src/bin/validate.rs" /> — standalone role-focused validation and migration binary used by GitHub Actions and future Renovate-style automation.
+- <RepoFile path="src/bin/role.rs" /> — standalone role-focused validation and migration binary used by GitHub Actions and future Renovate-style automation.
 
 Whenever the manifest schema changes, also update
 [Role Manifest](/developing/role-manifest/).

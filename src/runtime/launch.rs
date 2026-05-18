@@ -3579,7 +3579,7 @@ plugins = []
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -3639,7 +3639,7 @@ plugins = []
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -3709,7 +3709,7 @@ plugins = []
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -3761,7 +3761,7 @@ agents = ["codex"]
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -3812,7 +3812,7 @@ agents = ["codex"]
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -3870,7 +3870,7 @@ agents = ["codex"]
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -3917,7 +3917,7 @@ agents = ["amp"]
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -3976,7 +3976,7 @@ agents = ["amp"]
         .unwrap();
         std::fs::write(
             manifest_temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         let manifest = crate::manifest::RoleManifest::load(manifest_temp.path()).unwrap();
@@ -4499,7 +4499,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -4598,7 +4598,7 @@ plugins = ["code-review@claude-plugins-official"]
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -4652,7 +4652,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -4734,7 +4734,7 @@ trusted = true
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -4818,7 +4818,7 @@ trusted = true
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -4916,7 +4916,7 @@ trusted = true
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -4972,7 +4972,7 @@ agents = ["codex"]
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5044,7 +5044,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5112,7 +5112,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5159,7 +5159,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5209,7 +5209,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5251,6 +5251,179 @@ plugins = []
     }
 
     #[test]
+    fn load_agent_uses_prebuilt_when_construct_version_matches() {
+        // When the published image's jackin.construct_version label matches the
+        // Dockerfile's pinned tag, the pre-built image is used (no staleness).
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        // Capture queue (after preamble): [label value for CONSTRUCT_VERSION]
+        let mut runner = FakeRunner::for_load_agent(["0.1-trixie".to_string()]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha4"
+dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &repo_workspace(&repo_dir),
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let build_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker build "))
+            .unwrap();
+        assert!(
+            build_cmd.contains("--pull"),
+            "pre-built mode must pass --pull; got: {build_cmd}"
+        );
+    }
+
+    #[test]
+    fn load_agent_falls_back_to_workspace_when_construct_version_stale() {
+        // When the published image's jackin.construct_version label differs from
+        // the Dockerfile's pinned tag, jackin falls back to workspace mode.
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        // Capture queue (after preamble): [stale label value from published image]
+        // The published image pre-dates the Renovate bump: it carries 0.0-trixie
+        // but the Dockerfile now pins 0.1-trixie, triggering workspace fallback.
+        let mut runner = FakeRunner::for_load_agent(["0.0-trixie".to_string()]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha4"
+dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &repo_workspace(&repo_dir),
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let build_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker build "))
+            .unwrap();
+        // Workspace mode with rebuild=true passes --pull and must NOT use the
+        // published image as base.
+        assert!(
+            build_cmd.contains("--pull"),
+            "workspace rebuild must pass --pull; got: {build_cmd}"
+        );
+        assert!(
+            !build_cmd.contains("docker.io/myorg/my-role:latest"),
+            "stale published image must not be used as base; got: {build_cmd}"
+        );
+    }
+
+    #[test]
+    fn load_agent_uses_prebuilt_when_construct_version_label_absent() {
+        // Backward-compatibility guarantee: published images built before the
+        // jackin.construct_version label was introduced have no label. jackin
+        // must treat the absent label as "not stale" so those images keep
+        // working without forcing a full workspace rebuild on every launch.
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        // Empty string → read_image_label filters it to None → not stale.
+        let mut runner = FakeRunner::for_load_agent([String::new()]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha4"
+dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &repo_workspace(&repo_dir),
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let build_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker build "))
+            .unwrap();
+        // Prebuilt mode: --pull is passed to pick up a refreshed published image.
+        assert!(
+            build_cmd.contains("--pull"),
+            "prebuilt mode must pass --pull; got: {build_cmd}"
+        );
+        // In prebuilt mode rebuild=false, so the construct-mismatch guard runs
+        // a docker inspect on the derived image. Workspace-rebuild mode skips it.
+        assert!(
+            runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("docker inspect") && c.contains("jk_agent-smith")),
+            "prebuilt mode must run docker inspect on derived image (construct-mismatch check)"
+        );
+    }
+
+    #[test]
     fn load_agent_ignores_published_image_when_rebuild() {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
@@ -5262,7 +5435,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5321,7 +5494,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5395,7 +5568,7 @@ plugins = ["code-review@claude-plugins-official"]
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5466,7 +5639,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5578,7 +5751,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5688,7 +5861,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5752,7 +5925,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5806,7 +5979,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5866,7 +6039,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5925,7 +6098,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -5981,7 +6154,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6040,7 +6213,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6090,7 +6263,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6138,7 +6311,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6187,7 +6360,7 @@ plugins = []
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6287,7 +6460,7 @@ trusted = true
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6359,7 +6532,7 @@ dst = "/workspace"
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6462,7 +6635,7 @@ trusted = true
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6542,7 +6715,7 @@ trusted = true
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(
@@ -6639,7 +6812,7 @@ trusted = true
         std::fs::create_dir_all(&repo_dir).unwrap();
         std::fs::write(
             repo_dir.join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         std::fs::write(

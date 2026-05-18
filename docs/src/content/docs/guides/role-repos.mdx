@@ -103,11 +103,11 @@ Every role repo must satisfy a contract:
 3. **The Dockerfile path must be relative** and must stay inside the repo checkout (no `../` escapes)
 4. **The final Dockerfile stage must use the construct base**:
    ```dockerfile
-   FROM projectjackin/construct:trixie
+   FROM projectjackin/construct:0.1-trixie
    ```
    An optional alias is allowed:
    ```dockerfile
-   FROM projectjackin/construct:trixie AS runtime
+   FROM projectjackin/construct:0.1-trixie AS runtime
    ```
 5. **Earlier stages may use any base image** — multi-stage builds are fully supported
 6. **No symlinks** — the derived build-context generator currently rejects symlinks
@@ -131,7 +131,7 @@ name = "Frontend Engineer"
 ```
 
 ```dockerfile title="Dockerfile"
-FROM projectjackin/construct:trixie
+FROM projectjackin/construct:0.1-trixie
 
 # Install Node.js via mise
 RUN mise install node@22 && mise use --global node@22

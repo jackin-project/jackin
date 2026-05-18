@@ -1057,7 +1057,7 @@ plugins = []
         .unwrap();
         std::fs::write(
             temp.path().join("Dockerfile"),
-            "FROM projectjackin/construct:trixie\n",
+            "FROM projectjackin/construct:0.1-trixie\n",
         )
         .unwrap();
         crate::manifest::RoleManifest::load(temp.path()).unwrap()

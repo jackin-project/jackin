@@ -7,7 +7,7 @@ use crate::version_check;
 use owo_colors::OwoColorize;
 
 use super::identity::HostIdentity;
-use super::naming::{LABEL_IMAGE_CONSTRUCT, image_name};
+use super::naming::{LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, image_name};
 
 /// Build the Docker image for the role. Returns the image name.
 #[allow(clippy::similar_names, clippy::too_many_arguments)]
@@ -43,9 +43,34 @@ pub(super) fn build_agent_image(
     // using it as base would silently ignore the local construct override.
     let custom_construct =
         crate::repo_contract::construct_image() != crate::repo_contract::CONSTRUCT_IMAGE;
-    let use_prebuilt =
+    let mut use_prebuilt =
         published_image.is_some() && !rebuild && branch_override.is_none() && !custom_construct;
-    let base_image_override = use_prebuilt.then(|| published_image.unwrap());
+    let mut base_image_override = use_prebuilt.then(|| published_image.unwrap());
+
+    // When using the pre-built published image, verify it was built from the
+    // same construct version the Dockerfile now pins. A mismatch means the
+    // published image pre-dates a Renovate update (the role Dockerfile was
+    // bumped to a newer construct version but CI has not yet rebuilt the
+    // published image). Fall back to workspace mode so the role's workspace
+    // Dockerfile — which carries the new pinned version — is used directly.
+    let rebuild = if use_prebuilt
+        && construct_version_is_stale(
+            published_image.unwrap(),
+            &validated_repo.dockerfile.construct_version,
+            runner,
+        ) {
+        eprintln!(
+            "note: published image {} predates Dockerfile construct pin {}; \
+             rebuilding from workspace Dockerfile",
+            published_image.unwrap(),
+            validated_repo.dockerfile.construct_version,
+        );
+        use_prebuilt = false;
+        base_image_override = None;
+        true
+    } else {
+        rebuild
+    };
 
     // create_derived_build_context copies the repo into a temp directory,
     // creating an immutable snapshot.  After this point the shared cached
@@ -90,23 +115,9 @@ pub(super) fn build_agent_image(
     // override while this invocation uses the canonical one, or vice versa —
     // and must be rebuilt from scratch rather than reused.
     let current_construct = crate::repo_contract::construct_image();
-    let cached_construct_label = runner
-        .capture(
-            "docker",
-            &[
-                "inspect",
-                "--format",
-                &format!("{{{{index .Config.Labels \"{LABEL_IMAGE_CONSTRUCT}\"}}}}"),
-                &image,
-            ],
-            None,
-        )
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let construct_mismatch = cached_construct_label
-        .as_deref()
-        .is_some_and(|cached| cached != current_construct);
+    let construct_mismatch = !rebuild
+        && read_image_label(runner, &image, LABEL_IMAGE_CONSTRUCT)
+            .is_some_and(|cached| cached != current_construct);
     let rebuild = rebuild || construct_mismatch;
 
     let cache_bust_value = if rebuild || agent_update {
@@ -137,10 +148,11 @@ pub(super) fn build_agent_image(
     // no-op, so this adds negligible overhead while ensuring the local daemon
     // picks up any newly pushed workspace image.
     //
-    // Workspace mode with --rebuild: pass --pull to refresh the upstream
-    // construct base before rebuilding from the workspace Dockerfile.
+    // Workspace mode with rebuild=true (explicit --rebuild or staleness-driven
+    // fallback): pass --pull to refresh the upstream construct base before
+    // rebuilding from the workspace Dockerfile.
     //
-    // Workspace mode without --rebuild (no published_image): omit --pull so
+    // Workspace mode without rebuild (no published_image): omit --pull so
     // Docker's layer cache is respected across invocations. The base image is
     // not re-evaluated and heavy apt / toolchain layers stay cached.
     if use_prebuilt || rebuild {
@@ -167,6 +179,54 @@ pub(super) fn build_agent_image(
     extract_agent_version(paths, &image, agent, debug, runner);
 
     Ok(image)
+}
+
+fn read_image_label(runner: &mut impl CommandRunner, image: &str, key: &str) -> Option<String> {
+    runner
+        .capture(
+            "docker",
+            &[
+                "inspect",
+                "--format",
+                &format!("{{{{index .Config.Labels \"{key}\"}}}}"),
+                image,
+            ],
+            None,
+        )
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Returns true when the published image's construct version label differs from
+/// the Dockerfile's pinned version, meaning the published image pre-dates a
+/// Renovate bump. If the label is absent the image predates this tracking
+/// feature — treat as fresh so existing published images keep working.
+///
+/// If `docker pull` fails the image may not exist locally at all. Treating a
+/// missing image as "not stale" would let the prebuilt path proceed and produce
+/// a confusing late failure inside `docker build`. Return `true` (stale) so
+/// jackin falls back to workspace mode, which gives the operator a clearer
+/// error if the construct base is also unreachable.
+fn construct_version_is_stale(
+    published: &str,
+    dockerfile_version: &str,
+    runner: &mut impl CommandRunner,
+) -> bool {
+    if let Err(e) = runner.run(
+        "docker",
+        &["pull", "--quiet", published],
+        None,
+        &RunOptions::default(),
+    ) {
+        eprintln!(
+            "warning: docker pull {published} failed ({e}); \
+             treating published image as stale and rebuilding from workspace Dockerfile"
+        );
+        return true;
+    }
+    read_image_label(runner, published, LABEL_IMAGE_CONSTRUCT_VERSION)
+        .is_some_and(|stored| stored != dockerfile_version)
 }
 
 fn extract_agent_version(

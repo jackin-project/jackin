@@ -125,6 +125,9 @@ pub enum RoleCommand {
     /// Create a new role repository scaffold
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     Create(RoleCreateArgs),
+    /// Print the construct image version tag pinned in the role Dockerfile
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    ConstructVersion(RoleRepoPathArgs),
 }
 
 /// Role repository path argument shared by `validate` and `migrate`.
@@ -534,6 +537,29 @@ mod tests {
             Some(Command::Role(super::RoleCommand::Migrate(
                 super::RoleRepoPathArgs { path: Some(ref path) }
             ))) if path == std::path::Path::new("/tmp/my-role")
+        ));
+    }
+
+    #[test]
+    fn parses_role_construct_version_with_default_path() {
+        let cli = Cli::try_parse_from(["jackin", "role", "construct-version"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Role(super::RoleCommand::ConstructVersion(
+                super::RoleRepoPathArgs { path: None }
+            )))
+        ));
+    }
+
+    #[test]
+    fn parses_role_construct_version_with_path() {
+        let cli =
+            Cli::try_parse_from(["jackin", "role", "construct-version", "/tmp/my-role"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Role(super::RoleCommand::ConstructVersion(
+                super::RoleRepoPathArgs { path: Some(ref p) }
+            ))) if p == std::path::Path::new("/tmp/my-role")
         ));
     }
 

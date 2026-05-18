@@ -91,7 +91,7 @@ Role manifests live in role repos that jackin does not own. The policy is:
 - **Older-stamped manifest uses a newer feature**: jackin refuses to use the role and emits a feature-specific error with `jackin role migrate <role-repo-path>`. For example, `opencode` requires `v1alpha3` and `kimi` requires `v1alpha4`; an older-stamped manifest that declares either agent must be migrated before launch.
 - **Version newer than expected**: jackin refuses and emits: `role manifest is at {new}, this binary only understands up to {current}; upgrade jackin`.
 
-The `jackin role migrate <role-repo-path>` command applies the manifest migration chain to a desktop local role clone and writes the result back. The operator can then inspect the diff, commit, and push. CI, validation workflows, and Renovate-style automation use the standalone `jackin-validate --migrate <role-repo-path>` binary instead of the full Jackin operator CLI.
+The `jackin role migrate <role-repo-path>` command applies the manifest migration chain to a desktop local role clone and writes the result back. The operator can then inspect the diff, commit, and push. CI, validation workflows, and Renovate-style automation use the standalone `jackin-role migrate <role-repo-path>` binary instead of the full Jackin operator CLI.
 
 The `--pr` path remains future work. When implemented, it will have jackin open a pull request in the role repo automatically via `gh`.
 
@@ -131,7 +131,7 @@ The migration framework carves out an exception for the three file kinds operato
 1. Add `version: String` (`version` in TOML) to `RoleManifest` in <RepoFile path="src/manifest/mod.rs" />.
 2. Implement the version-gate logic at manifest load time with the error messages described above.
 3. Ship with `CURRENT_MANIFEST_VERSION = "v1alpha1"`; treat missing `version` as legacy.
-4. Add `jackin-validate --migrate <role-repo-path>` that applies the migration chain and writes the updated manifest back to the local role clone.
+4. Add `jackin-role migrate <role-repo-path>` that applies the migration chain and writes the updated manifest back to the local role clone.
 
 **Phase 3 — `--pr` auto-migration**
 
@@ -141,7 +141,7 @@ The migration framework carves out an exception for the three file kinds operato
 
 **Phase 4 — Renovate-style auto-migration GitHub Action**
 
-`--pr` runs from an operator's machine, so a role repo whose author has not run `jackin role migrate` stays broken in CI until someone opens a PR by hand. A scheduled action closes that gap by watching role repos and opening migration PRs upstream automatically. That action should run the small role-focused `jackin-validate --migrate` binary, not the full `jackin` operator binary.
+`--pr` runs from an operator's machine, so a role repo whose author has not run `jackin role migrate` stays broken in CI until someone opens a PR by hand. A scheduled action closes that gap by watching role repos and opening migration PRs upstream automatically. That action should run the small role-focused `jackin-role migrate` binary, not the full `jackin` operator binary.
 
 The action extends [`validate-agent-action`](https://github.com/jackin-project/validate-agent-action) with a `migrate` mode (rather than introducing a new repo — role authors install one action). Two deployment shapes mirror Renovate's:
 
@@ -152,7 +152,7 @@ The action extends [`validate-agent-action`](https://github.com/jackin-project/v
 Per-run flow (both modes):
 
 1. Check out the role repo at the default branch.
-2. Run `jackin-validate <repo>` to detect whether the manifest is already current. If yes, jump to the cleanup step below.
+2. Run `jackin-role validate <repo>` to detect whether the manifest is already current. If yes, jump to the cleanup step below.
 3. Switch to a deterministic branch name (e.g. `jackin/schema-migration/v1alpha1-to-v1alpha2`) and run the manifest migrator.
 4. Commit the migrated manifest with a fixed message shape; push.
 5. Open a PR if none exists for that branch; update the existing PR if one does (Renovate's "branch is the source of truth" model). PR body links to the schema-versions page and names the source jackin tag for traceability.
@@ -163,7 +163,7 @@ Open design questions:
 
 - **Target-repo discovery.** How does the central runner enumerate which repos to scan? Renovate uses an onboarding PR plus a per-repo config file; jackin's analog is unspecified. Options: subscribe to push events and short-circuit when `jackin.role.toml` is absent, require an explicit allowlist file in each repo, or piggy-back on an org-level config. Pick one before implementation.
 - **App vs PAT default in docs.** Renovate's default-recommended path is the hosted app; jackin picks one as the documented default and calls out the other as fallback.
-- **Source of "current schema."** The action needs to know which `CURRENT_*_VERSION` to migrate to. Options: pin to the latest `jackin-validate` release, follow the same `latest-build` channel as the existing validate action, or pin per-workflow. Decision affects how new schema versions roll out across the role-repo ecosystem.
+- **Source of "current schema."** The action needs to know which `CURRENT_*_VERSION` to migrate to. Options: pin to the latest `jackin-role` release, follow the same `latest-build` channel as the existing validate action, or pin per-workflow. Decision affects how new schema versions roll out across the role-repo ecosystem.
 - **Branch lifecycle.** When a role author rebases, force-pushes, or hand-edits the migration PR, the action must detect drift and either rebase its own commit or stop (Renovate calls this "rebase strategy" — it has multiple modes; jackin picks one).
 - **Conflict handling.** If a role author has already partially migrated, the action's migration step may produce a no-op diff. The action detects that case and closes the PR rather than opens an empty one.
 
