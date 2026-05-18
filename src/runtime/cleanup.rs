@@ -307,18 +307,10 @@ pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
     prune_dir(&paths.cache_dir, "shared cache")
 }
 
-/// Uses `remove_dir` (not `remove_dir_all`) so surviving content prevents
-/// removal rather than being silently deleted.
 pub fn prune_jackin_home(paths: &JackinPaths) {
-    match std::fs::remove_dir(&paths.jackin_home) {
+    match std::fs::remove_dir_all(&paths.jackin_home) {
         Ok(()) => println!("Removed jackin home ({}).", paths.jackin_home.display()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) if err.kind() == std::io::ErrorKind::DirectoryNotEmpty => {
-            println!(
-                "jackin home ({}) not empty, leaving in place.",
-                paths.jackin_home.display()
-            );
-        }
         Err(err) => {
             eprintln!(
                 "  {} could not remove {}: {err}",
@@ -508,134 +500,52 @@ pub fn prune_instances(paths: &JackinPaths, runner: &mut impl CommandRunner) -> 
 
 /// Force-eject all managed Docker resources then purge every instance's
 /// state directory and index entry, regardless of status.
-/// Used by `jackin prune all`.
+/// Used by `jackin prune instances --all` and `jackin prune system --all`.
 pub fn prune_all_instances(
     paths: &JackinPaths,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     exile_all(runner)?;
 
-    // reconcile must run before sweep_stale_artifacts: with all containers
-    // gone, reconcile will attempt to stop any live caffeinate process and
-    // remove its PID file. sweep_stale_artifacts unconditionally deletes
-    // *.pid files, so running it first would remove the PID file while
-    // caffeinate is still alive, leaving an orphaned process with no
-    // recoverable handle.
+    // reconcile must run before data_dir removal: with all containers gone,
+    // reconcile will attempt to stop any live caffeinate process and remove
+    // its PID file. Removing data_dir first would delete the PID file before
+    // reconcile can read it to stop the live process, orphaning it.
     super::caffeinate::reconcile(paths, runner);
 
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
     if index.instances.is_empty() {
         println!("No instances to prune.");
-        sweep_stale_artifacts(&paths.data_dir);
-        return Ok(());
-    }
+    } else {
+        let containers: Vec<String> = index
+            .instances
+            .iter()
+            .map(|e| e.container_base.clone())
+            .collect();
 
-    let containers: Vec<String> = index
-        .instances
-        .iter()
-        .map(|e| e.container_base.clone())
-        .collect();
-
-    let mut removed: Vec<String> = Vec::new();
-    let mut skipped: Vec<(String, anyhow::Error)> = Vec::new();
-
-    for container_base in containers {
-        match purge_container_filesystem(paths, &container_base, runner) {
-            Ok(()) => removed.push(container_base),
-            Err(error) => skipped.push((container_base, error)),
+        println!("Pruned {} instance(s):", containers.len());
+        for name in &containers {
+            println!("  {name}");
         }
-    }
-
-    if !removed.is_empty() {
-        let refs: Vec<&str> = removed.iter().map(String::as_str).collect();
-        match InstanceIndex::remove_many(&paths.data_dir, &refs) {
-            Ok(()) => println!("Pruned {} instance(s):", removed.len()),
-            Err(err) => {
+        for container_base in &containers {
+            if let Err(err) = purge_container_filesystem(paths, container_base, runner) {
                 eprintln!(
-                    "{} instance index could not be updated: {err:#}; run `jackin prune instances` again to retry",
+                    "  {} isolation cleanup for {container_base} failed: {err}",
                     "warning:".yellow().bold()
-                );
-                println!(
-                    "Removed state for {} instance(s) (index not updated):",
-                    removed.len()
                 );
             }
         }
-        for name in &removed {
-            println!("  {name}");
-        }
     }
 
-    for (name, error) in &skipped {
-        eprintln!(
-            "{} failed to purge state for {name}: {error}",
-            "warning:".yellow().bold()
-        );
-    }
-
-    if skipped.is_empty() {
-        sweep_stale_artifacts(&paths.data_dir);
+    if let Err(err) = std::fs::remove_dir_all(&paths.data_dir)
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        return Err(anyhow::Error::from(err).context(format!(
+            "failed to remove instance data at {}",
+            paths.data_dir.display()
+        )));
     }
     Ok(())
-}
-
-fn sweep_stale_artifacts(data_dir: &std::path::Path) {
-    let entries = match std::fs::read_dir(data_dir) {
-        Ok(e) => e,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return,
-        Err(err) => {
-            eprintln!(
-                "  {} could not read {}: {err}",
-                "warning:".yellow().bold(),
-                data_dir.display()
-            );
-            return;
-        }
-    };
-    for entry in entries.flatten() {
-        let file_name = entry.file_name();
-        let name = file_name.to_string_lossy();
-        let Ok(ft) = entry.file_type() else { continue };
-        let ext = std::path::Path::new(name.as_ref())
-            .extension()
-            .and_then(std::ffi::OsStr::to_str)
-            .unwrap_or("");
-        let path = entry.path();
-        if ft.is_file()
-            && (ext == "lock" || ext == "pid" || name == "instances.json")
-            && let Err(err) = std::fs::remove_file(&path)
-            && err.kind() != std::io::ErrorKind::NotFound
-        {
-            eprintln!(
-                "  {} could not remove {}: {err}",
-                "warning:".yellow().bold(),
-                path.display()
-            );
-        } else if ft.is_dir()
-            && ext == "locks"
-            && let Err(err) = std::fs::remove_dir_all(&path)
-            && err.kind() != std::io::ErrorKind::NotFound
-        {
-            eprintln!(
-                "  {} could not remove {}: {err}",
-                "warning:".yellow().bold(),
-                path.display()
-            );
-        }
-    }
-    // `remove_dir` (not `remove_dir_all`): if any entry was skipped above
-    // (e.g. a failed-purge state dir), the directory is not empty and
-    // `remove_dir` fails silently, leaving the partial state intact.
-    if let Err(err) = std::fs::remove_dir(data_dir)
-        && err.kind() != std::io::ErrorKind::NotFound
-        && err.kind() != std::io::ErrorKind::DirectoryNotEmpty
-    {
-        eprintln!(
-            "  {} could not remove {}: {err}",
-            "warning:".yellow().bold(),
-            data_dir.display()
-        );
-    }
 }
 
 fn ensure_role_resources_absent_for_purge(
@@ -1497,16 +1407,13 @@ jk-a1b2c3d4-myworkspace-agentsmith"
     }
 
     #[test]
-    fn prune_all_instances_sweeps_orphaned_lock_files_and_locks_dirs() {
+    fn prune_all_instances_removes_data_dir_entirely() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         std::fs::create_dir_all(&paths.data_dir).unwrap();
         std::fs::write(paths.data_dir.join("jk-abc123-thearchitect.lock"), b"").unwrap();
         std::fs::write(paths.data_dir.join("caffeinate.lock"), b"").unwrap();
         std::fs::write(paths.data_dir.join("caffeinate.pid"), b"99999").unwrap();
-        std::fs::write(paths.data_dir.join("instances.json.lock"), b"").unwrap();
-        // instances.json is NOT pre-planted; read_or_rebuild will create it,
-        // then sweep_stale_artifacts must remove it.
         std::fs::create_dir_all(paths.data_dir.join("the-architect.locks")).unwrap();
         std::fs::write(
             paths
@@ -1524,37 +1431,13 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         prune_all_instances(&paths, &mut runner).unwrap();
 
         assert!(
-            !paths.data_dir.join("jk-abc123-thearchitect.lock").exists(),
-            "instance launch lock should be removed"
-        );
-        assert!(
-            !paths.data_dir.join("caffeinate.lock").exists(),
-            "caffeinate mutex lock should be removed"
-        );
-        assert!(
-            !paths.data_dir.join("caffeinate.pid").exists(),
-            "caffeinate pid file should be removed"
-        );
-        assert!(
-            !paths.data_dir.join("instances.json.lock").exists(),
-            "instances.json.lock should be removed"
-        );
-        assert!(
-            !paths.data_dir.join("instances.json").exists(),
-            "instances.json should be removed"
-        );
-        assert!(
-            !paths.data_dir.join("the-architect.locks").exists(),
-            "repo locks dir should be removed"
-        );
-        assert!(
             !paths.data_dir.exists(),
-            "data_dir itself should be removed when empty"
+            "data_dir should be completely removed"
         );
     }
 
     #[test]
-    fn prune_all_instances_sweeps_even_when_index_empty() {
+    fn prune_all_instances_removes_data_dir_when_index_empty() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         std::fs::create_dir_all(&paths.data_dir).unwrap();
@@ -1566,44 +1449,20 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         ]);
         prune_all_instances(&paths, &mut runner).unwrap();
 
-        assert!(
-            !paths.data_dir.join("jk-stale.lock").exists(),
-            "stale lock swept even with empty index"
-        );
-        assert!(
-            !paths.data_dir.exists(),
-            "data_dir removed when only stale locks present"
-        );
+        assert!(!paths.data_dir.exists(), "data_dir removed");
     }
 
     // ── prune_jackin_home ────────────────────────────────────────────────────
 
     #[test]
-    fn prune_jackin_home_removes_empty_dir() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        std::fs::create_dir_all(&paths.jackin_home).unwrap();
-
-        prune_jackin_home(&paths);
-
-        assert!(
-            !paths.jackin_home.exists(),
-            "empty jackin_home should be removed"
-        );
-    }
-
-    #[test]
-    fn prune_jackin_home_does_not_remove_non_empty_dir() {
+    fn prune_jackin_home_removes_home() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         std::fs::create_dir_all(paths.jackin_home.join("leftover")).unwrap();
 
         prune_jackin_home(&paths);
 
-        assert!(
-            paths.jackin_home.exists(),
-            "jackin_home with remaining content must survive"
-        );
+        assert!(!paths.jackin_home.exists(), "jackin_home should be removed");
     }
 
     #[test]
