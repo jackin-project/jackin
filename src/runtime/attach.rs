@@ -471,10 +471,9 @@ enum DockerNetworkState {
 }
 
 async fn inspect_docker_network(docker: &impl crate::docker_client::DockerApi, network: &str) -> DockerNetworkState {
-    // Use list_networks with name filter to check existence
-    match docker.list_networks(&[&format!("name={network}")]).await {
-        Ok(nets) if nets.iter().any(|n| n.name == network) => DockerNetworkState::Present,
-        Ok(_) => DockerNetworkState::NotFound,
+    match docker.inspect_network(network).await {
+        Ok(Some(_)) => DockerNetworkState::Present,
+        Ok(None) => DockerNetworkState::NotFound,
         Err(e) => DockerNetworkState::InspectUnavailable(e.to_string()),
     }
 }
@@ -541,15 +540,19 @@ pub(super) async fn wait_for_dind(
         ));
     }
 
-    docker
+    match docker
         .exec_capture(dind_name, &["test", "-f", "/certs/client/ca.pem"])
         .await
-        .map_err(|_| {
-            anyhow::anyhow!(
+    {
+        Ok(_) => {}
+        Err(e) if e.to_string().contains("exited with code") => {
+            anyhow::bail!(
                 "DinD TLS client certificates not found on volume {certs_volume} — \
                  the DinD sidecar may have started without generating certificates"
-            )
-        })?;
+            );
+        }
+        Err(e) => return Err(e.context(format!("checking TLS cert presence in {dind_name}"))),
+    }
 
     Ok(())
 }
@@ -992,17 +995,17 @@ mod tests {
             .unwrap();
         // inspect: role container running, dind stopped
         // exec_capture: tmux list-sessions returns two sessions
-        // list_networks: network present
+        // inspect_network: network present
         let docker = FakeDockerClient {
             inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
                 ContainerState::Running,
                 ContainerState::Stopped { exit_code: 137, oom_killed: false },
             ])),
-            list_networks_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                vec![crate::docker_client::NetworkRow {
+            inspect_network_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                Some(crate::docker_client::NetworkRow {
                     name: format!("{container_name}-net"),
                     labels: Default::default(),
-                }],
+                }),
             ])),
             ..Default::default()
         };
@@ -1201,6 +1204,43 @@ jackin-codex-abc".to_string()]);
         assert!(
             err.to_string().contains("OOM") && err.to_string().contains("jackin load"),
             "expected OOM error directing to jackin load; got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn wait_for_dind_times_out_when_all_attempts_fail() {
+        tokio::time::pause(); // make all sleeps instant
+        let docker = FakeDockerClient {
+            fail_with: vec![("docker exec".to_string(), "connection refused".to_string())],
+            ..Default::default()
+        };
+
+        let err = wait_for_dind("jk-agent-smith-dind", "jk-agent-smith-dind-certs", &docker)
+            .await
+            .unwrap_err();
+
+        assert!(err.to_string().contains("timed out"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn wait_for_dind_fails_when_cert_absent() {
+        // First exec (docker info) succeeds; second exec (test -f) exits with code 1.
+        let docker = FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                // docker info: success
+                String::new(),
+            ])),
+            fail_with: vec![("test -f /certs/client/ca.pem".to_string(), "exec in jk-agent-smith-dind exited with code 1: ".to_string())],
+            ..Default::default()
+        };
+
+        let err = wait_for_dind("jk-agent-smith-dind", "jk-agent-smith-dind-certs", &docker)
+            .await
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("TLS client certificates not found"),
+            "got: {err}"
         );
     }
 }

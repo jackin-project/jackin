@@ -69,7 +69,7 @@ pub enum RemoveImageOutcome {
     NotFound,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerSpec {
     pub image: String,
     pub hostname: Option<String>,
@@ -102,6 +102,7 @@ pub trait DockerApi {
     ) -> anyhow::Result<()>;
     async fn remove_network(&self, name: &str) -> anyhow::Result<()>;
     async fn list_networks(&self, label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>>;
+    async fn inspect_network(&self, name: &str) -> anyhow::Result<Option<NetworkRow>>;
     async fn list_image_tags(&self, reference_filter: &str) -> anyhow::Result<Vec<String>>;
     async fn remove_image(&self, name: &str) -> anyhow::Result<RemoveImageOutcome>;
     async fn inspect_image_label(
@@ -436,9 +437,39 @@ impl DockerApi for BollardDockerClient {
                     }
                 }
             }
-            StartExecResults::Detached => {}
+            StartExecResults::Detached => {
+                anyhow::bail!(
+                    "exec in {container} returned Detached — attach_stdout was set but exec ran detached"
+                );
+            }
         }
+
+        let inspect = self
+            .inner
+            .inspect_exec(&exec.id)
+            .await
+            .with_context(|| format!("inspecting exec result in {container}"))?;
+        let exit_code = inspect.exit_code.unwrap_or(-1);
+        if exit_code != 0 {
+            anyhow::bail!(
+                "exec in {container} exited with code {exit_code}: {}",
+                output_buf.trim()
+            );
+        }
+
         Ok(output_buf.trim().to_string())
+    }
+
+    async fn inspect_network(&self, name: &str) -> anyhow::Result<Option<NetworkRow>> {
+        match self.inner.inspect_network(name, None::<bollard::query_parameters::InspectNetworkOptions>).await {
+            Ok(n) => {
+                let net_name = n.name.unwrap_or_else(|| name.to_string());
+                let labels = n.labels.unwrap_or_default();
+                Ok(Some(NetworkRow { name: net_name, labels }))
+            }
+            Err(e) if is_http_status(&e, 404) => Ok(None),
+            Err(e) => Err(anyhow::Error::from(e).context(format!("inspecting network {name}"))),
+        }
     }
 }
 
@@ -453,6 +484,7 @@ pub struct FakeDockerClient {
     pub list_image_tags_queue: std::cell::RefCell<std::collections::VecDeque<Vec<String>>>,
     pub remove_image_queue: std::cell::RefCell<std::collections::VecDeque<RemoveImageOutcome>>,
     pub exec_capture_queue: std::cell::RefCell<std::collections::VecDeque<String>>,
+    pub inspect_network_queue: std::cell::RefCell<std::collections::VecDeque<Option<NetworkRow>>>,
     pub fail_with: Vec<(String, String)>,
     pub created_containers: std::cell::RefCell<Vec<(String, ContainerSpec)>>,
     pub created_networks: std::cell::RefCell<Vec<(String, HashMap<String, String>)>>,
@@ -469,6 +501,7 @@ impl Default for FakeDockerClient {
             list_image_tags_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             remove_image_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            inspect_network_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             fail_with: Vec::new(),
             created_containers: std::cell::RefCell::new(Vec::new()),
             created_networks: std::cell::RefCell::new(Vec::new()),
@@ -516,11 +549,15 @@ impl FakeDockerClient {
     }
 
     fn pop_remove_image(&self) -> RemoveImageOutcome {
-        self.remove_image_queue.borrow_mut().pop_front().unwrap_or(RemoveImageOutcome::Removed)
+        self.remove_image_queue.borrow_mut().pop_front().expect("remove_image called but remove_image_queue is empty")
     }
 
     fn pop_exec_capture(&self) -> String {
         self.exec_capture_queue.borrow_mut().pop_front().unwrap_or_default()
+    }
+
+    fn pop_inspect_network(&self) -> Option<NetworkRow> {
+        self.inspect_network_queue.borrow_mut().pop_front().unwrap_or(None)
     }
 }
 
@@ -607,6 +644,13 @@ impl DockerApi for FakeDockerClient {
         self.record(&op);
         self.check_fail(&op)?;
         Ok(self.pop_list_networks())
+    }
+
+    async fn inspect_network(&self, name: &str) -> anyhow::Result<Option<NetworkRow>> {
+        let op = format!("docker network inspect {name}");
+        self.record(&op);
+        self.check_fail(&op)?;
+        Ok(self.pop_inspect_network())
     }
 
     async fn list_image_tags(&self, reference_filter: &str) -> anyhow::Result<Vec<String>> {

@@ -136,7 +136,6 @@ async fn collect_labeled_dind(docker: &impl DockerApi) -> anyhow::Result<Vec<Din
 /// Return `DinD` sidecar containers whose corresponding role container is no
 /// longer running.  These are leftovers from hard kills, terminal closures,
 /// or startup failures.
-/// Return `DinD` sidecars whose role container is not in `running`.
 fn filter_orphaned_dind(sidecars: Vec<DindInfo>, running: &[String]) -> Vec<DindInfo> {
     sidecars
         .into_iter()
@@ -721,8 +720,6 @@ mod tests {
 
     #[tokio::test]
     async fn eject_agent_ignores_missing_runtime_resources() {
-        // FakeDockerClient returns Ok for all operations by default
-        // (404 → Ok for remove operations)
         let docker = FakeDockerClient::default();
 
         eject_role("jk-agent-smith", &docker).await.unwrap();
@@ -735,6 +732,32 @@ mod tests {
                 "docker volume rm jk-agent-smith-dind-certs",
                 "docker network rm jk-agent-smith-net",
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn eject_role_phase1_failure_prevents_phase2_calls() {
+        // When remove_container fails, remove_volume and remove_network must not be called.
+        let docker = FakeDockerClient {
+            fail_with: vec![(
+                "docker rm -f jk-agent-smith".to_string(),
+                "Error response from daemon: permission denied".to_string(),
+            )],
+            ..Default::default()
+        };
+
+        let err = eject_role("jk-agent-smith", &docker).await.unwrap_err();
+
+        assert!(err.to_string().contains("permission denied"), "got: {err}");
+        assert!(
+            !docker.recorded.borrow().iter().any(|c| c.contains("docker volume rm")),
+            "volume rm must not be called after phase-1 failure; recorded: {:?}",
+            docker.recorded.borrow()
+        );
+        assert!(
+            !docker.recorded.borrow().iter().any(|c| c.contains("docker network rm")),
+            "network rm must not be called after phase-1 failure; recorded: {:?}",
+            docker.recorded.borrow()
         );
     }
 
@@ -758,7 +781,6 @@ mod tests {
 
     #[tokio::test]
     async fn exile_all_continues_when_some_runtime_resources_are_missing() {
-        // FakeDockerClient treats all remove operations as success (404 is Ok)
         let docker = FakeDockerClient {
             list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![
                 ContainerRow { name: "jk-k7p9m2xq-agentsmith".to_string(), labels: Default::default() },
@@ -1129,7 +1151,8 @@ mod tests {
     async fn prune_images_removes_images_not_in_use() {
         let docker = FakeDockerClient {
             list_image_tags_queue: std::cell::RefCell::new(VecDeque::from([vec!["jk_agent-smith:latest".to_string()]])),
-            list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![]])), // no containers
+            list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![]])),
+            remove_image_queue: std::cell::RefCell::new(VecDeque::from([crate::docker_client::RemoveImageOutcome::Removed])),
             ..Default::default()
         };
 
@@ -1182,6 +1205,7 @@ mod tests {
             list_containers_queue: std::cell::RefCell::new(VecDeque::from([vec![
                 ContainerRow { name: "jk-bar".to_string(), labels: image_labels },
             ]])),
+            remove_image_queue: std::cell::RefCell::new(VecDeque::from([crate::docker_client::RemoveImageOutcome::Removed])),
             ..Default::default()
         };
 

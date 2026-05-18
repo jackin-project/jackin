@@ -154,14 +154,14 @@ pub(super) fn commit_editor_save(
         plan,
         exit_on_success,
         &mut crate::docker::ShellRunner::default(),
-        None, // uses BollardDockerClient::new() inside
+        None, // uses BollardDockerClient::connect() inside
     )
 }
 
 /// Test seam: the same flow as [`commit_editor_save`] but with injectable
 /// `CommandRunner` and `DockerApi`. Production code paths thread through the
 /// public wrapper above with `ShellRunner::default()` and
-/// `BollardDockerClient::new()`. Tests pass fake impls so the drift
+/// `BollardDockerClient::connect()`. Tests pass fake impls so the drift
 /// detection branch is exercised without a real Docker daemon.
 #[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
 pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>(
@@ -236,19 +236,24 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                     docker,
                 ))
             } else {
-                (|| -> anyhow::Result<_> {
+                let paths_clone = paths.clone();
+                let name = original_name.to_string();
+                let mounts = prospective_mounts.clone();
+                std::thread::spawn(move || {
                     let rt = tokio::runtime::Builder::new_current_thread()
                         .enable_all()
                         .build()
                         .context("building tokio runtime for drift check")?;
                     let docker = crate::docker_client::BollardDockerClient::connect()?;
                     rt.block_on(crate::config::detect_workspace_edit_drift(
-                        paths,
-                        original_name,
-                        &prospective_mounts,
+                        &paths_clone,
+                        &name,
+                        &mounts,
                         &docker,
                     ))
-                })()
+                })
+                .join()
+                .map_err(|_| anyhow::anyhow!("drift detection thread panicked"))?
             };
             match detect_result {
                 Err(e) => {
@@ -334,19 +339,24 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                     docker,
                 ))
             } else {
-                (|| -> anyhow::Result<_> {
+                let paths_clone = paths.clone();
+                let name = original_name.to_string();
+                let mounts = prospective_mounts.clone();
+                std::thread::spawn(move || {
                     let rt = tokio::runtime::Builder::new_current_thread()
                         .enable_all()
                         .build()
                         .context("building tokio runtime for drift detection")?;
                     let docker = crate::docker_client::BollardDockerClient::connect()?;
                     rt.block_on(crate::config::detect_workspace_edit_drift(
-                        paths,
-                        original_name,
-                        &prospective_mounts,
+                        &paths_clone,
+                        &name,
+                        &mounts,
                         &docker,
                     ))
-                })()
+                })
+                .join()
+                .map_err(|_| anyhow::anyhow!("drift detection thread panicked"))?
             };
             match drift_result {
                 Err(e) => {
@@ -356,6 +366,9 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                 Ok(detection) => {
                     for rec in &detection.stopped_records {
                         let container_dir = paths.data_dir.join(&rec.container_name);
+                        // NOTE: block_on inside tokio runtime will panic if called from async context.
+                        // This path requires restructuring (runner is !Send, can't spawn thread).
+                        // Tracked as a known limitation.
                         let cleanup_result = (|| -> anyhow::Result<()> {
                             let rt = tokio::runtime::Builder::new_current_thread()
                                 .enable_all()

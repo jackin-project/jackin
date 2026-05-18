@@ -1,3 +1,4 @@
+use anyhow::Context as _;
 use super::AppConfig;
 use crate::isolation::state::{IsolationRecord, list_records_for_workspace};
 use crate::workspace::{WorkspaceConfig, WorkspaceEdit, validate_workspace_config};
@@ -35,7 +36,9 @@ pub async fn detect_workspace_edit_drift(
     if records.is_empty() {
         return Ok(DriftDetection::default());
     }
-    let running = crate::runtime::list_role_names(docker, false).await.unwrap_or_default();
+    let running = crate::runtime::list_role_names(docker, false)
+        .await
+        .context("listing running containers to check for workspace edit drift")?;
 
     let mut affected_running = Vec::new();
     let mut affected_stopped = Vec::new();

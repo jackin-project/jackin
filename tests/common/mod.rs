@@ -47,6 +47,9 @@ impl DockerApi for NoOpDocker {
     async fn list_networks(&self, _label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>> {
         Ok(vec![])
     }
+    async fn inspect_network(&self, _name: &str) -> anyhow::Result<Option<NetworkRow>> {
+        Ok(None)
+    }
     async fn list_image_tags(&self, _reference_filter: &str) -> anyhow::Result<Vec<String>> {
         Ok(vec![])
     }

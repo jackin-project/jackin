@@ -1050,6 +1050,8 @@ async fn launch_role_runtime(
     // sessions. The primary agent session starts immediately below via
     // `docker exec tmux new-session`, and model/CLI flags are passed there
     // rather than as CMD args to the image.
+    let image_label = format!("jackin.image={image}");
+    run_args.extend_from_slice(&["--label", &image_label]);
     run_args.extend_from_slice(&["--entrypoint", "/jackin/runtime/supervisor.sh"]);
     run_args.push(image);
     runner.run("docker", &run_args, None, &docker_run_opts).await?;
@@ -1222,7 +1224,10 @@ pub async fn inspect_attach_outcome(
             return Ok(AttachOutcome::still_running());
         }
     };
-    let _ = docker; // docker parameter reserved for future bollard migration of this inspect
+    // docker unused: migrating to bollard requires ContainerState to distinguish
+    // paused/restarting from exited (bollard's running=false covers both). Kept
+    // as a CLI path until ContainerState is extended to carry those states.
+    let _ = docker;
     let parts: Vec<&str> = state.trim().split('|').collect();
     let status = parts.first().copied().unwrap_or("");
     let exit_code = parts.get(1).and_then(|s| s.parse::<i32>().ok());
@@ -1337,6 +1342,8 @@ fn pull_workspace_repos_with_git(
     }
 }
 
+// Boxed future required: load_role calls itself recursively via
+// RestoreResolution::RebuildRelatedRole — async fn recursion is not allowed.
 #[allow(clippy::too_many_lines)]
 pub fn load_role<'a>(
     paths: &'a JackinPaths,
@@ -2152,10 +2159,14 @@ async fn render_exit(agent_display_name: &str, docker: &impl DockerApi, runner: 
     if opts.no_intro {
         return;
     }
-    tui::outro_animation(
-        agent_display_name,
-        &list_running_agent_display_names(docker).await.unwrap_or_default(),
-    );
+    let running = match list_running_agent_display_names(docker).await {
+        Ok(names) => names,
+        Err(e) => {
+            eprintln!("  {} could not list running sessions for outro: {e}", "warning:".yellow().bold());
+            vec![]
+        }
+    };
+    tui::outro_animation(agent_display_name, &running);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
