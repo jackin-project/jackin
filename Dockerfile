@@ -1,6 +1,11 @@
-FROM projectjackin/construct:trixie
+FROM projectjackin/construct:0.1-trixie
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Baked in by CI from the version tag in the FROM line above so jackin can
+# detect published-image staleness at launch time.
+ARG CONSTRUCT_VERSION=unknown
+LABEL jackin.construct_version=${CONSTRUCT_VERSION}
 
 # CAVEMAN_VERSION must be a release tag from
 # https://github.com/JuliusBrussee/caveman/releases — never `main`,
