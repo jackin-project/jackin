@@ -336,9 +336,8 @@ printf '\033[2J\033[H'
 # adds no value and clutters the agent's full-screen UI.
 tmux set-option -g status off 2>/dev/null || true
 
-# `always` instead of `on`: none of the supported agents (claude, codex, amp,
-# kimi, opencode) emit the per-app activation escape, so `on` would have no
-# effect — Shift+Enter would still collapse to plain Enter.
+# `always` not `on`: agents don't emit the per-app activation escape, so `on`
+# silently fails to forward Shift+Enter.
 tmux set-option -s extended-keys always
 # Paired with extended-keys: advertises extkeys to xterm*-TERM panes so their
 # terminfo queries confirm support.
