@@ -9,7 +9,7 @@ use super::super::super::widgets::{
 use super::super::render::apply_scroll_delta;
 use super::super::state::{
     EditorState, FileBrowserTarget, ManagerListRow, ManagerStage, ManagerState, Modal,
-    SettingsState, Toast, ToastKind,
+    SettingsState,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
@@ -137,27 +137,27 @@ pub(super) fn handle_list_key(
         KeyCode::Char('r' | 'R') => Ok(instance_action_outcome(
             state,
             ConsoleInstanceAction::Reconnect,
-            "No recoverable instance for this row",
+            "No recoverable instance for this workspace.",
         )),
         KeyCode::Char('a' | 'A') => Ok(instance_action_outcome(
             state,
             ConsoleInstanceAction::NewSession,
-            "No running instance for this row",
+            "No running instance for this workspace.",
         )),
         KeyCode::Char('x' | 'X') => Ok(instance_action_outcome(
             state,
             ConsoleInstanceAction::Shell,
-            "No running instance for this row",
+            "No running instance for this workspace.",
         )),
         KeyCode::Char('i' | 'I') => Ok(instance_action_outcome(
             state,
             ConsoleInstanceAction::Inspect,
-            "No instance state for this row",
+            "No instance state for this workspace.",
         )),
         KeyCode::Char('p' | 'P') => Ok(instance_action_outcome(
             state,
             ConsoleInstanceAction::Purge,
-            "No purgeable instance state for this row",
+            "No purgeable instance for this workspace.",
         )),
         KeyCode::Char('s' | 'S') => {
             state.stage = ManagerStage::Settings(SettingsState::from_config(config));
@@ -173,10 +173,11 @@ fn instance_action_outcome(
     empty_message: &str,
 ) -> InputOutcome {
     let Some(container) = selected_instance_container(state, action) else {
-        state.toast = Some(Toast {
-            message: empty_message.into(),
-            kind: ToastKind::Error,
-            shown_at: std::time::Instant::now(),
+        state.list_modal = Some(Modal::ErrorPopup {
+            state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                "No instance",
+                empty_message,
+            ),
         });
         return InputOutcome::Continue;
     };
@@ -475,7 +476,7 @@ mod tests {
     }
 
     /// `e` and `d` on the current-directory row must be silent no-ops —
-    /// no toast, no stage transition.
+    /// no modal, no stage transition.
     #[test]
     fn current_directory_row_silently_ignores_edit_and_delete() {
         let tmp = tempfile::tempdir().unwrap();
@@ -508,7 +509,6 @@ mod tests {
             "e on row 0 must not open the Editor; got {:?}",
             state.stage
         );
-        assert!(state.toast.is_none(), "e on row 0 must not show a toast");
 
         handle_key(
             &mut state,
@@ -523,7 +523,6 @@ mod tests {
             "d on row 0 must not open ConfirmDelete; got {:?}",
             state.stage
         );
-        assert!(state.toast.is_none(), "d on row 0 must not show a toast");
     }
 
     /// Enter on row 0 returns `LaunchCurrentDir`; Enter on row 1 returns
@@ -716,7 +715,7 @@ mod tests {
     }
 
     #[test]
-    fn a_and_x_produce_toast_for_non_running_instance() {
+    fn a_and_x_return_continue_for_non_running_instance() {
         let workdir = "/workspace/demo";
         let ws = WorkspaceConfig {
             workdir: workdir.into(),
@@ -724,7 +723,7 @@ mod tests {
             ..Default::default()
         };
         let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
-        // RestoreAvailable instance — not active/running, so a/x must toast.
+        // RestoreAvailable instance — not active/running, so a/x must return Continue.
         state.instances = vec![instance_entry(
             "jackin-demo-architect-123456",
             InstanceStatus::RestoreAvailable,
@@ -732,7 +731,7 @@ mod tests {
         )];
 
         for key_char in ['a', 'x'] {
-            state.toast = None;
+            state.list_modal = None;
             let outcome = handle_key(
                 &mut state,
                 &mut config,
@@ -743,11 +742,12 @@ mod tests {
             .unwrap();
             assert!(
                 matches!(outcome, InputOutcome::Continue),
-                "'{key_char}' on non-running instance must return Continue (toast path); got {outcome:?}",
+                "'{key_char}' on non-running instance must return Continue; got {outcome:?}",
             );
             assert!(
-                state.toast.is_some(),
-                "'{key_char}' on non-running instance must set a toast",
+                matches!(state.list_modal, Some(Modal::ErrorPopup { .. })),
+                "'{key_char}' on non-running instance must open an ErrorPopup; got {:?}",
+                state.list_modal,
             );
         }
     }
@@ -910,7 +910,7 @@ mod tests {
     }
 
     #[test]
-    fn list_o_with_zero_github_mounts_shows_toast() {
+    fn list_o_with_zero_github_mounts_is_silent_noop() {
         let tmp_src = tempfile::tempdir().unwrap();
         let plain = tmp_src.path().join("plain");
         std::fs::create_dir(&plain).unwrap();
@@ -929,14 +929,12 @@ mod tests {
         )
         .unwrap();
 
-        // Silent no-op: no modal, no toast.
         assert!(state.list_modal.is_none(), "no modal when no GitHub URLs");
-        assert!(state.toast.is_none(), "no toast when no GitHub URLs");
     }
 
     #[test]
     fn list_o_on_row_zero_is_silent_noop() {
-        // Row 0 is "Current directory" — O must be silent (no toast, no modal).
+        // Row 0 is "Current directory" — O must be a silent no-op.
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -956,7 +954,6 @@ mod tests {
         )
         .unwrap();
 
-        assert!(state.toast.is_none(), "O on row 0 must not toast");
         assert!(
             state.list_modal.is_none(),
             "O on row 0 must not open a modal"
@@ -967,7 +964,7 @@ mod tests {
     fn picker_commit_closes_list_modal_and_clears_state() {
         // Seed the state directly with an open GithubPicker, then commit.
         // We can't assert `open::that_detached` ran, but we *can* pin that
-        // the modal closes (no lingering state) and no error toast appears
+        // the modal closes (no lingering state) and no ErrorPopup appears
         // when the underlying call path doesn't error out synchronously.
         use crate::console::widgets::github_picker::{GithubChoice, GithubPickerState};
         let tmp = tempfile::tempdir().unwrap();
@@ -1029,10 +1026,5 @@ mod tests {
         .unwrap();
 
         assert!(state.list_modal.is_none());
-        assert!(
-            state.toast.is_none(),
-            "Esc must not toast: {:?}",
-            state.toast
-        );
     }
 }

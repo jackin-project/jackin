@@ -13,9 +13,7 @@ pub(super) mod save;
 use crossterm::event::KeyEvent;
 
 use super::super::widgets::ModalOutcome;
-use super::state::{
-    EditorSaveFlow, EditorState, ExitIntent, ManagerStage, ManagerState, Toast, ToastKind,
-};
+use super::state::{EditorSaveFlow, EditorState, ExitIntent, ManagerStage, ManagerState};
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 
@@ -142,6 +140,20 @@ pub fn handle_key(
                 }
             }
             return Ok(InputOutcome::Continue);
+        }
+        return Ok(InputOutcome::Continue);
+    }
+    if let ManagerStage::Settings(settings) = &mut state.stage
+        && settings.error_popup.is_some()
+    {
+        let dismiss = settings.error_popup.as_ref().is_some_and(|p| {
+            matches!(
+                p.handle_key(key),
+                crate::console::widgets::ModalOutcome::Cancel
+            )
+        });
+        if dismiss {
+            settings.error_popup = None;
         }
         return Ok(InputOutcome::Continue);
     }
@@ -293,11 +305,6 @@ fn handle_confirm_delete_key(
             let cache = state.op_cache.clone();
             let op_available = state.op_available;
             *state = ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
-            state.toast = Some(Toast {
-                message: format!("deleted \"{ws_name}\""),
-                kind: ToastKind::Success,
-                shown_at: std::time::Instant::now(),
-            });
             Ok(InputOutcome::Continue)
         }
         ModalOutcome::Commit(false) | ModalOutcome::Cancel => {
@@ -419,6 +426,72 @@ mod tests {
         assert!(
             !reloaded.workspaces.contains_key("original"),
             "the original (pre-edit) name must not end up on disk"
+        );
+    }
+
+    #[test]
+    fn settings_error_popup_dismissed_by_enter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = super::super::state::SettingsState::from_config(&config);
+        settings.error_popup = Some(crate::console::widgets::error_popup::ErrorPopupState::new(
+            "Test", "details",
+        ));
+        state.stage = ManagerStage::Settings(settings);
+
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Enter),
+        )
+        .unwrap();
+
+        assert!(
+            matches!(outcome, InputOutcome::Continue),
+            "Enter on error popup must return Continue; got {outcome:?}"
+        );
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("must remain in Settings stage");
+        };
+        assert!(
+            settings.error_popup.is_none(),
+            "Enter must dismiss the error popup"
+        );
+    }
+
+    #[test]
+    fn settings_error_popup_unrelated_key_does_not_dismiss() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = super::super::state::SettingsState::from_config(&config);
+        settings.error_popup = Some(crate::console::widgets::error_popup::ErrorPopupState::new(
+            "Test", "details",
+        ));
+        state.stage = ManagerStage::Settings(settings);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('j')),
+        )
+        .unwrap();
+
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("must remain in Settings stage");
+        };
+        assert!(
+            settings.error_popup.is_some(),
+            "unrelated key must not dismiss the error popup"
         );
     }
 }

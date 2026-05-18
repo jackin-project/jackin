@@ -6,7 +6,6 @@ use super::super::state::{
     AuthFormFocus, AuthFormReturnPath, AuthFormTarget, GlobalMountConfirm, GlobalMountDraft,
     GlobalMountModal, GlobalMountTextTarget, ManagerStage, ManagerState, SettingsAuthModal,
     SettingsEnvConfirm, SettingsEnvModal, SettingsEnvScope, SettingsEnvTextTarget, SettingsTab,
-    Toast, ToastKind,
 };
 use crate::config::AppConfig;
 use crate::console::widgets::ModalOutcome;
@@ -19,7 +18,6 @@ use crate::paths::JackinPaths;
 use crate::selector::RoleSelector;
 use crate::workspace::{MountConfig, resolve_path};
 
-const NO_MOUNT_SELECTED: &str = "No mount selected.";
 const MOUNT_NAME_EMPTY: &str = "Mount name cannot be empty.";
 const MOUNT_GONE: &str = "Mount no longer exists; selection was cleared.";
 const ADD_DRAFT_LOST: &str = "Add-mount draft was lost; press 'a' to start over.";
@@ -155,12 +153,8 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         }
         // S is handled before the match (early-return above) so `open_settings_save_preview`
         // can receive all of `settings` without conflicting with the `global` borrow.
-        KeyCode::Char('d' | 'D') => {
-            if global.pending.is_empty() {
-                set_toast(state, "Nothing to remove.", ToastKind::Error);
-            } else {
-                global.modal = Some(confirm_modal(GlobalMountConfirm::Remove));
-            }
+        KeyCode::Char('d' | 'D') if !global.pending.is_empty() => {
+            global.modal = Some(confirm_modal(GlobalMountConfirm::Remove));
         }
         KeyCode::Char('r' | 'R') => {
             if let Some(row) = global.pending.get_mut(global.selected) {
@@ -1015,7 +1009,6 @@ fn commit_settings_save(
     match settings.save_to_config(paths) {
         Ok(saved) => {
             *config = saved;
-            settings.mounts.success = Some("Settings saved.".into());
             settings.mounts.exit_requested = true;
         }
         Err(err) => settings.mounts.error = Some(err.to_string()),
@@ -1280,7 +1273,6 @@ fn open_edit_text(state: &mut ManagerState<'_>, target: GlobalMountTextTarget) {
     };
     let global = &mut settings.mounts;
     let Some(row) = global.pending.get(global.selected) else {
-        set_toast(state, NO_MOUNT_SELECTED, ToastKind::Error);
         return;
     };
     let (label, initial) = match target {
@@ -1568,45 +1560,31 @@ fn set_settings_env_value_typed(
     }
 }
 
-/// Promote pending error/success messages to toasts; pop back to the
-/// workspace list when the handler set `exit_requested`.
-pub(super) fn after_global_mounts_event(state: &mut ManagerState<'_>) {
-    let ManagerStage::Settings(settings) = &mut state.stage else {
-        return;
-    };
-    let global = &mut settings.mounts;
-    let error = global.error.take();
-    let success = global.success.take();
-    let exit = std::mem::take(&mut global.exit_requested);
-    if let Some(err) = error {
-        set_toast(state, &err, ToastKind::Error);
-    } else if let Some(msg) = success {
-        set_toast(state, &msg, ToastKind::Success);
-    }
-    if exit {
-        state.stage = ManagerStage::List;
-    }
-}
-
+/// Promote any pending error from a settings sub-tab to `settings.error_popup`,
+/// pop back to the workspace list when a handler set `exit_requested`.
 pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
-    let env_error = settings.env.error.take();
-    let auth_error = settings.auth.error.take();
-    let trust_error = settings.trust.error.take();
-    if let Some(err) = env_error.or(auth_error).or(trust_error) {
-        set_toast(state, &err, ToastKind::Error);
+    // Each tab dispatches to exactly one sub-handler per keypress, so at
+    // most one error field is set at a time — `or_else` laziness is safe.
+    let error = settings
+        .mounts
+        .error
+        .take()
+        .or_else(|| settings.env.error.take())
+        .or_else(|| settings.auth.error.take())
+        .or_else(|| settings.trust.error.take());
+    let exit = std::mem::take(&mut settings.mounts.exit_requested);
+    if let Some(msg) = error {
+        settings.error_popup = Some(crate::console::widgets::error_popup::ErrorPopupState::new(
+            "Settings error",
+            msg,
+        ));
     }
-    after_global_mounts_event(state);
-}
-
-fn set_toast(state: &mut ManagerState<'_>, msg: &str, kind: ToastKind) {
-    state.toast = Some(Toast {
-        message: msg.to_string(),
-        kind,
-        shown_at: std::time::Instant::now(),
-    });
+    if exit {
+        state.stage = ManagerStage::List;
+    }
 }
 
 fn confirm_modal(action: GlobalMountConfirm) -> GlobalMountModal<'static> {
@@ -2089,6 +2067,48 @@ mod tests {
             rows.iter()
                 .any(|row| matches!(row, SettingsEnvRow::RoleHeader { role, .. } if role == "agent-with-env")),
             "roles with env entries should remain visible: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn after_settings_event_promotes_mounts_error_to_error_popup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = SettingsState::from_config(&config);
+        settings.mounts.error = Some("mount error detail".into());
+        state.stage = ManagerStage::Settings(settings);
+
+        after_settings_event(&mut state);
+
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("must stay in Settings stage");
+        };
+        assert!(
+            settings.error_popup.is_some(),
+            "error_popup must be set after after_settings_event"
+        );
+    }
+
+    #[test]
+    fn after_settings_event_exit_requested_pops_to_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = SettingsState::from_config(&config);
+        settings.mounts.exit_requested = true;
+        state.stage = ManagerStage::Settings(settings);
+
+        after_settings_event(&mut state);
+
+        assert!(
+            matches!(state.stage, ManagerStage::List),
+            "exit_requested must pop to List; got {:?}",
+            state.stage,
         );
     }
 }

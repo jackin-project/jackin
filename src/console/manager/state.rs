@@ -61,7 +61,6 @@ pub struct ManagerState<'a> {
     pub instances: Vec<crate::instance::InstanceIndexEntry>,
     pub current_dir: String,
     pub selected: usize,
-    pub toast: Option<Toast>,
     /// Modal slot at the list level (e.g. `Modal::GithubPicker`); the
     /// Editor / `CreatePrelude` stages own their own modal slots.
     pub list_modal: Option<Modal<'a>>,
@@ -99,8 +98,9 @@ pub struct ManagerState<'a> {
     /// state on disk can't change at the 20 Hz render cadence and the
     /// rebuild path walks every container directory.
     instances_last_refresh: Option<std::time::Instant>,
-    /// Last surfaced `refresh_instances` error message. Dedup gate so
-    /// transient errors don't spam toasts every refresh tick.
+    /// Dedup gate: last error string from `refresh_instances`. Without
+    /// this, a persistent parse error would reopen the popup on every
+    /// 20 Hz tick — operators would never be able to dismiss it.
     instances_last_error: Option<String>,
 }
 
@@ -151,7 +151,6 @@ pub struct GlobalMountsState<'a> {
     pub modal: Option<GlobalMountModal<'a>>,
     pub add_draft: Option<GlobalMountDraft>,
     pub error: Option<String>,
-    pub success: Option<String>,
     pub scroll_x: u16,
     pub scroll_y: u16,
     pub scroll_focused: bool,
@@ -209,6 +208,9 @@ pub struct SettingsState<'a> {
     pub env: SettingsEnvState<'a>,
     pub auth: SettingsAuthState,
     pub trust: SettingsTrustState,
+    /// Error popup shown on top of all settings content. Dismissed with
+    /// Enter / O / Esc; clears automatically when opened again.
+    pub error_popup: Option<ErrorPopupState>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -593,7 +595,6 @@ impl GlobalMountsState<'_> {
             modal: None,
             add_draft: None,
             error: None,
-            success: None,
             scroll_x: 0,
             scroll_y: 0,
             scroll_focused: false,
@@ -611,7 +612,6 @@ impl GlobalMountsState<'_> {
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.add_draft = None;
         self.error = None;
-        self.success = None;
     }
 
     pub fn save_to_config(
@@ -642,6 +642,7 @@ impl SettingsState<'_> {
             env: SettingsEnvState::from_config(config),
             auth: SettingsAuthState::from_config(config),
             trust: SettingsTrustState::from_config(config),
+            error_popup: None,
         }
     }
 
@@ -1261,19 +1262,6 @@ pub enum CreateStep {
     NameWorkspace,
 }
 
-#[derive(Debug, Clone)]
-pub struct Toast {
-    pub message: String,
-    pub kind: ToastKind,
-    pub shown_at: std::time::Instant,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ToastKind {
-    Success,
-    Error,
-}
-
 // ── Impls ──────────────────────────────────────────────────────────
 
 impl WorkspaceSummary {
@@ -1370,7 +1358,6 @@ impl ManagerState<'_> {
             instances: Vec::new(),
             current_dir: cwd.display().to_string(),
             selected,
-            toast: None,
             list_modal: None,
             inline_role_picker: None,
             inline_agent_picker: None,
@@ -1503,16 +1490,14 @@ impl ManagerState<'_> {
                 self.instances_last_error = None;
             }
             Err(error) => {
-                // Empty list would look identical to "no instances",
-                // hiding corrupt index / permission errors. Surface
-                // via toast so the operator has a path to investigate.
                 self.instances.clear();
                 let message = format!("instance index error: {error}");
                 if self.instances_last_error.as_deref() != Some(&message) {
-                    self.toast = Some(Toast {
-                        message: message.clone(),
-                        kind: ToastKind::Error,
-                        shown_at: std::time::Instant::now(),
+                    self.list_modal = Some(Modal::ErrorPopup {
+                        state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                            "Instance index error",
+                            &message,
+                        ),
                     });
                     self.instances_last_error = Some(message);
                 }
@@ -1968,16 +1953,11 @@ mod tests {
     }
 
     #[test]
-    fn refresh_instances_surfaces_index_error_via_toast() {
-        // Corrupt the index file; the read path must surface the parse
-        // error as a toast and dedup so subsequent identical errors
-        // don't pin a new toast every refresh tick.
+    fn refresh_instances_clears_on_index_error() {
         let tmp = tempfile::tempdir().unwrap();
         let paths = crate::paths::JackinPaths::for_tests(tmp.path());
         std::fs::create_dir_all(&paths.data_dir).unwrap();
         std::fs::write(paths.data_dir.join("instances.json"), b"not json").unwrap();
-        // Also drop a directory that looks like a state dir so
-        // `rebuild()` doesn't silently regenerate a fresh empty index.
         let bogus = paths.data_dir.join("jackin-bogus-k7p9m2xq");
         std::fs::create_dir_all(bogus.join(".jackin")).unwrap();
         std::fs::write(bogus.join(".jackin/instance.json"), b"not json").unwrap();
@@ -1987,24 +1967,6 @@ mod tests {
         state.refresh_instances(&paths);
 
         assert!(state.instances.is_empty());
-        let toast = state.toast.as_ref().expect("error toast must be emitted");
-        assert_eq!(toast.kind, ToastKind::Error);
-        assert!(
-            toast.message.contains("instance index error"),
-            "toast message: {}",
-            toast.message
-        );
-
-        let first_shown_at = toast.shown_at;
-        // Second refresh: stash + dedup must not overwrite the first
-        // toast when the error message is unchanged.
-        state.force_refresh_instances_for_test();
-        state.refresh_instances(&paths);
-        let toast2 = state.toast.as_ref().unwrap();
-        assert_eq!(
-            toast2.shown_at, first_shown_at,
-            "identical error must not re-emit the toast",
-        );
     }
 
     #[test]

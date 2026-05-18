@@ -1,6 +1,6 @@
-//! List-stage rendering: the left-column workspace list, right-pane
+//! List-stage rendering: the left-column workspace list and right-pane
 //! details (saved workspace / current-directory / "+ New workspace"
-//! sentinel), and the transient toast overlay.
+//! sentinel).
 
 use ratatui::{
     Frame,
@@ -74,11 +74,6 @@ pub(super) fn render_list_body(
             state.list_names_focused,
             None,
         );
-    }
-
-    // Toast overlay — rendered last so it appears on top.
-    if let Some(toast) = &state.toast {
-        render_toast(frame, area, toast);
     }
 }
 
@@ -231,35 +226,6 @@ fn render_agent_picker_sidebar(
             .position(|agent| *agent == picker.focused),
     );
     frame.render_stateful_widget(list, area, &mut list_state);
-}
-
-fn render_toast(frame: &mut Frame, area: Rect, toast: &super::super::state::Toast) {
-    use super::super::state::ToastKind;
-    let elapsed = toast.shown_at.elapsed();
-    // Auto-expire after 3 seconds — caller should clear before that,
-    // but defensively skip rendering if we're past.
-    if elapsed > std::time::Duration::from_secs(3) {
-        return;
-    }
-
-    let (prefix, color) = match toast.kind {
-        ToastKind::Success => ("✓ ", PHOSPHOR_GREEN),
-        ToastKind::Error => ("✗ ", Color::Rgb(255, 94, 122)),
-    };
-    let mut style = Style::default().fg(color).add_modifier(Modifier::BOLD);
-    // Shimmer: first 400ms is bright-white flicker, then settles.
-    if elapsed < std::time::Duration::from_millis(400) {
-        style = style.fg(WHITE);
-    }
-    let line = Line::from(Span::styled(format!("{}{}", prefix, toast.message), style));
-    let banner_area = Rect {
-        x: area.x + 2,
-        y: area.y + 1,
-        width: area.width.saturating_sub(4),
-        height: 1,
-    };
-    frame.render_widget(ratatui::widgets::Clear, banner_area);
-    frame.render_widget(Paragraph::new(line), banner_area);
 }
 
 /// Pre-formatted mount row. `host_source` is `Some` only when src != dst
