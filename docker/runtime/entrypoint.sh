@@ -92,9 +92,9 @@ fi
 # overwrite this path; per-repo .git/hooks/ hooks are bypassed while
 # either flag is enabled.
 if [ "${JACKIN_GIT_COAUTHOR_TRAILER:-0}" = "1" ] || [ "${JACKIN_GIT_DCO:-0}" = "1" ]; then
-    _hooks_dir="/jackin/runtime/git-hooks"
+    _hooks_dir="/jackin/state/git-hooks"
     mkdir -p "$_hooks_dir" || {
-        echo "[entrypoint] ERROR: failed to create git-hooks dir $_hooks_dir (is /jackin mounted read-only?)" >&2
+        echo "[entrypoint] ERROR: failed to create git-hooks dir $_hooks_dir (is /jackin/state unwritable?)" >&2
         exit 1
     }
     cat > "$_hooks_dir/prepare-commit-msg" <<'HOOK_EOF' || { echo "[entrypoint] ERROR: failed to write prepare-commit-msg hook" >&2; exit 1; }
