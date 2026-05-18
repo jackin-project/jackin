@@ -138,6 +138,22 @@ This means terminal-specific features (such as Ghostty's Kitty keyboard protocol
 
 If the export fails (e.g. `infocmp` is not installed or the terminfo entry is missing), jackin' falls back to `xterm-256color`.
 
+## In-session tmux configuration
+
+Beyond `$TERM` forwarding, the entrypoint applies five tmux session options immediately before exec-ing the agent. The construct image ships Debian trixie tmux (3.5+), so all options are applied unconditionally — no version guard or error suppression.
+
+| Option | Why |
+|---|---|
+| `extended-keys always` | Agents don't emit the per-app activation escape that `on` waits for, so `on` silently fails to forward Shift+Enter. `always` bypasses the opt-in. |
+| `terminal-features 'xterm*:extkeys'` | Paired with `extended-keys`: advertises `modifyOtherKeys` capability to panes so their terminfo queries confirm support. |
+| `focus-events on` | Emits `FocusIn`/`FocusOut` sequences so editors (Neovim, Helix, etc.) reload agent-written files on pane focus return. |
+| `allow-passthrough on` | Container panes cannot reach the outer terminal's OSC surface without this. tmux-aware tools (Claude Code, etc.) wrap their OSC sequences in DCS passthrough when `$TMUX` is set; this option forwards them to the outer terminal. Tools that emit raw OSC without wrapping need `allow-passthrough all` (tmux 3.4+). |
+| `escape-time 0` | Removes the Escape disambiguation delay that misfires in agent TUI vi-mode navigation. |
+
+Implementation: <RepoFile path="docker/runtime/entrypoint.sh" /> (lines at the bottom of the script, before `exec`).
+
+Operators running `jackin console` from inside their own tmux session need matching host-side configuration so that modified keys are forwarded through the host tmux before they reach the container. See the [Running inside tmux](/guides/tmux/) operator guide.
+
 ## Workspace materialization
 
 Workspace mounts pass through three distinct shapes between operator intent and a Docker bind-mount. Keeping these separate is what lets per-mount isolation slot in cleanly:

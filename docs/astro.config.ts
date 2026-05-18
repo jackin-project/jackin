@@ -90,6 +90,7 @@ export default defineConfig({
                 { label: 'GitHub CLI Authentication', slug: 'guides/authentication/github-cli' },
               ],
             },
+            { label: 'Running inside tmux', slug: 'guides/tmux' },
             { label: 'Security Model', slug: 'guides/security-model' },
             { label: 'Comparison', slug: 'guides/comparison' },
           ],
