@@ -47,6 +47,14 @@ pub(crate) fn end_debug_buffering() {
     }
 }
 
+/// Drain the debug buffer and return its contents without printing to stderr.
+/// Only for use in tests that need to assert on debug output.
+#[cfg(test)]
+pub(crate) fn drain_debug_buffer_for_test() -> Vec<String> {
+    DEBUG_BUFFER_ACTIVE.store(false, Ordering::Relaxed);
+    drain_debug_buffer()
+}
+
 pub fn emit_debug_line(category: &str, message: &str) {
     let line = format_debug_line(category, message);
     if DEBUG_BUFFER_ACTIVE.load(Ordering::Relaxed) {
