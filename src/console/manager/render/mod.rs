@@ -480,7 +480,17 @@ pub fn render(
                 // Handled above via the `is_list_stage` early branch.
             }
             ManagerStage::Settings(settings) => {
-                if let Some(modal) = &mut settings.mounts.modal {
+                if let Some(popup) = &settings.error_popup {
+                    let inner_width = (area.width * 60 / 100).saturating_sub(4);
+                    let max_rows = area.height.saturating_sub(2);
+                    let h = crate::console::widgets::error_popup::required_height(
+                        popup,
+                        inner_width,
+                        max_rows,
+                    );
+                    let popup_area = centered_rect_fixed(area, 60, h);
+                    crate::console::widgets::error_popup::render(frame, popup_area, popup);
+                } else if let Some(modal) = &mut settings.mounts.modal {
                     global_mounts::render_global_mount_modal(frame, modal);
                 } else if let Some(modal) = &mut settings.env.modal {
                     global_mounts::render_settings_env_modal(frame, modal);

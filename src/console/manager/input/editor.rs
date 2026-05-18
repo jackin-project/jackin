@@ -11,8 +11,7 @@ use super::super::render::apply_scroll_delta;
 use super::super::render::editor::{SecretsRow, secrets_flat_rows};
 use super::super::state::{
     ConfirmTarget, EditorMode, EditorSaveFlow, EditorState, EditorTab, ExitIntent, FieldFocus,
-    FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsScopeTag, TextInputTarget, Toast,
-    ToastKind,
+    FileBrowserTarget, ManagerStage, ManagerState, Modal, SecretsScopeTag, TextInputTarget,
 };
 use super::InputOutcome;
 use crate::config::AppConfig;
@@ -426,8 +425,6 @@ pub(super) fn handle_editor_key(
             editor.cycle_isolation_for_selected_mount();
         }
         KeyCode::Char('o' | 'O') if editor.active_tab == super::super::state::EditorTab::Mounts => {
-            // Open in browser; toast for non-GitHub mounts so the
-            // binding stays discoverable.
             let FieldFocus::Row(n) = editor.active_field;
             if let Some(m) = editor.pending.mounts.get(n) {
                 let kind = super::super::mount_info::inspect(&m.src);
@@ -437,20 +434,22 @@ pub(super) fn handle_editor_key(
                         ..
                     } => {
                         if let Err(e) = open::that_detached(&web_url) {
-                            state.toast = Some(Toast {
-                                message: format!("failed to open URL: {e}"),
-                                kind: ToastKind::Error,
-                                shown_at: std::time::Instant::now(),
+                            editor.modal = Some(Modal::ErrorPopup {
+                                state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                                    "Failed to open URL",
+                                    format!("{e}"),
+                                ),
                             });
                         }
                     }
                     super::super::mount_info::MountKind::Git { .. }
                     | super::super::mount_info::MountKind::Folder
                     | super::super::mount_info::MountKind::Missing => {
-                        state.toast = Some(Toast {
-                            message: "no GitHub URL for this mount".into(),
-                            kind: ToastKind::Error,
-                            shown_at: std::time::Instant::now(),
+                        editor.modal = Some(Modal::ErrorPopup {
+                            state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                                "No GitHub URL",
+                                "This mount has no GitHub remote URL.\n\nOnly git repositories with a GitHub origin support browser preview.",
+                            ),
                         });
                     }
                 }

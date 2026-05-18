@@ -13,9 +13,7 @@ pub(super) mod save;
 use crossterm::event::KeyEvent;
 
 use super::super::widgets::ModalOutcome;
-use super::state::{
-    EditorSaveFlow, EditorState, ExitIntent, ManagerStage, ManagerState, Toast, ToastKind,
-};
+use super::state::{EditorSaveFlow, EditorState, ExitIntent, ManagerStage, ManagerState};
 use crate::config::AppConfig;
 use crate::paths::JackinPaths;
 
@@ -142,6 +140,16 @@ pub fn handle_key(
                 }
             }
             return Ok(InputOutcome::Continue);
+        }
+        return Ok(InputOutcome::Continue);
+    }
+    if let ManagerStage::Settings(settings) = &mut state.stage
+        && settings.error_popup.is_some()
+    {
+        if let Some(popup) = &settings.error_popup {
+            if matches!(popup.handle_key(key), crate::console::widgets::ModalOutcome::Cancel) {
+                settings.error_popup = None;
+            }
         }
         return Ok(InputOutcome::Continue);
     }
@@ -293,11 +301,6 @@ fn handle_confirm_delete_key(
             let cache = state.op_cache.clone();
             let op_available = state.op_available;
             *state = ManagerState::from_config_with_cache_and_op(config, cwd, cache, op_available);
-            state.toast = Some(Toast {
-                message: format!("deleted \"{ws_name}\""),
-                kind: ToastKind::Success,
-                shown_at: std::time::Instant::now(),
-            });
             Ok(InputOutcome::Continue)
         }
         ModalOutcome::Commit(false) | ModalOutcome::Cancel => {

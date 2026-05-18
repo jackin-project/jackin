@@ -59,14 +59,15 @@ impl ConsoleState {
         let roles = choice.allowed_roles.clone();
 
         if roles.is_empty() {
-            // Toast + stay so the operator can fix `allowed_roles`
+            // Stay so the operator can fix `allowed_roles`
             // — a single Enter shouldn't terminate the TUI.
             let name = choice.name;
             if let ConsoleStage::Manager(ms) = &mut self.stage {
-                ms.toast = Some(crate::console::manager::state::Toast {
-                    message: format!("no eligible roles for workspace \"{name}\""),
-                    kind: crate::console::manager::state::ToastKind::Error,
-                    shown_at: std::time::Instant::now(),
+                ms.list_modal = Some(crate::console::manager::state::Modal::ErrorPopup {
+                    state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                        "No eligible roles",
+                        format!("Workspace \"{name}\" has no allowed roles configured.\n\nAdd at least one role to `allowed_roles` in the workspace settings."),
+                    ),
                 });
             }
             self.pending_launch = None;
@@ -425,14 +426,6 @@ pub fn run_console(
     let mut last_mouse_event_at: Option<std::time::Instant> = None;
 
     let result = 'main: loop {
-        // Auto-expire manager toasts after 3 seconds.
-        if let ConsoleStage::Manager(ms) = &mut state.stage
-            && let Some(toast) = &ms.toast
-            && toast.shown_at.elapsed() > std::time::Duration::from_secs(3)
-        {
-            ms.toast = None;
-        }
-
         // Drain worker results before render so a fresh result lands
         // this frame instead of a stale Loading one.
         if let ConsoleStage::Manager(ms) = &mut state.stage {

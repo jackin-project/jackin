@@ -1620,11 +1620,6 @@ mod tests {
             "exit_on_success should land us in the list; got {:?}",
             state.stage,
         );
-        assert!(
-            state.toast.is_none(),
-            "saving should not show a success toast; got {:?}",
-            state.toast,
-        );
     }
 
     #[test]
@@ -1727,11 +1722,6 @@ mod tests {
             matches!(state.stage, ManagerStage::List),
             "create save should return to the list; got {:?}",
             state.stage,
-        );
-        assert!(
-            state.toast.is_none(),
-            "create save should not show a success toast; got {:?}",
-            state.toast,
         );
     }
 
