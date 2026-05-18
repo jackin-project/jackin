@@ -13,7 +13,10 @@ use fs2::FileExt;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 
-use super::attach::{ContainerState, hardline_agent, inspect_container_state, wait_for_dind};
+use super::attach::{
+    AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions,
+    inspect_container_state, wait_for_dind,
+};
 use super::cleanup::{gc_orphaned_resources, run_cleanup_command};
 use super::discovery::list_running_agent_display_names;
 use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_host_identity};
@@ -2023,13 +2026,38 @@ fn load_role_with(
         // Classify how the interactive session ended so we know whether to
         // tear the container down or preserve it for `jackin hardline` to
         // restart:
-        //  - Running     → terminal was closed (user detached).  Keep it.
+        //  - Running + active sessions → terminal closed (user detached). Keep it.
+        //  - Running + no sessions     → agent exited; supervisor will stop the
+        //                                container within ≤1 s but inspect raced
+        //                                ahead. Treat the same as Stopped/0.
         //  - Stopped / 0 → user exited cleanly inside Claude Code.  Tear down.
         //  - Stopped / ≠0 or OOM-killed → crash.  Preserve so `jackin hardline`
         //    can restart the existing container + DinD sidecar.
         #[allow(clippy::match_same_arms)]
         match inspect_container_state(runner, &container_name) {
-            ContainerState::Running => cleanup.disarm(),
+            ContainerState::Running => {
+                let sessions = inspect_agent_sessions(
+                    runner,
+                    &container_name,
+                    &ContainerState::Running,
+                );
+                if matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty()) {
+                    if !matches!(
+                        decision,
+                        crate::isolation::finalize::FinalizeDecision::Preserved
+                    ) {
+                        write_instance_status(
+                            paths,
+                            &container_state,
+                            &mut instance_manifest,
+                            InstanceStatus::CleanExited,
+                        )?;
+                    }
+                    cleanup.run(runner);
+                } else {
+                    cleanup.disarm();
+                }
+            }
             ContainerState::Stopped {
                 exit_code: 0,
                 oom_killed: false,

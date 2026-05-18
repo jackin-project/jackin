@@ -3,7 +3,7 @@ title: "jackin-container: In-Container Supervisor Binary"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open — design proposal
+**Status**: Partially implemented — Phase 1 cleanup gap closed via improved bash supervisor; Rust binary with inotify, Unix socket interface, and daemon integration remain
 
 ## Problem
 
@@ -114,14 +114,13 @@ When `docker run` starts a role container, jackin adds the socket mount and swit
 
 ## Implementation plan
 
-### Phase 1 — Binary skeleton as PID 1 *(fixes the cleanup gap)*
+### Phase 1 — Cleanup gap closed *(shipped — bash supervisor with socket polling)*
 
-- Create `crates/jackin-container/` workspace member.
-- Implement PID 1 bootstrap: zombie reaping via `SIGCHLD` handler, `SIGTERM`/`SIGINT` → clean exit.
-- Implement tmux socket watch via `inotify`. Exit 0 when socket is deleted.
-- Add CI job: cross-compile for `linux/amd64` and `linux/arm64`, publish to GitHub Releases.
-- Replace `supervisor.sh` in the derived `Dockerfile` with the binary download and install.
-- Remove <RepoFile path="docker/runtime/supervisor.sh" /> (or keep as fallback for images built before this lands — pre-release, so no migration shim needed).
+The cleanup gap is fixed. <RepoFile path="docker/runtime/supervisor.sh" /> now monitors the tmux server socket (`/tmp/tmux-<uid>/default`) with a 1-second polling loop. When the socket disappears (last session ended and all clients disconnected), the supervisor exits 0 → container exits 0 → the host-side cleanup path runs automatically. A 60-second startup grace period prevents the supervisor from exiting before the first `docker exec tmux new-session` creates the socket.
+
+<RepoFile path="src/runtime/launch.rs" /> was updated alongside it: when `docker exec` returns and the container is still `Running`, the code now calls `inspect_agent_sessions` to distinguish a clean agent exit (no sessions — run teardown) from a detached terminal (sessions active — keep the container alive).
+
+The Rust binary with `inotify`-based watching is deferred. The bash polling approach closes the operator-facing gap at low implementation cost; the binary becomes worth the cross-compilation and distribution overhead once Phase 2 (Unix socket status interface) lands.
 
 ### Phase 2 — Unix socket + status command *(structured session inventory)*
 
