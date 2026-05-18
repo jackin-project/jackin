@@ -2036,11 +2036,8 @@ fn load_role_with(
         #[allow(clippy::match_same_arms)]
         match inspect_container_state(runner, &container_name) {
             ContainerState::Running => {
-                let sessions = inspect_agent_sessions(
-                    runner,
-                    &container_name,
-                    &ContainerState::Running,
-                );
+                let sessions =
+                    inspect_agent_sessions(runner, &container_name, &ContainerState::Running);
                 if matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty()) {
                     if !matches!(
                         decision,
