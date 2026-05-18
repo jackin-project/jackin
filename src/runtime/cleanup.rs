@@ -1469,7 +1469,10 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         std::fs::write(paths.data_dir.join("instances.json.lock"), b"").unwrap();
         std::fs::create_dir_all(paths.data_dir.join("the-architect.locks")).unwrap();
         std::fs::write(
-            paths.data_dir.join("the-architect.locks").join("default.repo.lock"),
+            paths
+                .data_dir
+                .join("the-architect.locks")
+                .join("default.repo.lock"),
             b"",
         )
         .unwrap();
