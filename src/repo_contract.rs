@@ -16,7 +16,10 @@ pub fn construct_image() -> String {
     std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_else(|_| CONSTRUCT_IMAGE.to_owned())
 }
 
+/// All instances carry the invariants enforced by `validate_agent_dockerfile`;
+/// external crates cannot construct this type with struct-literal syntax.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ValidatedDockerfile {
     pub dockerfile_path: PathBuf,
     pub dockerfile_contents: String,
@@ -28,9 +31,6 @@ pub struct ValidatedDockerfile {
     /// (e.g. `0.1-trixie`). Compared against the `jackin.construct_version`
     /// label on the published image to detect staleness at launch time.
     pub construct_version: String,
-    // Prevents struct-literal construction outside this module so all
-    // instances carry the invariants enforced by validate_agent_dockerfile.
-    _private: (),
 }
 
 pub fn validate_agent_dockerfile(
@@ -81,7 +81,7 @@ pub fn validate_agent_dockerfile(
     let version_suffix = format!("-{CONSTRUCT_STABLE_TAG}");
     if tag
         .strip_suffix(version_suffix.as_str())
-        .map_or(true, str::is_empty)
+        .is_none_or(str::is_empty)
     {
         return Err(RoleRepoValidationError::DockerfileMissingVersionPin);
     }
@@ -92,7 +92,6 @@ pub fn validate_agent_dockerfile(
         final_stage_image: image_str.to_string(),
         final_stage_alias: alias.clone(),
         construct_version: tag.to_string(),
-        _private: (),
     })
 }
 
