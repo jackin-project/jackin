@@ -127,23 +127,11 @@ impl BollardDockerClient {
     }
 }
 
-fn is_404(err: &bollard::errors::Error) -> bool {
+fn is_http_status(err: &bollard::errors::Error, code: u16) -> bool {
     matches!(
         err,
-        bollard::errors::Error::DockerResponseServerError {
-            status_code: 404,
-            ..
-        }
-    )
-}
-
-fn is_409(err: &bollard::errors::Error) -> bool {
-    matches!(
-        err,
-        bollard::errors::Error::DockerResponseServerError {
-            status_code: 409,
-            ..
-        }
+        bollard::errors::Error::DockerResponseServerError { status_code, .. }
+        if *status_code == code
     )
 }
 
@@ -167,7 +155,7 @@ impl DockerApi for BollardDockerClient {
             .await;
 
         match result {
-            Err(ref e) if is_404(e) => ContainerState::NotFound,
+            Err(ref e) if is_http_status(e, 404) => ContainerState::NotFound,
             Err(e) => ContainerState::InspectUnavailable(e.to_string()),
             Ok(info) => {
                 let state = match info.state {
@@ -202,7 +190,7 @@ impl DockerApi for BollardDockerClient {
             .await
         {
             Ok(()) => Ok(()),
-            Err(e) if is_404(&e) => Ok(()),
+            Err(e) if is_http_status(&e, 404) => Ok(()),
             Err(e) => Err(anyhow::Error::from(e).context(format!("removing container {name}"))),
         }
     }
@@ -281,7 +269,7 @@ impl DockerApi for BollardDockerClient {
             .await
         {
             Ok(()) => Ok(()),
-            Err(e) if is_404(&e) => Ok(()),
+            Err(e) if is_http_status(&e, 404) => Ok(()),
             Err(e) => Err(anyhow::Error::from(e).context(format!("removing volume {name}"))),
         }
     }
@@ -305,7 +293,7 @@ impl DockerApi for BollardDockerClient {
     async fn remove_network(&self, name: &str) -> anyhow::Result<()> {
         match self.inner.remove_network(name).await {
             Ok(()) => Ok(()),
-            Err(e) if is_404(&e) => Ok(()),
+            Err(e) if is_http_status(&e, 404) => Ok(()),
             Err(e) => Err(anyhow::Error::from(e).context(format!("removing network {name}"))),
         }
     }
@@ -365,8 +353,8 @@ impl DockerApi for BollardDockerClient {
             .await
         {
             Ok(_) => Ok(RemoveImageOutcome::Removed),
-            Err(e) if is_404(&e) => Ok(RemoveImageOutcome::NotFound),
-            Err(ref e) if is_409(e) => Ok(RemoveImageOutcome::InUse),
+            Err(e) if is_http_status(&e, 404) => Ok(RemoveImageOutcome::NotFound),
+            Err(ref e) if is_http_status(e, 409) => Ok(RemoveImageOutcome::InUse),
             Err(e) => {
                 let msg = e.to_string().to_ascii_lowercase();
                 if msg.contains("in use") || msg.contains("cannot be forced") {
@@ -384,7 +372,7 @@ impl DockerApi for BollardDockerClient {
         label: &str,
     ) -> anyhow::Result<Option<String>> {
         match self.inner.inspect_image(image).await {
-            Err(e) if is_404(&e) => Ok(None),
+            Err(e) if is_http_status(&e, 404) => Ok(None),
             Err(e) => Err(anyhow::Error::from(e).context(format!("inspecting image {image}"))),
             Ok(info) => {
                 let value = info
@@ -503,6 +491,16 @@ impl FakeDockerClient {
         self.recorded.borrow_mut().push(entry);
     }
 
+    fn ignore_if_missing(result: anyhow::Result<()>) -> anyhow::Result<()> {
+        result.or_else(|e| {
+            if e.to_string().to_ascii_lowercase().contains("no such") {
+                Ok(())
+            } else {
+                Err(e)
+            }
+        })
+    }
+
     fn pop_inspect(&self) -> ContainerState {
         self.inspect_queue.borrow_mut().pop_front().unwrap_or(ContainerState::NotFound)
     }
@@ -549,11 +547,7 @@ impl DockerApi for FakeDockerClient {
 
     async fn remove_container(&self, name: &str) -> anyhow::Result<()> {
         self.record(format!("docker rm -f {name}"));
-        self.check_fail(&format!("docker rm -f {name}"))
-            .or_else(|e| {
-                let msg = e.to_string().to_ascii_lowercase();
-                if msg.contains("no such") { Ok(()) } else { Err(e) }
-            })
+        Self::ignore_if_missing(self.check_fail(&format!("docker rm -f {name}")))
     }
 
     async fn list_containers(
@@ -585,11 +579,7 @@ impl DockerApi for FakeDockerClient {
 
     async fn remove_volume(&self, name: &str) -> anyhow::Result<()> {
         self.record(format!("docker volume rm {name}"));
-        self.check_fail(&format!("docker volume rm {name}"))
-            .or_else(|e| {
-                let msg = e.to_string().to_ascii_lowercase();
-                if msg.contains("no such") { Ok(()) } else { Err(e) }
-            })
+        Self::ignore_if_missing(self.check_fail(&format!("docker volume rm {name}")))
     }
 
     async fn create_network(
@@ -604,11 +594,7 @@ impl DockerApi for FakeDockerClient {
 
     async fn remove_network(&self, name: &str) -> anyhow::Result<()> {
         self.record(format!("docker network rm {name}"));
-        self.check_fail(&format!("docker network rm {name}"))
-            .or_else(|e| {
-                let msg = e.to_string().to_ascii_lowercase();
-                if msg.contains("no such") { Ok(()) } else { Err(e) }
-            })
+        Self::ignore_if_missing(self.check_fail(&format!("docker network rm {name}")))
     }
 
     async fn list_networks(&self, label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>> {

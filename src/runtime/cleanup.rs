@@ -156,11 +156,12 @@ pub(super) async fn gc_orphaned_resources(docker: &impl DockerApi) {
         let certs_volume = dind_certs_volume(&info.role);
         let network = format!("{}-net", info.role);
 
-        let r1 = docker.remove_container(&info.role).await;
-        let r2 = docker.remove_container(&info.name).await;
-        let r3 = docker.remove_volume(&certs_volume).await;
-        let r4 = docker.remove_network(&network).await;
-
+        let (r1, r2, r3, r4) = tokio::join!(
+            docker.remove_container(&info.role),
+            docker.remove_container(&info.name),
+            docker.remove_volume(&certs_volume),
+            docker.remove_network(&network),
+        );
         let results = [&r1, &r2, &r3, &r4];
         for (result, label) in
             results
