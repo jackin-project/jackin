@@ -544,7 +544,9 @@ mod tests {
         use std::sync::Mutex;
         // Serialize tests that mutate global debug state.
         static LOCK: Mutex<()> = Mutex::new(());
-        let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         // Write the token to a temp file so the secret string is only in the
         // command's stdout — not in the argv that log_command emits.
