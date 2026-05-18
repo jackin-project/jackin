@@ -57,6 +57,15 @@ impl CommandRunner for ScriptedRunner {
     ) -> anyhow::Result<String> {
         Ok(self.capture_queue.pop_front().unwrap_or_default())
     }
+
+    fn capture_secret(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+    ) -> anyhow::Result<String> {
+        self.capture(program, args, cwd)
+    }
 }
 
 #[test]

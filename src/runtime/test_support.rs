@@ -98,8 +98,18 @@ impl CommandRunner for FakeRunner {
         //   - `rev-list`: empty output = "no commits ahead" → SafeToDelete
         //   - `symbolic-ref HEAD`: any Ok (including "") = "HEAD on a branch",
         //     silently skipping the detached-HEAD guard
-        // Always provide one queue entry per expected capture call and
+        // Always provide one queue entry per expected capture call (including
+        // any `capture_secret` calls, which delegate here in test stubs) and
         // document each in a comment above the `fake_with_outputs` call.
         Ok(self.capture_queue.pop_front().unwrap_or_default())
+    }
+
+    fn capture_secret(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&std::path::Path>,
+    ) -> anyhow::Result<String> {
+        self.capture(program, args, cwd)
     }
 }

@@ -513,5 +513,14 @@ mod tests {
         ) -> anyhow::Result<String> {
             Ok(self.0.clone())
         }
+
+        fn capture_secret(
+            &mut self,
+            program: &str,
+            args: &[&str],
+            cwd: Option<&std::path::Path>,
+        ) -> anyhow::Result<String> {
+            self.capture(program, args, cwd)
+        }
     }
 }

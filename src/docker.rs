@@ -58,16 +58,16 @@ pub trait CommandRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String>;
-    /// Like `capture` but suppresses stdout from debug output.
-    /// Use for commands whose output is a secret (tokens, passwords).
+    /// Like `capture` but suppresses stdout from debug output and omits
+    /// stderr from error messages. Use for commands whose stdout is a secret
+    /// (tokens, passwords). Note: args logged via `log_command` are not
+    /// suppressed — callers must not pass secrets as positional arguments.
     fn capture_secret(
         &mut self,
         program: &str,
         args: &[&str],
         cwd: Option<&Path>,
-    ) -> anyhow::Result<String> {
-        self.capture(program, args, cwd)
-    }
+    ) -> anyhow::Result<String>;
 }
 
 #[derive(Debug, Default)]
@@ -282,6 +282,9 @@ impl ShellRunner {
             .join()
             .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))??;
         if !status.success() {
+            if secret {
+                anyhow::bail!("command failed: {} {}", program, args.join(" "));
+            }
             let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
             if stderr.is_empty() {
                 anyhow::bail!("command failed: {} {}", program, args.join(" "));
