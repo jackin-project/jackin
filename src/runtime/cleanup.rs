@@ -595,43 +595,45 @@ fn sweep_stale_artifacts(data_dir: &std::path::Path) {
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
         let Ok(ft) = entry.file_type() else { continue };
-        if ft.is_file() {
-            if name.ends_with(".lock") || name.ends_with(".pid") || name == "instances.json" {
-                if let Err(err) = std::fs::remove_file(entry.path()) {
-                    if err.kind() != std::io::ErrorKind::NotFound {
-                        eprintln!(
-                            "  {} could not remove {}: {err}",
-                            "warning:".yellow().bold(),
-                            entry.path().display()
-                        );
-                    }
-                }
-            }
-        } else if ft.is_dir() && name.ends_with(".locks") {
-            if let Err(err) = std::fs::remove_dir_all(entry.path()) {
-                if err.kind() != std::io::ErrorKind::NotFound {
-                    eprintln!(
-                        "  {} could not remove {}: {err}",
-                        "warning:".yellow().bold(),
-                        entry.path().display()
-                    );
-                }
-            }
+        let has_ext = |s: &str| {
+            std::path::Path::new(&name)
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case(s))
+        };
+        if ft.is_file()
+            && (has_ext("lock") || has_ext("pid") || name == "instances.json")
+            && let Err(err) = std::fs::remove_file(entry.path())
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            eprintln!(
+                "  {} could not remove {}: {err}",
+                "warning:".yellow().bold(),
+                entry.path().display()
+            );
+        } else if ft.is_dir()
+            && has_ext("locks")
+            && let Err(err) = std::fs::remove_dir_all(entry.path())
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            eprintln!(
+                "  {} could not remove {}: {err}",
+                "warning:".yellow().bold(),
+                entry.path().display()
+            );
         }
     }
     // `remove_dir` (not `remove_dir_all`): if any entry was skipped above
     // (e.g. a failed-purge state dir), the directory is not empty and
     // `remove_dir` fails silently, leaving the partial state intact.
-    if let Err(err) = std::fs::remove_dir(data_dir) {
-        if err.kind() != std::io::ErrorKind::NotFound
-            && err.kind() != std::io::ErrorKind::DirectoryNotEmpty
-        {
-            eprintln!(
-                "  {} could not remove {}: {err}",
-                "warning:".yellow().bold(),
-                data_dir.display()
-            );
-        }
+    if let Err(err) = std::fs::remove_dir(data_dir)
+        && err.kind() != std::io::ErrorKind::NotFound
+        && err.kind() != std::io::ErrorKind::DirectoryNotEmpty
+    {
+        eprintln!(
+            "  {} could not remove {}: {err}",
+            "warning:".yellow().bold(),
+            data_dir.display()
+        );
     }
 }
 
