@@ -343,7 +343,7 @@ fn resolve_github_token(runner: &mut impl CommandRunner) -> Option<String> {
         }
     }
     runner
-        .capture("gh", &["auth", "token"], None)
+        .capture_secret("gh", &["auth", "token"], None)
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())

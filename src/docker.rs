@@ -58,6 +58,16 @@ pub trait CommandRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String>;
+    /// Like `capture` but suppresses stdout from debug output.
+    /// Use for commands whose output is a secret (tokens, passwords).
+    fn capture_secret(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+    ) -> anyhow::Result<String> {
+        self.capture(program, args, cwd)
+    }
 }
 
 #[derive(Debug, Default)]
@@ -212,6 +222,27 @@ impl CommandRunner for ShellRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
+        self.do_capture(program, args, cwd, false)
+    }
+
+    fn capture_secret(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+    ) -> anyhow::Result<String> {
+        self.do_capture(program, args, cwd, true)
+    }
+}
+
+impl ShellRunner {
+    fn do_capture(
+        &mut self,
+        program: &str,
+        args: &[&str],
+        cwd: Option<&Path>,
+        secret: bool,
+    ) -> anyhow::Result<String> {
         self.log_command(program, args, cwd);
         let mut child = Self::build_command(program, args, cwd)
             .stdout(std::process::Stdio::piped())
@@ -258,7 +289,7 @@ impl CommandRunner for ShellRunner {
             anyhow::bail!("command failed: {} {}: {}", program, args.join(" "), stderr);
         }
         let stdout = String::from_utf8_lossy(&stdout).trim().to_string();
-        if self.debug && !stdout.is_empty() {
+        if self.debug && !stdout.is_empty() && !secret {
             let first_line = stdout.lines().next().unwrap_or("");
             crate::tui::emit_debug_line("cmd", &format!("-> {first_line}"));
         }
