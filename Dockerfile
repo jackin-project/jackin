@@ -18,9 +18,6 @@ ARG PROTOC_VERSION=34.1
 ARG CARGO_BINSTALL_VERSION=1.19.1
 ARG TESSL_VERSION=0.77.0
 ARG CAVEMAN_VERSION=1.7.0
-# Passed by CI to authenticate GitHub API calls during mise install.
-# Declared as ARG (not ENV) so it is not baked into any image layer.
-ARG GITHUB_TOKEN
 
 # `libclang-dev` is required by Rust crates with `bindgen` build-deps
 # (rdkafka-sys et al.) used in the ChainArgos monorepo.
