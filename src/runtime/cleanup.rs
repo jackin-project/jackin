@@ -6,7 +6,10 @@ use crate::selector::RoleSelector;
 use owo_colors::OwoColorize;
 
 use super::discovery::{list_managed_role_names, list_role_names};
-use super::naming::{LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume};
+use super::naming::{
+    LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume, dind_container_name,
+    role_network_name,
+};
 
 pub async fn purge_class_data(
     paths: &JackinPaths,
@@ -81,14 +84,25 @@ async fn purge_container_filesystem(
 }
 
 pub async fn eject_role(container_name: &str, docker: &impl DockerApi) -> anyhow::Result<()> {
-    let dind = format!("{container_name}-dind");
+    let dind = dind_container_name(container_name);
     let certs_volume = dind_certs_volume(container_name);
-    let network = format!("{container_name}-net");
+    let network = role_network_name(container_name);
 
-    docker.remove_container(container_name).await?;
-    docker.remove_container(&dind).await?;
-    docker.remove_volume(&certs_volume).await?;
-    docker.remove_network(&network).await?;
+    // Remove containers first so the network has no active endpoints.
+    let (r1, r2) = tokio::join!(
+        docker.remove_container(container_name),
+        docker.remove_container(&dind),
+    );
+    r1?;
+    r2?;
+
+    // Volume and network are independent of each other once containers are gone.
+    let (r3, r4) = tokio::join!(
+        docker.remove_volume(&certs_volume),
+        docker.remove_network(&network),
+    );
+    r3?;
+    r4?;
 
     Ok(())
 }
@@ -122,26 +136,19 @@ async fn collect_labeled_dind(docker: &impl DockerApi) -> anyhow::Result<Vec<Din
 /// Return `DinD` sidecar containers whose corresponding role container is no
 /// longer running.  These are leftovers from hard kills, terminal closures,
 /// or startup failures.
-async fn collect_orphaned_dind(docker: &impl DockerApi) -> anyhow::Result<Vec<DindInfo>> {
-    let sidecars = collect_labeled_dind(docker).await?;
-
-    if sidecars.is_empty() {
-        return Ok(vec![]);
-    }
-
-    let running = list_role_names(docker, false).await?;
-
-    Ok(sidecars
+/// Return `DinD` sidecars whose role container is not in `running`.
+fn filter_orphaned_dind(sidecars: Vec<DindInfo>, running: &[String]) -> Vec<DindInfo> {
+    sidecars
         .into_iter()
         .filter(|info| !running.contains(&info.role))
-        .collect())
+        .collect()
 }
 
 /// Remove orphaned `DinD` containers, their associated role containers, cert
 /// volumes, and networks.  Errors are logged but do not abort the launch — GC
 /// is best-effort.
 pub(super) async fn gc_orphaned_resources(docker: &impl DockerApi) {
-    let orphaned = match collect_orphaned_dind(docker).await {
+    let sidecars = match collect_labeled_dind(docker).await {
         Ok(v) => v,
         Err(err) => {
             eprintln!(
@@ -152,13 +159,36 @@ pub(super) async fn gc_orphaned_resources(docker: &impl DockerApi) {
         }
     };
 
+    if sidecars.is_empty() {
+        // No orphaned DinD sidecars — still check for orphaned networks.
+        gc_orphaned_networks(docker, None).await;
+        return;
+    }
+
+    // Fetch running roles once; reuse for both orphan detection and network GC.
+    let running = match list_role_names(docker, false).await {
+        Ok(v) => v,
+        Err(err) => {
+            eprintln!(
+                "  {} GC: could not list running role containers: {err}",
+                "warning:".yellow().bold()
+            );
+            return;
+        }
+    };
+
+    let orphaned = filter_orphaned_dind(sidecars, &running);
+
     for info in &orphaned {
         let certs_volume = dind_certs_volume(&info.role);
-        let network = format!("{}-net", info.role);
+        let network = role_network_name(&info.role);
 
-        let (r1, r2, r3, r4) = tokio::join!(
+        // Remove containers before the network (network rm requires no active endpoints).
+        let (r1, r2) = tokio::join!(
             docker.remove_container(&info.role),
             docker.remove_container(&info.name),
+        );
+        let (r3, r4) = tokio::join!(
             docker.remove_volume(&certs_volume),
             docker.remove_network(&network),
         );
@@ -185,12 +215,14 @@ pub(super) async fn gc_orphaned_resources(docker: &impl DockerApi) {
         }
     }
 
-    gc_orphaned_networks(docker).await;
+    gc_orphaned_networks(docker, Some(&running)).await;
 }
 
-/// Remove jackin-managed Docker networks whose owning role container no
-/// longer exists.
-async fn gc_orphaned_networks(docker: &impl DockerApi) {
+/// Remove jackin-managed Docker networks whose owning role container no longer
+/// exists. Pass `Some(running)` to reuse an already-fetched list of running
+/// role names; pass `None` to fetch fresh (used when no DinD sidecars were
+/// found and the list was never retrieved).
+async fn gc_orphaned_networks(docker: &impl DockerApi, running: Option<&[String]>) {
     let net_rows = match docker.list_networks(&[LABEL_MANAGED]).await {
         Ok(v) => v,
         Err(err) => {
@@ -215,14 +247,21 @@ async fn gc_orphaned_networks(docker: &impl DockerApi) {
         return;
     }
 
-    let running = match list_role_names(docker, false).await {
-        Ok(v) => v,
-        Err(err) => {
-            eprintln!(
-                "  {} GC: could not list running role containers: {err}",
-                "warning:".yellow().bold()
-            );
-            return;
+    let fetched;
+    let running = match running {
+        Some(r) => r,
+        None => {
+            fetched = match list_role_names(docker, false).await {
+                Ok(v) => v,
+                Err(err) => {
+                    eprintln!(
+                        "  {} GC: could not list running role containers: {err}",
+                        "warning:".yellow().bold()
+                    );
+                    return;
+                }
+            };
+            &fetched
         }
     };
 
@@ -311,11 +350,6 @@ pub async fn prune_images(docker: &impl DockerApi) -> anyhow::Result<()> {
             Some(img)
         })
         .collect();
-
-    // Also collect image info from container summaries (via image name in the row itself)
-    // Actually containers have image names in their labels or a separate field
-    // For now, use docker.list_image_tags approach combined with docker inspect
-    // The simplest approach: get all image tags and try to remove ones not in use
 
     let mut removed = 0usize;
     let mut skipped = 0usize;

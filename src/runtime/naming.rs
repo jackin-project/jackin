@@ -98,6 +98,14 @@ pub(super) fn dind_certs_volume(container_name: &str) -> String {
     format!("{container_name}-dind-certs")
 }
 
+pub(super) fn dind_container_name(container_name: &str) -> String {
+    format!("{container_name}-dind")
+}
+
+pub(super) fn role_network_name(container_name: &str) -> String {
+    format!("{container_name}-net")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

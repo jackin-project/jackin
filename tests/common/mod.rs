@@ -60,7 +60,7 @@ impl DockerApi for NoOpDocker {
     ) -> anyhow::Result<Option<String>> {
         Ok(None)
     }
-    async fn pull_image(&self, _image: &str, _debug: bool) -> anyhow::Result<()> {
+    async fn pull_image(&self, _image: &str) -> anyhow::Result<()> {
         Ok(())
     }
     async fn exec_capture(&self, _container: &str, _cmd: &[&str]) -> anyhow::Result<String> {

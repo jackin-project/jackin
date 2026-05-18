@@ -109,7 +109,7 @@ pub trait DockerApi {
         image: &str,
         label: &str,
     ) -> anyhow::Result<Option<String>>;
-    async fn pull_image(&self, image: &str, debug: bool) -> anyhow::Result<()>;
+    async fn pull_image(&self, image: &str) -> anyhow::Result<()>;
     async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String>;
 }
 
@@ -385,10 +385,8 @@ impl DockerApi for BollardDockerClient {
         }
     }
 
-    async fn pull_image(&self, image: &str, debug: bool) -> anyhow::Result<()> {
-        if debug {
-            eprintln!("[jackin debug] docker pull {image}");
-        }
+    async fn pull_image(&self, image: &str) -> anyhow::Result<()> {
+        crate::tui::emit_debug_line("pull", image);
         use bollard::query_parameters::CreateImageOptions;
         let mut stream = self.inner.create_image(
             Some(CreateImageOptions {
@@ -487,8 +485,8 @@ impl FakeDockerClient {
         Ok(())
     }
 
-    fn record(&self, entry: String) {
-        self.recorded.borrow_mut().push(entry);
+    fn record(&self, entry: &str) {
+        self.recorded.borrow_mut().push(entry.to_string());
     }
 
     fn ignore_if_missing(result: anyhow::Result<()>) -> anyhow::Result<()> {
@@ -530,7 +528,7 @@ impl FakeDockerClient {
 impl DockerApi for FakeDockerClient {
     async fn inspect_container_state(&self, name: &str) -> ContainerState {
         let op = format!("docker inspect {name}");
-        self.record(op.clone());
+        self.record(&op);
         if let Some((_, msg)) = self.fail_with.iter().find(|(pat, _)| op.contains(pat.as_str())) {
             let msg = msg.clone();
             let lower = msg.to_ascii_lowercase();
@@ -546,8 +544,9 @@ impl DockerApi for FakeDockerClient {
     }
 
     async fn remove_container(&self, name: &str) -> anyhow::Result<()> {
-        self.record(format!("docker rm -f {name}"));
-        Self::ignore_if_missing(self.check_fail(&format!("docker rm -f {name}")))
+        let op = format!("docker rm -f {name}");
+        self.record(&op);
+        Self::ignore_if_missing(self.check_fail(&op))
     }
 
     async fn list_containers(
@@ -561,25 +560,28 @@ impl DockerApi for FakeDockerClient {
         } else {
             format!("docker ps --filter {filter_str}")
         };
-        self.record(op.clone());
+        self.record(&op);
         self.check_fail(&op)?;
         Ok(self.pop_list_containers())
     }
 
     async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()> {
-        self.record(format!("create_container:{name}"));
+        let op = format!("create_container:{name}");
+        self.record(&op);
         self.created_containers.borrow_mut().push((name.to_string(), spec));
-        self.check_fail(&format!("create_container:{name}"))
+        self.check_fail(&op)
     }
 
     async fn start_container(&self, name: &str) -> anyhow::Result<()> {
-        self.record(format!("start_container:{name}"));
-        self.check_fail(&format!("start_container:{name}"))
+        let op = format!("start_container:{name}");
+        self.record(&op);
+        self.check_fail(&op)
     }
 
     async fn remove_volume(&self, name: &str) -> anyhow::Result<()> {
-        self.record(format!("docker volume rm {name}"));
-        Self::ignore_if_missing(self.check_fail(&format!("docker volume rm {name}")))
+        let op = format!("docker volume rm {name}");
+        self.record(&op);
+        Self::ignore_if_missing(self.check_fail(&op))
     }
 
     async fn create_network(
@@ -587,34 +589,37 @@ impl DockerApi for FakeDockerClient {
         name: &str,
         labels: HashMap<String, String>,
     ) -> anyhow::Result<()> {
-        self.record(format!("docker network create {name}"));
+        let op = format!("docker network create {name}");
+        self.record(&op);
         self.created_networks.borrow_mut().push((name.to_string(), labels));
-        self.check_fail(&format!("docker network create {name}"))
+        self.check_fail(&op)
     }
 
     async fn remove_network(&self, name: &str) -> anyhow::Result<()> {
-        self.record(format!("docker network rm {name}"));
-        Self::ignore_if_missing(self.check_fail(&format!("docker network rm {name}")))
+        let op = format!("docker network rm {name}");
+        self.record(&op);
+        Self::ignore_if_missing(self.check_fail(&op))
     }
 
     async fn list_networks(&self, label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>> {
         let filter_str = label_filters.join(" --filter ");
         let op = format!("docker network ls --filter {filter_str}");
-        self.record(op.clone());
+        self.record(&op);
         self.check_fail(&op)?;
         Ok(self.pop_list_networks())
     }
 
     async fn list_image_tags(&self, reference_filter: &str) -> anyhow::Result<Vec<String>> {
         let op = format!("docker images --filter reference={reference_filter}");
-        self.record(op.clone());
+        self.record(&op);
         self.check_fail(&op)?;
         Ok(self.pop_list_image_tags())
     }
 
     async fn remove_image(&self, name: &str) -> anyhow::Result<RemoveImageOutcome> {
-        self.record(format!("docker rmi {name}"));
-        self.check_fail(&format!("docker rmi {name}"))?;
+        let op = format!("docker rmi {name}");
+        self.record(&op);
+        self.check_fail(&op)?;
         Ok(self.pop_remove_image())
     }
 
@@ -624,19 +629,20 @@ impl DockerApi for FakeDockerClient {
         label: &str,
     ) -> anyhow::Result<Option<String>> {
         let op = format!("docker inspect image:{image} label:{label}");
-        self.record(op.clone());
+        self.record(&op);
         self.check_fail(&op)?;
         Ok(None)
     }
 
-    async fn pull_image(&self, image: &str, _debug: bool) -> anyhow::Result<()> {
-        self.record(format!("docker pull {image}"));
-        self.check_fail(&format!("docker pull {image}"))
+    async fn pull_image(&self, image: &str) -> anyhow::Result<()> {
+        let op = format!("docker pull {image}");
+        self.record(&op);
+        self.check_fail(&op)
     }
 
     async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String> {
         let op = format!("docker exec {} {}", container, cmd.join(" "));
-        self.record(op.clone());
+        self.record(&op);
         self.check_fail(&op)?;
         Ok(self.pop_exec_capture())
     }
