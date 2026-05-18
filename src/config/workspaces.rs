@@ -601,6 +601,7 @@ mod tests {
         fn paths_for(data: &std::path::Path) -> JackinPaths {
             JackinPaths {
                 home_dir: data.into(),
+                jackin_home: data.into(),
                 config_dir: data.into(),
                 config_file: data.join("config.toml"),
                 workspaces_dir: data.join("workspaces"),

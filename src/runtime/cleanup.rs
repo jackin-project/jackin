@@ -307,6 +307,25 @@ pub fn prune_cache(paths: &JackinPaths) -> anyhow::Result<()> {
     prune_dir(&paths.cache_dir, "shared cache")
 }
 
+/// Remove the jackin home directory if it is empty. Called as the last step of
+/// `prune system --all` after instances, images, roles, and cache are removed.
+/// Uses `remove_dir` (not `remove_dir_all`) so any surviving content prevents
+/// removal rather than being silently deleted.
+pub fn prune_jackin_home(paths: &JackinPaths) {
+    match std::fs::remove_dir(&paths.jackin_home) {
+        Ok(()) => println!("Removed jackin home ({}).", paths.jackin_home.display()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) if err.kind() == std::io::ErrorKind::DirectoryNotEmpty => {}
+        Err(err) => {
+            eprintln!(
+                "  {} could not remove {}: {err}",
+                "warning:".yellow().bold(),
+                paths.jackin_home.display()
+            );
+        }
+    }
+}
+
 /// Remove jk_* Docker images that have no jackin-managed role containers (running or stopped).
 ///
 /// Per-image `rmi` failures are printed to stderr and counted in the summary but do not

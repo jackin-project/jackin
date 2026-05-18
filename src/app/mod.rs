@@ -1256,6 +1256,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 let errors: Vec<anyhow::Error> =
                     results.into_iter().filter_map(Result::err).collect();
                 if errors.is_empty() {
+                    runtime::prune_jackin_home(&paths);
                     Ok(())
                 } else {
                     for err in &errors {
