@@ -57,9 +57,20 @@ pub(super) fn build_agent_image(
         && construct_version_is_stale(
             published_image.unwrap(),
             &validated_repo.dockerfile.construct_version,
-            debug,
             runner,
         ) {
+        if debug {
+            eprintln!(
+                "{}",
+                format!(
+                    "[debug] published image {} predates Dockerfile construct pin {}; \
+                     rebuilding from workspace Dockerfile",
+                    published_image.unwrap(),
+                    validated_repo.dockerfile.construct_version,
+                )
+                .dimmed()
+            );
+        }
         use_prebuilt = false;
         base_image_override = None;
         true
@@ -199,7 +210,6 @@ fn read_image_label(runner: &mut impl CommandRunner, image: &str, key: &str) -> 
 fn construct_version_is_stale(
     published: &str,
     dockerfile_version: &str,
-    debug: bool,
     runner: &mut impl CommandRunner,
 ) -> bool {
     if let Err(e) = runner.run(
@@ -207,12 +217,9 @@ fn construct_version_is_stale(
         &["pull", "--quiet", published],
         None,
         &RunOptions::default(),
-    ) && debug
-    {
+    ) {
         eprintln!(
-            "{}",
-            format!("[debug] docker pull {published} failed ({e}); staleness check will use cached digest")
-                .dimmed()
+            "warning: docker pull {published} failed ({e}); staleness check will use locally cached image"
         );
     }
     read_image_label(runner, published, LABEL_IMAGE_CONSTRUCT_VERSION)

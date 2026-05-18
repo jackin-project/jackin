@@ -79,11 +79,13 @@ pub enum RoleRepoValidationError {
     #[error("final Dockerfile stage must use literal FROM {expected}")]
     DockerfileNonConstruct { expected: String },
     #[error(
-        "Dockerfile FROM {image}:{stable_tag} uses the floating tag — pin to a versioned release \
-         like FROM {image}:0.1-{stable_tag}.\n\
-         Configure Renovate with a regex versioning rule to track version bumps automatically."
+        "Dockerfile FROM {r}:{t} uses the floating tag — pin to a versioned release \
+         like FROM {r}:0.1-{t}.\n\
+         Configure Renovate with a regex versioning rule to track version bumps automatically.",
+        r = crate::repo_contract::CONSTRUCT_REGISTRY_IMAGE,
+        t = crate::repo_contract::CONSTRUCT_STABLE_TAG,
     )]
-    DockerfileMissingVersionPin { image: String, stable_tag: String },
+    DockerfileMissingVersionPin,
     /// Catch-all for non-structural failures (TOML parse, IO, manifest
     /// semantic validation). The friendly translator renders these as
     /// the generic "not a valid Jackin role" message.

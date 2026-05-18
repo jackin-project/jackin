@@ -541,6 +541,29 @@ mod tests {
     }
 
     #[test]
+    fn parses_role_construct_version_with_default_path() {
+        let cli = Cli::try_parse_from(["jackin", "role", "construct-version"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Role(super::RoleCommand::ConstructVersion(
+                super::RoleRepoPathArgs { path: None }
+            )))
+        ));
+    }
+
+    #[test]
+    fn parses_role_construct_version_with_path() {
+        let cli =
+            Cli::try_parse_from(["jackin", "role", "construct-version", "/tmp/my-role"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Role(super::RoleCommand::ConstructVersion(
+                super::RoleRepoPathArgs { path: Some(ref p) }
+            ))) if p == std::path::Path::new("/tmp/my-role")
+        ));
+    }
+
+    #[test]
     fn parses_role_create_with_projects_dir() {
         let cli =
             Cli::try_parse_from(["jackin", "role", "create", "ChainArgos/Backend", "."]).unwrap();

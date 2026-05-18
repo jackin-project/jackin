@@ -42,11 +42,12 @@ pub(super) const LABEL_KEEP_AWAKE: &str = "jackin.keep_awake=true";
 /// jackin invocation (and vice versa).
 pub(super) const LABEL_IMAGE_CONSTRUCT: &str = "jackin.construct_image";
 
-/// Image label key recording the construct image version tag baked into a
-/// **published** role image at CI time (e.g. `0.1-trixie`). Checked in
-/// pre-built mode: if this value differs from the Dockerfile's pinned version,
-/// the published image pre-dates a Renovate update and jackin switches to
-/// workspace mode so the role's workspace Dockerfile is used directly.
+/// Image label key recording the construct version tag baked into a published
+/// role image. Written by role CI via `jackin-role construct-version` as a
+/// `--build-arg` during `docker build` (see validate-agent-action). Checked at
+/// launch time: a mismatch against the Dockerfile's pinned version means the
+/// published image pre-dates a Renovate bump; jackin falls back to workspace
+/// mode so the role's workspace Dockerfile — carrying the new pin — is used.
 pub(super) const LABEL_IMAGE_CONSTRUCT_VERSION: &str = "jackin.construct_version";
 
 /// Format a human-friendly role name from a container name and its display label.

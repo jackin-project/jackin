@@ -84,7 +84,7 @@ The Dockerfile path must:
 - Be relative (no absolute paths)
 - Stay inside the repository (no `../` escapes)
 - Point to a valid Dockerfile
-- Have a final stage that starts with `FROM projectjackin/construct:trixie`
+- Have a final stage that starts with `FROM projectjackin/construct:0.1-trixie` (a versioned construct tag — the floating `:trixie` tag fails validation)
 
 Every agent listed in `agents` must have a matching `[<agent>]` table, even when that table is empty. A manifest with `agents = ["claude", "codex", "amp", "kimi", "opencode"]` needs `[claude]`, `[codex]`, `[amp]`, `[kimi]`, and `[opencode]`.
 

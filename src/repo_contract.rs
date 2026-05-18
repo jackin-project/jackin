@@ -7,7 +7,8 @@ use crate::repo::RoleRepoValidationError;
 
 pub const CONSTRUCT_REGISTRY_IMAGE: &str = "projectjackin/construct";
 pub const CONSTRUCT_STABLE_TAG: &str = "trixie";
-/// Floating tag — kept for the `JACKIN_CONSTRUCT_IMAGE` default and error messages.
+/// Floating stable-channel tag. Fallback when `JACKIN_CONSTRUCT_IMAGE` is unset
+/// and the expected-image string embedded in `DockerfileNonConstruct` errors.
 pub const CONSTRUCT_IMAGE: &str = "projectjackin/construct:trixie";
 
 pub fn construct_image() -> String {
@@ -24,6 +25,9 @@ pub struct ValidatedDockerfile {
     /// The versioned tag component (e.g. `0.1-trixie`). Stored in the
     /// published image label so jackin can detect staleness at launch time.
     pub construct_version: String,
+    // Prevents struct-literal construction outside this module so all
+    // instances carry the invariants enforced by validate_agent_dockerfile.
+    _private: (),
 }
 
 pub fn validate_agent_dockerfile(
@@ -73,11 +77,9 @@ pub fn validate_agent_dockerfile(
     // versioned release (e.g. "0.1-trixie") so Renovate can track updates and
     // jackin can detect published-image staleness at launch time.
     let version_suffix = format!("-{CONSTRUCT_STABLE_TAG}");
-    if tag == CONSTRUCT_STABLE_TAG || !tag.ends_with(&version_suffix) {
-        return Err(RoleRepoValidationError::DockerfileMissingVersionPin {
-            image: CONSTRUCT_REGISTRY_IMAGE.to_owned(),
-            stable_tag: CONSTRUCT_STABLE_TAG.to_owned(),
-        });
+    let version_prefix_len = tag.len().saturating_sub(version_suffix.len());
+    if tag == CONSTRUCT_STABLE_TAG || !tag.ends_with(&version_suffix) || version_prefix_len == 0 {
+        return Err(RoleRepoValidationError::DockerfileMissingVersionPin);
     }
 
     Ok(ValidatedDockerfile {
@@ -86,6 +88,7 @@ pub fn validate_agent_dockerfile(
         final_stage_image: image_str.to_string(),
         final_stage_alias: alias.clone(),
         construct_version: tag.to_string(),
+        _private: (),
     })
 }
 

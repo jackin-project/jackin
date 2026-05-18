@@ -5251,6 +5251,116 @@ plugins = []
     }
 
     #[test]
+    fn load_agent_uses_prebuilt_when_construct_version_matches() {
+        // When the published image's jackin.construct_version label matches the
+        // Dockerfile's pinned tag, the pre-built image is used (no staleness).
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        // Capture queue (after preamble): [label value for CONSTRUCT_VERSION]
+        let mut runner = FakeRunner::for_load_agent(["0.1-trixie".to_string()]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha4"
+dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &repo_workspace(&repo_dir),
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let build_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker build "))
+            .unwrap();
+        assert!(
+            build_cmd.contains("--pull"),
+            "pre-built mode must pass --pull; got: {build_cmd}"
+        );
+    }
+
+    #[test]
+    fn load_agent_falls_back_to_workspace_when_construct_version_stale() {
+        // When the published image's jackin.construct_version label differs from
+        // the Dockerfile's pinned tag, jackin falls back to workspace mode.
+        let temp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let mut config = AppConfig::load_or_init(&paths).unwrap();
+        let selector = RoleSelector::new(None, "agent-smith");
+        // Capture queue (after preamble): [stale label value from published image]
+        // The Dockerfile pins 0.1-trixie but the label says 0.2-trixie, triggering
+        // fallback to workspace mode and a full rebuild.
+        let mut runner = FakeRunner::for_load_agent(["0.2-trixie".to_string()]);
+
+        let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
+        std::fs::create_dir_all(&repo_dir).unwrap();
+        std::fs::write(
+            repo_dir.join("Dockerfile"),
+            "FROM projectjackin/construct:0.1-trixie\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo_dir.join("jackin.role.toml"),
+            r#"version = "v1alpha4"
+dockerfile = "Dockerfile"
+published_image = "docker.io/myorg/my-role:latest"
+
+[claude]
+plugins = []
+"#,
+        )
+        .unwrap();
+
+        load_role(
+            &paths,
+            &mut config,
+            &selector,
+            &repo_workspace(&repo_dir),
+            &mut runner,
+            &LoadOptions::default(),
+        )
+        .unwrap();
+
+        let build_cmd = runner
+            .recorded
+            .iter()
+            .find(|call| call.contains("docker build "))
+            .unwrap();
+        // Workspace mode with rebuild=true passes --pull and must NOT use the
+        // published image as base.
+        assert!(
+            build_cmd.contains("--pull"),
+            "workspace rebuild must pass --pull; got: {build_cmd}"
+        );
+        assert!(
+            !build_cmd.contains("docker.io/myorg/my-role:latest"),
+            "stale published image must not be used as base; got: {build_cmd}"
+        );
+    }
+
+    #[test]
     fn load_agent_ignores_published_image_when_rebuild() {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());

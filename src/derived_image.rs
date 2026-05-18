@@ -200,6 +200,33 @@ pub fn shell_quote(value: &str) -> String {
     quoted
 }
 
+/// Replace `FROM projectjackin/construct:<tag>[@<digest>] [AS alias]` lines in
+/// `contents` with `FROM <override_image> [AS alias]`. Digest pins are dropped
+/// because a local override image has no matching digest.
+fn apply_construct_image_override(contents: &str, override_image: &str) -> String {
+    let construct_from_prefix = format!("FROM {}:", crate::repo_contract::CONSTRUCT_REGISTRY_IMAGE);
+    let from_override = format!("FROM {override_image}");
+    let mut result = contents
+        .lines()
+        .map(|line| {
+            if line.starts_with(&construct_from_prefix) {
+                let after_prefix = &line[construct_from_prefix.len()..];
+                let alias = after_prefix
+                    .split_once(' ')
+                    .map_or(String::new(), |(_, rest)| format!(" {rest}"));
+                format!("{from_override}{alias}")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if contents.ends_with('\n') {
+        result.push('\n');
+    }
+    result
+}
+
 pub fn create_derived_build_context(
     repo_dir: &Path,
     validated: &ValidatedRoleRepo,
@@ -220,37 +247,17 @@ pub fn create_derived_build_context(
 
     let base_dockerfile = base_image_override.map_or_else(
         || {
-            // When JACKIN_CONSTRUCT_IMAGE is not set, leave the Dockerfile
-            // untouched so Docker uses whatever versioned tag the role pins.
-            let Some(override_image) = std::env::var("JACKIN_CONSTRUCT_IMAGE").ok() else {
+            // When JACKIN_CONSTRUCT_IMAGE is not set or empty, leave the
+            // Dockerfile untouched so Docker uses whatever versioned tag the
+            // role pins.
+            let override_image = std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_default();
+            if override_image.trim().is_empty() {
                 return validated.dockerfile.dockerfile_contents.clone();
-            };
-            // Local construct override (JACKIN_CONSTRUCT_IMAGE is set): replace
-            // "FROM projectjackin/construct:<any-tag> [AS alias]" with
-            // "FROM local-override [AS alias]".
-            let construct_from_prefix =
-                format!("FROM {}:", crate::repo_contract::CONSTRUCT_REGISTRY_IMAGE);
-            let from_override = format!("FROM {override_image}");
-            let contents = &validated.dockerfile.dockerfile_contents;
-            let mut result = contents
-                .lines()
-                .map(|line| {
-                    if line.starts_with(&construct_from_prefix) {
-                        let after_prefix = &line[construct_from_prefix.len()..];
-                        let alias = after_prefix
-                            .split_once(' ')
-                            .map_or(String::new(), |(_, rest)| format!(" {rest}"));
-                        format!("{from_override}{alias}")
-                    } else {
-                        line.to_string()
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            if contents.ends_with('\n') {
-                result.push('\n');
             }
-            result
+            apply_construct_image_override(
+                &validated.dockerfile.dockerfile_contents,
+                &override_image,
+            )
         },
         |image| format!("FROM {image}\n"),
     );
@@ -998,6 +1005,26 @@ plugins = []
         let contents = std::fs::read_to_string(&build.dockerfile_path).unwrap();
         assert!(contents.starts_with("FROM docker.io/myorg/my-role:latest\n"));
         assert!(!contents.contains("projectjackin/construct:"));
+    }
+
+    #[test]
+    fn jackin_construct_image_override_preserves_as_alias() {
+        let input = "FROM projectjackin/construct:0.1-trixie AS runtime\nUSER agent\n";
+        let result = apply_construct_image_override(input, "jackin-local/construct:trixie");
+        assert!(
+            result.starts_with("FROM jackin-local/construct:trixie AS runtime\n"),
+            "override must replace the image but preserve the AS alias; got:\n{result}"
+        );
+    }
+
+    #[test]
+    fn jackin_construct_image_override_handles_digest_pinned_from() {
+        let input = "FROM projectjackin/construct:0.1-trixie@sha256:0b076bfbc53d36794fe54b1a9cab670f85f831af86d78426b1a88a8ac192d445 AS runtime\nUSER agent\n";
+        let result = apply_construct_image_override(input, "jackin-local/construct:trixie");
+        assert!(
+            result.starts_with("FROM jackin-local/construct:trixie AS runtime\n"),
+            "override must replace tag+digest and preserve AS alias; got:\n{result}"
+        );
     }
 
     #[cfg(unix)]

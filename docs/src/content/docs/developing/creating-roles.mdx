@@ -35,7 +35,7 @@ Creating a custom agent lets you define a specialized environment for a specific
    Start from the generated file and add the tools your role needs:
 
    ```dockerfile
-   FROM projectjackin/construct:trixie
+   FROM projectjackin/construct:0.1-trixie
 
    # Install Rust via mise
    RUN mise install rust@stable && mise use --global rust@stable
@@ -82,11 +82,11 @@ Use `jackin role migrate` on your own desktop when you are updating a checked-ou
 Your final stage **must** start from the construct image:
 
 ```dockerfile
-FROM projectjackin/construct:trixie
+FROM projectjackin/construct:0.1-trixie
 ```
 
 <Aside type="caution">
-This is the literal string jackin' checks for. `FROM projectjackin/construct:latest` or any other tag will fail validation.
+The final stage must use a versioned construct tag (e.g. `projectjackin/construct:0.1-trixie`). The floating `:trixie` tag, `:latest`, or any other non-versioned tag fails validation. Renovate can track version bumps automatically — see the `renovate.json` in the generated role repo.
 </Aside>
 ### Multi-stage builds are supported
 
@@ -100,7 +100,7 @@ COPY tools/ .
 RUN cargo build --release
 
 # Final stage — must use the construct
-FROM projectjackin/construct:trixie
+FROM projectjackin/construct:0.1-trixie
 COPY --from=builder /build/target/release/my-tool /usr/local/bin/
 ```
 
