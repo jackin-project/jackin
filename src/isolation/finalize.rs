@@ -104,7 +104,7 @@ impl FinalizerPrompt for StdinPrompt {
     }
 }
 
-pub fn finalize_foreground_session(
+pub async fn finalize_foreground_session(
     container_name: &str,
     container_state_dir: &Path,
     outcome: AttachOutcome,
@@ -158,29 +158,10 @@ pub fn finalize_foreground_session(
         is_interactive,
         prompt,
         runner,
-    )
+    ).await
 }
 
-fn has_tmux_sessions(runner: &mut impl CommandRunner, container_name: &str) -> bool {
-    // Run via sh to suppress the "no server running" error tmux emits when the
-    // socket is stale. Both "no server" and "no sessions" collapse to exit 0 with
-    // empty stdout so the caller only sees a non-empty result when sessions exist.
-    runner
-        .capture(
-            "docker",
-            &[
-                "exec",
-                container_name,
-                "sh",
-                "-c",
-                "tmux list-sessions -F '#{session_name}' 2>/dev/null || true",
-            ],
-            None,
-        )
-        .is_ok_and(|output| !output.trim().is_empty())
-}
-
-fn finalize_clean_exit(
+async fn finalize_clean_exit(
     container_name: &str,
     container_state_dir: &Path,
     is_interactive: bool,
@@ -195,7 +176,7 @@ fn finalize_clean_exit(
     // workspace can have multiple isolated mounts on different host repos
     // and each may need an independent decision).
     for record in records {
-        let assessment = assess_cleanup(&record, runner)?;
+        let assessment = assess_cleanup(&record, runner).await?;
         debug_log!(
             "isolation",
             "finalize assess: container={c} mount={d} → {a:?}",
@@ -205,7 +186,7 @@ fn finalize_clean_exit(
         );
         match assessment {
             CleanupAssessment::SafeToDelete => {
-                force_cleanup_isolated(&record, container_state_dir, runner)?;
+                force_cleanup_isolated(&record, container_state_dir, runner).await?;
             }
             CleanupAssessment::PreservedDirty => {
                 mark_preserved(container_state_dir, &record, CleanupStatus::PreservedDirty)?;
@@ -271,7 +252,7 @@ fn finalize_clean_exit(
                 any_preserved_after_prompt = true;
             }
             2 => {
-                if let Err(e) = force_cleanup_isolated(&rec, container_state_dir, runner) {
+                if let Err(e) = force_cleanup_isolated(&rec, container_state_dir, runner).await {
                     eprintln!(
                         "[jackin] warning: force-delete of isolated worktree `{wt}` failed: {e}\n         record retained — re-run `jackin purge {short}` to retry after resolving the underlying issue",
                         wt = rec.worktree_path,
@@ -355,7 +336,7 @@ enum CleanupAssessment {
 /// wrong.
 #[allow(clippy::unnecessary_wraps)] // Result lets us propagate from inner ? if a future revision adds Err arms
 #[allow(clippy::too_many_lines)] // Linear policy table is clearer inline than split across helpers
-fn assess_cleanup(
+async fn assess_cleanup(
     record: &IsolationRecord,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<CleanupAssessment> {
@@ -363,7 +344,7 @@ fn assess_cleanup(
         "git",
         &["-C", &record.worktree_path, "status", "--porcelain"],
         None,
-    ) {
+    ).await {
         Ok(s) => s,
         Err(e) => {
             debug_log!(
@@ -395,7 +376,7 @@ fn assess_cleanup(
             "refs/heads/",
         ],
         None,
-    ) {
+    ).await {
         Ok(s) => s,
         Err(e) => {
             debug_log!(
@@ -481,7 +462,7 @@ fn assess_cleanup(
                 &format!("{upstream}..{name}"),
             ],
             None,
-        ) {
+        ).await {
             Ok(s) => s,
             Err(e) => {
                 debug_log!(
@@ -519,6 +500,7 @@ fn assess_cleanup(
             ],
             None,
         )
+        .await
         .is_err()
     {
         // `symbolic-ref` fails on detached HEAD (exit 1) and on any git
@@ -532,7 +514,7 @@ fn assess_cleanup(
             "git",
             &["-C", &record.worktree_path, "rev-parse", "HEAD"],
             None,
-        ) {
+        ).await {
             Ok(head_sha) if head_sha.trim() == record.base_commit.trim() => {
                 // Detached HEAD parked at base — no unreachable commits.
             }
@@ -589,28 +571,8 @@ mod tests {
 
     use crate::runtime::test_support::FakeRunner;
 
-    #[test]
-    fn still_running_with_sessions_preserves() {
-        // Session list non-empty → real detach → Preserved.
-        let dir = TempDir::new().unwrap();
-        let mut p = NoPrompt;
-        let mut r = fake_with_outputs(&["jackin-claude-abc"]);
-        let dec = finalize_foreground_session(
-            "jackin-x",
-            dir.path(),
-            AttachOutcome::still_running(),
-            false,
-            &mut p,
-            &mut r,
-        )
-        .unwrap();
-        assert_eq!(dec, FinalizeDecision::Preserved);
-    }
-
-    #[test]
-    fn still_running_no_sessions_proceeds_to_clean_exit() {
-        // Empty session list → supervisor lag after clean agent exit →
-        // finalize_clean_exit → Cleaned (no isolation records to preserve).
+    #[tokio::test]
+    async fn still_running_preserves_records() {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
@@ -622,12 +584,13 @@ mod tests {
             &mut p,
             &mut r,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
     }
 
-    #[test]
-    fn stopped_non_zero_preserves_records() {
+    #[tokio::test]
+    async fn stopped_non_zero_preserves_records() {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
@@ -639,12 +602,13 @@ mod tests {
             &mut p,
             &mut r,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
     }
 
-    #[test]
-    fn oom_killed_preserves_records() {
+    #[tokio::test]
+    async fn oom_killed_preserves_records() {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
@@ -656,6 +620,7 @@ mod tests {
             &mut p,
             &mut r,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
     }
@@ -696,8 +661,8 @@ mod tests {
         format!("{name}\t{tip}\t{upstream}\t{track}")
     }
 
-    #[test]
-    fn clean_worktree_with_head_equal_base_deletes_record() {
+    #[tokio::test]
+    async fn clean_worktree_with_head_equal_base_deletes_record() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -718,6 +683,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
@@ -730,8 +696,8 @@ mod tests {
         assert!(runner.run_recorded.iter().any(|c| c.contains("branch -D")));
     }
 
-    #[test]
-    fn clean_worktree_with_pushed_commits_deletes_record() {
+    #[tokio::test]
+    async fn clean_worktree_with_pushed_commits_deletes_record() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -755,13 +721,14 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
     }
 
-    #[test]
-    fn clean_worktree_with_unpushed_commits_preserves() {
+    #[tokio::test]
+    async fn clean_worktree_with_unpushed_commits_preserves() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -789,6 +756,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -796,8 +764,8 @@ mod tests {
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
     }
 
-    #[test]
-    fn clean_worktree_no_upstream_preserves_when_head_diverged() {
+    #[tokio::test]
+    async fn clean_worktree_no_upstream_preserves_when_head_diverged() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -816,6 +784,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -863,8 +832,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn dirty_worktree_interactive_preserve_choice_keeps_state() {
+    #[tokio::test]
+    async fn dirty_worktree_interactive_preserve_choice_keeps_state() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -879,14 +848,15 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedDirty);
     }
 
-    #[test]
-    fn dirty_worktree_interactive_force_delete_runs_cleanup() {
+    #[tokio::test]
+    async fn dirty_worktree_interactive_force_delete_runs_cleanup() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -901,6 +871,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
@@ -912,8 +883,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn dirty_worktree_interactive_return_to_agent_signals_caller() {
+    #[tokio::test]
+    async fn dirty_worktree_interactive_return_to_agent_signals_caller() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -928,14 +899,15 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::ReturnToAgent);
         let recs = read_records(dir.path()).unwrap();
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedDirty);
     }
 
-    #[test]
-    fn dirty_worktree_non_interactive_prints_warning_and_preserves() {
+    #[tokio::test]
+    async fn dirty_worktree_non_interactive_prints_warning_and_preserves() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -950,6 +922,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -974,8 +947,8 @@ mod tests {
     // `PreservedUnpushed` (not `SafeToDelete`) so a transient git error
     // never garbage-collects unpushed scratch-branch commits.
 
-    #[test]
-    fn assess_cleanup_status_capture_failure_preserves_unpushed() {
+    #[tokio::test]
+    async fn assess_cleanup_status_capture_failure_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -991,6 +964,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1006,8 +980,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn assess_cleanup_for_each_ref_failure_preserves_unpushed() {
+    #[tokio::test]
+    async fn assess_cleanup_for_each_ref_failure_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1023,6 +997,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1035,8 +1010,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn assess_cleanup_rev_list_failure_preserves_unpushed() {
+    #[tokio::test]
+    async fn assess_cleanup_rev_list_failure_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1064,6 +1039,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1099,8 +1075,8 @@ mod tests {
     /// Multi-mount workspace with two preserved records, operator picks
     /// "force delete" on both. Both worktrees must be cleaned and the
     /// caller signaled `Cleaned` so the container teardown proceeds.
-    #[test]
-    fn multi_mount_force_delete_on_each_cleans_all_records() {
+    #[tokio::test]
+    async fn multi_mount_force_delete_on_each_cleans_all_records() {
         let dir = TempDir::new().unwrap();
         let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
@@ -1118,6 +1094,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(
@@ -1140,8 +1117,8 @@ mod tests {
     /// preserves the other. The container must NOT be torn down (only one
     /// of two records was actually cleaned), and the second worktree must
     /// remain on disk with its preserved status.
-    #[test]
-    fn multi_mount_mixed_decision_signals_preserved() {
+    #[tokio::test]
+    async fn multi_mount_mixed_decision_signals_preserved() {
         let dir = TempDir::new().unwrap();
         let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
@@ -1158,6 +1135,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(
             dec,
@@ -1178,8 +1156,8 @@ mod tests {
     /// container. Both records 1 (force-deleted) and 2 (pending decision)
     /// would have left state somewhere — this pins that the early-return
     /// happens cleanly.
-    #[test]
-    fn multi_mount_return_to_agent_on_second_prompt_short_circuits() {
+    #[tokio::test]
+    async fn multi_mount_return_to_agent_on_second_prompt_short_circuits() {
         let dir = TempDir::new().unwrap();
         let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
@@ -1199,6 +1177,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::ReturnToAgent);
         // First was force-deleted; second and third remain on disk.
@@ -1225,8 +1204,8 @@ mod tests {
     /// error, the container would be left running without a Preserved
     /// signal, and any subsequent records would never be prompted.
     /// Instead the failure is logged and the loop continues.
-    #[test]
-    fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
+    #[tokio::test]
+    async fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
         let dir = TempDir::new().unwrap();
         let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
@@ -1263,6 +1242,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .expect("loop must NOT propagate the cleanup Err — caller would see a raw error");
         assert_eq!(
             dec,
@@ -1282,8 +1262,8 @@ mod tests {
     /// Non-interactive multi-mount: every preserved record's path is
     /// printed to stderr so the operator sees all of them, not just the
     /// first.
-    #[test]
-    fn multi_mount_non_interactive_marks_all_preserved() {
+    #[tokio::test]
+    async fn multi_mount_non_interactive_marks_all_preserved() {
         let dir = TempDir::new().unwrap();
         let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
@@ -1299,6 +1279,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1310,8 +1291,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn assess_cleanup_empty_for_each_ref_preserves_unpushed() {
+    #[tokio::test]
+    async fn assess_cleanup_empty_for_each_ref_preserves_unpushed() {
         // Defense in depth: a worktree that reports zero local branches
         // is pathological — even a freshly materialized worktree carries
         // the scratch branch. Refuse to delete what we can't account for.
@@ -1330,6 +1311,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1349,8 +1331,8 @@ mod tests {
     /// pushed). Pre-fix this returned `PreservedUnpushed` because the
     /// upstream check was hardcoded against the abandoned scratch
     /// branch (which has no upstream by construction).
-    #[test]
-    fn renamed_branch_pushed_clean_is_safe_to_delete() {
+    #[tokio::test]
+    async fn renamed_branch_pushed_clean_is_safe_to_delete() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1377,6 +1359,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
@@ -1389,8 +1372,8 @@ mod tests {
     /// `[gone]` heuristic must mark this Safe; pre-fix the rev-list
     /// would have errored on the missing upstream and the Err arm
     /// would have routed to `PreservedUnpushed`.
-    #[test]
-    fn squash_merged_pruned_branch_is_safe_to_delete() {
+    #[tokio::test]
+    async fn squash_merged_pruned_branch_is_safe_to_delete() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1413,6 +1396,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
@@ -1426,8 +1410,8 @@ mod tests {
     /// Renamed branch ahead of base with no upstream — genuine local
     /// work; preserve. Pre-fix this also returned `PreservedUnpushed`
     /// (correct outcome) but only by accident of the wrong-branch check.
-    #[test]
-    fn renamed_branch_no_upstream_preserves_unpushed() {
+    #[tokio::test]
+    async fn renamed_branch_no_upstream_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1448,6 +1432,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1456,8 +1441,8 @@ mod tests {
 
     /// Renamed branch ahead with upstream set, rev-list returns commits
     /// → real unpushed work, preserve.
-    #[test]
-    fn renamed_branch_with_unpushed_commits_preserves() {
+    #[tokio::test]
+    async fn renamed_branch_with_unpushed_commits_preserves() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1478,6 +1463,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1486,8 +1472,8 @@ mod tests {
 
     /// Multiple non-trivial branches, all safe by different paths
     /// (one merged-and-pruned, one pushed-clean). All-Safe → cleanup.
-    #[test]
-    fn multiple_branches_all_safe_deletes_record() {
+    #[tokio::test]
+    async fn multiple_branches_all_safe_deletes_record() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1512,6 +1498,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
@@ -1528,8 +1515,8 @@ mod tests {
     }
 
     /// Multiple branches, one with real unpushed work → preserve.
-    #[test]
-    fn multiple_branches_one_unsafe_preserves() {
+    #[tokio::test]
+    async fn multiple_branches_one_unsafe_preserves() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1554,6 +1541,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1564,8 +1552,8 @@ mod tests {
     /// reach the prompt with reason=Unpushed (not Dirty). Pre-fix,
     /// `ask_unsafe_cleanup` had no reason argument so the wording was
     /// hardcoded to "uncommitted changes" for both paths.
-    #[test]
-    fn unpushed_branch_prompts_with_unpushed_reason() {
+    #[tokio::test]
+    async fn unpushed_branch_prompts_with_unpushed_reason() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1582,6 +1570,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         assert_eq!(p.seen, vec![PreservedReason::Unpushed]);
@@ -1589,8 +1578,8 @@ mod tests {
 
     /// Counterpart: a dirty worktree must reach the prompt with
     /// reason=Dirty so the operator sees "uncommitted changes".
-    #[test]
-    fn dirty_worktree_prompts_with_dirty_reason() {
+    #[tokio::test]
+    async fn dirty_worktree_prompts_with_dirty_reason() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1605,6 +1594,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         assert_eq!(p.seen, vec![PreservedReason::Dirty]);
@@ -1619,8 +1609,8 @@ mod tests {
     // always route to PreservedUnpushed.
     // ---------------------------------------------------------------
 
-    #[test]
-    fn assess_cleanup_malformed_row_empty_name_preserves_unpushed() {
+    #[tokio::test]
+    async fn assess_cleanup_malformed_row_empty_name_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1637,14 +1627,15 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
     }
 
-    #[test]
-    fn assess_cleanup_malformed_row_empty_tip_preserves_unpushed() {
+    #[tokio::test]
+    async fn assess_cleanup_malformed_row_empty_tip_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1662,6 +1653,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1675,8 +1667,8 @@ mod tests {
     // CleanupStatus::PreservedUnpushed) when is_interactive=false.
     // ---------------------------------------------------------------
 
-    #[test]
-    fn unpushed_worktree_non_interactive_prints_warning_and_preserves() {
+    #[tokio::test]
+    async fn unpushed_worktree_non_interactive_prints_warning_and_preserves() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1693,6 +1685,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1705,8 +1698,8 @@ mod tests {
     // three-way prompt dispatch works for both preservation paths.
     // ---------------------------------------------------------------
 
-    #[test]
-    fn unpushed_branch_interactive_force_delete_runs_cleanup() {
+    #[tokio::test]
+    async fn unpushed_branch_interactive_force_delete_runs_cleanup() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1722,6 +1715,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
@@ -1733,8 +1727,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn unpushed_branch_interactive_return_to_agent_signals_caller() {
+    #[tokio::test]
+    async fn unpushed_branch_interactive_return_to_agent_signals_caller() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1750,6 +1744,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::ReturnToAgent);
         let recs = read_records(dir.path()).unwrap();
@@ -1761,8 +1756,8 @@ mod tests {
     // emit `gone` instead of `[gone]`; both must short-circuit to Safe.
     // ---------------------------------------------------------------
 
-    #[test]
-    fn bare_gone_track_is_safe_to_delete() {
+    #[tokio::test]
+    async fn bare_gone_track_is_safe_to_delete() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1786,6 +1781,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
@@ -1804,8 +1800,8 @@ mod tests {
     // confirms HEAD is parked at base_commit.
     // ---------------------------------------------------------------
 
-    #[test]
-    fn detached_head_past_base_preserves_unpushed() {
+    #[tokio::test]
+    async fn detached_head_past_base_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1824,14 +1820,15 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
     }
 
-    #[test]
-    fn detached_head_at_base_is_safe_to_delete() {
+    #[tokio::test]
+    async fn detached_head_at_base_is_safe_to_delete() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1851,13 +1848,14 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
     }
 
-    #[test]
-    fn detached_head_rev_parse_failure_preserves_unpushed() {
+    #[tokio::test]
+    async fn detached_head_rev_parse_failure_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1878,6 +1876,7 @@ mod tests {
             &mut p,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();

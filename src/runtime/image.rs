@@ -17,7 +17,7 @@ use super::naming::{
     clippy::too_many_arguments,
     clippy::too_many_lines
 )]
-pub(super) fn build_agent_image(
+pub(super) async fn build_agent_image(
     paths: &JackinPaths,
     selector: &RoleSelector,
     cached_repo: &CachedRepo,
@@ -70,7 +70,7 @@ pub(super) fn build_agent_image(
             &validated_repo.dockerfile.construct_version,
             head_sha.as_deref(),
             runner,
-        ) {
+        ).await {
         eprintln!(
             "note: published image {} is out of date; rebuilding from workspace Dockerfile",
             published_image.unwrap(),
@@ -128,7 +128,7 @@ pub(super) fn build_agent_image(
     // and must be rebuilt from scratch rather than reused.
     let current_construct = crate::repo_contract::construct_image();
     let construct_mismatch = !rebuild
-        && read_image_label(runner, &image, LABEL_IMAGE_CONSTRUCT)
+        && read_image_label(runner, &image, LABEL_IMAGE_CONSTRUCT).await
             .is_some_and(|cached| cached != current_construct);
     let rebuild = rebuild || construct_mismatch;
 
@@ -179,7 +179,7 @@ pub(super) fn build_agent_image(
     build_args.extend(["--label", &construct_label]);
     build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
 
-    let github_token = resolve_github_token(runner);
+    let github_token = resolve_github_token(runner).await;
     let secret_file: Option<tempfile::NamedTempFile> = github_token.as_ref().and_then(|token| {
         let mut f = tempfile::NamedTempFile::new().ok()?;
         std::io::Write::write_all(&mut f, token.as_bytes()).ok()?;
@@ -204,14 +204,14 @@ pub(super) fn build_agent_image(
                 .unwrap_or_default(),
             ..RunOptions::default()
         },
-    )?;
+    ).await?;
 
-    extract_agent_version(paths, &image, agent, debug, runner);
+    extract_agent_version(paths, &image, agent, debug, runner).await;
 
     Ok(image)
 }
 
-fn read_image_label(runner: &mut impl CommandRunner, image: &str, key: &str) -> Option<String> {
+async fn read_image_label(runner: &mut impl CommandRunner, image: &str, key: &str) -> Option<String> {
     runner
         .capture(
             "docker",
@@ -223,6 +223,7 @@ fn read_image_label(runner: &mut impl CommandRunner, image: &str, key: &str) -> 
             ],
             None,
         )
+        .await
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -251,11 +252,11 @@ fn git_head_sha(dir: &std::path::Path, runner: &mut impl CommandRunner) -> Optio
 ///    Absent label is treated as fresh (backward compatibility).
 ///
 /// If `docker pull` fails the image may not exist locally at all. Treating a
-/// missing image as "not stale" would let the prebuilt path proceed and
-/// produce a confusing late failure inside `docker build`. Return `true`
-/// (stale) so jackin falls back to workspace mode, giving the operator a
-/// clearer error if the construct base is also unreachable.
-fn published_image_is_stale(
+/// missing image as "not stale" would let the prebuilt path proceed and produce
+/// a confusing late failure inside `docker build`. Return `true` (stale) so
+/// jackin falls back to workspace mode, which gives the operator a clearer
+/// error if the construct base is also unreachable.
+async fn construct_version_is_stale(
     published: &str,
     dockerfile_version: &str,
     head_sha: Option<&str>,
@@ -266,28 +267,18 @@ fn published_image_is_stale(
         &["pull", "--quiet", published],
         None,
         &RunOptions::default(),
-    ) {
+    ).await {
         eprintln!(
             "warning: docker pull {published} failed ({e}); \
              treating published image as stale and rebuilding from workspace Dockerfile"
         );
         return true;
     }
-
-    if let Some(sha) = head_sha {
-        match read_image_label(runner, published, LABEL_IMAGE_ROLE_GIT_SHA) {
-            Some(ref label_sha) if label_sha == sha => return false,
-            Some(_) => return true,
-            None => {}
-        }
-    }
-
-    // Fallback: construct-version check for pre-role-git-sha images.
-    read_image_label(runner, published, LABEL_IMAGE_CONSTRUCT_VERSION)
+    read_image_label(runner, published, LABEL_IMAGE_CONSTRUCT_VERSION).await
         .is_some_and(|stored| stored != dockerfile_version)
 }
 
-fn extract_agent_version(
+async fn extract_agent_version(
     paths: &JackinPaths,
     image: &str,
     agent: crate::agent::Agent,
@@ -300,7 +291,7 @@ fn extract_agent_version(
                 "docker",
                 &["run", "--rm", "--entrypoint", "claude", image, "--version"],
                 None,
-            ) else {
+            ).await else {
                 return;
             };
             let version = version.trim();
@@ -327,7 +318,7 @@ fn extract_agent_version(
                     "--version",
                 ],
                 None,
-            ) else {
+            ).await else {
                 return;
             };
             let version = version.trim();
@@ -347,7 +338,7 @@ fn extract_agent_version(
                 "docker",
                 &["run", "--rm", "--entrypoint", "kimi", image, "--version"],
                 None,
-            ) else {
+            ).await else {
                 return;
             };
             let version = version.trim();
@@ -373,13 +364,13 @@ fn extract_agent_version(
 ///
 /// Returns `None` when no token is available; callers must degrade gracefully
 /// (build still works, mise falls back to unauthenticated GitHub API access).
-fn resolve_github_token(runner: &mut impl CommandRunner) -> Option<String> {
+async fn resolve_github_token(runner: &mut impl CommandRunner) -> Option<String> {
     for var in ["GITHUB_TOKEN", "GH_TOKEN"] {
         if let Some(t) = std::env::var(var).ok().filter(|t| !t.trim().is_empty()) {
             return Some(t.trim().to_string());
         }
     }
-    match runner.capture_secret("gh", &["auth", "token"], None) {
+    match runner.capture_secret("gh", &["auth", "token"], None).await {
         Ok(s) => {
             let s = s.trim().to_string();
             (!s.is_empty()).then_some(s)

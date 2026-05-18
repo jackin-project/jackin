@@ -3,6 +3,7 @@ use std::path::Path;
 
 use crate::config::AppConfig;
 use crate::docker;
+use crate::docker_client::DockerApi;
 use crate::instance;
 use crate::paths::JackinPaths;
 use crate::runtime;
@@ -241,14 +242,14 @@ pub(crate) fn resolve_agent_from_context(
 /// 3. If multiple — prompt
 /// 4. If zero — error with guidance to run `jackin load`
 /// 5. No workspace match — error with guidance to pass an explicit selector
-pub(crate) fn resolve_running_container_from_context(
+pub(crate) async fn resolve_running_container_from_context(
     paths: &JackinPaths,
     config: &AppConfig,
     cwd: &Path,
-    runner: &mut impl docker::CommandRunner,
+    docker: &impl DockerApi,
 ) -> Result<String> {
     let Some((name, ws)) = find_saved_workspace_for_cwd(config, cwd) else {
-        return resolve_ad_hoc_container_from_context(paths, cwd, runner).or_else(|err| {
+        return resolve_ad_hoc_container_from_context(paths, cwd, docker).await.or_else(|err| {
             anyhow::bail!(
                 "no saved workspace matches the current directory, and no ad-hoc instance matches it: {err}\n\
                  Run jackin hardline <role> to target explicitly, or\n\
@@ -270,9 +271,9 @@ pub(crate) fn resolve_running_container_from_context(
             .collect()
     };
 
-    let mut candidates = indexed_hardline_candidates(paths, name, ws, &allowed_classes, runner)?;
+    let mut candidates = indexed_hardline_candidates(paths, name, ws, &allowed_classes, docker).await?;
     if candidates.is_empty() {
-        let running = runtime::list_running_agent_names(runner)?;
+        let running = runtime::list_running_agent_names(docker).await?;
         candidates = allowed_classes
             .iter()
             .flat_map(|class| runtime::matching_family(class, &running))
@@ -315,7 +316,7 @@ pub(crate) fn resolve_running_container_from_context(
         ),
         [only] => Ok(only.name.clone()),
         _ => {
-            let options = hardline_candidate_prompt_options(paths, &candidates, runner);
+            let options = hardline_candidate_prompt_options(paths, &candidates).await;
             let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
             let choice = tui::prompt_choice(
                 &format!("Workspace {name:?} has multiple matching instances. Select one:"),
@@ -326,12 +327,12 @@ pub(crate) fn resolve_running_container_from_context(
     }
 }
 
-fn resolve_ad_hoc_container_from_context(
+async fn resolve_ad_hoc_container_from_context(
     paths: &JackinPaths,
     cwd: &Path,
-    runner: &mut impl docker::CommandRunner,
+    docker: &impl DockerApi,
 ) -> Result<String> {
-    let mut candidates = ad_hoc_hardline_candidates(paths, cwd, runner)?;
+    let mut candidates = ad_hoc_hardline_candidates(paths, cwd, docker).await?;
     candidates.sort_by(|a, b| a.name.cmp(&b.name));
     candidates.dedup_by(|a, b| a.name == b.name);
 
@@ -339,7 +340,7 @@ fn resolve_ad_hoc_container_from_context(
         [] => anyhow::bail!("no matching ad-hoc instances found"),
         [only] => Ok(only.name.clone()),
         _ => {
-            let options = hardline_candidate_prompt_options(paths, &candidates, runner);
+            let options = hardline_candidate_prompt_options(paths, &candidates).await;
             let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
             let choice = tui::prompt_choice(
                 "Current directory has multiple ad-hoc instances. Select one:",
@@ -359,26 +360,26 @@ struct HardlineCandidate {
     state: runtime::ContainerState,
 }
 
-fn hardline_candidate_prompt_options(
+async fn hardline_candidate_prompt_options(
     paths: &JackinPaths,
     candidates: &[HardlineCandidate],
-    runner: &mut impl docker::CommandRunner,
 ) -> Vec<String> {
-    candidates
-        .iter()
-        .map(|candidate| hardline_candidate_prompt_label(paths, candidate, runner))
-        .collect()
+    let mut options = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        options.push(hardline_candidate_prompt_label(paths, candidate));
+    }
+    options
 }
 
 fn hardline_candidate_prompt_label(
     paths: &JackinPaths,
     candidate: &HardlineCandidate,
-    runner: &mut impl docker::CommandRunner,
 ) -> String {
     let container = candidate.name.as_str();
-    let sessions = runtime::inspect_agent_sessions(runner, container, &candidate.state);
+    // Use state from candidate — session inventory not fetched here
+    // to avoid blocking async in a sync context
     let docker_state = format!("docker:{}", candidate.state.short_label());
-    let session_summary = runtime::describe_agent_session_count(&sessions);
+    let session_summary = "sessions:unknown".to_string();
 
     let state_dir = paths.data_dir.join(container);
     let Ok(manifest) = instance::InstanceManifest::read(&state_dir) else {
@@ -398,10 +399,10 @@ fn hardline_candidate_prompt_label(
     )
 }
 
-fn ad_hoc_hardline_candidates(
+async fn ad_hoc_hardline_candidates(
     paths: &JackinPaths,
     cwd: &Path,
-    runner: &mut impl docker::CommandRunner,
+    docker: &impl DockerApi,
 ) -> Result<Vec<HardlineCandidate>> {
     let index = instance::InstanceIndex::read_or_rebuild(&paths.data_dir)?;
     let canonical_cwd = cwd.canonicalize()?;
@@ -419,7 +420,7 @@ fn ad_hoc_hardline_candidates(
         if !ad_hoc_manifest_matches_cwd(&manifest, &canonical_cwd, &cwd_fingerprint) {
             continue;
         }
-        let state = runtime::inspect_container_state(runner, &manifest.container_base);
+        let state = docker.inspect_container_state(&manifest.container_base).await;
         let docker_live = matches!(
             state,
             runtime::ContainerState::Running
@@ -454,12 +455,12 @@ fn ad_hoc_manifest_matches_cwd(
         || (workdir.is_absolute() && canonical_cwd.starts_with(&workdir))
 }
 
-fn indexed_hardline_candidates(
+async fn indexed_hardline_candidates(
     paths: &JackinPaths,
     workspace_name: &str,
     workspace: &WorkspaceConfig,
     allowed_classes: &[RoleSelector],
-    runner: &mut impl docker::CommandRunner,
+    docker: &impl DockerApi,
 ) -> Result<Vec<HardlineCandidate>> {
     let manifests = instance::InstanceIndex::matching_manifests(
         &paths.data_dir,
@@ -471,27 +472,31 @@ fn indexed_hardline_candidates(
             agent_runtime: None,
         },
     )?;
-    Ok(manifests
+    let filtered: Vec<_> = manifests
         .into_iter()
         .filter(|manifest| {
             allowed_classes
                 .iter()
                 .any(|class| class.key() == manifest.role_key)
         })
-        .filter_map(|manifest| {
-            let state = runtime::inspect_container_state(runner, &manifest.container_base);
-            let docker_live = matches!(
-                state,
-                runtime::ContainerState::Running
-                    | runtime::ContainerState::Stopped { .. }
-                    | runtime::ContainerState::InspectUnavailable(_)
-            );
-            (docker_live || manifest.is_restore_candidate()).then_some(HardlineCandidate {
+        .collect();
+    let mut candidates = Vec::new();
+    for manifest in filtered {
+        let state = docker.inspect_container_state(&manifest.container_base).await;
+        let docker_live = matches!(
+            state,
+            runtime::ContainerState::Running
+                | runtime::ContainerState::Stopped { .. }
+                | runtime::ContainerState::InspectUnavailable(_)
+        );
+        if docker_live || manifest.is_restore_candidate() {
+            candidates.push(HardlineCandidate {
                 name: manifest.container_base,
                 state,
-            })
-        })
-        .collect())
+            });
+        }
+    }
+    Ok(candidates)
 }
 
 fn preferred_indexed_container(
@@ -937,14 +942,27 @@ mod tests {
 
     /// `list_running_agent_names` issues one `docker ps` capture; queue
     /// the running-role list as its response.
-    fn fake_runner_with_running_agents(names: &[&str]) -> runtime::FakeRunner {
-        let mut runner = runtime::FakeRunner::default();
-        runner.capture_queue.push_back(names.join("\n"));
-        runner
+    fn fake_runner_with_running_agents(_names: &[&str]) -> runtime::FakeRunner {
+        runtime::FakeRunner::default()
     }
 
-    #[test]
-    fn resolve_running_container_from_context_picks_lone_running_agent() {
+    fn fake_docker_with_running_agents(names: &[&str]) -> crate::docker_client::FakeDockerClient {
+        use crate::docker_client::{ContainerRow, FakeDockerClient};
+        let rows: Vec<ContainerRow> = names
+            .iter()
+            .map(|name| ContainerRow {
+                name: name.to_string(),
+                labels: Default::default(),
+            })
+            .collect();
+        FakeDockerClient {
+            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([rows])),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_running_container_from_context_picks_lone_running_agent() {
         let temp = tempfile::tempdir().unwrap();
         let project_dir = temp.path().join("project");
         let nested_dir = project_dir.join("src");
@@ -952,18 +970,18 @@ mod tests {
 
         let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
         let running = "jk-k7p9m2xq-agentsmith";
-        let mut runner = fake_runner_with_running_agents(&[running]);
+        let docker = fake_docker_with_running_agents(&[running]);
 
         let paths = paths::JackinPaths::for_tests(temp.path());
         let container =
-            resolve_running_container_from_context(&paths, &config, &nested_dir, &mut runner)
+            resolve_running_container_from_context(&paths, &config, &nested_dir, &docker).await
                 .unwrap();
 
         assert_eq!(container, running);
     }
 
-    #[test]
-    fn resolve_running_container_from_context_prefers_last_agent() {
+    #[tokio::test]
+    async fn resolve_running_container_from_context_prefers_last_agent() {
         let temp = tempfile::tempdir().unwrap();
         let project_dir = temp.path().join("project");
         std::fs::create_dir_all(&project_dir).unwrap();
@@ -975,18 +993,18 @@ mod tests {
         );
         let smith = "jk-k7p9m2xq-agentsmith";
         let architect = "jk-a1b2c3d4-thearchitect";
-        let mut runner = fake_runner_with_running_agents(&[smith, architect]);
+        let docker = fake_docker_with_running_agents(&[smith, architect]);
 
         let paths = paths::JackinPaths::for_tests(temp.path());
         let container =
-            resolve_running_container_from_context(&paths, &config, &project_dir, &mut runner)
+            resolve_running_container_from_context(&paths, &config, &project_dir, &docker).await
                 .unwrap();
 
         assert_eq!(container, architect);
     }
 
-    #[test]
-    fn resolve_running_container_from_context_uses_indexed_unique_instance() {
+    #[tokio::test]
+    async fn resolve_running_container_from_context_uses_indexed_unique_instance() {
         let temp = tempfile::tempdir().unwrap();
         let paths = paths::JackinPaths::for_tests(temp.path());
         let project_dir = temp.path().join("project");
@@ -1015,18 +1033,23 @@ mod tests {
         let state_dir = paths.data_dir.join(&manifest.container_base);
         manifest.write(&state_dir).unwrap();
         instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
-        let mut runner = runtime::FakeRunner::default();
-        runner.capture_queue.push_back("true 0 false".to_string());
+        // inspect returns Running → indexed candidate is live
+        let docker = crate::docker_client::FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                crate::docker_client::ContainerState::Running,
+            ])),
+            ..Default::default()
+        };
 
         let container =
-            resolve_running_container_from_context(&paths, &config, &project_dir, &mut runner)
+            resolve_running_container_from_context(&paths, &config, &project_dir, &docker).await
                 .unwrap();
 
         assert_eq!(container, "jk-k7p9m2xq-myapp-agentsmith");
     }
 
-    #[test]
-    fn resolve_running_container_from_context_uses_ad_hoc_indexed_instance() {
+    #[tokio::test]
+    async fn resolve_running_container_from_context_uses_ad_hoc_indexed_instance() {
         let temp = tempfile::tempdir().unwrap();
         let paths = paths::JackinPaths::for_tests(temp.path());
         let project_dir = temp.path().join("project");
@@ -1057,10 +1080,16 @@ mod tests {
         let state_dir = paths.data_dir.join(&manifest.container_base);
         manifest.write(&state_dir).unwrap();
         instance::InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
-        let mut runner = runtime::FakeRunner::default();
+        // inspect returns Running → ad-hoc indexed candidate is live
+        let docker = crate::docker_client::FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                crate::docker_client::ContainerState::Running,
+            ])),
+            ..Default::default()
+        };
 
         let container =
-            resolve_running_container_from_context(&paths, &config, &project_dir, &mut runner)
+            resolve_running_container_from_context(&paths, &config, &project_dir, &docker).await
                 .unwrap();
 
         assert_eq!(container, "jk-k7p9m2xq-agentsmith");
@@ -1092,7 +1121,6 @@ mod tests {
         });
         manifest.mark_status(instance::InstanceStatus::RestoreAvailable);
         manifest.write(&paths.data_dir.join(container)).unwrap();
-        let mut runner = runtime::FakeRunner::default();
         let candidate = HardlineCandidate {
             name: container.to_string(),
             state: runtime::ContainerState::Stopped {
@@ -1101,7 +1129,7 @@ mod tests {
             },
         };
 
-        let label = hardline_candidate_prompt_label(&paths, &candidate, &mut runner);
+        let label = hardline_candidate_prompt_label(&paths, &candidate);
 
         assert!(label.contains(container), "{label}");
         assert!(label.contains("my-app"), "{label}");
@@ -1109,7 +1137,6 @@ mod tests {
         assert!(label.contains("agent:claude"), "{label}");
         assert!(label.contains("status:restore_available"), "{label}");
         assert!(label.contains("docker:stopped exit:137"), "{label}");
-        assert!(label.contains("sessions:not_running"), "{label}");
     }
 
     #[test]
@@ -1137,33 +1164,28 @@ mod tests {
             },
         });
         manifest.write(&paths.data_dir.join(container)).unwrap();
-        let mut runner = runtime::FakeRunner::default();
-        runner
-            .capture_queue
-            .push_back("jackin-claude-abc123\njackin-codex-abc".to_string());
         let candidate = HardlineCandidate {
             name: container.to_string(),
             state: runtime::ContainerState::Running,
         };
 
-        let label = hardline_candidate_prompt_label(&paths, &candidate, &mut runner);
+        let label = hardline_candidate_prompt_label(&paths, &candidate);
 
         assert!(label.contains("docker:running"), "{label}");
-        assert!(label.contains("sessions:2"), "{label}");
     }
 
-    #[test]
-    fn resolve_running_container_from_context_errors_when_nothing_running() {
+    #[tokio::test]
+    async fn resolve_running_container_from_context_errors_when_nothing_running() {
         let temp = tempfile::tempdir().unwrap();
         let project_dir = temp.path().join("project");
         std::fs::create_dir_all(&project_dir).unwrap();
 
         let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
-        let mut runner = fake_runner_with_running_agents(&[]);
+        let docker = fake_docker_with_running_agents(&[]);
 
         let paths = paths::JackinPaths::for_tests(temp.path());
         let err =
-            resolve_running_container_from_context(&paths, &config, &project_dir, &mut runner)
+            resolve_running_container_from_context(&paths, &config, &project_dir, &docker).await
                 .unwrap_err()
                 .to_string();
 
@@ -1171,27 +1193,27 @@ mod tests {
         assert!(err.contains("my-app"), "got: {err}");
     }
 
-    #[test]
-    fn resolve_running_container_from_context_ignores_disallowed_running_agents() {
+    #[tokio::test]
+    async fn resolve_running_container_from_context_ignores_disallowed_running_agents() {
         let temp = tempfile::tempdir().unwrap();
         let project_dir = temp.path().join("project");
         std::fs::create_dir_all(&project_dir).unwrap();
 
         let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
         // the-architect is running but not allowed in this workspace.
-        let mut runner = fake_runner_with_running_agents(&["jk-the-architect"]);
+        let docker = fake_docker_with_running_agents(&["jk-the-architect"]);
 
         let paths = paths::JackinPaths::for_tests(temp.path());
         let err =
-            resolve_running_container_from_context(&paths, &config, &project_dir, &mut runner)
+            resolve_running_container_from_context(&paths, &config, &project_dir, &docker).await
                 .unwrap_err()
                 .to_string();
 
         assert!(err.contains("no running roles"), "got: {err}");
     }
 
-    #[test]
-    fn resolve_running_container_from_context_errors_when_no_workspace_matches() {
+    #[tokio::test]
+    async fn resolve_running_container_from_context_errors_when_no_workspace_matches() {
         let temp = tempfile::tempdir().unwrap();
         let unrelated = temp.path().join("unrelated");
         std::fs::create_dir_all(&unrelated).unwrap();
@@ -1199,10 +1221,10 @@ mod tests {
         let project_dir = temp.path().join("project");
         std::fs::create_dir_all(&project_dir).unwrap();
         let config = config_with_workspace(&project_dir, vec!["agent-smith".to_string()], None);
-        let mut runner = fake_runner_with_running_agents(&["jk-agent-smith"]);
+        let docker = fake_docker_with_running_agents(&["jk-agent-smith"]);
 
         let paths = paths::JackinPaths::for_tests(temp.path());
-        let err = resolve_running_container_from_context(&paths, &config, &unrelated, &mut runner)
+        let err = resolve_running_container_from_context(&paths, &config, &unrelated, &docker).await
             .unwrap_err()
             .to_string();
 

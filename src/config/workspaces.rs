@@ -12,7 +12,7 @@ use crate::workspace::{WorkspaceConfig, WorkspaceEdit, validate_workspace_config
 /// `stopped_records` are the corresponding records on stopped containers.
 /// The CLI requires `--delete-isolated-state` to drop them before applying
 /// the edit.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DriftDetection {
     pub running_containers: Vec<String>,
     pub stopped_records: Vec<IsolationRecord>,
@@ -25,14 +25,17 @@ pub struct DriftDetection {
 /// edited mounts, or when the new `src` differs from the `original_src`
 /// recorded at materialization time. Drifted records on running containers
 /// go into `running_containers`; the rest land in `stopped_records`.
-pub fn detect_workspace_edit_drift(
+pub async fn detect_workspace_edit_drift(
     paths: &crate::paths::JackinPaths,
     workspace_name: &str,
     edited_mounts: &[crate::workspace::MountConfig],
-    runner: &mut impl crate::docker::CommandRunner,
+    docker: &impl crate::docker_client::DockerApi,
 ) -> anyhow::Result<DriftDetection> {
     let records = list_records_for_workspace(&paths.data_dir, workspace_name)?;
-    let running = crate::runtime::list_role_names(runner, false).unwrap_or_default();
+    if records.is_empty() {
+        return Ok(DriftDetection::default());
+    }
+    let running = crate::runtime::list_role_names(docker, false).await.unwrap_or_default();
 
     let mut affected_running = Vec::new();
     let mut affected_stopped = Vec::new();
@@ -579,6 +582,7 @@ mod tests {
         use crate::isolation::state::{CleanupStatus, IsolationRecord, write_records};
         use crate::paths::JackinPaths;
         use crate::runtime::test_support::FakeRunner;
+        use crate::docker_client::{ContainerRow, FakeDockerClient};
         use tempfile::TempDir;
 
         fn record_for(workspace: &str, container: &str, dst: &str, src: &str) -> IsolationRecord {
@@ -620,8 +624,8 @@ mod tests {
             }
         }
 
-        #[test]
-        fn detect_drift_flags_running_containers() {
+        #[tokio::test]
+        async fn detect_drift_flags_running_containers() {
             let data = TempDir::new().unwrap();
             let cdir = data.path().join("jk-a1b2c3d4-jackin");
             std::fs::create_dir_all(&cdir).unwrap();
@@ -642,12 +646,13 @@ mod tests {
                 "/workspace/jackin",
                 MountIsolation::Worktree,
             )];
-            let mut runner = FakeRunner::default();
-            runner
-                .capture_queue
-                .push_back("jk-a1b2c3d4-jackin\n".into());
-            runner.capture_queue.push_back(String::new());
-            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &mut runner).unwrap();
+            let docker = FakeDockerClient {
+                list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
+                    ContainerRow { name: "jk-a1b2c3d4-jackin".to_string(), labels: Default::default() },
+                ]])),
+                ..Default::default()
+            };
+            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker).await.unwrap();
             assert_eq!(
                 det.running_containers,
                 vec!["jk-a1b2c3d4-jackin".to_string()]
@@ -655,8 +660,8 @@ mod tests {
             assert!(det.stopped_records.is_empty());
         }
 
-        #[test]
-        fn detect_drift_flags_stopped_records_when_src_changes() {
+        #[tokio::test]
+        async fn detect_drift_flags_stopped_records_when_src_changes() {
             let data = TempDir::new().unwrap();
             let cdir = data.path().join("jk-a1b2c3d4-jackin");
             std::fs::create_dir_all(&cdir).unwrap();
@@ -677,17 +682,15 @@ mod tests {
                 "/workspace/jackin",
                 MountIsolation::Worktree,
             )];
-            let mut runner = FakeRunner::default();
-            runner.capture_queue.push_back(String::new());
-            runner.capture_queue.push_back(String::new());
-            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &mut runner).unwrap();
+            let docker = FakeDockerClient::default();
+            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker).await.unwrap();
             assert!(det.running_containers.is_empty());
             assert_eq!(det.stopped_records.len(), 1);
             assert_eq!(det.stopped_records[0].container_name, "jk-a1b2c3d4-jackin");
         }
 
-        #[test]
-        fn detect_drift_quiet_when_src_unchanged() {
+        #[tokio::test]
+        async fn detect_drift_quiet_when_src_unchanged() {
             let data = TempDir::new().unwrap();
             let cdir = data.path().join("jk-a1b2c3d4-jackin");
             std::fs::create_dir_all(&cdir).unwrap();
@@ -708,10 +711,8 @@ mod tests {
                 "/workspace/jackin",
                 MountIsolation::Worktree,
             )];
-            let mut runner = FakeRunner::default();
-            runner.capture_queue.push_back(String::new());
-            runner.capture_queue.push_back(String::new());
-            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &mut runner).unwrap();
+            let docker = FakeDockerClient::default();
+            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker).await.unwrap();
             assert!(det.running_containers.is_empty());
             assert!(det.stopped_records.is_empty());
         }
@@ -724,8 +725,8 @@ mod tests {
         /// so a future change that extends the drift predicate
         /// (proposed in code review of PR #177) updates this test in
         /// the same change instead of accidentally regressing on it.
-        #[test]
-        fn detect_drift_does_not_currently_flag_isolation_mode_flips() {
+        #[tokio::test]
+        async fn detect_drift_does_not_currently_flag_isolation_mode_flips() {
             let data = TempDir::new().unwrap();
             let cdir = data.path().join("jk-a1b2c3d4-jackin");
             std::fs::create_dir_all(&cdir).unwrap();
@@ -747,10 +748,8 @@ mod tests {
                 "/workspace/jackin",
                 MountIsolation::Shared,
             )];
-            let mut runner = FakeRunner::default();
-            runner.capture_queue.push_back(String::new());
-            runner.capture_queue.push_back(String::new());
-            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &mut runner).unwrap();
+            let docker = FakeDockerClient::default();
+            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker).await.unwrap();
             // Current behavior — known gap. If this test starts failing
             // because drift now correctly flags the flip, update it to
             // assert `det.stopped_records.len() == 1` and remove this
@@ -766,8 +765,8 @@ mod tests {
         /// (or renames its dst). The existing record's dst is no longer
         /// in `edited_mounts`, so drift fires — operator must
         /// acknowledge with `--delete-isolated-state`.
-        #[test]
-        fn detect_drift_flags_record_when_dst_removed_from_edit() {
+        #[tokio::test]
+        async fn detect_drift_flags_record_when_dst_removed_from_edit() {
             let data = TempDir::new().unwrap();
             let cdir = data.path().join("jk-a1b2c3d4-jackin");
             std::fs::create_dir_all(&cdir).unwrap();
@@ -789,10 +788,8 @@ mod tests {
                 "/workspace/other",
                 MountIsolation::Shared,
             )];
-            let mut runner = FakeRunner::default();
-            runner.capture_queue.push_back(String::new());
-            runner.capture_queue.push_back(String::new());
-            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &mut runner).unwrap();
+            let docker = FakeDockerClient::default();
+            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker).await.unwrap();
             assert!(det.running_containers.is_empty());
             assert_eq!(
                 det.stopped_records.len(),

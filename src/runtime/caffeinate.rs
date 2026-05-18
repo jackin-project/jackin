@@ -41,9 +41,9 @@ use anyhow::Context;
 use fs2::FileExt;
 
 use crate::docker::CommandRunner;
+use crate::docker_client::DockerApi;
 use crate::paths::JackinPaths;
 
-use super::naming::{FILTER_KEEP_AWAKE, FILTER_MANAGED};
 
 const PID_FILENAME: &str = "caffeinate.pid";
 const LOCK_FILENAME: &str = "caffeinate.lock";
@@ -54,12 +54,12 @@ const LOCK_FILENAME: &str = "caffeinate.lock";
 /// Best-effort: any failure (lock contention, docker failure, fork
 /// failure) is swallowed with a one-line stderr notice so it never
 /// breaks the user's actual command.
-pub fn reconcile(paths: &JackinPaths, runner: &mut impl CommandRunner) {
+pub async fn reconcile(paths: &JackinPaths, docker: &impl DockerApi, runner: &mut impl CommandRunner) {
     if !is_supported_platform() {
         return;
     }
 
-    if let Err(err) = reconcile_inner(paths, runner) {
+    if let Err(err) = reconcile_inner(paths, docker, runner).await {
         eprintln!("[jackin] keep_awake reconciler: {err}");
     }
 }
@@ -68,7 +68,7 @@ const fn is_supported_platform() -> bool {
     cfg!(target_os = "macos")
 }
 
-fn reconcile_inner(paths: &JackinPaths, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
+async fn reconcile_inner(paths: &JackinPaths, docker: &impl DockerApi, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
     std::fs::create_dir_all(&paths.data_dir).with_context(|| {
         format!(
             "creating data dir for caffeinate state: {}",
@@ -97,7 +97,7 @@ fn reconcile_inner(paths: &JackinPaths, runner: &mut impl CommandRunner) -> anyh
         }
     }
 
-    let want_running = count_keep_awake_agents(runner)? > 0;
+    let want_running = count_keep_awake_agents(docker).await? > 0;
     let pid_path = paths.data_dir.join(PID_FILENAME);
     let current_pid = read_pid_file(&pid_path)?;
     let liveness = current_pid.map_or(Liveness::Gone, is_caffeinate_alive_at);
@@ -112,9 +112,9 @@ fn reconcile_inner(paths: &JackinPaths, runner: &mut impl CommandRunner) -> anyh
             // propagating — otherwise the detached caffeinate would
             // run until reboot with no recoverable handle (we'd lose
             // the PID with the stack frame).
-            let pid = spawn_caffeinate(runner)?;
+            let pid = spawn_caffeinate(runner).await?;
             if let Err(err) = write_pid_file(&pid_path, pid) {
-                if let Err(stop_err) = stop_caffeinate(runner, pid) {
+                if let Err(stop_err) = stop_caffeinate(runner, pid).await {
                     eprintln!(
                         "[jackin] keep_awake: PID file write failed AND cleanup kill of newly-spawned caffeinate (PID {pid}) also failed: {stop_err}; manual `pkill caffeinate` may be required"
                     );
@@ -131,7 +131,7 @@ fn reconcile_inner(paths: &JackinPaths, runner: &mut impl CommandRunner) -> anyh
                 // would spawn a duplicate next to the orphan).
                 // Propagating with `?` keeps the PID file intact so
                 // the next reconcile retries the same PID.
-                stop_caffeinate(runner, pid)?;
+                stop_caffeinate(runner, pid).await?;
             }
             remove_pid_file_if_present(&pid_path)?;
         }
@@ -175,32 +175,23 @@ fn remove_pid_file_if_present(path: &Path) -> anyhow::Result<()> {
 /// Stopped containers are excluded — only an actually-running role
 /// justifies holding the assertion.
 ///
-/// The `FILTER_MANAGED` co-filter scopes the count to containers
-/// owned by a jackin install (multiple `--filter` flags AND together
-/// in `docker ps`). Without it, a container labelled
-/// `jackin.keep_awake=true` from a stale or external source — for
-/// example, an old jackin install whose state was uninstalled but
-/// whose containers were left running — would pin our caffeinate
-/// indefinitely with no way to discover why.
-fn count_keep_awake_agents(runner: &mut impl CommandRunner) -> anyhow::Result<usize> {
-    let output = runner.capture(
-        "docker",
-        &[
-            "ps",
-            "--filter",
-            FILTER_MANAGED,
-            "--filter",
-            FILTER_KEEP_AWAKE,
-            "--format",
-            "{{.Names}}",
-        ],
-        None,
-    )?;
-    // `trim().is_empty()` (vs `is_empty()`) is defensive against stray
-    // whitespace lines — a `\r` or space-prefixed entry would
-    // otherwise inflate the count and pin caffeinate when no roles
-    // are actually running.
-    Ok(output.lines().filter(|l| !l.trim().is_empty()).count())
+/// The `jackin.managed=true` co-filter scopes the count to containers
+/// owned by a jackin install (multiple label filters AND together in
+/// bollard). Without it, a container labelled `jackin.keep_awake=true`
+/// from a stale or external source — for example, an old jackin install
+/// whose state was uninstalled but whose containers were left running —
+/// would pin our caffeinate indefinitely with no way to discover why.
+async fn count_keep_awake_agents(docker: &impl DockerApi) -> anyhow::Result<usize> {
+    let rows = docker
+        .list_containers(
+            &[
+                super::naming::LABEL_MANAGED,
+                super::naming::LABEL_KEEP_AWAKE,
+            ],
+            false,
+        )
+        .await?;
+    Ok(rows.len())
 }
 
 fn read_pid_file(path: &Path) -> anyhow::Result<Option<u32>> {
@@ -329,7 +320,7 @@ fn classify_ps_comm_output(success: bool, stdout: &str) -> Liveness {
 ///    (Ctrl-C targets the foreground PGID, and there is no
 ///    foreground process in the original PGID once jackin exits),
 ///    but we cannot guarantee group isolation without `unsafe`.
-fn spawn_caffeinate(runner: &mut impl CommandRunner) -> anyhow::Result<u32> {
+async fn spawn_caffeinate(runner: &mut impl CommandRunner) -> anyhow::Result<u32> {
     // Routed through `CommandRunner` so `--debug` surfaces the spawn
     // (`[debug] sh -c …`) and the resulting PID (`[debug] -> <pid>`).
     // Operators validating keep_awake need to see this transition or
@@ -341,7 +332,7 @@ fn spawn_caffeinate(runner: &mut impl CommandRunner) -> anyhow::Result<u32> {
             "nohup caffeinate -imsu </dev/null >/dev/null 2>&1 & echo $!",
         ],
         None,
-    )?;
+    ).await?;
     raw.parse::<u32>()
         .with_context(|| format!("parsing caffeinate PID from {raw:?}"))
 }
@@ -361,7 +352,7 @@ fn spawn_caffeinate(runner: &mut impl CommandRunner) -> anyhow::Result<u32> {
 /// EPERM (PID flipped to a process owned by someone else — the very
 /// TOCTOU the comm check exists to prevent) both surface here so the
 /// operator sees a breadcrumb when the rare race fires.
-fn stop_caffeinate(runner: &mut impl CommandRunner, pid: u32) -> anyhow::Result<()> {
+async fn stop_caffeinate(runner: &mut impl CommandRunner, pid: u32) -> anyhow::Result<()> {
     // Routed through `CommandRunner` for the same reason as the spawn:
     // `--debug` must show the kill so operators can correlate the
     // teardown with the role exit. `capture` (vs `run`) folds the
@@ -370,6 +361,7 @@ fn stop_caffeinate(runner: &mut impl CommandRunner, pid: u32) -> anyhow::Result<
     crate::debug_log!("keep_awake", "stopping caffeinate (PID {pid})");
     runner
         .capture("kill", &[&pid.to_string()], None)
+        .await
         .map(|_| ())
 }
 
@@ -383,24 +375,26 @@ pub(super) fn pid_path_for_tests(paths: &JackinPaths) -> std::path::PathBuf {
 mod tests {
     use super::super::test_support::FakeRunner;
     use super::*;
+    use crate::docker_client::{ContainerRow, FakeDockerClient};
     use tempfile::tempdir;
 
-    #[test]
-    fn count_keep_awake_agents_returns_zero_for_empty_output() {
-        let mut runner = FakeRunner::with_capture_queue([String::new()]);
-        let count = count_keep_awake_agents(&mut runner).unwrap();
+    #[tokio::test]
+    async fn count_keep_awake_agents_returns_zero_for_empty_output() {
+        let docker = FakeDockerClient::default();
+        let count = count_keep_awake_agents(&docker).await.unwrap();
         assert_eq!(count, 0);
-        assert_eq!(
-            runner.recorded.last().unwrap(),
-            "docker ps --filter label=jackin.managed=true --filter label=jackin.keep_awake=true --format {{.Names}}"
-        );
     }
 
-    #[test]
-    fn count_keep_awake_agents_counts_nonempty_lines() {
-        let mut runner =
-            FakeRunner::with_capture_queue(["jk-agent-smith\njk-the-architect".to_string()]);
-        let count = count_keep_awake_agents(&mut runner).unwrap();
+    #[tokio::test]
+    async fn count_keep_awake_agents_counts_nonempty_lines() {
+        let docker = FakeDockerClient {
+            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
+                ContainerRow { name: "jk-agent-smith".to_string(), labels: Default::default() },
+                ContainerRow { name: "jk-the-architect".to_string(), labels: Default::default() },
+            ]])),
+            ..Default::default()
+        };
+        let count = count_keep_awake_agents(&docker).await.unwrap();
         assert_eq!(count, 2);
     }
 
@@ -521,48 +515,44 @@ mod tests {
         assert_eq!(classify_ps_comm_output(true, ""), Liveness::Gone);
     }
 
-    #[test]
-    fn reconcile_inner_is_noop_when_no_agents_and_no_pid_file() {
+    #[tokio::test]
+    async fn reconcile_inner_is_noop_when_no_agents_and_no_pid_file() {
         let tmp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
-        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+        let docker = FakeDockerClient::default();
+        let mut runner = FakeRunner::default();
 
-        reconcile_inner(&paths, &mut runner).unwrap();
+        reconcile_inner(&paths, &docker, &mut runner).await.unwrap();
 
         assert!(!pid_path_for_tests(&paths).exists());
     }
 
-    #[test]
-    fn reconcile_inner_clears_stale_pid_file_when_no_agents() {
+    #[tokio::test]
+    async fn reconcile_inner_clears_stale_pid_file_when_no_agents() {
         let tmp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         std::fs::create_dir_all(&paths.data_dir).unwrap();
         let pid_path = pid_path_for_tests(&paths);
-        // Use a PID that is definitely not caffeinate. A huge nonexistent
-        // PID exercises the "process gone" branch; PID 1 (launchd/init)
-        // would exercise the "alive but wrong comm" branch — both must
-        // be treated as "needs cleanup."
         std::fs::write(&pid_path, "2000000001").unwrap();
 
-        let mut runner = FakeRunner::with_capture_queue([String::new()]);
-        reconcile_inner(&paths, &mut runner).unwrap();
+        let docker = FakeDockerClient::default();
+        let mut runner = FakeRunner::default();
+        reconcile_inner(&paths, &docker, &mut runner).await.unwrap();
 
         assert!(!pid_path.exists(), "stale PID file should be removed");
     }
 
-    #[test]
-    fn reconcile_inner_clears_pid_file_when_pid_belongs_to_unrelated_process() {
+    #[tokio::test]
+    async fn reconcile_inner_clears_pid_file_when_pid_belongs_to_unrelated_process() {
         let tmp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         std::fs::create_dir_all(&paths.data_dir).unwrap();
         let pid_path = pid_path_for_tests(&paths);
-        // PID 1 is alive on every Unix host, but its comm is launchd /
-        // init / systemd, never "caffeinate" — so the comm check should
-        // reject it and reconcile should treat the PID file as stale.
         std::fs::write(&pid_path, "1").unwrap();
 
-        let mut runner = FakeRunner::with_capture_queue([String::new()]);
-        reconcile_inner(&paths, &mut runner).unwrap();
+        let docker = FakeDockerClient::default();
+        let mut runner = FakeRunner::default();
+        reconcile_inner(&paths, &docker, &mut runner).await.unwrap();
 
         assert!(
             !pid_path.exists(),

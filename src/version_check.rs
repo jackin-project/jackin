@@ -37,7 +37,7 @@ fn kimi_image_version_path(paths: &JackinPaths, image: &str) -> PathBuf {
 
 /// Query npm for the latest published `@anthropic-ai/claude-code` version,
 /// returning a cached value when the cache is still fresh.
-pub fn latest_claude_version(
+pub async fn latest_claude_version(
     paths: &JackinPaths,
     runner: &mut impl CommandRunner,
 ) -> Option<String> {
@@ -55,6 +55,7 @@ pub fn latest_claude_version(
             &["view", "@anthropic-ai/claude-code", "version"],
             None,
         )
+        .await
         .ok()?;
     let version = version.trim().to_string();
     if version.is_empty() {
@@ -82,7 +83,7 @@ pub fn store_image_version(paths: &JackinPaths, image: &str, version: &str) {
 
 /// Returns `true` when the image contains an older Claude Code version than
 /// the latest published release, meaning the image should be rebuilt.
-pub fn needs_claude_update(
+pub async fn needs_claude_update(
     paths: &JackinPaths,
     image: &str,
     runner: &mut impl CommandRunner,
@@ -90,7 +91,7 @@ pub fn needs_claude_update(
     let Some(installed) = stored_image_version(paths, image) else {
         return false; // first build — let it proceed normally
     };
-    let Some(latest) = latest_claude_version(paths, runner) else {
+    let Some(latest) = latest_claude_version(paths, runner).await else {
         return false; // npm unavailable — don't force a rebuild
     };
     installed != latest
@@ -98,7 +99,7 @@ pub fn needs_claude_update(
 
 /// Query npm for the latest published `opencode-ai` version,
 /// returning a cached value when the cache is still fresh.
-pub fn latest_opencode_version(
+pub async fn latest_opencode_version(
     paths: &JackinPaths,
     runner: &mut impl CommandRunner,
 ) -> Option<String> {
@@ -110,6 +111,7 @@ pub fn latest_opencode_version(
 
     let version = runner
         .capture("npm", &["view", "opencode-ai", "version"], None)
+        .await
         .ok()?;
     let version = version.trim().to_string();
     if version.is_empty() {
@@ -136,7 +138,7 @@ pub fn store_opencode_version(paths: &JackinPaths, image: &str, version: &str) {
 
 /// Returns `true` when the image contains an older `OpenCode` version than
 /// the latest published release, meaning the image should be rebuilt.
-pub fn needs_opencode_update(
+pub async fn needs_opencode_update(
     paths: &JackinPaths,
     image: &str,
     runner: &mut impl CommandRunner,
@@ -144,7 +146,7 @@ pub fn needs_opencode_update(
     let Some(installed) = stored_opencode_version(paths, image) else {
         return false;
     };
-    let Some(latest) = latest_opencode_version(paths, runner) else {
+    let Some(latest) = latest_opencode_version(paths, runner).await else {
         return false;
     };
     installed != latest
@@ -271,8 +273,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn needs_update_when_versions_differ() {
+    #[tokio::test]
+    async fn needs_update_when_versions_differ() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -283,11 +285,11 @@ mod tests {
         let _ = write_cached(&cache, "2.1.92");
 
         let mut runner = StubRunner("2.1.92".to_string());
-        assert!(needs_claude_update(&paths, "jk_agent-smith", &mut runner));
+        assert!(needs_claude_update(&paths, "jk_agent-smith", &mut runner).await);
     }
 
-    #[test]
-    fn no_update_when_versions_match() {
+    #[tokio::test]
+    async fn no_update_when_versions_match() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -297,18 +299,18 @@ mod tests {
         let _ = write_cached(&cache, "2.1.92");
 
         let mut runner = StubRunner("2.1.92".to_string());
-        assert!(!needs_claude_update(&paths, "jk_agent-smith", &mut runner));
+        assert!(!needs_claude_update(&paths, "jk_agent-smith", &mut runner).await);
     }
 
-    #[test]
-    fn no_update_on_first_build() {
+    #[tokio::test]
+    async fn no_update_on_first_build() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
 
         let mut runner = StubRunner("2.1.92".to_string());
         // No stored version yet → should not force rebuild
-        assert!(!needs_claude_update(&paths, "jk_agent-smith", &mut runner));
+        assert!(!needs_claude_update(&paths, "jk_agent-smith", &mut runner).await);
     }
 
     #[test]
@@ -372,8 +374,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn opencode_needs_update_when_versions_differ() {
+    #[tokio::test]
+    async fn opencode_needs_update_when_versions_differ() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -387,11 +389,11 @@ mod tests {
             &paths,
             "jk_the-architect",
             &mut runner
-        ));
+        ).await);
     }
 
-    #[test]
-    fn opencode_no_update_when_versions_match() {
+    #[tokio::test]
+    async fn opencode_no_update_when_versions_match() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -405,7 +407,7 @@ mod tests {
             &paths,
             "jk_the-architect",
             &mut runner
-        ));
+        ).await);
     }
 
     #[test]
@@ -495,7 +497,7 @@ mod tests {
     struct StubRunner(String);
 
     impl CommandRunner for StubRunner {
-        fn run(
+        async fn run(
             &mut self,
             _program: &str,
             _args: &[&str],
@@ -505,7 +507,7 @@ mod tests {
             Ok(())
         }
 
-        fn capture(
+        async fn capture(
             &mut self,
             _program: &str,
             _args: &[&str],
@@ -514,7 +516,7 @@ mod tests {
             Ok(self.0.clone())
         }
 
-        fn capture_secret(
+        async fn capture_secret(
             &mut self,
             _program: &str,
             _args: &[&str],

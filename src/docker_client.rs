@@ -1,0 +1,686 @@
+use std::collections::HashMap;
+
+use anyhow::Context;
+use bollard::Docker;
+use bollard::container::LogOutput;
+use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
+use bollard::models::{ContainerCreateBody, HostConfig, NetworkCreateRequest};
+use bollard::query_parameters::{
+    CreateContainerOptions, InspectContainerOptions, ListContainersOptions, ListImagesOptions,
+    ListNetworksOptions, RemoveContainerOptions, RemoveImageOptions, RemoveVolumeOptions,
+    StartContainerOptions,
+};
+use futures_util::StreamExt;
+use owo_colors::OwoColorize;
+
+// ── ContainerState ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContainerState {
+    NotFound,
+    InspectUnavailable(String),
+    Running,
+    Stopped { exit_code: i32, oom_killed: bool },
+}
+
+impl ContainerState {
+    #[must_use]
+    pub fn short_label(&self) -> String {
+        match self {
+            Self::Running => "running".to_string(),
+            Self::Stopped {
+                exit_code,
+                oom_killed: false,
+            } => format!("stopped exit:{exit_code}"),
+            Self::Stopped {
+                oom_killed: true, ..
+            } => "stopped oom_killed".to_string(),
+            Self::NotFound => "missing".to_string(),
+            Self::InspectUnavailable(_) => "unavailable".to_string(),
+        }
+    }
+
+    #[must_use]
+    pub fn inspect_label(&self) -> String {
+        match self {
+            Self::InspectUnavailable(reason) => format!("unavailable: {reason}"),
+            _ => self.short_label(),
+        }
+    }
+}
+
+// ── Other public types ────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContainerRow {
+    pub name: String,
+    pub labels: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetworkRow {
+    pub name: String,
+    pub labels: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RemoveImageOutcome {
+    Removed,
+    InUse,
+    NotFound,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContainerSpec {
+    pub image: String,
+    pub hostname: Option<String>,
+    pub env: Vec<String>,
+    pub labels: HashMap<String, String>,
+    pub network: String,
+    pub binds: Vec<String>,
+    pub entrypoint: Option<Vec<String>>,
+    pub privileged: bool,
+    pub workdir: Option<String>,
+}
+
+// ── DockerApi trait ───────────────────────────────────────────────────────
+
+pub trait DockerApi {
+    async fn inspect_container_state(&self, name: &str) -> ContainerState;
+    async fn remove_container(&self, name: &str) -> anyhow::Result<()>;
+    async fn list_containers(
+        &self,
+        label_filters: &[&str],
+        all: bool,
+    ) -> anyhow::Result<Vec<ContainerRow>>;
+    async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()>;
+    async fn start_container(&self, name: &str) -> anyhow::Result<()>;
+    async fn remove_volume(&self, name: &str) -> anyhow::Result<()>;
+    async fn create_network(
+        &self,
+        name: &str,
+        labels: HashMap<String, String>,
+    ) -> anyhow::Result<()>;
+    async fn remove_network(&self, name: &str) -> anyhow::Result<()>;
+    async fn list_networks(&self, label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>>;
+    async fn list_image_tags(&self, reference_filter: &str) -> anyhow::Result<Vec<String>>;
+    async fn remove_image(&self, name: &str) -> anyhow::Result<RemoveImageOutcome>;
+    async fn inspect_image_label(
+        &self,
+        image: &str,
+        label: &str,
+    ) -> anyhow::Result<Option<String>>;
+    async fn pull_image(&self, image: &str, debug: bool) -> anyhow::Result<()>;
+    async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String>;
+}
+
+// ── BollardDockerClient ───────────────────────────────────────────────────
+
+pub struct BollardDockerClient {
+    inner: Docker,
+}
+
+impl BollardDockerClient {
+    pub fn new() -> anyhow::Result<Self> {
+        let inner = Docker::connect_with_local_defaults()
+            .context("failed to connect to Docker daemon")?;
+        Ok(Self { inner })
+    }
+}
+
+fn is_404(err: &bollard::errors::Error) -> bool {
+    matches!(
+        err,
+        bollard::errors::Error::DockerResponseServerError {
+            status_code: 404,
+            ..
+        }
+    )
+}
+
+fn is_409(err: &bollard::errors::Error) -> bool {
+    matches!(
+        err,
+        bollard::errors::Error::DockerResponseServerError {
+            status_code: 409,
+            ..
+        }
+    )
+}
+
+fn build_label_filter(label_filters: &[&str]) -> Option<HashMap<String, Vec<String>>> {
+    if label_filters.is_empty() {
+        return None;
+    }
+    let mut map = HashMap::new();
+    map.insert(
+        "label".to_string(),
+        label_filters.iter().map(|s| s.to_string()).collect(),
+    );
+    Some(map)
+}
+
+impl DockerApi for BollardDockerClient {
+    async fn inspect_container_state(&self, name: &str) -> ContainerState {
+        let result = self
+            .inner
+            .inspect_container(name, None::<InspectContainerOptions>)
+            .await;
+
+        match result {
+            Err(ref e) if is_404(e) => ContainerState::NotFound,
+            Err(e) => ContainerState::InspectUnavailable(e.to_string()),
+            Ok(info) => {
+                let state = match info.state {
+                    None => return ContainerState::InspectUnavailable("no state field".to_string()),
+                    Some(s) => s,
+                };
+                let running = state.running.unwrap_or(false);
+                if running {
+                    ContainerState::Running
+                } else {
+                    let exit_code = state.exit_code.unwrap_or(0) as i32;
+                    let oom_killed = state.oom_killed.unwrap_or(false);
+                    ContainerState::Stopped {
+                        exit_code,
+                        oom_killed,
+                    }
+                }
+            }
+        }
+    }
+
+    async fn remove_container(&self, name: &str) -> anyhow::Result<()> {
+        match self
+            .inner
+            .remove_container(
+                name,
+                Some(RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(e) if is_404(&e) => Ok(()),
+            Err(e) => Err(anyhow::Error::from(e).context(format!("removing container {name}"))),
+        }
+    }
+
+    async fn list_containers(
+        &self,
+        label_filters: &[&str],
+        all: bool,
+    ) -> anyhow::Result<Vec<ContainerRow>> {
+        let filters = build_label_filter(label_filters);
+        let summaries = self
+            .inner
+            .list_containers(Some(ListContainersOptions {
+                all,
+                filters,
+                ..Default::default()
+            }))
+            .await
+            .context("listing containers")?;
+
+        Ok(summaries
+            .into_iter()
+            .map(|s| {
+                let raw_name = s
+                    .names
+                    .unwrap_or_default()
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                let name = raw_name.trim_start_matches('/').to_string();
+                let labels = s.labels.unwrap_or_default();
+                ContainerRow { name, labels }
+            })
+            .collect())
+    }
+
+    async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()> {
+        let labels = spec.labels;
+        let env = spec.env;
+        let binds = spec.binds;
+
+        self.inner
+            .create_container(
+                Some(CreateContainerOptions {
+                    name: Some(name.to_string()),
+                    ..Default::default()
+                }),
+                ContainerCreateBody {
+                    image: Some(spec.image),
+                    hostname: spec.hostname,
+                    env: Some(env),
+                    labels: Some(labels),
+                    host_config: Some(HostConfig {
+                        network_mode: Some(spec.network),
+                        binds: Some(binds),
+                        privileged: Some(spec.privileged),
+                        ..Default::default()
+                    }),
+                    entrypoint: spec.entrypoint,
+                    working_dir: spec.workdir,
+                    ..Default::default()
+                },
+            )
+            .await
+            .with_context(|| format!("creating container {name}"))?;
+        Ok(())
+    }
+
+    async fn start_container(&self, name: &str) -> anyhow::Result<()> {
+        self.inner
+            .start_container(name, None::<StartContainerOptions>)
+            .await
+            .with_context(|| format!("starting container {name}"))
+    }
+
+    async fn remove_volume(&self, name: &str) -> anyhow::Result<()> {
+        match self
+            .inner
+            .remove_volume(name, None::<RemoveVolumeOptions>)
+            .await
+        {
+            Ok(()) => Ok(()),
+            Err(e) if is_404(&e) => Ok(()),
+            Err(e) => Err(anyhow::Error::from(e).context(format!("removing volume {name}"))),
+        }
+    }
+
+    async fn create_network(
+        &self,
+        name: &str,
+        labels: HashMap<String, String>,
+    ) -> anyhow::Result<()> {
+        self.inner
+            .create_network(NetworkCreateRequest {
+                name: name.to_string(),
+                labels: Some(labels),
+                ..Default::default()
+            })
+            .await
+            .with_context(|| format!("creating network {name}"))?;
+        Ok(())
+    }
+
+    async fn remove_network(&self, name: &str) -> anyhow::Result<()> {
+        match self.inner.remove_network(name).await {
+            Ok(()) => Ok(()),
+            Err(e) if is_404(&e) => Ok(()),
+            Err(e) => Err(anyhow::Error::from(e).context(format!("removing network {name}"))),
+        }
+    }
+
+    async fn list_networks(&self, label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>> {
+        let filters = build_label_filter(label_filters);
+        let networks = self
+            .inner
+            .list_networks(Some(ListNetworksOptions {
+                filters,
+            }))
+            .await
+            .context("listing networks")?;
+
+        Ok(networks
+            .into_iter()
+            .filter_map(|n| {
+                let name = n.name?;
+                let labels = n.labels.unwrap_or_default();
+                Some(NetworkRow { name, labels })
+            })
+            .collect())
+    }
+
+    async fn list_image_tags(&self, reference_filter: &str) -> anyhow::Result<Vec<String>> {
+        let mut filters = HashMap::new();
+        filters.insert("reference".to_string(), vec![reference_filter.to_string()]);
+        let images = self
+            .inner
+            .list_images(Some(ListImagesOptions {
+                filters: Some(filters),
+                ..Default::default()
+            }))
+            .await
+            .context("listing images")?;
+
+        let tags: Vec<String> = images
+            .into_iter()
+            .flat_map(|i| i.repo_tags)
+            .filter(|t| !t.is_empty())
+            .collect();
+        Ok(tags)
+    }
+
+    async fn remove_image(&self, name: &str) -> anyhow::Result<RemoveImageOutcome> {
+        match self
+            .inner
+            .remove_image(
+                name,
+                Some(RemoveImageOptions {
+                    force: false,
+                    noprune: false,
+                    ..Default::default()
+                }),
+                None,
+            )
+            .await
+        {
+            Ok(_) => Ok(RemoveImageOutcome::Removed),
+            Err(e) if is_404(&e) => Ok(RemoveImageOutcome::NotFound),
+            Err(ref e) if is_409(e) => Ok(RemoveImageOutcome::InUse),
+            Err(ref e) => {
+                let msg = e.to_string().to_ascii_lowercase();
+                if msg.contains("in use") || msg.contains("cannot be forced") {
+                    Ok(RemoveImageOutcome::InUse)
+                } else {
+                    Err(anyhow::anyhow!("{e}").context(format!("removing image {name}")))
+                }
+            }
+        }
+    }
+
+    async fn inspect_image_label(
+        &self,
+        image: &str,
+        label: &str,
+    ) -> anyhow::Result<Option<String>> {
+        match self.inner.inspect_image(image).await {
+            Err(e) if is_404(&e) => Ok(None),
+            Err(e) => Err(anyhow::Error::from(e).context(format!("inspecting image {image}"))),
+            Ok(info) => {
+                let value = info
+                    .config
+                    .and_then(|c| c.labels)
+                    .and_then(|labels| labels.get(label).cloned())
+                    .filter(|s| !s.is_empty());
+                Ok(value)
+            }
+        }
+    }
+
+    async fn pull_image(&self, image: &str, debug: bool) -> anyhow::Result<()> {
+        if debug {
+            eprintln!("[jackin debug] docker pull {image}");
+        }
+        use bollard::query_parameters::CreateImageOptions;
+        let mut stream = self.inner.create_image(
+            Some(CreateImageOptions {
+                from_image: Some(image.to_string()),
+                ..Default::default()
+            }),
+            None,
+            None,
+        );
+        while let Some(event) = stream.next().await {
+            event.with_context(|| format!("pulling image {image}"))?;
+        }
+        Ok(())
+    }
+
+    async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String> {
+        let exec = self
+            .inner
+            .create_exec(
+                container,
+                CreateExecOptions {
+                    cmd: Some(cmd.iter().map(|s| s.to_string()).collect::<Vec<String>>()),
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    ..Default::default()
+                },
+            )
+            .await
+            .with_context(|| format!("creating exec in {container}"))?;
+
+        let mut output_buf = String::new();
+        match self
+            .inner
+            .start_exec(&exec.id, None::<StartExecOptions>)
+            .await
+            .with_context(|| format!("starting exec in {container}"))?
+        {
+            StartExecResults::Attached { mut output, .. } => {
+                while let Some(chunk) = output.next().await {
+                    match chunk
+                        .with_context(|| format!("reading exec output from {container}"))?
+                    {
+                        LogOutput::StdOut { message } | LogOutput::StdErr { message } => {
+                            output_buf.push_str(&String::from_utf8_lossy(&message));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            StartExecResults::Detached => {}
+        }
+        Ok(output_buf.trim().to_string())
+    }
+}
+
+// ── FakeDockerClient (test only) ──────────────────────────────────────────
+
+#[cfg(test)]
+pub struct FakeDockerClient {
+    pub recorded: std::cell::RefCell<Vec<String>>,
+    pub inspect_queue: std::cell::RefCell<std::collections::VecDeque<ContainerState>>,
+    pub list_containers_queue: std::cell::RefCell<std::collections::VecDeque<Vec<ContainerRow>>>,
+    pub list_networks_queue: std::cell::RefCell<std::collections::VecDeque<Vec<NetworkRow>>>,
+    pub list_image_tags_queue: std::cell::RefCell<std::collections::VecDeque<Vec<String>>>,
+    pub remove_image_queue: std::cell::RefCell<std::collections::VecDeque<RemoveImageOutcome>>,
+    pub exec_capture_queue: std::cell::RefCell<std::collections::VecDeque<String>>,
+    pub fail_with: Vec<(String, String)>,
+    pub created_containers: std::cell::RefCell<Vec<(String, ContainerSpec)>>,
+    pub created_networks: std::cell::RefCell<Vec<(String, HashMap<String, String>)>>,
+}
+
+#[cfg(test)]
+impl Default for FakeDockerClient {
+    fn default() -> Self {
+        Self {
+            recorded: std::cell::RefCell::new(Vec::new()),
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            list_networks_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            list_image_tags_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            remove_image_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            fail_with: Vec::new(),
+            created_containers: std::cell::RefCell::new(Vec::new()),
+            created_networks: std::cell::RefCell::new(Vec::new()),
+        }
+    }
+}
+
+#[cfg(test)]
+impl FakeDockerClient {
+    fn check_fail(&self, op: &str) -> anyhow::Result<()> {
+        if let Some((_, msg)) = self.fail_with.iter().find(|(pat, _)| op.contains(pat.as_str())) {
+            anyhow::bail!("{}", msg);
+        }
+        Ok(())
+    }
+
+    fn record(&self, entry: String) {
+        self.recorded.borrow_mut().push(entry);
+    }
+
+    fn pop_inspect(&self) -> ContainerState {
+        self.inspect_queue.borrow_mut().pop_front().unwrap_or(ContainerState::NotFound)
+    }
+
+    fn pop_list_containers(&self) -> Vec<ContainerRow> {
+        self.list_containers_queue.borrow_mut().pop_front().unwrap_or_default()
+    }
+
+    fn pop_list_networks(&self) -> Vec<NetworkRow> {
+        self.list_networks_queue.borrow_mut().pop_front().unwrap_or_default()
+    }
+
+    fn pop_list_image_tags(&self) -> Vec<String> {
+        self.list_image_tags_queue.borrow_mut().pop_front().unwrap_or_default()
+    }
+
+    fn pop_remove_image(&self) -> RemoveImageOutcome {
+        self.remove_image_queue.borrow_mut().pop_front().unwrap_or(RemoveImageOutcome::Removed)
+    }
+
+    fn pop_exec_capture(&self) -> String {
+        self.exec_capture_queue.borrow_mut().pop_front().unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+impl DockerApi for FakeDockerClient {
+    async fn inspect_container_state(&self, name: &str) -> ContainerState {
+        let op = format!("docker inspect {name}");
+        self.record(op.clone());
+        if let Some((_, msg)) = self.fail_with.iter().find(|(pat, _)| op.contains(pat.as_str())) {
+            let msg = msg.clone();
+            let lower = msg.to_ascii_lowercase();
+            if lower.contains("no such object")
+                || lower.contains("no such container")
+                || lower.contains("no such image")
+            {
+                return ContainerState::NotFound;
+            }
+            return ContainerState::InspectUnavailable(msg);
+        }
+        self.pop_inspect()
+    }
+
+    async fn remove_container(&self, name: &str) -> anyhow::Result<()> {
+        self.record(format!("docker rm -f {name}"));
+        self.check_fail(&format!("docker rm -f {name}"))
+            .or_else(|e| {
+                let msg = e.to_string().to_ascii_lowercase();
+                if msg.contains("no such") { Ok(()) } else { Err(e) }
+            })
+    }
+
+    async fn list_containers(
+        &self,
+        label_filters: &[&str],
+        all: bool,
+    ) -> anyhow::Result<Vec<ContainerRow>> {
+        let filter_str = label_filters.join(" --filter ");
+        let op = if all {
+            format!("docker ps -a --filter {filter_str}")
+        } else {
+            format!("docker ps --filter {filter_str}")
+        };
+        self.record(op.clone());
+        self.check_fail(&op)?;
+        Ok(self.pop_list_containers())
+    }
+
+    async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()> {
+        self.record(format!("create_container:{name}"));
+        self.created_containers.borrow_mut().push((name.to_string(), spec));
+        self.check_fail(&format!("create_container:{name}"))
+    }
+
+    async fn start_container(&self, name: &str) -> anyhow::Result<()> {
+        self.record(format!("start_container:{name}"));
+        self.check_fail(&format!("start_container:{name}"))
+    }
+
+    async fn remove_volume(&self, name: &str) -> anyhow::Result<()> {
+        self.record(format!("docker volume rm {name}"));
+        self.check_fail(&format!("docker volume rm {name}"))
+            .or_else(|e| {
+                let msg = e.to_string().to_ascii_lowercase();
+                if msg.contains("no such") { Ok(()) } else { Err(e) }
+            })
+    }
+
+    async fn create_network(
+        &self,
+        name: &str,
+        labels: HashMap<String, String>,
+    ) -> anyhow::Result<()> {
+        self.record(format!("docker network create {name}"));
+        self.created_networks.borrow_mut().push((name.to_string(), labels));
+        self.check_fail(&format!("docker network create {name}"))
+    }
+
+    async fn remove_network(&self, name: &str) -> anyhow::Result<()> {
+        self.record(format!("docker network rm {name}"));
+        self.check_fail(&format!("docker network rm {name}"))
+            .or_else(|e| {
+                let msg = e.to_string().to_ascii_lowercase();
+                if msg.contains("no such") { Ok(()) } else { Err(e) }
+            })
+    }
+
+    async fn list_networks(&self, label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>> {
+        let filter_str = label_filters.join(" --filter ");
+        let op = format!("docker network ls --filter {filter_str}");
+        self.record(op.clone());
+        self.check_fail(&op)?;
+        Ok(self.pop_list_networks())
+    }
+
+    async fn list_image_tags(&self, reference_filter: &str) -> anyhow::Result<Vec<String>> {
+        let op = format!("docker images --filter reference={reference_filter}");
+        self.record(op.clone());
+        self.check_fail(&op)?;
+        Ok(self.pop_list_image_tags())
+    }
+
+    async fn remove_image(&self, name: &str) -> anyhow::Result<RemoveImageOutcome> {
+        self.record(format!("docker rmi {name}"));
+        self.check_fail(&format!("docker rmi {name}"))?;
+        Ok(self.pop_remove_image())
+    }
+
+    async fn inspect_image_label(
+        &self,
+        image: &str,
+        label: &str,
+    ) -> anyhow::Result<Option<String>> {
+        let op = format!("docker inspect image:{image} label:{label}");
+        self.record(op.clone());
+        self.check_fail(&op)?;
+        Ok(None)
+    }
+
+    async fn pull_image(&self, image: &str, _debug: bool) -> anyhow::Result<()> {
+        self.record(format!("docker pull {image}"));
+        self.check_fail(&format!("docker pull {image}"))
+    }
+
+    async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String> {
+        let op = format!("docker exec {} {}", container, cmd.join(" "));
+        self.record(op.clone());
+        self.check_fail(&op)?;
+        Ok(self.pop_exec_capture())
+    }
+}
+
+/// Parse a "key=value" label string into two parts.
+pub(crate) fn parse_label(label: &str) -> (&str, &str) {
+    label.split_once('=').unwrap_or((label, ""))
+}
+
+/// Build a `HashMap` of labels from "key=value" label strings.
+pub(crate) fn labels_from_strs(labels: &[&str]) -> HashMap<String, String> {
+    labels
+        .iter()
+        .map(|l| {
+            let (k, v) = parse_label(l);
+            (k.to_string(), v.to_string())
+        })
+        .collect()
+}
+
+/// Warning printer used in best-effort GC operations.
+pub(crate) fn warn_gc(label: &str, name: &str, err: &anyhow::Error) {
+    eprintln!(
+        "  {} GC of {label} for {name}: {err}",
+        "warning:".yellow().bold()
+    );
+}

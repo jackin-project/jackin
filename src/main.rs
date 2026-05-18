@@ -3,7 +3,8 @@ use jackin::cli::Cli;
 use jackin::cli::dispatch::{self, Action};
 use jackin::cli::role::ConsoleArgs;
 
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
     let cli = Cli::parse();
     let debug = cli.debug;
 
@@ -14,7 +15,7 @@ fn main() {
                 console_args: ConsoleArgs::default(),
                 debug,
             };
-            if let Err(error) = jackin::run(cli) {
+            if let Err(error) = jackin::run(cli).await {
                 jackin::tui::fatal(&format!("{error:#}"));
                 std::process::exit(1);
             }
@@ -25,7 +26,7 @@ fn main() {
                 console_args: ConsoleArgs::default(),
                 debug,
             };
-            if let Err(error) = jackin::run(cli) {
+            if let Err(error) = jackin::run(cli).await {
                 jackin::tui::fatal(&format!("{error:#}"));
                 std::process::exit(1);
             }

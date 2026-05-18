@@ -17,8 +17,8 @@ pub use self::test_support::FakeRunner;
 pub(crate) use self::attach::docker_unavailable_msg;
 pub use self::attach::{
     AgentSession, AgentSessionInventory, ContainerState, describe_agent_session_count,
-    hardline_agent, inspect_agent_sessions, inspect_container_state, inspect_hardline_instance,
-    spawn_agent_session, spawn_shell_session,
+    hardline_agent, inspect_agent_sessions, inspect_hardline_instance, spawn_agent_session,
+    spawn_shell_session,
 };
 pub use self::caffeinate::reconcile as reconcile_keep_awake;
 pub use self::cleanup::{
@@ -33,7 +33,7 @@ pub use self::launch::{LoadOptions, load_role};
 pub use self::naming::matching_family;
 pub(crate) use self::repo_cache::{RepoError, normalize_github_url};
 
-pub(crate) fn register_agent_repo(
+pub(crate) async fn register_agent_repo(
     paths: &crate::paths::JackinPaths,
     selector: &crate::selector::RoleSelector,
     git_url: &str,
@@ -49,4 +49,5 @@ pub(crate) fn register_agent_repo(
         debug,
         persist_registration,
     )
+    .await
 }

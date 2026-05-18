@@ -17,7 +17,7 @@ use std::path::Path;
 /// jackin-side reference, which can only be reclaimed by manually running
 /// `git worktree prune` and `git branch -D` on the host repo.
 #[allow(clippy::too_many_lines)] // verify-and-bail flow has lots of small steps; splitting hurts readability
-pub fn force_cleanup_isolated(
+pub async fn force_cleanup_isolated(
     record: &IsolationRecord,
     container_state_dir: &Path,
     runner: &mut impl CommandRunner,
@@ -59,7 +59,7 @@ pub fn force_cleanup_isolated(
                 quiet: true,
                 ..Default::default()
             },
-        );
+        ).await;
         if let Err(e) = &wt_remove_result {
             debug_log!(
                 "isolation",
@@ -87,7 +87,7 @@ pub fn force_cleanup_isolated(
                 quiet: true,
                 ..Default::default()
             },
-        );
+        ).await;
         if let Err(e) = &branch_delete_result {
             debug_log!(
                 "isolation",
@@ -101,7 +101,7 @@ pub fn force_cleanup_isolated(
         // succeeds and we proceed; if it errored because the branch is
         // still checked out somewhere or we lack permission, the verify
         // fails and we bail without forgetting the record.
-        if branch_still_present(runner, &record.original_src, &record.scratch_branch) == Some(true)
+        if branch_still_present(runner, &record.original_src, &record.scratch_branch).await == Some(true)
         {
             anyhow::bail!(
                 "scratch branch `{}` still present after `git branch -D` on host repo `{}`; \
@@ -201,9 +201,10 @@ fn force_cleanup_clone(record: &IsolationRecord, container_state_dir: &Path) -> 
 /// Callers treat `None` as "couldn't verify, don't bail" — the cost of
 /// a false negative here (orphan branch left behind) is much lower than
 /// the cost of a false positive (operator stuck unable to purge).
-fn branch_still_present(runner: &mut impl CommandRunner, repo: &str, branch: &str) -> Option<bool> {
+async fn branch_still_present(runner: &mut impl CommandRunner, repo: &str, branch: &str) -> Option<bool> {
     let output = runner
         .capture("git", &["-C", repo, "branch", "--list", branch], None)
+        .await
         .ok()?;
     Some(!output.trim().is_empty())
 }
@@ -216,7 +217,7 @@ fn branch_still_present(runner: &mut impl CommandRunner, repo: &str, branch: &st
 /// the caller's exit code reflects reality — operator gets a non-zero
 /// status and an actionable summary instead of a misleading exit-0
 /// "purge succeeded" with a warning that scrolled past.
-pub fn purge_isolated_for_container(
+pub async fn purge_isolated_for_container(
     container_state_dir: &Path,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
@@ -229,7 +230,7 @@ pub fn purge_isolated_for_container(
     );
     let mut failed: Vec<String> = Vec::new();
     for rec in records {
-        if let Err(e) = force_cleanup_isolated(&rec, container_state_dir, runner) {
+        if let Err(e) = force_cleanup_isolated(&rec, container_state_dir, runner).await {
             eprintln!(
                 "[jackin] warning: failed to clean up isolated mount `{}`: {e}",
                 rec.mount_dst
@@ -275,15 +276,15 @@ mod tests {
         }
     }
 
-    #[test]
-    fn force_cleanup_runs_git_and_removes_record() {
+    #[tokio::test]
+    async fn force_cleanup_runs_git_and_removes_record() {
         let repo_dir = TempDir::new().unwrap();
         let container_dir = TempDir::new().unwrap();
         let rec = rec_for(repo_dir.path(), container_dir.path());
         write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
 
         let mut runner = FakeRunner::default();
-        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).unwrap();
+        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).await.unwrap();
 
         assert!(
             runner
@@ -300,8 +301,8 @@ mod tests {
         assert!(read_records(container_dir.path()).unwrap().is_empty());
     }
 
-    #[test]
-    fn force_cleanup_clone_removes_directory_without_host_git_ops() {
+    #[tokio::test]
+    async fn force_cleanup_clone_removes_directory_without_host_git_ops() {
         let repo_dir = TempDir::new().unwrap();
         let container_dir = TempDir::new().unwrap();
         let clone_dir = container_dir
@@ -316,15 +317,15 @@ mod tests {
         write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
 
         let mut runner = FakeRunner::default();
-        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).unwrap();
+        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).await.unwrap();
 
         assert!(runner.run_recorded.is_empty());
         assert!(!clone_dir.exists());
         assert!(read_records(container_dir.path()).unwrap().is_empty());
     }
 
-    #[test]
-    fn force_cleanup_tolerates_missing_host_repo() {
+    #[tokio::test]
+    async fn force_cleanup_tolerates_missing_host_repo() {
         let container_dir = TempDir::new().unwrap();
         let rec = IsolationRecord {
             original_src: "/nonexistent/path".into(),
@@ -333,7 +334,7 @@ mod tests {
         write_records(container_dir.path(), std::slice::from_ref(&rec)).unwrap();
 
         let mut runner = FakeRunner::default();
-        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).unwrap();
+        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).await.unwrap();
         assert!(
             runner.run_recorded.is_empty(),
             "should skip git when src missing"
@@ -341,8 +342,8 @@ mod tests {
         assert!(read_records(container_dir.path()).unwrap().is_empty());
     }
 
-    #[test]
-    fn force_cleanup_is_idempotent_when_worktree_already_gone() {
+    #[tokio::test]
+    async fn force_cleanup_is_idempotent_when_worktree_already_gone() {
         let repo_dir = TempDir::new().unwrap();
         let container_dir = TempDir::new().unwrap();
         let mut rec = rec_for(repo_dir.path(), container_dir.path());
@@ -352,12 +353,12 @@ mod tests {
         rec.worktree_path = format!("{}-gone", rec.worktree_path);
 
         let mut runner = FakeRunner::default();
-        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).unwrap();
+        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).await.unwrap();
         assert!(read_records(container_dir.path()).unwrap().is_empty());
     }
 
-    #[test]
-    fn purge_isolated_for_container_runs_force_cleanup_for_each_record() {
+    #[tokio::test]
+    async fn purge_isolated_for_container_runs_force_cleanup_for_each_record() {
         let repo_dir = TempDir::new().unwrap();
         let container_dir = TempDir::new().unwrap();
         let r1 = rec_for(repo_dir.path(), container_dir.path());
@@ -371,7 +372,7 @@ mod tests {
         write_records(container_dir.path(), &records).unwrap();
 
         let mut runner = FakeRunner::default();
-        purge_isolated_for_container(container_dir.path(), &mut runner).unwrap();
+        purge_isolated_for_container(container_dir.path(), &mut runner).await.unwrap();
 
         let removes = runner
             .run_recorded
@@ -388,11 +389,11 @@ mod tests {
         assert!(read_records(container_dir.path()).unwrap().is_empty());
     }
 
-    #[test]
-    fn purge_isolated_is_noop_when_no_records() {
+    #[tokio::test]
+    async fn purge_isolated_is_noop_when_no_records() {
         let container_dir = TempDir::new().unwrap();
         let mut runner = FakeRunner::default();
-        purge_isolated_for_container(container_dir.path(), &mut runner).unwrap();
+        purge_isolated_for_container(container_dir.path(), &mut runner).await.unwrap();
         assert!(runner.run_recorded.is_empty());
     }
 
@@ -401,8 +402,8 @@ mod tests {
     /// gone → cleanup proceeds and the record is removed. The verify
     /// step is exactly what lets us distinguish "already done" from
     /// "real failure".
-    #[test]
-    fn force_cleanup_tolerates_branch_already_deleted_when_verify_says_absent() {
+    #[tokio::test]
+    async fn force_cleanup_tolerates_branch_already_deleted_when_verify_says_absent() {
         let repo_dir = TempDir::new().unwrap();
         let container_dir = TempDir::new().unwrap();
         let rec = rec_for(repo_dir.path(), container_dir.path());
@@ -416,7 +417,7 @@ mod tests {
             capture_queue: std::collections::VecDeque::from(vec![String::new()]),
             ..Default::default()
         };
-        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).unwrap();
+        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).await.unwrap();
         assert!(
             read_records(container_dir.path()).unwrap().is_empty(),
             "record should be removed when branch is verified absent"
@@ -427,8 +428,8 @@ mod tests {
     /// the branch is still present. Cleanup must bail without touching
     /// the record so the operator can re-run `jackin purge` after
     /// resolving the issue.
-    #[test]
-    fn force_cleanup_retains_record_when_branch_delete_fails_and_branch_still_present() {
+    #[tokio::test]
+    async fn force_cleanup_retains_record_when_branch_delete_fails_and_branch_still_present() {
         let repo_dir = TempDir::new().unwrap();
         let container_dir = TempDir::new().unwrap();
         let rec = rec_for(repo_dir.path(), container_dir.path());
@@ -442,7 +443,7 @@ mod tests {
             ]),
             ..Default::default()
         };
-        let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner).unwrap_err();
+        let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner).await.unwrap_err();
         assert!(
             err.to_string().contains("scratch branch"),
             "error should name the branch; got: {err}"
@@ -470,8 +471,8 @@ mod tests {
     /// (b) bail with an aggregate Err so the exit code reflects reality.
     /// Pre-fix: returned Ok(()) regardless, masking the failure as a
     /// scrolled-past stderr warning.
-    #[test]
-    fn purge_isolated_for_container_bails_when_any_record_fails() {
+    #[tokio::test]
+    async fn purge_isolated_for_container_bails_when_any_record_fails() {
         let repo_dir = TempDir::new().unwrap();
         let container_dir = TempDir::new().unwrap();
         // Two records on different mounts.
@@ -498,7 +499,7 @@ mod tests {
             fail_on: vec!["branch -D jackin/scratch/x ".into()],
             ..Default::default()
         };
-        let err = purge_isolated_for_container(container_dir.path(), &mut runner).unwrap_err();
+        let err = purge_isolated_for_container(container_dir.path(), &mut runner).await.unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("1 failure"),
@@ -521,8 +522,8 @@ mod tests {
     /// "callers treat None as 'couldn't verify, don't bail'" — pin
     /// that contract so a refactor to `unwrap_or(true)` (the "safer"
     /// reading) doesn't break purge for any verify failure.
-    #[test]
-    fn force_cleanup_proceeds_when_verify_capture_itself_errors() {
+    #[tokio::test]
+    async fn force_cleanup_proceeds_when_verify_capture_itself_errors() {
         let repo_dir = TempDir::new().unwrap();
         let container_dir = TempDir::new().unwrap();
         let rec = rec_for(repo_dir.path(), container_dir.path());
@@ -535,7 +536,7 @@ mod tests {
             fail_on: vec!["branch -D".into(), "branch --list".into()],
             ..Default::default()
         };
-        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).unwrap();
+        force_cleanup_isolated(&rec, container_dir.path(), &mut runner).await.unwrap();
         assert!(
             read_records(container_dir.path()).unwrap().is_empty(),
             "record should be removed when verify is inconclusive (None) — \
@@ -544,8 +545,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn force_cleanup_error_message_mentions_record_retention() {
+    #[tokio::test]
+    async fn force_cleanup_error_message_mentions_record_retention() {
         // This test pins that any failure path produces an error
         // message that tells the operator the record was retained.
         // Concretely covered by the branch-still-present test above;
@@ -560,7 +561,7 @@ mod tests {
             capture_queue: std::collections::VecDeque::from(vec!["jackin/scratch/x".to_string()]),
             ..Default::default()
         };
-        let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner).unwrap_err();
+        let err = force_cleanup_isolated(&rec, container_dir.path(), &mut runner).await.unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("`jackin purge`"), "got: {msg}");
         assert!(msg.contains("record retained"), "got: {msg}");

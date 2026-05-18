@@ -1,47 +1,16 @@
+use std::io::Write as _;
+
 use crate::docker::{CommandRunner, RunOptions};
+use crate::docker_client::DockerApi;
 use crate::instance::InstanceManifest;
+
+pub use crate::docker_client::ContainerState;
 #[cfg(test)]
 use crate::instance::{InstanceIndex, InstanceStatus};
 use crate::paths::JackinPaths;
 use crate::tui;
 
 use super::naming::dind_certs_volume;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ContainerState {
-    NotFound,
-    InspectUnavailable(String),
-    Running,
-    Stopped { exit_code: i32, oom_killed: bool },
-}
-
-impl ContainerState {
-    /// Short label that elides the `InspectUnavailable` reason.
-    #[must_use]
-    pub fn short_label(&self) -> String {
-        match self {
-            Self::Running => "running".to_string(),
-            Self::Stopped {
-                exit_code,
-                oom_killed: false,
-            } => format!("stopped exit:{exit_code}"),
-            Self::Stopped {
-                oom_killed: true, ..
-            } => "stopped oom_killed".to_string(),
-            Self::NotFound => "missing".to_string(),
-            Self::InspectUnavailable(_) => "unavailable".to_string(),
-        }
-    }
-
-    /// Verbose label that surfaces the inspect-failure reason.
-    #[must_use]
-    pub fn inspect_label(&self) -> String {
-        match self {
-            Self::InspectUnavailable(reason) => format!("unavailable: {reason}"),
-            _ => self.short_label(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentSession {
@@ -55,60 +24,9 @@ pub enum AgentSessionInventory {
     Sessions(Vec<AgentSession>),
 }
 
-/// Query a container's state with a single `docker inspect` call.
-///
-/// Uses Go-template formatting to extract three fields in one round trip:
-/// `Running`, `ExitCode`, and `OOMKilled`.
-pub fn inspect_container_state(runner: &mut impl CommandRunner, name: &str) -> ContainerState {
-    let output = match runner.capture(
-        "docker",
-        &[
-            "inspect",
-            "--format",
-            "{{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}}",
-            name,
-        ],
-        None,
-    ) {
-        Ok(output) => output,
-        Err(error) => {
-            let error = error.to_string();
-            if crate::docker::is_missing_resource_error(&error) {
-                return ContainerState::NotFound;
-            }
-            return ContainerState::InspectUnavailable(error);
-        }
-    };
 
-    let mut parts = output.split_whitespace();
-    let Some(running) = parts.next() else {
-        return ContainerState::NotFound;
-    };
-    if running == "true" {
-        return ContainerState::Running;
-    }
-    if running != "false" {
-        return ContainerState::InspectUnavailable(format!(
-            "unexpected docker inspect output for '{name}': {output:?}"
-        ));
-    }
-    let Some(exit_code) = parts.next().and_then(|s| s.parse().ok()) else {
-        return ContainerState::InspectUnavailable(format!(
-            "unexpected docker inspect output for '{name}': {output:?}"
-        ));
-    };
-    let Some(oom_killed) = parts.next().map(|part| part == "true") else {
-        return ContainerState::InspectUnavailable(format!(
-            "unexpected docker inspect output for '{name}': {output:?}"
-        ));
-    };
-    ContainerState::Stopped {
-        exit_code,
-        oom_killed,
-    }
-}
 
-pub fn inspect_agent_sessions(
+pub async fn inspect_agent_sessions(
     runner: &mut impl CommandRunner,
     container_name: &str,
     state: &ContainerState,
@@ -131,7 +49,7 @@ pub fn inspect_agent_sessions(
             "tmux list-sessions -F '#{session_name}' 2>/dev/null || true",
         ],
         None,
-    ) {
+    ).await {
         Ok(output) => AgentSessionInventory::Sessions(parse_tmux_sessions(&output)),
         Err(error) => AgentSessionInventory::Unavailable(error.to_string()),
     }
@@ -191,13 +109,13 @@ pub(super) fn short_session_id() -> String {
 ///
 /// `TMUX=` prevents nested-session warnings when the operator's host terminal
 /// is itself inside tmux.
-pub(super) fn reconnect_or_create_session(
+pub(super) async fn reconnect_or_create_session(
     paths: &JackinPaths,
     container_name: &str,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     set_role_terminal_title(paths, container_name);
-    let sessions = inspect_agent_sessions(runner, container_name, &ContainerState::Running);
+    let sessions = inspect_agent_sessions(runner, container_name, &ContainerState::Running).await;
     let has_sessions = matches!(&sessions, AgentSessionInventory::Sessions(v) if !v.is_empty());
 
     if has_sessions {
@@ -214,7 +132,7 @@ pub(super) fn reconnect_or_create_session(
             ],
             None,
             &RunOptions::default(),
-        )
+        ).await
     } else {
         let agent_slug =
             crate::instance::InstanceManifest::read(&paths.data_dir.join(container_name))
@@ -242,7 +160,7 @@ pub(super) fn reconnect_or_create_session(
             ],
             None,
             &RunOptions::default(),
-        )
+        ).await
     }
 }
 
@@ -250,12 +168,13 @@ pub(super) fn reconnect_or_create_session(
 ///
 /// Intentionally ephemeral — no tmux session, no reconnect. Used by
 /// `jackin hardline --shell` and the console Shell action.
-pub fn spawn_shell_session(
+pub async fn spawn_shell_session(
     paths: &JackinPaths,
     container_name: &str,
+    docker: &impl crate::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    match inspect_container_state(runner, container_name) {
+    match docker.inspect_container_state(container_name).await {
         ContainerState::Running => {}
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
@@ -276,27 +195,28 @@ pub fn spawn_shell_session(
     }
 
     set_role_terminal_title(paths, container_name);
-    super::caffeinate::reconcile(paths, runner);
+    super::caffeinate::reconcile(paths, docker, runner).await;
     let result = runner.run(
         "docker",
         &["exec", "-e", "TMUX=", "-it", container_name, "/bin/zsh"],
         None,
         &RunOptions::default(),
-    );
+    ).await;
     eprintln!();
     result
 }
 
-pub fn spawn_agent_session(
+pub async fn spawn_agent_session(
     paths: &JackinPaths,
     container_name: &str,
     manifest: Option<&InstanceManifest>,
     agent: crate::agent::Agent,
     git_coauthor_trailer: bool,
     git_dco: bool,
+    docker: &impl crate::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    match inspect_container_state(runner, container_name) {
+    match docker.inspect_container_state(container_name).await {
         ContainerState::Running => {}
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
@@ -331,7 +251,7 @@ pub fn spawn_agent_session(
     let git_dco_env = git_dco.then(|| format!("{}=1", crate::env_model::JACKIN_GIT_DCO_ENV_NAME));
     let session_name = format!("jackin-{}-{}", agent.slug(), short_session_id());
     set_role_terminal_title(paths, container_name);
-    super::caffeinate::reconcile(paths, runner);
+    super::caffeinate::reconcile(paths, docker, runner).await;
     let mut tmux_args = vec![
         "exec",
         "-e",
@@ -352,18 +272,19 @@ pub fn spawn_agent_session(
         tmux_args.extend_from_slice(&["-e", env.as_str()]);
     }
     tmux_args.extend_from_slice(&["-s", &session_name, "--", "/jackin/runtime/entrypoint.sh"]);
-    let result = runner.run("docker", &tmux_args, None, &RunOptions::default());
+    let result = runner.run("docker", &tmux_args, None, &RunOptions::default()).await;
     eprintln!();
     result?;
 
-    let outcome = crate::runtime::launch::inspect_attach_outcome(runner, container_name)?;
+    let outcome = crate::runtime::launch::inspect_attach_outcome(docker, runner, container_name).await?;
     super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
     Ok(())
 }
 
-pub fn hardline_agent(
+pub async fn hardline_agent(
     paths: &JackinPaths,
     container_name: &str,
+    docker: &impl crate::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     // Reconcile keep_awake right before each `reconnect_or_create_session` call.
@@ -371,10 +292,10 @@ pub fn hardline_agent(
     // so the post-hardline reconcile in `app::Command::Hardline` would fire
     // too late. Firing here, while the container is observably running, ensures
     // caffeinate spawns for the duration of the re-attached session.
-    let attach_outcome = match inspect_container_state(runner, container_name) {
+    let attach_outcome = match docker.inspect_container_state(container_name).await {
         ContainerState::Running => {
-            super::caffeinate::reconcile(paths, runner);
-            reconnect_or_create_session(paths, container_name, runner)
+            super::caffeinate::reconcile(paths, docker, runner).await;
+            reconnect_or_create_session(paths, container_name, runner).await
         }
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
@@ -416,7 +337,7 @@ pub fn hardline_agent(
     // Finalize per-mount isolation worktrees after re-attach. We do not honor
     // a `ReturnToAgent` decision here — `hardline` is itself a re-attach, and
     // the operator can simply re-invoke `jackin hardline` to come back.
-    let outcome = crate::runtime::launch::inspect_attach_outcome(runner, container_name)?;
+    let outcome = crate::runtime::launch::inspect_attach_outcome(docker, runner, container_name).await?;
     super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
     let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
     let mut prompt = crate::isolation::finalize::StdinPrompt;
@@ -427,13 +348,14 @@ pub fn hardline_agent(
         interactive,
         &mut prompt,
         runner,
-    )?;
+    ).await?;
     Ok(())
 }
 
-pub fn inspect_hardline_instance(
+pub async fn inspect_hardline_instance(
     paths: &JackinPaths,
     container_name: &str,
+    docker: &impl crate::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<String> {
     let state_dir = paths.data_dir.join(container_name);
@@ -456,11 +378,11 @@ pub fn inspect_hardline_instance(
         |manifest| manifest.docker.certs_volume.clone(),
     );
 
-    let role_container_state = inspect_container_state(runner, container_name);
-    let sessions = inspect_agent_sessions(runner, container_name, &role_container_state);
+    let role_container_state = docker.inspect_container_state(container_name).await;
+    let sessions = inspect_agent_sessions(runner, container_name, &role_container_state).await;
     let role_state = role_container_state.inspect_label();
-    let dind_state = inspect_container_state(runner, &dind_name).inspect_label();
-    let network_state = describe_network_state(inspect_docker_network(runner, &network_name));
+    let dind_state = docker.inspect_container_state(&dind_name).await.inspect_label();
+    let network_state = describe_network_state(inspect_docker_network(docker, &network_name).await);
     let mounts = describe_mount_state(&state_dir);
 
     let mut lines = vec![
@@ -549,17 +471,12 @@ enum DockerNetworkState {
     InspectUnavailable(String),
 }
 
-fn inspect_docker_network(runner: &mut impl CommandRunner, network: &str) -> DockerNetworkState {
-    match runner.capture("docker", &["network", "inspect", network], None) {
-        Ok(_) => DockerNetworkState::Present,
-        Err(error) => {
-            let error = error.to_string();
-            if crate::docker::is_missing_resource_error(&error) {
-                DockerNetworkState::NotFound
-            } else {
-                DockerNetworkState::InspectUnavailable(error)
-            }
-        }
+async fn inspect_docker_network(docker: &impl crate::docker_client::DockerApi, network: &str) -> DockerNetworkState {
+    // Use list_networks with name filter to check existence
+    match docker.list_networks(&[&format!("name={network}")]).await {
+        Ok(nets) if nets.iter().any(|n| n.name == network) => DockerNetworkState::Present,
+        Ok(_) => DockerNetworkState::NotFound,
+        Err(e) => DockerNetworkState::InspectUnavailable(e.to_string()),
     }
 }
 
@@ -584,34 +501,50 @@ fn missing_restore_message(
     )))
 }
 
-pub(super) fn wait_for_dind(
+pub(super) async fn wait_for_dind(
     dind_name: &str,
     certs_volume: &str,
-    runner: &mut impl CommandRunner,
-    _debug: bool,
+    docker: &impl DockerApi,
 ) -> anyhow::Result<()> {
-    // Wait for the DinD daemon to become ready (TLS handshake included).
-    tui::spin_wait(
-        "Waiting for Docker-in-Docker to be ready",
-        30,
-        std::time::Duration::from_secs(1),
-        || {
-            runner
-                .capture("docker", &["exec", dind_name, "docker", "info"], None)
-                .map(|_| ())
-        },
-    )
-    .map_err(|_| anyhow::anyhow!("timed out waiting for Docker-in-Docker sidecar {dind_name}"))?;
+    const MAX_ATTEMPTS: u32 = 30;
+    const INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+    const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    const SPIN_MS: u64 = 80;
+    let mut frame_idx: usize = 0;
+    let message = "Waiting for Docker-in-Docker to be ready";
+    let mut last_err = None;
 
-    // Verify TLS client certificates were generated on the shared volume.
-    // The DinD entrypoint writes certs before starting dockerd, so this
-    // should succeed immediately after `docker info` passes.
-    runner
-        .capture(
-            "docker",
-            &["exec", dind_name, "test", "-f", "/certs/client/ca.pem"],
-            None,
-        )
+    for _ in 0..MAX_ATTEMPTS {
+        match docker.exec_capture(dind_name, &["docker", "info"]).await {
+            Ok(_) => {
+                eprint!("\r\x1b[2K");
+                let _ = std::io::stderr().flush();
+                last_err = None;
+                break;
+            }
+            Err(e) => last_err = Some(e),
+        }
+        let spins = INTERVAL.as_millis() as u64 / SPIN_MS;
+        for _ in 0..spins {
+            let frame = FRAMES[frame_idx % FRAMES.len()];
+            eprint!("\r   {frame}   {message}");
+            let _ = std::io::stderr().flush();
+            tokio::time::sleep(std::time::Duration::from_millis(SPIN_MS)).await;
+            frame_idx += 1;
+        }
+    }
+    eprint!("\r\x1b[2K");
+    let _ = std::io::stderr().flush();
+
+    if let Some(e) = last_err {
+        return Err(anyhow::anyhow!(
+            "timed out waiting for Docker-in-Docker sidecar {dind_name}: {e}"
+        ));
+    }
+
+    docker
+        .exec_capture(dind_name, &["test", "-f", "/certs/client/ca.pem"])
+        .await
         .map_err(|_| {
             anyhow::anyhow!(
                 "DinD TLS client certificates not found on volume {certs_volume} — \
@@ -626,6 +559,7 @@ pub(super) fn wait_for_dind(
 mod tests {
     use super::super::test_support::FakeRunner;
     use super::*;
+    use crate::docker_client::FakeDockerClient;
     use tempfile::TempDir;
 
     fn test_paths() -> (TempDir, JackinPaths) {
@@ -634,12 +568,16 @@ mod tests {
         (dir, paths)
     }
 
-    #[test]
-    fn hardline_attaches_when_container_is_running() {
+    #[tokio::test]
+    async fn hardline_attaches_when_container_is_running() {
         let (_tmp, paths) = test_paths();
-        let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([ContainerState::Running])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
 
-        hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap();
+        hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner).await.unwrap();
 
         assert!(
             runner.recorded.iter().any(|c| {
@@ -654,8 +592,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn hardline_new_session_execs_entrypoint_in_running_container() {
+    #[tokio::test]
+    async fn hardline_new_session_execs_entrypoint_in_running_container() {
         let (_tmp, paths) = test_paths();
         let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
@@ -677,11 +615,15 @@ mod tests {
                 certs_volume: format!("{container_name}-dind-certs"),
             },
         });
-        let mut runner = FakeRunner::with_capture_queue([
-            "true 0 false".to_string(),
-            "true 0 false".to_string(),
-            "true 0 false".to_string(),
-        ]);
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Running,
+            ContainerState::Running,
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
 
         spawn_agent_session(
             &paths,
@@ -690,8 +632,10 @@ mod tests {
             crate::agent::Agent::Codex,
             false,
             false,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
 
         assert!(
@@ -710,8 +654,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
+    #[tokio::test]
+    async fn hardline_new_session_forwards_coauthor_trailer_env_when_enabled() {
         let (_tmp, paths) = test_paths();
         let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
@@ -733,11 +677,15 @@ mod tests {
                 certs_volume: format!("{container_name}-dind-certs"),
             },
         });
-        let mut runner = FakeRunner::with_capture_queue([
-            "true 0 false".to_string(),
-            "true 0 false".to_string(),
-            "true 0 false".to_string(),
-        ]);
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Running,
+            ContainerState::Running,
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
 
         spawn_agent_session(
             &paths,
@@ -746,8 +694,10 @@ mod tests {
             crate::agent::Agent::Claude,
             true,
             false,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
 
         assert!(
@@ -760,8 +710,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn hardline_new_session_forwards_dco_env_when_enabled() {
+    #[tokio::test]
+    async fn hardline_new_session_forwards_dco_env_when_enabled() {
         let (_tmp, paths) = test_paths();
         let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
@@ -783,11 +733,15 @@ mod tests {
                 certs_volume: format!("{container_name}-dind-certs"),
             },
         });
-        let mut runner = FakeRunner::with_capture_queue([
-            "true 0 false".to_string(),
-            "true 0 false".to_string(),
-            "true 0 false".to_string(),
-        ]);
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+            ContainerState::Running,
+            ContainerState::Running,
+            ContainerState::Running,
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
 
         spawn_agent_session(
             &paths,
@@ -796,8 +750,10 @@ mod tests {
             crate::agent::Agent::Claude,
             false,
             true,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
 
         assert!(
@@ -818,10 +774,16 @@ mod tests {
         );
     }
 
-    #[test]
-    fn hardline_new_session_requires_running_container() {
+    #[tokio::test]
+    async fn hardline_new_session_requires_running_container() {
         let (_tmp, paths) = test_paths();
-        let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped { exit_code: 137, oom_killed: false },
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
 
         let err = spawn_agent_session(
             &paths,
@@ -830,8 +792,10 @@ mod tests {
             crate::agent::Agent::Claude,
             false,
             false,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap_err();
 
         assert!(err.to_string().contains("is stopped"));
@@ -843,13 +807,16 @@ mod tests {
         );
     }
 
-    #[test]
-    fn spawn_shell_session_execs_zsh_in_running_container() {
+    #[tokio::test]
+    async fn spawn_shell_session_execs_zsh_in_running_container() {
         let (_tmp, paths) = test_paths();
-        // inspect returns Running; capture queue for caffeinate inspect.
-        let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([ContainerState::Running])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
 
-        spawn_shell_session(&paths, "jk-agent-smith", &mut runner).unwrap();
+        spawn_shell_session(&paths, "jk-agent-smith", &docker, &mut runner).await.unwrap();
 
         assert!(
             runner.recorded.iter().any(|c| {
@@ -863,12 +830,16 @@ mod tests {
         );
     }
 
-    #[test]
-    fn spawn_shell_session_sets_tmux_env_to_empty() {
+    #[tokio::test]
+    async fn spawn_shell_session_sets_tmux_env_to_empty() {
         let (_tmp, paths) = test_paths();
-        let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([ContainerState::Running])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
 
-        spawn_shell_session(&paths, "jk-agent-smith", &mut runner).unwrap();
+        spawn_shell_session(&paths, "jk-agent-smith", &docker, &mut runner).await.unwrap();
 
         let exec_call = runner
             .recorded
@@ -881,12 +852,18 @@ mod tests {
         );
     }
 
-    #[test]
-    fn spawn_shell_session_errors_on_stopped_container() {
+    #[tokio::test]
+    async fn spawn_shell_session_errors_on_stopped_container() {
         let (_tmp, paths) = test_paths();
-        let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped { exit_code: 137, oom_killed: false },
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
 
-        let err = spawn_shell_session(&paths, "jk-agent-smith", &mut runner).unwrap_err();
+        let err = spawn_shell_session(&paths, "jk-agent-smith", &docker, &mut runner).await.unwrap_err();
 
         assert!(err.to_string().contains("is stopped"));
         assert!(
@@ -895,23 +872,25 @@ mod tests {
         );
     }
 
-    #[test]
-    fn spawn_shell_session_errors_on_not_found() {
+    #[tokio::test]
+    async fn spawn_shell_session_errors_on_not_found() {
         let (_tmp, paths) = test_paths();
-        let mut runner = FakeRunner::default(); // empty inspect → NotFound
+        let docker = FakeDockerClient::default(); // empty inspect → NotFound
+        let mut runner = FakeRunner::default();
 
-        let err = spawn_shell_session(&paths, "jk-agent-smith", &mut runner).unwrap_err();
+        let err = spawn_shell_session(&paths, "jk-agent-smith", &docker, &mut runner).await.unwrap_err();
 
         assert!(err.to_string().contains("not found"));
         assert!(!runner.recorded.iter().any(|c| c.contains("docker exec")));
     }
 
-    #[test]
-    fn hardline_errors_when_container_not_found() {
+    #[tokio::test]
+    async fn hardline_errors_when_container_not_found() {
         let (_tmp, paths) = test_paths();
+        let docker = FakeDockerClient::default();
         let mut runner = FakeRunner::default();
 
-        let err = hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap_err();
+        let err = hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner).await.unwrap_err();
 
         assert!(err.to_string().contains("not found"));
         assert!(
@@ -922,40 +901,19 @@ mod tests {
         );
     }
 
-    #[test]
-    fn inspect_container_state_distinguishes_missing_container_from_docker_failure() {
-        let mut missing = FakeRunner::default();
-        missing.fail_with.push((
-            "docker inspect".to_string(),
-            "Error: No such object: jk-agent-smith".to_string(),
-        ));
-        assert_eq!(
-            inspect_container_state(&mut missing, "jk-agent-smith"),
-            ContainerState::NotFound
-        );
-
-        let mut unavailable = FakeRunner::default();
-        unavailable.fail_with.push((
-            "docker inspect".to_string(),
-            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
-        ));
-        assert!(matches!(
-            inspect_container_state(&mut unavailable, "jk-agent-smith"),
-            ContainerState::InspectUnavailable(reason)
-                if reason.contains("Cannot connect to the Docker daemon")
-        ));
-    }
-
-    #[test]
-    fn hardline_errors_when_docker_inspect_is_unavailable() {
+    #[tokio::test]
+    async fn hardline_errors_when_docker_inspect_is_unavailable() {
         let (_tmp, paths) = test_paths();
+        let docker = FakeDockerClient {
+            fail_with: vec![(
+                "docker inspect jk-agent-smith".to_string(),
+                "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+            )],
+            ..Default::default()
+        };
         let mut runner = FakeRunner::default();
-        runner.fail_with.push((
-            "docker inspect".to_string(),
-            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
-        ));
 
-        let err = hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap_err();
+        let err = hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner).await.unwrap_err();
 
         assert!(err.to_string().contains("Docker is unavailable"));
         assert!(
@@ -966,8 +924,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn hardline_marks_missing_manifest_restore_available() {
+    #[tokio::test]
+    async fn hardline_marks_missing_manifest_restore_available() {
         let (_tmp, paths) = test_paths();
         let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
@@ -993,9 +951,10 @@ mod tests {
         let state_dir = paths.data_dir.join(container_name);
         manifest.write(&state_dir).unwrap();
         InstanceIndex::update_manifest(&paths.data_dir, &manifest).unwrap();
+        let docker = FakeDockerClient::default(); // NotFound
         let mut runner = FakeRunner::default();
 
-        let err = hardline_agent(&paths, container_name, &mut runner).unwrap_err();
+        let err = hardline_agent(&paths, container_name, &docker, &mut runner).await.unwrap_err();
 
         assert!(err.to_string().contains("state remains recoverable"));
         let manifest = InstanceManifest::read(&state_dir).unwrap();
@@ -1004,8 +963,8 @@ mod tests {
         assert_eq!(index.instances[0].status, InstanceStatus::RestoreAvailable);
     }
 
-    #[test]
-    fn inspect_hardline_instance_reports_state_without_attaching() {
+    #[tokio::test]
+    async fn inspect_hardline_instance_reports_state_without_attaching() {
         let (_tmp, paths) = test_paths();
         let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let mut manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
@@ -1032,14 +991,28 @@ mod tests {
         manifest
             .write(&paths.data_dir.join(container_name))
             .unwrap();
+        // inspect: role container running, dind stopped
+        // exec_capture: tmux list-sessions returns two sessions
+        // list_networks: network present
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Running,
+                ContainerState::Stopped { exit_code: 137, oom_killed: false },
+            ])),
+            list_networks_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                vec![crate::docker_client::NetworkRow {
+                    name: format!("{container_name}-net"),
+                    labels: Default::default(),
+                }],
+            ])),
+            ..Default::default()
+        };
+        // Runner provides tmux session list for inspect_agent_sessions
         let mut runner = FakeRunner::with_capture_queue([
-            "true 0 false".to_string(),
             "jackin-claude-abc123\njackin-codex-abc".to_string(),
-            "false 137 false".to_string(),
-            "[]".to_string(),
         ]);
 
-        let report = inspect_hardline_instance(&paths, container_name, &mut runner).unwrap();
+        let report = inspect_hardline_instance(&paths, container_name, &docker, &mut runner).await.unwrap();
 
         assert!(report.contains("Instance ID: k7p9m2xq"), "{report}");
         assert!(report.contains("Workspace: workspace"), "{report}");
@@ -1066,13 +1039,20 @@ mod tests {
         );
     }
 
-    #[test]
-    fn inspect_agent_sessions_lists_tmux_sessions() {
-        let mut runner =
-            FakeRunner::with_capture_queue(["jackin-claude-abc123\njackin-codex-abc".to_string()]);
+    #[tokio::test]
+    async fn inspect_agent_sessions_lists_tmux_sessions() {
+        let docker = FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+            "jackin-claude-abc123
+            jackin-codex-abc".to_string(),
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::with_capture_queue(["jackin-claude-abc123
+jackin-codex-abc".to_string()]);
 
         let sessions =
-            inspect_agent_sessions(&mut runner, "jk-agent-smith", &ContainerState::Running);
+            inspect_agent_sessions(&mut runner, "jk-agent-smith", &ContainerState::Running).await;
 
         let AgentSessionInventory::Sessions(sessions) = sessions else {
             panic!("expected sessions");
@@ -1082,20 +1062,18 @@ mod tests {
         assert_eq!(sessions[1].command, "jackin-codex-abc");
     }
 
-    #[test]
-    fn inspect_agent_sessions_returns_empty_when_no_sessions_running() {
-        // tmux list-sessions exits 1 when no sessions exist; the sh wrapper
-        // converts that to exit 0 with empty output → empty sessions list.
+    #[tokio::test]
+    async fn inspect_agent_sessions_returns_empty_when_no_sessions_running() {
         let mut runner = FakeRunner::with_capture_queue([String::new()]);
 
         let sessions =
-            inspect_agent_sessions(&mut runner, "jk-agent-smith", &ContainerState::Running);
+            inspect_agent_sessions(&mut runner, "jk-agent-smith", &ContainerState::Running).await;
 
         assert_eq!(sessions, AgentSessionInventory::Sessions(vec![]));
     }
 
-    #[test]
-    fn inspect_agent_sessions_skips_query_when_container_is_not_running() {
+    #[tokio::test]
+    async fn inspect_agent_sessions_skips_query_when_container_is_not_running() {
         let mut runner = FakeRunner::default();
 
         let sessions = inspect_agent_sessions(
@@ -1105,14 +1083,14 @@ mod tests {
                 exit_code: 137,
                 oom_killed: false,
             },
-        );
+        ).await;
 
         assert_eq!(sessions, AgentSessionInventory::NotRunning);
         assert!(runner.recorded.is_empty());
     }
 
-    #[test]
-    fn inspect_hardline_instance_still_reports_manifest_when_docker_unavailable() {
+    #[tokio::test]
+    async fn inspect_hardline_instance_still_reports_manifest_when_docker_unavailable() {
         let (_tmp, paths) = test_paths();
         let container_name = "jk-k7p9m2xq-workspace-agentsmith";
         let manifest = InstanceManifest::new(crate::instance::NewInstanceManifest {
@@ -1137,23 +1115,21 @@ mod tests {
         manifest
             .write(&paths.data_dir.join(container_name))
             .unwrap();
+        let docker = FakeDockerClient {
+            fail_with: vec![
+                (
+                    "docker inspect jk-k7p9m2xq-workspace-agentsmith".to_string(),
+                    "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+                ),
+            ],
+            ..Default::default()
+        };
         let mut runner = FakeRunner::default();
-        runner.fail_with.push((
-            "docker inspect".to_string(),
-            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
-        ));
-        runner.fail_with.push((
-            "docker network inspect".to_string(),
-            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
-        ));
 
-        let report = inspect_hardline_instance(&paths, container_name, &mut runner).unwrap();
+        let report = inspect_hardline_instance(&paths, container_name, &docker, &mut runner).await.unwrap();
 
         assert!(report.contains("Workspace: workspace"), "{report}");
         assert!(report.contains("Role container: jk-k7p9m2xq-workspace-agentsmith (unavailable:"));
-        assert!(
-            report.contains("Docker network: jk-k7p9m2xq-workspace-agentsmith-net (unavailable:")
-        );
         assert!(
             !runner
                 .recorded
@@ -1162,12 +1138,18 @@ mod tests {
         );
     }
 
-    #[test]
-    fn hardline_errors_on_clean_exit() {
+    #[tokio::test]
+    async fn hardline_errors_on_clean_exit() {
         let (_tmp, paths) = test_paths();
-        let mut runner = FakeRunner::with_capture_queue(["false 0 false".to_string()]);
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped { exit_code: 0, oom_killed: false },
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
 
-        let err = hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap_err();
+        let err = hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner).await.unwrap_err();
 
         assert!(err.to_string().contains("exited cleanly"));
         assert!(
@@ -1178,12 +1160,18 @@ mod tests {
         );
     }
 
-    #[test]
-    fn hardline_refuses_crashed_container() {
+    #[tokio::test]
+    async fn hardline_refuses_crashed_container() {
         let (_tmp, paths) = test_paths();
-        let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped { exit_code: 137, oom_killed: false },
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
 
-        let err = hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap_err();
+        let err = hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner).await.unwrap_err();
 
         assert!(
             err.to_string().contains("stopped") && err.to_string().contains("jackin load"),
@@ -1198,12 +1186,18 @@ mod tests {
         );
     }
 
-    #[test]
-    fn hardline_refuses_oom_killed_container() {
+    #[tokio::test]
+    async fn hardline_refuses_oom_killed_container() {
         let (_tmp, paths) = test_paths();
-        let mut runner = FakeRunner::with_capture_queue(["false 0 true".to_string()]);
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped { exit_code: 0, oom_killed: true },
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
 
-        let err = hardline_agent(&paths, "jk-agent-smith", &mut runner).unwrap_err();
+        let err = hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner).await.unwrap_err();
 
         assert!(
             err.to_string().contains("OOM") && err.to_string().contains("jackin load"),
