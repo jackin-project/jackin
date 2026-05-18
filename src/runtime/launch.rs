@@ -2037,7 +2037,9 @@ fn load_role_with(
         //  - Stopped / 0 → user exited cleanly inside Claude Code.  Tear down.
         //  - Stopped / ≠0 or OOM-killed → crash.  Preserve so `jackin hardline`
         //    can restart the existing container + DinD sidecar.
-        //  - NotFound → container was removed externally. Treat as Stopped/0.
+        //  - NotFound + !Preserved → removed externally. Treat as Stopped/0.
+        //  - NotFound + Preserved → removed externally while preserved status
+        //                           stands on disk. Nothing to clean up; skip.
         //  - InspectUnavailable → Docker unreachable; keep everything alive.
         let is_preserved = matches!(
             decision,
@@ -2105,7 +2107,14 @@ fn load_role_with(
                 if matches!(
                     decision,
                     crate::isolation::finalize::FinalizeDecision::Preserved
-                ) => {}
+                ) =>
+            {
+                crate::debug_log!(
+                    "instance",
+                    "container {container_name} not found after session with Preserved decision; \
+                     removed externally during finalization — preserved status on disk stands",
+                );
+            }
             ContainerState::NotFound => {
                 run_clean_exit_teardown(
                     paths,
