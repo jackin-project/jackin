@@ -17,7 +17,7 @@ on:
 
 jobs:
   publish:
-    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@e4ff18f9b62c7e704dade175b150c50e130270e6 # latest
+    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@6474eac93fb6f4d3aabf6ba051ae7ddfc1c77dba # latest
     permissions:
       contents: read
       id-token: write
