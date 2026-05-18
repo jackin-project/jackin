@@ -1,7 +1,9 @@
 # DL3004: construct base image is a dev container that intentionally exposes sudo
 # DL3059: per-tool RUN layers are deliberate for Docker layer cache reuse (see Dockerfile comments)
+# DL3003: cd inside RUN is intentional — caveman installer requires running from HOME
 # SC2016: single-quoted ${HOME} in echo is intentional — zsh expands it at source time, not build time
 ignore:
   - DL3004
   - DL3059
+  - DL3003
   - SC2016
