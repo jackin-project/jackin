@@ -39,6 +39,9 @@ pub struct RunOptions {
     /// When `true`, both stdout and stderr are sent to `/dev/null`.
     /// Useful for suppressing noisy output (e.g. git fetch) in non-debug mode.
     pub quiet: bool,
+    /// Additional environment variables injected into the child process,
+    /// additive over the inherited parent environment.
+    pub extra_env: Vec<(String, String)>,
 }
 
 pub trait CommandRunner {
@@ -129,7 +132,11 @@ impl CommandRunner for ShellRunner {
         self.log_command(program, args, cwd);
 
         if opts.quiet {
-            let mut child = Self::build_command(program, args, cwd)
+            let mut cmd = Self::build_command(program, args, cwd);
+            if !opts.extra_env.is_empty() {
+                cmd.envs(opts.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+            }
+            let mut child = cmd
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
                 .spawn()?;
@@ -141,9 +148,11 @@ impl CommandRunner for ShellRunner {
                 args.join(" ")
             );
         } else if opts.capture_stderr {
-            let mut child = Self::build_command(program, args, cwd)
-                .stderr(std::process::Stdio::piped())
-                .spawn()?;
+            let mut cmd = Self::build_command(program, args, cwd);
+            if !opts.extra_env.is_empty() {
+                cmd.envs(opts.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+            }
+            let mut child = cmd.stderr(std::process::Stdio::piped()).spawn()?;
             let stderr = child.stderr.take().ok_or_else(|| {
                 anyhow::anyhow!(
                     "failed to capture stderr for {} {}",
@@ -181,7 +190,11 @@ impl CommandRunner for ShellRunner {
                 );
             }
         } else {
-            let mut child = Self::build_command(program, args, cwd).spawn()?;
+            let mut cmd = Self::build_command(program, args, cwd);
+            if !opts.extra_env.is_empty() {
+                cmd.envs(opts.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+            }
+            let mut child = cmd.spawn()?;
             let status = child.wait()?;
             anyhow::ensure!(
                 status.success(),
