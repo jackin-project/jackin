@@ -237,7 +237,7 @@ impl CommandRunner for ShellRunner {
 
 impl ShellRunner {
     fn do_capture(
-        &mut self,
+        &self,
         program: &str,
         args: &[&str],
         cwd: Option<&Path>,
