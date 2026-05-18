@@ -110,23 +110,9 @@ pub(super) fn build_agent_image(
     // override while this invocation uses the canonical one, or vice versa —
     // and must be rebuilt from scratch rather than reused.
     let current_construct = crate::repo_contract::construct_image();
-    let cached_construct_label = runner
-        .capture(
-            "docker",
-            &[
-                "inspect",
-                "--format",
-                &format!("{{{{index .Config.Labels \"{LABEL_IMAGE_CONSTRUCT}\"}}}}"),
-                &image,
-            ],
-            None,
-        )
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let construct_mismatch = cached_construct_label
-        .as_deref()
-        .is_some_and(|cached| cached != current_construct);
+    let construct_mismatch = !rebuild
+        && read_image_label(runner, &image, LABEL_IMAGE_CONSTRUCT)
+            .is_some_and(|cached| cached != current_construct);
     let rebuild = rebuild || construct_mismatch;
 
     let cache_bust_value = if rebuild || agent_update {
@@ -189,6 +175,23 @@ pub(super) fn build_agent_image(
     Ok(image)
 }
 
+fn read_image_label(runner: &mut impl CommandRunner, image: &str, key: &str) -> Option<String> {
+    runner
+        .capture(
+            "docker",
+            &[
+                "inspect",
+                "--format",
+                &format!("{{{{index .Config.Labels \"{key}\"}}}}"),
+                image,
+            ],
+            None,
+        )
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 /// Returns true when the published image's construct version label differs from
 /// the Dockerfile's pinned version, meaning the published image pre-dates a
 /// Renovate bump. If the label is absent the image predates this tracking
@@ -212,21 +215,8 @@ fn construct_version_is_stale(
                 .dimmed()
         );
     }
-    let label_stored = runner
-        .capture(
-            "docker",
-            &[
-                "inspect",
-                "--format",
-                &format!("{{{{index .Config.Labels \"{LABEL_IMAGE_CONSTRUCT_VERSION}\"}}}}"),
-                published,
-            ],
-            None,
-        )
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    label_stored.is_some_and(|stored| stored != dockerfile_version)
+    read_image_label(runner, published, LABEL_IMAGE_CONSTRUCT_VERSION)
+        .is_some_and(|stored| stored != dockerfile_version)
 }
 
 fn extract_agent_version(

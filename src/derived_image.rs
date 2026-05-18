@@ -236,12 +236,10 @@ pub fn create_derived_build_context(
                 .lines()
                 .map(|line| {
                     if line.starts_with(&construct_from_prefix) {
-                        // Skip past "FROM registry/image:tag" to find optional " AS alias".
                         let after_prefix = &line[construct_from_prefix.len()..];
                         let alias = after_prefix
-                            .find(' ')
-                            .map_or("", |i| &after_prefix[i..])
-                            .to_string();
+                            .split_once(' ')
+                            .map_or(String::new(), |(_, rest)| format!(" {rest}"));
                         format!("{from_override}{alias}")
                     } else {
                         line.to_string()
