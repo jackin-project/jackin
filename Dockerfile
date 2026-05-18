@@ -18,6 +18,9 @@ ARG PROTOC_VERSION=34.1
 ARG CARGO_BINSTALL_VERSION=1.19.1
 ARG TESSL_VERSION=0.77.0
 ARG CAVEMAN_VERSION=1.7.0
+# Passed by CI to authenticate GitHub API calls during mise install.
+# Declared as ARG (not ENV) so it is not baked into any image layer.
+ARG GITHUB_TOKEN
 
 # `libclang-dev` is required by Rust crates with `bindgen` build-deps
 # (rdkafka-sys et al.) used in the ChainArgos monorepo.
@@ -45,32 +48,32 @@ RUN mkdir -p /home/agent/.gradle
 # Per-tool RUNs are deliberate: bumping one ARG only invalidates that
 # tool's layer. Trips hadolint DL3059; the cache reuse is worth it.
 RUN --mount=type=secret,id=github_token,required=false \
-    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
+    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "node@${NODE_VERSION}" && \
     mise use -g --pin "node@${NODE_VERSION}"
 
 RUN --mount=type=secret,id=github_token,required=false \
-    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
+    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "rust@${RUST_VERSION}" && \
     mise use -g --pin "rust@${RUST_VERSION}"
 
 RUN --mount=type=secret,id=github_token,required=false \
-    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
+    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "java@${JAVA_VERSION}" && \
     mise use -g --pin "java@${JAVA_VERSION}"
 
 RUN --mount=type=secret,id=github_token,required=false \
-    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
+    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "protoc@${PROTOC_VERSION}" && \
     mise use -g --pin "protoc@${PROTOC_VERSION}"
 
 RUN --mount=type=secret,id=github_token,required=false \
-    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
+    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "cargo-binstall@${CARGO_BINSTALL_VERSION}" && \
     mise use -g --pin "cargo-binstall@${CARGO_BINSTALL_VERSION}"
 
 RUN --mount=type=secret,id=github_token,required=false \
-    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
+    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise use -g cargo:cargo-nextest && \
     mise use -g cargo:ast-grep && \
     mise use -g cargo:rust-script && \
@@ -80,7 +83,7 @@ RUN --mount=type=secret,id=github_token,required=false \
 RUN curl -fsSL https://get.tessl.io | TESSL_VERSION="$TESSL_VERSION" sh
 
 RUN --mount=type=secret,id=github_token,required=false \
-    GITHUB_TOKEN=$(cat /run/secrets/github_token 2>/dev/null || true) \
+    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise exec "node@${NODE_VERSION}" -- npm install -g ctx7
 
 # Caveman bypasses the root `install.sh` because its per-agent
