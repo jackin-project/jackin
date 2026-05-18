@@ -336,19 +336,19 @@ printf '\033[2J\033[H'
 # adds no value and clutters the agent's full-screen UI.
 tmux set-option -g status off 2>/dev/null || true
 
-# `|| true` keeps startup working on tmux versions that don't recognise a flag.
-#
-# `always` instead of `on`: agents don't emit the per-app activation escape, so
-# `on` would have no effect — Shift+Enter would still collapse to plain Enter.
-tmux set-option -s extended-keys always 2>/dev/null || true
+# `always` instead of `on`: none of the supported agents (claude, codex, amp,
+# kimi, opencode) emit the per-app activation escape, so `on` would have no
+# effect — Shift+Enter would still collapse to plain Enter.
+tmux set-option -s extended-keys always
 # Paired with extended-keys: advertises extkeys to xterm*-TERM panes so their
 # terminfo queries confirm support.
-tmux set-option -as terminal-features 'xterm*:extkeys' 2>/dev/null || true
-tmux set-option -g focus-events on 2>/dev/null || true
+tmux set-option -as terminal-features 'xterm*:extkeys'
+tmux set-option -g focus-events on
 # Container panes cannot reach the outer terminal's OSC surface without this;
 # agent desktop notifications and progress bars are silently dropped otherwise.
-tmux set-option -g allow-passthrough on 2>/dev/null || true
-# Default 500 ms Escape disambiguation misfires in agent TUI vi-mode navigation.
-tmux set-option -sg escape-time 0 2>/dev/null || true
+tmux set-option -g allow-passthrough on
+# Escape disambiguation delay causes misfired key sequences in agent TUI
+# vi-mode navigation.
+tmux set-option -sg escape-time 0
 
 exec "${LAUNCH[@]}"
