@@ -147,7 +147,10 @@ pub fn handle_key(
         && settings.error_popup.is_some()
     {
         if let Some(popup) = &settings.error_popup {
-            if matches!(popup.handle_key(key), crate::console::widgets::ModalOutcome::Cancel) {
+            if matches!(
+                popup.handle_key(key),
+                crate::console::widgets::ModalOutcome::Cancel
+            ) {
                 settings.error_popup = None;
             }
         }

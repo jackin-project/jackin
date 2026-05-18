@@ -1579,9 +1579,10 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
     let _ = settings.mounts.success.take();
     let exit = std::mem::take(&mut settings.mounts.exit_requested);
     if let Some(msg) = error {
-        settings.error_popup = Some(
-            crate::console::widgets::error_popup::ErrorPopupState::new("Settings error", msg),
-        );
+        settings.error_popup = Some(crate::console::widgets::error_popup::ErrorPopupState::new(
+            "Settings error",
+            msg,
+        ));
     }
     if exit {
         state.stage = ManagerStage::List;

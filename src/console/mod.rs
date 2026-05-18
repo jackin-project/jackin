@@ -66,7 +66,9 @@ impl ConsoleState {
                 ms.list_modal = Some(crate::console::manager::state::Modal::ErrorPopup {
                     state: crate::console::widgets::error_popup::ErrorPopupState::new(
                         "No eligible roles",
-                        format!("Workspace \"{name}\" has no allowed roles configured.\n\nAdd at least one role to `allowed_roles` in the workspace settings."),
+                        format!(
+                            "Workspace \"{name}\" has no allowed roles configured.\n\nAdd at least one role to `allowed_roles` in the workspace settings."
+                        ),
                     ),
                 });
             }

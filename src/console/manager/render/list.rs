@@ -75,7 +75,6 @@ pub(super) fn render_list_body(
             None,
         );
     }
-
 }
 
 pub(in crate::console::manager) fn list_names_content_width(
