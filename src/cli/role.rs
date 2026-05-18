@@ -128,6 +128,9 @@ pub enum RoleCommand {
     /// Print the construct image version tag pinned in the role Dockerfile
     #[command(before_help = BANNER, styles = HELP_STYLES)]
     ConstructVersion(RoleRepoPathArgs),
+    /// Print the published Docker image declared in the role manifest
+    #[command(before_help = BANNER, styles = HELP_STYLES)]
+    PublishedImage(RoleRepoPathArgs),
 }
 
 /// Role repository path argument shared by `validate` and `migrate`.
