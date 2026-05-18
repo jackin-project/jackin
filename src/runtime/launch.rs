@@ -2033,24 +2033,21 @@ fn load_role_with(
         //  - Stopped / 0 → user exited cleanly inside Claude Code.  Tear down.
         //  - Stopped / ≠0 or OOM-killed → crash.  Preserve so `jackin hardline`
         //    can restart the existing container + DinD sidecar.
-        #[allow(clippy::match_same_arms)]
         match inspect_container_state(runner, &container_name) {
             ContainerState::Running => {
                 let sessions =
                     inspect_agent_sessions(runner, &container_name, &ContainerState::Running);
-                if matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty()) {
-                    if !matches!(
+                let no_sessions =
+                    matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty());
+                if no_sessions {
+                    run_clean_exit_teardown(
+                        paths,
+                        &container_state,
+                        &mut instance_manifest,
                         decision,
-                        crate::isolation::finalize::FinalizeDecision::Preserved
-                    ) {
-                        write_instance_status(
-                            paths,
-                            &container_state,
-                            &mut instance_manifest,
-                            InstanceStatus::CleanExited,
-                        )?;
-                    }
-                    cleanup.run(runner);
+                        &cleanup,
+                        runner,
+                    )?;
                 } else {
                     cleanup.disarm();
                 }
@@ -2058,24 +2055,15 @@ fn load_role_with(
             ContainerState::Stopped {
                 exit_code: 0,
                 oom_killed: false,
-            } if matches!(
-                decision,
-                crate::isolation::finalize::FinalizeDecision::Preserved
-            ) =>
-            {
-                cleanup.run(runner);
-            }
-            ContainerState::Stopped {
-                exit_code: 0,
-                oom_killed: false,
             } => {
-                write_instance_status(
+                run_clean_exit_teardown(
                     paths,
                     &container_state,
                     &mut instance_manifest,
-                    InstanceStatus::CleanExited,
+                    decision,
+                    &cleanup,
+                    runner,
                 )?;
-                cleanup.run(runner);
             }
             ContainerState::Stopped { .. } => {
                 write_instance_status(
@@ -2102,13 +2090,14 @@ fn load_role_with(
                     crate::isolation::finalize::FinalizeDecision::Preserved
                 ) => {}
             ContainerState::NotFound => {
-                write_instance_status(
+                run_clean_exit_teardown(
                     paths,
                     &container_state,
                     &mut instance_manifest,
-                    InstanceStatus::CleanExited,
+                    decision,
+                    &cleanup,
+                    runner,
                 )?;
-                cleanup.run(runner);
             }
         }
 
@@ -2499,6 +2488,27 @@ fn matching_instance_manifests(
             agent_runtime: Some(agent),
         },
     )
+}
+
+/// Write `CleanExited` status and run container teardown, unless `decision`
+/// is `Preserved` — in that case isolation already handled the worktree and
+/// status tracking, so only teardown runs.
+fn run_clean_exit_teardown(
+    paths: &JackinPaths,
+    state_dir: &std::path::Path,
+    manifest: &mut InstanceManifest,
+    decision: crate::isolation::finalize::FinalizeDecision,
+    cleanup: &LoadCleanup,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    if !matches!(
+        decision,
+        crate::isolation::finalize::FinalizeDecision::Preserved
+    ) {
+        write_instance_status(paths, state_dir, manifest, InstanceStatus::CleanExited)?;
+    }
+    cleanup.run(runner);
+    Ok(())
 }
 
 fn write_instance_status(
