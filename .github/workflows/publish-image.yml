@@ -17,10 +17,14 @@ on:
 
 jobs:
   publish:
-    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@52d91d33851d2f346316264831d1505a4bce57f2 # latest
+    uses: jackin-project/jackin-role-action/.github/workflows/publish.yml@ef61a0090d8fcfcaa07cc511cdc3dc5806445611 # latest
     permissions:
       contents: read
       id-token: write
+    with:
+      runner-amd64: hetzner-sentry
+      runner-arm64: hetzner-sentry
+      runner-merge: hetzner-sentry
     secrets:
       registry-username: ${{ secrets.DOCKERHUB_USERNAME }}
       registry-password: ${{ secrets.DOCKERHUB_TOKEN }}
