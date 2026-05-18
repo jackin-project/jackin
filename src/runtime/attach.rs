@@ -8,7 +8,6 @@ pub use crate::docker_client::ContainerState;
 #[cfg(test)]
 use crate::instance::{InstanceIndex, InstanceStatus};
 use crate::paths::JackinPaths;
-use crate::tui;
 
 use super::naming::dind_certs_volume;
 

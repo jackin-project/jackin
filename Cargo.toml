@@ -83,6 +83,9 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 must_use_candidate = "allow"
 module_name_repetitions = "allow"
+# DockerApi is an internal trait; auto-trait bounds (Send/Sync) are not
+# a concern for the current_thread runtime.
+async_fn_in_trait = "allow"
 
 # Allow casting in TUI code where precision loss is acceptable
 cast_possible_truncation = "allow"

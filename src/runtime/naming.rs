@@ -19,17 +19,6 @@ pub(super) const LABEL_MANAGED: &str = "jackin.managed=true";
 pub(super) const LABEL_KIND_ROLE: &str = "jackin.kind=role";
 /// `DinD` sidecars only — distinguishes them from role containers.
 pub(super) const LABEL_KIND_DIND: &str = "jackin.kind=dind";
-/// Filter expression for `docker images --filter` to list jackin-managed role images.
-pub(super) const FILTER_IMAGES: &str = "reference=jk_*";
-/// Filter expression for `docker ps --filter` to find managed containers.
-pub(super) const FILTER_MANAGED: &str = "label=jackin.managed=true";
-/// Filter expression for `docker ps --filter` to find role containers.
-pub(super) const FILTER_KIND_ROLE: &str = "label=jackin.kind=role";
-/// Filter expression for `docker ps --filter` to find `DinD` sidecars.
-pub(super) const FILTER_KIND_DIND: &str = "label=jackin.kind=dind";
-/// Filter expression for `docker ps --filter` to find roles whose
-/// workspace opted into the keep-awake reconciler.
-pub(super) const FILTER_KEEP_AWAKE: &str = "label=jackin.keep_awake=true";
 /// Applied to role containers whose workspace opted into the
 /// keep-awake reconciler. Read by `runtime::caffeinate::reconcile`
 /// to decide whether to keep `caffeinate` running.

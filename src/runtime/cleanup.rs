@@ -93,14 +93,6 @@ pub async fn eject_role(container_name: &str, docker: &impl DockerApi) -> anyhow
     Ok(())
 }
 
-pub(super) fn is_missing_cleanup_error(error: &anyhow::Error) -> bool {
-    let msg = error.to_string().to_ascii_lowercase();
-    msg.contains("no such object")
-        || msg.contains("no such container")
-        || msg.contains("no such network")
-        || msg.contains("no such volume")
-        || msg.contains("no such image")
-}
 
 // ── Orphaned resource garbage collection ─────────────────────────────────
 
@@ -756,23 +748,6 @@ mod tests {
                 "docker network rm jk-a1b2c3d4-myworkspace-agentsmith-net",
             ]
         );
-    }
-
-    #[tokio::test]
-    async fn is_missing_cleanup_error_tolerates_all_resource_types() {
-        let container_err =
-            anyhow::anyhow!("Error response from daemon: No such container: jk-agent-smith");
-        let volume_err = anyhow::anyhow!(
-            "Error response from daemon: No such volume: jk-agent-smith-dind-certs"
-        );
-        let network_err =
-            anyhow::anyhow!("Error response from daemon: No such network: jk-agent-smith-net");
-        let real_err = anyhow::anyhow!("Error response from daemon: permission denied");
-
-        assert!(is_missing_cleanup_error(&container_err));
-        assert!(is_missing_cleanup_error(&volume_err));
-        assert!(is_missing_cleanup_error(&network_err));
-        assert!(!is_missing_cleanup_error(&real_err));
     }
 
     #[tokio::test]

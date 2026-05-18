@@ -11,7 +11,6 @@ use bollard::query_parameters::{
     StartContainerOptions,
 };
 use futures_util::StreamExt;
-use owo_colors::OwoColorize;
 
 // ── ContainerState ────────────────────────────────────────────────────────
 
@@ -85,6 +84,7 @@ pub struct ContainerSpec {
 
 // ── DockerApi trait ───────────────────────────────────────────────────────
 
+#[allow(async_fn_in_trait)]
 pub trait DockerApi {
     async fn inspect_container_state(&self, name: &str) -> ContainerState;
     async fn remove_container(&self, name: &str) -> anyhow::Result<()>;
@@ -661,26 +661,3 @@ impl DockerApi for FakeDockerClient {
     }
 }
 
-/// Parse a "key=value" label string into two parts.
-pub(crate) fn parse_label(label: &str) -> (&str, &str) {
-    label.split_once('=').unwrap_or((label, ""))
-}
-
-/// Build a `HashMap` of labels from "key=value" label strings.
-pub(crate) fn labels_from_strs(labels: &[&str]) -> HashMap<String, String> {
-    labels
-        .iter()
-        .map(|l| {
-            let (k, v) = parse_label(l);
-            (k.to_string(), v.to_string())
-        })
-        .collect()
-}
-
-/// Warning printer used in best-effort GC operations.
-pub(crate) fn warn_gc(label: &str, name: &str, err: &anyhow::Error) {
-    eprintln!(
-        "  {} GC of {label} for {name}: {err}",
-        "warning:".yellow().bold()
-    );
-}

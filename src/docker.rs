@@ -10,6 +10,7 @@ pub struct RunOptions {
     pub extra_env: Vec<(String, String)>,
 }
 
+#[allow(async_fn_in_trait)]
 pub trait CommandRunner {
     async fn run(
         &mut self,

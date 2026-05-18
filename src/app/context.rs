@@ -2,7 +2,6 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::config::AppConfig;
-use crate::docker;
 use crate::docker_client::DockerApi;
 use crate::instance;
 use crate::paths::JackinPaths;
