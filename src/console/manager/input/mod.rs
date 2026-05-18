@@ -146,13 +146,14 @@ pub fn handle_key(
     if let ManagerStage::Settings(settings) = &mut state.stage
         && settings.error_popup.is_some()
     {
-        if let Some(popup) = &settings.error_popup {
-            if matches!(
-                popup.handle_key(key),
+        let dismiss = settings.error_popup.as_ref().is_some_and(|p| {
+            matches!(
+                p.handle_key(key),
                 crate::console::widgets::ModalOutcome::Cancel
-            ) {
-                settings.error_popup = None;
-            }
+            )
+        });
+        if dismiss {
+            settings.error_popup = None;
         }
         return Ok(InputOutcome::Continue);
     }

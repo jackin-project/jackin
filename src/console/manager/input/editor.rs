@@ -437,7 +437,7 @@ pub(super) fn handle_editor_key(
                             editor.modal = Some(Modal::ErrorPopup {
                                 state: crate::console::widgets::error_popup::ErrorPopupState::new(
                                     "Failed to open URL",
-                                    format!("{e}"),
+                                    e.to_string(),
                                 ),
                             });
                         }

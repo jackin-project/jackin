@@ -153,10 +153,8 @@ fn handle_global_mounts_key(state: &mut ManagerState<'_>, key: KeyEvent) {
         }
         // S is handled before the match (early-return above) so `open_settings_save_preview`
         // can receive all of `settings` without conflicting with the `global` borrow.
-        KeyCode::Char('d' | 'D') => {
-            if !global.pending.is_empty() {
-                global.modal = Some(confirm_modal(GlobalMountConfirm::Remove));
-            }
+        KeyCode::Char('d' | 'D') if !global.pending.is_empty() => {
+            global.modal = Some(confirm_modal(GlobalMountConfirm::Remove));
         }
         KeyCode::Char('r' | 'R') => {
             if let Some(row) = global.pending.get_mut(global.selected) {
