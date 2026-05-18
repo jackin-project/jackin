@@ -131,6 +131,12 @@ pub(crate) fn redact_env_args(args: &[&str]) -> Vec<String> {
     out
 }
 
+#[derive(Clone, Copy)]
+enum CaptureMode {
+    Normal,
+    Secret,
+}
+
 impl CommandRunner for ShellRunner {
     fn run(
         &mut self,
@@ -222,7 +228,7 @@ impl CommandRunner for ShellRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
-        self.do_capture(program, args, cwd, false)
+        self.do_capture(program, args, cwd, CaptureMode::Normal)
     }
 
     fn capture_secret(
@@ -231,7 +237,7 @@ impl CommandRunner for ShellRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
-        self.do_capture(program, args, cwd, true)
+        self.do_capture(program, args, cwd, CaptureMode::Secret)
     }
 }
 
@@ -241,7 +247,7 @@ impl ShellRunner {
         program: &str,
         args: &[&str],
         cwd: Option<&Path>,
-        secret: bool,
+        mode: CaptureMode,
     ) -> anyhow::Result<String> {
         self.log_command(program, args, cwd);
         let mut child = Self::build_command(program, args, cwd)
@@ -282,7 +288,7 @@ impl ShellRunner {
             .join()
             .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))??;
         if !status.success() {
-            if secret {
+            if matches!(mode, CaptureMode::Secret) {
                 anyhow::bail!("command failed: {} {}", program, args.join(" "));
             }
             let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
@@ -292,7 +298,7 @@ impl ShellRunner {
             anyhow::bail!("command failed: {} {}: {}", program, args.join(" "), stderr);
         }
         let stdout = String::from_utf8_lossy(&stdout).trim().to_string();
-        if self.debug && !stdout.is_empty() && !secret {
+        if self.debug && !stdout.is_empty() && matches!(mode, CaptureMode::Normal) {
             let first_line = stdout.lines().next().unwrap_or("");
             crate::tui::emit_debug_line("cmd", &format!("-> {first_line}"));
         }

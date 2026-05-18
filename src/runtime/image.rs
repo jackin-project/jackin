@@ -345,7 +345,7 @@ fn resolve_github_token(runner: &mut impl CommandRunner) -> Option<String> {
     match runner.capture_secret("gh", &["auth", "token"], None) {
         Ok(s) => {
             let s = s.trim().to_string();
-            if s.is_empty() { None } else { Some(s) }
+            (!s.is_empty()).then_some(s)
         }
         Err(e) => {
             crate::debug_log!("github_token", "gh auth token failed (no token): {e}");
