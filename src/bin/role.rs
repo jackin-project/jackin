@@ -6,7 +6,7 @@ use jackin::role_authoring;
 
 /// Validate, migrate, and inspect jackin role repositories.
 ///
-/// Used by CI (validate-agent-action) and role authors to validate the role
+/// Used by CI (jackin-role-action) and role authors to validate the role
 /// contract, migrate manifests, and extract metadata from role repositories.
 #[derive(Parser)]
 #[command(name = "jackin-role", version)]
