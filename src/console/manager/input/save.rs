@@ -1597,7 +1597,7 @@ mod tests {
     }
 
     #[test]
-    fn exit_on_success_save_does_not_show_success_toast() {
+    fn exit_on_success_save_returns_to_list() {
         let ws = WorkspaceConfig {
             version: crate::config::CURRENT_WORKSPACE_VERSION.to_string(),
             workdir: "/w".into(),
@@ -1696,7 +1696,7 @@ mod tests {
     }
 
     #[test]
-    fn create_mode_save_does_not_show_success_toast() {
+    fn create_mode_save_returns_to_list() {
         let (tmp, paths, mut config) = {
             let tmp = tempfile::tempdir().unwrap();
             let paths = JackinPaths::for_tests(tmp.path());

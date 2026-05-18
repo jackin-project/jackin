@@ -1,6 +1,6 @@
-//! List-stage rendering: the left-column workspace list, right-pane
+//! List-stage rendering: the left-column workspace list and right-pane
 //! details (saved workspace / current-directory / "+ New workspace"
-//! sentinel), and the transient toast overlay.
+//! sentinel).
 
 use ratatui::{
     Frame,

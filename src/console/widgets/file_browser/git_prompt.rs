@@ -73,10 +73,9 @@ impl FileBrowserState {
             // `o` for "open the repo's web URL in the browser" — best-effort.
             // No-op when `pending_git_url` is `None` (non-GitHub origin or
             // unresolvable remote); launcher failures are logged on the
-            // `--debug` channel since `FileBrowserState` doesn't own the
-            // global toast queue. The overlay drops the `· O open` hint
-            // segment in the None case so the keystroke is only advertised
-            // when it actually does something.
+            // `--debug` channel since `FileBrowserState` has no error surface.
+            // The overlay drops the `· O open` hint segment in the None case
+            // so the keystroke is only advertised when it actually does something.
             KeyCode::Char('o' | 'O') => {
                 if let Some(url) = self.pending_git_url.as_deref()
                     && let Err(e) = open::that_detached(url)

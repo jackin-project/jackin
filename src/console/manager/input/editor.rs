@@ -2170,6 +2170,34 @@ plugins = []
     }
 
     #[test]
+    fn o_on_folder_mount_opens_error_popup() {
+        // A plain folder mount has no GitHub URL — O must open an ErrorPopup
+        // explaining why, not silently do nothing.
+        let ws = WorkspaceConfig {
+            mounts: vec![MountConfig {
+                src: "/host/plain-dir".into(),
+                dst: "/host/plain-dir".into(),
+                readonly: false,
+                isolation: crate::isolation::MountIsolation::Shared,
+            }],
+            ..WorkspaceConfig::default()
+        };
+        let mut state = editor_on_mounts_tab(ws, 0);
+        let mut config = AppConfig::default();
+
+        press(&mut state, &mut config, KeyCode::Char('o')).unwrap();
+
+        let ManagerStage::Editor(editor) = &state.stage else {
+            panic!("expected editor stage");
+        };
+        assert!(
+            matches!(editor.modal, Some(Modal::ErrorPopup { .. })),
+            "O on a folder mount must open an ErrorPopup; got {:?}",
+            editor.modal,
+        );
+    }
+
+    #[test]
     fn added_mount_defaults_to_shared_isolation() {
         let mut editor = EditorState::new_edit("ws".into(), WorkspaceConfig::default());
         editor.active_tab = EditorTab::Mounts;

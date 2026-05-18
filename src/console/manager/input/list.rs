@@ -476,7 +476,7 @@ mod tests {
     }
 
     /// `e` and `d` on the current-directory row must be silent no-ops —
-    /// no toast, no stage transition.
+    /// no modal, no stage transition.
     #[test]
     fn current_directory_row_silently_ignores_edit_and_delete() {
         let tmp = tempfile::tempdir().unwrap();
@@ -934,7 +934,7 @@ mod tests {
 
     #[test]
     fn list_o_on_row_zero_is_silent_noop() {
-        // Row 0 is "Current directory" — O must be silent (no toast, no modal).
+        // Row 0 is "Current directory" — O must be a silent no-op.
         let tmp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(tmp.path());
         paths.ensure_base_dirs().unwrap();
@@ -964,7 +964,7 @@ mod tests {
     fn picker_commit_closes_list_modal_and_clears_state() {
         // Seed the state directly with an open GithubPicker, then commit.
         // We can't assert `open::that_detached` ran, but we *can* pin that
-        // the modal closes (no lingering state) and no error toast appears
+        // the modal closes (no lingering state) and no ErrorPopup appears
         // when the underlying call path doesn't error out synchronously.
         use crate::console::widgets::github_picker::{GithubChoice, GithubPickerState};
         let tmp = tempfile::tempdir().unwrap();

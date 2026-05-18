@@ -1009,7 +1009,6 @@ fn commit_settings_save(
     match settings.save_to_config(paths) {
         Ok(saved) => {
             *config = saved;
-            settings.mounts.success = Some("Settings saved.".into());
             settings.mounts.exit_requested = true;
         }
         Err(err) => settings.mounts.error = Some(err.to_string()),
@@ -1567,6 +1566,8 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
     let ManagerStage::Settings(settings) = &mut state.stage else {
         return;
     };
+    // Each tab dispatches to exactly one sub-handler per keypress, so at
+    // most one error field is set at a time — `or_else` laziness is safe.
     let error = settings
         .mounts
         .error
@@ -1574,7 +1575,6 @@ pub(super) fn after_settings_event(state: &mut ManagerState<'_>) {
         .or_else(|| settings.env.error.take())
         .or_else(|| settings.auth.error.take())
         .or_else(|| settings.trust.error.take());
-    let _ = settings.mounts.success.take();
     let exit = std::mem::take(&mut settings.mounts.exit_requested);
     if let Some(msg) = error {
         settings.error_popup = Some(crate::console::widgets::error_popup::ErrorPopupState::new(
@@ -2067,6 +2067,48 @@ mod tests {
             rows.iter()
                 .any(|row| matches!(row, SettingsEnvRow::RoleHeader { role, .. } if role == "agent-with-env")),
             "roles with env entries should remain visible: {rows:?}"
+        );
+    }
+
+    #[test]
+    fn after_settings_event_promotes_mounts_error_to_error_popup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = SettingsState::from_config(&config);
+        settings.mounts.error = Some("mount error detail".into());
+        state.stage = ManagerStage::Settings(settings);
+
+        after_settings_event(&mut state);
+
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("must stay in Settings stage");
+        };
+        assert!(
+            settings.error_popup.is_some(),
+            "error_popup must be set after after_settings_event"
+        );
+    }
+
+    #[test]
+    fn after_settings_event_exit_requested_pops_to_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = SettingsState::from_config(&config);
+        settings.mounts.exit_requested = true;
+        state.stage = ManagerStage::Settings(settings);
+
+        after_settings_event(&mut state);
+
+        assert!(
+            matches!(state.stage, ManagerStage::List),
+            "exit_requested must pop to List; got {:?}",
+            state.stage,
         );
     }
 }

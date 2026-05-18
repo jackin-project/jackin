@@ -98,6 +98,10 @@ pub struct ManagerState<'a> {
     /// state on disk can't change at the 20 Hz render cadence and the
     /// rebuild path walks every container directory.
     instances_last_refresh: Option<std::time::Instant>,
+    /// Dedup gate: last error string from `refresh_instances`. Without
+    /// this, a persistent parse error would reopen the popup on every
+    /// 20 Hz tick — operators would never be able to dismiss it.
+    instances_last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,7 +151,6 @@ pub struct GlobalMountsState<'a> {
     pub modal: Option<GlobalMountModal<'a>>,
     pub add_draft: Option<GlobalMountDraft>,
     pub error: Option<String>,
-    pub success: Option<String>,
     pub scroll_x: u16,
     pub scroll_y: u16,
     pub scroll_focused: bool,
@@ -592,7 +595,6 @@ impl GlobalMountsState<'_> {
             modal: None,
             add_draft: None,
             error: None,
-            success: None,
             scroll_x: 0,
             scroll_y: 0,
             scroll_focused: false,
@@ -610,7 +612,6 @@ impl GlobalMountsState<'_> {
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.add_draft = None;
         self.error = None;
-        self.success = None;
     }
 
     pub fn save_to_config(
@@ -1382,6 +1383,7 @@ impl ManagerState<'_> {
                 height: 24,
             },
             instances_last_refresh: None,
+            instances_last_error: None,
         }
     }
 
@@ -1485,9 +1487,20 @@ impl ManagerState<'_> {
         match crate::instance::InstanceIndex::read_or_rebuild(&paths.data_dir) {
             Ok(index) => {
                 self.instances = index.instances;
+                self.instances_last_error = None;
             }
-            Err(_) => {
+            Err(error) => {
                 self.instances.clear();
+                let message = format!("instance index error: {error}");
+                if self.instances_last_error.as_deref() != Some(&message) {
+                    self.list_modal = Some(Modal::ErrorPopup {
+                        state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                            "Instance index error",
+                            &message,
+                        ),
+                    });
+                    self.instances_last_error = Some(message);
+                }
             }
         }
     }

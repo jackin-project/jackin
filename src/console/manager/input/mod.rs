@@ -428,4 +428,70 @@ mod tests {
             "the original (pre-edit) name must not end up on disk"
         );
     }
+
+    #[test]
+    fn settings_error_popup_dismissed_by_enter() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = super::super::state::SettingsState::from_config(&config);
+        settings.error_popup = Some(crate::console::widgets::error_popup::ErrorPopupState::new(
+            "Test", "details",
+        ));
+        state.stage = ManagerStage::Settings(settings);
+
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Enter),
+        )
+        .unwrap();
+
+        assert!(
+            matches!(outcome, InputOutcome::Continue),
+            "Enter on error popup must return Continue; got {outcome:?}"
+        );
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("must remain in Settings stage");
+        };
+        assert!(
+            settings.error_popup.is_none(),
+            "Enter must dismiss the error popup"
+        );
+    }
+
+    #[test]
+    fn settings_error_popup_unrelated_key_does_not_dismiss() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = JackinPaths::for_tests(tmp.path());
+        paths.ensure_base_dirs().unwrap();
+        let mut config = AppConfig::default();
+        let mut state = ManagerState::from_config(&config, tmp.path());
+        let mut settings = super::super::state::SettingsState::from_config(&config);
+        settings.error_popup = Some(crate::console::widgets::error_popup::ErrorPopupState::new(
+            "Test", "details",
+        ));
+        state.stage = ManagerStage::Settings(settings);
+
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('j')),
+        )
+        .unwrap();
+
+        let ManagerStage::Settings(settings) = &state.stage else {
+            panic!("must remain in Settings stage");
+        };
+        assert!(
+            settings.error_popup.is_some(),
+            "unrelated key must not dismiss the error popup"
+        );
+    }
 }
