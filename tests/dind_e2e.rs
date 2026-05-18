@@ -54,7 +54,7 @@ fn jackin_load_agent_smith_can_reach_its_dind_daemon_with_proxy_env() {
     let target = format!("{}:/workspace", workspace_dir.display());
     let args = ["load", ROLE_KEY, &target, "--agent", "claude", "--no-intro"];
     // The Dockerfile pins FROM to 0.1-trixie (versioned, as required by
-    // jackin-validate). That tag doesn't exist until the first construct CI
+    // jackin-role validate). That tag doesn't exist until the first construct CI
     // build runs after this PR lands. Override with the published floating tag
     // so the E2E build succeeds in CI while the Dockerfile stays correctly
     // pinned for validation purposes.

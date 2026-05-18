@@ -1008,6 +1008,16 @@ plugins = []
     }
 
     #[test]
+    fn jackin_construct_image_override_no_alias() {
+        let input = "FROM projectjackin/construct:0.1-trixie\nUSER agent\n";
+        let result = apply_construct_image_override(input, "jackin-local/construct:trixie");
+        assert!(
+            result.starts_with("FROM jackin-local/construct:trixie\n"),
+            "override without alias must not add trailing space; got:\n{result}"
+        );
+    }
+
+    #[test]
     fn jackin_construct_image_override_preserves_as_alias() {
         let input = "FROM projectjackin/construct:0.1-trixie AS runtime\nUSER agent\n";
         let result = apply_construct_image_override(input, "jackin-local/construct:trixie");

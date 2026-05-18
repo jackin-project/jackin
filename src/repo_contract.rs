@@ -7,8 +7,9 @@ use crate::repo::RoleRepoValidationError;
 
 pub const CONSTRUCT_REGISTRY_IMAGE: &str = "projectjackin/construct";
 pub const CONSTRUCT_STABLE_TAG: &str = "trixie";
-/// Floating stable-channel tag. Fallback when `JACKIN_CONSTRUCT_IMAGE` is unset
-/// and the expected-image string embedded in `DockerfileNonConstruct` errors.
+/// Floating stable-channel tag. Default returned by `construct_image()` when
+/// `JACKIN_CONSTRUCT_IMAGE` is unset; also used in `DockerfileNonConstruct`
+/// error messages.
 pub const CONSTRUCT_IMAGE: &str = "projectjackin/construct:trixie";
 
 pub fn construct_image() -> String {
@@ -19,11 +20,13 @@ pub fn construct_image() -> String {
 pub struct ValidatedDockerfile {
     pub dockerfile_path: PathBuf,
     pub dockerfile_contents: String,
-    /// Full versioned image tag (e.g. `projectjackin/construct:0.1-trixie`).
+    /// Full versioned image reference from the final `FROM` line
+    /// (e.g. `projectjackin/construct:0.1-trixie`). Digest pins are included.
     pub final_stage_image: String,
     pub final_stage_alias: Option<String>,
-    /// The versioned tag component (e.g. `0.1-trixie`). Stored in the
-    /// published image label so jackin can detect staleness at launch time.
+    /// Tag component of `final_stage_image` with any digest pin stripped
+    /// (e.g. `0.1-trixie`). Compared against the `jackin.construct_version`
+    /// label on the published image to detect staleness at launch time.
     pub construct_version: String,
     // Prevents struct-literal construction outside this module so all
     // instances carry the invariants enforced by validate_agent_dockerfile.
@@ -65,7 +68,6 @@ pub fn validate_agent_dockerfile(
     let base_ref = image_str
         .split_once('@')
         .map_or(image_str, |(base, _)| base);
-    // "projectjackin/construct:0.1-trixie" → ("projectjackin/construct", "0.1-trixie")
     let (registry_image, tag) = base_ref.rsplit_once(':').unwrap_or((base_ref, ""));
 
     let expected = CONSTRUCT_IMAGE.to_owned();
@@ -158,9 +160,32 @@ mod tests {
 
         assert!(matches!(
             error,
-            RoleRepoValidationError::DockerfileMissingVersionPin { .. }
+            RoleRepoValidationError::DockerfileMissingVersionPin
         ));
-        assert!(error.to_string().contains("floating tag"));
+        let msg = error.to_string();
+        assert!(msg.contains("floating tag"));
+        assert!(
+            msg.contains("Renovate"),
+            "error must include Renovate guidance; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn rejects_empty_version_prefix() {
+        let temp = tempdir().unwrap();
+        let dockerfile = temp.path().join("Dockerfile");
+        std::fs::write(
+            &dockerfile,
+            format!("FROM {CONSTRUCT_REGISTRY_IMAGE}:-{CONSTRUCT_STABLE_TAG}\n"),
+        )
+        .unwrap();
+
+        let error = validate_agent_dockerfile(&dockerfile).unwrap_err();
+
+        assert!(matches!(
+            error,
+            RoleRepoValidationError::DockerfileMissingVersionPin
+        ));
     }
 
     #[test]

@@ -59,18 +59,12 @@ pub(super) fn build_agent_image(
             &validated_repo.dockerfile.construct_version,
             runner,
         ) {
-        if debug {
-            eprintln!(
-                "{}",
-                format!(
-                    "[debug] published image {} predates Dockerfile construct pin {}; \
-                     rebuilding from workspace Dockerfile",
-                    published_image.unwrap(),
-                    validated_repo.dockerfile.construct_version,
-                )
-                .dimmed()
-            );
-        }
+        eprintln!(
+            "note: published image {} predates Dockerfile construct pin {}; \
+             rebuilding from workspace Dockerfile",
+            published_image.unwrap(),
+            validated_repo.dockerfile.construct_version,
+        );
         use_prebuilt = false;
         base_image_override = None;
         true
@@ -154,10 +148,11 @@ pub(super) fn build_agent_image(
     // no-op, so this adds negligible overhead while ensuring the local daemon
     // picks up any newly pushed workspace image.
     //
-    // Workspace mode with --rebuild: pass --pull to refresh the upstream
-    // construct base before rebuilding from the workspace Dockerfile.
+    // Workspace mode with rebuild=true (explicit --rebuild or staleness-driven
+    // fallback): pass --pull to refresh the upstream construct base before
+    // rebuilding from the workspace Dockerfile.
     //
-    // Workspace mode without --rebuild (no published_image): omit --pull so
+    // Workspace mode without rebuild (no published_image): omit --pull so
     // Docker's layer cache is respected across invocations. The base image is
     // not re-evaluated and heavy apt / toolchain layers stay cached.
     if use_prebuilt || rebuild {
@@ -207,6 +202,12 @@ fn read_image_label(runner: &mut impl CommandRunner, image: &str, key: &str) -> 
 /// the Dockerfile's pinned version, meaning the published image pre-dates a
 /// Renovate bump. If the label is absent the image predates this tracking
 /// feature — treat as fresh so existing published images keep working.
+///
+/// If `docker pull` fails the image may not exist locally at all. Treating a
+/// missing image as "not stale" would let the prebuilt path proceed and produce
+/// a confusing late failure inside `docker build`. Return `true` (stale) so
+/// jackin falls back to workspace mode, which gives the operator a clearer
+/// error if the construct base is also unreachable.
 fn construct_version_is_stale(
     published: &str,
     dockerfile_version: &str,
@@ -219,8 +220,10 @@ fn construct_version_is_stale(
         &RunOptions::default(),
     ) {
         eprintln!(
-            "warning: docker pull {published} failed ({e}); staleness check will use locally cached image"
+            "warning: docker pull {published} failed ({e}); \
+             treating published image as stale and rebuilding from workspace Dockerfile"
         );
+        return true;
     }
     read_image_label(runner, published, LABEL_IMAGE_CONSTRUCT_VERSION)
         .is_some_and(|stored| stored != dockerfile_version)

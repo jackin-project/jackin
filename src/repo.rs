@@ -80,7 +80,7 @@ pub enum RoleRepoValidationError {
     DockerfileNonConstruct { expected: String },
     #[error(
         "Dockerfile FROM {r}:{t} uses the floating tag — pin to a versioned release \
-         like FROM {r}:0.1-{t}.\n\
+         like FROM {r}:<version>-{t}.\n\
          Configure Renovate with a regex versioning rule to track version bumps automatically.",
         r = crate::repo_contract::CONSTRUCT_REGISTRY_IMAGE,
         t = crate::repo_contract::CONSTRUCT_STABLE_TAG,
