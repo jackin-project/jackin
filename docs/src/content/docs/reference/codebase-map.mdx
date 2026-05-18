@@ -173,7 +173,7 @@ into a single module:
 | <RepoFile path="src/repo.rs" /> | Role-repo validation — required files, path-traversal checks. |
 | <RepoFile path="src/repo_contract.rs" /> | Enforces that role `Dockerfile`s extend the construct base. |
 | <RepoFile path="src/derived_image.rs" /> | Generates the derived Dockerfile from the role's repo + the construct base. |
-| <RepoFile path="src/docker.rs" /> | Docker command builder — `CommandRunner` trait and `ShellRunner`. |
+| <RepoFile path="src/docker.rs" /> | Docker command builder — `CommandRunner` trait (`run`, `capture`, `capture_secret`) and `ShellRunner`. `capture_secret` suppresses stdout from the debug stream and omits stderr from error messages; use it for commands whose output is a credential. |
 | <RepoFile path="src/paths.rs" /> | XDG-compliant data and config directory resolution (`JackinPaths`). |
 
 ## Code ↔ docs cross-reference
