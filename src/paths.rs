@@ -94,6 +94,7 @@ mod env_override_tests {
             None,
         );
 
+        assert_eq!(paths.jackin_home, jackin_root.path());
         assert_eq!(paths.data_dir, jackin_root.path().join("data"));
         assert_eq!(paths.roles_dir, jackin_root.path().join("roles"));
         assert_eq!(paths.cache_dir, jackin_root.path().join("cache"));

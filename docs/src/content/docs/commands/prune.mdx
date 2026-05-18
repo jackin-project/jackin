@@ -81,6 +81,8 @@ jackin prune system [--yes] [--all]
 
 Runs all four subcommands in order: `instances` → `images` → `roles` → `cache`. Prompts for confirmation before proceeding unless `--yes` is passed. By default skips running instances; pass `--all` to stop and remove them too.
 
+When `--all` is passed and all steps succeed, jackin also removes its runtime home directory if it is empty after cleanup, leaving no managed state on disk.
+
 ### Options
 
 | Option | Description |
@@ -118,6 +120,7 @@ jackin prune system --all
 - **Running instances (without `--all`)** — without the `--all` flag, containers that are currently attached or running are never stopped or purged by `prune`. Pass `--all` to include them.
 - **Stopped instances with recovery state (without `--all`)** — instances with status `restore_available`, `crashed`, `preserved_dirty`, or `preserved_unpushed` are skipped unless `--all` is passed. Use `jackin hardline` to reconnect or `jackin eject <selector> --purge` to explicitly remove them.
 - **Operator config** — `~/.config/jackin/config.toml` and saved workspaces are never modified by `prune`.
+- **Runtime home when non-empty** — `prune system --all` removes the runtime home directory only when it is empty after all steps succeed. Any content that could not be cleaned (for example, an instance state directory that failed to purge) causes the runtime home to be left in place.
 
 ## Relationship to `jackin purge`
 
