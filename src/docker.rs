@@ -62,6 +62,11 @@ pub trait CommandRunner {
     /// stderr from error messages. Use for commands whose stdout is a secret
     /// (tokens, passwords). Note: args logged via `log_command` are not
     /// suppressed — callers must not pass secrets as positional arguments.
+    ///
+    /// # Errors
+    /// Returns an error when the command fails to spawn, exits non-zero, or an
+    /// I/O reader thread panics. When the command exits non-zero, stderr is
+    /// omitted from the error message to avoid leaking secret-adjacent output.
     fn capture_secret(
         &mut self,
         program: &str,
@@ -131,7 +136,7 @@ pub(crate) fn redact_env_args(args: &[&str]) -> Vec<String> {
     out
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum CaptureMode {
     Normal,
     Secret,
@@ -288,7 +293,7 @@ impl ShellRunner {
             .join()
             .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))??;
         if !status.success() {
-            if matches!(mode, CaptureMode::Secret) {
+            if mode == CaptureMode::Secret {
                 anyhow::bail!("command failed: {} {}", program, args.join(" "));
             }
             let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
@@ -298,7 +303,7 @@ impl ShellRunner {
             anyhow::bail!("command failed: {} {}: {}", program, args.join(" "), stderr);
         }
         let stdout = String::from_utf8_lossy(&stdout).trim().to_string();
-        if self.debug && !stdout.is_empty() && matches!(mode, CaptureMode::Normal) {
+        if self.debug && !stdout.is_empty() && mode == CaptureMode::Normal {
             let first_line = stdout.lines().next().unwrap_or("");
             crate::tui::emit_debug_line("cmd", &format!("-> {first_line}"));
         }
