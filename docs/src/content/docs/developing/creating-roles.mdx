@@ -86,7 +86,7 @@ FROM projectjackin/construct:0.1-trixie
 ```
 
 <Aside type="caution">
-The final stage must use a versioned construct tag (e.g. `projectjackin/construct:0.1-trixie`). The floating `:trixie` tag, `:latest`, or any other non-versioned tag fails validation. Renovate can track version bumps automatically — see the `renovate.json` in the generated role repo.
+The final stage must use a versioned construct tag (e.g. `projectjackin/construct:0.1-trixie`). The floating `:trixie` tag, `:latest`, or any other non-versioned tag fails validation. Renovate can track version bumps automatically — the generated role repo includes a Renovate configuration with a regex versioning rule for construct version pins.
 </Aside>
 ### Multi-stage builds are supported
 
