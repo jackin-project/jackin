@@ -731,6 +731,7 @@ mod tests {
         )];
 
         for key_char in ['a', 'x'] {
+            state.list_modal = None;
             let outcome = handle_key(
                 &mut state,
                 &mut config,
@@ -742,6 +743,11 @@ mod tests {
             assert!(
                 matches!(outcome, InputOutcome::Continue),
                 "'{key_char}' on non-running instance must return Continue; got {outcome:?}",
+            );
+            assert!(
+                matches!(state.list_modal, Some(Modal::ErrorPopup { .. })),
+                "'{key_char}' on non-running instance must open an ErrorPopup; got {:?}",
+                state.list_modal,
             );
         }
     }
