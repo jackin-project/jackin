@@ -493,9 +493,15 @@ pub fn prune_all_instances(
 ) -> anyhow::Result<()> {
     exile_all(runner)?;
 
+    // With all containers gone, reconcile will stop caffeinate and remove its
+    // PID file. Must run before sweep_stale_artifacts so we SIGTERM the live
+    // process before deleting the only handle to it.
+    super::caffeinate::reconcile(paths, runner);
+
     let index = InstanceIndex::read_or_rebuild(&paths.data_dir)?;
     if index.instances.is_empty() {
         println!("No instances to prune.");
+        sweep_stale_artifacts(&paths.data_dir);
         return Ok(());
     }
 
@@ -542,7 +548,33 @@ pub fn prune_all_instances(
         );
     }
 
+    sweep_stale_artifacts(&paths.data_dir);
     Ok(())
+}
+
+/// Remove all artifacts left behind after all instances are gone, then remove
+/// data_dir itself if empty. Best-effort: individual failures are silently
+/// ignored because this is housekeeping, not load-bearing state management.
+fn sweep_stale_artifacts(data_dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(data_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Ok(ft) = entry.file_type() else { continue };
+        if ft.is_file() {
+            if name.ends_with(".lock") || name.ends_with(".pid") || name == "instances.json" {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        } else if ft.is_dir() && name.ends_with(".locks") {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+    // Remove the directory itself if it is now empty. `remove_dir` (not
+    // `remove_dir_all`) is intentional: if any entry was skipped above
+    // (e.g. a failed-purge state dir), the directory is not empty and
+    // `remove_dir` fails silently, leaving the partial state intact.
+    let _ = std::fs::remove_dir(data_dir);
 }
 
 fn ensure_role_resources_absent_for_purge(
@@ -1401,5 +1433,85 @@ jk-a1b2c3d4-myworkspace-agentsmith"
         let msg = err.to_string();
         assert!(msg.contains("failed to remove test label"), "got: {msg}");
         assert!(msg.contains("child"), "got: {msg}");
+    }
+
+    // ── sweep_stale_artifacts ────────────────────────────────────────────────
+
+    #[test]
+    fn prune_all_instances_sweeps_orphaned_lock_files_and_locks_dirs() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        std::fs::create_dir_all(&paths.data_dir).unwrap();
+
+        // Plant the kinds of stale artifacts that accumulate in data_dir.
+        std::fs::write(paths.data_dir.join("jk-abc123-thearchitect.lock"), b"").unwrap();
+        std::fs::write(paths.data_dir.join("caffeinate.lock"), b"").unwrap();
+        std::fs::write(paths.data_dir.join("caffeinate.pid"), b"99999").unwrap();
+        std::fs::write(paths.data_dir.join("instances.json.lock"), b"").unwrap();
+        std::fs::create_dir_all(paths.data_dir.join("the-architect.locks")).unwrap();
+        std::fs::write(
+            paths.data_dir.join("the-architect.locks").join("default.repo.lock"),
+            b"",
+        )
+        .unwrap();
+
+        // FakeRunner: exile_all calls docker ps -a to list managed containers
+        // (returns empty), then caffeinate reconcile calls docker ps (returns
+        // empty — no keep-awake agents). No instances in index.
+        let mut runner = FakeRunner::with_capture_queue([
+            String::new(), // exile_all: docker ps -a (no managed containers)
+            String::new(), // caffeinate reconcile: docker ps keep-awake check
+        ]);
+        prune_all_instances(&paths, &mut runner).unwrap();
+
+        assert!(
+            !paths.data_dir.join("jk-abc123-thearchitect.lock").exists(),
+            "instance launch lock should be removed"
+        );
+        assert!(
+            !paths.data_dir.join("caffeinate.lock").exists(),
+            "caffeinate mutex lock should be removed"
+        );
+        assert!(
+            !paths.data_dir.join("caffeinate.pid").exists(),
+            "caffeinate pid file should be removed"
+        );
+        assert!(
+            !paths.data_dir.join("instances.json.lock").exists(),
+            "instances.json.lock should be removed"
+        );
+        assert!(
+            !paths.data_dir.join("the-architect.locks").exists(),
+            "repo locks dir should be removed"
+        );
+        assert!(
+            !paths.data_dir.exists(),
+            "data_dir itself should be removed when empty"
+        );
+    }
+
+    #[test]
+    fn prune_all_instances_sweeps_even_when_index_empty() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        std::fs::create_dir_all(&paths.data_dir).unwrap();
+        std::fs::write(paths.data_dir.join("jk-stale.lock"), b"").unwrap();
+
+        // No instances in index; exile_all and caffeinate reconcile each make
+        // one docker ps call.
+        let mut runner = FakeRunner::with_capture_queue([
+            String::new(), // exile_all
+            String::new(), // caffeinate reconcile
+        ]);
+        prune_all_instances(&paths, &mut runner).unwrap();
+
+        assert!(
+            !paths.data_dir.join("jk-stale.lock").exists(),
+            "stale lock swept even with empty index"
+        );
+        assert!(
+            !paths.data_dir.exists(),
+            "data_dir removed when only stale locks present"
+        );
     }
 }
