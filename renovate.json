@@ -10,5 +10,7 @@
       "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)-trixie$"
     }
   ],
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 20,
   "commitBody": "Signed-off-by: Renovate Bot <renovate@whitesourcesoftware.com>"
 }
