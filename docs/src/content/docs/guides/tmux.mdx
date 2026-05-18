@@ -15,7 +15,7 @@ These settings apply to the **host tmux** — the session you start `jackin cons
 Add the following lines to your `~/.tmux.conf`:
 
 ```sh
-# Pass Shift+Enter and other modified keys through to the agent (tmux 3.2+)
+# Pass Shift+Enter and other modified keys through to the agent (tmux 3.2a+)
 set -s extended-keys always
 set -as terminal-features 'xterm*:extkeys'
 
@@ -43,9 +43,9 @@ If you also want mouse scrollback and pane interaction, add `set -g mouse on`. T
 
 tmux by default collapses modifier+key combinations before forwarding them to the inner pane. Shift+Enter arrives at the agent as plain Enter, which submits the prompt instead of inserting a newline.
 
-`set -s extended-keys always` forwards extended key sequences (xterm CSI-u / `modifyOtherKeys` format) unconditionally, without waiting for the inner app to opt in via an activation escape. `set -as terminal-features 'xterm*:extkeys'` advertises that capability to inner panes so their terminfo queries confirm support.
+`set -s extended-keys always` forwards extended key sequences (`modifyOtherKeys` format) unconditionally, without waiting for the inner app to opt in via an activation escape. `set -as terminal-features 'xterm*:extkeys'` advertises that capability to inner panes so their terminfo queries confirm support.
 
-**Requires tmux 3.2 or later.**
+**Requires tmux 3.2a or later.**
 
 ### `focus-events` — editor file reloads
 
@@ -53,7 +53,7 @@ When enabled, tmux emits `FocusIn` and `FocusOut` escape sequences to the active
 
 ### `allow-passthrough on` — desktop notifications and progress bars
 
-Agents emit OSC escape sequences for desktop notifications, progress bars, and clipboard updates. tmux intercepts and drops these by default. With `allow-passthrough on`, tmux forwards DCS-wrapped passthrough sequences to the outer terminal so they reach iTerm2, Ghostty, Kitty, etc.
+tmux-aware tools (Claude Code, iTerm2 inline images, etc.) wrap their OSC sequences in a DCS passthrough escape when they detect `$TMUX`. With `allow-passthrough on`, tmux forwards those DCS-wrapped sequences to the outer terminal so desktop notifications, progress bars, and clipboard writes reach iTerm2, Ghostty, Kitty, etc. Tools that emit raw OSC without DCS wrapping require `allow-passthrough all` (tmux 3.4+) instead.
 
 **Requires tmux 3.3 or later.**
 
