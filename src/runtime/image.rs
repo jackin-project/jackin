@@ -10,7 +10,11 @@ use super::identity::HostIdentity;
 use super::naming::{LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, image_name};
 
 /// Build the Docker image for the role. Returns the image name.
-#[allow(clippy::similar_names, clippy::too_many_arguments)]
+#[allow(
+    clippy::similar_names,
+    clippy::too_many_arguments,
+    clippy::too_many_lines
+)]
 pub(super) fn build_agent_image(
     paths: &JackinPaths,
     selector: &RoleSelector,
@@ -166,12 +170,29 @@ pub(super) fn build_agent_image(
     build_args.extend(["--label", &construct_label]);
     build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
 
+    let github_token = resolve_github_token(runner);
+    let secret_file: Option<tempfile::NamedTempFile> = github_token.as_ref().and_then(|token| {
+        let mut f = tempfile::NamedTempFile::new().ok()?;
+        std::io::Write::write_all(&mut f, token.as_bytes()).ok()?;
+        Some(f)
+    });
+    let secret_arg = secret_file
+        .as_ref()
+        .map(|f| format!("id=github_token,src={}", f.path().display()));
+    if let Some(ref s) = secret_arg {
+        build_args.extend(["--secret", s.as_str()]);
+    }
+
     runner.run(
         "docker",
         &build_args,
         None,
         &RunOptions {
             capture_stderr: true,
+            extra_env: github_token
+                .as_ref()
+                .map(|_| vec![("DOCKER_BUILDKIT".to_string(), "1".to_string())])
+                .unwrap_or_default(),
             ..RunOptions::default()
         },
     )?;
@@ -306,4 +327,24 @@ fn extract_agent_version(
         }
         _ => {}
     }
+}
+
+/// Resolves a GitHub token for authenticating mise's GitHub API calls during
+/// Docker image builds. Checks `GITHUB_TOKEN` and `GH_TOKEN` env vars first
+/// (set in CI and by operators), then falls back to `gh auth token` for local
+/// development where the user is already logged in via the gh CLI.
+///
+/// Returns `None` when no token is available; callers must degrade gracefully
+/// (build still works, mise falls back to unauthenticated GitHub API access).
+fn resolve_github_token(runner: &mut impl CommandRunner) -> Option<String> {
+    for var in ["GITHUB_TOKEN", "GH_TOKEN"] {
+        if let Some(t) = std::env::var(var).ok().filter(|t| !t.trim().is_empty()) {
+            return Some(t.trim().to_string());
+        }
+    }
+    runner
+        .capture("gh", &["auth", "token"], None)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
