@@ -179,12 +179,6 @@ async fn has_tmux_sessions(
                  treating as sessions-present — run `jackin purge {container_name}` to clean \
                  up isolation worktrees if this was a clean exit"
             );
-            debug_log!(
-                "isolation",
-                "has_tmux_sessions: exec_capture failed for {c}: {e}; \
-                 treating conservatively as sessions-present",
-                c = container_name,
-            );
             true
         }
     }

@@ -7,8 +7,8 @@ use owo_colors::OwoColorize;
 
 use super::discovery::{list_managed_role_names, list_role_names};
 use super::naming::{
-    LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, dind_certs_volume, dind_container_name,
-    role_network_name,
+    LABEL_IMAGE_KEY, LABEL_KIND_DIND, LABEL_KIND_ROLE, LABEL_MANAGED, LABEL_ROLE_KEY,
+    dind_certs_volume, dind_container_name, role_network_name,
 };
 
 pub async fn purge_class_data(
@@ -121,7 +121,7 @@ async fn collect_labeled_dind(docker: &impl DockerApi) -> anyhow::Result<Vec<Din
     Ok(rows
         .into_iter()
         .filter_map(|row| {
-            let role = row.labels.get("jackin.role")?.clone();
+            let role = row.labels.get(LABEL_ROLE_KEY)?.clone();
             if role.is_empty() {
                 return None;
             }
@@ -236,7 +236,7 @@ async fn gc_orphaned_networks(docker: &impl DockerApi, running: Option<&[String]
     let networks: Vec<(String, String)> = net_rows
         .into_iter()
         .filter_map(|n| {
-            let role = n.labels.get("jackin.role")?.clone();
+            let role = n.labels.get(LABEL_ROLE_KEY)?.clone();
             if role.is_empty() {
                 return None;
             }
@@ -280,9 +280,7 @@ async fn gc_orphaned_networks(docker: &impl DockerApi, running: Option<&[String]
 
 pub async fn exile_all(docker: &impl DockerApi) -> anyhow::Result<()> {
     let names = list_managed_role_names(docker).await?;
-    for name in names {
-        eject_role(&name, docker).await?;
-    }
+    futures_util::future::try_join_all(names.iter().map(|name| eject_role(name, docker))).await?;
     Ok(())
 }
 
@@ -340,7 +338,7 @@ pub async fn prune_images(docker: &impl DockerApi) -> anyhow::Result<()> {
     let in_use: std::collections::HashSet<String> = role_rows
         .iter()
         .filter_map(|row| {
-            let img_label = row.labels.get("jackin.image").cloned().unwrap_or_default();
+            let img_label = row.labels.get(LABEL_IMAGE_KEY).cloned().unwrap_or_default();
             if img_label.is_empty() {
                 return None;
             }
@@ -528,9 +526,13 @@ async fn ensure_role_resources_absent_for_purge(
     docker: &impl DockerApi,
     container_name: &str,
 ) -> anyhow::Result<()> {
-    ensure_container_absent_for_purge(docker, container_name, "role container").await?;
-    ensure_container_absent_for_purge(docker, &format!("{container_name}-dind"), "DinD sidecar")
-        .await
+    let dind = dind_container_name(container_name);
+    let (role_result, dind_result) = tokio::join!(
+        ensure_container_absent_for_purge(docker, container_name, "role container"),
+        ensure_container_absent_for_purge(docker, &dind, "DinD sidecar"),
+    );
+    role_result?;
+    dind_result
 }
 
 async fn ensure_container_absent_for_purge(
@@ -726,104 +728,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn purge_container_state_refuses_when_role_container_paused() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
+    async fn purge_container_state_refuses_for_active_non_running_states() {
+        use crate::docker_client::ContainerState;
+        let cases: &[(ContainerState, &str)] = &[
+            (ContainerState::Paused, "and is paused"),
+            (ContainerState::Restarting, "and is restarting"),
+            (ContainerState::Created, "and is being created"),
+            (ContainerState::Removing, "and is being removed"),
+            (ContainerState::Dead, "but is dead"),
+        ];
         let container = "jk-agent-smith";
-        std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
-        let docker = FakeDockerClient {
-            inspect_queue: std::cell::RefCell::new(VecDeque::from([
-                crate::docker_client::ContainerState::Paused,
-            ])),
-            ..Default::default()
-        };
-        let mut runner = FakeRunner::default();
-        let err = purge_container_state(&paths, container, &docker, &mut runner)
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("and is paused"), "got: {err}");
-    }
-
-    #[tokio::test]
-    async fn purge_container_state_refuses_when_role_container_restarting() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        let container = "jk-agent-smith";
-        std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
-        let docker = FakeDockerClient {
-            inspect_queue: std::cell::RefCell::new(VecDeque::from([
-                crate::docker_client::ContainerState::Restarting,
-            ])),
-            ..Default::default()
-        };
-        let mut runner = FakeRunner::default();
-        let err = purge_container_state(&paths, container, &docker, &mut runner)
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("and is restarting"), "got: {err}");
-    }
-
-    #[tokio::test]
-    async fn purge_container_state_refuses_when_role_container_created() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        let container = "jk-agent-smith";
-        std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
-        let docker = FakeDockerClient {
-            inspect_queue: std::cell::RefCell::new(VecDeque::from([
-                crate::docker_client::ContainerState::Created,
-            ])),
-            ..Default::default()
-        };
-        let mut runner = FakeRunner::default();
-        let err = purge_container_state(&paths, container, &docker, &mut runner)
-            .await
-            .unwrap_err();
-        assert!(
-            err.to_string().contains("and is being created"),
-            "got: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn purge_container_state_refuses_when_role_container_removing() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        let container = "jk-agent-smith";
-        std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
-        let docker = FakeDockerClient {
-            inspect_queue: std::cell::RefCell::new(VecDeque::from([
-                crate::docker_client::ContainerState::Removing,
-            ])),
-            ..Default::default()
-        };
-        let mut runner = FakeRunner::default();
-        let err = purge_container_state(&paths, container, &docker, &mut runner)
-            .await
-            .unwrap_err();
-        assert!(
-            err.to_string().contains("and is being removed"),
-            "got: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn purge_container_state_refuses_when_role_container_dead() {
-        let temp = tempdir().unwrap();
-        let paths = JackinPaths::for_tests(temp.path());
-        let container = "jk-agent-smith";
-        std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
-        let docker = FakeDockerClient {
-            inspect_queue: std::cell::RefCell::new(VecDeque::from([
-                crate::docker_client::ContainerState::Dead,
-            ])),
-            ..Default::default()
-        };
-        let mut runner = FakeRunner::default();
-        let err = purge_container_state(&paths, container, &docker, &mut runner)
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("but is dead"), "got: {err}");
+        for (state, expected_phrase) in cases {
+            let temp = tempdir().unwrap();
+            let paths = JackinPaths::for_tests(temp.path());
+            std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
+            let docker = FakeDockerClient {
+                inspect_queue: std::cell::RefCell::new(VecDeque::from([state.clone()])),
+                ..Default::default()
+            };
+            let mut runner = FakeRunner::default();
+            let err = purge_container_state(&paths, container, &docker, &mut runner)
+                .await
+                .unwrap_err();
+            assert!(
+                err.to_string().contains(expected_phrase),
+                "state={state:?}: got: {err}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -979,7 +910,7 @@ mod tests {
     #[tokio::test]
     async fn gc_removes_orphaned_dind_and_network() {
         let mut labels = std::collections::HashMap::new();
-        labels.insert("jackin.role".to_string(), "jk-agent-smith".to_string());
+        labels.insert(LABEL_ROLE_KEY.to_string(), "jk-agent-smith".to_string());
         let docker = FakeDockerClient {
             list_containers_queue: std::cell::RefCell::new(VecDeque::from([
                 // collect_labeled_dind: DinD sidecar with jackin.role label
@@ -1029,7 +960,7 @@ mod tests {
     #[tokio::test]
     async fn gc_skips_dind_when_agent_is_running() {
         let mut labels = std::collections::HashMap::new();
-        labels.insert("jackin.role".to_string(), "jk-agent-smith".to_string());
+        labels.insert(LABEL_ROLE_KEY.to_string(), "jk-agent-smith".to_string());
         let docker = FakeDockerClient {
             list_containers_queue: std::cell::RefCell::new(VecDeque::from([
                 // collect_labeled_dind: DinD sidecar present
@@ -1080,7 +1011,7 @@ mod tests {
     #[tokio::test]
     async fn gc_removes_orphaned_network_without_dind() {
         let mut net_labels = std::collections::HashMap::new();
-        net_labels.insert("jackin.role".to_string(), "jk-agent-smith".to_string());
+        net_labels.insert(LABEL_ROLE_KEY.to_string(), "jk-agent-smith".to_string());
         let docker = FakeDockerClient {
             list_containers_queue: std::cell::RefCell::new(VecDeque::from([
                 vec![], // collect_labeled_dind: no DinD sidecars
@@ -1111,9 +1042,9 @@ mod tests {
     #[tokio::test]
     async fn gc_cleans_multiple_orphans() {
         let mut labels_smith = std::collections::HashMap::new();
-        labels_smith.insert("jackin.role".to_string(), "jk-agent-smith".to_string());
+        labels_smith.insert(LABEL_ROLE_KEY.to_string(), "jk-agent-smith".to_string());
         let mut labels_neo = std::collections::HashMap::new();
-        labels_neo.insert("jackin.role".to_string(), "jk-neo".to_string());
+        labels_neo.insert(LABEL_ROLE_KEY.to_string(), "jk-neo".to_string());
         let docker = FakeDockerClient {
             list_containers_queue: std::cell::RefCell::new(VecDeque::from([
                 // collect_labeled_dind: two orphaned DinD sidecars
@@ -1179,7 +1110,7 @@ mod tests {
         // must emit a warning and return without panicking.
         let docker = FakeDockerClient {
             fail_with: vec![(
-                "jackin.kind=dind".to_string(),
+                LABEL_KIND_DIND.to_string(),
                 "Error response from daemon: socket timeout".to_string(),
             )],
             ..Default::default()
@@ -1209,7 +1140,7 @@ mod tests {
         // Network ls succeeds (non-empty), but the docker ps to list running roles fails.
         // gc_orphaned_networks must emit a warning and return without calling network rm.
         let mut net_labels = std::collections::HashMap::new();
-        net_labels.insert("jackin.role".to_string(), "jk-agent-smith".to_string());
+        net_labels.insert(LABEL_ROLE_KEY.to_string(), "jk-agent-smith".to_string());
         let docker = FakeDockerClient {
             list_containers_queue: std::cell::RefCell::new(VecDeque::from([
                 vec![], // collect_labeled_dind: no DinD
@@ -1220,7 +1151,7 @@ mod tests {
                 labels: net_labels,
             }]])),
             fail_with: vec![(
-                "jackin.kind=role".to_string(),
+                LABEL_KIND_ROLE.to_string(),
                 "Error response from daemon: socket timeout".to_string(),
             )],
             ..Default::default()
@@ -1362,7 +1293,7 @@ mod tests {
     async fn prune_images_skips_images_in_use_by_role_containers() {
         // Image listed, but a role container has jackin.image label pointing to it.
         let mut image_labels = std::collections::HashMap::new();
-        image_labels.insert("jackin.image".to_string(), "jk_agent-smith".to_string());
+        image_labels.insert(LABEL_IMAGE_KEY.to_string(), "jk_agent-smith".to_string());
         let docker = FakeDockerClient {
             list_image_tags_queue: std::cell::RefCell::new(VecDeque::from([vec![
                 "jk_agent-smith:latest".to_string(),
@@ -1485,7 +1416,7 @@ mod tests {
     async fn prune_images_mixed_removed_and_skipped() {
         // One image is in-use (pre-filtered via jackin.image label), one is removed.
         let mut image_labels = std::collections::HashMap::new();
-        image_labels.insert("jackin.image".to_string(), "jk_neo".to_string()); // no :tag → jk_neo:latest
+        image_labels.insert(LABEL_IMAGE_KEY.to_string(), "jk_neo".to_string()); // no :tag → jk_neo:latest
         let docker = FakeDockerClient {
             list_image_tags_queue: std::cell::RefCell::new(VecDeque::from([vec![
                 "jk_agent-smith:latest".to_string(),

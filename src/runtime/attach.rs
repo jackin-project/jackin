@@ -1327,149 +1327,77 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spawn_shell_session_succeeds_when_container_paused() {
-        let (_tmp, paths) = test_paths();
-        let docker = FakeDockerClient {
-            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                ContainerState::Paused,
-            ])),
-            ..Default::default()
-        };
-        let mut runner = FakeRunner::default();
-
-        spawn_shell_session(&paths, "jk-agent-smith", &docker, &mut runner)
-            .await
-            .unwrap();
-
-        assert!(
-            runner.recorded.iter().any(|c| {
-                c.contains("docker exec") && c.contains("TMUX=") && c.contains("jk-agent-smith")
-            }),
-            "expected docker exec with TMUX= for paused container; got: {:?}",
-            runner.recorded
-        );
+    async fn spawn_shell_session_succeeds_when_container_paused_or_restarting() {
+        for state in [ContainerState::Paused, ContainerState::Restarting] {
+            let (_tmp, paths) = test_paths();
+            let docker = FakeDockerClient {
+                inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                    state.clone()
+                ])),
+                ..Default::default()
+            };
+            let mut runner = FakeRunner::default();
+            spawn_shell_session(&paths, "jk-agent-smith", &docker, &mut runner)
+                .await
+                .unwrap();
+            assert!(
+                runner.recorded.iter().any(|c| {
+                    c.contains("docker exec") && c.contains("TMUX=") && c.contains("jk-agent-smith")
+                }),
+                "state={state:?}: expected docker exec with TMUX=; got: {:?}",
+                runner.recorded
+            );
+        }
     }
 
     #[tokio::test]
-    async fn spawn_shell_session_succeeds_when_container_restarting() {
-        let (_tmp, paths) = test_paths();
-        let docker = FakeDockerClient {
-            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                ContainerState::Restarting,
-            ])),
-            ..Default::default()
-        };
-        let mut runner = FakeRunner::default();
-
-        spawn_shell_session(&paths, "jk-agent-smith", &docker, &mut runner)
-            .await
-            .unwrap();
-
-        assert!(
-            runner.recorded.iter().any(|c| {
-                c.contains("docker exec") && c.contains("TMUX=") && c.contains("jk-agent-smith")
-            }),
-            "expected docker exec with TMUX= for restarting container; got: {:?}",
-            runner.recorded
-        );
+    async fn hardline_agent_errors_on_inactive_states() {
+        let cases: &[(ContainerState, &str)] = &[
+            (ContainerState::Created, "created"),
+            (ContainerState::Dead, "dead"),
+            (ContainerState::Removing, "removing"),
+        ];
+        for (state, expected_phrase) in cases {
+            let (_tmp, paths) = test_paths();
+            let docker = FakeDockerClient {
+                inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                    state.clone()
+                ])),
+                ..Default::default()
+            };
+            let mut runner = FakeRunner::default();
+            let err = hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner)
+                .await
+                .unwrap_err();
+            assert!(
+                err.to_string().contains(expected_phrase),
+                "state={state:?}: expected phrase {expected_phrase:?}; got: {err}"
+            );
+            assert!(
+                !runner
+                    .recorded
+                    .iter()
+                    .any(|c| c.contains("tmux") || c.contains("docker start")),
+                "state={state:?}: no exec or start must fire"
+            );
+        }
     }
 
     #[tokio::test]
-    async fn hardline_agent_errors_on_created() {
-        let (_tmp, paths) = test_paths();
-        let docker = FakeDockerClient {
-            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                ContainerState::Created,
-            ])),
-            ..Default::default()
-        };
-        let mut runner = FakeRunner::default();
-
-        let err = hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner)
-            .await
-            .unwrap_err();
-
-        assert!(
-            err.to_string().contains("created"),
-            "expected error mentioning 'created'; got: {err}"
-        );
-        assert!(
-            !runner
-                .recorded
-                .iter()
-                .any(|c| c.contains("tmux") || c.contains("docker start")),
-            "no exec or start must fire against a created container"
-        );
-    }
-
-    #[tokio::test]
-    async fn hardline_agent_errors_on_dead() {
-        let (_tmp, paths) = test_paths();
-        let docker = FakeDockerClient {
-            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                ContainerState::Dead,
-            ])),
-            ..Default::default()
-        };
-        let mut runner = FakeRunner::default();
-
-        let err = hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner)
-            .await
-            .unwrap_err();
-
-        assert!(
-            err.to_string().contains("dead"),
-            "expected error mentioning 'dead'; got: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn hardline_agent_errors_on_removing() {
-        let (_tmp, paths) = test_paths();
-        let docker = FakeDockerClient {
-            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                ContainerState::Removing,
-            ])),
-            ..Default::default()
-        };
-        let mut runner = FakeRunner::default();
-
-        let err = hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner)
-            .await
-            .unwrap_err();
-
-        assert!(
-            err.to_string().contains("removing"),
-            "expected error mentioning 'removing'; got: {err}"
-        );
-    }
-
-    #[tokio::test]
-    async fn inspect_agent_sessions_returns_not_running_for_paused() {
-        let docker = FakeDockerClient::default();
-
-        let sessions =
-            inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Paused).await;
-
-        assert_eq!(sessions, AgentSessionInventory::NotRunning);
-        assert!(
-            docker.recorded.borrow().is_empty(),
-            "exec_capture must not be called for a paused container"
-        );
-    }
-
-    #[tokio::test]
-    async fn inspect_agent_sessions_returns_not_running_for_restarting() {
-        let docker = FakeDockerClient::default();
-
-        let sessions =
-            inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Restarting).await;
-
-        assert_eq!(sessions, AgentSessionInventory::NotRunning);
-        assert!(
-            docker.recorded.borrow().is_empty(),
-            "exec_capture must not be called for a restarting container"
-        );
+    async fn inspect_agent_sessions_returns_not_running_for_non_running_states() {
+        for state in [ContainerState::Paused, ContainerState::Restarting] {
+            let docker = FakeDockerClient::default();
+            let sessions = inspect_agent_sessions(&docker, "jk-agent-smith", &state).await;
+            assert_eq!(
+                sessions,
+                AgentSessionInventory::NotRunning,
+                "state={state:?}"
+            );
+            assert!(
+                docker.recorded.borrow().is_empty(),
+                "state={state:?}: exec_capture must not be called"
+            );
+        }
     }
 
     #[tokio::test]

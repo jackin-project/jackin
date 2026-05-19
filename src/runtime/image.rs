@@ -133,15 +133,18 @@ pub(super) async fn build_agent_image(
     // override while this invocation uses the canonical one, or vice versa —
     // and must be rebuilt from scratch rather than reused.
     let current_construct = crate::repo_contract::construct_image();
-    // Treat inspect errors as label-absent (no mismatch): a transient daemon
-    // error must not abort the build — the operator's explicit build intent
-    // takes priority over the mismatch check.
-    let cached_construct = docker
-        .inspect_image_label(&image, LABEL_IMAGE_CONSTRUCT)
-        .await
-        .unwrap_or(None);
-    let construct_mismatch =
-        !rebuild && cached_construct.is_some_and(|cached| cached != current_construct);
+    // When rebuild is already forced, the mismatch check result cannot change the
+    // outcome — skip the round-trip. Treat inspect errors as label-absent (no
+    // mismatch) so transient daemon errors never abort an otherwise-proceeding build.
+    let construct_mismatch = if rebuild {
+        false
+    } else {
+        docker
+            .inspect_image_label(&image, LABEL_IMAGE_CONSTRUCT)
+            .await
+            .unwrap_or(None)
+            .is_some_and(|cached| cached != current_construct)
+    };
     let rebuild = rebuild || construct_mismatch;
 
     let cache_bust_value = if rebuild || agent_update {

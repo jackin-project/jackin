@@ -41,6 +41,14 @@ pub(super) const LABEL_IMAGE_CONSTRUCT: &str = "jackin.construct_image";
 /// mode so the role's workspace Dockerfile — carrying the new pin — is used.
 pub(super) const LABEL_IMAGE_CONSTRUCT_VERSION: &str = "jackin.construct_version";
 
+/// Container label key storing the role container name. Applied to `DinD`
+/// sidecars and managed networks so GC can map them back to their role.
+pub(super) const LABEL_ROLE_KEY: &str = "jackin.role";
+
+/// Container / image label key storing the derived image name. Applied to
+/// role containers so image GC can skip images currently in use.
+pub(super) const LABEL_IMAGE_KEY: &str = "jackin.image";
+
 /// Image label key recording the git commit SHA of the role repo from which a
 /// published image was built. Role CI passes `--build-arg ROLE_GIT_SHA=<sha>`
 /// (set to `${{ github.sha }}`) so the Dockerfile's
