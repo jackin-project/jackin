@@ -374,14 +374,11 @@ pub async fn hardline_agent(
     Ok(())
 }
 
-#[allow(clippy::needless_pass_by_ref_mut)]
 pub async fn inspect_hardline_instance(
     paths: &JackinPaths,
     container_name: &str,
     docker: &impl crate::docker_client::DockerApi,
-    runner: &mut impl CommandRunner,
 ) -> anyhow::Result<String> {
-    let _ = runner; // reserved for future CLI operations
     let state_dir = paths.data_dir.join(container_name);
     // `--inspect` is the operator's recovery tool. Distinguish "no
     // manifest yet" (pre-restore) from "manifest unreadable" (torn
@@ -402,14 +399,15 @@ pub async fn inspect_hardline_instance(
         |manifest| manifest.docker.certs_volume.clone(),
     );
 
-    let role_container_state = docker.inspect_container_state(container_name).await;
+    let (role_container_state, dind_state_raw, network_result) = tokio::join!(
+        docker.inspect_container_state(container_name),
+        docker.inspect_container_state(&dind_name),
+        inspect_docker_network(docker, &network_name),
+    );
     let sessions = inspect_agent_sessions(docker, container_name, &role_container_state).await;
     let role_state = role_container_state.inspect_label();
-    let dind_state = docker
-        .inspect_container_state(&dind_name)
-        .await
-        .inspect_label();
-    let network_state = describe_network_state(inspect_docker_network(docker, &network_name).await);
+    let dind_state = dind_state_raw.inspect_label();
+    let network_state = describe_network_state(network_result);
     let mounts = describe_mount_state(&state_dir);
 
     let mut lines = vec![
@@ -1076,9 +1074,7 @@ mod tests {
             ])),
             ..Default::default()
         };
-        let mut runner = FakeRunner::default();
-
-        let report = inspect_hardline_instance(&paths, container_name, &docker, &mut runner)
+        let report = inspect_hardline_instance(&paths, container_name, &docker)
             .await
             .unwrap();
 
@@ -1099,12 +1095,6 @@ mod tests {
             )
         );
         assert!(report.contains("Docker network: jk-k7p9m2xq-workspace-agentsmith-net (present)"));
-        assert!(
-            !runner
-                .recorded
-                .iter()
-                .any(|c| c.contains("docker start") || c.contains("tmux new-session -A"))
-        );
     }
 
     #[tokio::test]
@@ -1193,20 +1183,12 @@ mod tests {
             )],
             ..Default::default()
         };
-        let mut runner = FakeRunner::default();
-
-        let report = inspect_hardline_instance(&paths, container_name, &docker, &mut runner)
+        let report = inspect_hardline_instance(&paths, container_name, &docker)
             .await
             .unwrap();
 
         assert!(report.contains("Workspace: workspace"), "{report}");
         assert!(report.contains("Role container: jk-k7p9m2xq-workspace-agentsmith (unavailable:"));
-        assert!(
-            !runner
-                .recorded
-                .iter()
-                .any(|c| c.contains("docker start") || c.contains("docker attach"))
-        );
     }
 
     #[tokio::test]

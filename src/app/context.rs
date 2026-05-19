@@ -420,17 +420,7 @@ async fn ad_hoc_hardline_candidates(
         let state = docker
             .inspect_container_state(&manifest.container_base)
             .await;
-        let docker_live = matches!(
-            state,
-            runtime::ContainerState::Running
-                | runtime::ContainerState::Paused
-                | runtime::ContainerState::Restarting
-                | runtime::ContainerState::Created
-                | runtime::ContainerState::Removing
-                | runtime::ContainerState::Dead
-                | runtime::ContainerState::Stopped { .. }
-                | runtime::ContainerState::InspectUnavailable(_)
-        );
+        let docker_live = state.is_present();
         if docker_live || manifest.is_restore_candidate() {
             candidates.push(HardlineCandidate {
                 name: manifest.container_base,
@@ -489,17 +479,7 @@ async fn indexed_hardline_candidates(
         let state = docker
             .inspect_container_state(&manifest.container_base)
             .await;
-        let docker_live = matches!(
-            state,
-            runtime::ContainerState::Running
-                | runtime::ContainerState::Paused
-                | runtime::ContainerState::Restarting
-                | runtime::ContainerState::Created
-                | runtime::ContainerState::Removing
-                | runtime::ContainerState::Dead
-                | runtime::ContainerState::Stopped { .. }
-                | runtime::ContainerState::InspectUnavailable(_)
-        );
+        let docker_live = state.is_present();
         if docker_live || manifest.is_restore_candidate() {
             candidates.push(HardlineCandidate {
                 name: manifest.container_base,

@@ -232,20 +232,14 @@ pub async fn run(cli: Cli) -> Result<()> {
             } else if new {
                 HardlineAction::NewSession
             } else if explicit_selector {
-                prompt_explicit_hardline_action_if_multiple_sessions(
-                    &container,
-                    &docker,
-                    &mut runner,
-                )
-                .await?
+                prompt_explicit_hardline_action_if_multiple_sessions(&container, &docker).await?
             } else {
                 prompt_hardline_action(&container)?
             };
             if action == HardlineAction::Inspect {
                 println!(
                     "{}",
-                    runtime::inspect_hardline_instance(&paths, &container, &docker, &mut runner)
-                        .await?
+                    runtime::inspect_hardline_instance(&paths, &container, &docker).await?
                 );
                 return Ok(());
             }
@@ -1613,14 +1607,11 @@ fn prompt_hardline_action(container: &str) -> Result<HardlineAction> {
     ))
 }
 
-#[allow(clippy::needless_pass_by_ref_mut)]
 async fn prompt_explicit_hardline_action_if_multiple_sessions(
     container: &str,
     docker: &impl DockerApi,
-    runner: &mut impl crate::docker::CommandRunner,
 ) -> Result<HardlineAction> {
     use std::io::IsTerminal;
-    let _ = runner; // reserved for future CLI operations
 
     if !std::io::stdin().is_terminal() {
         return Ok(HardlineAction::Reconnect);
@@ -1732,7 +1723,7 @@ async fn handle_console_instance_action(
         console::ConsoleInstanceAction::Inspect => {
             println!(
                 "{}",
-                runtime::inspect_hardline_instance(paths, &container, docker, runner).await?
+                runtime::inspect_hardline_instance(paths, &container, docker).await?
             );
             Ok(())
         }

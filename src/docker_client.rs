@@ -58,6 +58,12 @@ impl ContainerState {
             _ => self.short_label(),
         }
     }
+
+    /// Returns `true` for every state except `NotFound`.
+    #[must_use]
+    pub const fn is_present(&self) -> bool {
+        !matches!(self, Self::NotFound)
+    }
 }
 
 // ── Other public types ────────────────────────────────────────────────────
