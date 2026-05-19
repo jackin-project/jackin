@@ -6,8 +6,6 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # detect published-image staleness at launch time.
 ARG CONSTRUCT_VERSION=unknown
 LABEL jackin.construct_version=${CONSTRUCT_VERSION}
-ARG ROLE_GIT_SHA=unknown
-LABEL jackin.role_git_sha=${ROLE_GIT_SHA}
 
 # CAVEMAN_VERSION must be a release tag from
 # https://github.com/JuliusBrussee/caveman/releases — never `main`,
@@ -109,6 +107,11 @@ RUN . ~/.profile && \
     echo "[caveman] installing amp profile" && \
     npx -y skills add "JuliusBrussee/caveman#v${CAVEMAN_VERSION}" -a amp --yes --global && \
     test -f "${HOME}/.agents/skills/caveman/SKILL.md"
+
+# ARG ROLE_GIT_SHA is declared here (after all tool layers) so that a
+# per-commit SHA change does not invalidate the expensive tool cache layers above.
+ARG ROLE_GIT_SHA=unknown
+LABEL jackin.role_git_sha=${ROLE_GIT_SHA}
 
 COPY --chown=agent:agent zshrc.d/docker-helpers.zsh /home/agent/.zshrc.d/docker-helpers.zsh
 RUN echo 'source /home/agent/.zshrc.d/docker-helpers.zsh' >> /home/agent/.zshrc
