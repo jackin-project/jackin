@@ -332,7 +332,6 @@ export default defineConfig({
                   label: 'Infrastructure',
                   collapsed: true,
                   items: [
-                    { label: 'Bollard migration', slug: 'reference/roadmap/bollard-migration' },
                     { label: 'Construct user creation', slug: 'reference/roadmap/construct-user-creation' },
                     { label: 'Workspace registry cache', slug: 'reference/roadmap/workspace-registry-cache' },
                   ],

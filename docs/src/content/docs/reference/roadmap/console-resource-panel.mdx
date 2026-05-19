@@ -64,10 +64,7 @@ Two distinct concerns plumbed through the same console panel:
 
 ### Per-agent sampling
 
-Use the Docker stats API (`docker stats --no-stream` or, post-[Bollard
-migration](/reference/roadmap/bollard-migration/), the typed
-`ContainerStats` endpoint). Sample every 2 seconds while the console is
-open; pause sampling when the panel is collapsed.
+Use the Docker stats API (`docker stats --no-stream` or, via the `DockerApi` trait in <RepoFile path="src/docker_client.rs" />, the typed `ContainerStats` endpoint). Sample every 2 seconds while the console is open; pause sampling when the panel is collapsed.
 
 Fields per agent:
 
@@ -153,5 +150,4 @@ per-agent table includes a status column to its left.
   status column lives in the same per-agent table
 - [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) —
   later turns the per-agent column into a richer telemetry view
-- [Bollard migration](/reference/roadmap/bollard-migration/) — typed
-  Docker stats API simplifies the sampler
+- [Codebase Map](/reference/codebase-map/) — `DockerApi` trait entry covers the typed Docker stats API the sampler will use
