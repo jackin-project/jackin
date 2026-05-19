@@ -2114,7 +2114,7 @@ async fn load_role_with(
                     &mut instance_manifest,
                     InstanceStatus::Crashed,
                 )?;
-                cleanup.disarm();
+                cleanup.run(docker).await;
             }
             ContainerState::InspectUnavailable(reason) => {
                 cleanup.disarm();
@@ -2614,12 +2614,12 @@ pub(super) fn record_instance_attach_outcome(
 }
 
 fn format_attach_outcome(outcome: crate::isolation::finalize::AttachOutcome) -> String {
-    if outcome.oom_killed {
-        return "oom_killed".to_string();
+    use crate::isolation::finalize::AttachOutcome;
+    match outcome {
+        AttachOutcome::OomKilled => "oom_killed".to_string(),
+        AttachOutcome::StillRunning => "running".to_string(),
+        AttachOutcome::Stopped(code) => format!("exit:{code}"),
     }
-    outcome
-        .exit_code
-        .map_or_else(|| "running".to_string(), |code| format!("exit:{code}"))
 }
 
 fn preserved_instance_status(state_dir: &std::path::Path) -> anyhow::Result<InstanceStatus> {
@@ -5596,8 +5596,8 @@ plugins = []
             build_cmd.contains("--pull"),
             "prebuilt mode must pass --pull; got: {build_cmd}"
         );
-        // In prebuilt mode rebuild=false, so the construct-mismatch guard runs
-        // docker.inspect_image_label on the derived image. Workspace-rebuild mode skips it.
+        // In prebuilt mode rebuild=false, so the construct-mismatch guard calls
+        // inspect_image_labels on the derived image (bollard). Workspace-rebuild mode skips it.
         assert!(
             docker
                 .recorded
@@ -5821,7 +5821,7 @@ plugins = []
         assert!(docker_recorded.iter().any(|call| {
             call.contains(&format!("docker exec {dind} test -f /certs/client/ca.pem"))
         }));
-        let _ = dind_start_runner; // ordering check simplified; both runner and docker are used
+        let _ = dind_start_runner;
     }
 
     #[tokio::test]

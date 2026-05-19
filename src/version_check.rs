@@ -184,7 +184,12 @@ pub fn stored_cache_bust(paths: &JackinPaths, image: &str) -> Option<String> {
 /// same Docker cache layer.
 pub fn store_cache_bust(paths: &JackinPaths, image: &str, value: &str) {
     let path = cache_bust_path(paths, image);
-    let _ = write_cached(&path, value);
+    if let Err(e) = write_cached(&path, value) {
+        eprintln!(
+            "warning: failed to persist JACKIN_CACHE_BUST for {image}: {e}; \
+             subsequent non-rebuild launches may replay the wrong cache layer"
+        );
+    }
 }
 
 /// Extract a bare semver string from `claude --version` output.

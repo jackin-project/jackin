@@ -24,6 +24,9 @@ pub trait CommandRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String>;
+    /// Like `capture` but suppresses stdout from the debug stream and omits
+    /// stderr from error messages. Use for commands whose output is a credential
+    /// (e.g. `gh auth token`, `op read`) so the value never appears in debug logs.
     async fn capture_secret(
         &mut self,
         program: &str,

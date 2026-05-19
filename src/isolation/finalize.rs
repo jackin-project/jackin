@@ -17,29 +17,24 @@ use crate::runtime::attach::TMUX_LIST_SESSIONS_CMD;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AttachOutcome {
-    pub exit_code: Option<i32>,
-    pub oom_killed: bool,
+pub enum AttachOutcome {
+    /// Container is still running — exec returned but supervisor poll may lag.
+    StillRunning,
+    /// Container exited with the given code.
+    Stopped(i32),
+    /// Kernel OOM-killed the container.
+    OomKilled,
 }
 
 impl AttachOutcome {
     pub const fn still_running() -> Self {
-        Self {
-            exit_code: None,
-            oom_killed: false,
-        }
+        Self::StillRunning
     }
     pub const fn stopped(code: i32) -> Self {
-        Self {
-            exit_code: Some(code),
-            oom_killed: false,
-        }
+        Self::Stopped(code)
     }
     pub const fn oom_killed() -> Self {
-        Self {
-            exit_code: None,
-            oom_killed: true,
-        }
+        Self::OomKilled
     }
 }
 
@@ -116,21 +111,18 @@ pub async fn finalize_foreground_session(
 ) -> anyhow::Result<FinalizeDecision> {
     debug_log!(
         "isolation",
-        "finalize_foreground_session: container={c} exit_code={ec:?} oom_killed={oom} interactive={i}",
+        "finalize_foreground_session: container={c} outcome={o:?} interactive={i}",
         c = container_name,
-        ec = outcome.exit_code,
-        oom = outcome.oom_killed,
+        o = outcome,
         i = is_interactive,
     );
-    if outcome.oom_killed || outcome.exit_code != Some(0) {
-        // Still-running container (exit_code=None, not OOM): the docker exec
-        // returned but the supervisor's 1-second poll loop may not have caught the
-        // tmux server exit yet. Check sessions to distinguish detach from lag:
-        //   - sessions present → real detach (Ctrl-B D); preserve as before
-        //   - no sessions → supervisor lag after clean agent exit; fall through to
-        //     finalize_clean_exit so isolation worktrees are swept normally
-        if outcome.exit_code.is_none()
-            && !outcome.oom_killed
+    if !matches!(outcome, AttachOutcome::Stopped(0)) {
+        // Non-zero exit, OOM-kill, or still-running → preserve by default.
+        // Exception: StillRunning with no active tmux sessions means the
+        // supervisor lag case — the docker exec returned while the container is
+        // still up but the agent already exited cleanly. Fall through to
+        // finalize_clean_exit so isolation worktrees are swept normally.
+        if matches!(outcome, AttachOutcome::StillRunning)
             && !has_tmux_sessions(docker, container_name).await
         {
             debug_log!(
@@ -182,6 +174,11 @@ async fn has_tmux_sessions(
             // and this exec. Treat conservatively as sessions-present — the
             // finalize path must not auto-clean records for a container that may
             // still have active sessions.
+            eprintln!(
+                "[jackin] warning: could not check tmux sessions in {container_name} ({e}); \
+                 treating as sessions-present — run `jackin purge {container_name}` to clean \
+                 up isolation worktrees if this was a clean exit"
+            );
             debug_log!(
                 "isolation",
                 "has_tmux_sessions: exec_capture failed for {c}: {e}; \
@@ -620,8 +617,6 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
-        // Empty exec_capture output → no tmux sessions → has_tmux_sessions returns
-        // false → !has_tmux_sessions = true → falls through to finalize_clean_exit.
         let docker = crate::docker_client::FakeDockerClient {
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
                 String::new(),
@@ -647,8 +642,6 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
-        // Non-empty output → sessions present → has_tmux_sessions returns true
-        // → real detach (Ctrl-B D) → Preserved.
         let docker = crate::docker_client::FakeDockerClient {
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
                 "jackin-claude-abc".to_string(),
@@ -2002,6 +1995,29 @@ mod tests {
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn has_tmux_sessions_error_treated_as_sessions_present() {
+        let dir = TempDir::new().unwrap();
+        let mut p = NoPrompt;
+        let mut r = FakeRunner::default();
+        let docker = crate::docker_client::FakeDockerClient {
+            fail_with: vec![("docker exec".to_string(), "exec failed".to_string())],
+            ..Default::default()
+        };
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::still_running(),
+            false,
+            &mut p,
+            &docker,
+            &mut r,
+        )
+        .await
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
     }
 
     #[tokio::test]

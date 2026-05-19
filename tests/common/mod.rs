@@ -62,13 +62,6 @@ impl DockerApi for NoOpDocker {
     ) -> anyhow::Result<std::collections::HashMap<String, String>> {
         Ok(std::collections::HashMap::new())
     }
-    async fn inspect_image_label(
-        &self,
-        _image: &str,
-        _label: &str,
-    ) -> anyhow::Result<Option<String>> {
-        Ok(None)
-    }
     async fn pull_image(&self, _image: &str) -> anyhow::Result<()> {
         Ok(())
     }

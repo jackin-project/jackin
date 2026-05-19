@@ -14,8 +14,6 @@ use bollard::query_parameters::{
 };
 use futures_util::StreamExt;
 
-// ── ContainerState ────────────────────────────────────────────────────────
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainerState {
     NotFound,
@@ -66,8 +64,6 @@ impl ContainerState {
     }
 }
 
-// ── Other public types ────────────────────────────────────────────────────
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContainerRow {
     pub name: String,
@@ -100,8 +96,6 @@ pub struct ContainerSpec {
     pub workdir: Option<String>,
 }
 
-// ── DockerApi trait ───────────────────────────────────────────────────────
-
 pub trait DockerApi {
     async fn inspect_container_state(&self, name: &str) -> ContainerState;
     async fn remove_container(&self, name: &str) -> anyhow::Result<()>;
@@ -123,14 +117,17 @@ pub trait DockerApi {
     async fn inspect_network(&self, name: &str) -> anyhow::Result<Option<NetworkRow>>;
     async fn list_image_tags(&self, reference_filter: &str) -> anyhow::Result<Vec<String>>;
     async fn remove_image(&self, name: &str) -> anyhow::Result<RemoveImageOutcome>;
-    async fn inspect_image_label(&self, image: &str, label: &str)
-    -> anyhow::Result<Option<String>>;
     async fn inspect_image_labels(&self, image: &str) -> anyhow::Result<HashMap<String, String>>;
+    async fn inspect_image_label(
+        &self,
+        image: &str,
+        label: &str,
+    ) -> anyhow::Result<Option<String>> {
+        Ok(self.inspect_image_labels(image).await?.remove(label))
+    }
     async fn pull_image(&self, image: &str) -> anyhow::Result<()>;
     async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String>;
 }
-
-// ── BollardDockerClient ───────────────────────────────────────────────────
 
 pub struct BollardDockerClient {
     inner: Docker,
@@ -405,14 +402,6 @@ impl DockerApi for BollardDockerClient {
         }
     }
 
-    async fn inspect_image_label(
-        &self,
-        image: &str,
-        label: &str,
-    ) -> anyhow::Result<Option<String>> {
-        Ok(self.inspect_image_labels(image).await?.remove(label))
-    }
-
     async fn pull_image(&self, image: &str) -> anyhow::Result<()> {
         use bollard::query_parameters::CreateImageOptions;
         crate::tui::emit_debug_line("pull", image);
@@ -507,8 +496,6 @@ impl DockerApi for BollardDockerClient {
         }
     }
 }
-
-// ── FakeDockerClient (test only) ──────────────────────────────────────────
 
 #[cfg(test)]
 pub struct FakeDockerClient {
@@ -679,10 +666,11 @@ impl DockerApi for FakeDockerClient {
     async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()> {
         let op = format!("create_container:{name}");
         self.record(&op);
+        self.check_fail(&op)?;
         self.created_containers
             .borrow_mut()
             .push((name.to_string(), spec));
-        self.check_fail(&op)
+        Ok(())
     }
 
     async fn start_container(&self, name: &str) -> anyhow::Result<()> {
@@ -752,14 +740,6 @@ impl DockerApi for FakeDockerClient {
         Ok(self.pop_inspect_image_labels())
     }
 
-    async fn inspect_image_label(
-        &self,
-        image: &str,
-        label: &str,
-    ) -> anyhow::Result<Option<String>> {
-        Ok(self.inspect_image_labels(image).await?.remove(label))
-    }
-
     async fn pull_image(&self, image: &str) -> anyhow::Result<()> {
         let op = format!("docker pull {image}");
         self.record(&op);
@@ -771,5 +751,56 @@ impl DockerApi for FakeDockerClient {
         self.record(&op);
         self.check_fail(&op)?;
         Ok(self.pop_exec_capture())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn container_state_short_label() {
+        let cases: &[(ContainerState, &str)] = &[
+            (ContainerState::Running, "running"),
+            (ContainerState::Paused, "paused"),
+            (ContainerState::Restarting, "restarting"),
+            (ContainerState::Removing, "removing"),
+            (ContainerState::Created, "created"),
+            (ContainerState::Dead, "dead"),
+            (
+                ContainerState::Stopped {
+                    exit_code: 0,
+                    oom_killed: false,
+                },
+                "stopped exit:0",
+            ),
+            (
+                ContainerState::Stopped {
+                    exit_code: 1,
+                    oom_killed: false,
+                },
+                "stopped exit:1",
+            ),
+            (
+                ContainerState::Stopped {
+                    exit_code: 0,
+                    oom_killed: true,
+                },
+                "stopped oom_killed",
+            ),
+            (ContainerState::NotFound, "missing"),
+            (
+                ContainerState::InspectUnavailable("reason".to_string()),
+                "unavailable",
+            ),
+        ];
+
+        for (state, expected) in cases {
+            assert_eq!(
+                state.short_label(),
+                *expected,
+                "short_label mismatch for {state:?}"
+            );
+        }
     }
 }

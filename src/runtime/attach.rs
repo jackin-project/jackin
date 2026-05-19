@@ -9,6 +9,8 @@ use crate::instance::InstanceManifest;
 pub const TMUX_LIST_SESSIONS_CMD: &str =
     "tmux list-sessions -F '#{session_name}' 2>/dev/null || true";
 
+// Re-exported so callers that already imported from `attach` keep working
+// after ContainerState moved to `docker_client`.
 pub use crate::docker_client::ContainerState;
 #[cfg(test)]
 use crate::instance::{InstanceIndex, InstanceStatus};
@@ -18,7 +20,7 @@ use super::naming::dind_certs_volume;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentSession {
-    pub command: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,7 +62,7 @@ fn parse_tmux_sessions(output: &str) -> Vec<AgentSession> {
                 return None;
             }
             Some(AgentSession {
-                command: name.to_string(),
+                name: name.to_string(),
             })
         })
         .collect()
@@ -95,14 +97,6 @@ pub(super) fn short_session_id() -> String {
     format!("{:06x}", ts & 0x00ff_ffff)
 }
 
-/// Reconnect to an existing tmux session in a running container, or create a
-/// new one when none are running.
-///
-/// If one or more sessions exist, attaches to the most recently used one via
-/// `tmux attach-session` (no `-t`). If no sessions are running, reads the
-/// agent from the instance manifest and starts a new `jackin-<agent>-<id>`
-/// session via `entrypoint.sh`.
-///
 /// `TMUX=` prevents nested-session warnings when the operator's host terminal
 /// is itself inside tmux.
 pub(super) async fn reconnect_or_create_session(
@@ -133,11 +127,27 @@ pub(super) async fn reconnect_or_create_session(
             )
             .await
     } else {
-        let agent_slug =
-            crate::instance::InstanceManifest::read(&paths.data_dir.join(container_name))
-                .ok()
-                .and_then(|m| m.agent().ok())
-                .map_or_else(|| "agent".to_string(), |a| a.slug().to_string());
+        let agent_slug = match crate::instance::InstanceManifest::read(
+            &paths.data_dir.join(container_name),
+        ) {
+            Ok(m) => match m.agent() {
+                Ok(a) => a.slug().to_string(),
+                Err(e) => {
+                    crate::debug_log!(
+                        "instance",
+                        "reconnect_or_create_session: unrecognized agent for {container_name}: {e}"
+                    );
+                    "agent".to_string()
+                }
+            },
+            Err(e) => {
+                crate::debug_log!(
+                    "instance",
+                    "reconnect_or_create_session: manifest read failed for {container_name}: {e}"
+                );
+                "agent".to_string()
+            }
+        };
         let agent_env = format!("{}={agent_slug}", crate::env_model::JACKIN_AGENT_ENV_NAME);
         let session_name = format!("jackin-{agent_slug}-{}", short_session_id());
         runner
@@ -166,8 +176,8 @@ pub(super) async fn reconnect_or_create_session(
 }
 
 /// Verify the container is reachable (running/paused/restarting).
-/// Returns `Ok(())` when the container is accessible, `Err` otherwise.
-/// `stopped_hint` is appended to the "is stopped" error message.
+/// Returns `Ok(())` when reachable, `Err` otherwise.
+/// `stopped_hint` is the trailing clause of the "is stopped" error, e.g. "restart it before opening a shell".
 async fn require_container_reachable(
     paths: &JackinPaths,
     container_name: &str,
@@ -470,7 +480,7 @@ fn describe_agent_sessions(sessions: &AgentSessionInventory) -> String {
         }
         AgentSessionInventory::Sessions(sessions) => sessions
             .iter()
-            .map(|session| session.command.as_str())
+            .map(|session| session.name.as_str())
             .collect::<Vec<_>>()
             .join("; "),
     }
@@ -485,10 +495,10 @@ fn describe_network_state(state: DockerNetworkState) -> String {
 }
 
 fn describe_mount_state(state_dir: &std::path::Path) -> String {
-    crate::isolation::state::MountSummary::for_state_dir(state_dir).map_or_else(
-        |_| "unknown".to_string(),
-        crate::isolation::state::MountSummary::inspect_label,
-    )
+    match crate::isolation::state::MountSummary::for_state_dir(state_dir) {
+        Ok(summary) => summary.inspect_label(),
+        Err(e) => format!("unknown (error reading state: {e})"),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1115,8 +1125,8 @@ mod tests {
             panic!("expected sessions");
         };
         assert_eq!(sessions.len(), 2);
-        assert_eq!(sessions[0].command, "jackin-claude-abc123");
-        assert_eq!(sessions[1].command, "jackin-codex-abc");
+        assert_eq!(sessions[0].name, "jackin-claude-abc123");
+        assert_eq!(sessions[1].name, "jackin-codex-abc");
     }
 
     #[tokio::test]
@@ -1314,5 +1324,167 @@ mod tests {
                 .contains("TLS client certificates not found"),
             "got: {err}"
         );
+    }
+
+    #[tokio::test]
+    async fn spawn_shell_session_succeeds_when_container_paused() {
+        let (_tmp, paths) = test_paths();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Paused,
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+
+        spawn_shell_session(&paths, "jk-agent-smith", &docker, &mut runner)
+            .await
+            .unwrap();
+
+        assert!(
+            runner.recorded.iter().any(|c| {
+                c.contains("docker exec") && c.contains("TMUX=") && c.contains("jk-agent-smith")
+            }),
+            "expected docker exec with TMUX= for paused container; got: {:?}",
+            runner.recorded
+        );
+    }
+
+    #[tokio::test]
+    async fn spawn_shell_session_succeeds_when_container_restarting() {
+        let (_tmp, paths) = test_paths();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Restarting,
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+
+        spawn_shell_session(&paths, "jk-agent-smith", &docker, &mut runner)
+            .await
+            .unwrap();
+
+        assert!(
+            runner.recorded.iter().any(|c| {
+                c.contains("docker exec") && c.contains("TMUX=") && c.contains("jk-agent-smith")
+            }),
+            "expected docker exec with TMUX= for restarting container; got: {:?}",
+            runner.recorded
+        );
+    }
+
+    #[tokio::test]
+    async fn hardline_agent_errors_on_created() {
+        let (_tmp, paths) = test_paths();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Created,
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+
+        let err = hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner)
+            .await
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("created"),
+            "expected error mentioning 'created'; got: {err}"
+        );
+        assert!(
+            !runner
+                .recorded
+                .iter()
+                .any(|c| c.contains("tmux") || c.contains("docker start")),
+            "no exec or start must fire against a created container"
+        );
+    }
+
+    #[tokio::test]
+    async fn hardline_agent_errors_on_dead() {
+        let (_tmp, paths) = test_paths();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Dead,
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+
+        let err = hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner)
+            .await
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("dead"),
+            "expected error mentioning 'dead'; got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn hardline_agent_errors_on_removing() {
+        let (_tmp, paths) = test_paths();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Removing,
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+
+        let err = hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner)
+            .await
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("removing"),
+            "expected error mentioning 'removing'; got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn inspect_agent_sessions_returns_not_running_for_paused() {
+        let docker = FakeDockerClient::default();
+
+        let sessions =
+            inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Paused).await;
+
+        assert_eq!(sessions, AgentSessionInventory::NotRunning);
+        assert!(
+            docker.recorded.borrow().is_empty(),
+            "exec_capture must not be called for a paused container"
+        );
+    }
+
+    #[tokio::test]
+    async fn inspect_agent_sessions_returns_not_running_for_restarting() {
+        let docker = FakeDockerClient::default();
+
+        let sessions =
+            inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Restarting).await;
+
+        assert_eq!(sessions, AgentSessionInventory::NotRunning);
+        assert!(
+            docker.recorded.borrow().is_empty(),
+            "exec_capture must not be called for a restarting container"
+        );
+    }
+
+    #[tokio::test]
+    async fn wait_for_dind_succeeds_when_daemon_ready_immediately() {
+        // docker info succeeds on first attempt; test -f /certs/client/ca.pem also succeeds.
+        let docker = FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                String::new(), // docker info
+                String::new(), // test -f /certs/client/ca.pem
+            ])),
+            ..Default::default()
+        };
+
+        wait_for_dind("jk-agent-smith-dind", "jk-agent-smith-dind-certs", &docker)
+            .await
+            .unwrap();
     }
 }

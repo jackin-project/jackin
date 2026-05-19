@@ -726,6 +726,107 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn purge_container_state_refuses_when_role_container_paused() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container = "jk-agent-smith";
+        std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(VecDeque::from([
+                crate::docker_client::ContainerState::Paused,
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+        let err = purge_container_state(&paths, container, &docker, &mut runner)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("and is paused"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn purge_container_state_refuses_when_role_container_restarting() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container = "jk-agent-smith";
+        std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(VecDeque::from([
+                crate::docker_client::ContainerState::Restarting,
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+        let err = purge_container_state(&paths, container, &docker, &mut runner)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("and is restarting"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn purge_container_state_refuses_when_role_container_created() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container = "jk-agent-smith";
+        std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(VecDeque::from([
+                crate::docker_client::ContainerState::Created,
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+        let err = purge_container_state(&paths, container, &docker, &mut runner)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("and is being created"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn purge_container_state_refuses_when_role_container_removing() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container = "jk-agent-smith";
+        std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(VecDeque::from([
+                crate::docker_client::ContainerState::Removing,
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+        let err = purge_container_state(&paths, container, &docker, &mut runner)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("and is being removed"),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn purge_container_state_refuses_when_role_container_dead() {
+        let temp = tempdir().unwrap();
+        let paths = JackinPaths::for_tests(temp.path());
+        let container = "jk-agent-smith";
+        std::fs::create_dir_all(paths.data_dir.join(container)).unwrap();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(VecDeque::from([
+                crate::docker_client::ContainerState::Dead,
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+        let err = purge_container_state(&paths, container, &docker, &mut runner)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("but is dead"), "got: {err}");
+    }
+
+    #[tokio::test]
     async fn eject_agent_removes_container_dind_and_network() {
         let docker = FakeDockerClient::default();
 

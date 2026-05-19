@@ -5,7 +5,6 @@ use crate::paths::JackinPaths;
 use crate::repo::CachedRepo;
 use crate::selector::RoleSelector;
 use crate::version_check;
-use anyhow::Context;
 use owo_colors::OwoColorize;
 
 use super::identity::HostIdentity;
@@ -134,10 +133,13 @@ pub(super) async fn build_agent_image(
     // override while this invocation uses the canonical one, or vice versa —
     // and must be rebuilt from scratch rather than reused.
     let current_construct = crate::repo_contract::construct_image();
+    // Treat inspect errors as label-absent (no mismatch): a transient daemon
+    // error must not abort the build — the operator's explicit build intent
+    // takes priority over the mismatch check.
     let cached_construct = docker
         .inspect_image_label(&image, LABEL_IMAGE_CONSTRUCT)
         .await
-        .with_context(|| format!("inspecting construct label on derived image {image}"))?;
+        .unwrap_or(None);
     let construct_mismatch =
         !rebuild && cached_construct.is_some_and(|cached| cached != current_construct);
     let rebuild = rebuild || construct_mismatch;
@@ -190,11 +192,28 @@ pub(super) async fn build_agent_image(
     build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
 
     let github_token = resolve_github_token(runner).await;
-    let secret_file: Option<tempfile::NamedTempFile> = github_token.as_ref().and_then(|token| {
-        let mut f = tempfile::NamedTempFile::new().ok()?;
-        std::io::Write::write_all(&mut f, token.as_bytes()).ok()?;
-        Some(f)
-    });
+    let secret_file: Option<tempfile::NamedTempFile> =
+        github_token
+            .as_ref()
+            .and_then(|token| match tempfile::NamedTempFile::new() {
+                Err(e) => {
+                    eprintln!(
+                        "warning: failed to create tempfile for GitHub token: {e}; \
+                     build will use unauthenticated GitHub API"
+                    );
+                    None
+                }
+                Ok(mut f) => match std::io::Write::write_all(&mut f, token.as_bytes()) {
+                    Err(e) => {
+                        eprintln!(
+                            "warning: failed to write GitHub token to tempfile: {e}; \
+                         build will use unauthenticated GitHub API"
+                        );
+                        None
+                    }
+                    Ok(()) => Some(f),
+                },
+            });
     let secret_arg = secret_file
         .as_ref()
         .map(|f| format!("id=github_token,src={}", f.path().display()));
@@ -329,6 +348,7 @@ async fn extract_agent_version(
         )
         .await
     else {
+        eprintln!("warning: could not probe {display} version from {image}; version check skipped");
         return;
     };
     let version = raw.trim();
@@ -443,5 +463,21 @@ mod tests {
         };
         let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
         assert!(stale, "pull failure should report image as stale");
+    }
+
+    #[tokio::test]
+    async fn published_image_stale_when_inspect_image_labels_fails() {
+        let docker = FakeDockerClient {
+            fail_with: vec![(
+                "docker inspect image:".to_string(),
+                "daemon error".to_string(),
+            )],
+            ..FakeDockerClient::default()
+        };
+        let stale = published_image_is_stale("img:latest", "0.1", Some("abc"), &docker).await;
+        assert!(
+            stale,
+            "inspect_image_labels failure should treat image as stale"
+        );
     }
 }

@@ -86,6 +86,11 @@ impl CommandRunner for FakeRunner {
         let command = format!("{} {}", program, args.join(" "));
         self.recorded.push(command.clone());
         self.check_command(&command)?;
+        // Empty queue returns "" — safe for most captures (git SHA, id outputs), but
+        // dangerous for assess_cleanup captures: `rev-list` returning "" maps to
+        // "0 commits ahead, safe to delete" and `symbolic-ref HEAD` returning ""
+        // silently skips the detached-HEAD guard. Pre-fill the queue in tests that
+        // exercise those code paths.
         Ok(self.capture_queue.pop_front().unwrap_or_default())
     }
 
