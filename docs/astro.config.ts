@@ -133,6 +133,7 @@ export default defineConfig({
             { label: 'Creating a Role', slug: 'developing/creating-roles' },
             { label: 'Role Manifest', slug: 'developing/role-manifest' },
             { label: 'Construct Image', slug: 'developing/construct-image' },
+            { label: 'Publishing Role Images', slug: 'developing/publishing-role-images' },
           ],
         },
         {
