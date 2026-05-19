@@ -97,6 +97,7 @@ pub struct ContainerSpec {
 }
 
 pub trait DockerApi {
+    #[must_use]
     async fn inspect_container_state(&self, name: &str) -> ContainerState;
     async fn remove_container(&self, name: &str) -> anyhow::Result<()>;
     async fn list_containers(
@@ -498,20 +499,24 @@ impl DockerApi for BollardDockerClient {
 }
 
 #[cfg(test)]
-pub struct FakeDockerClient {
-    pub recorded: std::cell::RefCell<Vec<String>>,
-    pub inspect_queue: std::cell::RefCell<std::collections::VecDeque<ContainerState>>,
-    pub list_containers_queue: std::cell::RefCell<std::collections::VecDeque<Vec<ContainerRow>>>,
-    pub list_networks_queue: std::cell::RefCell<std::collections::VecDeque<Vec<NetworkRow>>>,
-    pub list_image_tags_queue: std::cell::RefCell<std::collections::VecDeque<Vec<String>>>,
-    pub remove_image_queue: std::cell::RefCell<std::collections::VecDeque<RemoveImageOutcome>>,
-    pub exec_capture_queue: std::cell::RefCell<std::collections::VecDeque<String>>,
-    pub inspect_image_labels_queue:
+pub(crate) struct FakeDockerClient {
+    pub(crate) recorded: std::cell::RefCell<Vec<String>>,
+    pub(crate) inspect_queue: std::cell::RefCell<std::collections::VecDeque<ContainerState>>,
+    pub(crate) list_containers_queue:
+        std::cell::RefCell<std::collections::VecDeque<Vec<ContainerRow>>>,
+    pub(crate) list_networks_queue:
+        std::cell::RefCell<std::collections::VecDeque<Vec<NetworkRow>>>,
+    pub(crate) list_image_tags_queue: std::cell::RefCell<std::collections::VecDeque<Vec<String>>>,
+    pub(crate) remove_image_queue:
+        std::cell::RefCell<std::collections::VecDeque<RemoveImageOutcome>>,
+    pub(crate) exec_capture_queue: std::cell::RefCell<std::collections::VecDeque<String>>,
+    pub(crate) inspect_image_labels_queue:
         std::cell::RefCell<std::collections::VecDeque<HashMap<String, String>>>,
-    pub inspect_network_queue: std::cell::RefCell<std::collections::VecDeque<Option<NetworkRow>>>,
-    pub fail_with: Vec<(String, String)>,
-    pub created_containers: std::cell::RefCell<Vec<(String, ContainerSpec)>>,
-    pub created_networks: std::cell::RefCell<Vec<(String, HashMap<String, String>)>>,
+    pub(crate) inspect_network_queue:
+        std::cell::RefCell<std::collections::VecDeque<Option<NetworkRow>>>,
+    pub(crate) fail_with: Vec<(String, String)>,
+    pub(crate) created_containers: std::cell::RefCell<Vec<(String, ContainerSpec)>>,
+    pub(crate) created_networks: std::cell::RefCell<Vec<(String, HashMap<String, String>)>>,
 }
 
 #[cfg(test)]
