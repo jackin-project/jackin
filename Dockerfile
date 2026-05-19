@@ -6,6 +6,8 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # detect published-image staleness at launch time.
 ARG CONSTRUCT_VERSION=unknown
 LABEL jackin.construct_version=${CONSTRUCT_VERSION}
+ARG ROLE_GIT_SHA=unknown
+LABEL jackin.role_git_sha=${ROLE_GIT_SHA}
 
 # CAVEMAN_VERSION must be a release tag from
 # https://github.com/JuliusBrussee/caveman/releases — never `main`,
