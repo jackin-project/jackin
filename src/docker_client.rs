@@ -615,14 +615,14 @@ impl FakeDockerClient {
         self.inspect_image_label_queue
             .borrow_mut()
             .pop_front()
-            .unwrap_or(None)
+            .flatten()
     }
 
     fn pop_inspect_network(&self) -> Option<NetworkRow> {
         self.inspect_network_queue
             .borrow_mut()
             .pop_front()
-            .unwrap_or(None)
+            .flatten()
     }
 }
 

@@ -54,7 +54,7 @@ pub(super) async fn build_agent_image(
         crate::repo_contract::construct_image() != crate::repo_contract::CONSTRUCT_IMAGE;
     let mut use_prebuilt =
         published_image.is_some() && !rebuild && branch_override.is_none() && !custom_construct;
-    let mut base_image_override = use_prebuilt.then(|| published_image.unwrap());
+    let mut base_image_override = if use_prebuilt { published_image } else { None };
 
     // Resolve the role repo HEAD SHA once — used both for the published-image
     // staleness check and as a build-arg so local builds carry the same label.
@@ -67,22 +67,24 @@ pub(super) async fn build_agent_image(
     //   label matches the Dockerfile's pinned version → still usable.
     // Either mismatch falls back to workspace mode so the role's workspace
     // Dockerfile is used directly.
-    let rebuild = if use_prebuilt
-        && published_image_is_stale(
-            published_image.unwrap(),
+    let rebuild = if let Some(published) = published_image.filter(|_| use_prebuilt) {
+        if published_image_is_stale(
+            published,
             &validated_repo.dockerfile.construct_version,
             head_sha.as_deref(),
             docker,
         )
         .await
-    {
-        eprintln!(
-            "note: published image {} is out of date; rebuilding from workspace Dockerfile",
-            published_image.unwrap(),
-        );
-        use_prebuilt = false;
-        base_image_override = None;
-        true
+        {
+            eprintln!(
+                "note: published image {published} is out of date; rebuilding from workspace Dockerfile",
+            );
+            use_prebuilt = false;
+            base_image_override = None;
+            true
+        } else {
+            rebuild
+        }
     } else {
         rebuild
     };
