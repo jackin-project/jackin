@@ -59,6 +59,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, `Amp`, `Kimi
 - [Config versioning and migration framework](/reference/roadmap/config-versioning-migration/) — shipped per-file schema gates for config, workspace files, and role manifests, plus automatic config/workspace migration, desktop role manifest migration through `jackin role migrate`, and CI migration through `jackin-role migrate`; roadmap tracks deferred `--pr` automation and the Renovate-style auto-migration GitHub Action
 - [Console agent session control](/reference/roadmap/console-agent-session-control/) — Phases 1–3 shipped: instance discovery, console Instances panel, `hardline --shell`, tmux-backed primary session (supervisor as PID 1, `tmux new-session -A`), secondary agent sessions via `hardline --new`, and console `a`/`x` keybindings; Phase 4 (agent runtime status + resource panel integration) remains open
 - [jackin-container: in-container supervisor binary](/reference/roadmap/jackin-container-binary/) — Phase 1 shipped: improved bash supervisor exits when the last tmux session ends, closing the automatic container teardown gap; Rust binary with inotify, Unix socket status interface, and daemon event streaming remain
+- [Docker API migration](/reference/roadmap/bollard-migration/) — Phase 1 shipped: `DockerApi` trait with `BollardDockerClient`, all lifecycle/cleanup/inspect/exec/image-inspect/pull operations migrated to bollard, `ContainerState` extended to all 9 Docker states, CLI stderr string-matching eliminated; `docker build` and interactive `docker run -it` remain deferred to Phase 2
 
 ## Planned
 
@@ -87,7 +88,6 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, `Amp`, `Kimi
 
 ### Infrastructure improvements
 
-- **[Docker API migration](/reference/roadmap/bollard-migration/)** — incremental migration from CLI string-matching to the Bollard typed API client for more robust error handling. Phase 1 (lifecycle / cleanup / `inspect` via Bollard) is now scoped as the next concrete PR and closes open review findings #13 and #14; `docker build` and interactive `docker run -it` remain deferred to Phase 2 (status: partially scoped)
 - **[Construct user creation optimization](/reference/roadmap/construct-user-creation/)** — move user creation to the derived layer to eliminate UID/GID remapping (status: deferred — needs design work)
 - **[Workspace registry cache](/reference/roadmap/workspace-registry-cache/)** — opt-in workspace-level zot registry that acts as a pull-through cache for Docker Hub and a local push target; shared across all DinD sidecars in a workspace so base image layers are pulled once and reused, and built images persist across sessions (status: open — design proposal)
 
