@@ -13,7 +13,7 @@ use super::naming::{
 };
 
 /// Build the Docker image for the role. Returns the image name.
-#[allow(
+#[expect(
     clippy::similar_names,
     clippy::too_many_arguments,
     clippy::too_many_lines
@@ -312,7 +312,7 @@ async fn published_image_is_stale(
         .is_some_and(|stored| stored != dockerfile_version)
 }
 
-#[allow(clippy::type_complexity)]
+#[expect(clippy::type_complexity)]
 async fn extract_agent_version(
     paths: &JackinPaths,
     image: &str,

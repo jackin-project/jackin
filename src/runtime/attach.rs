@@ -240,7 +240,7 @@ pub async fn spawn_shell_session(
     result
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn spawn_agent_session(
     paths: &JackinPaths,
     container_name: &str,

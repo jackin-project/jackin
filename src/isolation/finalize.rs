@@ -358,7 +358,7 @@ enum CleanupAssessment {
 /// `debug_log!` of the underlying error so `--debug` shows what went
 /// wrong.
 #[allow(clippy::unnecessary_wraps)] // Result lets us propagate from inner ? if a future revision adds Err arms
-#[allow(clippy::too_many_lines)] // Linear policy table is clearer inline than split across helpers
+#[expect(clippy::too_many_lines)] // Linear policy table is clearer inline than split across helpers
 async fn assess_cleanup(
     record: &IsolationRecord,
     runner: &mut impl CommandRunner,
