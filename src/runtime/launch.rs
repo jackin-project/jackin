@@ -6248,7 +6248,11 @@ plugins = []
         assert!(body.contains(r#""role_key": "agent-smith""#));
         assert!(body.contains(r#""agent_runtime": "claude""#));
         assert!(body.contains(r#""host_workdir_fingerprint": "sha256:"#));
-        assert!(body.contains(r#""status": "restore_available""#));
+        // With no tmux sessions after docker exec returns, the new
+        // finalize path treats it as a clean exit (supervisor lag) rather
+        // than a detach — so the final status is clean_exited, not
+        // restore_available.
+        assert!(body.contains(r#""status": "clean_exited""#));
         let index_body = std::fs::read_to_string(paths.data_dir.join("instances.json")).unwrap();
         assert!(index_body.contains(&format!(r#""container_base": "{container_name}""#)));
     }
