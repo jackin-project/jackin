@@ -52,6 +52,16 @@ pub(super) const LABEL_IMAGE_CONSTRUCT: &str = "jackin.construct_image";
 /// mode so the role's workspace Dockerfile — carrying the new pin — is used.
 pub(super) const LABEL_IMAGE_CONSTRUCT_VERSION: &str = "jackin.construct_version";
 
+/// Image label key recording the git commit SHA of the role repo from which a
+/// published image was built. Role CI passes `--build-arg ROLE_GIT_SHA=<sha>`
+/// (set to `${{ github.sha }}`) so the Dockerfile's
+/// `LABEL jackin.role_git_sha=${ROLE_GIT_SHA}` bakes it in. Checked at launch
+/// time before the construct-version check: if the label matches the HEAD of
+/// the cached role repo the image is current and the workspace rebuild is
+/// skipped. Falls through to the construct-version check when this label is
+/// absent (images predating this feature).
+pub(super) const LABEL_IMAGE_ROLE_GIT_SHA: &str = "jackin.role_git_sha";
+
 /// Format a human-friendly role name from a container name and its display label.
 ///
 /// Examples:
