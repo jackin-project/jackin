@@ -7,9 +7,10 @@
 # surface the container logs.
 #
 # The tmux server creates its socket at /tmp/tmux-<uid>/default when the
-# first session starts and removes it when the last session ends and all
-# clients have disconnected. Watching the socket file is reliable and
-# requires no tmux hooks or configuration.
+# first session starts. The grace period watches for the socket file to
+# appear; the monitor loop polls via `tmux list-sessions` rather than a
+# plain file-existence check so a stale socket (tmux crashed without
+# cleanup) doesn't keep the supervisor alive indefinitely.
 #
 # Will be removed in Phase 2 when the `jackin-container` Rust binary takes
 # over as PID 1 with inotify-based socket watching.
@@ -43,9 +44,11 @@ if [ ! -S "$TMUX_SOCKET" ]; then
     exit 1
 fi
 
-# Wait for the last session to end. The tmux server removes the socket
-# immediately after the last session closes and all clients disconnect.
-while [ -S "$TMUX_SOCKET" ]; do
+# Wait for the last session to end. Poll via `tmux list-sessions` rather
+# than a plain socket-file existence check: if tmux crashes or is killed
+# without removing the socket, a stale file would keep the supervisor
+# alive indefinitely.
+while tmux list-sessions &>/dev/null; do
     sleep 1 &
     wait $! || true
 done
