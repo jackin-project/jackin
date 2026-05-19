@@ -504,8 +504,7 @@ pub(crate) struct FakeDockerClient {
     pub(crate) inspect_queue: std::cell::RefCell<std::collections::VecDeque<ContainerState>>,
     pub(crate) list_containers_queue:
         std::cell::RefCell<std::collections::VecDeque<Vec<ContainerRow>>>,
-    pub(crate) list_networks_queue:
-        std::cell::RefCell<std::collections::VecDeque<Vec<NetworkRow>>>,
+    pub(crate) list_networks_queue: std::cell::RefCell<std::collections::VecDeque<Vec<NetworkRow>>>,
     pub(crate) list_image_tags_queue: std::cell::RefCell<std::collections::VecDeque<Vec<String>>>,
     pub(crate) remove_image_queue:
         std::cell::RefCell<std::collections::VecDeque<RemoveImageOutcome>>,
