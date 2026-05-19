@@ -127,7 +127,10 @@ pub fn finalize_foreground_session(
         //   - sessions present → real detach (Ctrl-B D); preserve as before
         //   - no sessions → supervisor lag after clean agent exit; fall through to
         //     finalize_clean_exit so isolation worktrees are swept normally
-        if outcome.exit_code.is_none() && !outcome.oom_killed && !has_tmux_sessions(runner, container_name) {
+        if outcome.exit_code.is_none()
+            && !outcome.oom_killed
+            && !has_tmux_sessions(runner, container_name)
+        {
             debug_log!(
                 "isolation",
                 "finalize: container={c} still running but no tmux sessions; \
