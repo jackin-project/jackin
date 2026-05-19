@@ -3,13 +3,13 @@ title: "jackin-container: In-Container Multiplexer Server"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — Phase 1 cleanup gap closed via improved bash supervisor; Rust binary, multiplexer server, and desktop bridge remain
+**Status**: Partially implemented — Phase 1 cleanup gap closed; container and DinD tear down automatically on clean agent exit. Rust binary, multiplexer server, and desktop bridge remain.
 
 ## Problem
 
 The current container supervisor is a bash wait loop (<RepoFile path="docker/runtime/supervisor.sh" />) that keeps the container alive while agent sessions run via `docker exec`. It has two immediate limitations and one deeper architectural gap.
 
-**Last-session cleanup does not fire.** When a tmux session exits, the supervisor keeps the container running. Because the container state is `Running` rather than `Stopped`, the host jackin cleanup path (`finalize_foreground_session`, container teardown, DinD/network/certs removal) never fires automatically. The operator must explicitly run `jackin eject` to clean up a container after all sessions end.
+**Last-session cleanup does not fire** *(resolved in Phase 1).* When a tmux session exits, the supervisor was keeping the container running. Because the container state is `Running` rather than `Stopped`, the host jackin cleanup path (`finalize_foreground_session`, container teardown, DinD/network/certs removal) would not fire automatically. The operator had to explicitly run `jackin eject` to clean up a container after all sessions end.
 
 **Session inventory requires shelling out.** Querying which sessions are active requires `docker exec <container> sh -c 'tmux list-sessions ...'` from the host. There is no structured interface for the host CLI or the future jackin daemon to ask "what is running in this container right now?"
 
@@ -146,13 +146,13 @@ The deeper architectural difference: Herdr wraps **bare host processes**. Jackin
 
 ## Implementation plan
 
-### Phase 1 — Cleanup gap closed *(shipped — bash supervisor with socket polling)*
+### Phase 1 — Cleanup gap closed *(shipped — bash supervisor + host-side teardown)*
 
 **Current state:** containers still use tmux as the session layer. This is a temporary arrangement: `docker exec tmux new-session` creates sessions, `docker exec tmux attach-session` reconnects, and `docker exec tmux list-sessions` queries what is running. The bash supervisor wraps tmux from the outside and has no understanding of what is happening inside sessions. This is the minimal viable approach — it works, but it gives Jackin no visibility into agent state, no structured event stream, and no way to manage sessions without shelling into the container.
 
-**What shipped in Phase 1:** <RepoFile path="docker/runtime/supervisor.sh" /> now monitors the tmux server socket (`/tmp/tmux-<uid>/default`) with a 1-second polling loop. When the socket disappears (last session ended and all clients disconnected), the supervisor exits 0 → container exits 0 → the host-side cleanup path runs automatically. A 60-second startup grace period prevents the supervisor from exiting before the first `docker exec tmux new-session` creates the socket.
+**What shipped in Phase 1:** <RepoFile path="docker/runtime/supervisor.sh" /> now polls `tmux list-sessions` every second rather than watching the socket file disappear. Using `tmux list-sessions` is robust to stale socket files left behind when tmux crashes or is killed without cleanup — a plain `[ -S socket ]` file-existence check would loop forever on a dead socket. When `tmux list-sessions` returns non-zero (server gone or no sessions), the supervisor exits 0. A 60-second startup grace period waits for the socket file to appear before entering the monitor loop, preventing a premature exit before the first `docker exec tmux new-session` creates it.
 
-<RepoFile path="src/runtime/launch.rs" /> was updated alongside it: when `docker exec` returns and the container is still `Running`, the code now calls `inspect_agent_sessions` to distinguish a clean agent exit (no sessions — run teardown) from a detached terminal (sessions active — keep the container alive).
+Two companion fixes in the host-side Rust code were required to make the cleanup path actually fire. <RepoFile path="src/isolation/finalize.rs" /> (`finalize_foreground_session`) now calls `has_tmux_sessions` when the container is still `Running` after `docker exec` returns: an empty session list means supervisor lag, not a detach, so the code falls through to `finalize_clean_exit` and sweeps isolation worktrees normally instead of returning `Preserved`. <RepoFile path="src/runtime/launch.rs" /> now tears down the DinD sidecar and Docker network in every branch where the container has exited — including crashes (non-zero exit) — rather than preserving them for a `jackin hardline` reconnect that cannot work without a live DinD. When `docker exec` returns and the container is still `Running` with an empty session list, teardown fires immediately without a redundant re-query (the session check in `finalize_foreground_session` already confirmed no sessions are present). Only a genuinely live detach (container still `Running` AND sessions confirmed present) keeps the DinD alive for reconnect.
 
 **Why this is temporary and why a purpose-built multiplexer makes sense:** researching [Herdr](https://github.com/ogulcancelik/herdr) — a Rust terminal multiplexer purpose-built for AI coding agents — confirmed that the missing piece is a session layer that understands AI agents natively. Herdr tracks four agent states (blocked / working / done / idle) with zero configuration, exposes a Unix socket API for session control, and streams status-change events. It is designed for bare host processes (not containers) and is AGPL-3.0, so it cannot be embedded in Jackin. But the core concept is exactly right: a multiplexer that knows about agents, not just terminals. `jackin-container` will become that multiplexer — running inside the container where it can see the agent's PTY output directly, exposed through a Unix socket that the host and desktop app both drive. The tmux layer goes away in Phase 3.
 
