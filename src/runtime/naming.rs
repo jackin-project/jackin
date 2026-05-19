@@ -19,17 +19,6 @@ pub(super) const LABEL_MANAGED: &str = "jackin.managed=true";
 pub(super) const LABEL_KIND_ROLE: &str = "jackin.kind=role";
 /// `DinD` sidecars only — distinguishes them from role containers.
 pub(super) const LABEL_KIND_DIND: &str = "jackin.kind=dind";
-/// Filter expression for `docker images --filter` to list jackin-managed role images.
-pub(super) const FILTER_IMAGES: &str = "reference=jk_*";
-/// Filter expression for `docker ps --filter` to find managed containers.
-pub(super) const FILTER_MANAGED: &str = "label=jackin.managed=true";
-/// Filter expression for `docker ps --filter` to find role containers.
-pub(super) const FILTER_KIND_ROLE: &str = "label=jackin.kind=role";
-/// Filter expression for `docker ps --filter` to find `DinD` sidecars.
-pub(super) const FILTER_KIND_DIND: &str = "label=jackin.kind=dind";
-/// Filter expression for `docker ps --filter` to find roles whose
-/// workspace opted into the keep-awake reconciler.
-pub(super) const FILTER_KEEP_AWAKE: &str = "label=jackin.keep_awake=true";
 /// Applied to role containers whose workspace opted into the
 /// keep-awake reconciler. Read by `runtime::caffeinate::reconcile`
 /// to decide whether to keep `caffeinate` running.
@@ -51,6 +40,14 @@ pub(super) const LABEL_IMAGE_CONSTRUCT: &str = "jackin.construct_image";
 /// published image pre-dates a Renovate bump; jackin falls back to workspace
 /// mode so the role's workspace Dockerfile — carrying the new pin — is used.
 pub(super) const LABEL_IMAGE_CONSTRUCT_VERSION: &str = "jackin.construct_version";
+
+/// Container label key storing the role container name. Applied to `DinD`
+/// sidecars and managed networks so GC can map them back to their role.
+pub(super) const LABEL_ROLE_KEY: &str = "jackin.role";
+
+/// Container / image label key storing the derived image name. Applied to
+/// role containers so image GC can skip images currently in use.
+pub(super) const LABEL_IMAGE_KEY: &str = "jackin.image";
 
 /// Image label key recording the git commit SHA of the role repo from which a
 /// published image was built. Role CI passes `--build-arg ROLE_GIT_SHA=<sha>`
@@ -107,6 +104,14 @@ pub(super) fn image_name_for_branch(selector: &RoleSelector, branch: &str) -> St
 /// `DinD` sidecar (writer) and the role container (reader).
 pub(super) fn dind_certs_volume(container_name: &str) -> String {
     format!("{container_name}-dind-certs")
+}
+
+pub(super) fn dind_container_name(container_name: &str) -> String {
+    format!("{container_name}-dind")
+}
+
+pub(super) fn role_network_name(container_name: &str) -> String {
+    format!("{container_name}-net")
 }
 
 #[cfg(test)]

@@ -1,75 +1,17 @@
+mod common;
+
+use common::{FakeRunner, NoOpDocker};
 use jackin::agent::Agent;
 use jackin::config::AppConfig;
-use jackin::docker::{CommandRunner, RunOptions};
 use jackin::isolation::MountIsolation;
 use jackin::paths::JackinPaths;
 use jackin::runtime::{LoadOptions, load_role};
 use jackin::selector::RoleSelector;
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
-use std::collections::VecDeque;
-use std::path::Path;
 use tempfile::tempdir;
 
-#[derive(Default)]
-struct FakeRunner {
-    recorded: Vec<String>,
-    capture_queue: VecDeque<String>,
-}
-
-impl FakeRunner {
-    fn for_load_agent(outputs: impl IntoIterator<Item = String>) -> Self {
-        // Preamble: 1 orphaned-DinD GC scan (`gc_orphaned_networks`
-        // short-circuits on empty output) + 4 identity lookups.
-        let mut capture_queue = VecDeque::new();
-        for _ in 0..5 {
-            capture_queue.push_back(String::new());
-        }
-        capture_queue.extend(outputs);
-        Self {
-            recorded: Vec::new(),
-            capture_queue,
-        }
-    }
-}
-
-impl CommandRunner for FakeRunner {
-    fn run(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        _cwd: Option<&Path>,
-        _opts: &RunOptions,
-    ) -> anyhow::Result<()> {
-        self.recorded.push(format!("{program} {}", args.join(" ")));
-        Ok(())
-    }
-
-    fn capture(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        _cwd: Option<&Path>,
-    ) -> anyhow::Result<String> {
-        self.recorded.push(format!("{program} {}", args.join(" ")));
-        Ok(self.capture_queue.pop_front().unwrap_or_default())
-    }
-
-    fn capture_secret(
-        &mut self,
-        program: &str,
-        args: &[&str],
-        cwd: Option<&Path>,
-    ) -> anyhow::Result<String> {
-        // Delegates to `capture` and consumes one queue slot. Always provision
-        // one entry per expected `capture_secret` call (e.g. `gh auth token`
-        // in `resolve_github_token`) and document it above the `for_load_agent`
-        // call — same discipline as for `capture` calls.
-        self.capture(program, args, cwd)
-    }
-}
-
-#[test]
-fn codex_launch_invokes_docker_run_with_codex_agent() {
+#[tokio::test]
+async fn codex_launch_invokes_docker_run_with_codex_agent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -128,18 +70,21 @@ model = "gpt-5"
         keep_awake_enabled: false,
         git_pull_on_entry: false,
     };
-    // Capture queue (role-specific, after 5-slot preamble):
+    // Capture queue (role-specific, after 4-slot preamble):
     //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
+    let docker = NoOpDocker;
 
     load_role(
         &paths,
         &mut config,
         &selector,
         &workspace,
+        &docker,
         &mut runner,
         &LoadOptions::default(),
     )
+    .await
     .unwrap();
 
     let build_cmd = runner
@@ -183,8 +128,8 @@ model = "gpt-5"
     assert!(!run_cmd.contains("/home/agent/.jackin"), "{run_cmd}");
 }
 
-#[test]
-fn codex_launch_cli_agent_override_wins_over_workspace() {
+#[tokio::test]
+async fn codex_launch_cli_agent_override_wins_over_workspace() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
@@ -236,9 +181,10 @@ plugins = []
         keep_awake_enabled: false,
         git_pull_on_entry: false,
     };
-    // Capture queue (role-specific, after 5-slot preamble):
+    // Capture queue (role-specific, after 4-slot preamble):
     //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
+    let docker = NoOpDocker;
     let opts = LoadOptions {
         agent: Some(Agent::Codex),
         ..LoadOptions::default()
@@ -249,9 +195,11 @@ plugins = []
         &mut config,
         &selector,
         &workspace,
+        &docker,
         &mut runner,
         &opts,
     )
+    .await
     .unwrap();
 
     let run_cmd = runner

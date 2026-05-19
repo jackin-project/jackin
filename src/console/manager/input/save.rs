@@ -8,6 +8,7 @@ use super::super::state::{
 use crate::config::AppConfig;
 use crate::config::editor::EnvScope;
 use crate::paths::JackinPaths;
+use anyhow::Context as _;
 
 /// Phase 1: validate, plan, open `ConfirmSave`. Validation failures
 /// route to `EditorSaveFlow::Error` as an inline banner (popup is
@@ -145,7 +146,7 @@ pub(super) fn commit_editor_save(
     plan: super::super::state::PendingSaveCommit,
     exit_on_success: bool,
 ) -> anyhow::Result<()> {
-    commit_editor_save_with_runner(
+    commit_editor_save_with_runner::<crate::docker_client::BollardDockerClient>(
         state,
         config,
         paths,
@@ -153,16 +154,21 @@ pub(super) fn commit_editor_save(
         plan,
         exit_on_success,
         &mut crate::docker::ShellRunner::default(),
+        None, // uses BollardDockerClient::connect() inside
     )
 }
 
-/// Test seam: the same flow as [`commit_editor_save`] but with an
-/// injectable `CommandRunner`. Production code paths thread through the
-/// public wrapper above with `ShellRunner::default()`. Tests pass a
-/// `FakeRunner` so the drift detection branch is exercised without a
-/// real Docker daemon.
-#[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
-pub(super) fn commit_editor_save_with_runner(
+/// Test seam: the same flow as [`commit_editor_save`] but with injectable
+/// `CommandRunner` and `DockerApi`. Production code paths thread through the
+/// public wrapper above with `ShellRunner::default()` and
+/// `BollardDockerClient::connect()`. Tests pass fake impls so the drift
+/// detection branch is exercised without a real Docker daemon.
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    clippy::unnecessary_wraps
+)]
+pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>(
     state: &mut ManagerState<'_>,
     config: &mut AppConfig,
     paths: &JackinPaths,
@@ -170,6 +176,7 @@ pub(super) fn commit_editor_save_with_runner(
     plan: super::super::state::PendingSaveCommit,
     exit_on_success: bool,
     runner: &mut impl crate::docker::CommandRunner,
+    docker_override: Option<&D>,
 ) -> anyhow::Result<()> {
     let ManagerStage::Editor(editor) = &mut state.stage else {
         return Ok(());
@@ -212,12 +219,45 @@ pub(super) fn commit_editor_save_with_runner(
                 &editor.pending.mounts,
                 &plan.effective_removals,
             );
-            match crate::config::detect_workspace_edit_drift(
-                paths,
-                original_name,
-                &prospective_mounts,
-                runner,
-            ) {
+            // Fast-path: no isolation records means no drift possible, skip Docker.
+            let has_records =
+                crate::isolation::state::list_records_for_workspace(&paths.data_dir, original_name)
+                    .is_ok_and(|r| !r.is_empty());
+
+            let detect_result: anyhow::Result<_> = if !has_records {
+                Ok(crate::config::DriftDetection::default())
+            } else if let Some(docker) = docker_override {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .context("building tokio runtime for drift check")?;
+                rt.block_on(crate::config::detect_workspace_edit_drift(
+                    paths,
+                    original_name,
+                    &prospective_mounts,
+                    docker,
+                ))
+            } else {
+                let paths_clone = paths.clone();
+                let name = original_name.clone();
+                let mounts = prospective_mounts;
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .context("building tokio runtime for drift check")?;
+                    let docker = crate::docker_client::BollardDockerClient::connect()?;
+                    rt.block_on(crate::config::detect_workspace_edit_drift(
+                        &paths_clone,
+                        &name,
+                        &mounts,
+                        &docker,
+                    ))
+                })
+                .join()
+                .map_err(|_| anyhow::anyhow!("drift detection thread panicked"))?
+            };
+            match detect_result {
                 Err(e) => {
                     open_save_error_popup(editor, &e.to_string());
                     return Ok(());
@@ -281,12 +321,44 @@ pub(super) fn commit_editor_save_with_runner(
             // Re-detect to avoid a TOCTOU window where state changed
             // between the confirm modal opening and the operator's Yes.
             // `force_cleanup_isolated` is idempotent so re-running is safe.
-            match crate::config::detect_workspace_edit_drift(
-                paths,
-                original_name,
-                &prospective_mounts,
-                runner,
-            ) {
+            let has_records2 =
+                crate::isolation::state::list_records_for_workspace(&paths.data_dir, original_name)
+                    .is_ok_and(|r| !r.is_empty());
+
+            let drift_result: anyhow::Result<_> = if !has_records2 {
+                Ok(crate::config::DriftDetection::default())
+            } else if let Some(docker) = docker_override {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .context("building tokio runtime for drift detection")?;
+                rt.block_on(crate::config::detect_workspace_edit_drift(
+                    paths,
+                    original_name,
+                    &prospective_mounts,
+                    docker,
+                ))
+            } else {
+                let paths_clone = paths.clone();
+                let name = original_name.clone();
+                let mounts = prospective_mounts;
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .context("building tokio runtime for drift detection")?;
+                    let docker = crate::docker_client::BollardDockerClient::connect()?;
+                    rt.block_on(crate::config::detect_workspace_edit_drift(
+                        &paths_clone,
+                        &name,
+                        &mounts,
+                        &docker,
+                    ))
+                })
+                .join()
+                .map_err(|_| anyhow::anyhow!("drift detection thread panicked"))?
+            };
+            match drift_result {
                 Err(e) => {
                     open_save_error_popup(editor, &e.to_string());
                     return Ok(());
@@ -294,11 +366,20 @@ pub(super) fn commit_editor_save_with_runner(
                 Ok(detection) => {
                     for rec in &detection.stopped_records {
                         let container_dir = paths.data_dir.join(&rec.container_name);
-                        if let Err(e) = crate::isolation::cleanup::force_cleanup_isolated(
-                            rec,
-                            &container_dir,
-                            runner,
-                        ) {
+                        // block_on inside an async context panics; runner is !Send so we can't
+                        // spawn a thread. Workaround: spin a fresh single-threaded runtime.
+                        let cleanup_result = (|| -> anyhow::Result<()> {
+                            let rt = tokio::runtime::Builder::new_current_thread()
+                                .enable_all()
+                                .build()
+                                .context("building tokio runtime for cleanup")?;
+                            rt.block_on(crate::isolation::cleanup::force_cleanup_isolated(
+                                rec,
+                                &container_dir,
+                                runner,
+                            ))
+                        })();
+                        if let Err(e) = cleanup_result {
                             open_save_error_popup(editor, &e.to_string());
                             return Ok(());
                         }
@@ -2086,22 +2167,6 @@ mod tests {
         (tmp, paths, config, ws)
     }
 
-    /// `detect_workspace_edit_drift` issues two `capture` calls on the
-    /// runner: `list_records_for_workspace` is filesystem-only (no
-    /// runner traffic), but `list_role_names(running)` issues a `docker
-    /// ps` capture that returns the newline-separated container names.
-    /// Tests construct the runner with the appropriate output queued.
-    fn fake_runner_with_running(names: &[&str]) -> crate::runtime::FakeRunner {
-        let mut runner = crate::runtime::FakeRunner::default();
-        let joined = if names.is_empty() {
-            String::new()
-        } else {
-            format!("{}\n", names.join("\n"))
-        };
-        runner.capture_queue.push_back(joined);
-        runner
-    }
-
     #[test]
     fn save_blocks_with_error_popup_when_running_container_has_drifted_state() {
         let (tmp, paths, mut config, ws) = setup_with_isolated_record(
@@ -2138,7 +2203,17 @@ mod tests {
             e.modal = None;
         }
 
-        let mut runner = fake_runner_with_running(&["jk-a1b2c3d4-driftws"]);
+        let mut runner = crate::runtime::FakeRunner::default();
+        // inject FakeDockerClient: container is running
+        let fake_docker = crate::docker_client::FakeDockerClient {
+            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                vec![crate::docker_client::ContainerRow {
+                    name: "jk-a1b2c3d4-driftws".to_string(),
+                    labels: std::collections::HashMap::default(),
+                }],
+            ])),
+            ..Default::default()
+        };
         super::commit_editor_save_with_runner(
             &mut state,
             &mut config,
@@ -2147,6 +2222,7 @@ mod tests {
             plan,
             false,
             &mut runner,
+            Some(&fake_docker),
         )
         .unwrap();
 
@@ -2201,7 +2277,9 @@ mod tests {
 
         // No running container — drift lands on stopped_records and we
         // expect the confirm modal.
-        let mut runner = fake_runner_with_running(&[]);
+        let mut runner = crate::runtime::FakeRunner::default();
+        // inject FakeDockerClient: no running containers
+        let fake_docker = crate::docker_client::FakeDockerClient::default();
         super::commit_editor_save_with_runner(
             &mut state,
             &mut config,
@@ -2210,6 +2288,7 @@ mod tests {
             plan,
             false,
             &mut runner,
+            Some(&fake_docker),
         )
         .unwrap();
 

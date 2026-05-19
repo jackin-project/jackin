@@ -134,7 +134,7 @@ fn role_root_has_unexpected_entries(root: &std::path::Path) -> anyhow::Result<bo
 }
 
 /// Derive a short repository name from a git remote URL (e.g. `jackin-project/jackin`).
-pub(super) fn git_repo_name(
+pub(super) async fn git_repo_name(
     dir: &std::path::Path,
     runner: &mut impl CommandRunner,
 ) -> Option<String> {
@@ -143,28 +143,34 @@ pub(super) fn git_repo_name(
         runner,
         "git",
         &["-C", &dir_str, "remote", "get-url", "origin"],
-    )?;
+    )
+    .await?;
     parse_repo_name(&url)
 }
 
 /// Get the current branch name for a git directory.
-pub(super) fn git_branch(dir: &std::path::Path, runner: &mut impl CommandRunner) -> Option<String> {
+pub(super) async fn git_branch(
+    dir: &std::path::Path,
+    runner: &mut impl CommandRunner,
+) -> Option<String> {
     let dir_str = dir.display().to_string();
     try_capture(
         runner,
         "git",
         &["-C", &dir_str, "rev-parse", "--abbrev-ref", "HEAD"],
     )
+    .await
 }
 
 /// Check whether a path is inside a git work tree.
-pub(super) fn is_git_dir(dir: &std::path::Path, runner: &mut impl CommandRunner) -> bool {
+pub(super) async fn is_git_dir(dir: &std::path::Path, runner: &mut impl CommandRunner) -> bool {
     let dir_str = dir.display().to_string();
     try_capture(
         runner,
         "git",
         &["-C", &dir_str, "rev-parse", "--is-inside-work-tree"],
     )
+    .await
     .is_some()
 }
 
@@ -182,7 +188,7 @@ pub(super) fn confirm_repo_removal_interactive() -> anyhow::Result<bool> {
         .interact()?)
 }
 
-pub(super) fn resolve_agent_repo(
+pub(super) async fn resolve_agent_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
     git_url: &str,
@@ -201,6 +207,7 @@ pub(super) fn resolve_agent_repo(
         branch_override,
         confirm_repo_removal_interactive,
     )
+    .await
 }
 
 /// Resolve a role repo into the cache, registering it on success.
@@ -217,7 +224,7 @@ pub(super) fn resolve_agent_repo(
 ///
 /// `persist_registration` is the single commit point — it must be
 /// idempotent so retries after a transient failure are safe.
-pub(super) fn register_agent_repo(
+pub(super) async fn register_agent_repo(
     paths: &JackinPaths,
     selector: &RoleSelector,
     git_url: &str,
@@ -231,7 +238,8 @@ pub(super) fn register_agent_repo(
     let legacy_root = role_cache_root(paths, selector);
     if cached_repo.repo_dir.join(".git").is_dir() || legacy_root.join(".git").is_dir() {
         let (cached_repo, validated_repo, _lock_file) =
-            resolve_agent_repo_with(paths, selector, git_url, runner, debug, None, || Ok(false))?;
+            resolve_agent_repo_with(paths, selector, git_url, runner, debug, None, || Ok(false))
+                .await?;
         persist_registration()?;
         return Ok((cached_repo, validated_repo));
     }
@@ -287,6 +295,7 @@ pub(super) fn register_agent_repo(
             None,
             &git_run_opts,
         )
+        .await
         .map_err(RepoError::CloneFailed)?;
 
     let validated_repo = validate_role_repo(&temp_repo).map_err(RepoError::InvalidRoleRepo)?;
@@ -344,7 +353,7 @@ fn clone_args<'a>(git_url: &'a str, dest: &'a str, branch: Option<&'a str>) -> V
 }
 
 #[allow(clippy::too_many_lines)]
-pub(super) fn resolve_agent_repo_with(
+pub(super) async fn resolve_agent_repo_with(
     paths: &JackinPaths,
     selector: &RoleSelector,
     git_url: &str,
@@ -412,11 +421,13 @@ pub(super) fn resolve_agent_repo_with(
 
     let repo_path = cached_repo.repo_dir.display().to_string();
     if cached_repo.repo_dir.join(".git").is_dir() {
-        let remote_url = runner.capture(
-            "git",
-            &["-C", &repo_path, "remote", "get-url", "origin"],
-            None,
-        )?;
+        let remote_url = runner
+            .capture(
+                "git",
+                &["-C", &repo_path, "remote", "get-url", "origin"],
+                None,
+            )
+            .await?;
         if !repo_matches(git_url, &remote_url) {
             // Route diagnostics through the buffered debug channel rather
             // than `eprintln!` — the latter corrupts the alt-screen render
@@ -434,6 +445,7 @@ pub(super) fn resolve_agent_repo_with(
                 let clone_args = clone_args(git_url, &repo_path, branch_override);
                 runner
                     .run("git", &clone_args, None, &git_run_opts)
+                    .await
                     .map_err(RepoError::CloneFailed)?;
                 let validated_repo = validate_role_repo(&cached_repo.repo_dir)
                     .map_err(RepoError::InvalidRoleRepo)?;
@@ -443,18 +455,20 @@ pub(super) fn resolve_agent_repo_with(
             return Err(anyhow::Error::new(RepoError::RemoteMismatch));
         }
 
-        let status = runner.capture(
-            "git",
-            &[
-                "-C",
-                &repo_path,
-                "status",
-                "--porcelain",
-                "--ignored=matching",
-                "--untracked-files=all",
-            ],
-            None,
-        )?;
+        let status = runner
+            .capture(
+                "git",
+                &[
+                    "-C",
+                    &repo_path,
+                    "status",
+                    "--porcelain",
+                    "--ignored=matching",
+                    "--untracked-files=all",
+                ],
+                None,
+            )
+            .await?;
         anyhow::ensure!(
             status.is_empty(),
             "cached role repo contains local changes or extra files: {}. Remove the cached repo or clean it before loading.",
@@ -465,9 +479,10 @@ pub(super) fn resolve_agent_repo_with(
         // multiple branches" errors that occur with `git pull` when the
         // remote has multiple branches. When a branch is pinned via
         // `--branch`, use it directly; otherwise derive from HEAD.
+        let branch_val = git_branch(&cached_repo.repo_dir, runner).await;
         let branch = branch_override.map_or_else(
             || {
-                git_branch(&cached_repo.repo_dir, runner).ok_or_else(|| {
+                branch_val.ok_or_else(|| {
                     anyhow::anyhow!(
                         "could not determine current branch of cached role repo at {}",
                         cached_repo.repo_dir.display()
@@ -476,33 +491,40 @@ pub(super) fn resolve_agent_repo_with(
             },
             |b| Ok(b.to_string()),
         )?;
-        runner.run(
-            "git",
-            &["-C", &repo_path, "fetch", "origin", &branch],
-            None,
-            &git_run_opts,
-        )?;
-        let ff_result = runner.run(
-            "git",
-            &["-C", &repo_path, "merge", "--ff-only", "FETCH_HEAD"],
-            None,
-            &git_run_opts,
-        );
+        runner
+            .run(
+                "git",
+                &["-C", &repo_path, "fetch", "origin", &branch],
+                None,
+                &git_run_opts,
+            )
+            .await?;
+        let ff_result = runner
+            .run(
+                "git",
+                &["-C", &repo_path, "merge", "--ff-only", "FETCH_HEAD"],
+                None,
+                &git_run_opts,
+            )
+            .await;
         if ff_result.is_err() {
             eprintln!(
                 "        cached role branch diverged (remote may have been force-pushed) — resetting to origin/{branch}"
             );
-            runner.run(
-                "git",
-                &["-C", &repo_path, "reset", "--hard", "FETCH_HEAD"],
-                None,
-                &git_run_opts,
-            )?;
+            runner
+                .run(
+                    "git",
+                    &["-C", &repo_path, "reset", "--hard", "FETCH_HEAD"],
+                    None,
+                    &git_run_opts,
+                )
+                .await?;
         }
     } else {
         let clone_args = clone_args(git_url, &repo_path, branch_override);
         runner
             .run("git", &clone_args, None, &git_run_opts)
+            .await
             .map_err(RepoError::CloneFailed)?;
     }
 
@@ -618,8 +640,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn resolve_agent_repo_rejects_cached_repo_with_wrong_remote() {
+    #[tokio::test]
+    async fn resolve_agent_repo_rejects_cached_repo_with_wrong_remote() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
@@ -651,6 +673,7 @@ plugins = []
             false,
             None,
         )
+        .await
         .unwrap_err();
 
         assert!(
@@ -660,8 +683,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn resolve_agent_repo_recovers_when_user_confirms_removal() {
+    #[tokio::test]
+    async fn resolve_agent_repo_recovers_when_user_confirms_removal() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
@@ -724,7 +747,8 @@ plugins = []
             false,
             None,
             || Ok(true), // user confirms removal
-        );
+        )
+        .await;
 
         assert!(result.is_ok(), "expected recovery to succeed: {result:?}");
         assert!(
@@ -733,8 +757,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn resolve_agent_repo_aborts_when_user_declines_removal() {
+    #[tokio::test]
+    async fn resolve_agent_repo_aborts_when_user_declines_removal() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
@@ -767,6 +791,7 @@ plugins = []
             None,
             || Ok(false), // user declines
         )
+        .await
         .unwrap_err();
 
         assert!(
@@ -778,8 +803,8 @@ plugins = []
         assert!(repo_dir.join(".git").is_dir());
     }
 
-    #[test]
-    fn resolve_agent_repo_rejects_cached_repo_with_local_changes() {
+    #[tokio::test]
+    async fn resolve_agent_repo_rejects_cached_repo_with_local_changes() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
@@ -813,13 +838,14 @@ plugins = []
             false,
             None,
         )
+        .await
         .unwrap_err();
 
         assert!(error.to_string().contains("contains local changes"));
     }
 
-    #[test]
-    fn resolve_agent_repo_uses_run_for_clone_after_recovery() {
+    #[tokio::test]
+    async fn resolve_agent_repo_uses_run_for_clone_after_recovery() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
@@ -874,7 +900,8 @@ plugins = []
             false,
             None,
             || Ok(true),
-        );
+        )
+        .await;
 
         assert!(result.is_ok(), "expected recovery to succeed: {result:?}");
         assert!(runner.run_recorded.iter().any(|call| {
@@ -882,8 +909,8 @@ plugins = []
         }));
     }
 
-    #[test]
-    fn resolve_agent_repo_uses_run_for_pull_on_clean_repo() {
+    #[tokio::test]
+    async fn resolve_agent_repo_uses_run_for_pull_on_clean_repo() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
@@ -918,7 +945,8 @@ plugins = []
             &mut runner,
             false,
             None,
-        );
+        )
+        .await;
 
         assert!(
             result.is_ok(),
@@ -942,8 +970,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn resolve_agent_repo_migrates_legacy_root_repo_to_default_sibling_layout() {
+    #[tokio::test]
+    async fn resolve_agent_repo_migrates_legacy_root_repo_to_default_sibling_layout() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
@@ -970,6 +998,7 @@ plugins = []
             false,
             None,
         )
+        .await
         .unwrap();
 
         assert_eq!(cached_repo.repo_dir, legacy_root.join("default"));
@@ -1023,8 +1052,8 @@ plugins = []
             .join("repo")
     }
 
-    #[test]
-    fn register_agent_repo_cleans_up_temp_dir_on_validate_failure() {
+    #[tokio::test]
+    async fn register_agent_repo_cleans_up_temp_dir_on_validate_failure() {
         // When validation rejects the cloned repo (here: no Dockerfile,
         // no jackin.role.toml — just a `.git` dir), `register_agent_repo`
         // must NOT rename the temp dir into the cache and must NOT call
@@ -1060,6 +1089,7 @@ plugins = []
                 Ok(())
             },
         )
+        .await
         .unwrap_err();
 
         assert!(
@@ -1078,8 +1108,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn register_agent_repo_aborts_when_persist_registration_fails() {
+    #[tokio::test]
+    async fn register_agent_repo_aborts_when_persist_registration_fails() {
         // Persist runs after rename, so a persist failure leaves the
         // cache populated but registration un-persisted. Verify the
         // error surfaces with the diagnostic context that points the
@@ -1105,6 +1135,7 @@ plugins = []
             false,
             || anyhow::bail!("simulated config write failure"),
         )
+        .await
         .unwrap_err();
 
         let chain = format!("{err:?}");
@@ -1118,8 +1149,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn register_agent_repo_rejects_stale_non_git_directory() {
+    #[tokio::test]
+    async fn register_agent_repo_rejects_stale_non_git_directory() {
         // A pre-existing directory at the cache slot that is *not* a
         // git repo must bail rather than overwrite or skip — the
         // operator likely has unsynced work there.
@@ -1140,6 +1171,7 @@ plugins = []
             false,
             || Ok(()),
         )
+        .await
         .unwrap_err();
 
         assert!(

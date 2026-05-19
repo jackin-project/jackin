@@ -8,10 +8,6 @@ pub struct FakeRunner {
     pub fail_on: Vec<String>,
     pub fail_with: Vec<(String, String)>,
     pub capture_queue: VecDeque<String>,
-    /// Optional callbacks keyed by a substring of the command.  When a
-    /// captured command matches the key, the callback is invoked before the
-    /// output is returned.  This is useful for simulating filesystem
-    /// side-effects (e.g. `git clone` creating repo files on disk).
     pub side_effects: Vec<(String, Box<dyn FnOnce()>)>,
 }
 
@@ -24,13 +20,11 @@ impl FakeRunner {
     }
 
     /// Number of capture calls `load_role` makes before reaching role-
-    /// specific logic: 1 GC query (orphaned `DinD` scan; `gc_orphaned_networks`
-    /// short-circuits on empty output) + 4 identity lookups (`git config
-    /// user.name`, `git config user.email`, `id -u`, `id -g`).
-    const LOAD_PREAMBLE_CAPTURES: usize = 5;
+    /// specific logic: 4 identity lookups (`git config user.name`,
+    /// `git config user.email`, `id -u`, `id -g`).
+    /// GC now uses `DockerApi`, not `CommandRunner`, so it no longer counts.
+    const LOAD_PREAMBLE_CAPTURES: usize = 4;
 
-    /// Prefixes the capture queue with empty responses for the `load_role`
-    /// preamble queries so tests can focus on the role-specific output.
     pub(super) fn for_load_agent<const N: usize>(outputs: [String; N]) -> Self {
         let mut queue = VecDeque::with_capacity(Self::LOAD_PREAMBLE_CAPTURES + N);
         for _ in 0..Self::LOAD_PREAMBLE_CAPTURES {
@@ -70,7 +64,7 @@ impl FakeRunner {
 }
 
 impl CommandRunner for FakeRunner {
-    fn run(
+    async fn run(
         &mut self,
         program: &str,
         args: &[&str],
@@ -83,7 +77,7 @@ impl CommandRunner for FakeRunner {
         self.check_command(&command)
     }
 
-    fn capture(
+    async fn capture(
         &mut self,
         program: &str,
         args: &[&str],
@@ -92,24 +86,20 @@ impl CommandRunner for FakeRunner {
         let command = format!("{} {}", program, args.join(" "));
         self.recorded.push(command.clone());
         self.check_command(&command)?;
-        // `unwrap_or_default()` returns `Ok("")` when the queue is exhausted.
-        // Two commands in `assess_cleanup` are dangerous when they silently
-        // receive a phantom `Ok("")`:
-        //   - `rev-list`: empty output = "no commits ahead" → SafeToDelete
-        //   - `symbolic-ref HEAD`: any Ok (including "") = "HEAD on a branch",
-        //     silently skipping the detached-HEAD guard
-        // Always provide one queue entry per expected capture call (including
-        // any `capture_secret` calls, which delegate here in test stubs) and
-        // document each in a comment above the `fake_with_outputs` call.
+        // Empty queue returns "" — safe for most captures (git SHA, id outputs), but
+        // dangerous for assess_cleanup captures: `rev-list` returning "" maps to
+        // "0 commits ahead, safe to delete" and `symbolic-ref HEAD` returning ""
+        // silently skips the detached-HEAD guard. Pre-fill the queue in tests that
+        // exercise those code paths.
         Ok(self.capture_queue.pop_front().unwrap_or_default())
     }
 
-    fn capture_secret(
+    async fn capture_secret(
         &mut self,
         program: &str,
         args: &[&str],
         cwd: Option<&std::path::Path>,
     ) -> anyhow::Result<String> {
-        self.capture(program, args, cwd)
+        self.capture(program, args, cwd).await
     }
 }

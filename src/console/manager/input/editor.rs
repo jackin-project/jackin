@@ -1,6 +1,7 @@
 //! Editor-stage dispatch: tab navigation, field focus, per-tab key
 //! handling, and the editor-level modal dispatcher.
 
+use anyhow::Context as _;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::super::super::widgets::{
@@ -1514,14 +1515,20 @@ fn apply_role_input_with_runner(
     let result = (|| -> anyhow::Result<crate::config::RoleSource> {
         let source = candidate_role_source(config, &selector)?;
         let source_to_register = source.clone();
-        crate::runtime::register_agent_repo(
+        // register_agent_repo is async; drive it on a new current-thread runtime
+        // so the TUI's sync event loop can block until it's done.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .context("building tokio runtime for role registration")?;
+        rt.block_on(crate::runtime::register_agent_repo(
             paths,
             &selector,
             &source.git,
             runner,
             crate::tui::is_debug_mode(),
             || persist_role_source_registration(config, paths, &key, &source_to_register),
-        )?;
+        ))?;
         Ok(source)
     })();
 

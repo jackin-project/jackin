@@ -49,6 +49,7 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, `Amp`, `Kimi
 - Project structure map refresh — <RepoFile path="PROJECT_STRUCTURE.md" /> now covers the root file/workflow map and delegates detailed source navigation to the [Codebase Map](/reference/codebase-map/)
 - Unique container identity and restore — DNS-safe unique container identities, per-instance manifests and rebuildable index, hardline/load/console recovery flows, durable per-instance agent home restore, related-instance recovery/rebuild, moved ad-hoc path recovery, guarded purge, `hardline --new`, and Java Testcontainers DinD smoke coverage have shipped; operator workflow is documented in [Parallel Agents](/guides/parallel-agents/), contributor details live in [Runtime Instance Model](/reference/runtime-instance-model/), and reconnectable named sessions plus persistent lifecycle history are tracked separately
 - Role authoring CLI — desktop role creation, validation, and migration are documented in the [`role` command reference](/commands/role/) and [Creating a Role](/developing/creating-roles/); the standalone CI/Renovate-style validator split is documented in [Architecture](/reference/architecture/#role-repository-tooling) and [Schema Versions](/reference/schema-versions/)
+- Async Docker API via bollard — `DockerApi` trait, `BollardDockerClient`, `FakeDockerClient`, `ContainerState` (all 9 Docker lifecycle states); typed API for lifecycle, cleanup, inspect, exec, and image operations, replacing CLI stderr string-matching; `docker build`, `docker exec -it`, and `docker run -it` stay on the CLI by design — see [Codebase Map](/reference/codebase-map/) for details
 
 ## Partially implemented
 
@@ -87,7 +88,6 @@ jackin' is a functional proof of concept. **`Claude Code`, `Codex`, `Amp`, `Kimi
 
 ### Infrastructure improvements
 
-- **[Docker API migration](/reference/roadmap/bollard-migration/)** — incremental migration from CLI string-matching to the Bollard typed API client for more robust error handling. Phase 1 (lifecycle / cleanup / `inspect` via Bollard) is now scoped as the next concrete PR and closes open review findings #13 and #14; `docker build` and interactive `docker run -it` remain deferred to Phase 2 (status: partially scoped)
 - **[Construct user creation optimization](/reference/roadmap/construct-user-creation/)** — move user creation to the derived layer to eliminate UID/GID remapping (status: deferred — needs design work)
 - **[Workspace registry cache](/reference/roadmap/workspace-registry-cache/)** — opt-in workspace-level zot registry that acts as a pull-through cache for Docker Hub and a local push target; shared across all DinD sidecars in a workspace so base image layers are pulled once and reused, and built images persist across sessions (status: open — design proposal)
 

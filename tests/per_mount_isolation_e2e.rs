@@ -1,3 +1,5 @@
+mod common;
+
 use jackin::docker::{CommandRunner, RunOptions};
 use jackin::isolation::MountIsolation;
 use jackin::isolation::finalize::{
@@ -37,7 +39,7 @@ impl ScriptedRunner {
 }
 
 impl CommandRunner for ScriptedRunner {
-    fn run(
+    async fn run(
         &mut self,
         program: &str,
         args: &[&str],
@@ -49,7 +51,7 @@ impl CommandRunner for ScriptedRunner {
         Ok(())
     }
 
-    fn capture(
+    async fn capture(
         &mut self,
         _program: &str,
         _args: &[&str],
@@ -58,19 +60,19 @@ impl CommandRunner for ScriptedRunner {
         Ok(self.capture_queue.pop_front().unwrap_or_default())
     }
 
-    fn capture_secret(
+    async fn capture_secret(
         &mut self,
         program: &str,
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
-        self.capture(program, args, cwd)
+        self.capture(program, args, cwd).await
     }
 }
 
-#[test]
+#[tokio::test]
 #[allow(clippy::too_many_lines)]
-fn materialize_then_clean_exit_removes_record_and_branch() {
+async fn materialize_then_clean_exit_removes_record_and_branch() {
     let repo = TempDir::new().unwrap();
     std::fs::create_dir_all(repo.path().join(".git")).unwrap();
     let data = TempDir::new().unwrap();
@@ -112,6 +114,7 @@ fn materialize_then_clean_exit_removes_record_and_branch() {
         },
         &mut runner,
     )
+    .await
     .unwrap();
 
     let recs = read_records(&cdir).unwrap();
@@ -182,14 +185,17 @@ fn materialize_then_clean_exit_removes_record_and_branch() {
     let branches = "jackin/scratch/jackin-the-architect\tdeadbeef\t\t\n";
     let mut finalize_runner = ScriptedRunner::new(&["", branches]);
     let mut prompt = NoPrompt;
+    let docker = common::NoOpDocker;
     let dec = finalize_foreground_session(
         "jackin-the-architect",
         &cdir,
         AttachOutcome::stopped(0),
         false,
         &mut prompt,
+        &docker,
         &mut finalize_runner,
     )
+    .await
     .unwrap();
     assert_eq!(dec, FinalizeDecision::Cleaned);
     assert!(read_records(&cdir).unwrap().is_empty());

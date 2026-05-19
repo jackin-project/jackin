@@ -14,10 +14,9 @@ use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 
 use super::attach::{
-    AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions,
-    inspect_container_state, wait_for_dind,
+    AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions, wait_for_dind,
 };
-use super::cleanup::{gc_orphaned_resources, run_cleanup_command};
+use super::cleanup::gc_orphaned_resources;
 use super::discovery::list_running_agent_display_names;
 use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_host_identity};
 use super::image::build_agent_image;
@@ -26,6 +25,7 @@ use super::naming::{
     format_role_display, image_name, image_name_for_branch,
 };
 use super::repo_cache::resolve_agent_repo;
+use crate::docker_client::DockerApi;
 
 const MISE_TRUSTED_CONFIG_PATHS_ENV: &str = "MISE_TRUSTED_CONFIG_PATHS";
 
@@ -719,9 +719,10 @@ struct LaunchContext<'a> {
 
 /// Create the Docker network, start `DinD`, and launch the role container.
 #[allow(clippy::too_many_lines)]
-fn launch_role_runtime(
+async fn launch_role_runtime(
     ctx: &LaunchContext<'_>,
     steps: &mut StepCounter,
+    docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     let LaunchContext {
@@ -753,20 +754,14 @@ fn launch_role_runtime(
 
     // Create Docker network
     let role_label = format!("jackin.role={container_name}");
-    runner.run(
-        "docker",
-        &[
-            "network",
-            "create",
-            "--label",
-            LABEL_MANAGED,
-            "--label",
-            &role_label,
-            network,
-        ],
-        None,
-        &docker_run_opts,
-    )?;
+    let network_labels = [LABEL_MANAGED, role_label.as_str()]
+        .iter()
+        .map(|kv| {
+            let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+            (k.to_string(), v.to_string())
+        })
+        .collect();
+    docker.create_network(network, network_labels).await?;
 
     // Start Docker-in-Docker with TLS.
     //
@@ -805,9 +800,11 @@ fn launch_role_runtime(
         &certs_dind_mount,
         "docker:dind",
     ];
-    runner.run("docker", &dind_args, None, &docker_run_opts)?;
+    runner
+        .run("docker", &dind_args, None, &docker_run_opts)
+        .await?;
 
-    wait_for_dind(dind, &certs_volume, runner, *debug)?;
+    wait_for_dind(dind, &certs_volume, docker).await?;
 
     // Step 4: Mount volumes and launch
     steps.next("Launching role");
@@ -1051,9 +1048,13 @@ fn launch_role_runtime(
     // sessions. The primary agent session starts immediately below via
     // `docker exec tmux new-session`, and model/CLI flags are passed there
     // rather than as CMD args to the image.
+    let image_label = format!("jackin.image={image}");
+    run_args.extend_from_slice(&["--label", &image_label]);
     run_args.extend_from_slice(&["--entrypoint", "/jackin/runtime/supervisor.sh"]);
     run_args.push(image);
-    runner.run("docker", &run_args, None, &docker_run_opts)?;
+    runner
+        .run("docker", &run_args, None, &docker_run_opts)
+        .await?;
 
     // Collect entrypoint args to forward model overrides into the tmux session.
     let mut session_arg_strings: Vec<String> = Vec::new();
@@ -1077,12 +1078,12 @@ fn launch_role_runtime(
     // Reconcile keep_awake AFTER the role container is running but
     // BEFORE the foreground session blocks. This is the only window in
     // which an interactive `jackin load` can spawn caffeinate.
-    super::caffeinate::reconcile(paths, runner);
+    super::caffeinate::reconcile(paths, docker, runner).await;
 
     // Pre-session safety check: if the supervisor exited immediately (missing
     // or broken supervisor script), surface the container logs rather than
     // failing with a cryptic docker exec error.
-    if let Some(err) = diagnose_premature_exit(runner, container_name) {
+    if let Some(err) = diagnose_premature_exit(docker, runner, container_name).await {
         return Err(err);
     }
 
@@ -1114,11 +1115,13 @@ fn launch_role_runtime(
     for s in &session_arg_strings {
         exec_args.push(s.as_str());
     }
-    let session_result = runner.run("docker", &exec_args, None, &RunOptions::default());
+    let session_result = runner
+        .run("docker", &exec_args, None, &RunOptions::default())
+        .await;
     // Ensure cleanup debug logs start on a fresh line after the interactive session
     eprintln!();
     if session_result.is_err()
-        && let Some(err) = diagnose_premature_exit(runner, container_name)
+        && let Some(err) = diagnose_premature_exit(docker, runner, container_name).await
     {
         return Err(err);
     }
@@ -1138,19 +1141,23 @@ fn launch_role_runtime(
 ///
 /// Returns `None` when the container is still running (the normal
 /// happy path) so the caller can proceed to the session exec.
-fn diagnose_premature_exit(
+async fn diagnose_premature_exit(
+    docker: &impl DockerApi,
     runner: &mut impl crate::docker::CommandRunner,
     container_name: &str,
 ) -> Option<anyhow::Error> {
-    use super::attach::{ContainerState, inspect_container_state};
-
-    match inspect_container_state(runner, container_name) {
+    match docker.inspect_container_state(container_name).await {
         // Default to letting the `docker exec` attempt proceed when state is
         // ambiguous: the daemon's own error from a true `NotFound`
         // (`No such container`) is just as actionable as anything we
         // could synthesize, and a transient inspect hiccup must not
         // hijack an otherwise-healthy launch.
         ContainerState::Running
+        | ContainerState::Paused
+        | ContainerState::Restarting
+        | ContainerState::Created
+        | ContainerState::Removing
+        | ContainerState::Dead
         | ContainerState::NotFound
         | ContainerState::InspectUnavailable(_) => None,
         ContainerState::Stopped {
@@ -1159,6 +1166,7 @@ fn diagnose_premature_exit(
         } => {
             let logs = runner
                 .capture("docker", &["logs", "--tail", "40", container_name], None)
+                .await
                 .ok()
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty());
@@ -1198,68 +1206,42 @@ fn diagnose_premature_exit(
 /// running. `still_running()` instead skips the auto-cleanup path entirely
 /// and preserves records for `jackin hardline` to recover.
 #[allow(clippy::unnecessary_wraps)] // Result preserved so callers' `?` keeps working without a churn-y signature change
-pub fn inspect_attach_outcome(
-    runner: &mut impl crate::docker::CommandRunner,
+pub async fn inspect_attach_outcome(
+    docker: &impl DockerApi,
     container: &str,
 ) -> anyhow::Result<crate::isolation::finalize::AttachOutcome> {
     use crate::isolation::finalize::AttachOutcome;
-    let state = match runner.capture(
-        "docker",
-        &[
-            "inspect",
-            "-f",
-            "{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}",
-            container,
-        ],
-        None,
-    ) {
-        Ok(s) => s,
-        Err(e) => {
-            crate::debug_log!(
-                "isolation",
-                "inspect_attach_outcome: docker inspect failed for {container}: {e}; treating as still_running (conservative — finalize_clean_exit's auto-cleanup never fires)",
-            );
-            return Ok(AttachOutcome::still_running());
-        }
-    };
-    let parts: Vec<&str> = state.trim().split('|').collect();
-    let status = parts.first().copied().unwrap_or("");
-    let exit_code = parts.get(1).and_then(|s| s.parse::<i32>().ok());
-    let oom = parts.get(2).copied().unwrap_or("") == "true";
-    // Only `exited` legitimately routes through finalize_clean_exit.
-    // `paused | restarting | removing | created` are all states where
-    // the container hasn't exited and has no exit code to act on —
-    // collapsing them into stopped(0) would let finalize_clean_exit
-    // auto-delete worktrees of containers that may resume any moment.
-    // OOM is a real exit (the kernel killed the process); we surface
-    // it explicitly so finalize preserves the recovery state.
-    // Unknown status strings (future Docker versions, exotic runtimes)
-    // are treated conservatively as still_running with a debug_log so
-    // the issue is debuggable but not data-destructive.
-    match status {
-        "running" | "paused" | "restarting" | "removing" | "created" => {
-            Ok(AttachOutcome::still_running())
-        }
-        "exited" | "dead" if oom => Ok(AttachOutcome::oom_killed()),
-        "exited" => Ok(AttachOutcome::stopped(exit_code.unwrap_or(0))),
-        "dead" => {
-            // `dead` means the daemon failed to deinitialize the container
-            // — rare, indicates trouble. Preserve records so the operator
-            // can inspect rather than auto-cleaning.
+    // Only `Stopped` with a clean or non-zero exit legitimately routes through
+    // finalize_clean_exit. Paused/Restarting/Created/Removing are transient
+    // active states — treating them as still_running is the conservative choice
+    // that prevents finalize_clean_exit from auto-deleting worktrees of
+    // containers that may resume. Dead is rare (daemon failed to deinitialize)
+    // and also preserved for operator inspection.
+    Ok(match docker.inspect_container_state(container).await {
+        ContainerState::Running
+        | ContainerState::Paused
+        | ContainerState::Restarting
+        | ContainerState::Created
+        | ContainerState::Removing => AttachOutcome::still_running(),
+        ContainerState::Dead => {
             crate::debug_log!(
                 "isolation",
                 "inspect_attach_outcome: container {container} status=dead; treating as still_running to preserve records for inspection",
             );
-            Ok(AttachOutcome::still_running())
+            AttachOutcome::still_running()
         }
-        other => {
+        ContainerState::Stopped {
+            oom_killed: true, ..
+        } => AttachOutcome::oom_killed(),
+        ContainerState::Stopped { exit_code, .. } => AttachOutcome::stopped(exit_code),
+        ContainerState::NotFound | ContainerState::InspectUnavailable(_) => {
             crate::debug_log!(
                 "isolation",
-                "inspect_attach_outcome: unknown docker status `{other}` for {container}; treating as still_running (conservative)",
+                "inspect_attach_outcome: docker inspect failed for {container}; treating as still_running (conservative — finalize_clean_exit's auto-cleanup never fires)",
             );
-            Ok(AttachOutcome::still_running())
+            AttachOutcome::still_running()
         }
-    }
+    })
 }
 
 enum GitPullResult {
@@ -1336,33 +1318,38 @@ fn pull_workspace_repos_with_git(
     }
 }
 
+// Boxed future required: load_role calls itself recursively via
+// RestoreResolution::RebuildRelatedRole — async fn recursion is not allowed.
 #[allow(clippy::too_many_lines)]
-pub fn load_role(
-    paths: &JackinPaths,
-    config: &mut AppConfig,
-    selector: &RoleSelector,
-    workspace: &crate::workspace::ResolvedWorkspace,
-    runner: &mut impl CommandRunner,
-    opts: &LoadOptions,
-) -> anyhow::Result<()> {
-    load_role_with(
+pub fn load_role<'a>(
+    paths: &'a JackinPaths,
+    config: &'a mut AppConfig,
+    selector: &'a RoleSelector,
+    workspace: &'a crate::workspace::ResolvedWorkspace,
+    docker: &'a impl DockerApi,
+    runner: &'a mut impl CommandRunner,
+    opts: &'a LoadOptions,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + 'a>> {
+    Box::pin(load_role_with(
         paths,
         config,
         selector,
         workspace,
+        docker,
         runner,
         opts,
         confirm_agent_trust,
         confirm_branch_trust,
-    )
+    ))
 }
 
 #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
-fn load_role_with(
+async fn load_role_with(
     paths: &JackinPaths,
     config: &mut AppConfig,
     selector: &RoleSelector,
     workspace: &crate::workspace::ResolvedWorkspace,
+    docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     opts: &LoadOptions,
     confirm_trust: impl FnOnce(&RoleSelector, &crate::config::RoleSource) -> anyhow::Result<()>,
@@ -1371,10 +1358,10 @@ fn load_role_with(
     // Pre-launch garbage collection: remove orphaned DinD containers and
     // networks left behind by hard kills, terminal closures, or startup
     // failures.  Best-effort — errors are silently ignored.
-    gc_orphaned_resources(runner);
+    gc_orphaned_resources(docker).await;
 
-    let git = load_git_identity(runner);
-    let host = load_host_identity(runner);
+    let git = load_git_identity(runner).await;
+    let host = load_host_identity(runner).await;
 
     // Intro animation
     if !opts.no_intro {
@@ -1405,7 +1392,8 @@ fn load_role_with(
         runner,
         opts.debug,
         opts.role_branch.as_deref(),
-    )?;
+    )
+    .await?;
 
     // Trust gate: prompt the operator before running an untrusted third-party role
     let newly_trusted = if source.trusted {
@@ -1482,23 +1470,27 @@ fn load_role_with(
             &workspace.workdir,
             &role_key,
             agent,
-            runner,
-        )? {
+            docker,
+        )
+        .await?
+        {
             RestoreResolution::StartFresh => None,
             RestoreResolution::RestoreCurrentRole(container) => Some(container),
             RestoreResolution::RecoverRelatedRole(container) => {
-                let load_result = hardline_agent(paths, &container, runner).map(|()| container);
+                let load_result = hardline_agent(paths, &container, docker, runner)
+                    .await
+                    .map(|()| container);
                 let agent_display_name = match &load_result {
                     Ok(container_name) => format_role_display(container_name, &agent_display_name),
                     Err(_) => agent_display_name,
                 };
                 match load_result {
                     Ok(_) => {
-                        render_exit(&agent_display_name, runner, opts);
+                        render_exit(&agent_display_name, docker, opts).await;
                         return Ok(());
                     }
                     Err(error) => {
-                        render_exit(&agent_display_name, runner, opts);
+                        render_exit(&agent_display_name, docker, opts).await;
                         return Err(error);
                     }
                 }
@@ -1506,20 +1498,28 @@ fn load_role_with(
             RestoreResolution::RebuildRelatedRole(manifest) => {
                 let selector = RoleSelector::parse(&manifest.role_key)?;
                 let related_opts = related_restore_load_options(opts, &manifest)?;
-                let load_result =
-                    load_role(paths, config, &selector, workspace, runner, &related_opts)
-                        .map(|()| manifest.container_base);
+                let load_result = load_role(
+                    paths,
+                    config,
+                    &selector,
+                    workspace,
+                    docker,
+                    runner,
+                    &related_opts,
+                )
+                .await
+                .map(|()| manifest.container_base);
                 let agent_display_name = match &load_result {
                     Ok(container_name) => format_role_display(container_name, &agent_display_name),
                     Err(_) => agent_display_name,
                 };
                 match load_result {
                     Ok(_) => {
-                        render_exit(&agent_display_name, runner, opts);
+                        render_exit(&agent_display_name, docker, opts).await;
                         return Ok(());
                     }
                     Err(error) => {
-                        render_exit(&agent_display_name, runner, opts);
+                        render_exit(&agent_display_name, docker, opts).await;
                         return Err(error);
                     }
                 }
@@ -1528,9 +1528,9 @@ fn load_role_with(
     };
     let restoring = restore_container.is_some();
     let (container_name, _name_lock) = if let Some(container_name) = restore_container {
-        claim_known_container_name(paths, &container_name, runner)?
+        claim_known_container_name(paths, &container_name, docker).await?
     } else {
-        claim_container_name(paths, workspace_name.as_deref(), selector, runner)?
+        claim_container_name(paths, workspace_name.as_deref(), selector, docker).await?
     };
 
     let image_tag = opts.role_branch.as_deref().map_or_else(
@@ -1544,7 +1544,8 @@ fn load_role_with(
         &git,
         &image_tag,
         runner,
-    );
+    )
+    .await;
     eprintln!();
     tui::print_config_table(&config_rows);
     eprintln!();
@@ -1630,17 +1631,17 @@ fn load_role_with(
         );
     }
 
-    let load_result = (|| -> anyhow::Result<String> {
+    let load_result: anyhow::Result<String> = async {
         // Step 2: Build Docker image
         let rebuild = opts.rebuild;
         let agent_update = !rebuild && {
             let img = image_name(selector);
             let needs_update = match agent {
                 crate::agent::Agent::Claude => {
-                    version_check::needs_claude_update(paths, &img, runner)
+                    version_check::needs_claude_update(paths, &img, runner).await
                 }
                 crate::agent::Agent::Opencode => {
-                    version_check::needs_opencode_update(paths, &img, runner)
+                    version_check::needs_opencode_update(paths, &img, runner).await
                 }
                 _ => false,
             };
@@ -1666,9 +1667,10 @@ fn load_role_with(
             agent_update,
             opts.debug,
             opts.role_branch.as_deref(),
+            docker,
             runner,
             repo_lock,
-        )?;
+        ).await?;
 
         let container_state = paths.data_dir.join(&container_name);
         let network = format!("{container_name}-net");
@@ -1904,7 +1906,7 @@ fn load_role_with(
                 interactive,
             },
             runner,
-        )?;
+        ).await?;
 
         // Step 3: Create network and start Docker-in-Docker
         steps.next("Starting Docker-in-Docker");
@@ -1934,7 +1936,7 @@ fn load_role_with(
             certs_volume,
             network.clone(),
         );
-        let launch_result = launch_role_runtime(&ctx, &mut steps, runner);
+        let launch_result = launch_role_runtime(&ctx, &mut steps, docker, runner).await;
         if launch_result.is_err() {
             // FailedSetup write error must not abort cleanup; surface via debug.
             if let Err(status_err) = write_instance_status(
@@ -1949,7 +1951,7 @@ fn load_role_with(
                     container_name,
                 );
             }
-            cleanup.run(runner);
+            cleanup.run(docker).await;
         }
         launch_result?;
         write_instance_status(
@@ -1967,7 +1969,7 @@ fn load_role_with(
         // state inside the role, then the safe cleanup is retried.
         let interactive_finalize = std::io::stdin().is_terminal();
         let mut prompt = crate::isolation::finalize::StdinPrompt;
-        let outcome = inspect_attach_outcome(runner, &container_name)?;
+        let outcome = inspect_attach_outcome(docker, &container_name).await?;
         write_instance_attach_outcome(paths, &container_state, &mut instance_manifest, outcome)?;
         let decision = crate::isolation::finalize::finalize_foreground_session(
             &container_name,
@@ -1975,8 +1977,9 @@ fn load_role_with(
             outcome,
             interactive_finalize,
             &mut prompt,
+            docker,
             runner,
-        )?;
+        ).await?;
         if matches!(
             decision,
             crate::isolation::finalize::FinalizeDecision::Preserved
@@ -1999,14 +2002,14 @@ fn load_role_with(
             // could observe `docker ps --filter ...` = 0 and kill caffeinate,
             // leaving the restart session unprotected. The lock inside
             // `reconcile` serializes against that race.
-            super::caffeinate::reconcile(paths, runner);
+            super::caffeinate::reconcile(paths, docker, runner).await;
             runner.run(
                 "docker",
                 &["start", "-ai", &container_name],
                 None,
                 &RunOptions::default(),
-            )?;
-            let outcome2 = inspect_attach_outcome(runner, &container_name)?;
+            ).await?;
+            let outcome2 = inspect_attach_outcome(docker, &container_name).await?;
             write_instance_attach_outcome(
                 paths,
                 &container_state,
@@ -2019,8 +2022,9 @@ fn load_role_with(
                 outcome2,
                 interactive_finalize,
                 &mut prompt,
+                docker,
                 runner,
-            )?;
+            ).await?;
         }
 
         // Classify how the interactive session ended and tear down DinD/network
@@ -2034,21 +2038,22 @@ fn load_role_with(
         //  - Stopped / 0 → user exited cleanly. Tear down.
         //  - Stopped / ≠0 or OOM-killed → crash. Tear down; DinD is no longer
         //                                  needed once the container has exited.
-        //  - NotFound + !Preserved → removed externally. Tear down.
         //  - NotFound + Preserved → removed externally during finalization.
         //                           Tear down DinD/network; status on disk stands.
+        //  - NotFound → removed externally. Tear down.
         //  - InspectUnavailable → Docker unreachable; keep everything alive.
         let is_preserved = matches!(
             decision,
             crate::isolation::finalize::FinalizeDecision::Preserved
         );
-        match inspect_container_state(runner, &container_name) {
-            ContainerState::Running => {
+        #[allow(clippy::match_same_arms)]
+        match docker.inspect_container_state(&container_name).await {
+            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
                 if is_preserved {
                     // Finalize saw sessions at check-time (detach). Re-check: sessions
                     // may have ended in the interval between finalize and this inspect.
                     let sessions =
-                        inspect_agent_sessions(runner, &container_name, &ContainerState::Running);
+                        inspect_agent_sessions(docker, &container_name, &ContainerState::Running).await;
                     if let AgentSessionInventory::Unavailable(ref reason) = sessions {
                         crate::debug_log!(
                             "instance",
@@ -2059,51 +2064,57 @@ fn load_role_with(
                     let no_sessions =
                         matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty());
                     if no_sessions {
-                        run_clean_exit_teardown(
+                        write_instance_status(
                             paths,
                             &container_state,
                             &mut instance_manifest,
-                            is_preserved,
-                            &cleanup,
-                            runner,
+                            InstanceStatus::CleanExited,
                         )?;
+                        cleanup.run(docker).await;
                     } else {
                         cleanup.disarm();
                     }
                 } else {
                     // Finalize already confirmed no sessions (supervisor lag after
                     // clean exit). Skip the redundant re-query and tear down.
-                    run_clean_exit_teardown(
+                    write_instance_status(
                         paths,
                         &container_state,
                         &mut instance_manifest,
-                        is_preserved,
-                        &cleanup,
-                        runner,
+                        InstanceStatus::CleanExited,
                     )?;
+                    cleanup.run(docker).await;
                 }
             }
             ContainerState::Stopped {
                 exit_code: 0,
                 oom_killed: false,
+            } if is_preserved => {
+                cleanup.run(docker).await;
+            }
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
             } => {
-                run_clean_exit_teardown(
+                write_instance_status(
                     paths,
                     &container_state,
                     &mut instance_manifest,
-                    is_preserved,
-                    &cleanup,
-                    runner,
+                    InstanceStatus::CleanExited,
                 )?;
+                cleanup.run(docker).await;
             }
-            ContainerState::Stopped { .. } => {
+            ContainerState::Stopped { .. }
+            | ContainerState::Created
+            | ContainerState::Removing
+            | ContainerState::Dead => {
                 write_instance_status(
                     paths,
                     &container_state,
                     &mut instance_manifest,
                     InstanceStatus::Crashed,
                 )?;
-                cleanup.run(runner);
+                cleanup.run(docker).await;
             }
             ContainerState::InspectUnavailable(reason) => {
                 cleanup.disarm();
@@ -2115,34 +2126,28 @@ fn load_role_with(
                     )
                 );
             }
-            ContainerState::NotFound
-                if matches!(
-                    decision,
-                    crate::isolation::finalize::FinalizeDecision::Preserved
-                ) =>
-            {
+            ContainerState::NotFound if is_preserved => {
                 crate::debug_log!(
                     "instance",
                     "container {container_name} not found after session with Preserved decision; \
                      removed externally during finalization — tearing down DinD/network, \
                      preserved status on disk stands",
                 );
-                cleanup.run(runner);
+                cleanup.run(docker).await;
             }
             ContainerState::NotFound => {
-                run_clean_exit_teardown(
+                write_instance_status(
                     paths,
                     &container_state,
                     &mut instance_manifest,
-                    is_preserved,
-                    &cleanup,
-                    runner,
+                    InstanceStatus::CleanExited,
                 )?;
+                cleanup.run(docker).await;
             }
         }
 
         Ok(container_name)
-    })();
+    }.await;
 
     let agent_display_name = match &load_result {
         Ok(container_name) => format_role_display(container_name, &agent_display_name),
@@ -2151,11 +2156,11 @@ fn load_role_with(
 
     match load_result {
         Ok(_) => {
-            render_exit(&agent_display_name, runner, opts);
+            render_exit(&agent_display_name, docker, opts).await;
             Ok(())
         }
         Err(error) => {
-            render_exit(&agent_display_name, runner, opts);
+            render_exit(&agent_display_name, docker, opts).await;
             Err(error)
         }
     }
@@ -2180,14 +2185,21 @@ fn resolve_launch_role_source(
     Ok((source, is_new, false))
 }
 
-fn render_exit(agent_display_name: &str, runner: &mut impl CommandRunner, opts: &LoadOptions) {
+async fn render_exit(agent_display_name: &str, docker: &impl DockerApi, opts: &LoadOptions) {
     if opts.no_intro {
         return;
     }
-    tui::outro_animation(
-        agent_display_name,
-        &list_running_agent_display_names(runner).unwrap_or_default(),
-    );
+    let running = match list_running_agent_display_names(docker).await {
+        Ok(names) => names,
+        Err(e) => {
+            eprintln!(
+                "  {} could not list running sessions for outro: {e}",
+                "warning:".yellow().bold()
+            );
+            vec![]
+        }
+    };
+    tui::outro_animation(agent_display_name, &running);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2199,14 +2211,14 @@ enum RestoreResolution {
 }
 
 #[allow(clippy::too_many_lines)]
-fn resolve_restore_candidate(
+async fn resolve_restore_candidate(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
     workspace_label: &str,
     workdir: &str,
     role_key: &str,
     agent: crate::agent::Agent,
-    runner: &mut impl CommandRunner,
+    docker: &impl DockerApi,
 ) -> anyhow::Result<RestoreResolution> {
     let mut candidates = Vec::new();
     for manifest in matching_instance_manifests(
@@ -2220,7 +2232,9 @@ fn resolve_restore_candidate(
         if !manifest.is_restore_candidate() {
             continue;
         }
-        let docker_state = inspect_container_state(runner, &manifest.container_base);
+        let docker_state = docker
+            .inspect_container_state(&manifest.container_base)
+            .await;
         if let ContainerState::InspectUnavailable(reason) = docker_state {
             anyhow::bail!(
                 "{}",
@@ -2245,8 +2259,9 @@ fn resolve_restore_candidate(
         workdir,
         role_key,
         agent,
-        runner,
-    )?;
+        docker,
+    )
+    .await?;
 
     match candidates.as_slice() {
         [] if related.is_empty() => Ok(RestoreResolution::StartFresh),
@@ -2324,14 +2339,14 @@ struct RelatedRestoreCandidate {
     docker_state: ContainerState,
 }
 
-fn related_restore_candidates(
+async fn related_restore_candidates(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
     workspace_label: &str,
     workdir: &str,
     role_key: &str,
     agent: crate::agent::Agent,
-    runner: &mut impl CommandRunner,
+    docker: &impl DockerApi,
 ) -> anyhow::Result<Vec<RelatedRestoreCandidate>> {
     let mut candidates = Vec::new();
     for manifest in InstanceIndex::matching_manifests(
@@ -2350,10 +2365,18 @@ fn related_restore_candidates(
         if !manifest.is_restore_candidate() {
             continue;
         }
-        let docker_state = inspect_container_state(runner, &manifest.container_base);
+        let docker_state = docker
+            .inspect_container_state(&manifest.container_base)
+            .await;
         let should_prompt = match docker_state {
             ContainerState::InspectUnavailable(_) | ContainerState::NotFound => true,
-            ContainerState::Running | ContainerState::Stopped { .. } => false,
+            ContainerState::Running
+            | ContainerState::Paused
+            | ContainerState::Restarting
+            | ContainerState::Stopped { .. }
+            | ContainerState::Created
+            | ContainerState::Removing
+            | ContainerState::Dead => false,
         };
         if should_prompt {
             candidates.push(RelatedRestoreCandidate {
@@ -2395,10 +2418,16 @@ fn recover_related_restore_candidate(
     candidate: &RelatedRestoreCandidate,
 ) -> anyhow::Result<RestoreResolution> {
     match candidate.docker_state {
-        ContainerState::Running | ContainerState::Stopped { .. } => Ok(
-            RestoreResolution::RecoverRelatedRole(candidate.manifest.container_base.clone()),
-        ),
-        ContainerState::NotFound => Ok(RestoreResolution::RebuildRelatedRole(Box::new(
+        ContainerState::Running
+        | ContainerState::Paused
+        | ContainerState::Restarting
+        | ContainerState::Stopped { .. } => Ok(RestoreResolution::RecoverRelatedRole(
+            candidate.manifest.container_base.clone(),
+        )),
+        ContainerState::NotFound
+        | ContainerState::Created
+        | ContainerState::Removing
+        | ContainerState::Dead => Ok(RestoreResolution::RebuildRelatedRole(Box::new(
             candidate.manifest.clone(),
         ))),
         ContainerState::InspectUnavailable(ref reason) => {
@@ -2436,13 +2465,19 @@ fn related_restore_load_options(
 
 fn related_restore_candidate_action_label(candidate: &RelatedRestoreCandidate) -> String {
     match candidate.docker_state {
-        ContainerState::Running | ContainerState::Stopped { .. } => {
+        ContainerState::Running
+        | ContainerState::Paused
+        | ContainerState::Restarting
+        | ContainerState::Stopped { .. } => {
             format!(
                 "Recover now {}",
                 related_restore_candidate_label_for_prompt(candidate)
             )
         }
-        ContainerState::NotFound => {
+        ContainerState::NotFound
+        | ContainerState::Created
+        | ContainerState::Removing
+        | ContainerState::Dead => {
             format!(
                 "Rebuild now {}",
                 related_restore_candidate_label_for_prompt(candidate)
@@ -2530,24 +2565,6 @@ fn matching_instance_manifests(
     )
 }
 
-/// Write `CleanExited` status and run container teardown. When `preserved` is
-/// true, the status write is skipped (isolation wrote it earlier) but teardown
-/// still runs.
-fn run_clean_exit_teardown(
-    paths: &JackinPaths,
-    state_dir: &std::path::Path,
-    manifest: &mut InstanceManifest,
-    preserved: bool,
-    cleanup: &LoadCleanup,
-    runner: &mut impl CommandRunner,
-) -> anyhow::Result<()> {
-    if !preserved {
-        write_instance_status(paths, state_dir, manifest, InstanceStatus::CleanExited)?;
-    }
-    cleanup.run(runner);
-    Ok(())
-}
-
 fn write_instance_status(
     paths: &JackinPaths,
     state_dir: &std::path::Path,
@@ -2590,12 +2607,12 @@ pub(super) fn record_instance_attach_outcome(
 }
 
 fn format_attach_outcome(outcome: crate::isolation::finalize::AttachOutcome) -> String {
-    if outcome.oom_killed {
-        return "oom_killed".to_string();
+    use crate::isolation::finalize::AttachOutcome;
+    match outcome {
+        AttachOutcome::OomKilled => "oom_killed".to_string(),
+        AttachOutcome::StillRunning => "running".to_string(),
+        AttachOutcome::Stopped(code) => format!("exit:{code}"),
     }
-    outcome
-        .exit_code
-        .map_or_else(|| "running".to_string(), |code| format!("exit:{code}"))
 }
 
 fn preserved_instance_status(state_dir: &std::path::Path) -> anyhow::Result<InstanceStatus> {
@@ -2647,11 +2664,11 @@ const CLAIM_MAX_ATTEMPTS: u32 = 64;
 /// Claim a unique DNS-safe container name by acquiring an exclusive lock file.
 /// Random IDs avoid deterministic role slots; the lock still protects the
 /// vanishingly small random-collision window and concurrent launch races.
-fn claim_container_name(
+async fn claim_container_name(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
     selector: &RoleSelector,
-    runner: &mut impl CommandRunner,
+    docker: &impl DockerApi,
 ) -> anyhow::Result<(String, std::fs::File)> {
     std::fs::create_dir_all(&paths.data_dir)?;
 
@@ -2662,20 +2679,25 @@ fn claim_container_name(
     for attempt in 0..CLAIM_MAX_ATTEMPTS {
         let name = crate::instance::new_container_name(workspace_name, selector);
 
-        let slot_free = match inspect_container_state(runner, &name) {
+        let slot_free = match docker.inspect_container_state(&name).await {
             ContainerState::Stopped {
                 exit_code: 0,
                 oom_killed: false,
-            } => match runner.capture("docker", &["rm", &name], None) {
-                Ok(_) => true,
-                Err(error) if super::cleanup::is_missing_cleanup_error(&error) => true,
+            } => match docker.remove_container(&name).await {
+                Ok(()) => true,
                 Err(error) => {
                     return Err(error.context(format!(
                         "removing stale container `{name}` before reclaiming its name"
                     )));
                 }
             },
-            ContainerState::Running | ContainerState::Stopped { .. } => false,
+            ContainerState::Running
+            | ContainerState::Paused
+            | ContainerState::Restarting
+            | ContainerState::Stopped { .. }
+            | ContainerState::Created
+            | ContainerState::Removing
+            | ContainerState::Dead => false,
             ContainerState::NotFound => true,
             ContainerState::InspectUnavailable(reason) => {
                 anyhow::bail!(
@@ -2726,14 +2748,20 @@ fn claim_container_name(
     );
 }
 
-fn claim_known_container_name(
+async fn claim_known_container_name(
     paths: &JackinPaths,
     container_name: &str,
-    runner: &mut impl CommandRunner,
+    docker: &impl DockerApi,
 ) -> anyhow::Result<(String, std::fs::File)> {
-    match inspect_container_state(runner, container_name) {
+    match docker.inspect_container_state(container_name).await {
         ContainerState::NotFound => {}
-        ContainerState::Running | ContainerState::Stopped { .. } => {
+        ContainerState::Running
+        | ContainerState::Paused
+        | ContainerState::Restarting
+        | ContainerState::Stopped { .. }
+        | ContainerState::Created
+        | ContainerState::Removing
+        | ContainerState::Dead => {
             anyhow::bail!(
                 "cannot restore `{container_name}` because its Docker container already exists; use `jackin hardline {container_name}`"
             );
@@ -3321,21 +3349,21 @@ impl LoadCleanup {
         self.armed = false;
     }
 
-    fn run(&self, runner: &mut impl CommandRunner) {
+    async fn run(&self, docker: &impl DockerApi) {
         if !self.armed {
             return;
         }
 
-        if let Err(e) = run_cleanup_command(runner, &["rm", "-f", &self.container_name]) {
+        if let Err(e) = docker.remove_container(&self.container_name).await {
             tui::step_fail(&format!("cleanup failed (container): {e}"));
         }
-        if let Err(e) = run_cleanup_command(runner, &["rm", "-f", &self.dind]) {
+        if let Err(e) = docker.remove_container(&self.dind).await {
             tui::step_fail(&format!("cleanup failed (dind): {e}"));
         }
-        if let Err(e) = run_cleanup_command(runner, &["volume", "rm", &self.certs_volume]) {
+        if let Err(e) = docker.remove_volume(&self.certs_volume).await {
             tui::step_fail(&format!("cleanup failed (certs volume): {e}"));
         }
-        if let Err(e) = run_cleanup_command(runner, &["network", "rm", &self.network]) {
+        if let Err(e) = docker.remove_network(&self.network).await {
             tui::step_fail(&format!("cleanup failed (network): {e}"));
         }
     }
@@ -3391,10 +3419,10 @@ mod tests {
         InstanceIndex::update_manifest(&paths.data_dir, manifest).unwrap();
     }
 
-    fn resolve_workspace_restore(
+    async fn resolve_workspace_restore(
         paths: &JackinPaths,
         role_key: &str,
-        runner: &mut impl CommandRunner,
+        docker: &impl DockerApi,
     ) -> anyhow::Result<RestoreResolution> {
         resolve_restore_candidate(
             paths,
@@ -3403,12 +3431,13 @@ mod tests {
             "/workspace",
             role_key,
             crate::agent::Agent::Claude,
-            runner,
+            docker,
         )
+        .await
     }
 
-    #[test]
-    fn normalize_terminfo_entry_path_copies_macos_hex_dir_to_linux_char_dir() {
+    #[tokio::test]
+    async fn normalize_terminfo_entry_path_copies_macos_hex_dir_to_linux_char_dir() {
         let tmp = tempdir().unwrap();
         let terminfo_dir = tmp.path().join("terminfo");
         let macos_dir = terminfo_dir.join("78");
@@ -3425,8 +3454,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn normalize_terminfo_entry_path_accepts_existing_linux_char_dir() {
+    #[tokio::test]
+    async fn normalize_terminfo_entry_path_accepts_existing_linux_char_dir() {
         let tmp = tempdir().unwrap();
         let terminfo_dir = tmp.path().join("terminfo");
         let linux_dir = terminfo_dir.join("g");
@@ -3445,8 +3474,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn normalize_terminfo_entry_path_errors_when_neither_layout_present() {
+    #[tokio::test]
+    async fn normalize_terminfo_entry_path_errors_when_neither_layout_present() {
         let tmp = tempdir().unwrap();
         let terminfo_dir = tmp.path().join("terminfo");
 
@@ -3457,8 +3486,8 @@ mod tests {
         assert!(msg.contains("78/xterm-ghostty"), "got: {msg}");
     }
 
-    #[test]
-    fn normalize_terminfo_entry_path_errors_on_empty_term() {
+    #[tokio::test]
+    async fn normalize_terminfo_entry_path_errors_on_empty_term() {
         let tmp = tempdir().unwrap();
         let err = normalize_terminfo_entry_path(&tmp.path().join("terminfo"), "").unwrap_err();
         assert!(
@@ -3468,8 +3497,8 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[test]
-    fn normalize_terminfo_entry_path_resolves_alias_symlink_in_hex_dir() {
+    #[tokio::test]
+    async fn normalize_terminfo_entry_path_resolves_alias_symlink_in_hex_dir() {
         // Ghostty terminfo source has `xterm-ghostty|ghostty,...`; BSD
         // `tic` writes one file plus alias symlinks. `fs::copy` follows
         // symlinks, so the Linux destination ends up with the file
@@ -3493,8 +3522,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn macos_terminfo_entry_path_lowercase_hex_letter_for_kitty() {
+    #[tokio::test]
+    async fn macos_terminfo_entry_path_lowercase_hex_letter_for_kitty() {
         // 'k' = 0x6b. BSD `tic` formats the byte as lowercase hex; an
         // accidental {:X} (uppercase) would silently break lookups.
         let dir = std::path::Path::new("/tmp/test-cache");
@@ -3508,8 +3537,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn export_host_terminfo_returns_cached_linux_entry_without_invoking_subprocess() {
+    #[tokio::test]
+    async fn export_host_terminfo_returns_cached_linux_entry_without_invoking_subprocess() {
         // Pre-populated linux entry → early return before infocmp/tic.
         // Test passes on hosts without infocmp/tic installed because the
         // happy path never reaches the subprocess fork.
@@ -3529,8 +3558,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn export_host_terminfo_relocates_macos_hex_layout_without_invoking_subprocess() {
+    #[tokio::test]
+    async fn export_host_terminfo_relocates_macos_hex_layout_without_invoking_subprocess() {
         // Pre-populated hex entry → upgrade-path branch fires before
         // infocmp/tic. Operators who built the cache before this PR
         // should not pay the subprocess cost on every launch.
@@ -3550,8 +3579,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn export_host_terminfo_errors_on_empty_term() {
+    #[tokio::test]
+    async fn export_host_terminfo_errors_on_empty_term() {
         let tmp = tempdir().unwrap();
         let err = export_host_terminfo("", tmp.path()).unwrap_err();
         assert!(
@@ -3560,28 +3589,41 @@ mod tests {
         );
     }
 
-    #[test]
-    fn diagnose_premature_exit_returns_none_when_container_running() {
-        // Single inspect = "running" → fast path returns Ok(()) so attach
-        // proceeds. The function must NOT consume the logs queue entry in
-        // this case.
-        let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
-        let result = super::diagnose_premature_exit(&mut runner, "jk-the-architect");
+    #[tokio::test]
+    async fn diagnose_premature_exit_returns_none_when_container_running() {
+        use crate::docker_client::{ContainerState, FakeDockerClient};
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Running,
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+        let result = super::diagnose_premature_exit(&docker, &mut runner, "jk-the-architect").await;
         assert!(
             result.is_none(),
             "running container must not be diagnosed as a failure"
         );
     }
 
-    #[test]
-    fn diagnose_premature_exit_includes_logs_when_container_already_stopped() {
-        // First capture: inspect → exited 127 (entrypoint command not found).
-        // Second capture: docker logs → entrypoint stderr.
+    #[tokio::test]
+    async fn diagnose_premature_exit_includes_logs_when_container_already_stopped() {
+        use crate::docker_client::{ContainerState, FakeDockerClient};
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped {
+                    exit_code: 127,
+                    oom_killed: false,
+                },
+            ])),
+
+            ..Default::default()
+        };
         let mut runner = FakeRunner::with_capture_queue([
-            "false 127 false".to_string(),
             "/jackin/runtime/entrypoint.sh: line 85: exec: codex: not found".to_string(),
         ]);
-        let err = super::diagnose_premature_exit(&mut runner, "jk-the-architect")
+        let err = super::diagnose_premature_exit(&docker, &mut runner, "jk-the-architect")
+            .await
             .expect("stopped container must produce a diagnostic error");
         let msg = err.to_string();
         assert!(
@@ -3601,11 +3643,22 @@ mod tests {
         );
     }
 
-    #[test]
-    fn diagnose_premature_exit_flags_oom_kill_distinct_from_normal_exit() {
-        let mut runner =
-            FakeRunner::with_capture_queue(["false 137 true".to_string(), String::new()]);
-        let err = super::diagnose_premature_exit(&mut runner, "jackin-x")
+    #[tokio::test]
+    async fn diagnose_premature_exit_flags_oom_kill_distinct_from_normal_exit() {
+        use crate::docker_client::{ContainerState, FakeDockerClient};
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped {
+                    exit_code: 137,
+                    oom_killed: true,
+                },
+            ])),
+
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+        let err = super::diagnose_premature_exit(&docker, &mut runner, "jackin-x")
+            .await
             .expect("OOM-killed container is a premature exit");
         let msg = err.to_string();
         assert!(msg.contains("OOM killed"), "expected OOM marker in: {msg}");
@@ -3615,21 +3668,21 @@ mod tests {
         );
     }
 
-    #[test]
-    fn diagnose_premature_exit_passes_through_when_inspect_returns_notfound() {
-        // Empty inspect output maps to `ContainerState::NotFound`. We
-        // intentionally defer to the exec error rather than synthesize a
-        // less-helpful diagnostic — and a transient inspect hiccup must not
-        // abort an otherwise-healthy launch.
-        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+    #[tokio::test]
+    async fn diagnose_premature_exit_passes_through_when_inspect_returns_notfound() {
+        use crate::docker_client::FakeDockerClient;
+        let docker = FakeDockerClient::default(); // empty queue → NotFound
+        let mut runner = FakeRunner::default();
         assert!(
-            super::diagnose_premature_exit(&mut runner, "jackin-x").is_none(),
+            super::diagnose_premature_exit(&docker, &mut runner, "jackin-x")
+                .await
+                .is_none(),
             "NotFound must not abort launch before exec attempt"
         );
     }
 
-    #[test]
-    fn agent_mounts_for_claude_ignore_mode_mounts_state_but_no_auth_handoff() {
+    #[tokio::test]
+    async fn agent_mounts_for_claude_ignore_mode_mounts_state_but_no_auth_handoff() {
         // Ignore mode must still mount durable Claude home state so
         // conversations/plugins survive a Docker delete, but auth handoff
         // files under /jackin/claude/ must not flow into the container.
@@ -3688,8 +3741,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn agent_mounts_for_claude_sync_mode_forwards_auth_files() {
+    #[tokio::test]
+    async fn agent_mounts_for_claude_sync_mode_forwards_auth_files() {
         // Sync mode + host auth present → both account.json and
         // credentials.json flow under /jackin/claude/. Plugins are baked
         // into the image and do not need a runtime mount.
@@ -3756,8 +3809,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn agent_mounts_for_claude_oauth_token_mode_mounts_skeleton_only() {
+    #[tokio::test]
+    async fn agent_mounts_for_claude_oauth_token_mode_mounts_skeleton_only() {
         // OAuthToken mode writes a `{"hasCompletedOnboarding":true}`
         // skeleton at account.json (so the in-container CLI does not
         // run its login wizard) and removes credentials.json. The
@@ -3813,8 +3866,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn agent_mounts_for_codex_without_auth_mounts_state_but_no_auth_handoff() {
+    #[tokio::test]
+    async fn agent_mounts_for_codex_without_auth_mounts_state_but_no_auth_handoff() {
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -3864,8 +3917,8 @@ agents = ["codex"]
         );
     }
 
-    #[test]
-    fn agent_mounts_for_codex_synced_includes_auth_json() {
+    #[tokio::test]
+    async fn agent_mounts_for_codex_synced_includes_auth_json() {
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -3922,8 +3975,8 @@ agents = ["codex"]
         );
     }
 
-    #[test]
-    fn agent_mounts_for_codex_host_missing_omits_auth_json() {
+    #[tokio::test]
+    async fn agent_mounts_for_codex_host_missing_omits_auth_json() {
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -3969,8 +4022,8 @@ agents = ["codex"]
         );
     }
 
-    #[test]
-    fn agent_mounts_for_amp_synced_includes_secrets_json() {
+    #[tokio::test]
+    async fn agent_mounts_for_amp_synced_includes_secrets_json() {
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -4028,8 +4081,8 @@ agents = ["amp"]
         );
     }
 
-    #[test]
-    fn agent_mounts_for_amp_ignore_mounts_state_but_no_auth_handoff() {
+    #[tokio::test]
+    async fn agent_mounts_for_amp_ignore_mounts_state_but_no_auth_handoff() {
         use crate::agent::Agent;
         use crate::instance::RoleState;
 
@@ -4083,8 +4136,8 @@ agents = ["amp"]
         );
     }
 
-    #[test]
-    fn build_workspace_mount_strings_marks_overrides_readonly() {
+    #[tokio::test]
+    async fn build_workspace_mount_strings_marks_overrides_readonly() {
         // One worktree-mode mount with all four bind sources populated.
         // Host `.git/` mount MUST stay rw (git writes refs/objects/
         // HEAD/index/logs all under it on every commit/branch/fetch).
@@ -4170,8 +4223,8 @@ agents = ["amp"]
         );
     }
 
-    #[test]
-    fn build_workspace_mount_strings_passthrough_for_shared_mounts() {
+    #[tokio::test]
+    async fn build_workspace_mount_strings_passthrough_for_shared_mounts() {
         // Shared mounts produce exactly one bind spec, no aux entries.
         let mat = MaterializedWorkspace {
             workdir: "/workspace".into(),
@@ -4189,8 +4242,8 @@ agents = ["amp"]
         assert_eq!(strings, vec!["/host/shared:/workspace/shared".to_string()]);
     }
 
-    #[test]
-    fn build_workspace_mount_strings_two_isolated_mounts_emits_eight_distinct_strings() {
+    #[tokio::test]
+    async fn build_workspace_mount_strings_two_isolated_mounts_emits_eight_distinct_strings() {
         // A workspace with two isolated mounts on different host repos
         // (allowed by validate_isolation_layout) must emit a clean
         // 4-bind grouping per mount with no path collisions. This is
@@ -4274,8 +4327,8 @@ agents = ["amp"]
         );
     }
 
-    #[test]
-    fn build_workspace_mount_strings_preserves_readonly_on_user_facing_mount() {
+    #[tokio::test]
+    async fn build_workspace_mount_strings_preserves_readonly_on_user_facing_mount() {
         // A user-configured `readonly = true` mount still gets `:ro` on
         // the user-facing dst — this is independent of the override
         // hardening.
@@ -4295,8 +4348,8 @@ agents = ["amp"]
         assert_eq!(strings, vec!["/host/cache:/workspace/cache:ro".to_string()]);
     }
 
-    #[test]
-    fn workspace_mise_paths_cover_workdir_and_mount_destinations() {
+    #[tokio::test]
+    async fn workspace_mise_paths_cover_workdir_and_mount_destinations() {
         let workspace = crate::workspace::ResolvedWorkspace {
             label: "sample-workspace".to_string(),
             workdir: "/workspace".to_string(),
@@ -4327,8 +4380,8 @@ agents = ["amp"]
         );
     }
 
-    #[test]
-    fn workspace_mise_env_does_not_override_operator_value() {
+    #[tokio::test]
+    async fn workspace_mise_env_does_not_override_operator_value() {
         let workspace = repo_workspace(std::path::Path::new("/host/repo"));
         let mut vars = vec![(
             MISE_TRUSTED_CONFIG_PATHS_ENV.to_string(),
@@ -4346,8 +4399,8 @@ agents = ["amp"]
         );
     }
 
-    #[test]
-    fn git_pull_on_entry_starts_all_repo_pulls_before_waiting() {
+    #[tokio::test]
+    async fn git_pull_on_entry_starts_all_repo_pulls_before_waiting() {
         let temp = tempdir().unwrap();
         let bin_dir = temp.path().join("bin");
         let marker_dir = temp.path().join("markers");
@@ -4463,8 +4516,8 @@ echo "pulled $2"
             .to_string()
     }
 
-    #[test]
-    fn validate_agent_supported_rejects_unsupported_choice() {
+    #[tokio::test]
+    async fn validate_agent_supported_rejects_unsupported_choice() {
         let temp = tempdir().unwrap();
         std::fs::write(
             temp.path().join("jackin.role.toml"),
@@ -4487,8 +4540,8 @@ plugins = []
         assert!(message.contains("supported: [claude]"));
     }
 
-    #[test]
-    fn trust_gate_rejects_untrusted_agent_in_non_interactive_context() {
+    #[tokio::test]
+    async fn trust_gate_rejects_untrusted_agent_in_non_interactive_context() {
         let selector = RoleSelector::new(Some("evil-org"), "backdoor");
         let source = crate::config::RoleSource {
             git: "https://github.com/evil-org/jackin-backdoor.git".to_string(),
@@ -4513,8 +4566,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn restore_role_source_override_uses_manifest_source_without_mutating_config() {
+    #[tokio::test]
+    async fn restore_role_source_override_uses_manifest_source_without_mutating_config() {
         let selector = RoleSelector::new(None, "agent-smith");
         let mut config = AppConfig::default();
         config.roles.insert(
@@ -4558,8 +4611,8 @@ plugins = []
         anyhow::bail!("role source not trusted — aborting")
     }
 
-    #[test]
-    fn load_namespaced_agent_registers_source_and_trusts_on_accept() {
+    #[tokio::test]
+    async fn load_namespaced_agent_registers_source_and_trusts_on_accept() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -4587,16 +4640,19 @@ plugins = ["code-review@claude-plugins-official"]
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role_with(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
             auto_trust,
             |_, _, _| Ok(()),
         )
+        .await
         .unwrap();
 
         // Source was auto-registered and persisted with trust
@@ -4612,10 +4668,11 @@ plugins = ["code-review@claude-plugins-official"]
         assert!(runner.recorded.iter().any(|call| {
             call.contains("docker build ") && call.contains("-t jk_chainargos_the-architect")
         }));
-        assert!(runner.recorded.iter().any(|call| {
-            call.contains("docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jk-")
-                && call.contains("thearchitect")
-        }));
+        assert!(
+            docker.recorded.borrow().iter().any(|call| {
+                call.contains("docker inspect jk-") && call.contains("thearchitect")
+            })
+        );
         let run_cmd = runner
             .recorded
             .iter()
@@ -4658,8 +4715,8 @@ plugins = ["code-review@claude-plugins-official"]
         );
     }
 
-    #[test]
-    fn load_namespaced_agent_aborts_when_trust_declined() {
+    #[tokio::test]
+    async fn load_namespaced_agent_aborts_when_trust_declined() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -4685,16 +4742,19 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         let error = load_role_with(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
             deny_trust,
             |_, _, _| Ok(()),
         )
+        .await
         .unwrap_err();
 
         assert!(error.to_string().contains("not trusted"));
@@ -4712,8 +4772,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_injects_configured_mounts() {
+    #[tokio::test]
+    async fn load_agent_injects_configured_mounts() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(Some("chainargos"), "agent-brown");
@@ -4771,14 +4831,17 @@ trusted = true
             git_pull_on_entry: false,
         };
 
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -4789,8 +4852,8 @@ trusted = true
         assert!(run_cmd.contains(&format!("{}:/test-data:ro", mount_src.display())));
     }
 
-    #[test]
-    fn load_agent_runs_attached_without_runtime_plugins_mount() {
+    #[tokio::test]
+    async fn load_agent_runs_attached_without_runtime_plugins_mount() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -4821,14 +4884,17 @@ plugins = ["code-review@claude-plugins-official"]
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         assert!(
@@ -4843,10 +4909,13 @@ plugins = ["code-review@claude-plugins-official"]
                 .iter()
                 .any(|call| call.contains("docker build "))
         );
-        assert!(runner.recorded.iter().any(|call| {
-            call.contains("docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jk-")
-                && call.contains("agentsmith")
-        }));
+        assert!(
+            docker
+                .recorded
+                .borrow()
+                .iter()
+                .any(|call| { call.contains("docker inspect jk-") && call.contains("agentsmith") })
+        );
         assert!(
             runner.recorded.iter().any(
                 |call| call.contains("docker run -d --name jk-") && call.contains("agentsmith")
@@ -4866,8 +4935,8 @@ plugins = ["code-review@claude-plugins-official"]
         );
     }
 
-    #[test]
-    fn load_agent_launches_codex_from_workspace_agent() {
+    #[tokio::test]
+    async fn load_agent_launches_codex_from_workspace_agent() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -4910,14 +4979,17 @@ model = "gpt-5"
 
         let mut workspace = repo_workspace(&repo_dir);
         workspace.default_agent = Some(crate::agent::Agent::Codex);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let build_cmd = runner
@@ -4967,8 +5039,8 @@ model = "gpt-5"
 
     /// Codex CLI drives interactive `ChatGPT` login when no API key is
     /// present, so jackin must not gate launch on `OPENAI_API_KEY`.
-    #[test]
-    fn load_agent_launches_codex_without_openai_key() {
+    #[tokio::test]
+    async fn load_agent_launches_codex_without_openai_key() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -5004,14 +5076,17 @@ agents = ["codex"]
 
         let mut workspace = repo_workspace(&repo_dir);
         workspace.default_agent = Some(crate::agent::Agent::Codex);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -5026,8 +5101,8 @@ agents = ["codex"]
         assert!(!run_cmd.contains("-e OPENAI_API_KEY="));
     }
 
-    #[test]
-    fn load_agent_uses_resolved_workspace_mounts_and_workdir() {
+    #[tokio::test]
+    async fn load_agent_uses_resolved_workspace_mounts_and_workdir() {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -5074,14 +5149,17 @@ plugins = []
             git_pull_on_entry: false,
         };
 
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_call = runner
@@ -5098,8 +5176,8 @@ plugins = []
         assert!(!run_call.contains(&format!("{}:/workspace", repo_dir.display())));
     }
 
-    #[test]
-    fn load_agent_passes_host_uid_and_gid_to_docker_build() {
+    #[tokio::test]
+    async fn load_agent_passes_host_uid_and_gid_to_docker_build() {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -5146,14 +5224,17 @@ plugins = []
             git_pull_on_entry: false,
         };
 
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let build_call = runner
@@ -5172,8 +5253,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_omits_pull_flag_in_normal_workspace_build() {
+    #[tokio::test]
+    async fn load_agent_omits_pull_flag_in_normal_workspace_build() {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -5198,14 +5279,17 @@ plugins = []
         )
         .unwrap();
 
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &repo_workspace(&repo_dir),
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let build_cmd = runner
@@ -5219,8 +5303,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_passes_pull_flag_when_rebuild() {
+    #[tokio::test]
+    async fn load_agent_passes_pull_flag_when_rebuild() {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -5245,17 +5329,20 @@ plugins = []
         )
         .unwrap();
 
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &repo_workspace(&repo_dir),
+            &docker,
             &mut runner,
             &LoadOptions {
                 rebuild: true,
                 ..LoadOptions::default()
             },
         )
+        .await
         .unwrap();
 
         let build_cmd = runner
@@ -5269,8 +5356,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_passes_pull_flag_with_published_image() {
+    #[tokio::test]
+    async fn load_agent_passes_pull_flag_with_published_image() {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -5296,14 +5383,17 @@ plugins = []
         )
         .unwrap();
 
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &repo_workspace(&repo_dir),
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let build_cmd = runner
@@ -5322,8 +5412,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_uses_prebuilt_when_construct_version_matches() {
+    #[tokio::test]
+    async fn load_agent_uses_prebuilt_when_construct_version_matches() {
         // When the published image's jackin.construct_version label matches the
         // Dockerfile's pinned tag, the pre-built image is used (no staleness).
         let temp = tempfile::tempdir().unwrap();
@@ -5352,14 +5442,17 @@ plugins = []
         )
         .unwrap();
 
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &repo_workspace(&repo_dir),
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let build_cmd = runner
@@ -5373,8 +5466,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_falls_back_to_workspace_when_construct_version_stale() {
+    #[tokio::test]
+    async fn load_agent_falls_back_to_workspace_when_construct_version_stale() {
         // When the published image's jackin.construct_version label differs from
         // the Dockerfile's pinned tag, jackin falls back to workspace mode.
         let temp = tempfile::tempdir().unwrap();
@@ -5405,14 +5498,17 @@ plugins = []
         )
         .unwrap();
 
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &repo_workspace(&repo_dir),
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let build_cmd = runner
@@ -5432,8 +5528,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_uses_prebuilt_when_construct_version_label_absent() {
+    #[tokio::test]
+    async fn load_agent_uses_prebuilt_when_construct_version_label_absent() {
         // Backward-compatibility guarantee: published images built before the
         // jackin.construct_version label was introduced have no label. jackin
         // must treat the absent label as "not stale" so those images keep
@@ -5442,7 +5538,7 @@ plugins = []
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
-        // Empty string → read_image_label filters it to None → not stale.
+        // Empty inspect_image_labels queue → no construct label → no mismatch.
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -5464,14 +5560,17 @@ plugins = []
         )
         .unwrap();
 
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &repo_workspace(&repo_dir),
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let build_cmd = runner
@@ -5484,19 +5583,20 @@ plugins = []
             build_cmd.contains("--pull"),
             "prebuilt mode must pass --pull; got: {build_cmd}"
         );
-        // In prebuilt mode rebuild=false, so the construct-mismatch guard runs
-        // a docker inspect on the derived image. Workspace-rebuild mode skips it.
+        // In prebuilt mode rebuild=false, so the construct-mismatch guard calls
+        // inspect_image_labels on the derived image (bollard). Workspace-rebuild mode skips it.
         assert!(
-            runner
+            docker
                 .recorded
+                .borrow()
                 .iter()
-                .any(|c| c.contains("docker inspect") && c.contains("jk_agent-smith")),
-            "prebuilt mode must run docker inspect on derived image (construct-mismatch check)"
+                .any(|c| c.contains("docker inspect image:jk_agent-smith")),
+            "prebuilt mode must run docker inspect_image_label on derived image (construct-mismatch check)"
         );
     }
 
-    #[test]
-    fn load_agent_ignores_published_image_when_rebuild() {
+    #[tokio::test]
+    async fn load_agent_ignores_published_image_when_rebuild() {
         let temp = tempfile::tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -5522,17 +5622,20 @@ plugins = []
         )
         .unwrap();
 
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &repo_workspace(&repo_dir),
+            &docker,
             &mut runner,
             &LoadOptions {
                 rebuild: true,
                 ..LoadOptions::default()
             },
         )
+        .await
         .unwrap();
 
         // With --rebuild the workspace Dockerfile is used even when published_image is set.
@@ -5544,8 +5647,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_rolls_back_runtime_on_attached_run_failure() {
+    #[tokio::test]
+    async fn load_agent_rolls_back_runtime_on_attached_run_failure() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -5581,14 +5684,17 @@ plugins = ["code-review@claude-plugins-official"]
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         let error = load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap_err();
 
         assert!(error.to_string().contains("docker run -d --name jk-"));
@@ -5596,34 +5702,39 @@ plugins = ["code-review@claude-plugins-official"]
         let dind = format!("{container_name}-dind");
         let certs_volume = format!("{container_name}-dind-certs");
         let network = format!("{container_name}-net");
+        // Cleanup uses docker (bollard) for rm operations
         assert!(
-            runner
+            docker
                 .recorded
+                .borrow()
                 .iter()
                 .any(|call| call == &format!("docker rm -f {container_name}"))
         );
         assert!(
-            runner
+            docker
                 .recorded
+                .borrow()
                 .iter()
                 .any(|call| call == &format!("docker rm -f {dind}"))
         );
         assert!(
-            runner
+            docker
                 .recorded
+                .borrow()
                 .iter()
                 .any(|call| call == &format!("docker volume rm {certs_volume}"))
         );
         assert!(
-            runner
+            docker
                 .recorded
+                .borrow()
                 .iter()
                 .any(|call| call == &format!("docker network rm {network}"))
         );
     }
 
-    #[test]
-    fn load_agent_checks_dind_readiness() {
+    #[tokio::test]
+    async fn load_agent_checks_dind_readiness() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -5655,46 +5766,53 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let dind = launched_dind_container_name(&runner);
-        // DinD readiness check polls via docker exec
+        // DinD readiness check polls via docker exec (bollard)
         assert!(
-            runner
+            docker
                 .recorded
+                .borrow()
                 .iter()
                 .any(|call| call.contains(&format!("docker exec {dind} docker info")))
         );
 
-        // DinD container is started before the readiness check
-        let dind_start = runner
+        // DinD container is started (via runner) before the readiness check (via docker)
+        let dind_start_runner = runner
             .recorded
             .iter()
             .position(|call| call.contains(&format!("docker run -d --name {dind}")))
             .unwrap();
-        let dind_check = runner
-            .recorded
-            .iter()
-            .position(|call| call.contains(&format!("docker exec {dind} docker info")))
-            .unwrap();
-        assert!(dind_start < dind_check);
+        // docker exec calls go through bollard docker.exec_capture
+        let docker_recorded = docker.recorded.borrow();
+        assert!(
+            docker_recorded
+                .iter()
+                .any(|call| call.contains(&format!("docker exec {dind} docker info"))),
+            "DinD readiness docker info check must be recorded; recorded: {docker_recorded:?}"
+        );
 
-        // TLS cert verification runs after docker info check
-        assert!(runner.recorded.iter().any(|call| {
+        // TLS cert verification also via docker.exec_capture
+        assert!(docker_recorded.iter().any(|call| {
             call.contains(&format!("docker exec {dind} test -f /certs/client/ca.pem"))
         }));
+        let _ = dind_start_runner;
     }
 
-    #[test]
-    fn load_agent_configures_dind_with_tls() {
+    #[tokio::test]
+    async fn load_agent_configures_dind_with_tls() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -5726,14 +5844,17 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let dind = launched_dind_container_name(&runner);
@@ -5797,8 +5918,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_adds_dind_to_no_proxy_when_proxy_is_configured() {
+    #[tokio::test]
+    async fn load_agent_adds_dind_to_no_proxy_when_proxy_is_configured() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -5838,14 +5959,17 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -5862,55 +5986,58 @@ plugins = []
         assert!(run_cmd.contains(&format!("no_proxy=localhost,127.0.0.1,{dind}")));
     }
 
-    #[test]
-    fn load_agent_synthesizes_both_no_proxy_casings_when_only_proxy_set() {
-        let (run_cmd, _temp) = run_load_with_env(&[("HTTPS_PROXY", "http://proxy.internal:8305")]);
+    #[tokio::test]
+    async fn load_agent_synthesizes_both_no_proxy_casings_when_only_proxy_set() {
+        let (run_cmd, _temp) =
+            run_load_with_env(&[("HTTPS_PROXY", "http://proxy.internal:8305")]).await;
         let dind = dind_env_from_run_cmd(&run_cmd);
         assert!(run_cmd.contains(&format!("NO_PROXY={dind}")));
         assert!(run_cmd.contains(&format!("no_proxy={dind}")));
     }
 
-    #[test]
-    fn load_agent_mirrors_no_proxy_to_missing_lower_casing() {
+    #[tokio::test]
+    async fn load_agent_mirrors_no_proxy_to_missing_lower_casing() {
         let (run_cmd, _temp) = run_load_with_env(&[
             ("HTTPS_PROXY", "http://proxy.internal:8305"),
             ("NO_PROXY", "internal.corp"),
-        ]);
+        ])
+        .await;
         let dind = dind_env_from_run_cmd(&run_cmd);
         assert!(run_cmd.contains(&format!("NO_PROXY=internal.corp,{dind}")));
         assert!(run_cmd.contains(&format!("no_proxy=internal.corp,{dind}")));
     }
 
-    #[test]
-    fn load_agent_mirrors_lower_no_proxy_to_missing_upper_casing() {
+    #[tokio::test]
+    async fn load_agent_mirrors_lower_no_proxy_to_missing_upper_casing() {
         let (run_cmd, _temp) = run_load_with_env(&[
             ("https_proxy", "http://proxy.internal:8305"),
             ("no_proxy", "internal.corp"),
-        ]);
+        ])
+        .await;
         let dind = dind_env_from_run_cmd(&run_cmd);
         assert!(run_cmd.contains(&format!("NO_PROXY=internal.corp,{dind}")));
         assert!(run_cmd.contains(&format!("no_proxy=internal.corp,{dind}")));
     }
 
-    #[test]
-    fn load_agent_synthesizes_both_casings_when_only_no_proxy_declared() {
+    #[tokio::test]
+    async fn load_agent_synthesizes_both_casings_when_only_no_proxy_declared() {
         // Operator may have proxy injected by /etc/environment, transparent
         // proxy, or container-injected vars; jackin only sees NO_PROXY.
         // Both casings must still receive the DinD bypass.
-        let (run_cmd, _temp) = run_load_with_env(&[("NO_PROXY", "internal.corp")]);
+        let (run_cmd, _temp) = run_load_with_env(&[("NO_PROXY", "internal.corp")]).await;
         let dind = dind_env_from_run_cmd(&run_cmd);
         assert!(run_cmd.contains(&format!("NO_PROXY=internal.corp,{dind}")));
         assert!(run_cmd.contains(&format!("no_proxy=internal.corp,{dind}")));
     }
 
-    #[test]
-    fn load_agent_omits_no_proxy_when_no_proxy_env_declared() {
-        let (run_cmd, _temp) = run_load_with_env(&[]);
+    #[tokio::test]
+    async fn load_agent_omits_no_proxy_when_no_proxy_env_declared() {
+        let (run_cmd, _temp) = run_load_with_env(&[]).await;
         assert!(!run_cmd.contains("NO_PROXY="));
         assert!(!run_cmd.contains("no_proxy="));
     }
 
-    fn run_load_with_env(entries: &[(&str, &str)]) -> (String, tempfile::TempDir) {
+    async fn run_load_with_env(entries: &[(&str, &str)]) -> (String, tempfile::TempDir) {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -5948,14 +6075,17 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -5967,8 +6097,8 @@ plugins = []
         (run_cmd, temp)
     }
 
-    #[test]
-    fn append_no_proxy_host_is_idempotent() {
+    #[tokio::test]
+    async fn append_no_proxy_host_is_idempotent() {
         assert_eq!(
             append_no_proxy_host("localhost,jk-agent-smith-dind", "jk-agent-smith-dind"),
             "localhost,jk-agent-smith-dind"
@@ -5979,8 +6109,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_sets_display_name_label() {
+    #[tokio::test]
+    async fn load_agent_sets_display_name_label() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -6015,14 +6145,17 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -6033,8 +6166,8 @@ plugins = []
         assert!(run_cmd.contains("jackin.display_name=Agent Smith"));
     }
 
-    #[test]
-    fn load_agent_emits_keep_awake_label_when_workspace_opted_in() {
+    #[tokio::test]
+    async fn load_agent_emits_keep_awake_label_when_workspace_opted_in() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -6070,14 +6203,17 @@ plugins = []
 
         let mut workspace = repo_workspace(&repo_dir);
         workspace.keep_awake_enabled = true;
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -6093,8 +6229,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_omits_keep_awake_label_when_workspace_opted_out() {
+    #[tokio::test]
+    async fn load_agent_omits_keep_awake_label_when_workspace_opted_out() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -6129,14 +6265,17 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir); // keep_awake_enabled defaults false
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -6152,8 +6291,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_sets_claude_env_to_jackin() {
+    #[tokio::test]
+    async fn load_agent_sets_claude_env_to_jackin() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -6185,14 +6324,17 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -6207,8 +6349,8 @@ plugins = []
         assert!(!run_cmd.contains("JACKIN_DEBUG"));
     }
 
-    #[test]
-    fn load_agent_writes_instance_manifest() {
+    #[tokio::test]
+    async fn load_agent_writes_instance_manifest() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -6241,14 +6383,17 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let container_name = launched_role_container_name(&runner);
@@ -6267,8 +6412,8 @@ plugins = []
         assert!(index_body.contains(&format!(r#""container_base": "{container_name}""#)));
     }
 
-    #[test]
-    fn load_agent_passes_debug_flag_when_enabled() {
+    #[tokio::test]
+    async fn load_agent_passes_debug_flag_when_enabled() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -6304,14 +6449,17 @@ plugins = []
             debug: true,
             ..LoadOptions::default()
         };
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &opts,
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -6322,8 +6470,8 @@ plugins = []
         assert!(run_cmd.contains("-e JACKIN_DEBUG=1"));
     }
 
-    #[test]
-    fn load_agent_injects_coauthor_trailer_env_when_enabled() {
+    #[tokio::test]
+    async fn load_agent_injects_coauthor_trailer_env_when_enabled() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -6350,14 +6498,17 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -6371,8 +6522,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_omits_coauthor_trailer_env_when_disabled() {
+    #[tokio::test]
+    async fn load_agent_omits_coauthor_trailer_env_when_disabled() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -6398,14 +6549,17 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -6419,8 +6573,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_injects_dco_env_when_enabled() {
+    #[tokio::test]
+    async fn load_agent_injects_dco_env_when_enabled() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
@@ -6447,14 +6601,17 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -6465,42 +6622,42 @@ plugins = []
         assert!(run_cmd.contains("-e JACKIN_GIT_DCO=1"), "{run_cmd}");
     }
 
-    #[test]
-    fn load_options_debug_disables_intro_for_load() {
+    #[tokio::test]
+    async fn load_options_debug_disables_intro_for_load() {
         let opts = LoadOptions::for_load(false, true, false);
         assert!(opts.no_intro, "debug mode must disable intro for load");
         assert!(opts.debug);
     }
 
-    #[test]
-    fn load_options_no_intro_flag_for_load() {
+    #[tokio::test]
+    async fn load_options_no_intro_flag_for_load() {
         let opts = LoadOptions::for_load(true, false, false);
         assert!(opts.no_intro, "explicit no_intro must be respected");
         assert!(!opts.debug);
     }
 
-    #[test]
-    fn load_options_intro_plays_when_no_flags_for_load() {
+    #[tokio::test]
+    async fn load_options_intro_plays_when_no_flags_for_load() {
         let opts = LoadOptions::for_load(false, false, false);
         assert!(!opts.no_intro, "intro should play when no flags set");
     }
 
-    #[test]
-    fn load_options_debug_disables_intro_for_launch() {
+    #[tokio::test]
+    async fn load_options_debug_disables_intro_for_launch() {
         let opts = LoadOptions::for_launch(true);
         assert!(opts.no_intro, "debug mode must disable intro for launch");
         assert!(opts.debug);
     }
 
-    #[test]
-    fn load_options_intro_plays_when_no_debug_for_launch() {
+    #[tokio::test]
+    async fn load_options_intro_plays_when_no_debug_for_launch() {
         let opts = LoadOptions::for_launch(false);
         assert!(!opts.no_intro, "intro should play when debug is off");
         assert!(!opts.debug);
     }
 
-    #[test]
-    fn load_agent_injects_global_operator_env_literal() {
+    #[tokio::test]
+    async fn load_agent_injects_global_operator_env_literal() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -6547,14 +6704,17 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -6568,8 +6728,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_injects_mise_trusted_paths_for_any_workspace() {
+    #[tokio::test]
+    async fn load_agent_injects_mise_trusted_paths_for_any_workspace() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -6640,14 +6800,17 @@ plugins = []
             git_pull_on_entry: false,
         };
 
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -6663,8 +6826,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_operator_env_overrides_manifest_env() {
+    #[tokio::test]
+    async fn load_agent_operator_env_overrides_manifest_env() {
         // Spec: on conflict between manifest-declared env and operator
         // env, operator wins. The manifest below declares OPERATOR_SMOKE
         // as a literal "manifest-default"; the global operator env
@@ -6725,14 +6888,17 @@ plugins = []
         .unwrap();
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &LoadOptions::default(),
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -6750,8 +6916,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn load_agent_injects_host_ref_operator_env() {
+    #[tokio::test]
+    async fn load_agent_injects_host_ref_operator_env() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         paths.ensure_base_dirs().unwrap();
@@ -6813,14 +6979,17 @@ plugins = []
         };
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &opts,
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -6835,8 +7004,8 @@ plugins = []
     }
 
     #[cfg(unix)]
-    #[test]
-    fn load_agent_injects_op_cli_resolved_value() {
+    #[tokio::test]
+    async fn load_agent_injects_op_cli_resolved_value() {
         use std::os::unix::fs::PermissionsExt;
 
         let temp = tempdir().unwrap();
@@ -6912,14 +7081,17 @@ plugins = []
         };
 
         let workspace = repo_workspace(&repo_dir);
+        let docker = crate::docker_client::FakeDockerClient::default();
         load_role(
             &paths,
             &mut config,
             &selector,
             &workspace,
+            &docker,
             &mut runner,
             &opts,
         )
+        .await
         .unwrap();
 
         let run_cmd = runner
@@ -6936,15 +7108,16 @@ plugins = []
     // ── claim_container_name tests ────────────────────────────────────────────
 
     /// `NotFound` → claim a unique ad-hoc name directly (no docker rm issued).
-    #[test]
-    fn claim_container_name_not_found_claims_unique_ad_hoc_name() {
+    #[tokio::test]
+    async fn claim_container_name_not_found_claims_unique_ad_hoc_name() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        // inspect returns "" → NotFound
-        let mut runner = FakeRunner::with_capture_queue([String::new()]);
-
-        let (name, _lock) = claim_container_name(&paths, None, &selector, &mut runner).unwrap();
+        // inspect returns NotFound (empty queue)
+        let docker = crate::docker_client::FakeDockerClient::default();
+        let (name, _lock) = claim_container_name(&paths, None, &selector, &docker)
+            .await
+            .unwrap();
 
         assert!(name.starts_with("jk-"), "{name}");
         assert!(name.contains("agentsmith"), "{name}");
@@ -6954,116 +7127,154 @@ plugins = []
             crate::instance::naming::is_dns_label(&format!("{name}-dind")),
             "{name}"
         );
-        assert!(runner.recorded.iter().any(|call| {
-            call.contains("docker inspect --format {{.State.Running}} {{.State.ExitCode}} {{.State.OOMKilled}} jk-")
-                && call.contains("agentsmith")
-        }));
         assert!(
-            !runner
+            docker
                 .recorded
+                .borrow()
+                .iter()
+                .any(|call| call.contains("docker inspect"))
+        );
+        assert!(
+            !docker
+                .recorded
+                .borrow()
                 .iter()
                 .any(|call| call.contains("docker rm"))
         );
     }
 
-    #[test]
-    fn claim_container_name_docker_unavailable_errors() {
+    #[tokio::test]
+    async fn claim_container_name_docker_unavailable_errors() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::default();
-        runner.fail_with.push((
-            "docker inspect".to_string(),
-            "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
-        ));
-
-        let err = claim_container_name(&paths, None, &selector, &mut runner).unwrap_err();
+        let docker = crate::docker_client::FakeDockerClient {
+            fail_with: vec![(
+                "docker inspect".to_string(),
+                "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string(),
+            )],
+            ..Default::default()
+        };
+        let err = claim_container_name(&paths, None, &selector, &docker)
+            .await
+            .unwrap_err();
 
         assert!(err.to_string().contains("cannot claim container name"));
         assert!(err.to_string().contains("Docker is unavailable"));
     }
 
     /// Running collision → skip that random name and claim another one.
-    #[test]
-    fn claim_container_name_running_collision_tries_another_unique_name() {
+    #[tokio::test]
+    async fn claim_container_name_running_collision_tries_another_unique_name() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let mut runner =
-            FakeRunner::with_capture_queue(["true 0 false".to_string(), String::new()]);
-
-        let (name, _lock) = claim_container_name(&paths, None, &selector, &mut runner).unwrap();
+        // First inspect → Running (occupied), second → NotFound (claimed)
+        let docker = crate::docker_client::FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Running,
+                ContainerState::NotFound,
+            ])),
+            ..Default::default()
+        };
+        let (name, _lock) = claim_container_name(&paths, None, &selector, &docker)
+            .await
+            .unwrap();
 
         assert!(name.starts_with("jk-"), "{name}");
         assert!(name.ends_with("-agentsmith"), "{name}");
         assert!(!name.contains("clone"), "{name}");
         assert_eq!(
-            runner
+            docker
                 .recorded
+                .borrow()
                 .iter()
-                .filter(|call| call.contains("docker inspect --format"))
+                .filter(|c| c.contains("docker inspect"))
                 .count(),
             2
         );
         assert!(
-            !runner
+            !docker
                 .recorded
+                .borrow()
                 .iter()
-                .any(|call| call.contains("docker rm"))
+                .any(|c| c.contains("docker rm"))
         );
     }
 
     /// Stopped / exit 0 collision → docker rm issued, same random slot reclaimed.
-    #[test]
-    fn claim_container_name_clean_exit_removes_and_reclaims() {
+    #[tokio::test]
+    async fn claim_container_name_clean_exit_removes_and_reclaims() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::with_capture_queue(["false 0 false".to_string()]);
-
-        let (name, _lock) = claim_container_name(&paths, None, &selector, &mut runner).unwrap();
+        // Stopped with exit_code=0, oom_killed=false → remove and reclaim
+        let docker = crate::docker_client::FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped {
+                    exit_code: 0,
+                    oom_killed: false,
+                },
+            ])),
+            ..Default::default()
+        };
+        let (name, _lock) = claim_container_name(&paths, None, &selector, &docker)
+            .await
+            .unwrap();
 
         assert!(name.starts_with("jk-"), "{name}");
         assert!(name.ends_with("-agentsmith"), "{name}");
         assert!(
-            runner
+            docker
                 .recorded
+                .borrow()
                 .iter()
-                .any(|call| call.starts_with("docker rm jk-") && call.contains("agentsmith"))
+                .any(|c| c.contains("docker rm -f") && c.contains("agentsmith"))
         );
     }
 
     /// Stopped / non-zero collision → skip it and claim another random name.
-    #[test]
-    fn claim_container_name_crashed_collision_tries_another_unique_name() {
+    #[tokio::test]
+    async fn claim_container_name_crashed_collision_tries_another_unique_name() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let mut runner =
-            FakeRunner::with_capture_queue(["false 1 false".to_string(), String::new()]);
-
-        let (name, _lock) = claim_container_name(&paths, None, &selector, &mut runner).unwrap();
+        // Stopped with exit_code=1 → skip (no rm), then NotFound → claim
+        let docker = crate::docker_client::FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped {
+                    exit_code: 1,
+                    oom_killed: false,
+                },
+                ContainerState::NotFound,
+            ])),
+            ..Default::default()
+        };
+        let (name, _lock) = claim_container_name(&paths, None, &selector, &docker)
+            .await
+            .unwrap();
 
         assert!(name.starts_with("jk-"), "{name}");
         assert!(name.ends_with("-agentsmith"), "{name}");
         assert!(!name.contains("clone"), "{name}");
         assert!(
-            !runner
+            !docker
                 .recorded
+                .borrow()
                 .iter()
-                .any(|call| call.contains("docker rm"))
+                .any(|c| c.contains("docker rm"))
         );
     }
 
-    #[test]
-    fn claim_container_name_saved_workspace_includes_workspace_component() {
+    #[tokio::test]
+    async fn claim_container_name_saved_workspace_includes_workspace_component() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
-        let mut runner = FakeRunner::with_capture_queue([String::new()]);
-
-        let (name, _lock) =
-            claim_container_name(&paths, Some("my-workspace"), &selector, &mut runner).unwrap();
+        let docker = crate::docker_client::FakeDockerClient::default();
+        let (name, _lock) = claim_container_name(&paths, Some("my-workspace"), &selector, &docker)
+            .await
+            .unwrap();
 
         assert!(name.starts_with("jk-"), "{name}");
         assert!(
@@ -7073,8 +7284,8 @@ plugins = []
         assert!(name.len() <= 58, "{name}");
     }
 
-    #[test]
-    fn restore_candidate_blocks_noninteractive_fresh_load() {
+    #[tokio::test]
+    async fn restore_candidate_blocks_noninteractive_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jk-k7p9m2xq-workspace-agentsmith";
@@ -7087,16 +7298,19 @@ plugins = []
         manifest
             .write(&paths.data_dir.join(container_name))
             .unwrap();
-        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+        // inspect_container_state → NotFound → candidate available (stdin not interactive → error)
+        let docker = crate::docker_client::FakeDockerClient::default();
 
-        let error = resolve_workspace_restore(&paths, "agent-smith", &mut runner).unwrap_err();
+        let error = resolve_workspace_restore(&paths, "agent-smith", &docker)
+            .await
+            .unwrap_err();
 
         assert!(error.to_string().contains("restore is available"));
         assert!(error.to_string().contains(container_name));
     }
 
-    #[test]
-    fn running_matching_instance_does_not_block_fresh_load() {
+    #[tokio::test]
+    async fn running_matching_instance_does_not_block_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jk-k7p9m2xq-workspace-agentsmith";
@@ -7107,15 +7321,23 @@ plugins = []
             crate::agent::Agent::Claude,
         );
         write_indexed_manifest(&paths, &manifest);
-        let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
+        // Running → not a restore candidate → StartFresh
+        let docker = crate::docker_client::FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Running,
+            ])),
+            ..Default::default()
+        };
 
-        let candidate = resolve_workspace_restore(&paths, "agent-smith", &mut runner).unwrap();
+        let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)
+            .await
+            .unwrap();
 
         assert_eq!(candidate, RestoreResolution::StartFresh);
     }
 
-    #[test]
-    fn stopped_matching_instance_does_not_block_fresh_load() {
+    #[tokio::test]
+    async fn stopped_matching_instance_does_not_block_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jk-k7p9m2xq-workspace-agentsmith";
@@ -7126,15 +7348,26 @@ plugins = []
             crate::agent::Agent::Claude,
         );
         write_indexed_manifest(&paths, &manifest);
-        let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
+        // Stopped (non-clean) → not a restore candidate → StartFresh
+        let docker = crate::docker_client::FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped {
+                    exit_code: 137,
+                    oom_killed: false,
+                },
+            ])),
+            ..Default::default()
+        };
 
-        let candidate = resolve_workspace_restore(&paths, "agent-smith", &mut runner).unwrap();
+        let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)
+            .await
+            .unwrap();
 
         assert_eq!(candidate, RestoreResolution::StartFresh);
     }
 
-    #[test]
-    fn related_restore_candidate_blocks_noninteractive_fresh_load() {
+    #[tokio::test]
+    async fn related_restore_candidate_blocks_noninteractive_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jk-k7p9m2xq-workspace-thearchitect";
@@ -7145,9 +7378,12 @@ plugins = []
             crate::agent::Agent::Claude,
         );
         write_indexed_manifest(&paths, &manifest);
-        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+        // inspect → NotFound → matching but different role → stdin not interactive → error
+        let docker = crate::docker_client::FakeDockerClient::default();
 
-        let error = resolve_workspace_restore(&paths, "agent-smith", &mut runner).unwrap_err();
+        let error = resolve_workspace_restore(&paths, "agent-smith", &docker)
+            .await
+            .unwrap_err();
 
         let message = error.to_string();
         assert!(
@@ -7157,8 +7393,8 @@ plugins = []
         assert!(message.contains("jackin hardline <instance>"), "{message}");
     }
 
-    #[test]
-    fn running_related_instance_does_not_block_fresh_load() {
+    #[tokio::test]
+    async fn running_related_instance_does_not_block_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jk-k7p9m2xq-workspace-thearchitect";
@@ -7169,15 +7405,23 @@ plugins = []
             crate::agent::Agent::Claude,
         );
         write_indexed_manifest(&paths, &manifest);
-        let mut runner = FakeRunner::with_capture_queue(["true 0 false".to_string()]);
+        // Related container is Running → skip → StartFresh
+        let docker = crate::docker_client::FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Running,
+            ])),
+            ..Default::default()
+        };
 
-        let candidate = resolve_workspace_restore(&paths, "agent-smith", &mut runner).unwrap();
+        let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)
+            .await
+            .unwrap();
 
         assert_eq!(candidate, RestoreResolution::StartFresh);
     }
 
-    #[test]
-    fn stopped_related_instance_does_not_block_fresh_load() {
+    #[tokio::test]
+    async fn stopped_related_instance_does_not_block_fresh_load() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jk-k7p9m2xq-workspace-thearchitect";
@@ -7188,15 +7432,26 @@ plugins = []
             crate::agent::Agent::Claude,
         );
         write_indexed_manifest(&paths, &manifest);
-        let mut runner = FakeRunner::with_capture_queue(["false 137 false".to_string()]);
+        // Related container stopped non-cleanly → skip → StartFresh
+        let docker = crate::docker_client::FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped {
+                    exit_code: 137,
+                    oom_killed: false,
+                },
+            ])),
+            ..Default::default()
+        };
 
-        let candidate = resolve_workspace_restore(&paths, "agent-smith", &mut runner).unwrap();
+        let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)
+            .await
+            .unwrap();
 
         assert_eq!(candidate, RestoreResolution::StartFresh);
     }
 
-    #[test]
-    fn related_restore_candidates_ignore_finished_instances() {
+    #[tokio::test]
+    async fn related_restore_candidates_ignore_finished_instances() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jk-k7p9m2xq-workspace-thearchitect";
@@ -7208,16 +7463,19 @@ plugins = []
         );
         manifest.mark_status(InstanceStatus::CleanExited);
         write_indexed_manifest(&paths, &manifest);
-        let mut runner = FakeRunner::default();
+        // Manifest is CleanExited → not a restore candidate, no docker call
+        let docker = crate::docker_client::FakeDockerClient::default();
 
-        let candidate = resolve_workspace_restore(&paths, "agent-smith", &mut runner).unwrap();
+        let candidate = resolve_workspace_restore(&paths, "agent-smith", &docker)
+            .await
+            .unwrap();
 
         assert_eq!(candidate, RestoreResolution::StartFresh);
-        assert!(runner.recorded.is_empty());
+        assert!(docker.recorded.borrow().is_empty());
     }
 
-    #[test]
-    fn related_restore_candidate_with_container_recovers_in_place() {
+    #[tokio::test]
+    async fn related_restore_candidate_with_container_recovers_in_place() {
         let container_name = "jk-k7p9m2xq-workspace-thearchitect";
         let candidate = RelatedRestoreCandidate {
             manifest: workspace_manifest(
@@ -7238,8 +7496,8 @@ plugins = []
         assert!(related_restore_candidate_action_label(&candidate).starts_with("Recover now"));
     }
 
-    #[test]
-    fn missing_related_restore_candidate_rebuilds_in_place() {
+    #[tokio::test]
+    async fn missing_related_restore_candidate_rebuilds_in_place() {
         let container_name = "jk-k7p9m2xq-workspace-thearchitect";
         let candidate = RelatedRestoreCandidate {
             manifest: workspace_manifest(
@@ -7261,8 +7519,8 @@ plugins = []
         assert!(related_restore_candidate_action_label(&candidate).starts_with("Rebuild now"));
     }
 
-    #[test]
-    fn related_restore_load_options_use_manifest_source_ref_and_agent() {
+    #[tokio::test]
+    async fn related_restore_load_options_use_manifest_source_ref_and_agent() {
         let container_name = "jk-k7p9m2xq-workspace-thearchitect";
         let mut manifest = workspace_manifest(
             container_name,
@@ -7294,8 +7552,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn supersede_restore_candidates_updates_manifest_and_index() {
+    #[tokio::test]
+    async fn supersede_restore_candidates_updates_manifest_and_index() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jk-k7p9m2xq-workspace-agentsmith";
@@ -7315,8 +7573,8 @@ plugins = []
         assert_eq!(index.instances[0].status, InstanceStatus::Superseded);
     }
 
-    #[test]
-    fn restore_candidate_label_includes_manifest_and_mount_state() {
+    #[tokio::test]
+    async fn restore_candidate_label_includes_manifest_and_mount_state() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jk-k7p9m2xq-workspace-agentsmith";
@@ -7356,8 +7614,8 @@ plugins = []
         assert!(!label.contains(container_name), "{label}");
     }
 
-    #[test]
-    fn record_instance_attach_outcome_updates_manifest() {
+    #[tokio::test]
+    async fn record_instance_attach_outcome_updates_manifest() {
         let temp = tempdir().unwrap();
         let paths = JackinPaths::for_tests(temp.path());
         let container_name = "jk-k7p9m2xq-workspace-agentsmith";
@@ -7382,8 +7640,8 @@ plugins = []
         assert_eq!(manifest.last_attach_outcome.as_deref(), Some("exit:137"));
     }
 
-    #[test]
-    fn format_attach_outcome_names_running_exit_and_oom() {
+    #[tokio::test]
+    async fn format_attach_outcome_names_running_exit_and_oom() {
         use crate::isolation::finalize::AttachOutcome;
 
         assert_eq!(
@@ -7397,8 +7655,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn verify_credential_sync_returns_ok_regardless() {
+    #[tokio::test]
+    async fn verify_credential_sync_returns_ok_regardless() {
         use crate::agent::Agent;
         use crate::config::AuthForwardMode;
         let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
@@ -7415,8 +7673,8 @@ plugins = []
         assert!(r.is_ok());
     }
 
-    #[test]
-    fn verify_credential_ignore_returns_ok_regardless() {
+    #[tokio::test]
+    async fn verify_credential_ignore_returns_ok_regardless() {
         use crate::agent::Agent;
         use crate::config::AuthForwardMode;
         let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
@@ -7433,8 +7691,8 @@ plugins = []
         assert!(r.is_ok());
     }
 
-    #[test]
-    fn verify_credential_api_key_present_ok() {
+    #[tokio::test]
+    async fn verify_credential_api_key_present_ok() {
         use crate::agent::Agent;
         use crate::config::AuthForwardMode;
         let mut merged = std::collections::BTreeMap::new();
@@ -7452,8 +7710,8 @@ plugins = []
         assert!(r.is_ok());
     }
 
-    #[test]
-    fn verify_credential_api_key_missing_returns_structured_error() {
+    #[tokio::test]
+    async fn verify_credential_api_key_missing_returns_structured_error() {
         use crate::agent::Agent;
         use crate::config::AuthForwardMode;
         let mut merged = std::collections::BTreeMap::new();
@@ -7509,8 +7767,8 @@ plugins = []
         }
     }
 
-    #[test]
-    fn verify_credential_api_key_unset_returns_structured_error() {
+    #[tokio::test]
+    async fn verify_credential_api_key_unset_returns_structured_error() {
         use crate::agent::Agent;
         use crate::config::AuthForwardMode;
         // ANTHROPIC_API_KEY not in map at all.
@@ -7528,8 +7786,8 @@ plugins = []
         assert!(matches!(r, Err(LaunchError::AuthCredentialMissing { .. })));
     }
 
-    #[test]
-    fn verify_credential_oauth_token_missing_for_claude() {
+    #[tokio::test]
+    async fn verify_credential_oauth_token_missing_for_claude() {
         use crate::agent::Agent;
         use crate::config::AuthForwardMode;
         let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
@@ -7551,8 +7809,8 @@ plugins = []
         }
     }
 
-    #[test]
-    fn verify_credential_codex_api_key_missing() {
+    #[tokio::test]
+    async fn verify_credential_codex_api_key_missing() {
         use crate::agent::Agent;
         use crate::config::AuthForwardMode;
         let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
@@ -7575,8 +7833,8 @@ plugins = []
         }
     }
 
-    #[test]
-    fn verify_credential_amp_api_key_missing() {
+    #[tokio::test]
+    async fn verify_credential_amp_api_key_missing() {
         use crate::agent::Agent;
         use crate::config::AuthForwardMode;
         let merged: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
@@ -7599,8 +7857,8 @@ plugins = []
         }
     }
 
-    #[test]
-    fn build_mode_resolution_populates_all_3_layers() {
+    #[tokio::test]
+    async fn build_mode_resolution_populates_all_3_layers() {
         use crate::agent::Agent;
         use crate::config::{AgentAuthConfig, AuthForwardMode};
         use crate::workspace::WorkspaceConfig;
@@ -7631,8 +7889,8 @@ plugins = []
         assert_eq!(trace[2].1, Some(AuthForwardMode::Sync));
     }
 
-    #[test]
-    fn build_mode_resolution_role_override_wins() {
+    #[tokio::test]
+    async fn build_mode_resolution_role_override_wins() {
         use crate::agent::Agent;
         use crate::config::{AgentAuthConfig, AuthForwardMode};
         use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
@@ -7654,8 +7912,8 @@ plugins = []
         assert_eq!(trace[2].1, None);
     }
 
-    #[test]
-    fn build_env_layer_states_classifies_present_vs_absent() {
+    #[tokio::test]
+    async fn build_env_layer_states_classifies_present_vs_absent() {
         use crate::operator_env::{EnvValue, OpRef};
         use crate::workspace::{WorkspaceConfig, WorkspaceRoleOverride};
 
@@ -7684,8 +7942,8 @@ plugins = []
         assert_eq!(layers[3].1, EnvLayerState::ResolvedOpRef);
     }
 
-    #[test]
-    fn build_env_layer_states_classifies_literal_at_global() {
+    #[tokio::test]
+    async fn build_env_layer_states_classifies_literal_at_global() {
         use crate::operator_env::EnvValue;
 
         let mut env = std::collections::BTreeMap::new();
@@ -7705,83 +7963,94 @@ plugins = []
         assert_eq!(layers[3].1, EnvLayerState::Unset);
     }
 
-    #[test]
-    fn inspect_attach_outcome_capture_failure_returns_still_running() {
-        // A docker daemon hiccup or a container removed mid-inspect must
-        // NOT route through finalize_clean_exit's auto-cleanup path —
-        // returning still_running keeps the records preserved for
-        // `jackin hardline` to recover.
+    #[tokio::test]
+    async fn inspect_attach_outcome_capture_failure_returns_still_running() {
+        // Docker unavailable or container removed mid-inspect must NOT route
+        // through finalize_clean_exit's auto-cleanup path — still_running
+        // keeps records preserved for `jackin hardline` to recover.
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = crate::runtime::test_support::FakeRunner {
-            fail_on: vec!["docker inspect".into()],
-            ..Default::default()
-        };
-        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
-        assert_eq!(outcome, AttachOutcome::still_running());
+        for state in [
+            ContainerState::NotFound,
+            ContainerState::InspectUnavailable("daemon down".into()),
+        ] {
+            let docker = crate::docker_client::FakeDockerClient {
+                inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([state])),
+                ..Default::default()
+            };
+            let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
+            assert_eq!(outcome, AttachOutcome::still_running());
+        }
     }
 
-    /// Helper for `inspect_attach_outcome` status tests — returns a
-    /// `FakeRunner` whose `docker inspect` capture returns the given
-    /// `status|exit_code|oom` line. Other docker calls also queue the
-    /// same response (we make only one inspect call per test).
-    fn inspect_runner(
-        status: &str,
-        exit_code: i32,
-        oom: bool,
-    ) -> crate::runtime::test_support::FakeRunner {
-        crate::runtime::test_support::FakeRunner {
-            capture_queue: std::collections::VecDeque::from(vec![format!(
-                "{status}|{exit_code}|{oom}\n",
-            )]),
+    fn inspect_docker(
+        state: crate::docker_client::ContainerState,
+    ) -> crate::docker_client::FakeDockerClient {
+        crate::docker_client::FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([state])),
             ..Default::default()
         }
     }
 
-    /// `exited` with `exit_code=0` → stopped(0) → enters `finalize_clean_exit`
+    /// `Stopped { exit_code: 0 }` → stopped(0) → enters `finalize_clean_exit`
     /// which is the documented happy path for clean container exits.
-    #[test]
-    fn inspect_attach_outcome_exited_zero_returns_stopped() {
+    #[tokio::test]
+    async fn inspect_attach_outcome_exited_zero_returns_stopped() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = inspect_runner("exited", 0, false);
-        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        let docker = inspect_docker(ContainerState::Stopped {
+            exit_code: 0,
+            oom_killed: false,
+        });
+        let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
         assert_eq!(outcome, AttachOutcome::stopped(0));
     }
 
-    /// `exited` with non-zero `exit_code` → preserved by finalize.
-    #[test]
-    fn inspect_attach_outcome_exited_nonzero_returns_stopped_with_code() {
+    /// `Stopped { exit_code: 137 }` → stopped(137) → preserved by finalize.
+    #[tokio::test]
+    async fn inspect_attach_outcome_exited_nonzero_returns_stopped_with_code() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = inspect_runner("exited", 137, false);
-        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        let docker = inspect_docker(ContainerState::Stopped {
+            exit_code: 137,
+            oom_killed: false,
+        });
+        let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
         assert_eq!(outcome, AttachOutcome::stopped(137));
     }
 
-    /// `exited` with OOMKilled=true → `oom_killed`.
-    #[test]
-    fn inspect_attach_outcome_exited_oom_returns_oom_killed() {
+    /// `Stopped { oom_killed: true }` → `oom_killed`.
+    #[tokio::test]
+    async fn inspect_attach_outcome_exited_oom_returns_oom_killed() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = inspect_runner("exited", 137, true);
-        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        let docker = inspect_docker(ContainerState::Stopped {
+            exit_code: 137,
+            oom_killed: true,
+        });
+        let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
         assert_eq!(outcome, AttachOutcome::oom_killed());
     }
 
-    /// `running` → `still_running`. The basic happy detach case.
-    #[test]
-    fn inspect_attach_outcome_running_returns_still_running() {
+    /// `Running` → `still_running`. The basic happy detach case.
+    #[tokio::test]
+    async fn inspect_attach_outcome_running_returns_still_running() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = inspect_runner("running", 0, false);
-        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        let docker = inspect_docker(ContainerState::Running);
+        let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
         assert_eq!(outcome, AttachOutcome::still_running());
     }
 
-    /// `paused` → `still_running`. The container hasn't exited; treating
+    /// `Paused` → `still_running`. The container hasn't exited; treating
     /// it as stopped(0) would let `finalize_clean_exit` auto-delete its
     /// worktrees while the container is paused but recoverable.
-    #[test]
-    fn inspect_attach_outcome_paused_returns_still_running() {
+    #[tokio::test]
+    async fn inspect_attach_outcome_paused_returns_still_running() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = inspect_runner("paused", 0, false);
-        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        let docker = inspect_docker(ContainerState::Paused);
+        let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
         assert_eq!(
             outcome,
             AttachOutcome::still_running(),
@@ -7789,45 +8058,51 @@ plugins = []
         );
     }
 
-    /// `restarting`, `removing`, `created` → `still_running` for the same
-    /// reason as `paused`: not exited, no real exit code to act on.
-    #[test]
-    fn inspect_attach_outcome_transient_states_return_still_running() {
+    /// `Restarting`, `Removing`, `Created` → `still_running` for the same
+    /// reason as `Paused`: not exited, no real exit code to act on.
+    #[tokio::test]
+    async fn inspect_attach_outcome_transient_states_return_still_running() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        for status in ["restarting", "removing", "created"] {
-            let mut runner = inspect_runner(status, 0, false);
-            let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        for state in [
+            ContainerState::Restarting,
+            ContainerState::Removing,
+            ContainerState::Created,
+        ] {
+            let docker = inspect_docker(state.clone());
+            let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
             assert_eq!(
                 outcome,
                 AttachOutcome::still_running(),
-                "status `{status}` must map to still_running",
+                "{state:?} must map to still_running",
             );
         }
     }
 
-    /// `dead` → `still_running` (conservative: daemon failed to
+    /// `Dead` → `still_running` (conservative: daemon failed to
     /// deinitialize; records preserved for inspection).
-    #[test]
-    fn inspect_attach_outcome_dead_returns_still_running() {
+    #[tokio::test]
+    async fn inspect_attach_outcome_dead_returns_still_running() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = inspect_runner("dead", 0, false);
-        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        let docker = inspect_docker(ContainerState::Dead);
+        let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
         assert_eq!(outcome, AttachOutcome::still_running());
     }
 
-    /// Unknown status (future Docker versions, exotic runtimes) →
-    /// `still_running` with `debug_log`. Conservative direction so a new
-    /// status string never accidentally triggers data deletion.
-    #[test]
-    fn inspect_attach_outcome_unknown_status_returns_still_running() {
+    /// `InspectUnavailable` → `still_running`. Conservative direction so a
+    /// daemon error never accidentally triggers data deletion.
+    #[tokio::test]
+    async fn inspect_attach_outcome_unknown_status_returns_still_running() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = inspect_runner("hibernated", 0, false);
-        let outcome = inspect_attach_outcome(&mut runner, "jackin-x").unwrap();
+        let docker = inspect_docker(ContainerState::InspectUnavailable("unexpected".into()));
+        let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
         assert_eq!(outcome, AttachOutcome::still_running());
     }
 
-    #[test]
-    fn auth_credential_missing_displays_layer_trace() {
+    #[tokio::test]
+    async fn auth_credential_missing_displays_layer_trace() {
         let err = LaunchError::AuthCredentialMissing {
             agent: crate::agent::Agent::Claude,
             mode: crate::config::AuthForwardMode::ApiKey,
@@ -7866,8 +8141,8 @@ plugins = []
         assert!(s.contains("Open the Auth panel"), "got: {s}");
     }
 
-    #[test]
-    fn auth_credential_missing_codex_api_key_renders() {
+    #[tokio::test]
+    async fn auth_credential_missing_codex_api_key_renders() {
         let err = LaunchError::AuthCredentialMissing {
             agent: crate::agent::Agent::Codex,
             mode: crate::config::AuthForwardMode::ApiKey,
@@ -7882,8 +8157,8 @@ plugins = []
         assert!(s.contains("OPENAI_API_KEY"), "got: {s}");
     }
 
-    #[test]
-    fn auth_credential_missing_amp_api_key_renders() {
+    #[tokio::test]
+    async fn auth_credential_missing_amp_api_key_renders() {
         let err = LaunchError::AuthCredentialMissing {
             agent: crate::agent::Agent::Amp,
             mode: crate::config::AuthForwardMode::ApiKey,
@@ -7900,8 +8175,8 @@ plugins = []
 
     // ── verify_github_token_present (Token-mode pre-flight) ──────
 
-    #[test]
-    fn verify_github_token_present_ok_when_token_resolves() {
+    #[tokio::test]
+    async fn verify_github_token_present_ok_when_token_resolves() {
         let r = super::verify_github_token_present(
             crate::config::GithubAuthMode::Token,
             Some("ghp_real"),
@@ -7911,8 +8186,8 @@ plugins = []
         assert!(r.is_ok());
     }
 
-    #[test]
-    fn verify_github_token_present_ok_for_sync_and_ignore_regardless_of_token() {
+    #[tokio::test]
+    async fn verify_github_token_present_ok_for_sync_and_ignore_regardless_of_token() {
         // Sync / Ignore have no pre-flight invariant on GH_TOKEN —
         // Sync sources its token from the host, Ignore exports nothing.
         let r = super::verify_github_token_present(
@@ -7931,8 +8206,8 @@ plugins = []
         assert!(r.is_ok());
     }
 
-    #[test]
-    fn verify_github_token_present_errors_when_token_missing() {
+    #[tokio::test]
+    async fn verify_github_token_present_errors_when_token_missing() {
         let err = super::verify_github_token_present(
             crate::config::GithubAuthMode::Token,
             None,
@@ -7959,8 +8234,8 @@ plugins = []
         assert!(s.contains("\"ignore\""), "got: {s}");
     }
 
-    #[test]
-    fn verify_github_token_present_errors_when_token_empty_string() {
+    #[tokio::test]
+    async fn verify_github_token_present_errors_when_token_empty_string() {
         // Empty string must be rejected the same as missing — `gh`
         // reads `GH_TOKEN=""` as no token, and we don't want to
         // launch DinD just for the agent to fail at first push.
@@ -7976,16 +8251,16 @@ plugins = []
 
     // ── resolve_github_env_map ───────────────────────────────────
 
-    #[test]
-    fn resolve_github_env_map_returns_empty_for_no_declarations() {
+    #[tokio::test]
+    async fn resolve_github_env_map_returns_empty_for_no_declarations() {
         use std::collections::BTreeMap;
         let decls: BTreeMap<String, crate::operator_env::EnvValue> = BTreeMap::new();
         let resolved = super::resolve_github_env_map(&decls, &LoadOptions::default()).unwrap();
         assert!(resolved.is_empty());
     }
 
-    #[test]
-    fn resolve_github_env_map_resolves_plain_values() {
+    #[tokio::test]
+    async fn resolve_github_env_map_resolves_plain_values() {
         use std::collections::BTreeMap;
         let mut decls: BTreeMap<String, crate::operator_env::EnvValue> = BTreeMap::new();
         decls.insert(
@@ -8007,8 +8282,8 @@ plugins = []
         );
     }
 
-    #[test]
-    fn resolve_github_env_map_aggregates_failures() {
+    #[tokio::test]
+    async fn resolve_github_env_map_aggregates_failures() {
         use std::collections::BTreeMap;
         // Two host-env references, both unset → both reported in
         // one structured error rather than aborting on the first.

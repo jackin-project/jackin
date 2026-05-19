@@ -1,110 +1,90 @@
-use crate::docker::CommandRunner;
+use crate::docker_client::{ContainerRow, DockerApi};
 
-use super::naming::{FILTER_KIND_ROLE, format_role_display};
+use super::naming::{LABEL_KIND_ROLE, format_role_display};
 
-pub fn list_running_agent_names(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<String>> {
-    list_role_names(runner, false)
+fn role_containers_to_names(rows: Vec<ContainerRow>) -> Vec<String> {
+    rows.into_iter()
+        .filter(|r| !r.name.is_empty())
+        .map(|r| r.name)
+        .collect()
 }
 
-pub fn list_managed_role_names(runner: &mut impl CommandRunner) -> anyhow::Result<Vec<String>> {
-    list_role_names(runner, true)
+pub async fn list_running_agent_names(docker: &impl DockerApi) -> anyhow::Result<Vec<String>> {
+    list_role_names(docker, false).await
 }
 
-// `pub(crate)` so `config::workspaces` drift detection can read the
-// raw running-role list. Clippy's nursery flags `pub(crate)` inside
-// private modules even when the wider visibility is intentional.
+pub async fn list_managed_role_names(docker: &impl DockerApi) -> anyhow::Result<Vec<String>> {
+    list_role_names(docker, true).await
+}
+
 #[allow(clippy::redundant_pub_crate)]
-pub(crate) fn list_role_names(
-    runner: &mut impl CommandRunner,
+pub(crate) async fn list_role_names(
+    docker: &impl DockerApi,
     include_stopped: bool,
 ) -> anyhow::Result<Vec<String>> {
-    let role_output = if include_stopped {
-        runner.capture(
-            "docker",
-            &[
-                "ps",
-                "-a",
-                "--filter",
-                FILTER_KIND_ROLE,
-                "--format",
-                "{{.Names}}",
-            ],
-            None,
-        )?
-    } else {
-        runner.capture(
-            "docker",
-            &["ps", "--filter", FILTER_KIND_ROLE, "--format", "{{.Names}}"],
-            None,
-        )?
-    };
-
-    Ok(role_output
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(String::from)
-        .collect())
+    let rows = docker
+        .list_containers(&[LABEL_KIND_ROLE], include_stopped)
+        .await?;
+    Ok(role_containers_to_names(rows))
 }
 
-/// List running roles with human-friendly display names.
-///
-/// Returns display names like "The Architect (k7p9m2xq)". Falls back
-/// to the raw container name when no display label is present.
-pub fn list_running_agent_display_names(
-    runner: &mut impl CommandRunner,
+pub async fn list_running_agent_display_names(
+    docker: &impl DockerApi,
 ) -> anyhow::Result<Vec<String>> {
-    let output = runner.capture(
-        "docker",
-        &[
-            "ps",
-            "--filter",
-            FILTER_KIND_ROLE,
-            "--format",
-            "{{.Names}}\t{{.Label \"jackin.display_name\"}}",
-        ],
-        None,
-    )?;
-
-    Ok(output
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(|line| {
-            let parts: Vec<&str> = line.splitn(2, '\t').collect();
-            let container_name = parts[0];
-            let display_name = parts.get(1).unwrap_or(&"");
-            format_role_display(container_name, display_name)
+    let rows = docker.list_containers(&[LABEL_KIND_ROLE], false).await?;
+    Ok(rows
+        .into_iter()
+        .filter(|r| !r.name.is_empty())
+        .map(|r| {
+            let display_name = r
+                .labels
+                .get("jackin.display_name")
+                .map_or("", String::as_str);
+            format_role_display(&r.name, display_name)
         })
         .collect())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_support::FakeRunner;
+
     use super::*;
+    use crate::docker_client::{ContainerRow, FakeDockerClient};
+    use std::collections::HashMap;
 
-    #[test]
-    fn list_managed_agent_names_excludes_dind_sidecars() {
-        let mut runner = FakeRunner::with_capture_queue(["jk-agent-smith".to_string()]);
+    #[tokio::test]
+    async fn list_managed_agent_names_excludes_dind_sidecars() {
+        let docker = FakeDockerClient {
+            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                vec![ContainerRow {
+                    name: "jk-agent-smith".to_string(),
+                    labels: HashMap::new(),
+                }],
+            ])),
+            ..Default::default()
+        };
 
-        let names = list_managed_role_names(&mut runner).unwrap();
+        let names = list_managed_role_names(&docker).await.unwrap();
 
         assert_eq!(names, vec!["jk-agent-smith"]);
-        assert!(runner.recorded.iter().any(|call| {
-            call == "docker ps -a --filter label=jackin.kind=role --format {{.Names}}"
-        }));
     }
 
-    #[test]
-    fn list_running_agent_display_names_excludes_dind_sidecars() {
-        let mut runner =
-            FakeRunner::with_capture_queue(["jk-k7p9m2xq-agentsmith\tAgent Smith".to_string()]);
+    #[tokio::test]
+    async fn list_running_agent_display_names_formats_correctly() {
+        let mut labels = HashMap::new();
+        labels.insert("jackin.display_name".to_string(), "Agent Smith".to_string());
+        let docker = FakeDockerClient {
+            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                vec![ContainerRow {
+                    name: "jk-k7p9m2xq-agentsmith".to_string(),
+                    labels,
+                }],
+            ])),
+            ..Default::default()
+        };
 
-        let names = list_running_agent_display_names(&mut runner).unwrap();
+        let names = list_running_agent_display_names(&docker).await.unwrap();
 
-        // Instance ID is appended so concurrent sessions render distinctly.
         assert_eq!(names, vec!["Agent Smith (k7p9m2xq)"]);
-        assert!(runner.recorded.iter().any(|call| {
-            call == "docker ps --filter label=jackin.kind=role --format {{.Names}}\t{{.Label \"jackin.display_name\"}}"
-        }));
     }
 }

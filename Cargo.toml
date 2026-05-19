@@ -47,10 +47,14 @@ portable-pty = "0.9"
 sha2 = "0.11"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rand = "0.10"
+tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time"] }
+bollard = "0.21"
+futures-util = "0.3"
 
 [dev-dependencies]
 assert_cmd = "=2.2.2"
 predicates = "=3.1.4"
+tokio = { version = "1", features = ["test-util"] }
 
 [features]
 # `e2e` gates real-Docker smoke tests. Default `cargo nextest run` skips them;
@@ -59,6 +63,9 @@ e2e = []
 
 [lints.rust]
 unsafe_code = "forbid"
+# DockerApi and CommandRunner are internal traits; auto-trait bounds (Send/Sync)
+# are not a concern with the current_thread tokio runtime.
+async_fn_in_trait = "allow"
 
 [lints.clippy]
 # Lint groups — bugs are errors, style is advisory
@@ -80,6 +87,8 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 must_use_candidate = "allow"
 module_name_repetitions = "allow"
+# async functions in a current_thread binary do not need Send futures
+future_not_send = "allow"
 
 # Allow casting in TUI code where precision loss is acceptable
 cast_possible_truncation = "allow"

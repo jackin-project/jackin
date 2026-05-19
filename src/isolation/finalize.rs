@@ -13,32 +13,28 @@ use crate::debug_log;
 use crate::docker::CommandRunner;
 use crate::isolation::cleanup::force_cleanup_isolated;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
+use crate::runtime::attach::TMUX_LIST_SESSIONS_CMD;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AttachOutcome {
-    pub exit_code: Option<i32>,
-    pub oom_killed: bool,
+pub enum AttachOutcome {
+    /// Container is still running — exec returned but supervisor poll may lag.
+    StillRunning,
+    /// Container exited with the given code.
+    Stopped(i32),
+    /// Kernel OOM-killed the container.
+    OomKilled,
 }
 
 impl AttachOutcome {
     pub const fn still_running() -> Self {
-        Self {
-            exit_code: None,
-            oom_killed: false,
-        }
+        Self::StillRunning
     }
     pub const fn stopped(code: i32) -> Self {
-        Self {
-            exit_code: Some(code),
-            oom_killed: false,
-        }
+        Self::Stopped(code)
     }
     pub const fn oom_killed() -> Self {
-        Self {
-            exit_code: None,
-            oom_killed: true,
-        }
+        Self::OomKilled
     }
 }
 
@@ -104,32 +100,30 @@ impl FinalizerPrompt for StdinPrompt {
     }
 }
 
-pub fn finalize_foreground_session(
+pub async fn finalize_foreground_session(
     container_name: &str,
     container_state_dir: &Path,
     outcome: AttachOutcome,
     is_interactive: bool,
     prompt: &mut impl FinalizerPrompt,
+    docker: &impl crate::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<FinalizeDecision> {
     debug_log!(
         "isolation",
-        "finalize_foreground_session: container={c} exit_code={ec:?} oom_killed={oom} interactive={i}",
+        "finalize_foreground_session: container={c} outcome={o:?} interactive={i}",
         c = container_name,
-        ec = outcome.exit_code,
-        oom = outcome.oom_killed,
+        o = outcome,
         i = is_interactive,
     );
-    if outcome.exit_code.is_none() || outcome.oom_killed || outcome.exit_code != Some(0) {
-        // Still-running container (exit_code=None, not OOM): the docker exec
-        // returned but the supervisor's 1-second poll loop may not have caught the
-        // tmux server exit yet. Check sessions to distinguish detach from lag:
-        //   - sessions present → real detach (Ctrl-B D); preserve as before
-        //   - no sessions → supervisor lag after clean agent exit; fall through to
-        //     finalize_clean_exit so isolation worktrees are swept normally
-        if outcome.exit_code.is_none()
-            && !outcome.oom_killed
-            && !has_tmux_sessions(runner, container_name)
+    if !matches!(outcome, AttachOutcome::Stopped(0)) {
+        // Non-zero exit, OOM-kill, or still-running → preserve by default.
+        // Exception: StillRunning with no active tmux sessions means the
+        // supervisor lag case — the docker exec returned while the container is
+        // still up but the agent already exited cleanly. Fall through to
+        // finalize_clean_exit so isolation worktrees are swept normally.
+        if matches!(outcome, AttachOutcome::StillRunning)
+            && !has_tmux_sessions(docker, container_name).await
         {
             debug_log!(
                 "isolation",
@@ -143,7 +137,8 @@ pub fn finalize_foreground_session(
                 is_interactive,
                 prompt,
                 runner,
-            );
+            )
+            .await;
         }
         debug_log!(
             "isolation",
@@ -159,28 +154,37 @@ pub fn finalize_foreground_session(
         prompt,
         runner,
     )
+    .await
 }
 
-fn has_tmux_sessions(runner: &mut impl CommandRunner, container_name: &str) -> bool {
+async fn has_tmux_sessions(
+    docker: &impl crate::docker_client::DockerApi,
+    container_name: &str,
+) -> bool {
     // Run via sh to suppress the "no server running" error tmux emits when the
     // socket is stale. Both "no server" and "no sessions" collapse to exit 0 with
     // empty stdout so the caller only sees a non-empty result when sessions exist.
-    runner
-        .capture(
-            "docker",
-            &[
-                "exec",
-                container_name,
-                "sh",
-                "-c",
-                "tmux list-sessions -F '#{session_name}' 2>/dev/null || true",
-            ],
-            None,
-        )
-        .is_ok_and(|output| !output.trim().is_empty())
+    match docker
+        .exec_capture(container_name, &["sh", "-c", TMUX_LIST_SESSIONS_CMD])
+        .await
+    {
+        Ok(output) => !output.trim().is_empty(),
+        Err(e) => {
+            // Docker unreachable or container stopped between the exit-code check
+            // and this exec. Treat conservatively as sessions-present — the
+            // finalize path must not auto-clean records for a container that may
+            // still have active sessions.
+            eprintln!(
+                "[jackin] warning: could not check tmux sessions in {container_name} ({e}); \
+                 treating as sessions-present — run `jackin purge {container_name}` to clean \
+                 up isolation worktrees if this was a clean exit"
+            );
+            true
+        }
+    }
 }
 
-fn finalize_clean_exit(
+async fn finalize_clean_exit(
     container_name: &str,
     container_state_dir: &Path,
     is_interactive: bool,
@@ -195,7 +199,7 @@ fn finalize_clean_exit(
     // workspace can have multiple isolated mounts on different host repos
     // and each may need an independent decision).
     for record in records {
-        let assessment = assess_cleanup(&record, runner)?;
+        let assessment = assess_cleanup(&record, runner).await?;
         debug_log!(
             "isolation",
             "finalize assess: container={c} mount={d} → {a:?}",
@@ -205,7 +209,7 @@ fn finalize_clean_exit(
         );
         match assessment {
             CleanupAssessment::SafeToDelete => {
-                force_cleanup_isolated(&record, container_state_dir, runner)?;
+                force_cleanup_isolated(&record, container_state_dir, runner).await?;
             }
             CleanupAssessment::PreservedDirty => {
                 mark_preserved(container_state_dir, &record, CleanupStatus::PreservedDirty)?;
@@ -271,7 +275,7 @@ fn finalize_clean_exit(
                 any_preserved_after_prompt = true;
             }
             2 => {
-                if let Err(e) = force_cleanup_isolated(&rec, container_state_dir, runner) {
+                if let Err(e) = force_cleanup_isolated(&rec, container_state_dir, runner).await {
                     eprintln!(
                         "[jackin] warning: force-delete of isolated worktree `{wt}` failed: {e}\n         record retained — re-run `jackin purge {short}` to retry after resolving the underlying issue",
                         wt = rec.worktree_path,
@@ -354,16 +358,19 @@ enum CleanupAssessment {
 /// `debug_log!` of the underlying error so `--debug` shows what went
 /// wrong.
 #[allow(clippy::unnecessary_wraps)] // Result lets us propagate from inner ? if a future revision adds Err arms
-#[allow(clippy::too_many_lines)] // Linear policy table is clearer inline than split across helpers
-fn assess_cleanup(
+#[expect(clippy::too_many_lines)] // Linear policy table is clearer inline than split across helpers
+async fn assess_cleanup(
     record: &IsolationRecord,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<CleanupAssessment> {
-    let porcelain = match runner.capture(
-        "git",
-        &["-C", &record.worktree_path, "status", "--porcelain"],
-        None,
-    ) {
+    let porcelain = match runner
+        .capture(
+            "git",
+            &["-C", &record.worktree_path, "status", "--porcelain"],
+            None,
+        )
+        .await
+    {
         Ok(s) => s,
         Err(e) => {
             debug_log!(
@@ -385,17 +392,20 @@ fn assess_cleanup(
     // when the configured upstream ref no longer resolves locally —
     // typically because the remote branch was deleted after a PR merge
     // and the next `git fetch --prune` removed the remote-tracking ref.
-    let raw = match runner.capture(
-        "git",
-        &[
-            "-C",
-            &record.worktree_path,
-            "for-each-ref",
-            "--format=%(refname:short)%09%(objectname)%09%(upstream:short)%09%(upstream:track)",
-            "refs/heads/",
-        ],
-        None,
-    ) {
+    let raw = match runner
+        .capture(
+            "git",
+            &[
+                "-C",
+                &record.worktree_path,
+                "for-each-ref",
+                "--format=%(refname:short)%09%(objectname)%09%(upstream:short)%09%(upstream:track)",
+                "refs/heads/",
+            ],
+            None,
+        )
+        .await
+    {
         Ok(s) => s,
         Err(e) => {
             debug_log!(
@@ -472,16 +482,19 @@ fn assess_cleanup(
             continue;
         }
 
-        let ahead = match runner.capture(
-            "git",
-            &[
-                "-C",
-                &record.worktree_path,
-                "rev-list",
-                &format!("{upstream}..{name}"),
-            ],
-            None,
-        ) {
+        let ahead = match runner
+            .capture(
+                "git",
+                &[
+                    "-C",
+                    &record.worktree_path,
+                    "rev-list",
+                    &format!("{upstream}..{name}"),
+                ],
+                None,
+            )
+            .await
+        {
             Ok(s) => s,
             Err(e) => {
                 debug_log!(
@@ -519,6 +532,7 @@ fn assess_cleanup(
             ],
             None,
         )
+        .await
         .is_err()
     {
         // `symbolic-ref` fails on detached HEAD (exit 1) and on any git
@@ -528,11 +542,14 @@ fn assess_cleanup(
             "finalize assess: symbolic-ref HEAD failed for {wt} (detached HEAD or error); checking rev-parse HEAD",
             wt = record.worktree_path,
         );
-        match runner.capture(
-            "git",
-            &["-C", &record.worktree_path, "rev-parse", "HEAD"],
-            None,
-        ) {
+        match runner
+            .capture(
+                "git",
+                &["-C", &record.worktree_path, "rev-parse", "HEAD"],
+                None,
+            )
+            .await
+        {
             Ok(head_sha) if head_sha.trim() == record.base_commit.trim() => {
                 // Detached HEAD parked at base — no unreachable commits.
             }
@@ -589,73 +606,92 @@ mod tests {
 
     use crate::runtime::test_support::FakeRunner;
 
-    #[test]
-    fn still_running_with_sessions_preserves() {
-        // Session list non-empty → real detach → Preserved.
-        let dir = TempDir::new().unwrap();
-        let mut p = NoPrompt;
-        let mut r = fake_with_outputs(&["jackin-claude-abc"]);
-        let dec = finalize_foreground_session(
-            "jackin-x",
-            dir.path(),
-            AttachOutcome::still_running(),
-            false,
-            &mut p,
-            &mut r,
-        )
-        .unwrap();
-        assert_eq!(dec, FinalizeDecision::Preserved);
-    }
-
-    #[test]
-    fn still_running_no_sessions_proceeds_to_clean_exit() {
-        // Empty session list → supervisor lag after clean agent exit →
-        // finalize_clean_exit → Cleaned (no isolation records to preserve).
+    #[tokio::test]
+    async fn still_running_preserves_records() {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
+        let docker = crate::docker_client::FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                String::new(),
+            ])),
+            ..Default::default()
+        };
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::still_running(),
             false,
             &mut p,
+            &docker,
             &mut r,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
     }
 
-    #[test]
-    fn stopped_non_zero_preserves_records() {
+    #[tokio::test]
+    async fn still_running_with_sessions_preserves() {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
+        let docker = crate::docker_client::FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                "jackin-claude-abc".to_string(),
+            ])),
+            ..Default::default()
+        };
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::still_running(),
+            false,
+            &mut p,
+            &docker,
+            &mut r,
+        )
+        .await
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+    }
+
+    #[tokio::test]
+    async fn stopped_non_zero_preserves_records() {
+        let dir = TempDir::new().unwrap();
+        let mut p = NoPrompt;
+        let mut r = FakeRunner::default();
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(137),
             false,
             &mut p,
+            &docker,
             &mut r,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
     }
 
-    #[test]
-    fn oom_killed_preserves_records() {
+    #[tokio::test]
+    async fn oom_killed_preserves_records() {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::oom_killed(),
             false,
             &mut p,
+            &docker,
             &mut r,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
     }
@@ -696,8 +732,8 @@ mod tests {
         format!("{name}\t{tip}\t{upstream}\t{track}")
     }
 
-    #[test]
-    fn clean_worktree_with_head_equal_base_deletes_record() {
+    #[tokio::test]
+    async fn clean_worktree_with_head_equal_base_deletes_record() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -710,14 +746,17 @@ mod tests {
         let branches = format!("{}\n", ferow("jackin/scratch/x", "abc", "", ""));
         let mut runner = fake_with_outputs(&["", &branches, "refs/heads/jackin/scratch/x"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
@@ -730,8 +769,8 @@ mod tests {
         assert!(runner.run_recorded.iter().any(|c| c.contains("branch -D")));
     }
 
-    #[test]
-    fn clean_worktree_with_pushed_commits_deletes_record() {
+    #[tokio::test]
+    async fn clean_worktree_with_pushed_commits_deletes_record() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -747,21 +786,24 @@ mod tests {
         );
         let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/jackin/scratch/x"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
     }
 
-    #[test]
-    fn clean_worktree_with_unpushed_commits_preserves() {
+    #[tokio::test]
+    async fn clean_worktree_with_unpushed_commits_preserves() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -781,14 +823,17 @@ mod tests {
         );
         let mut runner = fake_with_outputs(&["", &branches, "deadbeef\n"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -796,8 +841,8 @@ mod tests {
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
     }
 
-    #[test]
-    fn clean_worktree_no_upstream_preserves_when_head_diverged() {
+    #[tokio::test]
+    async fn clean_worktree_no_upstream_preserves_when_head_diverged() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -808,14 +853,17 @@ mod tests {
         let branches = format!("{}\n", ferow("jackin/scratch/x", "newhead", "", ""));
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -863,44 +911,50 @@ mod tests {
         }
     }
 
-    #[test]
-    fn dirty_worktree_interactive_preserve_choice_keeps_state() {
+    #[tokio::test]
+    async fn dirty_worktree_interactive_preserve_choice_keeps_state() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
         let mut runner = fake_with_outputs(&[" M file\n"]);
         let mut p = ScriptedPrompt(VecDeque::from([1]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedDirty);
     }
 
-    #[test]
-    fn dirty_worktree_interactive_force_delete_runs_cleanup() {
+    #[tokio::test]
+    async fn dirty_worktree_interactive_force_delete_runs_cleanup() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
         let mut runner = fake_with_outputs(&[" M file\n"]);
         let mut p = ScriptedPrompt(VecDeque::from([2]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
@@ -912,44 +966,50 @@ mod tests {
         );
     }
 
-    #[test]
-    fn dirty_worktree_interactive_return_to_agent_signals_caller() {
+    #[tokio::test]
+    async fn dirty_worktree_interactive_return_to_agent_signals_caller() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
         let mut runner = fake_with_outputs(&[" M file\n"]);
         let mut p = ScriptedPrompt(VecDeque::from([0]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::ReturnToAgent);
         let recs = read_records(dir.path()).unwrap();
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedDirty);
     }
 
-    #[test]
-    fn dirty_worktree_non_interactive_prints_warning_and_preserves() {
+    #[tokio::test]
+    async fn dirty_worktree_non_interactive_prints_warning_and_preserves() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
         let mut runner = fake_with_outputs(&[" M file\n"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -974,8 +1034,8 @@ mod tests {
     // `PreservedUnpushed` (not `SafeToDelete`) so a transient git error
     // never garbage-collects unpushed scratch-branch commits.
 
-    #[test]
-    fn assess_cleanup_status_capture_failure_preserves_unpushed() {
+    #[tokio::test]
+    async fn assess_cleanup_status_capture_failure_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -983,14 +1043,17 @@ mod tests {
         // status --porcelain errors → must NOT be treated as clean tree.
         let mut runner = fake_failing_capture(&[], "status --porcelain");
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1006,8 +1069,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn assess_cleanup_for_each_ref_failure_preserves_unpushed() {
+    #[tokio::test]
+    async fn assess_cleanup_for_each_ref_failure_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1015,14 +1078,17 @@ mod tests {
         // status clean, then for-each-ref refs/heads/ errors.
         let mut runner = fake_failing_capture(&[""], "for-each-ref");
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1035,8 +1101,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn assess_cleanup_rev_list_failure_preserves_unpushed() {
+    #[tokio::test]
+    async fn assess_cleanup_rev_list_failure_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1056,14 +1122,17 @@ mod tests {
         );
         let mut runner = fake_failing_capture(&["", &branches], "rev-list");
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1099,8 +1168,8 @@ mod tests {
     /// Multi-mount workspace with two preserved records, operator picks
     /// "force delete" on both. Both worktrees must be cleaned and the
     /// caller signaled `Cleaned` so the container teardown proceeds.
-    #[test]
-    fn multi_mount_force_delete_on_each_cleans_all_records() {
+    #[tokio::test]
+    async fn multi_mount_force_delete_on_each_cleans_all_records() {
         let dir = TempDir::new().unwrap();
         let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
@@ -1110,14 +1179,17 @@ mod tests {
         let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
         // Operator chooses option 2 (force delete) for both.
         let mut p = ScriptedPrompt(VecDeque::from([2, 2]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(
@@ -1140,8 +1212,8 @@ mod tests {
     /// preserves the other. The container must NOT be torn down (only one
     /// of two records was actually cleaned), and the second worktree must
     /// remain on disk with its preserved status.
-    #[test]
-    fn multi_mount_mixed_decision_signals_preserved() {
+    #[tokio::test]
+    async fn multi_mount_mixed_decision_signals_preserved() {
         let dir = TempDir::new().unwrap();
         let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
@@ -1150,14 +1222,17 @@ mod tests {
         let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
         // First record force-deleted, second preserved.
         let mut p = ScriptedPrompt(VecDeque::from([2, 1]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(
             dec,
@@ -1178,8 +1253,8 @@ mod tests {
     /// container. Both records 1 (force-deleted) and 2 (pending decision)
     /// would have left state somewhere — this pins that the early-return
     /// happens cleanly.
-    #[test]
-    fn multi_mount_return_to_agent_on_second_prompt_short_circuits() {
+    #[tokio::test]
+    async fn multi_mount_return_to_agent_on_second_prompt_short_circuits() {
         let dir = TempDir::new().unwrap();
         let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
@@ -1191,14 +1266,17 @@ mod tests {
         // Operator: force-delete first, then return-to-role on second.
         // Third should never be prompted.
         let mut p = ScriptedPrompt(VecDeque::from([2, 0]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::ReturnToAgent);
         // First was force-deleted; second and third remain on disk.
@@ -1225,8 +1303,8 @@ mod tests {
     /// error, the container would be left running without a Preserved
     /// signal, and any subsequent records would never be prompted.
     /// Instead the failure is logged and the loop continues.
-    #[test]
-    fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
+    #[tokio::test]
+    async fn multi_mount_cleanup_failure_in_loop_does_not_abort() {
         let dir = TempDir::new().unwrap();
         let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
@@ -1255,14 +1333,17 @@ mod tests {
         };
         // Operator force-deletes both.
         let mut p = ScriptedPrompt(VecDeque::from([2, 2]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .expect("loop must NOT propagate the cleanup Err — caller would see a raw error");
         assert_eq!(
             dec,
@@ -1282,8 +1363,8 @@ mod tests {
     /// Non-interactive multi-mount: every preserved record's path is
     /// printed to stderr so the operator sees all of them, not just the
     /// first.
-    #[test]
-    fn multi_mount_non_interactive_marks_all_preserved() {
+    #[tokio::test]
+    async fn multi_mount_non_interactive_marks_all_preserved() {
         let dir = TempDir::new().unwrap();
         let r1 = rec_at(dir.path(), "/workspace/a", "jackin/scratch/x-a");
         let r2 = rec_at(dir.path(), "/workspace/b", "jackin/scratch/x-b");
@@ -1291,14 +1372,17 @@ mod tests {
         write_records(dir.path(), &[r1, r2]).unwrap();
         let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1310,8 +1394,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn assess_cleanup_empty_for_each_ref_preserves_unpushed() {
+    #[tokio::test]
+    async fn assess_cleanup_empty_for_each_ref_preserves_unpushed() {
         // Defense in depth: a worktree that reports zero local branches
         // is pathological — even a freshly materialized worktree carries
         // the scratch branch. Refuse to delete what we can't account for.
@@ -1322,14 +1406,17 @@ mod tests {
         // status clean, then for-each-ref returns empty (no branches).
         let mut runner = fake_with_outputs(&["", ""]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1349,8 +1436,8 @@ mod tests {
     /// pushed). Pre-fix this returned `PreservedUnpushed` because the
     /// upstream check was hardcoded against the abandoned scratch
     /// branch (which has no upstream by construction).
-    #[test]
-    fn renamed_branch_pushed_clean_is_safe_to_delete() {
+    #[tokio::test]
+    async fn renamed_branch_pushed_clean_is_safe_to_delete() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1369,14 +1456,17 @@ mod tests {
             + "\n";
         let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/feature/x"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
@@ -1389,8 +1479,8 @@ mod tests {
     /// `[gone]` heuristic must mark this Safe; pre-fix the rev-list
     /// would have errored on the missing upstream and the Err arm
     /// would have routed to `PreservedUnpushed`.
-    #[test]
-    fn squash_merged_pruned_branch_is_safe_to_delete() {
+    #[tokio::test]
+    async fn squash_merged_pruned_branch_is_safe_to_delete() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1405,14 +1495,17 @@ mod tests {
         // symbolic-ref HEAD  (HEAD on feature/x → attached)
         let mut runner = fake_with_outputs(&["", &branches, "refs/heads/feature/x"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
@@ -1426,8 +1519,8 @@ mod tests {
     /// Renamed branch ahead of base with no upstream — genuine local
     /// work; preserve. Pre-fix this also returned `PreservedUnpushed`
     /// (correct outcome) but only by accident of the wrong-branch check.
-    #[test]
-    fn renamed_branch_no_upstream_preserves_unpushed() {
+    #[tokio::test]
+    async fn renamed_branch_no_upstream_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1440,14 +1533,17 @@ mod tests {
             + "\n";
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1456,8 +1552,8 @@ mod tests {
 
     /// Renamed branch ahead with upstream set, rev-list returns commits
     /// → real unpushed work, preserve.
-    #[test]
-    fn renamed_branch_with_unpushed_commits_preserves() {
+    #[tokio::test]
+    async fn renamed_branch_with_unpushed_commits_preserves() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1470,14 +1566,17 @@ mod tests {
             + "\n";
         let mut runner = fake_with_outputs(&["", &branches, "deadbeef\ncafef00d\n"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1486,8 +1585,8 @@ mod tests {
 
     /// Multiple non-trivial branches, all safe by different paths
     /// (one merged-and-pruned, one pushed-clean). All-Safe → cleanup.
-    #[test]
-    fn multiple_branches_all_safe_deletes_record() {
+    #[tokio::test]
+    async fn multiple_branches_all_safe_deletes_record() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1504,14 +1603,17 @@ mod tests {
         // then symbolic-ref HEAD (HEAD on feature/b → attached).
         let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/feature/b"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
@@ -1528,8 +1630,8 @@ mod tests {
     }
 
     /// Multiple branches, one with real unpushed work → preserve.
-    #[test]
-    fn multiple_branches_one_unsafe_preserves() {
+    #[tokio::test]
+    async fn multiple_branches_one_unsafe_preserves() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1546,14 +1648,17 @@ mod tests {
         // PreservedUnpushed without another rev-list.
         let mut runner = fake_with_outputs(&["", &branches, ""]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1564,8 +1669,8 @@ mod tests {
     /// reach the prompt with reason=Unpushed (not Dirty). Pre-fix,
     /// `ask_unsafe_cleanup` had no reason argument so the wording was
     /// hardcoded to "uncommitted changes" for both paths.
-    #[test]
-    fn unpushed_branch_prompts_with_unpushed_reason() {
+    #[tokio::test]
+    async fn unpushed_branch_prompts_with_unpushed_reason() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1574,14 +1679,17 @@ mod tests {
         // status clean → for-each-ref → ahead+no-upstream → preserve
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = RecordingPrompt::new([1]); // operator picks "preserve"
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         assert_eq!(p.seen, vec![PreservedReason::Unpushed]);
@@ -1589,22 +1697,25 @@ mod tests {
 
     /// Counterpart: a dirty worktree must reach the prompt with
     /// reason=Dirty so the operator sees "uncommitted changes".
-    #[test]
-    fn dirty_worktree_prompts_with_dirty_reason() {
+    #[tokio::test]
+    async fn dirty_worktree_prompts_with_dirty_reason() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
         let mut runner = fake_with_outputs(&[" M file\n"]);
         let mut p = RecordingPrompt::new([1]);
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         assert_eq!(p.seen, vec![PreservedReason::Dirty]);
@@ -1619,8 +1730,8 @@ mod tests {
     // always route to PreservedUnpushed.
     // ---------------------------------------------------------------
 
-    #[test]
-    fn assess_cleanup_malformed_row_empty_name_preserves_unpushed() {
+    #[tokio::test]
+    async fn assess_cleanup_malformed_row_empty_name_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1629,22 +1740,25 @@ mod tests {
         let branches = format!("{}\n", ferow("", "newhead", "", ""));
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
     }
 
-    #[test]
-    fn assess_cleanup_malformed_row_empty_tip_preserves_unpushed() {
+    #[tokio::test]
+    async fn assess_cleanup_malformed_row_empty_tip_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1654,14 +1768,17 @@ mod tests {
         let branches = format!("{}\n", ferow("feature/x", "", "origin/feature/x", ""));
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1675,8 +1792,8 @@ mod tests {
     // CleanupStatus::PreservedUnpushed) when is_interactive=false.
     // ---------------------------------------------------------------
 
-    #[test]
-    fn unpushed_worktree_non_interactive_prints_warning_and_preserves() {
+    #[tokio::test]
+    async fn unpushed_worktree_non_interactive_prints_warning_and_preserves() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1685,14 +1802,17 @@ mod tests {
         let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
@@ -1705,8 +1825,8 @@ mod tests {
     // three-way prompt dispatch works for both preservation paths.
     // ---------------------------------------------------------------
 
-    #[test]
-    fn unpushed_branch_interactive_force_delete_runs_cleanup() {
+    #[tokio::test]
+    async fn unpushed_branch_interactive_force_delete_runs_cleanup() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1714,14 +1834,17 @@ mod tests {
         let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = ScriptedPrompt(VecDeque::from([2]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
@@ -1733,8 +1856,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn unpushed_branch_interactive_return_to_agent_signals_caller() {
+    #[tokio::test]
+    async fn unpushed_branch_interactive_return_to_agent_signals_caller() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1742,14 +1865,17 @@ mod tests {
         let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = ScriptedPrompt(VecDeque::from([0]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::ReturnToAgent);
         let recs = read_records(dir.path()).unwrap();
@@ -1761,8 +1887,8 @@ mod tests {
     // emit `gone` instead of `[gone]`; both must short-circuit to Safe.
     // ---------------------------------------------------------------
 
-    #[test]
-    fn bare_gone_track_is_safe_to_delete() {
+    #[tokio::test]
+    async fn bare_gone_track_is_safe_to_delete() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1778,14 +1904,17 @@ mod tests {
         // symbolic-ref HEAD  (HEAD on feature/x → attached)
         let mut runner = fake_with_outputs(&["", &branches, "refs/heads/feature/x"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
@@ -1804,8 +1933,8 @@ mod tests {
     // confirms HEAD is parked at base_commit.
     // ---------------------------------------------------------------
 
-    #[test]
-    fn detached_head_past_base_preserves_unpushed() {
+    #[tokio::test]
+    async fn detached_head_past_base_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1816,22 +1945,25 @@ mod tests {
         // Queue: status, for-each-ref, rev-parse HEAD (symbolic-ref fails).
         let mut runner = fake_failing_capture(&["", &branches, "deadbeef"], "symbolic-ref");
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();
         assert_eq!(recs[0].cleanup_status, CleanupStatus::PreservedUnpushed);
     }
 
-    #[test]
-    fn detached_head_at_base_is_safe_to_delete() {
+    #[tokio::test]
+    async fn detached_head_at_base_is_safe_to_delete() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1843,21 +1975,47 @@ mod tests {
         // Using the real git rev-parse output format (trailing newline) so trim() is exercised.
         let mut runner = fake_failing_capture(&["", &branches, "abc\n"], "symbolic-ref");
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
         assert!(read_records(dir.path()).unwrap().is_empty());
     }
 
-    #[test]
-    fn detached_head_rev_parse_failure_preserves_unpushed() {
+    #[tokio::test]
+    async fn has_tmux_sessions_error_treated_as_sessions_present() {
+        let dir = TempDir::new().unwrap();
+        let mut p = NoPrompt;
+        let mut r = FakeRunner::default();
+        let docker = crate::docker_client::FakeDockerClient {
+            fail_with: vec![("docker exec".to_string(), "exec failed".to_string())],
+            ..Default::default()
+        };
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::still_running(),
+            false,
+            &mut p,
+            &docker,
+            &mut r,
+        )
+        .await
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+    }
+
+    #[tokio::test]
+    async fn detached_head_rev_parse_failure_preserves_unpushed() {
         let dir = TempDir::new().unwrap();
         let r = rec(dir.path());
         std::fs::create_dir_all(&r.original_src).unwrap();
@@ -1870,14 +2028,17 @@ mod tests {
             ..FakeRunner::default()
         };
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Preserved);
         let recs = read_records(dir.path()).unwrap();

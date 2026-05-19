@@ -84,14 +84,15 @@ fn prompt_choice_from<R: io::BufRead, W: Write>(
 ///
 /// `poll` is called up to `max_attempts` times with `interval` between calls.
 /// The spinner animates smoothly independent of the poll interval.
-pub fn spin_wait<F>(
+pub async fn spin_wait<F, Fut>(
     message: &str,
     max_attempts: u32,
     interval: std::time::Duration,
     mut poll: F,
 ) -> anyhow::Result<()>
 where
-    F: FnMut() -> anyhow::Result<()>,
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<()>>,
 {
     const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
     const SPIN_MS: u64 = 80;
@@ -101,12 +102,11 @@ where
 
     let debug = DEBUG_MODE.load(Ordering::Relaxed);
     for _attempt in 0..max_attempts {
-        // In debug mode, clear the spinner line before polling so debug output appears cleanly
         if debug {
             eprint!("\r\x1b[2K");
             let _ = io::stderr().flush();
         }
-        match poll() {
+        match poll().await {
             Ok(()) => {
                 eprint!("\r\x1b[2K");
                 let _ = io::stderr().flush();
@@ -114,7 +114,6 @@ where
             }
             Err(e) => last_err = Some(e),
         }
-        // Animate the spinner for the duration of `interval`
         let spins = interval.as_millis() as u64 / SPIN_MS;
         for _ in 0..spins {
             let frame = FRAMES[frame_idx % FRAMES.len()];
@@ -124,7 +123,7 @@ where
                 message.color(rgb(PHOSPHOR_DIM)).bold()
             );
             let _ = io::stderr().flush();
-            std::thread::sleep(std::time::Duration::from_millis(SPIN_MS));
+            tokio::time::sleep(std::time::Duration::from_millis(SPIN_MS)).await;
             frame_idx += 1;
         }
     }

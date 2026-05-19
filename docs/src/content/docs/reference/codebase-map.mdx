@@ -174,6 +174,7 @@ into a single module:
 | <RepoFile path="src/repo_contract.rs" /> | Enforces that role `Dockerfile`s extend the construct base. |
 | <RepoFile path="src/derived_image.rs" /> | Generates the derived Dockerfile from the role's repo + the construct base. |
 | <RepoFile path="src/docker.rs" /> | Docker command builder — `CommandRunner` trait (`run`, `capture`, `capture_secret`) and `ShellRunner`. `capture_secret` suppresses stdout from the debug stream and omits stderr from error messages; use it for commands whose output is a credential. |
+| <RepoFile path="src/docker_client.rs" /> | Bollard-based Docker API client — `DockerApi` trait (container/network/image/exec operations), `BollardDockerClient` (production), `FakeDockerClient` (tests), and `ContainerState` enum (all 9 Docker lifecycle states). Replaces Docker CLI string-matching for lifecycle, cleanup, and inspect paths. CLI stays CLI for `docker build` (no parsing risk, streaming context complexity), `docker exec -it` / `docker run -it` (TTY-bound; bollard exposes the raw stream but the Docker CLI manages raw-terminal mode, Ctrl-C signal forwarding, and SIGWINCH for free), and `docker run --rm` one-shot commands (fire-and-forget captured stdout; no parsing risk). |
 | <RepoFile path="src/paths.rs" /> | XDG-compliant data and config directory resolution (`JackinPaths`). |
 
 ## Code ↔ docs cross-reference

@@ -5,6 +5,7 @@ pub mod config;
 pub mod console;
 pub mod derived_image;
 pub mod docker;
+pub mod docker_client;
 pub mod env_model;
 pub mod env_resolver;
 pub mod host_claude;

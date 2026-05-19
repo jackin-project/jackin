@@ -92,32 +92,19 @@ record of what was reviewed and when.
     directories, such as `~/.ssh/id_ed25519`, `~/.aws/credentials`, or
     `~/.kube/config`, still bypass the warning prompt.
 
-13. **Cleanup tolerance still string-matches Docker CLI stderr.**
-    Missing-resource cleanup is still detected by checking stderr text
-    such as `No such container`, `No such volume`, and
-    `No such network`. Scoped for the
-    [Bollard migration](/reference/roadmap/bollard-migration/) Phase 1.
-
-14. **Container-state probing still collapses Docker failures into "not
-    found."** `inspect_container_state()` still treats any
-    `docker inspect` failure as a missing container, which hides
-    daemon or context failures behind misleading not-found behavior in
-    flows such as `hardline`. Scoped for the
-    [Bollard migration](/reference/roadmap/bollard-migration/) Phase 1.
-
-15. **Command execution timeouts are currently absent.** Timeout
+13. **Command execution timeouts are currently absent.** Timeout
     handling that earlier security notes marked as resolved is no
     longer present in the current `ShellRunner` implementation.
     Long-running or stalled subprocesses currently rely on normal
     process completion.
 
-16. **Host runtime-disable env can still be overridden by manifest
+14. **Host runtime-disable env can still be overridden by manifest
     env.** Host `JACKIN_DISABLE_*` passthrough vars are still added
     before manifest-resolved env pairs, and those names are not
     reserved in manifest validation. Agent manifests can therefore
     still negate operator runtime disable choices.
 
-17. **Reproducibility and provenance are still branch-moving by
+15. **Reproducibility and provenance are still branch-moving by
     default.** Role repos still default to moving git branches rather
     than pinned commits, and the current operator experience does not
     expose strong provenance or update controls.

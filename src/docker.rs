@@ -1,76 +1,33 @@
-use std::io::Read;
 use std::path::Path;
-
-/// `True` when a Docker CLI error message reports an absent resource.
-///
-/// Matches `inspect`'s `No such object`, or `rm`/`network rm`/`volume rm`'s
-/// `No such container`/`network`/`volume`, and `rmi`'s `No such image`.
-/// Match is case-insensitive because different daemon versions vary the casing.
-#[must_use]
-pub fn is_missing_resource_error(message: &str) -> bool {
-    let lower = message.to_ascii_lowercase();
-    lower.contains("no such object")
-        || lower.contains("no such container")
-        || lower.contains("no such network")
-        || lower.contains("no such volume")
-        || lower.contains("no such image")
-}
-
-/// `True` when a Docker `rmi` error indicates an image is still referenced
-/// by a running or stopped container. Match is case-insensitive.
-///
-/// `"image is being used by"` covers stopped containers. `"cannot be forced"`
-/// covers running containers (Docker refuses `rmi --force`). `"must be forced"`
-/// fires for multi-repo image references (not a container conflict) and is
-/// intentionally excluded — those images should be removable.
-#[must_use]
-pub fn is_image_in_use_error(message: &str) -> bool {
-    let lower = message.to_ascii_lowercase();
-    lower.contains("image is being used by") || lower.contains("cannot be forced")
-}
+use tokio::io::AsyncReadExt;
+use tokio::process::Command;
 
 /// Options that control how a command is executed.
 #[derive(Clone, Debug, Default)]
 pub struct RunOptions {
-    /// When `true`, stderr is piped, streamed to the terminal in real time,
-    /// and captured so it can be included in error messages.  When `false`
-    /// (the default), stderr is inherited directly from the parent process.
     pub capture_stderr: bool,
-    /// When `true`, both stdout and stderr are sent to `/dev/null`.
-    /// Useful for suppressing noisy output (e.g. git fetch) in non-debug mode.
     pub quiet: bool,
-    /// Additional environment variables injected into the child process,
-    /// additive over the inherited parent environment.
     pub extra_env: Vec<(String, String)>,
 }
 
 pub trait CommandRunner {
-    fn run(
+    async fn run(
         &mut self,
         program: &str,
         args: &[&str],
         cwd: Option<&Path>,
         opts: &RunOptions,
     ) -> anyhow::Result<()>;
-    fn capture(
+    async fn capture(
         &mut self,
         program: &str,
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String>;
-    /// Like `capture` but omits the `-> …` debug echo so stdout (the secret
-    /// value) is never written to the debug stream. Stderr is also omitted from
-    /// error messages on non-zero exit. Use for commands whose stdout is a
-    /// secret (tokens, passwords). Note: args logged via `log_command` are not
-    /// suppressed — callers must not pass secrets as positional arguments.
-    ///
-    /// # Errors
-    /// Returns an error if the command fails to spawn, if the OS does not
-    /// provide a piped stdout or stderr handle after spawn, if waiting for the
-    /// process returns an I/O error, if a reader thread panics, or if the
-    /// command exits non-zero. Stderr is omitted from the error message on
-    /// non-zero exit to avoid leaking secret-adjacent diagnostics.
-    fn capture_secret(
+    /// Like `capture` but suppresses stdout from the debug stream and omits
+    /// stderr from error messages. Use for commands whose output is a credential
+    /// (e.g. `gh auth token`, `op read`) so the value never appears in debug logs.
+    async fn capture_secret(
         &mut self,
         program: &str,
         args: &[&str],
@@ -84,8 +41,8 @@ pub struct ShellRunner {
 }
 
 impl ShellRunner {
-    fn build_command(program: &str, args: &[&str], cwd: Option<&Path>) -> std::process::Command {
-        let mut command = std::process::Command::new(program);
+    fn build_command(program: &str, args: &[&str], cwd: Option<&Path>) -> Command {
+        let mut command = Command::new(program);
         command.args(args);
         if let Some(dir) = cwd {
             command.current_dir(dir);
@@ -106,19 +63,7 @@ impl ShellRunner {
     }
 }
 
-/// Mask the value portion of `-e KEY=VALUE` / `--env KEY=VALUE` args so that
-/// secrets resolved into the env (1Password references, host-env passthroughs
-/// like `$GITHUB_TOKEN`, plain literals that may carry tokens) never appear in
-/// `--debug` output. The env var *name* is preserved so the operator can still
-/// see which keys are being injected.
-///
-/// Forms handled:
-/// - `-e KEY=VALUE` → `-e KEY=<redacted>`
-/// - `--env KEY=VALUE` → `--env KEY=<redacted>`
-/// - `-e KEY` (host-env passthrough; the docker CLI inherits the value from
-///   the launching shell — no value present in the argv) → left unchanged.
-///
-/// Other args are passed through unchanged.
+/// Mask the value portion of `-e KEY=VALUE` / `--env KEY=VALUE` args.
 pub(crate) fn redact_env_args(args: &[&str]) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(args.len());
     let mut i = 0;
@@ -146,7 +91,7 @@ enum CaptureMode {
 }
 
 impl CommandRunner for ShellRunner {
-    fn run(
+    async fn run(
         &mut self,
         program: &str,
         args: &[&str],
@@ -160,11 +105,11 @@ impl CommandRunner for ShellRunner {
             if !opts.extra_env.is_empty() {
                 cmd.envs(opts.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
             }
-            let mut child = cmd
+            let status = cmd
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null())
-                .spawn()?;
-            let status = child.wait()?;
+                .status()
+                .await?;
             anyhow::ensure!(
                 status.success(),
                 "command failed: {} {}",
@@ -177,34 +122,32 @@ impl CommandRunner for ShellRunner {
                 cmd.envs(opts.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
             }
             let mut child = cmd.stderr(std::process::Stdio::piped()).spawn()?;
-            let stderr = child.stderr.take().ok_or_else(|| {
+            let mut stderr_pipe = child.stderr.take().ok_or_else(|| {
                 anyhow::anyhow!(
                     "failed to capture stderr for {} {}",
                     program,
                     args.join(" ")
                 )
             })?;
-            let stderr_handle = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
-                let mut reader = std::io::BufReader::new(stderr);
-                let mut output = Vec::new();
-                let mut buf = [0_u8; 8192];
-                let mut writer = std::io::stderr().lock();
+            let mut stderr_buf = Vec::new();
+            let read_fut = async {
+                let mut buf = [0u8; 8192];
                 loop {
-                    let read = reader.read(&mut buf)?;
-                    if read == 0 {
+                    use std::io::Write;
+                    let n = stderr_pipe.read(&mut buf).await?;
+                    if n == 0 {
                         break;
                     }
-                    std::io::Write::write_all(&mut writer, &buf[..read])?;
-                    output.extend_from_slice(&buf[..read]);
+                    std::io::stderr().write_all(&buf[..n])?;
+                    stderr_buf.extend_from_slice(&buf[..n]);
                 }
-                Ok(output)
-            });
-            let status = child.wait()?;
-            let stderr = stderr_handle
-                .join()
-                .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))??;
+                Ok::<(), std::io::Error>(())
+            };
+            let (status, read_result) = tokio::join!(child.wait(), read_fut);
+            read_result?;
+            let status = status?;
             if !status.success() {
-                if String::from_utf8_lossy(&stderr).trim().is_empty() {
+                if String::from_utf8_lossy(&stderr_buf).trim().is_empty() {
                     anyhow::bail!("command failed: {} {}", program, args.join(" "));
                 }
                 anyhow::bail!(
@@ -218,8 +161,7 @@ impl CommandRunner for ShellRunner {
             if !opts.extra_env.is_empty() {
                 cmd.envs(opts.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
             }
-            let mut child = cmd.spawn()?;
-            let status = child.wait()?;
+            let status = cmd.status().await?;
             anyhow::ensure!(
                 status.success(),
                 "command failed: {} {}",
@@ -230,27 +172,29 @@ impl CommandRunner for ShellRunner {
         Ok(())
     }
 
-    fn capture(
+    async fn capture(
         &mut self,
         program: &str,
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
         self.do_capture(program, args, cwd, CaptureMode::Normal)
+            .await
     }
 
-    fn capture_secret(
+    async fn capture_secret(
         &mut self,
         program: &str,
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
         self.do_capture(program, args, cwd, CaptureMode::Secret)
+            .await
     }
 }
 
 impl ShellRunner {
-    fn do_capture(
+    async fn do_capture(
         &self,
         program: &str,
         args: &[&str],
@@ -258,50 +202,18 @@ impl ShellRunner {
         mode: CaptureMode,
     ) -> anyhow::Result<String> {
         self.log_command(program, args, cwd);
-        let mut child = Self::build_command(program, args, cwd)
+        let output = Self::build_command(program, args, cwd)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .spawn()?;
-        let stdout = child.stdout.take().ok_or_else(|| {
-            anyhow::anyhow!(
-                "failed to capture stdout for {} {}",
-                program,
-                args.join(" ")
-            )
-        })?;
-        let stderr = child.stderr.take().ok_or_else(|| {
-            anyhow::anyhow!(
-                "failed to capture stderr for {} {}",
-                program,
-                args.join(" ")
-            )
-        })?;
-        let stdout_handle = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
-            let mut reader = std::io::BufReader::new(stdout);
-            let mut output = Vec::new();
-            reader.read_to_end(&mut output)?;
-            Ok(output)
-        });
-        let stderr_handle = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
-            let mut reader = std::io::BufReader::new(stderr);
-            let mut output = Vec::new();
-            reader.read_to_end(&mut output)?;
-            Ok(output)
-        });
-        let status = child.wait()?;
-        let stdout = stdout_handle
-            .join()
-            .map_err(|_| anyhow::anyhow!("stdout reader thread panicked"))??;
-        let stderr = stderr_handle
-            .join()
-            .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))??;
-        if !status.success() {
+            .output()
+            .await?;
+        if !output.status.success() {
             match mode {
                 CaptureMode::Secret => {
                     anyhow::bail!("command failed: {} {}", program, args.join(" "));
                 }
                 CaptureMode::Normal => {
-                    let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
                     if stderr.is_empty() {
                         anyhow::bail!("command failed: {} {}", program, args.join(" "));
                     }
@@ -309,7 +221,7 @@ impl ShellRunner {
                 }
             }
         }
-        let stdout = String::from_utf8_lossy(&stdout).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if self.debug && !stdout.is_empty() {
             match mode {
                 CaptureMode::Normal => {
@@ -328,8 +240,8 @@ mod tests {
     use super::*;
 
     #[cfg(unix)]
-    #[test]
-    fn run_capture_stderr_returns_hint_after_streaming_stderr() {
+    #[tokio::test]
+    async fn run_capture_stderr_returns_hint_after_streaming_stderr() {
         let mut runner = ShellRunner::default();
         let opts = RunOptions {
             capture_stderr: true,
@@ -339,22 +251,24 @@ mod tests {
         let error = runner
             .run(
                 "sh",
-                &["-c", "printf 'region blocked\n' >&2; exit 2"],
+                &["-c", "printf 'region blocked\\n' >&2; exit 2"],
                 None,
                 &opts,
             )
+            .await
             .unwrap_err();
 
         assert!(error.to_string().contains("see stderr above"));
     }
 
     #[cfg(unix)]
-    #[test]
-    fn capture_handles_large_stdout() {
+    #[tokio::test]
+    async fn capture_handles_large_stdout() {
         let mut runner = ShellRunner::default();
 
         let output = runner
             .capture("sh", &["-c", "yes x | head -c 200000"], None)
+            .await
             .unwrap();
 
         assert!(output.len() >= 190_000);
@@ -393,8 +307,6 @@ mod tests {
 
     #[test]
     fn redact_env_args_leaves_host_passthrough_form_unchanged() {
-        // `-e KEY` (no `=`) means docker inherits from the host shell.
-        // There's no value in argv to redact.
         let args = &["run", "-e", "GITHUB_TOKEN", "image:tag"];
         let redacted = redact_env_args(args);
         assert_eq!(redacted, vec!["run", "-e", "GITHUB_TOKEN", "image:tag"]);
@@ -430,7 +342,6 @@ mod tests {
 
     #[test]
     fn redact_env_args_passes_non_env_args_through() {
-        // No -e / --env anywhere — args round-trip unchanged.
         let args = &["build", "-t", "image:tag", "--no-cache", "."];
         let redacted = redact_env_args(args);
         assert_eq!(
@@ -441,7 +352,6 @@ mod tests {
 
     #[test]
     fn redact_env_args_handles_empty_value() {
-        // `-e KEY=` (empty value) should still mask, never pass through.
         let args = &["run", "-e", "EMPTY=", "image:tag"];
         let redacted = redact_env_args(args);
         assert_eq!(redacted, vec!["run", "-e", "EMPTY=<redacted>", "image:tag"]);
@@ -449,9 +359,6 @@ mod tests {
 
     #[test]
     fn redact_env_args_handles_value_containing_equals() {
-        // Values can contain `=` (e.g. URLs with query strings). Only the
-        // first `=` separates KEY from VALUE; everything after the first
-        // `=` is the value and must be redacted.
         let args = &[
             "run",
             "-e",
@@ -467,61 +374,14 @@ mod tests {
 
     #[test]
     fn redact_env_args_handles_dash_e_at_end_with_no_value() {
-        // Defensive: malformed `-e` at end of args (no following arg).
-        // Should not panic; the lone `-e` passes through.
         let args = &["run", "-e"];
         let redacted = redact_env_args(args);
         assert_eq!(redacted, vec!["run", "-e"]);
     }
 
-    #[test]
-    fn is_image_in_use_error_matches_in_use_patterns() {
-        assert!(is_image_in_use_error(
-            "image is being used by stopped container abc123"
-        ));
-        assert!(is_image_in_use_error(
-            "conflict: unable to remove (cannot be forced)"
-        ));
-        // "must be forced" is the multi-repo case, NOT a container conflict —
-        // it should not match so those images can be removed.
-        assert!(!is_image_in_use_error(
-            "conflict: unable to remove (must be forced)"
-        ));
-    }
-
-    #[test]
-    fn is_image_in_use_error_is_case_insensitive() {
-        assert!(is_image_in_use_error(
-            "Image Is Being Used By running container"
-        ));
-        assert!(is_image_in_use_error("CANNOT BE FORCED"));
-    }
-
-    #[test]
-    fn is_image_in_use_error_does_not_match_real_errors() {
-        assert!(!is_image_in_use_error("permission denied"));
-        assert!(!is_image_in_use_error(
-            "Error response from daemon: no such image"
-        ));
-        assert!(!is_image_in_use_error(
-            "conflict: unable to remove (must be forced) - image is referenced in multiple repositories"
-        ));
-    }
-
-    #[test]
-    fn is_missing_resource_error_matches_no_such_image() {
-        assert!(is_missing_resource_error(
-            "Error response from daemon: No such image: jk-agent-smith:latest"
-        ));
-        assert!(is_missing_resource_error("no such image: jk-foo"));
-    }
-
     #[cfg(unix)]
-    #[test]
-    fn capture_secret_omits_stderr_from_error_on_failure() {
-        // Write the sentinel to a temp file so it is not in the script's argv —
-        // the only way it could appear in the error is if do_capture appends
-        // stderr, which it must not in Secret mode.
+    #[tokio::test]
+    async fn capture_secret_omits_stderr_from_error_on_failure() {
         let dir = tempfile::tempdir().unwrap();
         let secret_file = dir.path().join("s.txt");
         std::fs::write(&secret_file, "xSECRET_STDERR_CONTENTx").unwrap();
@@ -529,6 +389,7 @@ mod tests {
         let mut runner = ShellRunner::default();
         let err = runner
             .capture_secret("sh", &["-c", &script], None)
+            .await
             .unwrap_err();
         let msg = err.to_string();
         assert!(
@@ -539,17 +400,15 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[test]
-    fn capture_secret_suppresses_stdout_debug_echo() {
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn capture_secret_suppresses_stdout_debug_echo() {
         use std::sync::Mutex;
-        // Serialize tests that mutate global debug state.
         static LOCK: Mutex<()> = Mutex::new(());
         let _guard = LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-        // Write the token to a temp file so the secret string is only in the
-        // command's stdout — not in the argv that log_command emits.
         let dir = tempfile::tempdir().unwrap();
         let token_file = dir.path().join("t.txt");
         std::fs::write(&token_file, "gho_token_value\n").unwrap();
@@ -558,7 +417,10 @@ mod tests {
         crate::tui::set_debug_mode(true);
         crate::tui::begin_debug_buffering();
         let mut runner = ShellRunner { debug: true };
-        let output = runner.capture_secret("sh", &["-c", &script], None).unwrap();
+        let output = runner
+            .capture_secret("sh", &["-c", &script], None)
+            .await
+            .unwrap();
         let lines = crate::tui::drain_debug_buffer_for_test();
         crate::tui::set_debug_mode(false);
 

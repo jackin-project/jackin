@@ -255,7 +255,7 @@ fn write_git_overrides(
 /// Enable `extensions.worktreeConfig` on a host repo if not already set.
 /// Returns Ok(true) when newly enabled (caller may print a notice),
 /// Ok(false) when already enabled.
-pub fn ensure_worktree_config_enabled(
+pub async fn ensure_worktree_config_enabled(
     repo: &Path,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<bool> {
@@ -271,6 +271,7 @@ pub fn ensure_worktree_config_enabled(
             ],
             None,
         )
+        .await
         .unwrap_or_default();
     if current.trim() == "true" {
         debug_log!(
@@ -292,6 +293,7 @@ pub fn ensure_worktree_config_enabled(
             ],
             None,
         )
+        .await
         .unwrap_or_default();
     if format_version.trim() == "0" || format_version.trim().is_empty() {
         debug_log!(
@@ -299,36 +301,40 @@ pub fn ensure_worktree_config_enabled(
             "bumping core.repositoryformatversion 0 -> 1 at {} (required for extensions.worktreeConfig)",
             repo.display()
         );
-        runner.run(
-            "git",
-            &[
-                "-C",
-                &repo.to_string_lossy(),
-                "config",
-                "core.repositoryformatversion",
-                "1",
-            ],
-            None,
-            &crate::docker::RunOptions::default(),
-        )?;
+        runner
+            .run(
+                "git",
+                &[
+                    "-C",
+                    &repo.to_string_lossy(),
+                    "config",
+                    "core.repositoryformatversion",
+                    "1",
+                ],
+                None,
+                &crate::docker::RunOptions::default(),
+            )
+            .await?;
     }
     debug_log!(
         "isolation",
         "enabling extensions.worktreeConfig at {} (per-worktree config from now on)",
         repo.display()
     );
-    runner.run(
-        "git",
-        &[
-            "-C",
-            &repo.to_string_lossy(),
-            "config",
-            "extensions.worktreeConfig",
-            "true",
-        ],
-        None,
-        &crate::docker::RunOptions::default(),
-    )?;
+    runner
+        .run(
+            "git",
+            &[
+                "-C",
+                &repo.to_string_lossy(),
+                "config",
+                "extensions.worktreeConfig",
+                "true",
+            ],
+            None,
+            &crate::docker::RunOptions::default(),
+        )
+        .await?;
     Ok(true)
 }
 
@@ -418,7 +424,7 @@ pub struct PreflightContext {
 /// Validation that must pass before host-side git materialization. Layout
 /// validation (parent/child rejection) happens earlier at config-validation
 /// time; this is per-mount.
-pub fn preflight_isolated(
+pub async fn preflight_isolated(
     mount: &MountConfig,
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
@@ -469,6 +475,7 @@ pub fn preflight_isolated(
             &["-C", &mount.src, "rev-parse", "--show-toplevel"],
             None,
         )
+        .await
         .with_context(|| {
             format!(
                 "isolated mount `{}`: git rev-parse --show-toplevel",
@@ -489,26 +496,27 @@ pub fn preflight_isolated(
     );
 
     // Dirty tree check (separate test in 4.5).
-    check_dirty_tree(mount, ctx, runner)?;
+    check_dirty_tree(mount, ctx, runner).await?;
 
     Ok(())
 }
 
-pub fn preflight_worktree(
+pub async fn preflight_worktree(
     mount: &MountConfig,
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    preflight_isolated(mount, ctx, runner)
+    preflight_isolated(mount, ctx, runner).await
 }
 
-fn check_dirty_tree(
+async fn check_dirty_tree(
     mount: &MountConfig,
     ctx: &PreflightContext,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     let porcelain = runner
         .capture("git", &["-C", &mount.src, "status", "--porcelain"], None)
+        .await
         .with_context(|| format!("isolated mount `{}`: git status --porcelain", mount.dst))?;
     if porcelain.trim().is_empty() {
         return Ok(());
@@ -536,7 +544,7 @@ fn check_dirty_tree(
 /// Iterates the resolved workspace mounts, passes through `Shared` mounts,
 /// and per-mount-materializes `Worktree` mounts. Returns the
 /// `MaterializedWorkspace` ready for Docker launch.
-pub fn materialize_workspace(
+pub async fn materialize_workspace(
     resolved: &ResolvedWorkspace,
     container_state_dir: &Path,
     selector_key: &str,
@@ -584,24 +592,30 @@ pub fn materialize_workspace(
                     worktree_aux: None,
                 }
             }
-            MountIsolation::Worktree => materialize_one(
-                mount,
-                container_state_dir,
-                selector_key,
-                container_name,
-                workspace_name,
-                ctx,
-                runner,
-            )?,
-            MountIsolation::Clone => materialize_clone(
-                mount,
-                container_state_dir,
-                selector_key,
-                container_name,
-                workspace_name,
-                ctx,
-                runner,
-            )?,
+            MountIsolation::Worktree => {
+                materialize_one(
+                    mount,
+                    container_state_dir,
+                    selector_key,
+                    container_name,
+                    workspace_name,
+                    ctx,
+                    runner,
+                )
+                .await?
+            }
+            MountIsolation::Clone => {
+                materialize_clone(
+                    mount,
+                    container_state_dir,
+                    selector_key,
+                    container_name,
+                    workspace_name,
+                    ctx,
+                    runner,
+                )
+                .await?
+            }
         };
         materialized[idx] = Some(m);
     }
@@ -619,7 +633,7 @@ pub fn materialize_workspace(
 }
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-fn materialize_one(
+async fn materialize_one(
     mount: &MountConfig,
     container_state_dir: &Path,
     selector_key: &str,
@@ -710,12 +724,13 @@ fn materialize_one(
         dst = mount.dst,
         src = mount.src,
     );
-    preflight_worktree(mount, ctx, runner)?;
+    preflight_worktree(mount, ctx, runner).await?;
 
-    let _ = ensure_worktree_config_enabled(std::path::Path::new(&mount.src), runner)?;
+    let _ = ensure_worktree_config_enabled(std::path::Path::new(&mount.src), runner).await?;
 
     let host_head = runner
-        .capture("git", &["-C", &mount.src, "rev-parse", "HEAD"], None)?
+        .capture("git", &["-C", &mount.src, "rev-parse", "HEAD"], None)
+        .await?
         .trim()
         .to_string();
     debug_log!(
@@ -765,12 +780,14 @@ fn materialize_one(
             tip = branch_tip,
             host = host_head,
         );
-        runner.run(
-            "git",
-            &["-C", &mount.src, "worktree", "prune"],
-            None,
-            &crate::docker::RunOptions::default(),
-        )?;
+        runner
+            .run(
+                "git",
+                &["-C", &mount.src, "worktree", "prune"],
+                None,
+                &crate::docker::RunOptions::default(),
+            )
+            .await?;
         debug_log!(
             "isolation",
             "mount {dst}: git -C {src} worktree add {wt} {branch}",
@@ -793,6 +810,7 @@ fn materialize_one(
                 None,
                 &crate::docker::RunOptions::default(),
             )
+            .await
             .with_context(|| {
                 format!(
                     "isolated mount `{}`: adopt of existing scratch branch `{}` failed; \
@@ -812,21 +830,23 @@ fn materialize_one(
             wt = worktree_path.display(),
             base = host_head,
         );
-        runner.run(
-            "git",
-            &[
-                "-C",
-                &mount.src,
-                "worktree",
-                "add",
-                "-b",
-                &scratch_branch,
-                &worktree_path.to_string_lossy(),
-                &host_head,
-            ],
-            None,
-            &crate::docker::RunOptions::default(),
-        )?;
+        runner
+            .run(
+                "git",
+                &[
+                    "-C",
+                    &mount.src,
+                    "worktree",
+                    "add",
+                    "-b",
+                    &scratch_branch,
+                    &worktree_path.to_string_lossy(),
+                    &host_head,
+                ],
+                None,
+                &crate::docker::RunOptions::default(),
+            )
+            .await?;
         host_head
     };
 
@@ -866,7 +886,7 @@ fn materialize_one(
 }
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-fn materialize_clone(
+async fn materialize_clone(
     mount: &MountConfig,
     container_state_dir: &Path,
     selector_key: &str,
@@ -930,10 +950,11 @@ fn materialize_clone(
         );
     }
 
-    preflight_isolated(mount, ctx, runner)?;
+    preflight_isolated(mount, ctx, runner).await?;
 
     let host_head = runner
-        .capture("git", &["-C", &mount.src, "rev-parse", "HEAD"], None)?
+        .capture("git", &["-C", &mount.src, "rev-parse", "HEAD"], None)
+        .await?
         .trim()
         .to_string();
     let scratch_branch = branch_name(container_name, None);
@@ -943,30 +964,34 @@ fn materialize_clone(
             .with_context(|| format!("create parent dir for clone at {}", parent.display()))?;
     }
 
-    runner.run(
-        "git",
-        &[
-            "clone",
-            "--local",
-            &mount.src,
-            &clone_path.to_string_lossy(),
-        ],
-        None,
-        &crate::docker::RunOptions::default(),
-    )?;
-    runner.run(
-        "git",
-        &[
-            "-C",
-            &clone_path.to_string_lossy(),
-            "checkout",
-            "-B",
-            &scratch_branch,
-            &host_head,
-        ],
-        None,
-        &crate::docker::RunOptions::default(),
-    )?;
+    runner
+        .run(
+            "git",
+            &[
+                "clone",
+                "--local",
+                &mount.src,
+                &clone_path.to_string_lossy(),
+            ],
+            None,
+            &crate::docker::RunOptions::default(),
+        )
+        .await?;
+    runner
+        .run(
+            "git",
+            &[
+                "-C",
+                &clone_path.to_string_lossy(),
+                "checkout",
+                "-B",
+                &scratch_branch,
+                &host_head,
+            ],
+            None,
+            &crate::docker::RunOptions::default(),
+        )
+        .await?;
 
     // `git clone --local <mount.src>` points the clone's `origin` at
     // `mount.src` — on jackin's mount layout that path is identical
@@ -979,11 +1004,14 @@ fn materialize_clone(
     // without an SSH key; embedded `userinfo@` credentials are
     // stripped so a host-side PAT does not leak into the per-container
     // `.git/config`.
-    let host_origin = match runner.capture(
-        "git",
-        &["-C", &mount.src, "remote", "get-url", "origin"],
-        None,
-    ) {
+    let host_origin = match runner
+        .capture(
+            "git",
+            &["-C", &mount.src, "remote", "get-url", "origin"],
+            None,
+        )
+        .await
+    {
         Ok(s) => {
             let trimmed = s.trim();
             if trimmed.is_empty() {
@@ -1031,19 +1059,21 @@ fn materialize_clone(
             src = mount.src,
             url = url,
         );
-        runner.run(
-            "git",
-            &[
-                "-C",
-                &clone_path.to_string_lossy(),
-                "remote",
-                "set-url",
-                "origin",
-                &url,
-            ],
-            None,
-            &crate::docker::RunOptions::default(),
-        )?;
+        runner
+            .run(
+                "git",
+                &[
+                    "-C",
+                    &clone_path.to_string_lossy(),
+                    "remote",
+                    "set-url",
+                    "origin",
+                    &url,
+                ],
+                None,
+                &crate::docker::RunOptions::default(),
+            )
+            .await?;
     } else {
         debug_log!(
             "isolation",
@@ -1091,8 +1121,8 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    #[test]
-    fn materialized_mount_holds_isolation() {
+    #[tokio::test]
+    async fn materialized_mount_holds_isolation() {
         let m = MaterializedMount {
             bind_src: "/tmp/a".into(),
             dst: "/workspace/a".into(),
@@ -1103,8 +1133,8 @@ mod tests {
         assert_eq!(m.isolation, MountIsolation::Worktree);
     }
 
-    #[test]
-    fn worktree_path_uses_container_name_as_basename() {
+    #[tokio::test]
+    async fn worktree_path_uses_container_name_as_basename() {
         // Container name as the worktree's basename gives globally
         // unique admin entry names in `<host_repo>/.git/worktrees/`.
         // The `worktree/repo/` segments mark git's territory inside
@@ -1116,8 +1146,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn worktree_path_strips_trailing_slash_in_dst() {
+    #[tokio::test]
+    async fn worktree_path_strips_trailing_slash_in_dst() {
         let base = PathBuf::from("/data/jackin-x");
         assert_eq!(
             worktree_path_for(&base, "/workspace/jackin/", "jackin-x"),
@@ -1125,8 +1155,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn clone_path_uses_clone_repo_layout() {
+    #[tokio::test]
+    async fn clone_path_uses_clone_repo_layout() {
         let base = PathBuf::from("/data/jackin-x");
         assert_eq!(
             clone_path_for(&base, "/workspace/jackin", "jackin-x"),
@@ -1134,8 +1164,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn container_host_git_path_mirrors_dst_under_jackin_host() {
+    #[tokio::test]
+    async fn container_host_git_path_mirrors_dst_under_jackin_host() {
         assert_eq!(
             container_host_git_path("/Users/donbeave/Projects/jackin-project/jackin"),
             "/jackin/host/Users/donbeave/Projects/jackin-project/jackin/.git",
@@ -1148,8 +1178,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn strip_userinfo_removes_pat_from_https_origin() {
+    #[tokio::test]
+    async fn strip_userinfo_removes_pat_from_https_origin() {
         assert_eq!(
             strip_userinfo("https://x-access-token:ghp_xxx@github.com/owner/repo.git".into()),
             "https://github.com/owner/repo.git",
@@ -1164,8 +1194,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn strip_userinfo_passes_clean_urls_through_unchanged() {
+    #[tokio::test]
+    async fn strip_userinfo_passes_clean_urls_through_unchanged() {
         for url in [
             "https://github.com/owner/repo",
             "https://github.com/owner/repo.git",
@@ -1177,8 +1207,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn strip_userinfo_handles_authority_only_urls() {
+    #[tokio::test]
+    async fn strip_userinfo_handles_authority_only_urls() {
         // No path component after the authority — still strip userinfo.
         assert_eq!(
             strip_userinfo("https://user:pw@github.com".into()),
@@ -1186,8 +1216,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn host_git_paths_disambiguate_per_mount_in_one_container() {
+    #[tokio::test]
+    async fn host_git_paths_disambiguate_per_mount_in_one_container() {
         // Two isolated mounts on different host repos in the same
         // container must land at distinct container paths so multi-mount
         // workspaces don't collide. With the admin entry living
@@ -1200,8 +1230,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn write_git_overrides_writes_two_files_with_correct_content() {
+    #[tokio::test]
+    async fn write_git_overrides_writes_two_files_with_correct_content() {
         let cdir = tempfile::TempDir::new().unwrap();
 
         let aux = write_git_overrides(
@@ -1253,8 +1283,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn write_git_overrides_is_idempotent() {
+    #[tokio::test]
+    async fn write_git_overrides_is_idempotent() {
         let cdir = tempfile::TempDir::new().unwrap();
 
         let first = write_git_overrides(
@@ -1287,18 +1317,22 @@ mod tests {
         }
     }
 
-    #[test]
-    fn worktree_config_skips_when_already_enabled() {
+    #[tokio::test]
+    async fn worktree_config_skips_when_already_enabled() {
         let mut runner = fake_with_outputs(&["true\n"]);
-        let newly = ensure_worktree_config_enabled(Path::new("/repo"), &mut runner).unwrap();
+        let newly = ensure_worktree_config_enabled(Path::new("/repo"), &mut runner)
+            .await
+            .unwrap();
         assert!(!newly);
         assert_eq!(runner.run_recorded.len(), 0);
     }
 
-    #[test]
-    fn worktree_config_enables_and_bumps_format_version_from_zero() {
+    #[tokio::test]
+    async fn worktree_config_enables_and_bumps_format_version_from_zero() {
         let mut runner = fake_with_outputs(&["", "0"]);
-        let newly = ensure_worktree_config_enabled(Path::new("/repo"), &mut runner).unwrap();
+        let newly = ensure_worktree_config_enabled(Path::new("/repo"), &mut runner)
+            .await
+            .unwrap();
         assert!(newly);
         assert!(
             runner
@@ -1314,10 +1348,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn worktree_config_skips_format_bump_when_already_one() {
+    #[tokio::test]
+    async fn worktree_config_skips_format_bump_when_already_one() {
         let mut runner = fake_with_outputs(&["", "1"]);
-        ensure_worktree_config_enabled(Path::new("/repo"), &mut runner).unwrap();
+        ensure_worktree_config_enabled(Path::new("/repo"), &mut runner)
+            .await
+            .unwrap();
         assert!(
             !runner
                 .run_recorded
@@ -1351,68 +1387,80 @@ mod tests {
         }
     }
 
-    #[test]
-    fn preflight_rejects_readonly() {
+    #[tokio::test]
+    async fn preflight_rejects_readonly() {
         let mut m = worktree_mount("/workspace/x", "/tmp/x");
         m.readonly = true;
         let mut runner = FakeRunner::default();
-        let err = preflight_worktree(&m, &ctx(), &mut runner).unwrap_err();
+        let err = preflight_worktree(&m, &ctx(), &mut runner)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("cannot be readonly"));
     }
 
-    #[test]
-    fn preflight_rejects_sensitive_mount() {
+    #[tokio::test]
+    async fn preflight_rejects_sensitive_mount() {
         let home = directories::BaseDirs::new()
             .unwrap()
             .home_dir()
             .to_path_buf();
         let m = worktree_mount("/workspace/ssh", &home.join(".ssh").to_string_lossy());
         let mut runner = FakeRunner::default();
-        let err = preflight_worktree(&m, &ctx(), &mut runner).unwrap_err();
+        let err = preflight_worktree(&m, &ctx(), &mut runner)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("sensitive"));
     }
 
-    #[test]
-    fn preflight_rejects_mid_rebase() {
+    #[tokio::test]
+    async fn preflight_rejects_mid_rebase() {
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(dir.path().join(".git/rebase-merge")).unwrap();
         let m = worktree_mount("/workspace/x", &dir.path().to_string_lossy());
         let mut runner = FakeRunner::default();
-        let err = preflight_worktree(&m, &ctx(), &mut runner).unwrap_err();
+        let err = preflight_worktree(&m, &ctx(), &mut runner)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("mid-rebase-merge"));
     }
 
-    #[test]
-    fn preflight_rejects_mid_merge() {
+    #[tokio::test]
+    async fn preflight_rejects_mid_merge() {
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(dir.path().join(".git")).unwrap();
         std::fs::write(dir.path().join(".git/MERGE_HEAD"), "x").unwrap();
         let m = worktree_mount("/workspace/x", &dir.path().to_string_lossy());
         let mut runner = FakeRunner::default();
-        let err = preflight_worktree(&m, &ctx(), &mut runner).unwrap_err();
+        let err = preflight_worktree(&m, &ctx(), &mut runner)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("mid-MERGE_HEAD"));
     }
 
-    #[test]
-    fn preflight_rejects_mid_cherry_pick() {
+    #[tokio::test]
+    async fn preflight_rejects_mid_cherry_pick() {
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(dir.path().join(".git")).unwrap();
         std::fs::write(dir.path().join(".git/CHERRY_PICK_HEAD"), "x").unwrap();
         let m = worktree_mount("/workspace/x", &dir.path().to_string_lossy());
         let mut runner = FakeRunner::default();
-        let err = preflight_worktree(&m, &ctx(), &mut runner).unwrap_err();
+        let err = preflight_worktree(&m, &ctx(), &mut runner)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("mid-CHERRY_PICK_HEAD"));
     }
 
-    #[test]
-    fn preflight_rejects_subdir_of_repo() {
+    #[tokio::test]
+    async fn preflight_rejects_subdir_of_repo() {
         let dir = tempfile::TempDir::new().unwrap();
         std::fs::create_dir_all(dir.path().join(".git")).unwrap();
         let sub = dir.path().join("sub");
         std::fs::create_dir_all(&sub).unwrap();
         let m = worktree_mount("/workspace/x", &sub.to_string_lossy());
         let mut runner = fake_with_outputs(&[&dir.path().to_string_lossy()]);
-        let err = preflight_worktree(&m, &ctx(), &mut runner).unwrap_err();
+        let err = preflight_worktree(&m, &ctx(), &mut runner)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("not its root"));
     }
 
@@ -1435,35 +1483,35 @@ mod tests {
         fake_with_outputs(&[&repo.to_string_lossy(), status])
     }
 
-    #[test]
-    fn dirty_tree_rejected_non_interactive_no_force() {
+    #[tokio::test]
+    async fn dirty_tree_rejected_non_interactive_no_force() {
         let repo = make_repo_root();
         let m = worktree_mount("/workspace/x", &repo.path().to_string_lossy());
         let mut runner = fake_with_repo_and_status(repo.path(), dirty_porcelain());
         let mut c = ctx();
         c.force = false;
         c.interactive = false;
-        let err = preflight_worktree(&m, &c, &mut runner).unwrap_err();
+        let err = preflight_worktree(&m, &c, &mut runner).await.unwrap_err();
         assert!(err.to_string().contains("dirty"));
         assert!(err.to_string().contains("--force"));
     }
 
-    #[test]
-    fn dirty_tree_passes_with_force_non_interactive() {
+    #[tokio::test]
+    async fn dirty_tree_passes_with_force_non_interactive() {
         let repo = make_repo_root();
         let m = worktree_mount("/workspace/x", &repo.path().to_string_lossy());
         let mut runner = fake_with_repo_and_status(repo.path(), dirty_porcelain());
         let mut c = ctx();
         c.force = true;
-        preflight_worktree(&m, &c, &mut runner).unwrap();
+        preflight_worktree(&m, &c, &mut runner).await.unwrap();
     }
 
-    #[test]
-    fn clean_tree_passes() {
+    #[tokio::test]
+    async fn clean_tree_passes() {
         let repo = make_repo_root();
         let m = worktree_mount("/workspace/x", &repo.path().to_string_lossy());
         let mut runner = fake_with_repo_and_status(repo.path(), ignored_only_porcelain());
-        preflight_worktree(&m, &ctx(), &mut runner).unwrap();
+        preflight_worktree(&m, &ctx(), &mut runner).await.unwrap();
     }
 
     use crate::isolation::state::{CleanupStatus, read_records};
@@ -1501,8 +1549,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn first_materialization_runs_worktree_add_and_writes_record() {
+    #[tokio::test]
+    async fn first_materialization_runs_worktree_add_and_writes_record() {
         let repo = make_repo_root();
         let data = tempfile::TempDir::new().unwrap();
         let container_dir = data.path().join("jackin-the-architect");
@@ -1536,6 +1584,7 @@ mod tests {
             },
             &mut runner,
         )
+        .await
         .unwrap();
 
         assert_eq!(mat.mounts.len(), 1);
@@ -1568,8 +1617,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn shared_mounts_pass_through_unchanged() {
+    #[tokio::test]
+    async fn shared_mounts_pass_through_unchanged() {
         let data = tempfile::TempDir::new().unwrap();
         let container_dir = data.path().join("jackin-x");
         std::fs::create_dir_all(&container_dir).unwrap();
@@ -1600,6 +1649,7 @@ mod tests {
             },
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(mat.mounts[0].bind_src, "/tmp/cache");
         assert_eq!(mat.mounts[0].isolation, MountIsolation::Shared);
@@ -1609,8 +1659,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn clone_materialization_runs_local_shared_clone_and_writes_record() {
+    #[tokio::test]
+    async fn clone_materialization_runs_local_shared_clone_and_writes_record() {
         let repo = make_repo_root();
         let data = tempfile::TempDir::new().unwrap();
         let container_dir = data.path().join("jackin-x");
@@ -1637,6 +1687,7 @@ mod tests {
             },
             &mut runner,
         )
+        .await
         .unwrap();
 
         assert_eq!(mat.mounts[0].isolation, MountIsolation::Clone);
@@ -1676,8 +1727,8 @@ mod tests {
         assert_eq!(recs[0].base_commit, "deadbeef");
     }
 
-    #[test]
-    fn clone_materialization_normalizes_ssh_origin_to_https() {
+    #[tokio::test]
+    async fn clone_materialization_normalizes_ssh_origin_to_https() {
         // SCP-form host origin would point the clone at an SSH endpoint
         // the container has no key for; rewrite must land on HTTPS so
         // `gh auth git-credential` can authenticate the push.
@@ -1707,6 +1758,7 @@ mod tests {
             },
             &mut runner,
         )
+        .await
         .unwrap();
 
         assert!(
@@ -1717,8 +1769,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn clone_materialization_skips_origin_rewrite_when_host_origin_is_empty() {
+    #[tokio::test]
+    async fn clone_materialization_skips_origin_rewrite_when_host_origin_is_empty() {
         // Ok-arm with whitespace-only output: `trimmed.is_empty()`
         // collapses to `None`, no rewrite emitted.
         let repo = make_repo_root();
@@ -1747,6 +1799,7 @@ mod tests {
             },
             &mut runner,
         )
+        .await
         .unwrap();
 
         assert!(
@@ -1759,8 +1812,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn clone_materialization_falls_through_when_host_has_no_origin_remote() {
+    #[tokio::test]
+    async fn clone_materialization_falls_through_when_host_has_no_origin_remote() {
         // Err with `No such remote 'origin'` (fresh init, never pushed)
         // — fall through to loopback, do not abort.
         let repo = make_repo_root();
@@ -1792,6 +1845,7 @@ mod tests {
             },
             &mut runner,
         )
+        .await
         .expect("legitimate `No such remote` should fall through, not abort");
 
         assert!(
@@ -1804,8 +1858,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn clone_materialization_aborts_when_get_url_fails_unexpectedly() {
+    #[tokio::test]
+    async fn clone_materialization_aborts_when_get_url_fails_unexpectedly() {
         // Permission denied / corrupt config — anything that isn't a
         // `No such remote` signal — must abort the launch rather than
         // silently fall through to a loopback origin and misroute the
@@ -1839,6 +1893,7 @@ mod tests {
             },
             &mut runner,
         )
+        .await
         .expect_err("unexpected get-url failure should abort the launch");
 
         let chain = format!("{err:#}");
@@ -1850,8 +1905,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn clone_materialization_strips_embedded_credentials_from_host_origin() {
+    #[tokio::test]
+    async fn clone_materialization_strips_embedded_credentials_from_host_origin() {
         // Credentialed host origin (PAT baked into `.git/config`) must
         // not land verbatim in the per-container clone.
         let repo = make_repo_root();
@@ -1880,6 +1935,7 @@ mod tests {
             },
             &mut runner,
         )
+        .await
         .unwrap();
 
         let setting = runner
@@ -1897,8 +1953,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn clone_reuse_skips_git_ops_when_git_dir_exists() {
+    #[tokio::test]
+    async fn clone_reuse_skips_git_ops_when_git_dir_exists() {
         let repo = make_repo_root();
         let data = tempfile::TempDir::new().unwrap();
         let container_dir = data.path().join("jackin-x");
@@ -1939,13 +1995,14 @@ mod tests {
             },
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(mat.mounts[0].bind_src, cp.to_string_lossy());
         assert!(runner.run_recorded.is_empty(), "no git ops on clone reuse");
     }
 
-    #[test]
-    fn second_materialization_with_existing_record_skips_git_ops() {
+    #[tokio::test]
+    async fn second_materialization_with_existing_record_skips_git_ops() {
         let repo = make_repo_root();
         let data = tempfile::TempDir::new().unwrap();
         let container_dir = data.path().join("jackin-x");
@@ -1987,13 +2044,14 @@ mod tests {
             },
             &mut runner,
         )
+        .await
         .unwrap();
         assert_eq!(mat.mounts[0].bind_src, wt_path.to_string_lossy());
         assert!(runner.run_recorded.is_empty(), "no git ops on reuse");
     }
 
-    #[test]
-    fn drift_when_recorded_src_differs_errors_before_git_ops() {
+    #[tokio::test]
+    async fn drift_when_recorded_src_differs_errors_before_git_ops() {
         let repo = make_repo_root();
         let data = tempfile::TempDir::new().unwrap();
         let container_dir = data.path().join("jackin-x");
@@ -2034,6 +2092,7 @@ mod tests {
             },
             &mut runner,
         )
+        .await
         .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("source drift") || msg.contains("differs"));
@@ -2060,8 +2119,8 @@ mod tests {
         std::fs::write(repo.join(".git").join("packed-refs"), contents).unwrap();
     }
 
-    #[test]
-    fn find_local_branch_tip_reads_loose_ref_sha() {
+    #[tokio::test]
+    async fn find_local_branch_tip_reads_loose_ref_sha() {
         let repo = make_repo_root();
         let path = repo.path().to_string_lossy();
         assert_eq!(find_local_branch_tip(&path, "jackin/scratch/x"), None);
@@ -2072,8 +2131,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn find_local_branch_tip_reads_packed_refs_sha() {
+    #[tokio::test]
+    async fn find_local_branch_tip_reads_packed_refs_sha() {
         let repo = make_repo_root();
         write_packed_refs(
             repo.path(),
@@ -2090,8 +2149,8 @@ mod tests {
         assert_eq!(find_local_branch_tip(&path, "jackin/scratch/missing"), None);
     }
 
-    #[test]
-    fn find_local_branch_tip_loose_ref_wins_over_packed_refs() {
+    #[tokio::test]
+    async fn find_local_branch_tip_loose_ref_wins_over_packed_refs() {
         // git semantics: loose refs override packed-refs entries.
         // Critical because base_commit feeds finalize's safety
         // classifier, and a wrong SHA there can authorize deletion
@@ -2108,8 +2167,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn find_local_branch_tip_rejects_symref_loose_content() {
+    #[tokio::test]
+    async fn find_local_branch_tip_rejects_symref_loose_content() {
         // `git symbolic-ref refs/heads/<x> refs/heads/main` writes
         // `ref: refs/heads/main\n`. Returning that verbatim as the
         // SHA poisons IsolationRecord.base_commit.
@@ -2121,8 +2180,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn find_local_branch_tip_empty_loose_falls_through_to_packed() {
+    #[tokio::test]
+    async fn find_local_branch_tip_empty_loose_falls_through_to_packed() {
         // A 0-byte ref file (interrupted git op, third-party
         // tooling) must not yield Some("") and must not block the
         // packed-refs lookup.
@@ -2138,8 +2197,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn find_local_branch_tip_skips_malformed_packed_refs_lines() {
+    #[tokio::test]
+    async fn find_local_branch_tip_skips_malformed_packed_refs_lines() {
         let repo = make_repo_root();
         write_packed_refs(
             repo.path(),
@@ -2156,8 +2215,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn stale_scratch_branch_is_adopted_when_record_absent() {
+    #[tokio::test]
+    async fn stale_scratch_branch_is_adopted_when_record_absent() {
         let repo = make_repo_root();
         let data = tempfile::TempDir::new().unwrap();
         let container_dir = data.path().join("jackin-the-architect");
@@ -2194,6 +2253,7 @@ mod tests {
             },
             &mut runner,
         )
+        .await
         .unwrap();
 
         assert_eq!(mat.mounts.len(), 1);
@@ -2239,8 +2299,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn adopt_aborts_when_worktree_prune_fails() {
+    #[tokio::test]
+    async fn adopt_aborts_when_worktree_prune_fails() {
         // Prune failure must short-circuit before `worktree add`,
         // otherwise the add proceeds against an inconsistent admin
         // index and risks corrupting state.
@@ -2271,6 +2331,7 @@ mod tests {
             },
             &mut runner,
         )
+        .await
         .unwrap_err();
         assert!(err.to_string().contains("worktree prune"));
         assert!(
@@ -2287,8 +2348,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn fresh_materialization_uses_dash_b_when_branch_absent() {
+    #[tokio::test]
+    async fn fresh_materialization_uses_dash_b_when_branch_absent() {
         let repo = make_repo_root();
         let data = tempfile::TempDir::new().unwrap();
         let container_dir = data.path().join("jackin-x");
@@ -2313,6 +2374,7 @@ mod tests {
             },
             &mut runner,
         )
+        .await
         .unwrap();
         let add = runner
             .run_recorded
@@ -2336,8 +2398,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn docker_mount_order_is_length_ascending() {
+    #[tokio::test]
+    async fn docker_mount_order_is_length_ascending() {
         let mat = MaterializedWorkspace {
             workdir: "/workspace".into(),
             mounts: vec![
@@ -2363,8 +2425,8 @@ mod tests {
         assert_eq!(ordered[1].dst, "/workspace/proj/target");
     }
 
-    #[test]
-    fn docker_mount_order_is_stable_for_same_length() {
+    #[tokio::test]
+    async fn docker_mount_order_is_stable_for_same_length() {
         let mat = MaterializedWorkspace {
             workdir: "/workspace".into(),
             mounts: vec![
