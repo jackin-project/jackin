@@ -13,7 +13,10 @@ use fs2::FileExt;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 
-use super::attach::{ContainerState, hardline_agent, inspect_container_state, wait_for_dind};
+use super::attach::{
+    AgentSessionInventory, ContainerState, hardline_agent, inspect_agent_sessions,
+    inspect_container_state, wait_for_dind,
+};
 use super::cleanup::{gc_orphaned_resources, run_cleanup_command};
 use super::discovery::list_running_agent_display_names;
 use super::identity::{GitIdentity, build_config_rows, load_git_identity, load_host_identity};
@@ -2020,37 +2023,78 @@ fn load_role_with(
             )?;
         }
 
-        // Classify how the interactive session ended so we know whether to
-        // tear the container down or preserve it for `jackin hardline` to
-        // restart:
-        //  - Running     → terminal was closed (user detached).  Keep it.
-        //  - Stopped / 0 → user exited cleanly inside Claude Code.  Tear down.
-        //  - Stopped / ≠0 or OOM-killed → crash.  Preserve so `jackin hardline`
-        //    can restart the existing container + DinD sidecar.
-        #[allow(clippy::match_same_arms)]
+        // Classify how the interactive session ended and tear down DinD/network
+        // unless the container is still running with active sessions (detach):
+        //  - Running + active sessions → user detached (Ctrl-B D). Keep DinD so
+        //                               `jackin hardline` can reconnect.
+        //  - Running + no sessions → agent exited; supervisor lag or stale socket.
+        //                            Tear down same as Stopped/0 regardless of
+        //                            preserved isolation state — worktrees live on
+        //                            the host and are accessible without DinD.
+        //  - Stopped / 0 → user exited cleanly. Tear down.
+        //  - Stopped / ≠0 or OOM-killed → crash. Tear down; DinD is no longer
+        //                                  needed once the container has exited.
+        //  - NotFound + !Preserved → removed externally. Tear down.
+        //  - NotFound + Preserved → removed externally during finalization.
+        //                           Tear down DinD/network; status on disk stands.
+        //  - InspectUnavailable → Docker unreachable; keep everything alive.
+        let is_preserved = matches!(
+            decision,
+            crate::isolation::finalize::FinalizeDecision::Preserved
+        );
         match inspect_container_state(runner, &container_name) {
-            ContainerState::Running => cleanup.disarm(),
-            ContainerState::Stopped {
-                exit_code: 0,
-                oom_killed: false,
-            } if matches!(
-                decision,
-                crate::isolation::finalize::FinalizeDecision::Preserved
-            ) =>
-            {
-                cleanup.run(runner);
+            ContainerState::Running => {
+                if is_preserved {
+                    // Finalize saw sessions at check-time (detach). Re-check: sessions
+                    // may have ended in the interval between finalize and this inspect.
+                    let sessions =
+                        inspect_agent_sessions(runner, &container_name, &ContainerState::Running);
+                    if let AgentSessionInventory::Unavailable(ref reason) = sessions {
+                        crate::debug_log!(
+                            "instance",
+                            "inspect_agent_sessions unavailable for {container_name}: {reason}; \
+                             treating conservatively as sessions-present (container preserved)",
+                        );
+                    }
+                    let no_sessions =
+                        matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty());
+                    if no_sessions {
+                        run_clean_exit_teardown(
+                            paths,
+                            &container_state,
+                            &mut instance_manifest,
+                            is_preserved,
+                            &cleanup,
+                            runner,
+                        )?;
+                    } else {
+                        cleanup.disarm();
+                    }
+                } else {
+                    // Finalize already confirmed no sessions (supervisor lag after
+                    // clean exit). Skip the redundant re-query and tear down.
+                    run_clean_exit_teardown(
+                        paths,
+                        &container_state,
+                        &mut instance_manifest,
+                        is_preserved,
+                        &cleanup,
+                        runner,
+                    )?;
+                }
             }
             ContainerState::Stopped {
                 exit_code: 0,
                 oom_killed: false,
             } => {
-                write_instance_status(
+                run_clean_exit_teardown(
                     paths,
                     &container_state,
                     &mut instance_manifest,
-                    InstanceStatus::CleanExited,
+                    is_preserved,
+                    &cleanup,
+                    runner,
                 )?;
-                cleanup.run(runner);
             }
             ContainerState::Stopped { .. } => {
                 write_instance_status(
@@ -2059,7 +2103,7 @@ fn load_role_with(
                     &mut instance_manifest,
                     InstanceStatus::Crashed,
                 )?;
-                cleanup.disarm();
+                cleanup.run(runner);
             }
             ContainerState::InspectUnavailable(reason) => {
                 cleanup.disarm();
@@ -2075,15 +2119,25 @@ fn load_role_with(
                 if matches!(
                     decision,
                     crate::isolation::finalize::FinalizeDecision::Preserved
-                ) => {}
+                ) =>
+            {
+                crate::debug_log!(
+                    "instance",
+                    "container {container_name} not found after session with Preserved decision; \
+                     removed externally during finalization — tearing down DinD/network, \
+                     preserved status on disk stands",
+                );
+                cleanup.run(runner);
+            }
             ContainerState::NotFound => {
-                write_instance_status(
+                run_clean_exit_teardown(
                     paths,
                     &container_state,
                     &mut instance_manifest,
-                    InstanceStatus::CleanExited,
+                    is_preserved,
+                    &cleanup,
+                    runner,
                 )?;
-                cleanup.run(runner);
             }
         }
 
@@ -2474,6 +2528,24 @@ fn matching_instance_manifests(
             agent_runtime: Some(agent),
         },
     )
+}
+
+/// Write `CleanExited` status and run container teardown. When `preserved` is
+/// true, the status write is skipped (isolation wrote it earlier) but teardown
+/// still runs.
+fn run_clean_exit_teardown(
+    paths: &JackinPaths,
+    state_dir: &std::path::Path,
+    manifest: &mut InstanceManifest,
+    preserved: bool,
+    cleanup: &LoadCleanup,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    if !preserved {
+        write_instance_status(paths, state_dir, manifest, InstanceStatus::CleanExited)?;
+    }
+    cleanup.run(runner);
+    Ok(())
 }
 
 fn write_instance_status(
@@ -6190,7 +6262,7 @@ plugins = []
         assert!(body.contains(r#""role_key": "agent-smith""#));
         assert!(body.contains(r#""agent_runtime": "claude""#));
         assert!(body.contains(r#""host_workdir_fingerprint": "sha256:"#));
-        assert!(body.contains(r#""status": "restore_available""#));
+        assert!(body.contains(r#""status": "clean_exited""#));
         let index_body = std::fs::read_to_string(paths.data_dir.join("instances.json")).unwrap();
         assert!(index_body.contains(&format!(r#""container_base": "{container_name}""#)));
     }

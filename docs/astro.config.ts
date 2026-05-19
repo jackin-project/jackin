@@ -172,7 +172,6 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Overview', slug: 'reference/roadmap/agent-orchestrator-research' },
-                    { label: 'Herdr research', slug: 'reference/roadmap/herdr-research' },
                     {
                       label: 'Fleet phase 1 — Foundation gaps',
                       collapsed: true,
@@ -286,6 +285,7 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Overview', slug: 'reference/roadmap/jackin-daemon' },
+                    { label: 'jackin-container: in-container multiplexer server', slug: 'reference/roadmap/jackin-container-binary' },
                     { label: 'Jackin Desktop Agent Hub', slug: 'reference/roadmap/jackin-desktop-agent-hub' },
                     {
                       label: 'Phase 2 — First reactive adapters',
@@ -334,7 +334,6 @@ export default defineConfig({
                   items: [
                     { label: 'Bollard migration', slug: 'reference/roadmap/bollard-migration' },
                     { label: 'Construct user creation', slug: 'reference/roadmap/construct-user-creation' },
-                    { label: 'jackin-container: in-container supervisor binary', slug: 'reference/roadmap/jackin-container-binary' },
                     { label: 'Workspace registry cache', slug: 'reference/roadmap/workspace-registry-cache' },
                   ],
                 },

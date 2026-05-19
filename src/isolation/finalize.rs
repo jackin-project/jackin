@@ -121,6 +121,30 @@ pub fn finalize_foreground_session(
         i = is_interactive,
     );
     if outcome.exit_code.is_none() || outcome.oom_killed || outcome.exit_code != Some(0) {
+        // Still-running container (exit_code=None, not OOM): the docker exec
+        // returned but the supervisor's 1-second poll loop may not have caught the
+        // tmux server exit yet. Check sessions to distinguish detach from lag:
+        //   - sessions present → real detach (Ctrl-B D); preserve as before
+        //   - no sessions → supervisor lag after clean agent exit; fall through to
+        //     finalize_clean_exit so isolation worktrees are swept normally
+        if outcome.exit_code.is_none()
+            && !outcome.oom_killed
+            && !has_tmux_sessions(runner, container_name)
+        {
+            debug_log!(
+                "isolation",
+                "finalize: container={c} still running but no tmux sessions; \
+                 supervisor lag after clean exit — proceeding to isolation cleanup",
+                c = container_name,
+            );
+            return finalize_clean_exit(
+                container_name,
+                container_state_dir,
+                is_interactive,
+                prompt,
+                runner,
+            );
+        }
         debug_log!(
             "isolation",
             "finalize: container={c} preserved (non-clean exit)",
@@ -135,6 +159,25 @@ pub fn finalize_foreground_session(
         prompt,
         runner,
     )
+}
+
+fn has_tmux_sessions(runner: &mut impl CommandRunner, container_name: &str) -> bool {
+    // Run via sh to suppress the "no server running" error tmux emits when the
+    // socket is stale. Both "no server" and "no sessions" collapse to exit 0 with
+    // empty stdout so the caller only sees a non-empty result when sessions exist.
+    runner
+        .capture(
+            "docker",
+            &[
+                "exec",
+                container_name,
+                "sh",
+                "-c",
+                "tmux list-sessions -F '#{session_name}' 2>/dev/null || true",
+            ],
+            None,
+        )
+        .is_ok_and(|output| !output.trim().is_empty())
 }
 
 fn finalize_clean_exit(
@@ -547,7 +590,27 @@ mod tests {
     use crate::runtime::test_support::FakeRunner;
 
     #[test]
-    fn still_running_preserves_records() {
+    fn still_running_with_sessions_preserves() {
+        // Session list non-empty → real detach → Preserved.
+        let dir = TempDir::new().unwrap();
+        let mut p = NoPrompt;
+        let mut r = fake_with_outputs(&["jackin-claude-abc"]);
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::still_running(),
+            false,
+            &mut p,
+            &mut r,
+        )
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
+    }
+
+    #[test]
+    fn still_running_no_sessions_proceeds_to_clean_exit() {
+        // Empty session list → supervisor lag after clean agent exit →
+        // finalize_clean_exit → Cleaned (no isolation records to preserve).
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
@@ -560,7 +623,7 @@ mod tests {
             &mut r,
         )
         .unwrap();
-        assert_eq!(dec, FinalizeDecision::Preserved);
+        assert_eq!(dec, FinalizeDecision::Cleaned);
     }
 
     #[test]

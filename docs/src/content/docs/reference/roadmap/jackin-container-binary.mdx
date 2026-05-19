@@ -1,26 +1,34 @@
 ---
-title: "jackin-container: In-Container Supervisor Binary"
+title: "jackin-container: In-Container Multiplexer Server"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Open — design proposal
+**Status**: Partially implemented — Phase 1 cleanup gap closed; container and DinD tear down automatically on clean agent exit. Rust binary, multiplexer server, and desktop bridge remain.
 
 ## Problem
 
-The current container supervisor is a bash wait loop (<RepoFile path="docker/runtime/supervisor.sh" />) that keeps the container alive while agent sessions run via `docker exec`. It has two structural limitations:
+The current container supervisor is a bash wait loop (<RepoFile path="docker/runtime/supervisor.sh" />) that keeps the container alive while agent sessions run via `docker exec`. It has two immediate limitations and one deeper architectural gap.
 
-**Last-session cleanup does not fire.** When a tmux session exits, the supervisor keeps the container running. Because the container state is `Running` rather than `Stopped`, the host jackin cleanup path (`finalize_foreground_session`, container teardown, DinD/network/certs removal) never fires automatically. The operator must explicitly run `jackin eject` to clean up a container after all sessions end. This is wrong for the normal lifecycle — the container should stop and clean up when the last session exits cleanly.
+**Last-session cleanup does not fire** *(resolved in Phase 1).* When a tmux session exits, the supervisor was keeping the container running. Because the container state is `Running` rather than `Stopped`, the host jackin cleanup path (`finalize_foreground_session`, container teardown, DinD/network/certs removal) would not fire automatically. The operator had to explicitly run `jackin eject` to clean up a container after all sessions end.
 
-**Session inventory requires shelling out.** Querying which sessions are active requires `docker exec <container> sh -c 'tmux list-sessions ...'` from the host. There is no structured interface for the host CLI or the future jackin daemon to ask "what is running in this container right now?" The tmux command output is a formatting detail, not a protocol.
+**Session inventory requires shelling out.** Querying which sessions are active requires `docker exec <container> sh -c 'tmux list-sessions ...'` from the host. There is no structured interface for the host CLI or the future jackin daemon to ask "what is running in this container right now?"
 
-Both problems are symptoms of the same root cause: there is no jackin-owned process inside the container that understands session lifecycle and can communicate it to the host.
+**tmux is not designed for the container-per-agent model.** tmux has no concept of agent state, no structured control plane, and no event stream. Every interaction requires `docker exec tmux ...` round-trips. Jackin cannot ask "is this agent blocked or still working?" without reading raw terminal output from the outside. This is the root reason observability, attention prompts, and desktop app integration are hard to build on top of the current architecture. A purpose-built process inside the container — one that owns the session lifecycle from the start — can expose exactly the information Jackin needs over a structured protocol.
 
-## Goals
+## Vision
 
-- Container stops automatically when the last agent session exits cleanly, triggering normal host-side cleanup.
-- Host CLI and jackin daemon can query active sessions through a structured interface without parsing tmux output.
-- The binary is small, self-contained, and built from the jackin workspace — no new runtime dependencies inside the container.
-- The binary is a foundation for the jackin daemon to communicate with running containers, following the same Unix socket pattern Docker itself uses.
+Each jackin-managed container will eventually run `jackin-container` as PID 1. It starts as a minimal supervisor and evolves into a full in-container multiplexer server: it manages PTY sessions directly (replacing tmux), tracks agent state per session, and exposes a Unix socket API that the host CLI, the jackin daemon, and the Jackin desktop app all drive.
+
+The container becomes a self-contained server. The operator's terminal, the console TUI, and the desktop companion all talk to the same control plane:
+
+- **Spawn a session** (new agent or shell) — without shelling into the container
+- **Kill a session** — terminate a specific agent or shell
+- **Query status** — which sessions are running, which agent is blocked, which is done and waiting for review
+- **Get session title** — the current terminal title or process name for each session
+- **Attach to a session** — connect a PTY client to a running session
+- **Subscribe to events** — session started, session ended, agent state changed
+
+This makes `jackin-container` the data source for all future observability features: attention prompts, live agent state in the console, the desktop app's session panel, and the daemon's reactive instance index.
 
 ## Design
 
@@ -43,24 +51,8 @@ During the derived image build, jackin downloads the `jackin-container` binary f
 As PID 1, `jackin-container` must:
 
 1. **Reap zombie children.** Processes whose parent exits become children of PID 1. The binary must call `waitpid(-1, WNOHANG)` in a loop on `SIGCHLD` to reap them. `tokio` does not do this automatically.
-2. **Forward signals cleanly.** `SIGTERM` from `docker stop` → exit 0. `SIGINT` → exit 0. Both trigger the session-end path described below.
+2. **Forward signals cleanly.** `SIGTERM` from `docker stop` → exit 0. `SIGINT` → exit 0. Both trigger the session-end path.
 3. **Never crash on unexpected input.** PID 1 death kills the entire container. All error paths either log and continue or exit deliberately.
-
-### Session lifecycle tracking — tmux socket watch
-
-The binary tracks active sessions by watching the tmux server socket via `inotify` (Linux). The tmux server creates its socket at `/tmp/tmux-<uid>/default` when the first session starts and removes it when the last session ends. The binary watches for the socket's deletion:
-
-- Socket exists → at least one session running → binary stays alive
-- Socket deleted → all sessions ended → binary runs the end-of-sessions path
-
-This is event-driven, not polled. No tmux modification or hook configuration is needed.
-
-**End-of-sessions path:**
-1. Log that all sessions have ended
-2. Run the finalize hook if present (reserved for future use)
-3. Exit with code 0
-
-The container stops with `exit 0`. The host jackin cleanup logic already handles this case: `finalize_foreground_session` runs, the container is torn down, DinD/network/certs are removed. No new host-side logic is required — the gap is closed by the binary exiting cleanly at the right moment.
 
 ### Unix socket interface
 
@@ -70,74 +62,138 @@ The binary listens on a Unix domain socket at `/run/jackin/jackin.sock` inside t
 docker run ... -v /run/jackin/<instance-id>.sock:/run/jackin/jackin.sock ...
 ```
 
-The socket directory on the host (`/run/jackin/`) is created by jackin. One socket file per instance, named by instance ID.
+One socket file per instance on the host, named by instance ID.
 
-**Protocol:** Newline-delimited JSON. Each request is one JSON object followed by `\n`. Each response is one JSON object followed by `\n`. No framing, no length prefix — connection-per-request is acceptable for v1.
+**Protocol:** Newline-delimited JSON. Each request is one JSON object followed by `\n`. Each response is one JSON object followed by `\n`. No framing, no length prefix — connection-per-request for v1.
 
-**v1 commands:**
+### Session management API
 
-`status` — returns the active session list. This is the only command needed to fix the current gap and replace `docker exec tmux list-sessions` calls.
+The API grows with each phase. The full target API is:
 
-Request:
-```json
-{"method": "status"}
-```
+| Method | Phase | Description |
+|---|---|---|
+| `status` | 2 | List all sessions with name, agent type, created-at, and state |
+| `session.create` | 3 | Spawn a new agent or shell session |
+| `session.kill` | 3 | Terminate a session by ID |
+| `session.title` | 3 | Read the current terminal title or process name for a session |
+| `session.attach` | 3 | Return a PTY attachment handle so the client can connect |
+| `events` | 3 | Upgrade connection to a streaming event channel |
 
-Response:
-```json
-{
-  "sessions": [
-    {"name": "jackin-claude-1a2b3c",  "agent": "claude",  "created_at": "2026-05-17T13:00:00Z", "status": "running"},
-    {"name": "jackin-codex-4d5e6f",  "agent": "codex",   "created_at": "2026-05-17T13:04:11Z", "status": "running"}
-  ],
-  "container_uptime_secs": 3721
-}
-```
+**Event stream (Phase 3):** `session-started`, `session-ended`, `all-sessions-ended`, `agent-state-changed {session_id, state}`.
 
-`agent` is derived from the session name prefix (`jackin-<agent>-<id>` → `<agent>`).
+### Agent state model
 
-**Future commands (deferred — daemon phase):**
+Each session tracks one of four states. These states are inferred from PTY output activity and foreground process state — no agent hooks or configuration required.
 
-- `attach {"session": "jackin-claude-1a2b3c"}` — instruct the binary to run the attach command on behalf of the daemon
-- `events` — upgrade connection to an event stream: `session-started`, `session-ended`, `all-sessions-ended`
+| State | Meaning |
+|---|---|
+| `working` | Output flowing or foreground process actively running |
+| `blocked` | Silent for N seconds with a foreground process present — waiting for operator input |
+| `done` | Work finished; the operator has not yet reviewed the output |
+| `idle` | Reviewed or no work in progress |
 
-### Host side changes
+The two-stage `done` / `idle` split is important: a `done` slot should not be automatically refilled by the autonomous task queue or cleaned up from the console until the operator has acknowledged the output. This distinction drives the "ready for review" indicator in the desktop app and the dispatch logic in future autonomous queue work.
 
-When `docker run` starts a role container, jackin adds the socket mount and switches the entrypoint:
+### Session lifecycle tracking
 
-```
---entrypoint /usr/local/bin/jackin-container
--v /run/jackin/<instance-id>.sock:/run/jackin/jackin.sock
-```
+**Phase 2** (Rust binary, tmux still present): the binary watches the tmux server socket at `/tmp/tmux-<uid>/default` via `inotify`. Socket deleted → all sessions ended → exit 0. This replaces the 1-second bash polling loop from Phase 1.
 
-`inspect_agent_sessions` in <RepoFile path="src/runtime/attach.rs" /> is updated to connect to the socket and issue a `status` request instead of running `docker exec tmux list-sessions`. The existing `AgentSession` struct is populated from the response.
+**Phase 3** (multiplexer phase): the binary owns session lifecycle directly. No tmux. When the last session exits cleanly, the binary exits 0. When `SIGTERM` arrives, all sessions are terminated then the binary exits.
+
+### Why replace tmux
+
+- No structured API — every tmux interaction from the host requires `docker exec tmux ...`, a subprocess round-trip with string output that must be parsed.
+- No agent-state awareness — tmux reports session names and windows; it has no concept of whether the process inside is blocked, working, or done.
+- No event stream — the host cannot subscribe to "a session ended" without polling.
+- tmux adds binary size to the image, startup overhead, and a dependency Jackin does not control.
+
+A purpose-built multiplexer in `jackin-container` gives Jackin a clean control plane: structured socket, typed events, agent-state inference, and no external process to coordinate with.
+
+### Host-side changes per phase
+
+**Phase 2:** add socket mount to `docker run`; update `inspect_agent_sessions` in <RepoFile path="src/runtime/attach.rs" /> to connect to socket instead of `docker exec tmux list-sessions`.
+
+**Phase 3:** remove `tmux` from the derived image (<RepoFile path="docker/construct/Dockerfile" />); replace all `docker exec tmux ...` call sites in <RepoFile path="src/runtime/attach.rs" /> and <RepoFile path="src/runtime/launch.rs" /> with socket API calls.
+
+## Prior art: Herdr
+
+[Herdr](https://github.com/ogulcancelik/herdr) (`ogulcancelik/herdr`) is the closest public reference for the multiplexer server concept. It is a single Rust binary, built for exactly the same problem: managing multiple AI coding agents with per-project workspace grouping, four-state status tracking, a Unix socket API, and session persistence across client detach.
+
+Herdr cannot be embedded in or linked from Jackin: it is **AGPL-3.0**, which conflicts with Jackin's **Apache-2.0** license. Any reimplementation in `jackin-container` must be written from scratch. Ideas, concepts, and algorithms are not protected by copyright; the code that expresses them is.
+
+The deeper architectural difference: Herdr wraps **bare host processes**. Jackin wraps **Docker containers**. Herdr's status heuristics read foreground process state and PTY output from the agent's own terminal. When the agent runs inside a container and Herdr sees `docker attach` rather than the agent, the heuristics degrade. `jackin-container` runs *inside* the container — it sees the agent's PTY output directly, making the same heuristic approach reliable.
+
+### Concepts to implement independently
+
+**Two-stage done state.** Herdr distinguishes `Done` (work finished, not yet reviewed) from `Idle` (reviewed or empty). Jackin's `AgentStatus` model should adopt the same split for the same reasons: the autonomous task queue must not refill a `done` slot until the operator acknowledges, and the desktop app needs a distinct "ready for review" surface. Whether this lands as a `ReadyForReview` enum variant or as `Idle` + a separate acknowledgement flag is a design detail for Phase 3.
+
+**Workspace-level status roll-up.** Herdr's workspace sidebar shows the most urgent child status at the workspace level — one blocked agent makes the whole workspace show `Blocked`. The urgency order is `blocked > working > done > idle`. The console Instances panel should adopt this roll-up rule once agent-state events from Phase 3 are available.
+
+**Notification suppression when already looking.** Herdr suppresses sound and toast notifications when the relevant pane is focused. Jackin's attention prompts design should include the equivalent: if the console currently has that workspace row focused, downgrade or skip the OS notification. The precise condition needs design (console selection is coarser than Herdr's pane-level focus).
+
+**Sound escalation as opt-in.** Herdr ships silent toast by default, with opt-in sound escalation after N seconds. This pattern is validated by Herdr's live usage and should stay in the attention prompts V1 design.
+
+**Blocking `wait` semantics on the socket.** Herdr's socket API lets callers block until a status transition (`herdr wait agent-status 1-1 --status done`). This is a better interface than polling for automation scripts and for the daemon's event subscription. The `events` stream in Phase 3 should support the same pattern: a subscriber blocks on the stream and receives the event when the transition occurs.
+
+**PTY inference heuristic.** Herdr detects agent state with zero configuration by reading foreground process state plus output-silence duration. `jackin-container` will use the same approach — with the advantage that it runs inside the container and reads the agent's PTY directly rather than through a `docker attach` wrapper. The specific threshold tuning (how many seconds of silence = `blocked`) is a Phase 3 research task.
+
+### What not to borrow from Herdr
+
+- **Herdr as the session substrate.** Herdr manages bare-host PTY processes. `jackin-container` needs a PTY multiplexer that runs inside a container, is statically linked, and has no host-side dependencies. Herdr's internals are the wrong shape for this.
+- **Herdr's theme system.** Jackin's TUI uses a fixed palette. Themes are not a priority.
+- **Herdr's SSH remote tunneling.** Herdr's transparent PTY forwarding over SSH has a different threat model than the explicit operator-controlled tunneling planned for [jackin-remote](/reference/roadmap/jackin-remote/).
+- **Herdr's wire protocol verbatim.** The socket API vocabulary should be designed for Jackin's data model. Herdr is inspiration for the `wait` semantics, not a drop-in spec.
 
 ## Implementation plan
 
-### Phase 1 — Binary skeleton as PID 1 *(fixes the cleanup gap)*
+### Phase 1 — Cleanup gap closed *(shipped — bash supervisor + host-side teardown)*
+
+**Current state:** containers still use tmux as the session layer. This is a temporary arrangement: `docker exec tmux new-session` creates sessions, `docker exec tmux attach-session` reconnects, and `docker exec tmux list-sessions` queries what is running. The bash supervisor wraps tmux from the outside and has no understanding of what is happening inside sessions. This is the minimal viable approach — it works, but it gives Jackin no visibility into agent state, no structured event stream, and no way to manage sessions without shelling into the container.
+
+**What shipped in Phase 1:** <RepoFile path="docker/runtime/supervisor.sh" /> now polls `tmux list-sessions` every second rather than watching the socket file disappear. Using `tmux list-sessions` is robust to stale socket files left behind when tmux crashes or is killed without cleanup — a plain `[ -S socket ]` file-existence check would loop forever on a dead socket. When `tmux list-sessions` returns non-zero (server gone or no sessions), the supervisor exits 0. A 60-second startup grace period waits for the socket file to appear before entering the monitor loop, preventing a premature exit before the first `docker exec tmux new-session` creates it.
+
+Two companion fixes in the host-side Rust code were required to make the cleanup path actually fire. <RepoFile path="src/isolation/finalize.rs" /> (`finalize_foreground_session`) now calls `has_tmux_sessions` when the container is still `Running` after `docker exec` returns: an empty session list means supervisor lag, not a detach, so the code falls through to `finalize_clean_exit` and sweeps isolation worktrees normally instead of returning `Preserved`. <RepoFile path="src/runtime/launch.rs" /> now tears down the DinD sidecar and Docker network in every branch where the container has exited — including crashes (non-zero exit) — rather than preserving them for a `jackin hardline` reconnect that cannot work without a live DinD. When `docker exec` returns and the container is still `Running` with an empty session list, teardown fires immediately without a redundant re-query (the session check in `finalize_foreground_session` already confirmed no sessions are present). Only a genuinely live detach (container still `Running` AND sessions confirmed present) keeps the DinD alive for reconnect.
+
+**Why this is temporary and why a purpose-built multiplexer makes sense:** researching [Herdr](https://github.com/ogulcancelik/herdr) — a Rust terminal multiplexer purpose-built for AI coding agents — confirmed that the missing piece is a session layer that understands AI agents natively. Herdr tracks four agent states (blocked / working / done / idle) with zero configuration, exposes a Unix socket API for session control, and streams status-change events. It is designed for bare host processes (not containers) and is AGPL-3.0, so it cannot be embedded in Jackin. But the core concept is exactly right: a multiplexer that knows about agents, not just terminals. `jackin-container` will become that multiplexer — running inside the container where it can see the agent's PTY output directly, exposed through a Unix socket that the host and desktop app both drive. The tmux layer goes away in Phase 3.
+
+### Phase 2 — Rust binary skeleton + Unix socket status command *(structured session inventory)*
 
 - Create `crates/jackin-container/` workspace member.
-- Implement PID 1 bootstrap: zombie reaping via `SIGCHLD` handler, `SIGTERM`/`SIGINT` → clean exit.
-- Implement tmux socket watch via `inotify`. Exit 0 when socket is deleted.
+- Implement PID 1 bootstrap: zombie reaping via `SIGCHLD`, `SIGTERM`/`SIGINT` → clean exit.
+- Implement tmux socket watch via `inotify` (replaces bash polling). Exit 0 when socket deleted.
+- Implement Unix socket listener and `status` command.
 - Add CI job: cross-compile for `linux/amd64` and `linux/arm64`, publish to GitHub Releases.
-- Replace `supervisor.sh` in the derived `Dockerfile` with the binary download and install.
-- Remove <RepoFile path="docker/runtime/supervisor.sh" /> (or keep as fallback for images built before this lands — pre-release, so no migration shim needed).
+- Add socket mount to `docker run` in <RepoFile path="src/runtime/launch.rs" />.
+- Update `inspect_agent_sessions` in <RepoFile path="src/runtime/attach.rs" /> to query socket instead of `docker exec tmux list-sessions`.
+- Update `hardline --inspect` and console session inventory to use socket path.
+- Remove <RepoFile path="docker/runtime/supervisor.sh" /> (pre-release; no migration shim needed).
 
-### Phase 2 — Unix socket + status command *(structured session inventory)*
+### Phase 3 — In-container multiplexer *(replace tmux)*
 
-- Implement the Unix socket listener and `status` command in `jackin-container`.
-- Add the socket mount (`-v /run/jackin/<instance-id>.sock:/run/jackin/jackin.sock`) to the `docker run` call in <RepoFile path="src/runtime/launch.rs" />.
-- Update `inspect_agent_sessions` in <RepoFile path="src/runtime/attach.rs" /> to query the socket instead of running `docker exec tmux list-sessions`.
-- Update `hardline --inspect` and console session inventory to use the socket path.
+- Implement PTY session management in `jackin-container`: spawn PTY sessions, manage their lifecycle, reap child processes.
+- Implement agent state inference from PTY output and foreground process state (working / blocked / done / idle). Design the silence threshold and process-state heuristic.
+- Implement the two-stage `done` / `idle` split and the operator-acknowledgement mechanism.
+- Expand socket API: `session.create`, `session.kill`, `session.title`, `session.attach`, `events`.
+- Implement event stream: `session-started`, `session-ended`, `all-sessions-ended`, `agent-state-changed`.
+- Implement workspace-level status roll-up (`blocked > working > done > idle`) on the host side, consuming events from the socket.
+- Remove `tmux` from the derived image (<RepoFile path="docker/construct/Dockerfile" />).
+- Replace all `docker exec tmux ...` call sites in the host CLI with socket API calls.
+- Update console session panel to consume `agent-state-changed` events rather than polling.
+- Update attention prompts to subscribe to `blocked` state events rather than doing PTY polling from the host.
 
-### Phase 3 — Daemon integration *(deferred — depends on jackin daemon)*
+### Phase 4 — Daemon integration and desktop app bridge *(deferred)*
 
-- Add `events` command: the binary streams `session-started`, `session-ended`, and `all-sessions-ended` events over the socket.
-- Daemon subscribes to events per running container and updates the instance index reactively.
-- See [jackin daemon](/reference/roadmap/jackin-daemon/) for the daemon architecture.
+- Daemon connects to each running container's socket and maintains a live session index across all containers.
+- Desktop app reads from the daemon's aggregated view; each `jackin-container` socket is the per-container data source. The multiplexer IS the server; the desktop companion reads what is happening inside the container through it.
+- Advanced commands: session snapshots, resource usage per session, log streaming.
+- See [jackin daemon](/reference/roadmap/jackin-daemon/) and [Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/).
 
 ## Relationship to other roadmap items
 
-- **[Console agent session control](/reference/roadmap/console-agent-session-control/)** — Phase 4 (session reconciliation in the console) unblocks once Phase 2 of this item ships: the binary exposes live session state, eliminating the need to reconcile from a manifest snapshot.
-- **[Agent runtime status](/reference/roadmap/agent-runtime-status/)** — idle/busy indicators per session require the binary to track agent process state inside the container. Phase 3 events are the natural delivery mechanism.
-- **[jackin daemon](/reference/roadmap/jackin-daemon/)** — the binary is the per-container endpoint the daemon talks to. Phase 3 of this item and the daemon's container-watch phase are designed together.
+- **[Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)** — Herdr is evaluated there as the strongest prior art for the multiplexer vision. The full comparative table (Herdr vs. Jackin values) lives in the research overview.
+- **[Console agent session control](/reference/roadmap/console-agent-session-control/)** — Phase 4 of that item unblocks once Phase 2 of this item ships: the binary exposes live session state, eliminating manifest-snapshot reconciliation.
+- **[Agent runtime status](/reference/roadmap/agent-runtime-status/)** — the `agent-state-changed` event stream from Phase 3 is the delivery mechanism for blocked/working/done/idle indicators in the console and hardline.
+- **[Agent attention prompts](/reference/roadmap/agent-attention-prompts/)** — `blocked` events replace PTY polling from the host; `done` events trigger the "ready for review" notification path.
+- **[jackin daemon](/reference/roadmap/jackin-daemon/)** — `jackin-container` is the per-container endpoint the daemon subscribes to. Phase 4 of this item and the daemon's container-watch phase are designed together.
+- **[Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/)** — Phase 3 of this item is the prerequisite: the desktop app's live session view is driven by `jackin-container` socket events aggregated by the daemon.
+- **[jackin-remote](/reference/roadmap/jackin-remote/)** — remote containers will need a `jackin-container` socket accessible over the tunnel; the socket mount and auth model need to account for the remote path.
