@@ -56,6 +56,12 @@ impl DockerApi for NoOpDocker {
     async fn remove_image(&self, _name: &str) -> anyhow::Result<RemoveImageOutcome> {
         Ok(RemoveImageOutcome::NotFound)
     }
+    async fn inspect_image_labels(
+        &self,
+        _image: &str,
+    ) -> anyhow::Result<std::collections::HashMap<String, String>> {
+        Ok(std::collections::HashMap::new())
+    }
     async fn inspect_image_label(
         &self,
         _image: &str,

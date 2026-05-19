@@ -4,6 +4,11 @@ use crate::docker::{CommandRunner, RunOptions};
 use crate::docker_client::DockerApi;
 use crate::instance::InstanceManifest;
 
+// `tmux list-sessions` exits 1 when no sessions exist; `|| true` maps that to
+// exit 0 so only a real infrastructure failure reaches `Err`.
+pub const TMUX_LIST_SESSIONS_CMD: &str =
+    "tmux list-sessions -F '#{session_name}' 2>/dev/null || true";
+
 pub use crate::docker_client::ContainerState;
 #[cfg(test)]
 use crate::instance::{InstanceIndex, InstanceStatus};
@@ -37,19 +42,8 @@ pub async fn inspect_agent_sessions(
         return AgentSessionInventory::NotRunning;
     }
 
-    // `tmux list-sessions` exits 1 when no sessions exist, which docker exec
-    // surfaces as an error. Running via `sh -c '... || true'` maps both "zero
-    // sessions" and "sessions found" to exit 0; only a real infrastructure
-    // failure (container stopped mid-call, docker unavailable) reaches `Err`.
     match docker
-        .exec_capture(
-            container_name,
-            &[
-                "sh",
-                "-c",
-                "tmux list-sessions -F '#{session_name}' 2>/dev/null || true",
-            ],
-        )
+        .exec_capture(container_name, &["sh", "-c", TMUX_LIST_SESSIONS_CMD])
         .await
     {
         Ok(output) => AgentSessionInventory::Sessions(parse_tmux_sessions(&output)),
@@ -171,18 +165,17 @@ pub(super) async fn reconnect_or_create_session(
     }
 }
 
-/// Open a one-shot interactive zsh shell in a running container.
-///
-/// Intentionally ephemeral — no tmux session, no reconnect. Used by
-/// `jackin hardline --shell` and the console Shell action.
-pub async fn spawn_shell_session(
+/// Verify the container is reachable (running/paused/restarting).
+/// Returns `Ok(())` when the container is accessible, `Err` otherwise.
+/// `stopped_hint` is appended to the "is stopped" error message.
+async fn require_container_reachable(
     paths: &JackinPaths,
     container_name: &str,
     docker: &impl crate::docker_client::DockerApi,
-    runner: &mut impl CommandRunner,
+    stopped_hint: &str,
 ) -> anyhow::Result<()> {
     match docker.inspect_container_state(container_name).await {
-        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {}
+        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => Ok(()),
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
                 anyhow::bail!("{message}");
@@ -199,10 +192,29 @@ pub async fn spawn_shell_session(
         | ContainerState::Removing
         | ContainerState::Dead => {
             anyhow::bail!(
-                "container '{container_name}' is stopped; run `jackin hardline {container_name}` to restart it before opening a shell"
+                "container '{container_name}' is stopped; run `jackin hardline {container_name}` to {stopped_hint}"
             );
         }
     }
+}
+
+/// Open a one-shot interactive zsh shell in a running container.
+///
+/// Intentionally ephemeral — no tmux session, no reconnect. Used by
+/// `jackin hardline --shell` and the console Shell action.
+pub async fn spawn_shell_session(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl crate::docker_client::DockerApi,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    require_container_reachable(
+        paths,
+        container_name,
+        docker,
+        "restart it before opening a shell",
+    )
+    .await?;
 
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
@@ -229,28 +241,13 @@ pub async fn spawn_agent_session(
     docker: &impl crate::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
-    match docker.inspect_container_state(container_name).await {
-        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {}
-        ContainerState::NotFound => {
-            if let Some(message) = missing_restore_message(paths, container_name)? {
-                anyhow::bail!("{message}");
-            }
-            anyhow::bail!(
-                "container '{container_name}' not found; use `jackin load` to start a new session"
-            );
-        }
-        ContainerState::InspectUnavailable(reason) => {
-            anyhow::bail!("{}", inspect_unavailable_message(container_name, &reason));
-        }
-        ContainerState::Stopped { .. }
-        | ContainerState::Created
-        | ContainerState::Removing
-        | ContainerState::Dead => {
-            anyhow::bail!(
-                "container '{container_name}' is stopped; run `jackin hardline {container_name}` to restart or recover it before using `--new`"
-            );
-        }
-    }
+    require_container_reachable(
+        paths,
+        container_name,
+        docker,
+        "restart or recover it before using `--new`",
+    )
+    .await?;
 
     let workdir = manifest.map_or("/workspace", |manifest| manifest.workdir.as_str());
     let agent_env = format!(

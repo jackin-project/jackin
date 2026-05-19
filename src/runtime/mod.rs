@@ -1,4 +1,4 @@
-mod attach;
+pub(crate) mod attach;
 mod caffeinate;
 mod cleanup;
 mod discovery;

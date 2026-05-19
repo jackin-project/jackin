@@ -125,6 +125,7 @@ pub trait DockerApi {
     async fn remove_image(&self, name: &str) -> anyhow::Result<RemoveImageOutcome>;
     async fn inspect_image_label(&self, image: &str, label: &str)
     -> anyhow::Result<Option<String>>;
+    async fn inspect_image_labels(&self, image: &str) -> anyhow::Result<HashMap<String, String>>;
     async fn pull_image(&self, image: &str) -> anyhow::Result<()>;
     async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String>;
 }
@@ -390,23 +391,26 @@ impl DockerApi for BollardDockerClient {
         }
     }
 
+    async fn inspect_image_labels(&self, image: &str) -> anyhow::Result<HashMap<String, String>> {
+        match self.inner.inspect_image(image).await {
+            Err(e) if is_http_status(&e, 404) => Ok(HashMap::new()),
+            Err(e) => Err(anyhow::Error::from(e).context(format!("inspecting image {image}"))),
+            Ok(info) => Ok(info
+                .config
+                .and_then(|c| c.labels)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|(_, v)| !v.is_empty())
+                .collect()),
+        }
+    }
+
     async fn inspect_image_label(
         &self,
         image: &str,
         label: &str,
     ) -> anyhow::Result<Option<String>> {
-        match self.inner.inspect_image(image).await {
-            Err(e) if is_http_status(&e, 404) => Ok(None),
-            Err(e) => Err(anyhow::Error::from(e).context(format!("inspecting image {image}"))),
-            Ok(info) => {
-                let value = info
-                    .config
-                    .and_then(|c| c.labels)
-                    .and_then(|labels| labels.get(label).cloned())
-                    .filter(|s| !s.is_empty());
-                Ok(value)
-            }
-        }
+        Ok(self.inspect_image_labels(image).await?.remove(label))
     }
 
     async fn pull_image(&self, image: &str) -> anyhow::Result<()> {
@@ -515,7 +519,8 @@ pub struct FakeDockerClient {
     pub list_image_tags_queue: std::cell::RefCell<std::collections::VecDeque<Vec<String>>>,
     pub remove_image_queue: std::cell::RefCell<std::collections::VecDeque<RemoveImageOutcome>>,
     pub exec_capture_queue: std::cell::RefCell<std::collections::VecDeque<String>>,
-    pub inspect_image_label_queue: std::cell::RefCell<std::collections::VecDeque<Option<String>>>,
+    pub inspect_image_labels_queue:
+        std::cell::RefCell<std::collections::VecDeque<HashMap<String, String>>>,
     pub inspect_network_queue: std::cell::RefCell<std::collections::VecDeque<Option<NetworkRow>>>,
     pub fail_with: Vec<(String, String)>,
     pub created_containers: std::cell::RefCell<Vec<(String, ContainerSpec)>>,
@@ -533,7 +538,7 @@ impl Default for FakeDockerClient {
             list_image_tags_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             remove_image_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
-            inspect_image_label_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            inspect_image_labels_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             inspect_network_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             fail_with: Vec::new(),
             created_containers: std::cell::RefCell::new(Vec::new()),
@@ -611,11 +616,11 @@ impl FakeDockerClient {
             .unwrap_or_default()
     }
 
-    fn pop_inspect_image_label(&self) -> Option<String> {
-        self.inspect_image_label_queue
+    fn pop_inspect_image_labels(&self) -> HashMap<String, String> {
+        self.inspect_image_labels_queue
             .borrow_mut()
             .pop_front()
-            .flatten()
+            .unwrap_or_default()
     }
 
     fn pop_inspect_network(&self) -> Option<NetworkRow> {
@@ -740,15 +745,19 @@ impl DockerApi for FakeDockerClient {
         Ok(self.pop_remove_image())
     }
 
+    async fn inspect_image_labels(&self, image: &str) -> anyhow::Result<HashMap<String, String>> {
+        let op = format!("docker inspect image:{image}");
+        self.record(&op);
+        self.check_fail(&op)?;
+        Ok(self.pop_inspect_image_labels())
+    }
+
     async fn inspect_image_label(
         &self,
         image: &str,
         label: &str,
     ) -> anyhow::Result<Option<String>> {
-        let op = format!("docker inspect image:{image} label:{label}");
-        self.record(&op);
-        self.check_fail(&op)?;
-        Ok(self.pop_inspect_image_label())
+        Ok(self.inspect_image_labels(image).await?.remove(label))
     }
 
     async fn pull_image(&self, image: &str) -> anyhow::Result<()> {

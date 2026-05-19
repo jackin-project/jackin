@@ -13,6 +13,7 @@ use crate::debug_log;
 use crate::docker::CommandRunner;
 use crate::isolation::cleanup::force_cleanup_isolated;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
+use crate::runtime::attach::TMUX_LIST_SESSIONS_CMD;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,7 +122,7 @@ pub async fn finalize_foreground_session(
         oom = outcome.oom_killed,
         i = is_interactive,
     );
-    if outcome.exit_code.is_none() || outcome.oom_killed || outcome.exit_code != Some(0) {
+    if outcome.oom_killed || outcome.exit_code != Some(0) {
         // Still-running container (exit_code=None, not OOM): the docker exec
         // returned but the supervisor's 1-second poll loop may not have caught the
         // tmux server exit yet. Check sessions to distinguish detach from lag:
@@ -172,14 +173,7 @@ async fn has_tmux_sessions(
     // socket is stale. Both "no server" and "no sessions" collapse to exit 0 with
     // empty stdout so the caller only sees a non-empty result when sessions exist.
     match docker
-        .exec_capture(
-            container_name,
-            &[
-                "sh",
-                "-c",
-                "tmux list-sessions -F '#{session_name}' 2>/dev/null || true",
-            ],
-        )
+        .exec_capture(container_name, &["sh", "-c", TMUX_LIST_SESSIONS_CMD])
         .await
     {
         Ok(output) => !output.trim().is_empty(),

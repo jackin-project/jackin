@@ -134,12 +134,12 @@ pub(super) async fn build_agent_image(
     // override while this invocation uses the canonical one, or vice versa —
     // and must be rebuilt from scratch rather than reused.
     let current_construct = crate::repo_contract::construct_image();
-    let construct_label = docker
+    let cached_construct = docker
         .inspect_image_label(&image, LABEL_IMAGE_CONSTRUCT)
         .await
         .with_context(|| format!("inspecting construct label on derived image {image}"))?;
     let construct_mismatch =
-        !rebuild && construct_label.is_some_and(|cached| cached != current_construct);
+        !rebuild && cached_construct.is_some_and(|cached| cached != current_construct);
     let rebuild = rebuild || construct_mismatch;
 
     let cache_bust_value = if rebuild || agent_update {
@@ -265,40 +265,32 @@ async fn published_image_is_stale(
         return true;
     }
 
+    let labels = match docker.inspect_image_labels(published).await {
+        Err(e) => {
+            eprintln!(
+                "warning: could not read labels from {published} ({e}); \
+                 treating published image as stale"
+            );
+            return true;
+        }
+        Ok(map) => map,
+    };
+
     if let Some(sha) = head_sha {
-        match docker
-            .inspect_image_label(published, LABEL_IMAGE_ROLE_GIT_SHA)
-            .await
-        {
-            Err(e) => {
-                eprintln!(
-                    "warning: could not read label {LABEL_IMAGE_ROLE_GIT_SHA} from {published} ({e}); \
-                     treating published image as stale"
-                );
-                return true;
-            }
-            Ok(Some(ref label_sha)) if label_sha == sha => return false,
-            Ok(Some(_)) => return true,
-            Ok(None) => {}
+        match labels.get(LABEL_IMAGE_ROLE_GIT_SHA).map(String::as_str) {
+            Some(label_sha) if label_sha == sha => return false,
+            Some(_) => return true,
+            None => {}
         }
     }
 
     // Fallback: construct-version check for pre-role-git-sha images.
-    match docker
-        .inspect_image_label(published, LABEL_IMAGE_CONSTRUCT_VERSION)
-        .await
-    {
-        Err(e) => {
-            eprintln!(
-                "warning: could not read label {LABEL_IMAGE_CONSTRUCT_VERSION} from {published} ({e}); \
-                 treating published image as stale"
-            );
-            true
-        }
-        Ok(label) => label.is_some_and(|stored| stored != dockerfile_version),
-    }
+    labels
+        .get(LABEL_IMAGE_CONSTRUCT_VERSION)
+        .is_some_and(|stored| stored != dockerfile_version)
 }
 
+#[allow(clippy::type_complexity)]
 async fn extract_agent_version(
     paths: &JackinPaths,
     image: &str,
@@ -306,84 +298,50 @@ async fn extract_agent_version(
     debug: bool,
     runner: &mut impl CommandRunner,
 ) {
-    match agent {
-        crate::agent::Agent::Claude => {
-            let Ok(version) = runner
-                .capture(
-                    "docker",
-                    &["run", "--rm", "--entrypoint", "claude", image, "--version"],
-                    None,
-                )
-                .await
-            else {
-                return;
-            };
-            let version = version.trim();
-            if !version.is_empty() {
-                if debug {
-                    eprintln!("        Claude {version}");
-                }
-                if let Some(semver) = version_check::parse_claude_version(version) {
-                    version_check::store_image_version(paths, image, semver);
-                } else if debug {
-                    eprintln!("warning: unexpected claude --version output: {version:?}");
-                }
-            }
-        }
-        crate::agent::Agent::Opencode => {
-            let Ok(version) = runner
-                .capture(
-                    "docker",
-                    &[
-                        "run",
-                        "--rm",
-                        "--entrypoint",
-                        "opencode",
-                        image,
-                        "--version",
-                    ],
-                    None,
-                )
-                .await
-            else {
-                return;
-            };
-            let version = version.trim();
-            if !version.is_empty() {
-                if debug {
-                    eprintln!("        OpenCode {version}");
-                }
-                if let Some(semver) = version_check::parse_opencode_version(version) {
-                    version_check::store_opencode_version(paths, image, semver);
-                } else if debug {
-                    eprintln!("warning: unexpected opencode --version output: {version:?}");
-                }
-            }
-        }
-        crate::agent::Agent::Kimi => {
-            let Ok(version) = runner
-                .capture(
-                    "docker",
-                    &["run", "--rm", "--entrypoint", "kimi", image, "--version"],
-                    None,
-                )
-                .await
-            else {
-                return;
-            };
-            let version = version.trim();
-            if !version.is_empty() {
-                if debug {
-                    eprintln!("        Kimi {version}");
-                }
-                if let Some(semver) = version_check::parse_kimi_version(version) {
-                    version_check::store_kimi_version(paths, image, semver);
-                } else if debug {
-                    eprintln!("warning: unexpected kimi --version output: {version:?}");
-                }
-            }
-        }
-        _ => {}
+    let (display, parse, store): (
+        &str,
+        for<'a> fn(&'a str) -> Option<&'a str>,
+        fn(&JackinPaths, &str, &str),
+    ) = match agent {
+        crate::agent::Agent::Claude => (
+            "Claude",
+            version_check::parse_claude_version,
+            version_check::store_image_version,
+        ),
+        crate::agent::Agent::Opencode => (
+            "OpenCode",
+            version_check::parse_opencode_version,
+            version_check::store_opencode_version,
+        ),
+        crate::agent::Agent::Kimi => (
+            "Kimi",
+            version_check::parse_kimi_version,
+            version_check::store_kimi_version,
+        ),
+        _ => return,
+    };
+    let slug = agent.slug();
+    let Ok(raw) = runner
+        .capture(
+            "docker",
+            &["run", "--rm", "--entrypoint", slug, image, "--version"],
+            None,
+        )
+        .await
+    else {
+        return;
+    };
+    let version = raw.trim();
+    if version.is_empty() {
+        return;
+    }
+    if debug {
+        eprintln!("        {display} {version}");
+    }
+    if let Some(semver) = parse(version) {
+        store(paths, image, semver);
+    } else if debug {
+        eprintln!("warning: unexpected {slug} --version output: {version:?}");
     }
 }
 
@@ -416,43 +374,38 @@ async fn resolve_github_token(runner: &mut impl CommandRunner) -> Option<String>
 mod tests {
     use super::*;
     use crate::docker_client::FakeDockerClient;
+    use std::collections::HashMap;
 
-    fn make_docker_with_labels(labels: Vec<Option<String>>) -> FakeDockerClient {
+    fn make_docker(labels: HashMap<String, String>) -> FakeDockerClient {
         let docker = FakeDockerClient::default();
-        for label in labels {
-            docker
-                .inspect_image_label_queue
-                .borrow_mut()
-                .push_back(label);
-        }
+        docker
+            .inspect_image_labels_queue
+            .borrow_mut()
+            .push_back(labels);
         docker
     }
 
-    // pull_image always succeeds in FakeDockerClient (no fail_with configured).
-    // inspect_image_label_queue is consumed in order: first call = role_git_sha,
-    // second call = construct_version (fallback).
-
     #[tokio::test]
     async fn published_image_fresh_when_sha_matches() {
-        // Queue: role_git_sha label = "abc123" → pull succeeds, SHA matches → not stale.
-        let docker = make_docker_with_labels(vec![Some("abc123".to_string())]);
+        let docker =
+            make_docker([(LABEL_IMAGE_ROLE_GIT_SHA.to_string(), "abc123".to_string())].into());
         let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
         assert!(!stale, "matching SHA should report image as fresh");
     }
 
     #[tokio::test]
     async fn published_image_stale_when_sha_differs() {
-        // Queue: role_git_sha label = "oldsha" → SHA mismatch → stale.
-        let docker = make_docker_with_labels(vec![Some("oldsha".to_string())]);
+        let docker =
+            make_docker([(LABEL_IMAGE_ROLE_GIT_SHA.to_string(), "oldsha".to_string())].into());
         let stale = published_image_is_stale("img:latest", "0.1", Some("newsha"), &docker).await;
         assert!(stale, "mismatched SHA should report image as stale");
     }
 
     #[tokio::test]
     async fn published_image_falls_back_to_construct_version_when_no_sha_label() {
-        // No role_git_sha label (None). Fallback: construct_version label matches → fresh.
-        // Queue: first call (role_git_sha) → None, second call (construct_version) → "0.1".
-        let docker = make_docker_with_labels(vec![None, Some("0.1".to_string())]);
+        // No SHA label; construct_version matches → fresh.
+        let docker =
+            make_docker([(LABEL_IMAGE_CONSTRUCT_VERSION.to_string(), "0.1".to_string())].into());
         let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
         assert!(
             !stale,
@@ -462,8 +415,8 @@ mod tests {
 
     #[tokio::test]
     async fn published_image_stale_when_construct_version_differs() {
-        // No role_git_sha label; construct_version label = "0.0" ≠ "0.1" → stale.
-        let docker = make_docker_with_labels(vec![None, Some("0.0".to_string())]);
+        let docker =
+            make_docker([(LABEL_IMAGE_CONSTRUCT_VERSION.to_string(), "0.0".to_string())].into());
         let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
         assert!(
             stale,
@@ -473,8 +426,8 @@ mod tests {
 
     #[tokio::test]
     async fn published_image_fresh_when_no_labels_at_all() {
-        // No role_git_sha label AND no construct_version label → backward-compat: fresh.
-        let docker = make_docker_with_labels(vec![None, None]);
+        // No labels at all → backward-compat: fresh.
+        let docker = make_docker(HashMap::new());
         let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
         assert!(
             !stale,
