@@ -357,5 +357,6 @@ tmux set-option -g allow-passthrough on
 # Escape disambiguation delay causes misfired key sequences in agent TUI
 # vi-mode navigation.
 tmux set-option -sg escape-time 0
+tmux set-option -g mouse on
 
 exec "${LAUNCH[@]}"
