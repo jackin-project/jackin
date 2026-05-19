@@ -367,6 +367,7 @@ fn stop_caffeinate(runner: &mut impl CommandRunner, pid: u32) -> anyhow::Result<
     // teardown with the role exit. `capture` (vs `run`) folds the
     // kill's stderr into the error message — preserving the prior
     // behaviour where `ESRCH`/`EPERM` text reached the breadcrumb.
+    crate::debug_log!("keep_awake", "stopping caffeinate (PID {pid})");
     runner
         .capture("kill", &[&pid.to_string()], None)
         .map(|_| ())

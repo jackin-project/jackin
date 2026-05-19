@@ -43,9 +43,11 @@ Additional agent sessions allow a second (or third) agent runtime to run inside 
 
 Each session gets a unique name: `jackin-<agent>-<id>` using the same convention as the first session. `JACKIN_AGENT=<agent>` is passed via `tmux new-session -e` so the new session can use a different agent runtime than the one originally loaded. The session runs `/jackin/runtime/entrypoint.sh` with `--workdir` pointing at the workspace working directory inside the container.
 
-When an agent session exits cleanly: the tmux session is removed. The container keeps running. Other sessions are unaffected.
+When an agent session exits cleanly and other sessions remain: the tmux session is removed. The container keeps running. Other sessions are unaffected.
 
-When an agent crashes (non-zero exit): the tmux session is removed. The supervisor is still alive, so the container keeps running. `jackin hardline` can create a fresh session inside the still-running container.
+When the last session in the container exits: the tmux server exits, which the supervisor detects within its 1-second poll interval. The supervisor exits 0, which stops the container. The host-side finalize path then runs the full DinD/network/certs teardown (see [Container shutdown](#container-shutdown)).
+
+When an agent crashes (non-zero exit): the tmux session is removed. If other sessions remain, the container keeps running. If it was the last session, the container stops as above and teardown fires.
 
 Both `reconnect_or_create_session` (plain `hardline`) and `spawn_agent_session` (`hardline --new`) set the terminal tab title to the role's display name before the blocking exec, matching the behavior of `jackin load`.
 
@@ -73,11 +75,41 @@ Implementation: <RepoFile path="src/runtime/attach.rs" /> (`inspect_agent_sessio
 
 ## Container shutdown
 
-`docker stop <container>` sends SIGTERM to PID 1 (the supervisor). The trap in <RepoFile path="docker/runtime/supervisor.sh" /> kills the background sleep and calls `exit 0`. The container exits cleanly.
+### Normal exit (agent exits cleanly)
+
+1. **Agent exits** (`/exit` in Claude Code, or the agent process terminates with code 0). The tmux pane closes. If it was the last pane in the session, the session closes. If it was the last session, the tmux server exits and removes its PID namespace.
+2. **Supervisor detects exit** within 1 second. <RepoFile path="docker/runtime/supervisor.sh" /> runs `tmux list-sessions` in a poll loop. When the server is gone, `tmux list-sessions` returns non-zero → the `while` loop exits → supervisor exits 0 → container exits 0.
+3. **`docker exec` returns** to jackin (the `tmux new-session` command unblocks). The container may still show as `Running` at this instant because the supervisor's exit and Docker's state update are not instantaneous.
+4. **`inspect_attach_outcome`** queries `docker inspect` → container is still `Running` → returns `AttachOutcome::still_running()` (exit_code = None).
+5. **`finalize_foreground_session`** sees `exit_code=None` and calls `has_tmux_sessions` — `docker exec <container> sh -c 'tmux list-sessions ... 2>/dev/null || true'`. No sessions → proceeds to `finalize_clean_exit` (isolation worktrees swept, clones removed).
+6. **`inspect_container_state`** queries Docker again. By now the container has usually stopped (Stopped/0) or is still Running (supervisor lag):
+   - **Stopped/0**: `run_clean_exit_teardown` runs directly.
+   - **Running**: `!is_preserved` (finalize returned Cleaned) → `run_clean_exit_teardown` runs without re-querying sessions.
+7. **`cleanup.run()`** removes all resources in order:
+   - `docker rm -f <role-container>`
+   - `docker rm -f <dind-container>`
+   - `docker volume rm <certs-volume>`
+   - `docker network rm <network>`
+8. **Caffeinate reconcile** (`caffeinate::reconcile`): no containers carry `jackin.keep_awake=true` anymore → `want_running=false`, `liveness=Alive` → `stop_caffeinate(pid)` → `kill <caffeinate-pid>`. In `--debug` output this appears as `[jackin debug keep_awake] stopping caffeinate (PID N)` followed by `[jackin debug cmd] kill N`.
+
+### Forced stop (`docker stop`)
+
+`docker stop <container>` sends SIGTERM to PID 1 (the supervisor). The trap in <RepoFile path="docker/runtime/supervisor.sh" /> kills the background sleep and calls `exit 0`. The container exits cleanly, then host-side cleanup fires through the same path as a normal exit.
 
 One important caveat: SIGTERM is **not forwarded** to processes started via `docker exec` (the tmux server and agent processes inside it). They are killed when the PID namespace tears down after the supervisor exits. Agents that flush state on SIGTERM do not receive that signal when `docker stop` runs — they are killed directly by the kernel as the namespace closes.
 
-`jackin load` teardown (after the foreground session exits cleanly with code 0): stops the container, stops and removes the DinD sidecar, removes the network and certs volume.
+### Detach (Ctrl-B D)
+
+When the operator detaches from tmux (`Ctrl-B D`) instead of exiting the agent, the `docker exec` process returns but the tmux session and server remain alive inside the container. The supervisor keeps running (sessions still present). On the host side:
+
+- `inspect_attach_outcome` → container is `Running` → `still_running()`.
+- `finalize_foreground_session` calls `has_tmux_sessions` → sessions found → returns `Preserved`.
+- Container state match: `is_preserved=true` → re-checks sessions via `inspect_agent_sessions` → sessions still present → `cleanup.disarm()`.
+- The DinD, network, and certs volume all remain. `jackin hardline` can reattach to the running session.
+
+### Crash (non-zero exit or OOM)
+
+When the container exits with a non-zero code or OOM, `inspect_container_state` returns `Stopped { exit_code: nonzero, ... }` or `Stopped { oom_killed: true, ... }`. jackin writes `InstanceStatus::Crashed` and runs `cleanup.run()` — DinD, network, and certs volume are all removed. The instance manifest records the crash so `jackin console` surfaces it as a recoverable state.
 
 ## What persists across session exit
 
@@ -95,17 +127,30 @@ One important caveat: SIGTERM is **not forwarded** to processes started via `doc
 
 ```
 jackin load
-  └─ docker run -d (supervisor as PID 1)
+  └─ docker run -d (supervisor.sh as PID 1 — polls tmux list-sessions every 1s)
   └─ docker exec tmux new-session -s jackin-claude-1a2b3c → [SESSION]
        │
-       ├─ operator closes terminal → session paused in tmux, container running
+       ├─ operator detaches (Ctrl-B D) → session alive in tmux, container running
        │     └─ jackin hardline → docker exec tmux attach-session → reattach
+       │     └─ DinD/network preserved while container running with sessions
        │
        ├─ jackin hardline --new → docker exec tmux new-session -s jackin-codex-abc123
        │     └─ [SECOND SESSION] — independent lifecycle, equal standing
+       │     └─ both sessions must exit before supervisor stops the container
        │
        ├─ jackin hardline --shell → docker exec /bin/zsh → [SHELL SESSION, no tmux]
        │
-       └─ agent exits cleanly (exit 0) → tmux session removed
-             └─ jackin teardown: stop container, remove DinD/network/certs
+       └─ agent exits (/exit or process ends) → tmux session removed
+             ├─ other sessions remain → container keeps running
+             └─ last session exits → tmux server exits → supervisor detects (≤1s)
+                   └─ supervisor exits 0 → container exits 0
+                   └─ jackin finalize:
+                       ├─ has_tmux_sessions check → no sessions → finalize_clean_exit
+                       ├─ isolation worktrees swept (git status, clones removed)
+                       └─ cleanup.run():
+                           ├─ docker rm -f <role-container>
+                           ├─ docker rm -f <dind-container>
+                           ├─ docker volume rm <certs-volume>
+                           ├─ docker network rm <network>
+                           └─ caffeinate reconcile → kill <caffeinate-pid>
 ```
