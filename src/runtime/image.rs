@@ -109,10 +109,8 @@ pub(super) fn build_agent_image(
 
     let build_arg_uid = format!("JACKIN_HOST_UID={}", host.uid);
     let build_arg_gid = format!("JACKIN_HOST_GID={}", host.gid);
-    let build_arg_role_git_sha = format!(
-        "ROLE_GIT_SHA={}",
-        head_sha.as_deref().unwrap_or("unknown")
-    );
+    let build_arg_role_git_sha =
+        format!("ROLE_GIT_SHA={}", head_sha.as_deref().unwrap_or("unknown"));
     // Always pass the cache-bust arg so Docker matches the correct layer.
     //
     // When rebuilding (update available / --rebuild), generate a fresh
