@@ -931,13 +931,6 @@ mod tests {
         config
     }
 
-    /// `list_running_agent_names` issues one `docker ps` capture; queue
-    /// the running-role list as its response.
-    #[allow(dead_code)]
-    fn fake_runner_with_running_agents(_names: &[&str]) -> runtime::FakeRunner {
-        runtime::FakeRunner::default()
-    }
-
     fn fake_docker_with_running_agents(names: &[&str]) -> crate::docker_client::FakeDockerClient {
         use crate::docker_client::{ContainerRow, FakeDockerClient};
         let rows: Vec<ContainerRow> = names

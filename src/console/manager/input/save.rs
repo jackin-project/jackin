@@ -2167,23 +2167,6 @@ mod tests {
         (tmp, paths, config, ws)
     }
 
-    /// `detect_workspace_edit_drift` issues two `capture` calls on the
-    /// runner: `list_records_for_workspace` is filesystem-only (no
-    /// runner traffic), but `list_role_names(running)` issues a `docker
-    /// ps` capture that returns the newline-separated container names.
-    /// Tests construct the runner with the appropriate output queued.
-    #[allow(dead_code)]
-    fn fake_runner_with_running(names: &[&str]) -> crate::runtime::FakeRunner {
-        let mut runner = crate::runtime::FakeRunner::default();
-        let joined = if names.is_empty() {
-            String::new()
-        } else {
-            format!("{}\n", names.join("\n"))
-        };
-        runner.capture_queue.push_back(joined);
-        runner
-    }
-
     #[test]
     fn save_blocks_with_error_popup_when_running_container_has_drifted_state() {
         let (tmp, paths, mut config, ws) = setup_with_isolated_record(

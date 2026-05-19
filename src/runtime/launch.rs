@@ -1486,11 +1486,11 @@ async fn load_role_with(
                 };
                 match load_result {
                     Ok(_) => {
-                        render_exit(&agent_display_name, docker, runner, opts).await;
+                        render_exit(&agent_display_name, docker, opts).await;
                         return Ok(());
                     }
                     Err(error) => {
-                        render_exit(&agent_display_name, docker, runner, opts).await;
+                        render_exit(&agent_display_name, docker, opts).await;
                         return Err(error);
                     }
                 }
@@ -1515,11 +1515,11 @@ async fn load_role_with(
                 };
                 match load_result {
                     Ok(_) => {
-                        render_exit(&agent_display_name, docker, runner, opts).await;
+                        render_exit(&agent_display_name, docker, opts).await;
                         return Ok(());
                     }
                     Err(error) => {
-                        render_exit(&agent_display_name, docker, runner, opts).await;
+                        render_exit(&agent_display_name, docker, opts).await;
                         return Err(error);
                     }
                 }
@@ -1528,9 +1528,9 @@ async fn load_role_with(
     };
     let restoring = restore_container.is_some();
     let (container_name, _name_lock) = if let Some(container_name) = restore_container {
-        claim_known_container_name(paths, &container_name, docker, runner).await?
+        claim_known_container_name(paths, &container_name, docker).await?
     } else {
-        claim_container_name(paths, workspace_name.as_deref(), selector, docker, runner).await?
+        claim_container_name(paths, workspace_name.as_deref(), selector, docker).await?
     };
 
     let image_tag = opts.role_branch.as_deref().map_or_else(
@@ -2156,11 +2156,11 @@ async fn load_role_with(
 
     match load_result {
         Ok(_) => {
-            render_exit(&agent_display_name, docker, runner, opts).await;
+            render_exit(&agent_display_name, docker, opts).await;
             Ok(())
         }
         Err(error) => {
-            render_exit(&agent_display_name, docker, runner, opts).await;
+            render_exit(&agent_display_name, docker, opts).await;
             Err(error)
         }
     }
@@ -2185,14 +2185,7 @@ fn resolve_launch_role_source(
     Ok((source, is_new, false))
 }
 
-#[allow(clippy::needless_pass_by_ref_mut)]
-async fn render_exit(
-    agent_display_name: &str,
-    docker: &impl DockerApi,
-    runner: &mut impl CommandRunner,
-    opts: &LoadOptions,
-) {
-    let _ = runner; // runner kept for signature uniformity across callers
+async fn render_exit(agent_display_name: &str, docker: &impl DockerApi, opts: &LoadOptions) {
     if opts.no_intro {
         return;
     }
@@ -2671,15 +2664,12 @@ const CLAIM_MAX_ATTEMPTS: u32 = 64;
 /// Claim a unique DNS-safe container name by acquiring an exclusive lock file.
 /// Random IDs avoid deterministic role slots; the lock still protects the
 /// vanishingly small random-collision window and concurrent launch races.
-#[allow(clippy::needless_pass_by_ref_mut)]
 async fn claim_container_name(
     paths: &JackinPaths,
     workspace_name: Option<&str>,
     selector: &RoleSelector,
     docker: &impl DockerApi,
-    runner: &mut impl CommandRunner,
 ) -> anyhow::Result<(String, std::fs::File)> {
-    let _ = runner;
     std::fs::create_dir_all(&paths.data_dir)?;
 
     let mut last_lock_err: Option<std::io::Error> = None;
@@ -2758,14 +2748,11 @@ async fn claim_container_name(
     );
 }
 
-#[allow(clippy::needless_pass_by_ref_mut)]
 async fn claim_known_container_name(
     paths: &JackinPaths,
     container_name: &str,
     docker: &impl DockerApi,
-    runner: &mut impl CommandRunner,
 ) -> anyhow::Result<(String, std::fs::File)> {
-    let _ = runner;
     match docker.inspect_container_state(container_name).await {
         ContainerState::NotFound => {}
         ContainerState::Running
@@ -5551,7 +5538,7 @@ plugins = []
         let paths = JackinPaths::for_tests(temp.path());
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
-        // Empty string → read_image_label filters it to None → not stale.
+        // Empty inspect_image_labels queue → no construct label → no mismatch.
         let mut runner = FakeRunner::for_load_agent([String::new()]);
 
         let repo_dir = crate::repo::CachedRepo::new(&paths, &selector).repo_dir;
@@ -7128,9 +7115,7 @@ plugins = []
         let selector = RoleSelector::new(None, "agent-smith");
         // inspect returns NotFound (empty queue)
         let docker = crate::docker_client::FakeDockerClient::default();
-        let mut runner = FakeRunner::default();
-
-        let (name, _lock) = claim_container_name(&paths, None, &selector, &docker, &mut runner)
+        let (name, _lock) = claim_container_name(&paths, None, &selector, &docker)
             .await
             .unwrap();
 
@@ -7170,9 +7155,7 @@ plugins = []
             )],
             ..Default::default()
         };
-        let mut runner = FakeRunner::default();
-
-        let err = claim_container_name(&paths, None, &selector, &docker, &mut runner)
+        let err = claim_container_name(&paths, None, &selector, &docker)
             .await
             .unwrap_err();
 
@@ -7194,9 +7177,7 @@ plugins = []
             ])),
             ..Default::default()
         };
-        let mut runner = FakeRunner::default();
-
-        let (name, _lock) = claim_container_name(&paths, None, &selector, &docker, &mut runner)
+        let (name, _lock) = claim_container_name(&paths, None, &selector, &docker)
             .await
             .unwrap();
 
@@ -7237,9 +7218,7 @@ plugins = []
             ])),
             ..Default::default()
         };
-        let mut runner = FakeRunner::default();
-
-        let (name, _lock) = claim_container_name(&paths, None, &selector, &docker, &mut runner)
+        let (name, _lock) = claim_container_name(&paths, None, &selector, &docker)
             .await
             .unwrap();
 
@@ -7271,9 +7250,7 @@ plugins = []
             ])),
             ..Default::default()
         };
-        let mut runner = FakeRunner::default();
-
-        let (name, _lock) = claim_container_name(&paths, None, &selector, &docker, &mut runner)
+        let (name, _lock) = claim_container_name(&paths, None, &selector, &docker)
             .await
             .unwrap();
 
@@ -7295,17 +7272,9 @@ plugins = []
         let paths = JackinPaths::for_tests(temp.path());
         let selector = RoleSelector::new(None, "agent-smith");
         let docker = crate::docker_client::FakeDockerClient::default();
-        let mut runner = FakeRunner::default();
-
-        let (name, _lock) = claim_container_name(
-            &paths,
-            Some("my-workspace"),
-            &selector,
-            &docker,
-            &mut runner,
-        )
-        .await
-        .unwrap();
+        let (name, _lock) = claim_container_name(&paths, Some("my-workspace"), &selector, &docker)
+            .await
+            .unwrap();
 
         assert!(name.starts_with("jk-"), "{name}");
         assert!(
