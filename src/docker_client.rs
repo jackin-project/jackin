@@ -164,12 +164,13 @@ fn build_label_filter(label_filters: &[&str]) -> Option<HashMap<String, Vec<Stri
 
 impl DockerApi for BollardDockerClient {
     async fn inspect_container_state(&self, name: &str) -> ContainerState {
+        crate::debug_log!("docker", "inspect container {name}");
         let result = self
             .inner
             .inspect_container(name, None::<InspectContainerOptions>)
             .await;
 
-        match result {
+        let state = match result {
             Err(ref e) if is_http_status(e, 404) => ContainerState::NotFound,
             Err(e) => ContainerState::InspectUnavailable(e.to_string()),
             Ok(info) => {
@@ -199,10 +200,17 @@ impl DockerApi for BollardDockerClient {
                     }
                 }
             }
-        }
+        };
+        crate::debug_log!(
+            "docker",
+            "inspect container {name} -> {}",
+            state.inspect_label()
+        );
+        state
     }
 
     async fn remove_container(&self, name: &str) -> anyhow::Result<()> {
+        crate::debug_log!("docker", "rm -f {name}");
         match self
             .inner
             .remove_container(
@@ -225,6 +233,11 @@ impl DockerApi for BollardDockerClient {
         label_filters: &[&str],
         all: bool,
     ) -> anyhow::Result<Vec<ContainerRow>> {
+        crate::debug_log!(
+            "docker",
+            "ps{} --filter label=...",
+            if all { " -a" } else { "" }
+        );
         let filters = build_label_filter(label_filters);
         let summaries = self
             .inner
@@ -253,6 +266,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()> {
+        crate::debug_log!("docker", "create container {name} image={}", spec.image);
         self.inner
             .create_container(
                 Some(CreateContainerOptions {
@@ -281,6 +295,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn start_container(&self, name: &str) -> anyhow::Result<()> {
+        crate::debug_log!("docker", "start container {name}");
         self.inner
             .start_container(name, None::<StartContainerOptions>)
             .await
@@ -288,6 +303,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn remove_volume(&self, name: &str) -> anyhow::Result<()> {
+        crate::debug_log!("docker", "volume rm {name}");
         match self
             .inner
             .remove_volume(name, None::<RemoveVolumeOptions>)
@@ -304,6 +320,7 @@ impl DockerApi for BollardDockerClient {
         name: &str,
         labels: HashMap<String, String>,
     ) -> anyhow::Result<()> {
+        crate::debug_log!("docker", "network create {name}");
         self.inner
             .create_network(NetworkCreateRequest {
                 name: name.to_string(),
@@ -316,6 +333,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn remove_network(&self, name: &str) -> anyhow::Result<()> {
+        crate::debug_log!("docker", "network rm {name}");
         match self.inner.remove_network(name).await {
             Ok(()) => Ok(()),
             Err(e) if is_http_status(&e, 404) => Ok(()),
@@ -324,6 +342,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn list_networks(&self, label_filters: &[&str]) -> anyhow::Result<Vec<NetworkRow>> {
+        crate::debug_log!("docker", "network ls --filter label=...");
         let filters = build_label_filter(label_filters);
         let networks = self
             .inner
@@ -342,6 +361,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn list_image_tags(&self, reference_filter: &str) -> anyhow::Result<Vec<String>> {
+        crate::debug_log!("docker", "images --filter reference={reference_filter}");
         let mut filters = HashMap::new();
         filters.insert("reference".to_string(), vec![reference_filter.to_string()]);
         let images = self
@@ -362,6 +382,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn remove_image(&self, name: &str) -> anyhow::Result<RemoveImageOutcome> {
+        crate::debug_log!("docker", "rmi {name}");
         match self
             .inner
             .remove_image(
@@ -390,6 +411,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn inspect_image_labels(&self, image: &str) -> anyhow::Result<HashMap<String, String>> {
+        crate::debug_log!("docker", "inspect image:{image}");
         match self.inner.inspect_image(image).await {
             Err(e) if is_http_status(&e, 404) => Ok(HashMap::new()),
             Err(e) => Err(anyhow::Error::from(e).context(format!("inspecting image {image}"))),
@@ -405,7 +427,7 @@ impl DockerApi for BollardDockerClient {
 
     async fn pull_image(&self, image: &str) -> anyhow::Result<()> {
         use bollard::query_parameters::CreateImageOptions;
-        crate::tui::emit_debug_line("pull", image);
+        crate::debug_log!("docker", "pull {image}");
         let mut stream = self.inner.create_image(
             Some(CreateImageOptions {
                 from_image: Some(image.to_string()),
@@ -421,6 +443,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String> {
+        crate::debug_log!("docker", "exec {} {}", container, cmd.join(" "));
         let exec = self
             .inner
             .create_exec(
@@ -476,6 +499,7 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn inspect_network(&self, name: &str) -> anyhow::Result<Option<NetworkRow>> {
+        crate::debug_log!("docker", "network inspect {name}");
         match self
             .inner
             .inspect_network(
