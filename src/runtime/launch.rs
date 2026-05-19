@@ -2679,7 +2679,7 @@ async fn claim_container_name(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<(String, std::fs::File)> {
-    let _ = runner; // runner reserved for future use
+    let _ = runner;
     std::fs::create_dir_all(&paths.data_dir)?;
 
     let mut last_lock_err: Option<std::io::Error> = None;
@@ -2765,7 +2765,7 @@ async fn claim_known_container_name(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<(String, std::fs::File)> {
-    let _ = runner; // runner reserved for future use
+    let _ = runner;
     match docker.inspect_container_state(container_name).await {
         ContainerState::NotFound => {}
         ContainerState::Running

@@ -515,6 +515,7 @@ pub struct FakeDockerClient {
     pub list_image_tags_queue: std::cell::RefCell<std::collections::VecDeque<Vec<String>>>,
     pub remove_image_queue: std::cell::RefCell<std::collections::VecDeque<RemoveImageOutcome>>,
     pub exec_capture_queue: std::cell::RefCell<std::collections::VecDeque<String>>,
+    pub inspect_image_label_queue: std::cell::RefCell<std::collections::VecDeque<Option<String>>>,
     pub inspect_network_queue: std::cell::RefCell<std::collections::VecDeque<Option<NetworkRow>>>,
     pub fail_with: Vec<(String, String)>,
     pub created_containers: std::cell::RefCell<Vec<(String, ContainerSpec)>>,
@@ -532,6 +533,7 @@ impl Default for FakeDockerClient {
             list_image_tags_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             remove_image_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            inspect_image_label_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             inspect_network_queue: std::cell::RefCell::new(std::collections::VecDeque::new()),
             fail_with: Vec::new(),
             created_containers: std::cell::RefCell::new(Vec::new()),
@@ -607,6 +609,13 @@ impl FakeDockerClient {
             .borrow_mut()
             .pop_front()
             .unwrap_or_default()
+    }
+
+    fn pop_inspect_image_label(&self) -> Option<String> {
+        self.inspect_image_label_queue
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or(None)
     }
 
     fn pop_inspect_network(&self) -> Option<NetworkRow> {
@@ -739,7 +748,7 @@ impl DockerApi for FakeDockerClient {
         let op = format!("docker inspect image:{image} label:{label}");
         self.record(&op);
         self.check_fail(&op)?;
-        Ok(None)
+        Ok(self.pop_inspect_image_label())
     }
 
     async fn pull_image(&self, image: &str) -> anyhow::Result<()> {

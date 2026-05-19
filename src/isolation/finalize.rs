@@ -171,7 +171,7 @@ async fn has_tmux_sessions(
     // Run via sh to suppress the "no server running" error tmux emits when the
     // socket is stale. Both "no server" and "no sessions" collapse to exit 0 with
     // empty stdout so the caller only sees a non-empty result when sessions exist.
-    docker
+    match docker
         .exec_capture(
             container_name,
             &[
@@ -181,7 +181,22 @@ async fn has_tmux_sessions(
             ],
         )
         .await
-        .is_ok_and(|output| !output.trim().is_empty())
+    {
+        Ok(output) => !output.trim().is_empty(),
+        Err(e) => {
+            // Docker unreachable or container stopped between the exit-code check
+            // and this exec. Treat conservatively as sessions-present — the
+            // finalize path must not auto-clean records for a container that may
+            // still have active sessions.
+            debug_log!(
+                "isolation",
+                "has_tmux_sessions: exec_capture failed for {c}: {e}; \
+                 treating conservatively as sessions-present",
+                c = container_name,
+            );
+            true
+        }
+    }
 }
 
 async fn finalize_clean_exit(
@@ -611,7 +626,14 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
-        let docker = crate::docker_client::FakeDockerClient::default();
+        // Empty exec_capture output → no tmux sessions → has_tmux_sessions returns
+        // false → !has_tmux_sessions = true → falls through to finalize_clean_exit.
+        let docker = crate::docker_client::FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                String::new(),
+            ])),
+            ..Default::default()
+        };
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
@@ -624,6 +646,33 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(dec, FinalizeDecision::Cleaned);
+    }
+
+    #[tokio::test]
+    async fn still_running_with_sessions_preserves() {
+        let dir = TempDir::new().unwrap();
+        let mut p = NoPrompt;
+        let mut r = FakeRunner::default();
+        // Non-empty output → sessions present → has_tmux_sessions returns true
+        // → real detach (Ctrl-B D) → Preserved.
+        let docker = crate::docker_client::FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                "jackin-claude-abc".to_string(),
+            ])),
+            ..Default::default()
+        };
+        let dec = finalize_foreground_session(
+            "jackin-x",
+            dir.path(),
+            AttachOutcome::still_running(),
+            false,
+            &mut p,
+            &docker,
+            &mut r,
+        )
+        .await
+        .unwrap();
+        assert_eq!(dec, FinalizeDecision::Preserved);
     }
 
     #[tokio::test]

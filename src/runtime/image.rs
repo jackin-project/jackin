@@ -5,6 +5,7 @@ use crate::paths::JackinPaths;
 use crate::repo::CachedRepo;
 use crate::selector::RoleSelector;
 use crate::version_check;
+use anyhow::Context;
 use owo_colors::OwoColorize;
 
 use super::identity::HostIdentity;
@@ -131,12 +132,12 @@ pub(super) async fn build_agent_image(
     // override while this invocation uses the canonical one, or vice versa —
     // and must be rebuilt from scratch rather than reused.
     let current_construct = crate::repo_contract::construct_image();
-    let construct_mismatch = !rebuild
-        && docker
-            .inspect_image_label(&image, LABEL_IMAGE_CONSTRUCT)
-            .await
-            .unwrap_or_default()
-            .is_some_and(|cached| cached != current_construct);
+    let construct_label = docker
+        .inspect_image_label(&image, LABEL_IMAGE_CONSTRUCT)
+        .await
+        .with_context(|| format!("inspecting construct label on derived image {image}"))?;
+    let construct_mismatch =
+        !rebuild && construct_label.is_some_and(|cached| cached != current_construct);
     let rebuild = rebuild || construct_mismatch;
 
     let cache_bust_value = if rebuild || agent_update {
@@ -266,20 +267,34 @@ async fn published_image_is_stale(
         match docker
             .inspect_image_label(published, LABEL_IMAGE_ROLE_GIT_SHA)
             .await
-            .unwrap_or_default()
         {
-            Some(ref label_sha) if label_sha == sha => return false,
-            Some(_) => return true,
-            None => {}
+            Err(e) => {
+                eprintln!(
+                    "warning: could not read label {LABEL_IMAGE_ROLE_GIT_SHA} from {published} ({e}); \
+                     treating published image as stale"
+                );
+                return true;
+            }
+            Ok(Some(ref label_sha)) if label_sha == sha => return false,
+            Ok(Some(_)) => return true,
+            Ok(None) => {}
         }
     }
 
     // Fallback: construct-version check for pre-role-git-sha images.
-    docker
+    match docker
         .inspect_image_label(published, LABEL_IMAGE_CONSTRUCT_VERSION)
         .await
-        .unwrap_or_default()
-        .is_some_and(|stored| stored != dockerfile_version)
+    {
+        Err(e) => {
+            eprintln!(
+                "warning: could not read label {LABEL_IMAGE_CONSTRUCT_VERSION} from {published} ({e}); \
+                 treating published image as stale"
+            );
+            true
+        }
+        Ok(label) => label.is_some_and(|stored| stored != dockerfile_version),
+    }
 }
 
 async fn extract_agent_version(
@@ -392,5 +407,86 @@ async fn resolve_github_token(runner: &mut impl CommandRunner) -> Option<String>
             crate::debug_log!("github_token", "gh auth token failed (no token): {e}");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::docker_client::FakeDockerClient;
+
+    fn make_docker_with_labels(labels: Vec<Option<String>>) -> FakeDockerClient {
+        let docker = FakeDockerClient::default();
+        for label in labels {
+            docker
+                .inspect_image_label_queue
+                .borrow_mut()
+                .push_back(label);
+        }
+        docker
+    }
+
+    // pull_image always succeeds in FakeDockerClient (no fail_with configured).
+    // inspect_image_label_queue is consumed in order: first call = role_git_sha,
+    // second call = construct_version (fallback).
+
+    #[tokio::test]
+    async fn published_image_fresh_when_sha_matches() {
+        // Queue: role_git_sha label = "abc123" → pull succeeds, SHA matches → not stale.
+        let docker = make_docker_with_labels(vec![Some("abc123".to_string())]);
+        let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
+        assert!(!stale, "matching SHA should report image as fresh");
+    }
+
+    #[tokio::test]
+    async fn published_image_stale_when_sha_differs() {
+        // Queue: role_git_sha label = "oldsha" → SHA mismatch → stale.
+        let docker = make_docker_with_labels(vec![Some("oldsha".to_string())]);
+        let stale = published_image_is_stale("img:latest", "0.1", Some("newsha"), &docker).await;
+        assert!(stale, "mismatched SHA should report image as stale");
+    }
+
+    #[tokio::test]
+    async fn published_image_falls_back_to_construct_version_when_no_sha_label() {
+        // No role_git_sha label (None). Fallback: construct_version label matches → fresh.
+        // Queue: first call (role_git_sha) → None, second call (construct_version) → "0.1".
+        let docker = make_docker_with_labels(vec![None, Some("0.1".to_string())]);
+        let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
+        assert!(
+            !stale,
+            "matching construct version should be fresh when no SHA label"
+        );
+    }
+
+    #[tokio::test]
+    async fn published_image_stale_when_construct_version_differs() {
+        // No role_git_sha label; construct_version label = "0.0" ≠ "0.1" → stale.
+        let docker = make_docker_with_labels(vec![None, Some("0.0".to_string())]);
+        let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
+        assert!(
+            stale,
+            "outdated construct version should report image as stale"
+        );
+    }
+
+    #[tokio::test]
+    async fn published_image_fresh_when_no_labels_at_all() {
+        // No role_git_sha label AND no construct_version label → backward-compat: fresh.
+        let docker = make_docker_with_labels(vec![None, None]);
+        let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
+        assert!(
+            !stale,
+            "absent construct_version label should be treated as fresh (compat)"
+        );
+    }
+
+    #[tokio::test]
+    async fn published_image_stale_when_pull_fails() {
+        let docker = FakeDockerClient {
+            fail_with: vec![("docker pull".to_string(), "network error".to_string())],
+            ..FakeDockerClient::default()
+        };
+        let stale = published_image_is_stale("img:latest", "0.1", Some("abc123"), &docker).await;
+        assert!(stale, "pull failure should report image as stale");
     }
 }

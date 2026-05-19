@@ -366,9 +366,8 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                 Ok(detection) => {
                     for rec in &detection.stopped_records {
                         let container_dir = paths.data_dir.join(&rec.container_name);
-                        // NOTE: block_on inside tokio runtime will panic if called from async context.
-                        // This path requires restructuring (runner is !Send, can't spawn thread).
-                        // Tracked as a known limitation.
+                        // block_on inside an async context panics; runner is !Send so we can't
+                        // spawn a thread. Workaround: spin a fresh single-threaded runtime.
                         let cleanup_result = (|| -> anyhow::Result<()> {
                             let rt = tokio::runtime::Builder::new_current_thread()
                                 .enable_all()

@@ -28,6 +28,11 @@ pub async fn inspect_agent_sessions(
     container_name: &str,
     state: &ContainerState,
 ) -> AgentSessionInventory {
+    if matches!(state, ContainerState::InspectUnavailable(_)) {
+        return AgentSessionInventory::Unavailable(
+            "container state unavailable; skipping session query".to_string(),
+        );
+    }
     if !matches!(state, ContainerState::Running) {
         return AgentSessionInventory::NotRunning;
     }
