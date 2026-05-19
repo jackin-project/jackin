@@ -2044,18 +2044,7 @@ fn load_role_with(
         );
         match inspect_container_state(runner, &container_name) {
             ContainerState::Running => {
-                if !is_preserved {
-                    // Finalize already confirmed no sessions (supervisor lag after
-                    // clean exit). Skip the redundant re-query and tear down.
-                    run_clean_exit_teardown(
-                        paths,
-                        &container_state,
-                        &mut instance_manifest,
-                        is_preserved,
-                        &cleanup,
-                        runner,
-                    )?;
-                } else {
+                if is_preserved {
                     // Finalize saw sessions at check-time (detach). Re-check: sessions
                     // may have ended in the interval between finalize and this inspect.
                     let sessions =
@@ -2081,6 +2070,17 @@ fn load_role_with(
                     } else {
                         cleanup.disarm();
                     }
+                } else {
+                    // Finalize already confirmed no sessions (supervisor lag after
+                    // clean exit). Skip the redundant re-query and tear down.
+                    run_clean_exit_teardown(
+                        paths,
+                        &container_state,
+                        &mut instance_manifest,
+                        is_preserved,
+                        &cleanup,
+                        runner,
+                    )?;
                 }
             }
             ContainerState::Stopped {

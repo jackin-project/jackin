@@ -165,20 +165,19 @@ fn has_tmux_sessions(runner: &mut impl CommandRunner, container_name: &str) -> b
     // Run via sh to suppress the "no server running" error tmux emits when the
     // socket is stale. Both "no server" and "no sessions" collapse to exit 0 with
     // empty stdout so the caller only sees a non-empty result when sessions exist.
-    match runner.capture(
-        "docker",
-        &[
-            "exec",
-            container_name,
-            "sh",
-            "-c",
-            "tmux list-sessions -F '#{session_name}' 2>/dev/null || true",
-        ],
-        None,
-    ) {
-        Ok(output) => !output.trim().is_empty(),
-        Err(_) => false,
-    }
+    runner
+        .capture(
+            "docker",
+            &[
+                "exec",
+                container_name,
+                "sh",
+                "-c",
+                "tmux list-sessions -F '#{session_name}' 2>/dev/null || true",
+            ],
+            None,
+        )
+        .is_ok_and(|output| !output.trim().is_empty())
 }
 
 fn finalize_clean_exit(
