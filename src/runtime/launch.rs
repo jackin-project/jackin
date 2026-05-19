@@ -2044,18 +2044,9 @@ fn load_role_with(
         );
         match inspect_container_state(runner, &container_name) {
             ContainerState::Running => {
-                let sessions =
-                    inspect_agent_sessions(runner, &container_name, &ContainerState::Running);
-                if let AgentSessionInventory::Unavailable(ref reason) = sessions {
-                    crate::debug_log!(
-                        "instance",
-                        "inspect_agent_sessions unavailable for {container_name}: {reason}; \
-                         treating as sessions-present (container preserved)",
-                    );
-                }
-                let no_sessions =
-                    matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty());
-                if no_sessions {
+                if !is_preserved {
+                    // Finalize already confirmed no sessions (supervisor lag after
+                    // clean exit). Skip the redundant re-query and tear down.
                     run_clean_exit_teardown(
                         paths,
                         &container_state,
@@ -2065,7 +2056,31 @@ fn load_role_with(
                         runner,
                     )?;
                 } else {
-                    cleanup.disarm();
+                    // Finalize saw sessions at check-time (detach). Re-check: sessions
+                    // may have ended in the interval between finalize and this inspect.
+                    let sessions =
+                        inspect_agent_sessions(runner, &container_name, &ContainerState::Running);
+                    if let AgentSessionInventory::Unavailable(ref reason) = sessions {
+                        crate::debug_log!(
+                            "instance",
+                            "inspect_agent_sessions unavailable for {container_name}: {reason}; \
+                             treating conservatively as sessions-present (container preserved)",
+                        );
+                    }
+                    let no_sessions =
+                        matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty());
+                    if no_sessions {
+                        run_clean_exit_teardown(
+                            paths,
+                            &container_state,
+                            &mut instance_manifest,
+                            is_preserved,
+                            &cleanup,
+                            runner,
+                        )?;
+                    } else {
+                        cleanup.disarm();
+                    }
                 }
             }
             ContainerState::Stopped {
@@ -6247,10 +6262,6 @@ plugins = []
         assert!(body.contains(r#""role_key": "agent-smith""#));
         assert!(body.contains(r#""agent_runtime": "claude""#));
         assert!(body.contains(r#""host_workdir_fingerprint": "sha256:"#));
-        // With no tmux sessions after docker exec returns, the new
-        // finalize path treats it as a clean exit (supervisor lag) rather
-        // than a detach — so the final status is clean_exited, not
-        // restore_available.
         assert!(body.contains(r#""status": "clean_exited""#));
         let index_body = std::fs::read_to_string(paths.data_dir.join("instances.json")).unwrap();
         assert!(index_body.contains(&format!(r#""container_base": "{container_name}""#)));
