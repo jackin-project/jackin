@@ -271,7 +271,8 @@ pub async fn ensure_worktree_config_enabled(
             ],
             None,
         )
-        .await.unwrap_or_default();
+        .await
+        .unwrap_or_default();
     if current.trim() == "true" {
         debug_log!(
             "isolation",
@@ -292,43 +293,48 @@ pub async fn ensure_worktree_config_enabled(
             ],
             None,
         )
-        .await.unwrap_or_default();
+        .await
+        .unwrap_or_default();
     if format_version.trim() == "0" || format_version.trim().is_empty() {
         debug_log!(
             "isolation",
             "bumping core.repositoryformatversion 0 -> 1 at {} (required for extensions.worktreeConfig)",
             repo.display()
         );
-        runner.run(
-            "git",
-            &[
-                "-C",
-                &repo.to_string_lossy(),
-                "config",
-                "core.repositoryformatversion",
-                "1",
-            ],
-            None,
-            &crate::docker::RunOptions::default(),
-        ).await?;
+        runner
+            .run(
+                "git",
+                &[
+                    "-C",
+                    &repo.to_string_lossy(),
+                    "config",
+                    "core.repositoryformatversion",
+                    "1",
+                ],
+                None,
+                &crate::docker::RunOptions::default(),
+            )
+            .await?;
     }
     debug_log!(
         "isolation",
         "enabling extensions.worktreeConfig at {} (per-worktree config from now on)",
         repo.display()
     );
-    runner.run(
-        "git",
-        &[
-            "-C",
-            &repo.to_string_lossy(),
-            "config",
-            "extensions.worktreeConfig",
-            "true",
-        ],
-        None,
-        &crate::docker::RunOptions::default(),
-    ).await?;
+    runner
+        .run(
+            "git",
+            &[
+                "-C",
+                &repo.to_string_lossy(),
+                "config",
+                "extensions.worktreeConfig",
+                "true",
+            ],
+            None,
+            &crate::docker::RunOptions::default(),
+        )
+        .await?;
     Ok(true)
 }
 
@@ -586,24 +592,30 @@ pub async fn materialize_workspace(
                     worktree_aux: None,
                 }
             }
-            MountIsolation::Worktree => materialize_one(
-                mount,
-                container_state_dir,
-                selector_key,
-                container_name,
-                workspace_name,
-                ctx,
-                runner,
-            ).await?,
-            MountIsolation::Clone => materialize_clone(
-                mount,
-                container_state_dir,
-                selector_key,
-                container_name,
-                workspace_name,
-                ctx,
-                runner,
-            ).await?,
+            MountIsolation::Worktree => {
+                materialize_one(
+                    mount,
+                    container_state_dir,
+                    selector_key,
+                    container_name,
+                    workspace_name,
+                    ctx,
+                    runner,
+                )
+                .await?
+            }
+            MountIsolation::Clone => {
+                materialize_clone(
+                    mount,
+                    container_state_dir,
+                    selector_key,
+                    container_name,
+                    workspace_name,
+                    ctx,
+                    runner,
+                )
+                .await?
+            }
         };
         materialized[idx] = Some(m);
     }
@@ -768,12 +780,14 @@ async fn materialize_one(
             tip = branch_tip,
             host = host_head,
         );
-        runner.run(
-            "git",
-            &["-C", &mount.src, "worktree", "prune"],
-            None,
-            &crate::docker::RunOptions::default(),
-        ).await?;
+        runner
+            .run(
+                "git",
+                &["-C", &mount.src, "worktree", "prune"],
+                None,
+                &crate::docker::RunOptions::default(),
+            )
+            .await?;
         debug_log!(
             "isolation",
             "mount {dst}: git -C {src} worktree add {wt} {branch}",
@@ -816,21 +830,23 @@ async fn materialize_one(
             wt = worktree_path.display(),
             base = host_head,
         );
-        runner.run(
-            "git",
-            &[
-                "-C",
-                &mount.src,
-                "worktree",
-                "add",
-                "-b",
-                &scratch_branch,
-                &worktree_path.to_string_lossy(),
-                &host_head,
-            ],
-            None,
-            &crate::docker::RunOptions::default(),
-        ).await?;
+        runner
+            .run(
+                "git",
+                &[
+                    "-C",
+                    &mount.src,
+                    "worktree",
+                    "add",
+                    "-b",
+                    &scratch_branch,
+                    &worktree_path.to_string_lossy(),
+                    &host_head,
+                ],
+                None,
+                &crate::docker::RunOptions::default(),
+            )
+            .await?;
         host_head
     };
 
@@ -948,30 +964,34 @@ async fn materialize_clone(
             .with_context(|| format!("create parent dir for clone at {}", parent.display()))?;
     }
 
-    runner.run(
-        "git",
-        &[
-            "clone",
-            "--local",
-            &mount.src,
-            &clone_path.to_string_lossy(),
-        ],
-        None,
-        &crate::docker::RunOptions::default(),
-    ).await?;
-    runner.run(
-        "git",
-        &[
-            "-C",
-            &clone_path.to_string_lossy(),
-            "checkout",
-            "-B",
-            &scratch_branch,
-            &host_head,
-        ],
-        None,
-        &crate::docker::RunOptions::default(),
-    ).await?;
+    runner
+        .run(
+            "git",
+            &[
+                "clone",
+                "--local",
+                &mount.src,
+                &clone_path.to_string_lossy(),
+            ],
+            None,
+            &crate::docker::RunOptions::default(),
+        )
+        .await?;
+    runner
+        .run(
+            "git",
+            &[
+                "-C",
+                &clone_path.to_string_lossy(),
+                "checkout",
+                "-B",
+                &scratch_branch,
+                &host_head,
+            ],
+            None,
+            &crate::docker::RunOptions::default(),
+        )
+        .await?;
 
     // `git clone --local <mount.src>` points the clone's `origin` at
     // `mount.src` — on jackin's mount layout that path is identical
@@ -984,11 +1004,14 @@ async fn materialize_clone(
     // without an SSH key; embedded `userinfo@` credentials are
     // stripped so a host-side PAT does not leak into the per-container
     // `.git/config`.
-    let host_origin = match runner.capture(
-        "git",
-        &["-C", &mount.src, "remote", "get-url", "origin"],
-        None,
-    ).await {
+    let host_origin = match runner
+        .capture(
+            "git",
+            &["-C", &mount.src, "remote", "get-url", "origin"],
+            None,
+        )
+        .await
+    {
         Ok(s) => {
             let trimmed = s.trim();
             if trimmed.is_empty() {
@@ -1036,19 +1059,21 @@ async fn materialize_clone(
             src = mount.src,
             url = url,
         );
-        runner.run(
-            "git",
-            &[
-                "-C",
-                &clone_path.to_string_lossy(),
-                "remote",
-                "set-url",
-                "origin",
-                &url,
-            ],
-            None,
-            &crate::docker::RunOptions::default(),
-        ).await?;
+        runner
+            .run(
+                "git",
+                &[
+                    "-C",
+                    &clone_path.to_string_lossy(),
+                    "remote",
+                    "set-url",
+                    "origin",
+                    &url,
+                ],
+                None,
+                &crate::docker::RunOptions::default(),
+            )
+            .await?;
     } else {
         debug_log!(
             "isolation",
@@ -1295,7 +1320,9 @@ mod tests {
     #[tokio::test]
     async fn worktree_config_skips_when_already_enabled() {
         let mut runner = fake_with_outputs(&["true\n"]);
-        let newly = ensure_worktree_config_enabled(Path::new("/repo"), &mut runner).await.unwrap();
+        let newly = ensure_worktree_config_enabled(Path::new("/repo"), &mut runner)
+            .await
+            .unwrap();
         assert!(!newly);
         assert_eq!(runner.run_recorded.len(), 0);
     }
@@ -1303,7 +1330,9 @@ mod tests {
     #[tokio::test]
     async fn worktree_config_enables_and_bumps_format_version_from_zero() {
         let mut runner = fake_with_outputs(&["", "0"]);
-        let newly = ensure_worktree_config_enabled(Path::new("/repo"), &mut runner).await.unwrap();
+        let newly = ensure_worktree_config_enabled(Path::new("/repo"), &mut runner)
+            .await
+            .unwrap();
         assert!(newly);
         assert!(
             runner
@@ -1322,7 +1351,9 @@ mod tests {
     #[tokio::test]
     async fn worktree_config_skips_format_bump_when_already_one() {
         let mut runner = fake_with_outputs(&["", "1"]);
-        ensure_worktree_config_enabled(Path::new("/repo"), &mut runner).await.unwrap();
+        ensure_worktree_config_enabled(Path::new("/repo"), &mut runner)
+            .await
+            .unwrap();
         assert!(
             !runner
                 .run_recorded
@@ -1361,7 +1392,9 @@ mod tests {
         let mut m = worktree_mount("/workspace/x", "/tmp/x");
         m.readonly = true;
         let mut runner = FakeRunner::default();
-        let err = preflight_worktree(&m, &ctx(), &mut runner).await.unwrap_err();
+        let err = preflight_worktree(&m, &ctx(), &mut runner)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("cannot be readonly"));
     }
 
@@ -1373,7 +1406,9 @@ mod tests {
             .to_path_buf();
         let m = worktree_mount("/workspace/ssh", &home.join(".ssh").to_string_lossy());
         let mut runner = FakeRunner::default();
-        let err = preflight_worktree(&m, &ctx(), &mut runner).await.unwrap_err();
+        let err = preflight_worktree(&m, &ctx(), &mut runner)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("sensitive"));
     }
 
@@ -1383,7 +1418,9 @@ mod tests {
         std::fs::create_dir_all(dir.path().join(".git/rebase-merge")).unwrap();
         let m = worktree_mount("/workspace/x", &dir.path().to_string_lossy());
         let mut runner = FakeRunner::default();
-        let err = preflight_worktree(&m, &ctx(), &mut runner).await.unwrap_err();
+        let err = preflight_worktree(&m, &ctx(), &mut runner)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("mid-rebase-merge"));
     }
 
@@ -1394,7 +1431,9 @@ mod tests {
         std::fs::write(dir.path().join(".git/MERGE_HEAD"), "x").unwrap();
         let m = worktree_mount("/workspace/x", &dir.path().to_string_lossy());
         let mut runner = FakeRunner::default();
-        let err = preflight_worktree(&m, &ctx(), &mut runner).await.unwrap_err();
+        let err = preflight_worktree(&m, &ctx(), &mut runner)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("mid-MERGE_HEAD"));
     }
 
@@ -1405,7 +1444,9 @@ mod tests {
         std::fs::write(dir.path().join(".git/CHERRY_PICK_HEAD"), "x").unwrap();
         let m = worktree_mount("/workspace/x", &dir.path().to_string_lossy());
         let mut runner = FakeRunner::default();
-        let err = preflight_worktree(&m, &ctx(), &mut runner).await.unwrap_err();
+        let err = preflight_worktree(&m, &ctx(), &mut runner)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("mid-CHERRY_PICK_HEAD"));
     }
 
@@ -1417,7 +1458,9 @@ mod tests {
         std::fs::create_dir_all(&sub).unwrap();
         let m = worktree_mount("/workspace/x", &sub.to_string_lossy());
         let mut runner = fake_with_outputs(&[&dir.path().to_string_lossy()]);
-        let err = preflight_worktree(&m, &ctx(), &mut runner).await.unwrap_err();
+        let err = preflight_worktree(&m, &ctx(), &mut runner)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("not its root"));
     }
 

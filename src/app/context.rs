@@ -270,7 +270,8 @@ pub(crate) async fn resolve_running_container_from_context(
             .collect()
     };
 
-    let mut candidates = indexed_hardline_candidates(paths, name, ws, &allowed_classes, docker).await?;
+    let mut candidates =
+        indexed_hardline_candidates(paths, name, ws, &allowed_classes, docker).await?;
     if candidates.is_empty() {
         let running = runtime::list_running_agent_names(docker).await?;
         candidates = allowed_classes
@@ -315,7 +316,7 @@ pub(crate) async fn resolve_running_container_from_context(
         ),
         [only] => Ok(only.name.clone()),
         _ => {
-            let options = hardline_candidate_prompt_options(paths, &candidates).await;
+            let options = hardline_candidate_prompt_options(paths, &candidates);
             let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
             let choice = tui::prompt_choice(
                 &format!("Workspace {name:?} has multiple matching instances. Select one:"),
@@ -339,7 +340,7 @@ async fn resolve_ad_hoc_container_from_context(
         [] => anyhow::bail!("no matching ad-hoc instances found"),
         [only] => Ok(only.name.clone()),
         _ => {
-            let options = hardline_candidate_prompt_options(paths, &candidates).await;
+            let options = hardline_candidate_prompt_options(paths, &candidates);
             let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
             let choice = tui::prompt_choice(
                 "Current directory has multiple ad-hoc instances. Select one:",
@@ -359,7 +360,7 @@ struct HardlineCandidate {
     state: runtime::ContainerState,
 }
 
-async fn hardline_candidate_prompt_options(
+fn hardline_candidate_prompt_options(
     paths: &JackinPaths,
     candidates: &[HardlineCandidate],
 ) -> Vec<String> {
@@ -370,10 +371,7 @@ async fn hardline_candidate_prompt_options(
     options
 }
 
-fn hardline_candidate_prompt_label(
-    paths: &JackinPaths,
-    candidate: &HardlineCandidate,
-) -> String {
+fn hardline_candidate_prompt_label(paths: &JackinPaths, candidate: &HardlineCandidate) -> String {
     let container = candidate.name.as_str();
     // Use state from candidate — session inventory not fetched here
     // to avoid blocking async in a sync context
@@ -419,7 +417,9 @@ async fn ad_hoc_hardline_candidates(
         if !ad_hoc_manifest_matches_cwd(&manifest, &canonical_cwd, &cwd_fingerprint) {
             continue;
         }
-        let state = docker.inspect_container_state(&manifest.container_base).await;
+        let state = docker
+            .inspect_container_state(&manifest.container_base)
+            .await;
         let docker_live = matches!(
             state,
             runtime::ContainerState::Running
@@ -481,7 +481,9 @@ async fn indexed_hardline_candidates(
         .collect();
     let mut candidates = Vec::new();
     for manifest in filtered {
-        let state = docker.inspect_container_state(&manifest.container_base).await;
+        let state = docker
+            .inspect_container_state(&manifest.container_base)
+            .await;
         let docker_live = matches!(
             state,
             runtime::ContainerState::Running
@@ -941,6 +943,7 @@ mod tests {
 
     /// `list_running_agent_names` issues one `docker ps` capture; queue
     /// the running-role list as its response.
+    #[allow(dead_code)]
     fn fake_runner_with_running_agents(_names: &[&str]) -> runtime::FakeRunner {
         runtime::FakeRunner::default()
     }
@@ -951,11 +954,13 @@ mod tests {
             .iter()
             .map(|name| ContainerRow {
                 name: name.to_string(),
-                labels: Default::default(),
+                labels: std::collections::HashMap::default(),
             })
             .collect();
         FakeDockerClient {
-            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([rows])),
+            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                rows,
+            ])),
             ..Default::default()
         }
     }
@@ -973,7 +978,8 @@ mod tests {
 
         let paths = paths::JackinPaths::for_tests(temp.path());
         let container =
-            resolve_running_container_from_context(&paths, &config, &nested_dir, &docker).await
+            resolve_running_container_from_context(&paths, &config, &nested_dir, &docker)
+                .await
                 .unwrap();
 
         assert_eq!(container, running);
@@ -996,7 +1002,8 @@ mod tests {
 
         let paths = paths::JackinPaths::for_tests(temp.path());
         let container =
-            resolve_running_container_from_context(&paths, &config, &project_dir, &docker).await
+            resolve_running_container_from_context(&paths, &config, &project_dir, &docker)
+                .await
                 .unwrap();
 
         assert_eq!(container, architect);
@@ -1041,7 +1048,8 @@ mod tests {
         };
 
         let container =
-            resolve_running_container_from_context(&paths, &config, &project_dir, &docker).await
+            resolve_running_container_from_context(&paths, &config, &project_dir, &docker)
+                .await
                 .unwrap();
 
         assert_eq!(container, "jk-k7p9m2xq-myapp-agentsmith");
@@ -1088,7 +1096,8 @@ mod tests {
         };
 
         let container =
-            resolve_running_container_from_context(&paths, &config, &project_dir, &docker).await
+            resolve_running_container_from_context(&paths, &config, &project_dir, &docker)
+                .await
                 .unwrap();
 
         assert_eq!(container, "jk-k7p9m2xq-agentsmith");
@@ -1183,10 +1192,10 @@ mod tests {
         let docker = fake_docker_with_running_agents(&[]);
 
         let paths = paths::JackinPaths::for_tests(temp.path());
-        let err =
-            resolve_running_container_from_context(&paths, &config, &project_dir, &docker).await
-                .unwrap_err()
-                .to_string();
+        let err = resolve_running_container_from_context(&paths, &config, &project_dir, &docker)
+            .await
+            .unwrap_err()
+            .to_string();
 
         assert!(err.contains("no running roles"), "got: {err}");
         assert!(err.contains("my-app"), "got: {err}");
@@ -1203,10 +1212,10 @@ mod tests {
         let docker = fake_docker_with_running_agents(&["jk-the-architect"]);
 
         let paths = paths::JackinPaths::for_tests(temp.path());
-        let err =
-            resolve_running_container_from_context(&paths, &config, &project_dir, &docker).await
-                .unwrap_err()
-                .to_string();
+        let err = resolve_running_container_from_context(&paths, &config, &project_dir, &docker)
+            .await
+            .unwrap_err()
+            .to_string();
 
         assert!(err.contains("no running roles"), "got: {err}");
     }
@@ -1223,7 +1232,8 @@ mod tests {
         let docker = fake_docker_with_running_agents(&["jk-agent-smith"]);
 
         let paths = paths::JackinPaths::for_tests(temp.path());
-        let err = resolve_running_container_from_context(&paths, &config, &unrelated, &docker).await
+        let err = resolve_running_container_from_context(&paths, &config, &unrelated, &docker)
+            .await
             .unwrap_err()
             .to_string();
 

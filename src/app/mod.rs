@@ -37,6 +37,7 @@ fn parse_agent_from_cli(raw: &str) -> anyhow::Result<crate::agent::Agent> {
 }
 
 #[allow(clippy::too_many_lines)]
+#[allow(clippy::large_stack_frames)]
 pub async fn run(cli: Cli) -> Result<()> {
     let debug = cli.debug;
     tui::set_debug_mode(debug);
@@ -135,7 +136,8 @@ pub async fn run(cli: Cli) -> Result<()> {
                 &docker,
                 &mut runner,
                 &opts,
-            ).await;
+            )
+            .await;
             remember_last_agent(
                 &paths,
                 &mut config,
@@ -167,7 +169,8 @@ pub async fn run(cli: Cli) -> Result<()> {
                         outcome,
                         &docker,
                         &mut runner,
-                    ).await;
+                    )
+                    .await;
                 }
             };
 
@@ -182,8 +185,16 @@ pub async fn run(cli: Cli) -> Result<()> {
                 None => prompt_agent_choice_if_needed(&paths, &class, workspace.default_agent)?,
             };
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
-            let result =
-                runtime::load_role(&paths, &mut config, &class, &workspace, &docker, &mut runner, &opts).await;
+            let result = runtime::load_role(
+                &paths,
+                &mut config,
+                &class,
+                &workspace,
+                &docker,
+                &mut runner,
+                &opts,
+            )
+            .await;
             remember_last_agent(&paths, &mut config, Some(&workspace.label), &class, &result);
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             result
@@ -213,21 +224,28 @@ pub async fn run(cli: Cli) -> Result<()> {
                 resolve_running_container_from_context(&paths, &config, &cwd, &docker).await?
             };
             if shell {
-                return runtime::spawn_shell_session(&paths, &container, &docker, &mut runner).await;
+                return runtime::spawn_shell_session(&paths, &container, &docker, &mut runner)
+                    .await;
             }
             let action = if inspect {
                 HardlineAction::Inspect
             } else if new {
                 HardlineAction::NewSession
             } else if explicit_selector {
-                prompt_explicit_hardline_action_if_multiple_sessions(&container, &docker, &mut runner).await?
+                prompt_explicit_hardline_action_if_multiple_sessions(
+                    &container,
+                    &docker,
+                    &mut runner,
+                )
+                .await?
             } else {
                 prompt_hardline_action(&container)?
             };
             if action == HardlineAction::Inspect {
                 println!(
                     "{}",
-                    runtime::inspect_hardline_instance(&paths, &container, &docker, &mut runner).await?
+                    runtime::inspect_hardline_instance(&paths, &container, &docker, &mut runner)
+                        .await?
                 );
                 return Ok(());
             }
@@ -256,7 +274,8 @@ pub async fn run(cli: Cli) -> Result<()> {
                     config.git.dco,
                     &docker,
                     &mut runner,
-                ).await;
+                )
+                .await;
                 runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
                 return result;
             }
@@ -264,7 +283,8 @@ pub async fn run(cli: Cli) -> Result<()> {
             let result = if let Some(manifest) =
                 restore_candidate_for_hardline(&paths, &container, &docker).await?
             {
-                restore_hardline_instance(&paths, &mut config, &manifest, &docker, &mut runner).await
+                restore_hardline_instance(&paths, &mut config, &manifest, &docker, &mut runner)
+                    .await
             } else {
                 runtime::hardline_agent(&paths, &container, &docker, &mut runner).await
             };
@@ -307,10 +327,12 @@ pub async fn run(cli: Cli) -> Result<()> {
                     println!("No matching roles found.");
                 } else {
                     for container in &containers {
-                        runtime::eject_role(container, &docker).await
+                        runtime::eject_role(container, &docker)
+                            .await
                             .with_context(|| format!("ejecting {container}"))?;
                         if purge {
-                            runtime::purge_container_state(&paths, container, &docker, &mut runner).await
+                            runtime::purge_container_state(&paths, container, &docker, &mut runner)
+                                .await
                                 .with_context(|| format!("purging local state for {container}"))?;
                             println!("Ejected and purged {container}.");
                         } else {
@@ -319,7 +341,8 @@ pub async fn run(cli: Cli) -> Result<()> {
                     }
                 }
                 Ok(())
-            }.await;
+            }
+            .await;
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             result
         }
@@ -331,13 +354,15 @@ pub async fn run(cli: Cli) -> Result<()> {
                     println!("No roles running.");
                 } else {
                     for name in &names {
-                        runtime::eject_role(name, &docker).await
+                        runtime::eject_role(name, &docker)
+                            .await
                             .with_context(|| format!("ejecting {name}"))?;
                         println!("Ejected {name}.");
                     }
                 }
                 Ok(())
-            }.await;
+            }
+            .await;
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             result
         }
@@ -978,11 +1003,9 @@ pub async fn run(cli: Cli) -> Result<()> {
                 // exist. Connecting first ensures the daemon is reachable
                 // before we query it; skip the connection entirely when there
                 // is nothing to check (common in fresh or test environments).
-                let has_records = crate::isolation::state::list_records_for_workspace(
-                    &paths.data_dir,
-                    &name,
-                )
-                .is_ok_and(|r| !r.is_empty());
+                let has_records =
+                    crate::isolation::state::list_records_for_workspace(&paths.data_dir, &name)
+                        .is_ok_and(|r| !r.is_empty());
                 let detection = if has_records {
                     let docker = connect_docker()?;
                     crate::config::detect_workspace_edit_drift(
@@ -1020,7 +1043,8 @@ pub async fn run(cli: Cli) -> Result<()> {
                             rec,
                             &container_dir,
                             &mut runner,
-                        ).await?;
+                        )
+                        .await?;
                     }
                 }
 
@@ -1225,7 +1249,8 @@ pub async fn run(cli: Cli) -> Result<()> {
 
             match Selector::parse(&selector)? {
                 Selector::Container(container) => {
-                    runtime::purge_container_state(&paths, &container, &docker, &mut runner).await?;
+                    runtime::purge_container_state(&paths, &container, &docker, &mut runner)
+                        .await?;
                     println!("Purged state for {container}.");
                     Ok(())
                 }
@@ -1235,7 +1260,8 @@ pub async fn run(cli: Cli) -> Result<()> {
                         println!("Purged all state for {}.", class.key());
                     } else {
                         let container = resolve_role_to_container(&class, &docker).await?;
-                        runtime::purge_container_state(&paths, &container, &docker, &mut runner).await?;
+                        runtime::purge_container_state(&paths, &container, &docker, &mut runner)
+                            .await?;
                         println!("Purged state for {container}.");
                     }
                     Ok(())
@@ -1274,9 +1300,13 @@ pub async fn run(cli: Cli) -> Result<()> {
                 // Docker error doesn't leave the role cache and shared cache
                 // untouched.
                 let prune_instances_result = if args.all {
-                    runtime::prune_all_instances(&paths, &docker, &mut runner).await.context("prune instances")
+                    runtime::prune_all_instances(&paths, &docker, &mut runner)
+                        .await
+                        .context("prune instances")
                 } else {
-                    runtime::prune_instances(&paths, &docker, &mut runner).await.context("prune instances")
+                    runtime::prune_instances(&paths, &docker, &mut runner)
+                        .await
+                        .context("prune instances")
                 };
                 let results = [
                     prune_instances_result,
@@ -1689,7 +1719,8 @@ async fn handle_console_instance_action(
                 config.git.dco,
                 docker,
                 runner,
-            ).await;
+            )
+            .await;
             runtime::reconcile_keep_awake(paths, docker, runner).await;
             result
         }
@@ -1730,7 +1761,8 @@ async fn resolve_role_to_container(
     class: &RoleSelector,
     docker: &impl DockerApi,
 ) -> Result<String> {
-    let candidates = runtime::matching_family(class, &runtime::list_managed_role_names(docker).await?);
+    let candidates =
+        runtime::matching_family(class, &runtime::list_managed_role_names(docker).await?);
     match candidates.len() {
         1 => Ok(candidates.into_iter().next().unwrap()),
         0 => anyhow::bail!("no managed container found for role `{}`", class.key()),
@@ -2620,13 +2652,16 @@ mod auth_set_tests {
         let docker = crate::docker_client::FakeDockerClient {
             inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
                 runtime::ContainerState::InspectUnavailable(
-                    "Cannot connect to the Docker daemon at unix:///var/run/docker.sock".to_string()
+                    "Cannot connect to the Docker daemon at unix:///var/run/docker.sock"
+                        .to_string(),
                 ),
             ])),
             ..Default::default()
         };
 
-        let error = restore_candidate_for_hardline(&paths, container, &docker).await.unwrap_err();
+        let error = restore_candidate_for_hardline(&paths, container, &docker)
+            .await
+            .unwrap_err();
 
         assert!(error.to_string().contains("Docker is unavailable"));
     }
@@ -2932,6 +2967,8 @@ mod auth_set_tests {
 
 #[cfg(test)]
 mod resolve_role_tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[tokio::test]
@@ -2939,7 +2976,9 @@ mod resolve_role_tests {
         let selector = RoleSelector::new(None, "agent-smith");
         // list_containers returns empty → no match
         let docker = crate::docker_client::FakeDockerClient::default();
-        let err = resolve_role_to_container(&selector, &docker).await.unwrap_err();
+        let err = resolve_role_to_container(&selector, &docker)
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("no managed container found"),
             "{err}"
@@ -2951,13 +2990,23 @@ mod resolve_role_tests {
         let selector = RoleSelector::new(None, "agent-smith");
         // list_containers returns two containers → multiple match error
         let docker = crate::docker_client::FakeDockerClient {
-            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
-                crate::docker_client::ContainerRow { name: "jk-k7p9m2xq-agentsmith".to_string(), labels: Default::default() },
-                crate::docker_client::ContainerRow { name: "jk-a1b2c3d4-agentsmith".to_string(), labels: Default::default() },
-            ]])),
+            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                vec![
+                    crate::docker_client::ContainerRow {
+                        name: "jk-k7p9m2xq-agentsmith".to_string(),
+                        labels: HashMap::default(),
+                    },
+                    crate::docker_client::ContainerRow {
+                        name: "jk-a1b2c3d4-agentsmith".to_string(),
+                        labels: HashMap::default(),
+                    },
+                ],
+            ])),
             ..Default::default()
         };
-        let err = resolve_role_to_container(&selector, &docker).await.unwrap_err();
+        let err = resolve_role_to_container(&selector, &docker)
+            .await
+            .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("multiple containers found"), "{msg}");
         assert!(msg.contains("jk-k7p9m2xq-agentsmith"), "{msg}");
@@ -2969,9 +3018,12 @@ mod resolve_role_tests {
         let selector = RoleSelector::new(None, "agent-smith");
         // list_containers returns one container → single match
         let docker = crate::docker_client::FakeDockerClient {
-            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
-                crate::docker_client::ContainerRow { name: "jk-k7p9m2xq-agentsmith".to_string(), labels: Default::default() },
-            ]])),
+            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                vec![crate::docker_client::ContainerRow {
+                    name: "jk-k7p9m2xq-agentsmith".to_string(),
+                    labels: HashMap::default(),
+                }],
+            ])),
             ..Default::default()
         };
         let name = resolve_role_to_container(&selector, &docker).await.unwrap();

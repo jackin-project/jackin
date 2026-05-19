@@ -44,7 +44,6 @@ use crate::docker::CommandRunner;
 use crate::docker_client::DockerApi;
 use crate::paths::JackinPaths;
 
-
 const PID_FILENAME: &str = "caffeinate.pid";
 const LOCK_FILENAME: &str = "caffeinate.lock";
 
@@ -54,7 +53,11 @@ const LOCK_FILENAME: &str = "caffeinate.lock";
 /// Best-effort: any failure (lock contention, docker failure, fork
 /// failure) is swallowed with a one-line stderr notice so it never
 /// breaks the user's actual command.
-pub async fn reconcile(paths: &JackinPaths, docker: &impl DockerApi, runner: &mut impl CommandRunner) {
+pub async fn reconcile(
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+) {
     if !is_supported_platform() {
         return;
     }
@@ -68,7 +71,11 @@ const fn is_supported_platform() -> bool {
     cfg!(target_os = "macos")
 }
 
-async fn reconcile_inner(paths: &JackinPaths, docker: &impl DockerApi, runner: &mut impl CommandRunner) -> anyhow::Result<()> {
+async fn reconcile_inner(
+    paths: &JackinPaths,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
     std::fs::create_dir_all(&paths.data_dir).with_context(|| {
         format!(
             "creating data dir for caffeinate state: {}",
@@ -325,14 +332,16 @@ async fn spawn_caffeinate(runner: &mut impl CommandRunner) -> anyhow::Result<u32
     // (`[debug] sh -c …`) and the resulting PID (`[debug] -> <pid>`).
     // Operators validating keep_awake need to see this transition or
     // the reconciler is opaque from the outside.
-    let raw = runner.capture(
-        "sh",
-        &[
-            "-c",
-            "nohup caffeinate -imsu </dev/null >/dev/null 2>&1 & echo $!",
-        ],
-        None,
-    ).await?;
+    let raw = runner
+        .capture(
+            "sh",
+            &[
+                "-c",
+                "nohup caffeinate -imsu </dev/null >/dev/null 2>&1 & echo $!",
+            ],
+            None,
+        )
+        .await?;
     raw.parse::<u32>()
         .with_context(|| format!("parsing caffeinate PID from {raw:?}"))
 }
@@ -373,6 +382,8 @@ pub(super) fn pid_path_for_tests(paths: &JackinPaths) -> std::path::PathBuf {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::super::test_support::FakeRunner;
     use super::*;
     use crate::docker_client::{ContainerRow, FakeDockerClient};
@@ -388,10 +399,18 @@ mod tests {
     #[tokio::test]
     async fn count_keep_awake_agents_counts_nonempty_lines() {
         let docker = FakeDockerClient {
-            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
-                ContainerRow { name: "jk-agent-smith".to_string(), labels: Default::default() },
-                ContainerRow { name: "jk-the-architect".to_string(), labels: Default::default() },
-            ]])),
+            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                vec![
+                    ContainerRow {
+                        name: "jk-agent-smith".to_string(),
+                        labels: HashMap::default(),
+                    },
+                    ContainerRow {
+                        name: "jk-the-architect".to_string(),
+                        labels: HashMap::default(),
+                    },
+                ],
+            ])),
             ..Default::default()
         };
         let count = count_keep_awake_agents(&docker).await.unwrap();

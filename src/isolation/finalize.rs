@@ -129,7 +129,7 @@ pub async fn finalize_foreground_session(
         //     finalize_clean_exit so isolation worktrees are swept normally
         if outcome.exit_code.is_none()
             && !outcome.oom_killed
-            && !has_tmux_sessions(runner, container_name)
+            && !has_tmux_sessions(runner, container_name).await
         {
             debug_log!(
                 "isolation",
@@ -143,7 +143,8 @@ pub async fn finalize_foreground_session(
                 is_interactive,
                 prompt,
                 runner,
-            );
+            )
+            .await;
         }
         debug_log!(
             "isolation",
@@ -158,7 +159,28 @@ pub async fn finalize_foreground_session(
         is_interactive,
         prompt,
         runner,
-    ).await
+    )
+    .await
+}
+
+async fn has_tmux_sessions(runner: &mut impl CommandRunner, container_name: &str) -> bool {
+    // Run via sh to suppress the "no server running" error tmux emits when the
+    // socket is stale. Both "no server" and "no sessions" collapse to exit 0 with
+    // empty stdout so the caller only sees a non-empty result when sessions exist.
+    runner
+        .capture(
+            "docker",
+            &[
+                "exec",
+                container_name,
+                "sh",
+                "-c",
+                "tmux list-sessions -F '#{session_name}' 2>/dev/null || true",
+            ],
+            None,
+        )
+        .await
+        .is_ok_and(|output| !output.trim().is_empty())
 }
 
 async fn finalize_clean_exit(
@@ -340,11 +362,14 @@ async fn assess_cleanup(
     record: &IsolationRecord,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<CleanupAssessment> {
-    let porcelain = match runner.capture(
-        "git",
-        &["-C", &record.worktree_path, "status", "--porcelain"],
-        None,
-    ).await {
+    let porcelain = match runner
+        .capture(
+            "git",
+            &["-C", &record.worktree_path, "status", "--porcelain"],
+            None,
+        )
+        .await
+    {
         Ok(s) => s,
         Err(e) => {
             debug_log!(
@@ -366,17 +391,20 @@ async fn assess_cleanup(
     // when the configured upstream ref no longer resolves locally —
     // typically because the remote branch was deleted after a PR merge
     // and the next `git fetch --prune` removed the remote-tracking ref.
-    let raw = match runner.capture(
-        "git",
-        &[
-            "-C",
-            &record.worktree_path,
-            "for-each-ref",
-            "--format=%(refname:short)%09%(objectname)%09%(upstream:short)%09%(upstream:track)",
-            "refs/heads/",
-        ],
-        None,
-    ).await {
+    let raw = match runner
+        .capture(
+            "git",
+            &[
+                "-C",
+                &record.worktree_path,
+                "for-each-ref",
+                "--format=%(refname:short)%09%(objectname)%09%(upstream:short)%09%(upstream:track)",
+                "refs/heads/",
+            ],
+            None,
+        )
+        .await
+    {
         Ok(s) => s,
         Err(e) => {
             debug_log!(
@@ -453,16 +481,19 @@ async fn assess_cleanup(
             continue;
         }
 
-        let ahead = match runner.capture(
-            "git",
-            &[
-                "-C",
-                &record.worktree_path,
-                "rev-list",
-                &format!("{upstream}..{name}"),
-            ],
-            None,
-        ).await {
+        let ahead = match runner
+            .capture(
+                "git",
+                &[
+                    "-C",
+                    &record.worktree_path,
+                    "rev-list",
+                    &format!("{upstream}..{name}"),
+                ],
+                None,
+            )
+            .await
+        {
             Ok(s) => s,
             Err(e) => {
                 debug_log!(
@@ -510,11 +541,14 @@ async fn assess_cleanup(
             "finalize assess: symbolic-ref HEAD failed for {wt} (detached HEAD or error); checking rev-parse HEAD",
             wt = record.worktree_path,
         );
-        match runner.capture(
-            "git",
-            &["-C", &record.worktree_path, "rev-parse", "HEAD"],
-            None,
-        ).await {
+        match runner
+            .capture(
+                "git",
+                &["-C", &record.worktree_path, "rev-parse", "HEAD"],
+                None,
+            )
+            .await
+        {
             Ok(head_sha) if head_sha.trim() == record.base_commit.trim() => {
                 // Detached HEAD parked at base — no unreachable commits.
             }

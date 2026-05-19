@@ -55,7 +55,7 @@ pub(super) async fn build_agent_image(
 
     // Resolve the role repo HEAD SHA once — used both for the published-image
     // staleness check and as a build-arg so local builds carry the same label.
-    let head_sha = git_head_sha(&cached_repo.repo_dir, runner);
+    let head_sha = git_head_sha(&cached_repo.repo_dir, runner).await;
 
     // When using the pre-built published image, check whether it is current:
     // - Primary check: `jackin.role_git_sha` label matches the HEAD of the
@@ -70,7 +70,9 @@ pub(super) async fn build_agent_image(
             &validated_repo.dockerfile.construct_version,
             head_sha.as_deref(),
             runner,
-        ).await {
+        )
+        .await
+    {
         eprintln!(
             "note: published image {} is out of date; rebuilding from workspace Dockerfile",
             published_image.unwrap(),
@@ -128,7 +130,8 @@ pub(super) async fn build_agent_image(
     // and must be rebuilt from scratch rather than reused.
     let current_construct = crate::repo_contract::construct_image();
     let construct_mismatch = !rebuild
-        && read_image_label(runner, &image, LABEL_IMAGE_CONSTRUCT).await
+        && read_image_label(runner, &image, LABEL_IMAGE_CONSTRUCT)
+            .await
             .is_some_and(|cached| cached != current_construct);
     let rebuild = rebuild || construct_mismatch;
 
@@ -192,26 +195,32 @@ pub(super) async fn build_agent_image(
         build_args.extend(["--secret", s.as_str()]);
     }
 
-    runner.run(
-        "docker",
-        &build_args,
-        None,
-        &RunOptions {
-            capture_stderr: true,
-            extra_env: github_token
-                .as_ref()
-                .map(|_| vec![("DOCKER_BUILDKIT".to_string(), "1".to_string())])
-                .unwrap_or_default(),
-            ..RunOptions::default()
-        },
-    ).await?;
+    runner
+        .run(
+            "docker",
+            &build_args,
+            None,
+            &RunOptions {
+                capture_stderr: true,
+                extra_env: github_token
+                    .as_ref()
+                    .map(|_| vec![("DOCKER_BUILDKIT".to_string(), "1".to_string())])
+                    .unwrap_or_default(),
+                ..RunOptions::default()
+            },
+        )
+        .await?;
 
     extract_agent_version(paths, &image, agent, debug, runner).await;
 
     Ok(image)
 }
 
-async fn read_image_label(runner: &mut impl CommandRunner, image: &str, key: &str) -> Option<String> {
+async fn read_image_label(
+    runner: &mut impl CommandRunner,
+    image: &str,
+    key: &str,
+) -> Option<String> {
     runner
         .capture(
             "docker",
@@ -231,10 +240,11 @@ async fn read_image_label(runner: &mut impl CommandRunner, image: &str, key: &st
 
 /// Returns the HEAD commit SHA of the git repo at `dir`, or `None` if the
 /// directory is not a git repo or the command fails.
-fn git_head_sha(dir: &std::path::Path, runner: &mut impl CommandRunner) -> Option<String> {
+async fn git_head_sha(dir: &std::path::Path, runner: &mut impl CommandRunner) -> Option<String> {
     let dir_str = dir.display().to_string();
     runner
         .capture("git", &["-C", &dir_str, "rev-parse", "HEAD"], None)
+        .await
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -256,25 +266,39 @@ fn git_head_sha(dir: &std::path::Path, runner: &mut impl CommandRunner) -> Optio
 /// a confusing late failure inside `docker build`. Return `true` (stale) so
 /// jackin falls back to workspace mode, which gives the operator a clearer
 /// error if the construct base is also unreachable.
-async fn construct_version_is_stale(
+async fn published_image_is_stale(
     published: &str,
     dockerfile_version: &str,
     head_sha: Option<&str>,
     runner: &mut impl CommandRunner,
 ) -> bool {
-    if let Err(e) = runner.run(
-        "docker",
-        &["pull", "--quiet", published],
-        None,
-        &RunOptions::default(),
-    ).await {
+    if let Err(e) = runner
+        .run(
+            "docker",
+            &["pull", "--quiet", published],
+            None,
+            &RunOptions::default(),
+        )
+        .await
+    {
         eprintln!(
             "warning: docker pull {published} failed ({e}); \
              treating published image as stale and rebuilding from workspace Dockerfile"
         );
         return true;
     }
-    read_image_label(runner, published, LABEL_IMAGE_CONSTRUCT_VERSION).await
+
+    if let Some(sha) = head_sha {
+        match read_image_label(runner, published, LABEL_IMAGE_ROLE_GIT_SHA).await {
+            Some(ref label_sha) if label_sha == sha => return false,
+            Some(_) => return true,
+            None => {}
+        }
+    }
+
+    // Fallback: construct-version check for pre-role-git-sha images.
+    read_image_label(runner, published, LABEL_IMAGE_CONSTRUCT_VERSION)
+        .await
         .is_some_and(|stored| stored != dockerfile_version)
 }
 
@@ -287,11 +311,14 @@ async fn extract_agent_version(
 ) {
     match agent {
         crate::agent::Agent::Claude => {
-            let Ok(version) = runner.capture(
-                "docker",
-                &["run", "--rm", "--entrypoint", "claude", image, "--version"],
-                None,
-            ).await else {
+            let Ok(version) = runner
+                .capture(
+                    "docker",
+                    &["run", "--rm", "--entrypoint", "claude", image, "--version"],
+                    None,
+                )
+                .await
+            else {
                 return;
             };
             let version = version.trim();
@@ -307,18 +334,21 @@ async fn extract_agent_version(
             }
         }
         crate::agent::Agent::Opencode => {
-            let Ok(version) = runner.capture(
-                "docker",
-                &[
-                    "run",
-                    "--rm",
-                    "--entrypoint",
-                    "opencode",
-                    image,
-                    "--version",
-                ],
-                None,
-            ).await else {
+            let Ok(version) = runner
+                .capture(
+                    "docker",
+                    &[
+                        "run",
+                        "--rm",
+                        "--entrypoint",
+                        "opencode",
+                        image,
+                        "--version",
+                    ],
+                    None,
+                )
+                .await
+            else {
                 return;
             };
             let version = version.trim();
@@ -334,11 +364,14 @@ async fn extract_agent_version(
             }
         }
         crate::agent::Agent::Kimi => {
-            let Ok(version) = runner.capture(
-                "docker",
-                &["run", "--rm", "--entrypoint", "kimi", image, "--version"],
-                None,
-            ).await else {
+            let Ok(version) = runner
+                .capture(
+                    "docker",
+                    &["run", "--rm", "--entrypoint", "kimi", image, "--version"],
+                    None,
+                )
+                .await
+            else {
                 return;
             };
             let version = version.trim();

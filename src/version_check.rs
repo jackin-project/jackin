@@ -385,11 +385,7 @@ mod tests {
         let _ = write_cached(&cache, "1.14.48");
 
         let mut runner = StubRunner("1.14.48".to_string());
-        assert!(needs_opencode_update(
-            &paths,
-            "jk_the-architect",
-            &mut runner
-        ).await);
+        assert!(needs_opencode_update(&paths, "jk_the-architect", &mut runner).await);
     }
 
     #[tokio::test]
@@ -403,11 +399,7 @@ mod tests {
         let _ = write_cached(&cache, "1.14.48");
 
         let mut runner = StubRunner("1.14.48".to_string());
-        assert!(!needs_opencode_update(
-            &paths,
-            "jk_the-architect",
-            &mut runner
-        ).await);
+        assert!(!needs_opencode_update(&paths, "jk_the-architect", &mut runner).await);
     }
 
     #[test]

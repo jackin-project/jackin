@@ -1,7 +1,7 @@
-use anyhow::Context as _;
 use super::AppConfig;
 use crate::isolation::state::{IsolationRecord, list_records_for_workspace};
 use crate::workspace::{WorkspaceConfig, WorkspaceEdit, validate_workspace_config};
+use anyhow::Context as _;
 
 /// Outcome of a pre-edit drift check for a saved workspace.
 ///
@@ -581,10 +581,10 @@ mod tests {
 
     mod drift_detection {
         use super::super::*;
+        use crate::docker_client::{ContainerRow, FakeDockerClient};
         use crate::isolation::MountIsolation;
         use crate::isolation::state::{CleanupStatus, IsolationRecord, write_records};
         use crate::paths::JackinPaths;
-        use crate::docker_client::{ContainerRow, FakeDockerClient};
         use tempfile::TempDir;
 
         fn record_for(workspace: &str, container: &str, dst: &str, src: &str) -> IsolationRecord {
@@ -649,12 +649,17 @@ mod tests {
                 MountIsolation::Worktree,
             )];
             let docker = FakeDockerClient {
-                list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
-                    ContainerRow { name: "jk-a1b2c3d4-jackin".to_string(), labels: Default::default() },
-                ]])),
+                list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                    vec![ContainerRow {
+                        name: "jk-a1b2c3d4-jackin".to_string(),
+                        labels: std::collections::HashMap::default(),
+                    }],
+                ])),
                 ..Default::default()
             };
-            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker).await.unwrap();
+            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker)
+                .await
+                .unwrap();
             assert_eq!(
                 det.running_containers,
                 vec!["jk-a1b2c3d4-jackin".to_string()]
@@ -685,7 +690,9 @@ mod tests {
                 MountIsolation::Worktree,
             )];
             let docker = FakeDockerClient::default();
-            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker).await.unwrap();
+            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker)
+                .await
+                .unwrap();
             assert!(det.running_containers.is_empty());
             assert_eq!(det.stopped_records.len(), 1);
             assert_eq!(det.stopped_records[0].container_name, "jk-a1b2c3d4-jackin");
@@ -714,7 +721,9 @@ mod tests {
                 MountIsolation::Worktree,
             )];
             let docker = FakeDockerClient::default();
-            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker).await.unwrap();
+            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker)
+                .await
+                .unwrap();
             assert!(det.running_containers.is_empty());
             assert!(det.stopped_records.is_empty());
         }
@@ -751,7 +760,9 @@ mod tests {
                 MountIsolation::Shared,
             )];
             let docker = FakeDockerClient::default();
-            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker).await.unwrap();
+            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker)
+                .await
+                .unwrap();
             // Current behavior — known gap. If this test starts failing
             // because drift now correctly flags the flip, update it to
             // assert `det.stopped_records.len() == 1` and remove this
@@ -791,7 +802,9 @@ mod tests {
                 MountIsolation::Shared,
             )];
             let docker = FakeDockerClient::default();
-            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker).await.unwrap();
+            let det = detect_workspace_edit_drift(&paths, "jackin", &edited, &docker)
+                .await
+                .unwrap();
             assert!(det.running_containers.is_empty());
             assert_eq!(
                 det.stopped_records.len(),

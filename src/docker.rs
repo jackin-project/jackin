@@ -130,11 +130,11 @@ impl CommandRunner for ShellRunner {
             let read_fut = async {
                 let mut buf = [0u8; 8192];
                 loop {
+                    use std::io::Write;
                     let n = stderr_pipe.read(&mut buf).await?;
                     if n == 0 {
                         break;
                     }
-                    use std::io::Write;
                     std::io::stderr().write_all(&buf[..n])?;
                     stderr_buf.extend_from_slice(&buf[..n]);
                 }
@@ -175,7 +175,8 @@ impl CommandRunner for ShellRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
-        self.do_capture(program, args, cwd, CaptureMode::Normal).await
+        self.do_capture(program, args, cwd, CaptureMode::Normal)
+            .await
     }
 
     async fn capture_secret(
@@ -184,7 +185,8 @@ impl CommandRunner for ShellRunner {
         args: &[&str],
         cwd: Option<&Path>,
     ) -> anyhow::Result<String> {
-        self.do_capture(program, args, cwd, CaptureMode::Secret).await
+        self.do_capture(program, args, cwd, CaptureMode::Secret)
+            .await
     }
 }
 

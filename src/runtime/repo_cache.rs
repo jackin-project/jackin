@@ -149,13 +149,17 @@ pub(super) async fn git_repo_name(
 }
 
 /// Get the current branch name for a git directory.
-pub(super) async fn git_branch(dir: &std::path::Path, runner: &mut impl CommandRunner) -> Option<String> {
+pub(super) async fn git_branch(
+    dir: &std::path::Path,
+    runner: &mut impl CommandRunner,
+) -> Option<String> {
     let dir_str = dir.display().to_string();
     try_capture(
         runner,
         "git",
         &["-C", &dir_str, "rev-parse", "--abbrev-ref", "HEAD"],
-    ).await
+    )
+    .await
 }
 
 /// Check whether a path is inside a git work tree.
@@ -165,7 +169,8 @@ pub(super) async fn is_git_dir(dir: &std::path::Path, runner: &mut impl CommandR
         runner,
         "git",
         &["-C", &dir_str, "rev-parse", "--is-inside-work-tree"],
-    ).await
+    )
+    .await
     .is_some()
 }
 
@@ -201,7 +206,8 @@ pub(super) async fn resolve_agent_repo(
         debug,
         branch_override,
         confirm_repo_removal_interactive,
-    ).await
+    )
+    .await
 }
 
 /// Resolve a role repo into the cache, registering it on success.
@@ -232,7 +238,8 @@ pub(super) async fn register_agent_repo(
     let legacy_root = role_cache_root(paths, selector);
     if cached_repo.repo_dir.join(".git").is_dir() || legacy_root.join(".git").is_dir() {
         let (cached_repo, validated_repo, _lock_file) =
-            resolve_agent_repo_with(paths, selector, git_url, runner, debug, None, || Ok(false)).await?;
+            resolve_agent_repo_with(paths, selector, git_url, runner, debug, None, || Ok(false))
+                .await?;
         persist_registration()?;
         return Ok((cached_repo, validated_repo));
     }
@@ -414,11 +421,13 @@ pub(super) async fn resolve_agent_repo_with(
 
     let repo_path = cached_repo.repo_dir.display().to_string();
     if cached_repo.repo_dir.join(".git").is_dir() {
-        let remote_url = runner.capture(
-            "git",
-            &["-C", &repo_path, "remote", "get-url", "origin"],
-            None,
-        ).await?;
+        let remote_url = runner
+            .capture(
+                "git",
+                &["-C", &repo_path, "remote", "get-url", "origin"],
+                None,
+            )
+            .await?;
         if !repo_matches(git_url, &remote_url) {
             // Route diagnostics through the buffered debug channel rather
             // than `eprintln!` — the latter corrupts the alt-screen render
@@ -446,18 +455,20 @@ pub(super) async fn resolve_agent_repo_with(
             return Err(anyhow::Error::new(RepoError::RemoteMismatch));
         }
 
-        let status = runner.capture(
-            "git",
-            &[
-                "-C",
-                &repo_path,
-                "status",
-                "--porcelain",
-                "--ignored=matching",
-                "--untracked-files=all",
-            ],
-            None,
-        ).await?;
+        let status = runner
+            .capture(
+                "git",
+                &[
+                    "-C",
+                    &repo_path,
+                    "status",
+                    "--porcelain",
+                    "--ignored=matching",
+                    "--untracked-files=all",
+                ],
+                None,
+            )
+            .await?;
         anyhow::ensure!(
             status.is_empty(),
             "cached role repo contains local changes or extra files: {}. Remove the cached repo or clean it before loading.",
@@ -480,28 +491,34 @@ pub(super) async fn resolve_agent_repo_with(
             },
             |b| Ok(b.to_string()),
         )?;
-        runner.run(
-            "git",
-            &["-C", &repo_path, "fetch", "origin", &branch],
-            None,
-            &git_run_opts,
-        ).await?;
-        let ff_result = runner.run(
-            "git",
-            &["-C", &repo_path, "merge", "--ff-only", "FETCH_HEAD"],
-            None,
-            &git_run_opts,
-        ).await;
+        runner
+            .run(
+                "git",
+                &["-C", &repo_path, "fetch", "origin", &branch],
+                None,
+                &git_run_opts,
+            )
+            .await?;
+        let ff_result = runner
+            .run(
+                "git",
+                &["-C", &repo_path, "merge", "--ff-only", "FETCH_HEAD"],
+                None,
+                &git_run_opts,
+            )
+            .await;
         if ff_result.is_err() {
             eprintln!(
                 "        cached role branch diverged (remote may have been force-pushed) — resetting to origin/{branch}"
             );
-            runner.run(
-                "git",
-                &["-C", &repo_path, "reset", "--hard", "FETCH_HEAD"],
-                None,
-                &git_run_opts,
-            ).await?;
+            runner
+                .run(
+                    "git",
+                    &["-C", &repo_path, "reset", "--hard", "FETCH_HEAD"],
+                    None,
+                    &git_run_opts,
+                )
+                .await?;
         }
     } else {
         let clone_args = clone_args(git_url, &repo_path, branch_override);
@@ -730,7 +747,8 @@ plugins = []
             false,
             None,
             || Ok(true), // user confirms removal
-        ).await;
+        )
+        .await;
 
         assert!(result.is_ok(), "expected recovery to succeed: {result:?}");
         assert!(
@@ -772,7 +790,8 @@ plugins = []
             false,
             None,
             || Ok(false), // user declines
-        ).await
+        )
+        .await
         .unwrap_err();
 
         assert!(
@@ -818,7 +837,8 @@ plugins = []
             &mut runner,
             false,
             None,
-        ).await
+        )
+        .await
         .unwrap_err();
 
         assert!(error.to_string().contains("contains local changes"));
@@ -880,7 +900,8 @@ plugins = []
             false,
             None,
             || Ok(true),
-        ).await;
+        )
+        .await;
 
         assert!(result.is_ok(), "expected recovery to succeed: {result:?}");
         assert!(runner.run_recorded.iter().any(|call| {
@@ -924,7 +945,8 @@ plugins = []
             &mut runner,
             false,
             None,
-        ).await;
+        )
+        .await;
 
         assert!(
             result.is_ok(),
@@ -975,7 +997,8 @@ plugins = []
             &mut runner,
             false,
             None,
-        ).await
+        )
+        .await
         .unwrap();
 
         assert_eq!(cached_repo.repo_dir, legacy_root.join("default"));

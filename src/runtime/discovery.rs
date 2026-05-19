@@ -39,8 +39,7 @@ pub async fn list_running_agent_display_names(
             let display_name = r
                 .labels
                 .get("jackin.display_name")
-                .map(String::as_str)
-                .unwrap_or("");
+                .map_or("", String::as_str);
             format_role_display(&r.name, display_name)
         })
         .collect())
@@ -48,7 +47,7 @@ pub async fn list_running_agent_display_names(
 
 #[cfg(test)]
 mod tests {
-    
+
     use super::*;
     use crate::docker_client::{ContainerRow, FakeDockerClient};
     use std::collections::HashMap;
@@ -56,9 +55,12 @@ mod tests {
     #[tokio::test]
     async fn list_managed_agent_names_excludes_dind_sidecars() {
         let docker = FakeDockerClient {
-            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
-                ContainerRow { name: "jk-agent-smith".to_string(), labels: HashMap::new() },
-            ]])),
+            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                vec![ContainerRow {
+                    name: "jk-agent-smith".to_string(),
+                    labels: HashMap::new(),
+                }],
+            ])),
             ..Default::default()
         };
 
@@ -72,9 +74,12 @@ mod tests {
         let mut labels = HashMap::new();
         labels.insert("jackin.display_name".to_string(), "Agent Smith".to_string());
         let docker = FakeDockerClient {
-            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([vec![
-                ContainerRow { name: "jk-k7p9m2xq-agentsmith".to_string(), labels },
-            ]])),
+            list_containers_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                vec![ContainerRow {
+                    name: "jk-k7p9m2xq-agentsmith".to_string(),
+                    labels,
+                }],
+            ])),
             ..Default::default()
         };
 

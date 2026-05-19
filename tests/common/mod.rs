@@ -7,8 +7,8 @@ use jackin::docker_client::{
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
-/// Minimal no-op DockerApi stub. All operations return empty/success so
-/// load_role proceeds as if no containers exist.
+/// Minimal no-op `DockerApi` stub. All operations return empty/success so
+/// `load_role` proceeds as if no containers exist.
 pub struct NoOpDocker;
 
 impl DockerApi for NoOpDocker {
@@ -71,9 +71,9 @@ impl DockerApi for NoOpDocker {
     }
 }
 
-/// Queue-based CommandRunner for load_role integration tests. Pre-fills
+/// Queue-based `CommandRunner` for `load_role` integration tests. Pre-fills
 /// 4 empty slots for the identity-lookup preamble (git config user.name/email,
-/// id -u/-g); GC calls now go through DockerApi, not CommandRunner.
+/// id -u/-g); GC calls now go through `DockerApi`, not `CommandRunner`.
 #[derive(Default)]
 pub struct FakeRunner {
     pub recorded: Vec<String>,
@@ -87,7 +87,10 @@ impl FakeRunner {
             capture_queue.push_back(String::new());
         }
         capture_queue.extend(outputs);
-        Self { recorded: Vec::new(), capture_queue }
+        Self {
+            recorded: Vec::new(),
+            capture_queue,
+        }
     }
 }
 

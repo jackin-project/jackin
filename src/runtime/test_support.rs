@@ -22,7 +22,7 @@ impl FakeRunner {
     /// Number of capture calls `load_role` makes before reaching role-
     /// specific logic: 4 identity lookups (`git config user.name`,
     /// `git config user.email`, `id -u`, `id -g`).
-    /// GC now uses DockerApi, not CommandRunner, so it no longer counts.
+    /// GC now uses `DockerApi`, not `CommandRunner`, so it no longer counts.
     const LOAD_PREAMBLE_CAPTURES: usize = 4;
 
     pub(super) fn for_load_agent<const N: usize>(outputs: [String; N]) -> Self {

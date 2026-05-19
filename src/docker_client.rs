@@ -105,11 +105,8 @@ pub trait DockerApi {
     async fn inspect_network(&self, name: &str) -> anyhow::Result<Option<NetworkRow>>;
     async fn list_image_tags(&self, reference_filter: &str) -> anyhow::Result<Vec<String>>;
     async fn remove_image(&self, name: &str) -> anyhow::Result<RemoveImageOutcome>;
-    async fn inspect_image_label(
-        &self,
-        image: &str,
-        label: &str,
-    ) -> anyhow::Result<Option<String>>;
+    async fn inspect_image_label(&self, image: &str, label: &str)
+    -> anyhow::Result<Option<String>>;
     async fn pull_image(&self, image: &str) -> anyhow::Result<()>;
     async fn exec_capture(&self, container: &str, cmd: &[&str]) -> anyhow::Result<String>;
 }
@@ -122,13 +119,13 @@ pub struct BollardDockerClient {
 
 impl BollardDockerClient {
     pub fn connect() -> anyhow::Result<Self> {
-        let inner = Docker::connect_with_local_defaults()
-            .context("failed to connect to Docker daemon")?;
+        let inner =
+            Docker::connect_with_local_defaults().context("failed to connect to Docker daemon")?;
         Ok(Self { inner })
     }
 }
 
-fn is_http_status(err: &bollard::errors::Error, code: u16) -> bool {
+const fn is_http_status(err: &bollard::errors::Error, code: u16) -> bool {
     matches!(
         err,
         bollard::errors::Error::DockerResponseServerError { status_code, .. }
@@ -159,9 +156,8 @@ impl DockerApi for BollardDockerClient {
             Err(ref e) if is_http_status(e, 404) => ContainerState::NotFound,
             Err(e) => ContainerState::InspectUnavailable(e.to_string()),
             Ok(info) => {
-                let state = match info.state {
-                    None => return ContainerState::InspectUnavailable("no state field".to_string()),
-                    Some(s) => s,
+                let Some(state) = info.state else {
+                    return ContainerState::InspectUnavailable("no state field".to_string());
                 };
                 let running = state.running.unwrap_or(false);
                 if running {
@@ -303,9 +299,7 @@ impl DockerApi for BollardDockerClient {
         let filters = build_label_filter(label_filters);
         let networks = self
             .inner
-            .list_networks(Some(ListNetworksOptions {
-                filters,
-            }))
+            .list_networks(Some(ListNetworksOptions { filters }))
             .await
             .context("listing networks")?;
 
@@ -387,8 +381,8 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn pull_image(&self, image: &str) -> anyhow::Result<()> {
-        crate::tui::emit_debug_line("pull", image);
         use bollard::query_parameters::CreateImageOptions;
+        crate::tui::emit_debug_line("pull", image);
         let mut stream = self.inner.create_image(
             Some(CreateImageOptions {
                 from_image: Some(image.to_string()),
@@ -427,9 +421,7 @@ impl DockerApi for BollardDockerClient {
         {
             StartExecResults::Attached { mut output, .. } => {
                 while let Some(chunk) = output.next().await {
-                    match chunk
-                        .with_context(|| format!("reading exec output from {container}"))?
-                    {
+                    match chunk.with_context(|| format!("reading exec output from {container}"))? {
                         LogOutput::StdOut { message } | LogOutput::StdErr { message } => {
                             output_buf.push_str(&String::from_utf8_lossy(&message));
                         }
@@ -461,11 +453,21 @@ impl DockerApi for BollardDockerClient {
     }
 
     async fn inspect_network(&self, name: &str) -> anyhow::Result<Option<NetworkRow>> {
-        match self.inner.inspect_network(name, None::<bollard::query_parameters::InspectNetworkOptions>).await {
+        match self
+            .inner
+            .inspect_network(
+                name,
+                None::<bollard::query_parameters::InspectNetworkOptions>,
+            )
+            .await
+        {
             Ok(n) => {
                 let net_name = n.name.unwrap_or_else(|| name.to_string());
                 let labels = n.labels.unwrap_or_default();
-                Ok(Some(NetworkRow { name: net_name, labels }))
+                Ok(Some(NetworkRow {
+                    name: net_name,
+                    labels,
+                }))
             }
             Err(e) if is_http_status(&e, 404) => Ok(None),
             Err(e) => Err(anyhow::Error::from(e).context(format!("inspecting network {name}"))),
@@ -512,8 +514,12 @@ impl Default for FakeDockerClient {
 #[cfg(test)]
 impl FakeDockerClient {
     fn check_fail(&self, op: &str) -> anyhow::Result<()> {
-        if let Some((_, msg)) = self.fail_with.iter().find(|(pat, _)| op.contains(pat.as_str())) {
-            anyhow::bail!("{}", msg);
+        if let Some((_, msg)) = self
+            .fail_with
+            .iter()
+            .find(|(pat, _)| op.contains(pat.as_str()))
+        {
+            anyhow::bail!("{msg}");
         }
         Ok(())
     }
@@ -533,31 +539,52 @@ impl FakeDockerClient {
     }
 
     fn pop_inspect(&self) -> ContainerState {
-        self.inspect_queue.borrow_mut().pop_front().unwrap_or(ContainerState::NotFound)
+        self.inspect_queue
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or(ContainerState::NotFound)
     }
 
     fn pop_list_containers(&self) -> Vec<ContainerRow> {
-        self.list_containers_queue.borrow_mut().pop_front().unwrap_or_default()
+        self.list_containers_queue
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_default()
     }
 
     fn pop_list_networks(&self) -> Vec<NetworkRow> {
-        self.list_networks_queue.borrow_mut().pop_front().unwrap_or_default()
+        self.list_networks_queue
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_default()
     }
 
     fn pop_list_image_tags(&self) -> Vec<String> {
-        self.list_image_tags_queue.borrow_mut().pop_front().unwrap_or_default()
+        self.list_image_tags_queue
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_default()
     }
 
     fn pop_remove_image(&self) -> RemoveImageOutcome {
-        self.remove_image_queue.borrow_mut().pop_front().expect("remove_image called but remove_image_queue is empty")
+        self.remove_image_queue
+            .borrow_mut()
+            .pop_front()
+            .expect("remove_image called but remove_image_queue is empty")
     }
 
     fn pop_exec_capture(&self) -> String {
-        self.exec_capture_queue.borrow_mut().pop_front().unwrap_or_default()
+        self.exec_capture_queue
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or_default()
     }
 
     fn pop_inspect_network(&self) -> Option<NetworkRow> {
-        self.inspect_network_queue.borrow_mut().pop_front().unwrap_or(None)
+        self.inspect_network_queue
+            .borrow_mut()
+            .pop_front()
+            .unwrap_or(None)
     }
 }
 
@@ -566,7 +593,11 @@ impl DockerApi for FakeDockerClient {
     async fn inspect_container_state(&self, name: &str) -> ContainerState {
         let op = format!("docker inspect {name}");
         self.record(&op);
-        if let Some((_, msg)) = self.fail_with.iter().find(|(pat, _)| op.contains(pat.as_str())) {
+        if let Some((_, msg)) = self
+            .fail_with
+            .iter()
+            .find(|(pat, _)| op.contains(pat.as_str()))
+        {
             let msg = msg.clone();
             let lower = msg.to_ascii_lowercase();
             if lower.contains("no such object")
@@ -605,7 +636,9 @@ impl DockerApi for FakeDockerClient {
     async fn create_container(&self, name: &str, spec: ContainerSpec) -> anyhow::Result<()> {
         let op = format!("create_container:{name}");
         self.record(&op);
-        self.created_containers.borrow_mut().push((name.to_string(), spec));
+        self.created_containers
+            .borrow_mut()
+            .push((name.to_string(), spec));
         self.check_fail(&op)
     }
 
@@ -628,7 +661,9 @@ impl DockerApi for FakeDockerClient {
     ) -> anyhow::Result<()> {
         let op = format!("docker network create {name}");
         self.record(&op);
-        self.created_networks.borrow_mut().push((name.to_string(), labels));
+        self.created_networks
+            .borrow_mut()
+            .push((name.to_string(), labels));
         self.check_fail(&op)
     }
 
@@ -691,4 +726,3 @@ impl DockerApi for FakeDockerClient {
         Ok(self.pop_exec_capture())
     }
 }
-
