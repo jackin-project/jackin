@@ -7,7 +7,9 @@ use crate::version_check;
 use owo_colors::OwoColorize;
 
 use super::identity::HostIdentity;
-use super::naming::{LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, image_name};
+use super::naming::{
+    LABEL_IMAGE_CONSTRUCT, LABEL_IMAGE_CONSTRUCT_VERSION, LABEL_IMAGE_ROLE_GIT_SHA, image_name,
+};
 
 /// Build the Docker image for the role. Returns the image name.
 #[allow(
@@ -51,23 +53,27 @@ pub(super) fn build_agent_image(
         published_image.is_some() && !rebuild && branch_override.is_none() && !custom_construct;
     let mut base_image_override = use_prebuilt.then(|| published_image.unwrap());
 
-    // When using the pre-built published image, verify it was built from the
-    // same construct version the Dockerfile now pins. A mismatch means the
-    // published image pre-dates a Renovate update (the role Dockerfile was
-    // bumped to a newer construct version but CI has not yet rebuilt the
-    // published image). Fall back to workspace mode so the role's workspace
-    // Dockerfile — which carries the new pinned version — is used directly.
+    // Resolve the role repo HEAD SHA once — used both for the published-image
+    // staleness check and as a build-arg so local builds carry the same label.
+    let head_sha = git_head_sha(&cached_repo.repo_dir, runner);
+
+    // When using the pre-built published image, check whether it is current:
+    // - Primary check: `jackin.role_git_sha` label matches the HEAD of the
+    //   cached role repo → image was built from the exact same commit, fresh.
+    // - Fallback (images predating this feature): `jackin.construct_version`
+    //   label matches the Dockerfile's pinned version → still usable.
+    // Either mismatch falls back to workspace mode so the role's workspace
+    // Dockerfile is used directly.
     let rebuild = if use_prebuilt
-        && construct_version_is_stale(
+        && published_image_is_stale(
             published_image.unwrap(),
             &validated_repo.dockerfile.construct_version,
+            head_sha.as_deref(),
             runner,
         ) {
         eprintln!(
-            "note: published image {} predates Dockerfile construct pin {}; \
-             rebuilding from workspace Dockerfile",
+            "note: published image {} is out of date; rebuilding from workspace Dockerfile",
             published_image.unwrap(),
-            validated_repo.dockerfile.construct_version,
         );
         use_prebuilt = false;
         base_image_override = None;
@@ -103,6 +109,8 @@ pub(super) fn build_agent_image(
 
     let build_arg_uid = format!("JACKIN_HOST_UID={}", host.uid);
     let build_arg_gid = format!("JACKIN_HOST_GID={}", host.gid);
+    let build_arg_role_git_sha =
+        format!("ROLE_GIT_SHA={}", head_sha.as_deref().unwrap_or("unknown"));
     // Always pass the cache-bust arg so Docker matches the correct layer.
     //
     // When rebuilding (update available / --rebuild), generate a fresh
@@ -167,6 +175,7 @@ pub(super) fn build_agent_image(
     build_args.extend(["--build-arg", &build_arg_uid]);
     build_args.extend(["--build-arg", &build_arg_gid]);
     build_args.extend(["--build-arg", &cache_bust]);
+    build_args.extend(["--build-arg", &build_arg_role_git_sha]);
     build_args.extend(["--label", &construct_label]);
     build_args.extend(["-t", &image, "-f", &dockerfile_path, &context_dir]);
 
@@ -219,19 +228,37 @@ fn read_image_label(runner: &mut impl CommandRunner, image: &str, key: &str) -> 
         .filter(|s| !s.is_empty())
 }
 
-/// Returns true when the published image's construct version label differs from
-/// the Dockerfile's pinned version, meaning the published image pre-dates a
-/// Renovate bump. If the label is absent the image predates this tracking
-/// feature — treat as fresh so existing published images keep working.
+/// Returns the HEAD commit SHA of the git repo at `dir`, or `None` if the
+/// directory is not a git repo or the command fails.
+fn git_head_sha(dir: &std::path::Path, runner: &mut impl CommandRunner) -> Option<String> {
+    let dir_str = dir.display().to_string();
+    runner
+        .capture("git", &["-C", &dir_str, "rev-parse", "HEAD"], None)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Returns `true` when the published image is out of date relative to the
+/// current role repo state.
+///
+/// Checks in order:
+/// 1. `jackin.role_git_sha` label: if present and matches `head_sha`, the
+///    image was built from the exact same commit — fresh, no rebuild needed.
+///    If present and different, the image is stale.
+/// 2. Fallback for images predating role-git-sha tracking:
+///    `jackin.construct_version` label must match `dockerfile_version`.
+///    Absent label is treated as fresh (backward compatibility).
 ///
 /// If `docker pull` fails the image may not exist locally at all. Treating a
-/// missing image as "not stale" would let the prebuilt path proceed and produce
-/// a confusing late failure inside `docker build`. Return `true` (stale) so
-/// jackin falls back to workspace mode, which gives the operator a clearer
-/// error if the construct base is also unreachable.
-fn construct_version_is_stale(
+/// missing image as "not stale" would let the prebuilt path proceed and
+/// produce a confusing late failure inside `docker build`. Return `true`
+/// (stale) so jackin falls back to workspace mode, giving the operator a
+/// clearer error if the construct base is also unreachable.
+fn published_image_is_stale(
     published: &str,
     dockerfile_version: &str,
+    head_sha: Option<&str>,
     runner: &mut impl CommandRunner,
 ) -> bool {
     if let Err(e) = runner.run(
@@ -246,6 +273,16 @@ fn construct_version_is_stale(
         );
         return true;
     }
+
+    if let Some(sha) = head_sha {
+        match read_image_label(runner, published, LABEL_IMAGE_ROLE_GIT_SHA) {
+            Some(ref label_sha) if label_sha == sha => return false,
+            Some(_) => return true,
+            None => {}
+        }
+    }
+
+    // Fallback: construct-version check for pre-role-git-sha images.
     read_image_label(runner, published, LABEL_IMAGE_CONSTRUCT_VERSION)
         .is_some_and(|stored| stored != dockerfile_version)
 }
