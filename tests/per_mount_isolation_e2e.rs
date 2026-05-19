@@ -1,3 +1,5 @@
+mod common;
+
 use jackin::docker::{CommandRunner, RunOptions};
 use jackin::isolation::MountIsolation;
 use jackin::isolation::finalize::{
@@ -183,12 +185,14 @@ async fn materialize_then_clean_exit_removes_record_and_branch() {
     let branches = "jackin/scratch/jackin-the-architect\tdeadbeef\t\t\n";
     let mut finalize_runner = ScriptedRunner::new(&["", branches]);
     let mut prompt = NoPrompt;
+    let docker = common::NoOpDocker;
     let dec = finalize_foreground_session(
         "jackin-the-architect",
         &cdir,
         AttachOutcome::stopped(0),
         false,
         &mut prompt,
+        &docker,
         &mut finalize_runner,
     )
     .await

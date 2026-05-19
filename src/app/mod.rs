@@ -1613,18 +1613,20 @@ fn prompt_hardline_action(container: &str) -> Result<HardlineAction> {
     ))
 }
 
+#[allow(clippy::needless_pass_by_ref_mut)]
 async fn prompt_explicit_hardline_action_if_multiple_sessions(
     container: &str,
     docker: &impl DockerApi,
     runner: &mut impl crate::docker::CommandRunner,
 ) -> Result<HardlineAction> {
     use std::io::IsTerminal;
+    let _ = runner; // reserved for future CLI operations
 
     if !std::io::stdin().is_terminal() {
         return Ok(HardlineAction::Reconnect);
     }
     let state = docker.inspect_container_state(container).await;
-    let sessions = runtime::inspect_agent_sessions(runner, container, &state).await;
+    let sessions = runtime::inspect_agent_sessions(docker, container, &state).await;
     if !has_multiple_agent_sessions(&sessions) {
         return Ok(HardlineAction::Reconnect);
     }
@@ -1824,7 +1826,13 @@ async fn restore_candidate_for_hardline(
                 )
             );
         }
-        runtime::ContainerState::Running | runtime::ContainerState::Stopped { .. } => Ok(None),
+        runtime::ContainerState::Running
+        | runtime::ContainerState::Paused
+        | runtime::ContainerState::Restarting
+        | runtime::ContainerState::Created
+        | runtime::ContainerState::Removing
+        | runtime::ContainerState::Dead
+        | runtime::ContainerState::Stopped { .. } => Ok(None),
     }
 }
 

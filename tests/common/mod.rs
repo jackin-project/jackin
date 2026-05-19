@@ -75,11 +75,13 @@ impl DockerApi for NoOpDocker {
 /// 4 empty slots for the identity-lookup preamble (git config user.name/email,
 /// id -u/-g); GC calls now go through `DockerApi`, not `CommandRunner`.
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct FakeRunner {
     pub recorded: Vec<String>,
     pub capture_queue: VecDeque<String>,
 }
 
+#[allow(dead_code)]
 impl FakeRunner {
     pub fn for_load_agent(outputs: impl IntoIterator<Item = String>) -> Self {
         let mut capture_queue = VecDeque::new();

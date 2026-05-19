@@ -110,6 +110,7 @@ pub async fn finalize_foreground_session(
     outcome: AttachOutcome,
     is_interactive: bool,
     prompt: &mut impl FinalizerPrompt,
+    docker: &impl crate::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<FinalizeDecision> {
     debug_log!(
@@ -129,7 +130,7 @@ pub async fn finalize_foreground_session(
         //     finalize_clean_exit so isolation worktrees are swept normally
         if outcome.exit_code.is_none()
             && !outcome.oom_killed
-            && !has_tmux_sessions(runner, container_name).await
+            && !has_tmux_sessions(docker, container_name).await
         {
             debug_log!(
                 "isolation",
@@ -163,21 +164,21 @@ pub async fn finalize_foreground_session(
     .await
 }
 
-async fn has_tmux_sessions(runner: &mut impl CommandRunner, container_name: &str) -> bool {
+async fn has_tmux_sessions(
+    docker: &impl crate::docker_client::DockerApi,
+    container_name: &str,
+) -> bool {
     // Run via sh to suppress the "no server running" error tmux emits when the
     // socket is stale. Both "no server" and "no sessions" collapse to exit 0 with
     // empty stdout so the caller only sees a non-empty result when sessions exist.
-    runner
-        .capture(
-            "docker",
+    docker
+        .exec_capture(
+            container_name,
             &[
-                "exec",
-                container_name,
                 "sh",
                 "-c",
                 "tmux list-sessions -F '#{session_name}' 2>/dev/null || true",
             ],
-            None,
         )
         .await
         .is_ok_and(|output| !output.trim().is_empty())
@@ -610,12 +611,14 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::still_running(),
             false,
             &mut p,
+            &docker,
             &mut r,
         )
         .await
@@ -628,12 +631,14 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(137),
             false,
             &mut p,
+            &docker,
             &mut r,
         )
         .await
@@ -646,12 +651,14 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::oom_killed(),
             false,
             &mut p,
+            &docker,
             &mut r,
         )
         .await
@@ -709,12 +716,14 @@ mod tests {
         let branches = format!("{}\n", ferow("jackin/scratch/x", "abc", "", ""));
         let mut runner = fake_with_outputs(&["", &branches, "refs/heads/jackin/scratch/x"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -747,12 +756,14 @@ mod tests {
         );
         let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/jackin/scratch/x"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -782,12 +793,14 @@ mod tests {
         );
         let mut runner = fake_with_outputs(&["", &branches, "deadbeef\n"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -810,12 +823,14 @@ mod tests {
         let branches = format!("{}\n", ferow("jackin/scratch/x", "newhead", "", ""));
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -874,12 +889,14 @@ mod tests {
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
         let mut runner = fake_with_outputs(&[" M file\n"]);
         let mut p = ScriptedPrompt(VecDeque::from([1]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -897,12 +914,14 @@ mod tests {
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
         let mut runner = fake_with_outputs(&[" M file\n"]);
         let mut p = ScriptedPrompt(VecDeque::from([2]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -925,12 +944,14 @@ mod tests {
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
         let mut runner = fake_with_outputs(&[" M file\n"]);
         let mut p = ScriptedPrompt(VecDeque::from([0]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -948,12 +969,14 @@ mod tests {
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
         let mut runner = fake_with_outputs(&[" M file\n"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -990,12 +1013,14 @@ mod tests {
         // status --porcelain errors → must NOT be treated as clean tree.
         let mut runner = fake_failing_capture(&[], "status --porcelain");
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1023,12 +1048,14 @@ mod tests {
         // status clean, then for-each-ref refs/heads/ errors.
         let mut runner = fake_failing_capture(&[""], "for-each-ref");
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1065,12 +1092,14 @@ mod tests {
         );
         let mut runner = fake_failing_capture(&["", &branches], "rev-list");
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1120,12 +1149,14 @@ mod tests {
         let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
         // Operator chooses option 2 (force delete) for both.
         let mut p = ScriptedPrompt(VecDeque::from([2, 2]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1161,12 +1192,14 @@ mod tests {
         let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
         // First record force-deleted, second preserved.
         let mut p = ScriptedPrompt(VecDeque::from([2, 1]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1203,12 +1236,14 @@ mod tests {
         // Operator: force-delete first, then return-to-role on second.
         // Third should never be prompted.
         let mut p = ScriptedPrompt(VecDeque::from([2, 0]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1268,12 +1303,14 @@ mod tests {
         };
         // Operator force-deletes both.
         let mut p = ScriptedPrompt(VecDeque::from([2, 2]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1305,12 +1342,14 @@ mod tests {
         write_records(dir.path(), &[r1, r2]).unwrap();
         let mut runner = fake_with_outputs(&[" M file\n", " M file\n"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1337,12 +1376,14 @@ mod tests {
         // status clean, then for-each-ref returns empty (no branches).
         let mut runner = fake_with_outputs(&["", ""]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1385,12 +1426,14 @@ mod tests {
             + "\n";
         let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/feature/x"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1422,12 +1465,14 @@ mod tests {
         // symbolic-ref HEAD  (HEAD on feature/x → attached)
         let mut runner = fake_with_outputs(&["", &branches, "refs/heads/feature/x"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1458,12 +1503,14 @@ mod tests {
             + "\n";
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1489,12 +1536,14 @@ mod tests {
             + "\n";
         let mut runner = fake_with_outputs(&["", &branches, "deadbeef\ncafef00d\n"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1524,12 +1573,14 @@ mod tests {
         // then symbolic-ref HEAD (HEAD on feature/b → attached).
         let mut runner = fake_with_outputs(&["", &branches, "", "refs/heads/feature/b"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1567,12 +1618,14 @@ mod tests {
         // PreservedUnpushed without another rev-list.
         let mut runner = fake_with_outputs(&["", &branches, ""]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1596,12 +1649,14 @@ mod tests {
         // status clean → for-each-ref → ahead+no-upstream → preserve
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = RecordingPrompt::new([1]); // operator picks "preserve"
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1620,12 +1675,14 @@ mod tests {
         write_records(dir.path(), std::slice::from_ref(&r)).unwrap();
         let mut runner = fake_with_outputs(&[" M file\n"]);
         let mut p = RecordingPrompt::new([1]);
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1653,12 +1710,14 @@ mod tests {
         let branches = format!("{}\n", ferow("", "newhead", "", ""));
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1679,12 +1738,14 @@ mod tests {
         let branches = format!("{}\n", ferow("feature/x", "", "origin/feature/x", ""));
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1711,12 +1772,14 @@ mod tests {
         let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1741,12 +1804,14 @@ mod tests {
         let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = ScriptedPrompt(VecDeque::from([2]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1770,12 +1835,14 @@ mod tests {
         let branches = format!("{}\n", ferow("feature/x", "newhead", "", ""));
         let mut runner = fake_with_outputs(&["", &branches]);
         let mut p = ScriptedPrompt(VecDeque::from([0]));
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             true,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1807,12 +1874,14 @@ mod tests {
         // symbolic-ref HEAD  (HEAD on feature/x → attached)
         let mut runner = fake_with_outputs(&["", &branches, "refs/heads/feature/x"]);
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1846,12 +1915,14 @@ mod tests {
         // Queue: status, for-each-ref, rev-parse HEAD (symbolic-ref fails).
         let mut runner = fake_failing_capture(&["", &branches, "deadbeef"], "symbolic-ref");
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1874,12 +1945,14 @@ mod tests {
         // Using the real git rev-parse output format (trailing newline) so trim() is exercised.
         let mut runner = fake_failing_capture(&["", &branches, "abc\n"], "symbolic-ref");
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await
@@ -1902,12 +1975,14 @@ mod tests {
             ..FakeRunner::default()
         };
         let mut p = NoPrompt;
+        let docker = crate::docker_client::FakeDockerClient::default();
         let dec = finalize_foreground_session(
             "jackin-x",
             dir.path(),
             AttachOutcome::stopped(0),
             false,
             &mut p,
+            &docker,
             &mut runner,
         )
         .await

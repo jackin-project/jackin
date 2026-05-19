@@ -1,5 +1,6 @@
 use crate::derived_image::create_derived_build_context;
 use crate::docker::{CommandRunner, RunOptions};
+use crate::docker_client::DockerApi;
 use crate::paths::JackinPaths;
 use crate::repo::CachedRepo;
 use crate::selector::RoleSelector;
@@ -28,6 +29,7 @@ pub(super) async fn build_agent_image(
     agent_update: bool,
     debug: bool,
     branch_override: Option<&str>,
+    docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
     repo_lock: std::fs::File,
 ) -> anyhow::Result<String> {
@@ -69,7 +71,7 @@ pub(super) async fn build_agent_image(
             published_image.unwrap(),
             &validated_repo.dockerfile.construct_version,
             head_sha.as_deref(),
-            runner,
+            docker,
         )
         .await
     {
@@ -130,8 +132,10 @@ pub(super) async fn build_agent_image(
     // and must be rebuilt from scratch rather than reused.
     let current_construct = crate::repo_contract::construct_image();
     let construct_mismatch = !rebuild
-        && read_image_label(runner, &image, LABEL_IMAGE_CONSTRUCT)
+        && docker
+            .inspect_image_label(&image, LABEL_IMAGE_CONSTRUCT)
             .await
+            .unwrap_or_default()
             .is_some_and(|cached| cached != current_construct);
     let rebuild = rebuild || construct_mismatch;
 
@@ -216,28 +220,6 @@ pub(super) async fn build_agent_image(
     Ok(image)
 }
 
-async fn read_image_label(
-    runner: &mut impl CommandRunner,
-    image: &str,
-    key: &str,
-) -> Option<String> {
-    runner
-        .capture(
-            "docker",
-            &[
-                "inspect",
-                "--format",
-                &format!("{{{{index .Config.Labels \"{key}\"}}}}"),
-                image,
-            ],
-            None,
-        )
-        .await
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
 /// Returns the HEAD commit SHA of the git repo at `dir`, or `None` if the
 /// directory is not a git repo or the command fails.
 async fn git_head_sha(dir: &std::path::Path, runner: &mut impl CommandRunner) -> Option<String> {
@@ -270,17 +252,9 @@ async fn published_image_is_stale(
     published: &str,
     dockerfile_version: &str,
     head_sha: Option<&str>,
-    runner: &mut impl CommandRunner,
+    docker: &impl DockerApi,
 ) -> bool {
-    if let Err(e) = runner
-        .run(
-            "docker",
-            &["pull", "--quiet", published],
-            None,
-            &RunOptions::default(),
-        )
-        .await
-    {
+    if let Err(e) = docker.pull_image(published).await {
         eprintln!(
             "warning: docker pull {published} failed ({e}); \
              treating published image as stale and rebuilding from workspace Dockerfile"
@@ -289,7 +263,11 @@ async fn published_image_is_stale(
     }
 
     if let Some(sha) = head_sha {
-        match read_image_label(runner, published, LABEL_IMAGE_ROLE_GIT_SHA).await {
+        match docker
+            .inspect_image_label(published, LABEL_IMAGE_ROLE_GIT_SHA)
+            .await
+            .unwrap_or_default()
+        {
             Some(ref label_sha) if label_sha == sha => return false,
             Some(_) => return true,
             None => {}
@@ -297,8 +275,10 @@ async fn published_image_is_stale(
     }
 
     // Fallback: construct-version check for pre-role-git-sha images.
-    read_image_label(runner, published, LABEL_IMAGE_CONSTRUCT_VERSION)
+    docker
+        .inspect_image_label(published, LABEL_IMAGE_CONSTRUCT_VERSION)
         .await
+        .unwrap_or_default()
         .is_some_and(|stored| stored != dockerfile_version)
 }
 

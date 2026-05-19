@@ -541,6 +541,11 @@ async fn ensure_container_absent_for_purge(
     let state_phrase = match docker.inspect_container_state(container_name).await {
         crate::docker_client::ContainerState::NotFound => return Ok(()),
         crate::docker_client::ContainerState::Running => "and is running",
+        crate::docker_client::ContainerState::Paused => "and is paused",
+        crate::docker_client::ContainerState::Restarting => "and is restarting",
+        crate::docker_client::ContainerState::Created => "and is being created",
+        crate::docker_client::ContainerState::Removing => "and is being removed",
+        crate::docker_client::ContainerState::Dead => "but is dead",
         crate::docker_client::ContainerState::Stopped { .. } => "but is stopped",
         crate::docker_client::ContainerState::InspectUnavailable(reason) => {
             anyhow::bail!(

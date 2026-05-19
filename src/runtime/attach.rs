@@ -24,7 +24,7 @@ pub enum AgentSessionInventory {
 }
 
 pub async fn inspect_agent_sessions(
-    runner: &mut impl CommandRunner,
+    docker: &impl DockerApi,
     container_name: &str,
     state: &ContainerState,
 ) -> AgentSessionInventory {
@@ -36,17 +36,14 @@ pub async fn inspect_agent_sessions(
     // surfaces as an error. Running via `sh -c '... || true'` maps both "zero
     // sessions" and "sessions found" to exit 0; only a real infrastructure
     // failure (container stopped mid-call, docker unavailable) reaches `Err`.
-    match runner
-        .capture(
-            "docker",
+    match docker
+        .exec_capture(
+            container_name,
             &[
-                "exec",
-                container_name,
                 "sh",
                 "-c",
                 "tmux list-sessions -F '#{session_name}' 2>/dev/null || true",
             ],
-            None,
         )
         .await
     {
@@ -112,10 +109,11 @@ pub(super) fn short_session_id() -> String {
 pub(super) async fn reconnect_or_create_session(
     paths: &JackinPaths,
     container_name: &str,
+    docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     set_role_terminal_title(paths, container_name);
-    let sessions = inspect_agent_sessions(runner, container_name, &ContainerState::Running).await;
+    let sessions = inspect_agent_sessions(docker, container_name, &ContainerState::Running).await;
     let has_sessions = matches!(&sessions, AgentSessionInventory::Sessions(v) if !v.is_empty());
 
     if has_sessions {
@@ -179,7 +177,7 @@ pub async fn spawn_shell_session(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     match docker.inspect_container_state(container_name).await {
-        ContainerState::Running => {}
+        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {}
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
                 anyhow::bail!("{message}");
@@ -191,7 +189,10 @@ pub async fn spawn_shell_session(
         ContainerState::InspectUnavailable(reason) => {
             anyhow::bail!("{}", inspect_unavailable_message(container_name, &reason));
         }
-        ContainerState::Stopped { .. } => {
+        ContainerState::Stopped { .. }
+        | ContainerState::Created
+        | ContainerState::Removing
+        | ContainerState::Dead => {
             anyhow::bail!(
                 "container '{container_name}' is stopped; run `jackin hardline {container_name}` to restart it before opening a shell"
             );
@@ -224,7 +225,7 @@ pub async fn spawn_agent_session(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     match docker.inspect_container_state(container_name).await {
-        ContainerState::Running => {}
+        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {}
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
                 anyhow::bail!("{message}");
@@ -236,7 +237,10 @@ pub async fn spawn_agent_session(
         ContainerState::InspectUnavailable(reason) => {
             anyhow::bail!("{}", inspect_unavailable_message(container_name, &reason));
         }
-        ContainerState::Stopped { .. } => {
+        ContainerState::Stopped { .. }
+        | ContainerState::Created
+        | ContainerState::Removing
+        | ContainerState::Dead => {
             anyhow::bail!(
                 "container '{container_name}' is stopped; run `jackin hardline {container_name}` to restart or recover it before using `--new`"
             );
@@ -285,8 +289,7 @@ pub async fn spawn_agent_session(
     eprintln!();
     result?;
 
-    let outcome =
-        crate::runtime::launch::inspect_attach_outcome(docker, runner, container_name).await?;
+    let outcome = crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
     super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
     Ok(())
 }
@@ -303,9 +306,9 @@ pub async fn hardline_agent(
     // too late. Firing here, while the container is observably running, ensures
     // caffeinate spawns for the duration of the re-attached session.
     let attach_outcome = match docker.inspect_container_state(container_name).await {
-        ContainerState::Running => {
+        ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
             super::caffeinate::reconcile(paths, docker, runner).await;
-            reconnect_or_create_session(paths, container_name, runner).await
+            reconnect_or_create_session(paths, container_name, docker, runner).await
         }
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {
@@ -341,14 +344,20 @@ pub async fn hardline_agent(
                  use `jackin load` to start a new session or recover saved state"
             )
         }
+        state @ (ContainerState::Created | ContainerState::Removing | ContainerState::Dead) => {
+            anyhow::bail!(
+                "container '{container_name}' is not running (state: {}); \
+                 use `jackin load` to start a new session",
+                state.short_label()
+            )
+        }
     };
     attach_outcome?;
 
     // Finalize per-mount isolation worktrees after re-attach. We do not honor
     // a `ReturnToAgent` decision here — `hardline` is itself a re-attach, and
     // the operator can simply re-invoke `jackin hardline` to come back.
-    let outcome =
-        crate::runtime::launch::inspect_attach_outcome(docker, runner, container_name).await?;
+    let outcome = crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
     super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
     let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
     let mut prompt = crate::isolation::finalize::StdinPrompt;
@@ -358,18 +367,21 @@ pub async fn hardline_agent(
         outcome,
         interactive,
         &mut prompt,
+        docker,
         runner,
     )
     .await?;
     Ok(())
 }
 
+#[allow(clippy::needless_pass_by_ref_mut)]
 pub async fn inspect_hardline_instance(
     paths: &JackinPaths,
     container_name: &str,
     docker: &impl crate::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<String> {
+    let _ = runner; // reserved for future CLI operations
     let state_dir = paths.data_dir.join(container_name);
     // `--inspect` is the operator's recovery tool. Distinguish "no
     // manifest yet" (pre-restore) from "manifest unreadable" (torn
@@ -391,7 +403,7 @@ pub async fn inspect_hardline_instance(
     );
 
     let role_container_state = docker.inspect_container_state(container_name).await;
-    let sessions = inspect_agent_sessions(runner, container_name, &role_container_state).await;
+    let sessions = inspect_agent_sessions(docker, container_name, &role_container_state).await;
     let role_state = role_container_state.inspect_label();
     let dind_state = docker
         .inspect_container_state(&dind_name)
@@ -1053,6 +1065,9 @@ mod tests {
                     oom_killed: false,
                 },
             ])),
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                "jackin-claude-abc123\njackin-codex-abc".to_string(),
+            ])),
             inspect_network_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
                 Some(crate::docker_client::NetworkRow {
                     name: format!("{container_name}-net"),
@@ -1061,9 +1076,7 @@ mod tests {
             ])),
             ..Default::default()
         };
-        // Runner provides tmux session list for inspect_agent_sessions
-        let mut runner =
-            FakeRunner::with_capture_queue(["jackin-claude-abc123\njackin-codex-abc".to_string()]);
+        let mut runner = FakeRunner::default();
 
         let report = inspect_hardline_instance(&paths, container_name, &docker, &mut runner)
             .await
@@ -1096,20 +1109,15 @@ mod tests {
 
     #[tokio::test]
     async fn inspect_agent_sessions_lists_tmux_sessions() {
-        let _docker = FakeDockerClient {
+        let docker = FakeDockerClient {
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                "jackin-claude-abc123
-            jackin-codex-abc"
-                    .to_string(),
+                "jackin-claude-abc123\njackin-codex-abc".to_string(),
             ])),
             ..Default::default()
         };
-        let mut runner = FakeRunner::with_capture_queue(["jackin-claude-abc123
-jackin-codex-abc"
-            .to_string()]);
 
         let sessions =
-            inspect_agent_sessions(&mut runner, "jk-agent-smith", &ContainerState::Running).await;
+            inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Running).await;
 
         let AgentSessionInventory::Sessions(sessions) = sessions else {
             panic!("expected sessions");
@@ -1121,20 +1129,25 @@ jackin-codex-abc"
 
     #[tokio::test]
     async fn inspect_agent_sessions_returns_empty_when_no_sessions_running() {
-        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+        let docker = FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                String::new(),
+            ])),
+            ..Default::default()
+        };
 
         let sessions =
-            inspect_agent_sessions(&mut runner, "jk-agent-smith", &ContainerState::Running).await;
+            inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Running).await;
 
         assert_eq!(sessions, AgentSessionInventory::Sessions(vec![]));
     }
 
     #[tokio::test]
     async fn inspect_agent_sessions_skips_query_when_container_is_not_running() {
-        let mut runner = FakeRunner::default();
+        let docker = FakeDockerClient::default();
 
         let sessions = inspect_agent_sessions(
-            &mut runner,
+            &docker,
             "jk-agent-smith",
             &ContainerState::Stopped {
                 exit_code: 137,
@@ -1144,7 +1157,7 @@ jackin-codex-abc"
         .await;
 
         assert_eq!(sessions, AgentSessionInventory::NotRunning);
-        assert!(runner.recorded.is_empty());
+        assert!(docker.recorded.borrow().is_empty());
     }
 
     #[tokio::test]

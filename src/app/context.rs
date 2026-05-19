@@ -423,6 +423,11 @@ async fn ad_hoc_hardline_candidates(
         let docker_live = matches!(
             state,
             runtime::ContainerState::Running
+                | runtime::ContainerState::Paused
+                | runtime::ContainerState::Restarting
+                | runtime::ContainerState::Created
+                | runtime::ContainerState::Removing
+                | runtime::ContainerState::Dead
                 | runtime::ContainerState::Stopped { .. }
                 | runtime::ContainerState::InspectUnavailable(_)
         );
@@ -487,6 +492,11 @@ async fn indexed_hardline_candidates(
         let docker_live = matches!(
             state,
             runtime::ContainerState::Running
+                | runtime::ContainerState::Paused
+                | runtime::ContainerState::Restarting
+                | runtime::ContainerState::Created
+                | runtime::ContainerState::Removing
+                | runtime::ContainerState::Dead
                 | runtime::ContainerState::Stopped { .. }
                 | runtime::ContainerState::InspectUnavailable(_)
         );

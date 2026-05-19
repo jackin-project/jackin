@@ -754,22 +754,14 @@ async fn launch_role_runtime(
 
     // Create Docker network
     let role_label = format!("jackin.role={container_name}");
-    runner
-        .run(
-            "docker",
-            &[
-                "network",
-                "create",
-                "--label",
-                LABEL_MANAGED,
-                "--label",
-                &role_label,
-                network,
-            ],
-            None,
-            &docker_run_opts,
-        )
-        .await?;
+    let network_labels = [LABEL_MANAGED, role_label.as_str()]
+        .iter()
+        .map(|kv| {
+            let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+            (k.to_string(), v.to_string())
+        })
+        .collect();
+    docker.create_network(network, network_labels).await?;
 
     // Start Docker-in-Docker with TLS.
     //
@@ -1161,6 +1153,11 @@ async fn diagnose_premature_exit(
         // could synthesize, and a transient inspect hiccup must not
         // hijack an otherwise-healthy launch.
         ContainerState::Running
+        | ContainerState::Paused
+        | ContainerState::Restarting
+        | ContainerState::Created
+        | ContainerState::Removing
+        | ContainerState::Dead
         | ContainerState::NotFound
         | ContainerState::InspectUnavailable(_) => None,
         ContainerState::Stopped {
@@ -1211,74 +1208,40 @@ async fn diagnose_premature_exit(
 #[allow(clippy::unnecessary_wraps)] // Result preserved so callers' `?` keeps working without a churn-y signature change
 pub async fn inspect_attach_outcome(
     docker: &impl DockerApi,
-    runner: &mut impl crate::docker::CommandRunner,
     container: &str,
 ) -> anyhow::Result<crate::isolation::finalize::AttachOutcome> {
     use crate::isolation::finalize::AttachOutcome;
-    let state = match runner
-        .capture(
-            "docker",
-            &[
-                "inspect",
-                "-f",
-                "{{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}}",
-                container,
-            ],
-            None,
-        )
-        .await
-    {
-        Ok(s) => s,
-        Err(e) => {
-            crate::debug_log!(
-                "isolation",
-                "inspect_attach_outcome: docker inspect failed for {container}: {e}; treating as still_running (conservative — finalize_clean_exit's auto-cleanup never fires)",
-            );
-            return Ok(AttachOutcome::still_running());
-        }
-    };
-    // docker unused: migrating to bollard requires ContainerState to distinguish
-    // paused/restarting from exited (bollard's running=false covers both). Kept
-    // as a CLI path until ContainerState is extended to carry those states.
-    let _ = docker;
-    let parts: Vec<&str> = state.trim().split('|').collect();
-    let status = parts.first().copied().unwrap_or("");
-    let exit_code = parts.get(1).and_then(|s| s.parse::<i32>().ok());
-    let oom = parts.get(2).copied().unwrap_or("") == "true";
-    // Only `exited` legitimately routes through finalize_clean_exit.
-    // `paused | restarting | removing | created` are all states where
-    // the container hasn't exited and has no exit code to act on —
-    // collapsing them into stopped(0) would let finalize_clean_exit
-    // auto-delete worktrees of containers that may resume any moment.
-    // OOM is a real exit (the kernel killed the process); we surface
-    // it explicitly so finalize preserves the recovery state.
-    // Unknown status strings (future Docker versions, exotic runtimes)
-    // are treated conservatively as still_running with a debug_log so
-    // the issue is debuggable but not data-destructive.
-    match status {
-        "running" | "paused" | "restarting" | "removing" | "created" => {
-            Ok(AttachOutcome::still_running())
-        }
-        "exited" | "dead" if oom => Ok(AttachOutcome::oom_killed()),
-        "exited" => Ok(AttachOutcome::stopped(exit_code.unwrap_or(0))),
-        "dead" => {
-            // `dead` means the daemon failed to deinitialize the container
-            // — rare, indicates trouble. Preserve records so the operator
-            // can inspect rather than auto-cleaning.
+    // Only `Stopped` with a clean or non-zero exit legitimately routes through
+    // finalize_clean_exit. Paused/Restarting/Created/Removing are transient
+    // active states — treating them as still_running is the conservative choice
+    // that prevents finalize_clean_exit from auto-deleting worktrees of
+    // containers that may resume. Dead is rare (daemon failed to deinitialize)
+    // and also preserved for operator inspection.
+    Ok(match docker.inspect_container_state(container).await {
+        ContainerState::Running
+        | ContainerState::Paused
+        | ContainerState::Restarting
+        | ContainerState::Created
+        | ContainerState::Removing => AttachOutcome::still_running(),
+        ContainerState::Dead => {
             crate::debug_log!(
                 "isolation",
                 "inspect_attach_outcome: container {container} status=dead; treating as still_running to preserve records for inspection",
             );
-            Ok(AttachOutcome::still_running())
+            AttachOutcome::still_running()
         }
-        other => {
+        ContainerState::Stopped {
+            oom_killed: true, ..
+        } => AttachOutcome::oom_killed(),
+        ContainerState::Stopped { exit_code, .. } => AttachOutcome::stopped(exit_code),
+        ContainerState::NotFound | ContainerState::InspectUnavailable(_) => {
             crate::debug_log!(
                 "isolation",
-                "inspect_attach_outcome: unknown docker status `{other}` for {container}; treating as still_running (conservative)",
+                "inspect_attach_outcome: docker inspect failed for {container}; treating as still_running (conservative — finalize_clean_exit's auto-cleanup never fires)",
             );
-            Ok(AttachOutcome::still_running())
+            AttachOutcome::still_running()
         }
-    }
+    })
 }
 
 enum GitPullResult {
@@ -1704,6 +1667,7 @@ async fn load_role_with(
             agent_update,
             opts.debug,
             opts.role_branch.as_deref(),
+            docker,
             runner,
             repo_lock,
         ).await?;
@@ -2005,7 +1969,7 @@ async fn load_role_with(
         // state inside the role, then the safe cleanup is retried.
         let interactive_finalize = std::io::stdin().is_terminal();
         let mut prompt = crate::isolation::finalize::StdinPrompt;
-        let outcome = inspect_attach_outcome(docker, runner, &container_name).await?;
+        let outcome = inspect_attach_outcome(docker, &container_name).await?;
         write_instance_attach_outcome(paths, &container_state, &mut instance_manifest, outcome)?;
         let decision = crate::isolation::finalize::finalize_foreground_session(
             &container_name,
@@ -2013,6 +1977,7 @@ async fn load_role_with(
             outcome,
             interactive_finalize,
             &mut prompt,
+            docker,
             runner,
         ).await?;
         if matches!(
@@ -2044,7 +2009,7 @@ async fn load_role_with(
                 None,
                 &RunOptions::default(),
             ).await?;
-            let outcome2 = inspect_attach_outcome(docker, runner, &container_name).await?;
+            let outcome2 = inspect_attach_outcome(docker, &container_name).await?;
             write_instance_attach_outcome(
                 paths,
                 &container_state,
@@ -2057,6 +2022,7 @@ async fn load_role_with(
                 outcome2,
                 interactive_finalize,
                 &mut prompt,
+                docker,
                 runner,
             ).await?;
         }
@@ -2082,12 +2048,12 @@ async fn load_role_with(
         );
         #[allow(clippy::match_same_arms)]
         match docker.inspect_container_state(&container_name).await {
-            ContainerState::Running => {
+            ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
                 if is_preserved {
                     // Finalize saw sessions at check-time (detach). Re-check: sessions
                     // may have ended in the interval between finalize and this inspect.
                     let sessions =
-                        inspect_agent_sessions(runner, &container_name, &ContainerState::Running).await;
+                        inspect_agent_sessions(docker, &container_name, &ContainerState::Running).await;
                     if let AgentSessionInventory::Unavailable(ref reason) = sessions {
                         crate::debug_log!(
                             "instance",
@@ -2138,7 +2104,10 @@ async fn load_role_with(
                 )?;
                 cleanup.run(docker).await;
             }
-            ContainerState::Stopped { .. } => {
+            ContainerState::Stopped { .. }
+            | ContainerState::Created
+            | ContainerState::Removing
+            | ContainerState::Dead => {
                 write_instance_status(
                     paths,
                     &container_state,
@@ -2408,7 +2377,13 @@ async fn related_restore_candidates(
             .await;
         let should_prompt = match docker_state {
             ContainerState::InspectUnavailable(_) | ContainerState::NotFound => true,
-            ContainerState::Running | ContainerState::Stopped { .. } => false,
+            ContainerState::Running
+            | ContainerState::Paused
+            | ContainerState::Restarting
+            | ContainerState::Stopped { .. }
+            | ContainerState::Created
+            | ContainerState::Removing
+            | ContainerState::Dead => false,
         };
         if should_prompt {
             candidates.push(RelatedRestoreCandidate {
@@ -2450,10 +2425,16 @@ fn recover_related_restore_candidate(
     candidate: &RelatedRestoreCandidate,
 ) -> anyhow::Result<RestoreResolution> {
     match candidate.docker_state {
-        ContainerState::Running | ContainerState::Stopped { .. } => Ok(
-            RestoreResolution::RecoverRelatedRole(candidate.manifest.container_base.clone()),
-        ),
-        ContainerState::NotFound => Ok(RestoreResolution::RebuildRelatedRole(Box::new(
+        ContainerState::Running
+        | ContainerState::Paused
+        | ContainerState::Restarting
+        | ContainerState::Stopped { .. } => Ok(RestoreResolution::RecoverRelatedRole(
+            candidate.manifest.container_base.clone(),
+        )),
+        ContainerState::NotFound
+        | ContainerState::Created
+        | ContainerState::Removing
+        | ContainerState::Dead => Ok(RestoreResolution::RebuildRelatedRole(Box::new(
             candidate.manifest.clone(),
         ))),
         ContainerState::InspectUnavailable(ref reason) => {
@@ -2491,13 +2472,19 @@ fn related_restore_load_options(
 
 fn related_restore_candidate_action_label(candidate: &RelatedRestoreCandidate) -> String {
     match candidate.docker_state {
-        ContainerState::Running | ContainerState::Stopped { .. } => {
+        ContainerState::Running
+        | ContainerState::Paused
+        | ContainerState::Restarting
+        | ContainerState::Stopped { .. } => {
             format!(
                 "Recover now {}",
                 related_restore_candidate_label_for_prompt(candidate)
             )
         }
-        ContainerState::NotFound => {
+        ContainerState::NotFound
+        | ContainerState::Created
+        | ContainerState::Removing
+        | ContainerState::Dead => {
             format!(
                 "Rebuild now {}",
                 related_restore_candidate_label_for_prompt(candidate)
@@ -2714,7 +2701,13 @@ async fn claim_container_name(
                     )));
                 }
             },
-            ContainerState::Running | ContainerState::Stopped { .. } => false,
+            ContainerState::Running
+            | ContainerState::Paused
+            | ContainerState::Restarting
+            | ContainerState::Stopped { .. }
+            | ContainerState::Created
+            | ContainerState::Removing
+            | ContainerState::Dead => false,
             ContainerState::NotFound => true,
             ContainerState::InspectUnavailable(reason) => {
                 anyhow::bail!(
@@ -2775,7 +2768,13 @@ async fn claim_known_container_name(
     let _ = runner; // runner reserved for future use
     match docker.inspect_container_state(container_name).await {
         ContainerState::NotFound => {}
-        ContainerState::Running | ContainerState::Stopped { .. } => {
+        ContainerState::Running
+        | ContainerState::Paused
+        | ContainerState::Restarting
+        | ContainerState::Stopped { .. }
+        | ContainerState::Created
+        | ContainerState::Removing
+        | ContainerState::Dead => {
             anyhow::bail!(
                 "cannot restore `{container_name}` because its Docker container already exists; use `jackin hardline {container_name}`"
             );
@@ -4682,11 +4681,11 @@ plugins = ["code-review@claude-plugins-official"]
         assert!(runner.recorded.iter().any(|call| {
             call.contains("docker build ") && call.contains("-t jk_chainargos_the-architect")
         }));
-        assert!(runner.recorded.iter().any(|call| {
-            call.contains(
-                "docker inspect -f {{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}} jk-",
-            ) && call.contains("thearchitect")
-        }));
+        assert!(
+            docker.recorded.borrow().iter().any(|call| {
+                call.contains("docker inspect jk-") && call.contains("thearchitect")
+            })
+        );
         let run_cmd = runner
             .recorded
             .iter()
@@ -4923,11 +4922,13 @@ plugins = ["code-review@claude-plugins-official"]
                 .iter()
                 .any(|call| call.contains("docker build "))
         );
-        assert!(runner.recorded.iter().any(|call| {
-            call.contains(
-                "docker inspect -f {{.State.Status}}|{{.State.ExitCode}}|{{.State.OOMKilled}} jk-",
-            ) && call.contains("agentsmith")
-        }));
+        assert!(
+            docker
+                .recorded
+                .borrow()
+                .iter()
+                .any(|call| { call.contains("docker inspect jk-") && call.contains("agentsmith") })
+        );
         assert!(
             runner.recorded.iter().any(
                 |call| call.contains("docker run -d --name jk-") && call.contains("agentsmith")
@@ -5596,13 +5597,14 @@ plugins = []
             "prebuilt mode must pass --pull; got: {build_cmd}"
         );
         // In prebuilt mode rebuild=false, so the construct-mismatch guard runs
-        // a docker inspect on the derived image. Workspace-rebuild mode skips it.
+        // docker.inspect_image_label on the derived image. Workspace-rebuild mode skips it.
         assert!(
-            runner
+            docker
                 .recorded
+                .borrow()
                 .iter()
-                .any(|c| c.contains("docker inspect") && c.contains("jk_agent-smith")),
-            "prebuilt mode must run docker inspect on derived image (construct-mismatch check)"
+                .any(|c| c.contains("docker inspect image:jk_agent-smith")),
+            "prebuilt mode must run docker inspect_image_label on derived image (construct-mismatch check)"
         );
     }
 
@@ -7994,99 +7996,92 @@ plugins = []
 
     #[tokio::test]
     async fn inspect_attach_outcome_capture_failure_returns_still_running() {
-        // A docker daemon hiccup or a container removed mid-inspect must
-        // NOT route through finalize_clean_exit's auto-cleanup path —
-        // returning still_running keeps the records preserved for
-        // `jackin hardline` to recover.
+        // Docker unavailable or container removed mid-inspect must NOT route
+        // through finalize_clean_exit's auto-cleanup path — still_running
+        // keeps records preserved for `jackin hardline` to recover.
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = crate::runtime::test_support::FakeRunner {
-            fail_on: vec!["docker inspect".into()],
-            ..Default::default()
-        };
-        let docker = crate::docker_client::FakeDockerClient::default();
-        let outcome = inspect_attach_outcome(&docker, &mut runner, "jackin-x")
-            .await
-            .unwrap();
-        assert_eq!(outcome, AttachOutcome::still_running());
+        for state in [
+            ContainerState::NotFound,
+            ContainerState::InspectUnavailable("daemon down".into()),
+        ] {
+            let docker = crate::docker_client::FakeDockerClient {
+                inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([state])),
+                ..Default::default()
+            };
+            let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
+            assert_eq!(outcome, AttachOutcome::still_running());
+        }
     }
 
-    /// Helper for `inspect_attach_outcome` status tests — returns a
-    /// `FakeRunner` whose `docker inspect` capture returns the given
-    /// `status|exit_code|oom` line. Other docker calls also queue the
-    /// same response (we make only one inspect call per test).
-    fn inspect_runner(
-        status: &str,
-        exit_code: i32,
-        oom: bool,
-    ) -> crate::runtime::test_support::FakeRunner {
-        crate::runtime::test_support::FakeRunner {
-            capture_queue: std::collections::VecDeque::from(vec![format!(
-                "{status}|{exit_code}|{oom}\n",
-            )]),
+    fn inspect_docker(
+        state: crate::docker_client::ContainerState,
+    ) -> crate::docker_client::FakeDockerClient {
+        crate::docker_client::FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([state])),
             ..Default::default()
         }
     }
 
-    /// `exited` with `exit_code=0` → stopped(0) → enters `finalize_clean_exit`
+    /// `Stopped { exit_code: 0 }` → stopped(0) → enters `finalize_clean_exit`
     /// which is the documented happy path for clean container exits.
     #[tokio::test]
     async fn inspect_attach_outcome_exited_zero_returns_stopped() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = inspect_runner("exited", 0, false);
-        let docker = crate::docker_client::FakeDockerClient::default();
-        let outcome = inspect_attach_outcome(&docker, &mut runner, "jackin-x")
-            .await
-            .unwrap();
+        let docker = inspect_docker(ContainerState::Stopped {
+            exit_code: 0,
+            oom_killed: false,
+        });
+        let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
         assert_eq!(outcome, AttachOutcome::stopped(0));
     }
 
-    /// `exited` with non-zero `exit_code` → preserved by finalize.
+    /// `Stopped { exit_code: 137 }` → stopped(137) → preserved by finalize.
     #[tokio::test]
     async fn inspect_attach_outcome_exited_nonzero_returns_stopped_with_code() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = inspect_runner("exited", 137, false);
-        let docker = crate::docker_client::FakeDockerClient::default();
-        let outcome = inspect_attach_outcome(&docker, &mut runner, "jackin-x")
-            .await
-            .unwrap();
+        let docker = inspect_docker(ContainerState::Stopped {
+            exit_code: 137,
+            oom_killed: false,
+        });
+        let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
         assert_eq!(outcome, AttachOutcome::stopped(137));
     }
 
-    /// `exited` with OOMKilled=true → `oom_killed`.
+    /// `Stopped { oom_killed: true }` → `oom_killed`.
     #[tokio::test]
     async fn inspect_attach_outcome_exited_oom_returns_oom_killed() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = inspect_runner("exited", 137, true);
-        let docker = crate::docker_client::FakeDockerClient::default();
-        let outcome = inspect_attach_outcome(&docker, &mut runner, "jackin-x")
-            .await
-            .unwrap();
+        let docker = inspect_docker(ContainerState::Stopped {
+            exit_code: 137,
+            oom_killed: true,
+        });
+        let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
         assert_eq!(outcome, AttachOutcome::oom_killed());
     }
 
-    /// `running` → `still_running`. The basic happy detach case.
+    /// `Running` → `still_running`. The basic happy detach case.
     #[tokio::test]
     async fn inspect_attach_outcome_running_returns_still_running() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = inspect_runner("running", 0, false);
-        let docker = crate::docker_client::FakeDockerClient::default();
-        let outcome = inspect_attach_outcome(&docker, &mut runner, "jackin-x")
-            .await
-            .unwrap();
+        let docker = inspect_docker(ContainerState::Running);
+        let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
         assert_eq!(outcome, AttachOutcome::still_running());
     }
 
-    /// `paused` → `still_running`. The container hasn't exited; treating
+    /// `Paused` → `still_running`. The container hasn't exited; treating
     /// it as stopped(0) would let `finalize_clean_exit` auto-delete its
     /// worktrees while the container is paused but recoverable.
     #[tokio::test]
     async fn inspect_attach_outcome_paused_returns_still_running() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = inspect_runner("paused", 0, false);
-        let docker = crate::docker_client::FakeDockerClient::default();
-        let outcome = inspect_attach_outcome(&docker, &mut runner, "jackin-x")
-            .await
-            .unwrap();
+        let docker = inspect_docker(ContainerState::Paused);
+        let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
         assert_eq!(
             outcome,
             AttachOutcome::still_running(),
@@ -8094,49 +8089,46 @@ plugins = []
         );
     }
 
-    /// `restarting`, `removing`, `created` → `still_running` for the same
-    /// reason as `paused`: not exited, no real exit code to act on.
+    /// `Restarting`, `Removing`, `Created` → `still_running` for the same
+    /// reason as `Paused`: not exited, no real exit code to act on.
     #[tokio::test]
     async fn inspect_attach_outcome_transient_states_return_still_running() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        for status in ["restarting", "removing", "created"] {
-            let mut runner = inspect_runner(status, 0, false);
-            let docker = crate::docker_client::FakeDockerClient::default();
-            let outcome = inspect_attach_outcome(&docker, &mut runner, "jackin-x")
-                .await
-                .unwrap();
+        for state in [
+            ContainerState::Restarting,
+            ContainerState::Removing,
+            ContainerState::Created,
+        ] {
+            let docker = inspect_docker(state.clone());
+            let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
             assert_eq!(
                 outcome,
                 AttachOutcome::still_running(),
-                "status `{status}` must map to still_running",
+                "{state:?} must map to still_running",
             );
         }
     }
 
-    /// `dead` → `still_running` (conservative: daemon failed to
+    /// `Dead` → `still_running` (conservative: daemon failed to
     /// deinitialize; records preserved for inspection).
     #[tokio::test]
     async fn inspect_attach_outcome_dead_returns_still_running() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = inspect_runner("dead", 0, false);
-        let docker = crate::docker_client::FakeDockerClient::default();
-        let outcome = inspect_attach_outcome(&docker, &mut runner, "jackin-x")
-            .await
-            .unwrap();
+        let docker = inspect_docker(ContainerState::Dead);
+        let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
         assert_eq!(outcome, AttachOutcome::still_running());
     }
 
-    /// Unknown status (future Docker versions, exotic runtimes) →
-    /// `still_running` with `debug_log`. Conservative direction so a new
-    /// status string never accidentally triggers data deletion.
+    /// `InspectUnavailable` → `still_running`. Conservative direction so a
+    /// daemon error never accidentally triggers data deletion.
     #[tokio::test]
     async fn inspect_attach_outcome_unknown_status_returns_still_running() {
+        use crate::docker_client::ContainerState;
         use crate::isolation::finalize::AttachOutcome;
-        let mut runner = inspect_runner("hibernated", 0, false);
-        let docker = crate::docker_client::FakeDockerClient::default();
-        let outcome = inspect_attach_outcome(&docker, &mut runner, "jackin-x")
-            .await
-            .unwrap();
+        let docker = inspect_docker(ContainerState::InspectUnavailable("unexpected".into()));
+        let outcome = inspect_attach_outcome(&docker, "jackin-x").await.unwrap();
         assert_eq!(outcome, AttachOutcome::still_running());
     }
 

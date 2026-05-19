@@ -4,7 +4,9 @@ use anyhow::Context;
 use bollard::Docker;
 use bollard::container::LogOutput;
 use bollard::exec::{CreateExecOptions, StartExecOptions, StartExecResults};
-use bollard::models::{ContainerCreateBody, HostConfig, NetworkCreateRequest};
+use bollard::models::{
+    ContainerCreateBody, ContainerStateStatusEnum, HostConfig, NetworkCreateRequest,
+};
 use bollard::query_parameters::{
     CreateContainerOptions, InspectContainerOptions, ListContainersOptions, ListImagesOptions,
     ListNetworksOptions, RemoveContainerOptions, RemoveImageOptions, RemoveVolumeOptions,
@@ -19,6 +21,11 @@ pub enum ContainerState {
     NotFound,
     InspectUnavailable(String),
     Running,
+    Paused,
+    Restarting,
+    Removing,
+    Created,
+    Dead,
     Stopped { exit_code: i32, oom_killed: bool },
 }
 
@@ -27,6 +34,11 @@ impl ContainerState {
     pub fn short_label(&self) -> String {
         match self {
             Self::Running => "running".to_string(),
+            Self::Paused => "paused".to_string(),
+            Self::Restarting => "restarting".to_string(),
+            Self::Removing => "removing".to_string(),
+            Self::Created => "created".to_string(),
+            Self::Dead => "dead".to_string(),
             Self::Stopped {
                 exit_code,
                 oom_killed: false,
@@ -159,15 +171,26 @@ impl DockerApi for BollardDockerClient {
                 let Some(state) = info.state else {
                     return ContainerState::InspectUnavailable("no state field".to_string());
                 };
-                let running = state.running.unwrap_or(false);
-                if running {
-                    ContainerState::Running
-                } else {
-                    let exit_code = state.exit_code.unwrap_or(0) as i32;
-                    let oom_killed = state.oom_killed.unwrap_or(false);
-                    ContainerState::Stopped {
-                        exit_code,
-                        oom_killed,
+                match state.status {
+                    Some(ContainerStateStatusEnum::RUNNING) => ContainerState::Running,
+                    Some(ContainerStateStatusEnum::PAUSED) => ContainerState::Paused,
+                    Some(ContainerStateStatusEnum::RESTARTING) => ContainerState::Restarting,
+                    Some(ContainerStateStatusEnum::REMOVING) => ContainerState::Removing,
+                    Some(ContainerStateStatusEnum::CREATED) => ContainerState::Created,
+                    Some(ContainerStateStatusEnum::DEAD) => ContainerState::Dead,
+                    Some(ContainerStateStatusEnum::EXITED) | None => {
+                        let exit_code = state.exit_code.unwrap_or(0) as i32;
+                        let oom_killed = state.oom_killed.unwrap_or(false);
+                        ContainerState::Stopped {
+                            exit_code,
+                            oom_killed,
+                        }
+                    }
+                    Some(ContainerStateStatusEnum::EMPTY | ContainerStateStatusEnum::STOPPING) => {
+                        ContainerState::InspectUnavailable(format!(
+                            "unexpected container status: {:?}",
+                            state.status
+                        ))
                     }
                 }
             }
