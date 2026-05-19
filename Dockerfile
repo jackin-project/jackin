@@ -44,32 +44,32 @@ RUN mkdir -p /home/agent/.gradle
 
 # Per-tool RUNs are deliberate: bumping one ARG only invalidates that
 # tool's layer. Trips hadolint DL3059; the cache reuse is worth it.
-RUN --mount=type=secret,id=github_token,required=false \
+RUN --mount=type=secret,id=github_token,mode=0444,required=false \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "node@${NODE_VERSION}" && \
     mise use -g --pin "node@${NODE_VERSION}"
 
-RUN --mount=type=secret,id=github_token,required=false \
+RUN --mount=type=secret,id=github_token,mode=0444,required=false \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "rust@${RUST_VERSION}" && \
     mise use -g --pin "rust@${RUST_VERSION}"
 
-RUN --mount=type=secret,id=github_token,required=false \
+RUN --mount=type=secret,id=github_token,mode=0444,required=false \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "java@${JAVA_VERSION}" && \
     mise use -g --pin "java@${JAVA_VERSION}"
 
-RUN --mount=type=secret,id=github_token,required=false \
+RUN --mount=type=secret,id=github_token,mode=0444,required=false \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "protoc@${PROTOC_VERSION}" && \
     mise use -g --pin "protoc@${PROTOC_VERSION}"
 
-RUN --mount=type=secret,id=github_token,required=false \
+RUN --mount=type=secret,id=github_token,mode=0444,required=false \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "cargo-binstall@${CARGO_BINSTALL_VERSION}" && \
     mise use -g --pin "cargo-binstall@${CARGO_BINSTALL_VERSION}"
 
-RUN --mount=type=secret,id=github_token,required=false \
+RUN --mount=type=secret,id=github_token,mode=0444,required=false \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise use -g cargo:cargo-nextest && \
     mise use -g cargo:ast-grep && \
@@ -79,7 +79,7 @@ RUN --mount=type=secret,id=github_token,required=false \
 
 RUN curl -fsSL https://get.tessl.io | TESSL_VERSION="$TESSL_VERSION" sh
 
-RUN --mount=type=secret,id=github_token,required=false \
+RUN --mount=type=secret,id=github_token,mode=0444,required=false \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise exec "node@${NODE_VERSION}" -- npm install -g ctx7
 
