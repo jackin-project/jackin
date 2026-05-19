@@ -2023,23 +2023,20 @@ fn load_role_with(
             )?;
         }
 
-        // Classify how the interactive session ended so we know whether to
-        // tear the container down or preserve it for `jackin hardline` to
-        // restart:
-        //  - Running + active sessions → terminal closed (user detached). Keep it.
-        //  - Running + no sessions + !Preserved → agent exited; supervisor will
-        //                                stop the container within its polling
-        //                                interval but inspect raced ahead. Tear
-        //                                down same as Stopped/0.
-        //  - Running + no sessions + Preserved → agent exited with dirty
-        //                                worktrees. Keep container + DinD alive
-        //                                so `jackin hardline` can reconnect.
-        //  - Stopped / 0 → user exited cleanly inside Claude Code.  Tear down.
-        //  - Stopped / ≠0 or OOM-killed → crash.  Preserve so `jackin hardline`
-        //    can restart the existing container + DinD sidecar.
-        //  - NotFound + !Preserved → removed externally. Treat as Stopped/0.
-        //  - NotFound + Preserved → removed externally while preserved status
-        //                           stands on disk. Nothing to clean up; skip.
+        // Classify how the interactive session ended and tear down DinD/network
+        // unless the container is still running with active sessions (detach):
+        //  - Running + active sessions → user detached (Ctrl-B D). Keep DinD so
+        //                               `jackin hardline` can reconnect.
+        //  - Running + no sessions → agent exited; supervisor lag or stale socket.
+        //                            Tear down same as Stopped/0 regardless of
+        //                            preserved isolation state — worktrees live on
+        //                            the host and are accessible without DinD.
+        //  - Stopped / 0 → user exited cleanly. Tear down.
+        //  - Stopped / ≠0 or OOM-killed → crash. Tear down; DinD is no longer
+        //                                  needed once the container has exited.
+        //  - NotFound + !Preserved → removed externally. Tear down.
+        //  - NotFound + Preserved → removed externally during finalization.
+        //                           Tear down DinD/network; status on disk stands.
         //  - InspectUnavailable → Docker unreachable; keep everything alive.
         let is_preserved = matches!(
             decision,
@@ -2058,7 +2055,7 @@ fn load_role_with(
                 }
                 let no_sessions =
                     matches!(&sessions, AgentSessionInventory::Sessions(v) if v.is_empty());
-                if no_sessions && !is_preserved {
+                if no_sessions {
                     run_clean_exit_teardown(
                         paths,
                         &container_state,
@@ -2091,7 +2088,7 @@ fn load_role_with(
                     &mut instance_manifest,
                     InstanceStatus::Crashed,
                 )?;
-                cleanup.disarm();
+                cleanup.run(runner);
             }
             ContainerState::InspectUnavailable(reason) => {
                 cleanup.disarm();
@@ -2112,8 +2109,10 @@ fn load_role_with(
                 crate::debug_log!(
                     "instance",
                     "container {container_name} not found after session with Preserved decision; \
-                     removed externally during finalization — preserved status on disk stands",
+                     removed externally during finalization — tearing down DinD/network, \
+                     preserved status on disk stands",
                 );
+                cleanup.run(runner);
             }
             ContainerState::NotFound => {
                 run_clean_exit_teardown(
