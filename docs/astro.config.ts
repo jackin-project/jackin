@@ -147,6 +147,7 @@ export default defineConfig({
             { label: 'Schema Versions', slug: 'reference/schema-versions' },
             { label: 'Codebase Map', slug: 'reference/codebase-map' },
             { label: 'Claude Token Orchestrator', slug: 'reference/claude-token-orchestrator' },
+            { label: 'Multiplexer Design Rules', slug: 'reference/multiplexer-design-rules' },
             {
               label: 'Goal prompts',
               collapsed: true,

@@ -1,3 +1,7 @@
+[workspace]
+members = ["crates/jackin-container"]
+resolver = "2"
+
 [package]
 name = "jackin"
 version = "0.6.0-dev"

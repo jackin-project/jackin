@@ -1,0 +1,142 @@
+---
+title: "jackin-container: Multiplexer Design Rules"
+---
+
+**Rule zero: the agent's experience is inviolable.**
+
+The operator chose their agent (Claude Code, Codex, Amp, etc.) for its UX. `jackin-container` is a thin layer of glass in front of that UX — transparent in every direction, with zero opinions about what happens inside.
+
+Every feature, bug fix, and refactor must pass this test before it ships: **does the agent work exactly as it would in a bare terminal?** If the answer is anything other than an unqualified yes, the feature is incomplete.
+
+---
+
+## Priority order
+
+When two design goals conflict, resolve them in this order:
+
+1. **Agent fidelity** — the agent works exactly as in a bare terminal.
+2. **Input transparency** — every keystroke, mouse event, and paste the operator sends reaches the agent unmodified.
+3. **Output fidelity** — the agent's rendered output is pixel-accurate in the active pane.
+4. **Multiplexer features** — tabs, splits, status bar, command palette.
+
+Item 4 never wins over items 1–3.
+
+---
+
+## Terminal capability passthrough
+
+Every capability the base image supports must reach the agent inside the pane.
+
+### Extended keys
+
+- Forward `xterm`-style extended key sequences verbatim (Kitty protocol, CSI u, etc.).
+- Never swallow, re-encode, or normalize key sequences before passing them to the active pane's PTY.
+- `TERM=xterm-256color` is set for all pane PTYs. The multiplexer itself must advertise `extkeys` capability to the sessions it spawns so that agent CLIs which query `TERM` get the right answer.
+
+### Mouse events
+
+- Enable **SGR mouse** (`\e[?1006h`) and **any-event tracking** (`\e[?1003h`) on the host terminal when a client connects.
+- Forward mouse events to the active pane unless they land on a multiplexer UI element (status bar row, pane border). The check is: if the event row is row 0 (status bar), or the event column matches a recorded border column, handle it as multiplexer input. Every other mouse event passes through unmodified.
+- Preserve the exact mouse protocol the agent expects: if the agent sets SGR mouse, forward events in SGR format; if the agent uses X10 mouse, forward in X10 format. The multiplexer tracks per-pane mouse mode by intercepting the `?1000h/l`, `?1002h/l`, `?1003h/l`, `?1006h/l` DEC private mode sequences from the pane's output and re-emitting the correct format to the client.
+- **Mouse button 1 (left click) on a pane content area always reaches the agent.** The multiplexer does not capture left clicks in pane content even when the palette is open — it closes the palette and passes the click through.
+
+### Clipboard and OSC 52
+
+- Pass OSC 52 sequences from panes to the host terminal unmodified. This enables agent-initiated clipboard writes (e.g. `pbcopy` via OSC 52) to reach the operator's clipboard.
+- Never intercept or log clipboard content.
+
+### OSC and desktop notifications
+
+- Pass OSC 9 (desktop notification), OSC 777 (progress bar), OSC 7 (current directory), and all other OSC sequences from panes to the host terminal.
+- `allow-passthrough` semantics: everything in an OSC that the multiplexer does not explicitly handle is forwarded.
+
+### Focus events
+
+- Enable focus-in / focus-out reporting (`\e[?1004h`) on pane PTYs.
+- When the active pane changes (tab switch, split focus change), send focus-out to the old pane and focus-in to the new pane.
+- When the client terminal gains or loses focus, forward the event to the active pane.
+
+### True color and 256-color
+
+- The multiplexer's own UI elements (status bar, borders, dialog) use ANSI 256-color and 24-bit color.
+- Pane content is passed through without color transformation. Never re-encode pane output colors.
+
+### Bracketed paste
+
+- Enable bracketed paste mode (`\e[?2004h`) for pane PTYs.
+- Forward paste brackets from the host client to the active pane. If the host client is in bracketed paste mode and sends a paste sequence, forward it as-is; do not strip the brackets before routing to the pane.
+
+### Scrollback
+
+- The multiplexer does not implement its own scrollback. The agent's TUI manages its own scrollback via alternate screen. Raw shell sessions in a pane use the host terminal's scrollback (output is forwarded verbatim, so the host terminal's buffer captures it).
+
+---
+
+## What the status bar may never do
+
+The status bar occupies row 0 of the host terminal. It must never:
+
+- Cause the pane content to redraw more than once per output chunk.
+- Block PTY I/O while drawing.
+- Inject cursor-positioning sequences that land inside a pane's coordinate space.
+- Eat a keyboard event that should have gone to the active pane.
+
+The status bar draws by: save cursor → move to row 0 → draw → restore cursor. It fires at most once per output chunk from any pane, never on a timer while output is flowing.
+
+---
+
+## Pane coordinate contract
+
+Each pane's PTY is sized `(terminal_rows - 1) × terminal_cols`. The pane believes it owns rows `1..N` (0-based: rows `0..N-1`). The status bar occupies the physical row 0 of the host terminal.
+
+When a pane outputs cursor-positioning sequences (CSI H, CSI A/B/C/D, etc.), those coordinates are relative to the pane's own grid. The compositor translates them to host coordinates by adding the pane's top-left offset before forwarding to the client.
+
+**This translation must be lossless and bijective.** Any sequence that positions the cursor in the pane at (r, c) must position the cursor at (r + pane_row_offset, c + pane_col_offset) in the host terminal. No exceptions.
+
+---
+
+## Input routing rules
+
+```
+Input byte arrives from client terminal
+  │
+  ├─ Row 0 mouse click → status bar handler (tab switch or palette toggle)
+  ├─ Ctrl+J → open command palette (if no dialog open)
+  │           close command palette (if dialog open, send key to dialog)
+  ├─ Alt+Arrow → move pane focus
+  ├─ Dialog open + any key → dialog key handler
+  └─ Everything else → active pane PTY stdin (unmodified)
+```
+
+Ctrl+J is the **only** key the multiplexer intercepts from the pane input stream. Alt+Arrow keys are intercepted only when the current pane is not consuming them (detected by whether the pane has set application cursor key mode `\e[?1h`). When a pane enables application cursor mode, Alt+Arrow passthrough takes priority and the focus-move is deactivated until the pane disables application cursor mode.
+
+---
+
+## Verification checklist (run before any multiplexer feature PR)
+
+These behaviors must work end-to-end in a real container after every change:
+
+- [ ] `claude --dangerously-skip-permissions`: TUI renders correctly, Shift+Enter works, mouse click navigation works.
+- [ ] `codex`: input/output flows without garbling.
+- [ ] Shell session: tab completion works, up-arrow history works, `cat binary-file` does not crash the multiplexer.
+- [ ] Resize: drag the terminal window; all panes resize correctly; no agent crashes.
+- [ ] Mouse in Claude Code: clicking on a file in the sidebar opens it.
+- [ ] Copy from pane: selecting text with the mouse and copying works (both via mouse drag and OSC 52).
+- [ ] Bracketed paste into a pane: pasting multi-line text into an agent prompt works.
+- [ ] Session switch: switching tabs does not corrupt the other session's display (SIGWINCH forces redraw).
+- [ ] HSplit with two agents: both render independently; input goes only to the focused pane.
+
+---
+
+## Reference: tmux options we replicate
+
+The following tmux options were set in the old `entrypoint.sh` because they were necessary for agent fidelity. `jackin-container` must provide equivalent behavior at the PTY level:
+
+| tmux option | jackin-container equivalent |
+|---|---|
+| `extended-keys always` | PTY spawned with `TERM=xterm-256color`; client terminal has extended keys enabled |
+| `terminal-features 'xterm*:extkeys'` | Advertised via TERMINFO / TERM env inside pane |
+| `focus-events on` | Focus-in/out events forwarded to active pane (see Focus events above) |
+| `allow-passthrough on` | All unrecognized OSC sequences forwarded to host (see OSC above) |
+| `escape-time 0` | Escape sequences parsed with zero disambiguation delay in input handler |
+| `mouse on` | SGR + any-event mouse enabled on host terminal; routed per input routing rules |

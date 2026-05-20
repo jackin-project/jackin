@@ -32,7 +32,6 @@ RUN apt-get update && \
     procps \
     ripgrep \
     sudo \
-    tmux \
     tree \
     yq \
     zsh && \

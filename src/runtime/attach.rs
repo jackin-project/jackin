@@ -4,10 +4,8 @@ use crate::docker::{CommandRunner, RunOptions};
 use crate::docker_client::DockerApi;
 use crate::instance::InstanceManifest;
 
-// `tmux list-sessions` exits 1 when no sessions exist; `|| true` maps that to
-// exit 0 so only a real infrastructure failure reaches `Err`.
-pub const TMUX_LIST_SESSIONS_CMD: &str =
-    "tmux list-sessions -F '#{session_name}' 2>/dev/null || true";
+// Query session list from the jackin-container daemon via its socket.
+pub const JACKIN_STATUS_CMD: &str = "/usr/local/bin/jackin-container status 2>/dev/null || true";
 
 // Re-exported so callers that already imported from `attach` keep working
 // after ContainerState moved to `docker_client`.
@@ -45,25 +43,32 @@ pub async fn inspect_agent_sessions(
     }
 
     match docker
-        .exec_capture(container_name, &["sh", "-c", TMUX_LIST_SESSIONS_CMD])
+        .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
         .await
     {
-        Ok(output) => AgentSessionInventory::Sessions(parse_tmux_sessions(&output)),
+        Ok(output) => AgentSessionInventory::Sessions(parse_jackin_sessions(&output)),
         Err(error) => AgentSessionInventory::Unavailable(error.to_string()),
     }
 }
 
-fn parse_tmux_sessions(output: &str) -> Vec<AgentSession> {
+/// Parse session list from `jackin-container status` output.
+/// Each line is: `  [<id>] <label> (<agent>) state=<state> active=<bool>`.
+fn parse_jackin_sessions(output: &str) -> Vec<AgentSession> {
     output
         .lines()
         .filter_map(|line| {
-            let name = line.trim();
-            if name.is_empty() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || !trimmed.starts_with('[') {
                 return None;
             }
-            Some(AgentSession {
-                name: name.to_string(),
-            })
+            // Extract label (second word-group after the [id]).
+            let name = trimmed
+                .splitn(3, ']')
+                .nth(1)
+                .and_then(|rest| rest.trim().split_whitespace().next())
+                .unwrap_or(trimmed)
+                .to_string();
+            Some(AgentSession { name })
         })
         .collect()
 }
@@ -109,70 +114,23 @@ pub(super) async fn reconnect_or_create_session(
     let sessions = inspect_agent_sessions(docker, container_name, &ContainerState::Running).await;
     let has_sessions = matches!(&sessions, AgentSessionInventory::Sessions(v) if !v.is_empty());
 
-    if has_sessions {
-        runner
-            .run(
-                "docker",
-                &[
-                    "exec",
-                    "-e",
-                    "TMUX=",
-                    "-it",
-                    container_name,
-                    "tmux",
-                    "attach-session",
-                ],
-                None,
-                &RunOptions::default(),
-            )
-            .await
-    } else {
-        let agent_slug = match crate::instance::InstanceManifest::read(
-            &paths.data_dir.join(container_name),
-        ) {
-            Ok(m) => match m.agent() {
-                Ok(a) => a.slug().to_string(),
-                Err(e) => {
-                    crate::debug_log!(
-                        "instance",
-                        "reconnect_or_create_session: unrecognized agent for {container_name}: {e}"
-                    );
-                    "agent".to_string()
-                }
-            },
-            Err(e) => {
-                crate::debug_log!(
-                    "instance",
-                    "reconnect_or_create_session: manifest read failed for {container_name}: {e}"
-                );
-                "agent".to_string()
-            }
-        };
-        let agent_env = format!("{}={agent_slug}", crate::env_model::JACKIN_AGENT_ENV_NAME);
-        let session_name = format!("jackin-{agent_slug}-{}", short_session_id());
-        runner
-            .run(
-                "docker",
-                &[
-                    "exec",
-                    "-e",
-                    "TMUX=",
-                    "-it",
-                    container_name,
-                    "tmux",
-                    "new-session",
-                    "-e",
-                    &agent_env,
-                    "-s",
-                    &session_name,
-                    "--",
-                    "/jackin/runtime/entrypoint.sh",
-                ],
-                None,
-                &RunOptions::default(),
-            )
-            .await
-    }
+    // jackin-container client mode: connects to the running multiplexer daemon.
+    // Whether sessions already exist or not, the client attach point is the same —
+    // the daemon creates the initial session on first connect if none exist.
+    let _ = has_sessions; // daemon handles empty-session bootstrap internally
+    runner
+        .run(
+            "docker",
+            &[
+                "exec",
+                "-it",
+                container_name,
+                "/usr/local/bin/jackin-container",
+            ],
+            None,
+            &RunOptions::default(),
+        )
+        .await
 }
 
 /// Verify the container is reachable (running/paused/restarting).
@@ -228,10 +186,17 @@ pub async fn spawn_shell_session(
 
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
+    // Spawn a shell session via jackin-container's "new" subcommand with no agent slug.
     let result = runner
         .run(
             "docker",
-            &["exec", "-e", "TMUX=", "-it", container_name, "/bin/zsh"],
+            &[
+                "exec",
+                "-it",
+                container_name,
+                "/usr/local/bin/jackin-container",
+                "new",
+            ],
             None,
             &RunOptions::default(),
         )
@@ -260,43 +225,45 @@ pub async fn spawn_agent_session(
     .await?;
 
     let workdir = manifest.map_or("/workspace", |manifest| manifest.workdir.as_str());
-    let agent_env = format!(
-        "{}={}",
-        crate::env_model::JACKIN_AGENT_ENV_NAME,
-        agent.slug()
-    );
-    let git_coauthor_trailer_env = git_coauthor_trailer.then(|| {
-        format!(
-            "{}=1",
-            crate::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME
-        )
+
+    // Build extra env vars to forward to the new session via the daemon socket.
+    // jackin-container reads these from the environment when it spawns the
+    // session via the entrypoint. We forward them to the exec environment so
+    // the client can pass them on to the daemon's new-session request.
+    let agent_env = format!("{}={}", crate::env_model::JACKIN_AGENT_ENV_NAME, agent.slug());
+    let coauthor_env = git_coauthor_trailer.then(|| {
+        format!("{}=1", crate::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME)
     });
-    let git_dco_env = git_dco.then(|| format!("{}=1", crate::env_model::JACKIN_GIT_DCO_ENV_NAME));
-    let session_name = format!("jackin-{}-{}", agent.slug(), short_session_id());
+    let dco_env = git_dco.then(|| format!("{}=1", crate::env_model::JACKIN_GIT_DCO_ENV_NAME));
+
     set_role_terminal_title(paths, container_name);
     super::caffeinate::reconcile(paths, docker, runner).await;
-    let mut tmux_args = vec![
+
+    // Ask jackin-container to spawn a new session for this agent.
+    let mut exec_args = vec![
         "exec",
-        "-e",
-        "TMUX=",
         "--workdir",
         workdir,
-        "-it",
-        container_name,
-        "tmux",
-        "new-session",
         "-e",
         &agent_env,
+        "-it",
+        container_name,
+        "/usr/local/bin/jackin-container",
+        "new",
+        agent.slug(),
     ];
-    if let Some(ref env) = git_coauthor_trailer_env {
-        tmux_args.extend_from_slice(&["-e", env.as_str()]);
+    let coauthor_env_flag;
+    let dco_env_flag;
+    if let Some(ref env) = coauthor_env {
+        coauthor_env_flag = format!("-e={env}");
+        exec_args.insert(1, coauthor_env_flag.as_str());
     }
-    if let Some(ref env) = git_dco_env {
-        tmux_args.extend_from_slice(&["-e", env.as_str()]);
+    if let Some(ref env) = dco_env {
+        dco_env_flag = format!("-e={env}");
+        exec_args.insert(1, dco_env_flag.as_str());
     }
-    tmux_args.extend_from_slice(&["-s", &session_name, "--", "/jackin/runtime/entrypoint.sh"]);
     let result = runner
-        .run("docker", &tmux_args, None, &RunOptions::default())
+        .run("docker", &exec_args, None, &RunOptions::default())
         .await;
     eprintln!();
     result?;
@@ -631,12 +598,10 @@ mod tests {
         assert!(
             runner.recorded.iter().any(|c| {
                 c.contains("docker exec")
-                    && c.contains("TMUX=")
                     && c.contains("jk-agent-smith")
-                    && c.contains("tmux new-session")
-                    && c.contains("jackin-")
+                    && c.contains("jackin-container")
             }),
-            "expected tmux new-session exec in recorded commands; got: {:?}",
+            "expected jackin-container exec in recorded commands; got: {:?}",
             runner.recorded
         );
     }
@@ -690,15 +655,14 @@ mod tests {
         assert!(
             runner.recorded.iter().any(|call| {
                 call.contains("docker exec")
-                    && call.contains("TMUX=")
                     && call.contains("JACKIN_AGENT=codex")
                     && call.contains("--workdir /workspace/project")
                     && call.contains("jk-k7p9m2xq-workspace-agentsmith")
-                    && call.contains("tmux new-session")
-                    && call.contains("jackin-codex-")
-                    && call.contains("/jackin/runtime/entrypoint.sh")
+                    && call.contains("jackin-container")
+                    && call.contains("new")
+                    && call.contains("codex")
             }),
-            "expected tmux new-session for codex; got: {:?}",
+            "expected jackin-container new for codex; got: {:?}",
             runner.recorded
         );
     }
@@ -753,7 +717,7 @@ mod tests {
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("-e JACKIN_GIT_COAUTHOR_TRAILER=1")),
+                .any(|call| call.contains("-e=JACKIN_GIT_COAUTHOR_TRAILER=1")),
             "coauthor trailer env must be present when enabled; recorded: {:?}",
             runner.recorded
         );
@@ -809,7 +773,7 @@ mod tests {
             runner
                 .recorded
                 .iter()
-                .any(|call| call.contains("-e JACKIN_GIT_DCO=1")),
+                .any(|call| call.contains("-e=JACKIN_GIT_DCO=1")),
             "DCO env must be present when enabled; recorded: {:?}",
             runner.recorded
         );
@@ -860,7 +824,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn spawn_shell_session_execs_zsh_in_running_container() {
+    async fn spawn_shell_session_execs_jackin_container_new_in_running_container() {
         let (_tmp, paths) = test_paths();
         let docker = FakeDockerClient {
             inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
@@ -877,17 +841,17 @@ mod tests {
         assert!(
             runner.recorded.iter().any(|c| {
                 c.contains("docker exec")
-                    && c.contains("TMUX=")
                     && c.contains("jk-agent-smith")
-                    && c.contains("/bin/zsh")
+                    && c.contains("jackin-container")
+                    && c.contains("new")
             }),
-            "expected docker exec with /bin/zsh; got: {:?}",
+            "expected docker exec with jackin-container new; got: {:?}",
             runner.recorded
         );
     }
 
     #[tokio::test]
-    async fn spawn_shell_session_sets_tmux_env_to_empty() {
+    async fn spawn_shell_session_does_not_set_tmux_env() {
         let (_tmp, paths) = test_paths();
         let docker = FakeDockerClient {
             inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
@@ -901,14 +865,9 @@ mod tests {
             .await
             .unwrap();
 
-        let exec_call = runner
-            .recorded
-            .iter()
-            .find(|c| c.contains("docker exec") && c.contains("/bin/zsh"))
-            .expect("expected exec call");
         assert!(
-            exec_call.contains("TMUX="),
-            "TMUX= must clear nested-session env"
+            !runner.recorded.iter().any(|c| c.contains("TMUX=")),
+            "TMUX= must not be set in jackin-container shell sessions"
         );
     }
 
@@ -1065,7 +1024,7 @@ mod tests {
             .write(&paths.data_dir.join(container_name))
             .unwrap();
         // inspect: role container running, dind stopped
-        // exec_capture: tmux list-sessions returns two sessions
+        // exec_capture: jackin-container status returns two sessions
         // inspect_network: network present
         let docker = FakeDockerClient {
             inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
@@ -1076,7 +1035,7 @@ mod tests {
                 },
             ])),
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                "jackin-claude-abc123\njackin-codex-abc".to_string(),
+                "  [1] jackin-claude-abc123 (claude) state=working active=true\n  [2] jackin-codex-abc (codex) state=idle active=false".to_string(),
             ])),
             inspect_network_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
                 Some(crate::docker_client::NetworkRow {
@@ -1110,10 +1069,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn inspect_agent_sessions_lists_tmux_sessions() {
+    async fn inspect_agent_sessions_lists_jackin_sessions() {
         let docker = FakeDockerClient {
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                "jackin-claude-abc123\njackin-codex-abc".to_string(),
+                "  [1] Claude (claude) state=working active=true\n  [2] Codex (codex) state=idle active=false".to_string(),
             ])),
             ..Default::default()
         };
@@ -1125,8 +1084,8 @@ mod tests {
             panic!("expected sessions");
         };
         assert_eq!(sessions.len(), 2);
-        assert_eq!(sessions[0].name, "jackin-claude-abc123");
-        assert_eq!(sessions[1].name, "jackin-codex-abc");
+        assert_eq!(sessions[0].name, "Claude");
+        assert_eq!(sessions[1].name, "Codex");
     }
 
     #[tokio::test]
@@ -1342,9 +1301,11 @@ mod tests {
                 .unwrap();
             assert!(
                 runner.recorded.iter().any(|c| {
-                    c.contains("docker exec") && c.contains("TMUX=") && c.contains("jk-agent-smith")
+                    c.contains("docker exec")
+                        && c.contains("jk-agent-smith")
+                        && c.contains("jackin-container")
                 }),
-                "state={state:?}: expected docker exec with TMUX=; got: {:?}",
+                "state={state:?}: expected docker exec with jackin-container; got: {:?}",
                 runner.recorded
             );
         }

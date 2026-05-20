@@ -13,7 +13,7 @@ use crate::debug_log;
 use crate::docker::CommandRunner;
 use crate::isolation::cleanup::force_cleanup_isolated;
 use crate::isolation::state::{CleanupStatus, IsolationRecord, read_records, upsert_record};
-use crate::runtime::attach::TMUX_LIST_SESSIONS_CMD;
+use crate::runtime::attach::JACKIN_STATUS_CMD;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,16 +118,16 @@ pub async fn finalize_foreground_session(
     );
     if !matches!(outcome, AttachOutcome::Stopped(0)) {
         // Non-zero exit, OOM-kill, or still-running → preserve by default.
-        // Exception: StillRunning with no active tmux sessions means the
+        // Exception: StillRunning with no active jackin sessions means the
         // supervisor lag case — the docker exec returned while the container is
         // still up but the agent already exited cleanly. Fall through to
         // finalize_clean_exit so isolation worktrees are swept normally.
         if matches!(outcome, AttachOutcome::StillRunning)
-            && !has_tmux_sessions(docker, container_name).await
+            && !has_jackin_sessions(docker, container_name).await
         {
             debug_log!(
                 "isolation",
-                "finalize: container={c} still running but no tmux sessions; \
+                "finalize: container={c} still running but no jackin sessions; \
                  supervisor lag after clean exit — proceeding to isolation cleanup",
                 c = container_name,
             );
@@ -157,15 +157,15 @@ pub async fn finalize_foreground_session(
     .await
 }
 
-async fn has_tmux_sessions(
+async fn has_jackin_sessions(
     docker: &impl crate::docker_client::DockerApi,
     container_name: &str,
 ) -> bool {
-    // Run via sh to suppress the "no server running" error tmux emits when the
+    // Run via sh — jackin-container exits non-zero if no daemon is running;
     // socket is stale. Both "no server" and "no sessions" collapse to exit 0 with
     // empty stdout so the caller only sees a non-empty result when sessions exist.
     match docker
-        .exec_capture(container_name, &["sh", "-c", TMUX_LIST_SESSIONS_CMD])
+        .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
         .await
     {
         Ok(output) => !output.trim().is_empty(),
@@ -175,7 +175,7 @@ async fn has_tmux_sessions(
             // finalize path must not auto-clean records for a container that may
             // still have active sessions.
             eprintln!(
-                "[jackin] warning: could not check tmux sessions in {container_name} ({e}); \
+                "[jackin] warning: could not check jackin sessions in {container_name} ({e}); \
                  treating as sessions-present — run `jackin purge {container_name}` to clean \
                  up isolation worktrees if this was a clean exit"
             );
@@ -1992,7 +1992,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn has_tmux_sessions_error_treated_as_sessions_present() {
+    async fn has_jackin_sessions_error_treated_as_sessions_present() {
         let dir = TempDir::new().unwrap();
         let mut p = NoPrompt;
         let mut r = FakeRunner::default();
