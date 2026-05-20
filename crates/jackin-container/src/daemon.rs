@@ -282,7 +282,7 @@ impl Multiplexer {
                         }
                         DialogAction::Redraw => Some(self.compose_frame()),
                         DialogAction::Command(cmd) => {
-                            let result = self.handle_palette_command(cmd);
+                            self.handle_palette_command(cmd);
                             self.dialog = None;
                             Some(self.compose_frame())
                         }

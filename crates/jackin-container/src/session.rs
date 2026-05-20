@@ -20,6 +20,7 @@ pub fn next_id() -> u64 {
 }
 
 pub struct Session {
+    #[allow(dead_code)]
     pub id: u64,
     pub label: String,
     pub agent: Option<String>,
