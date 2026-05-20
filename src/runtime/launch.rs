@@ -1051,6 +1051,12 @@ async fn launch_role_runtime(
     run_args.extend_from_slice(&["--label", &image_label]);
     // Socket mount: host path is keyed by container name so multiple containers
     // can run concurrently without colliding.
+    // Ensure the host-side socket directory exists before Docker tries to mount
+    // it. On macOS /run/jackin/ is not created automatically.
+    let socket_dir = std::path::Path::new("/run/jackin");
+    if !socket_dir.exists() {
+        std::fs::create_dir_all(socket_dir).ok(); // best-effort; docker will error if needed
+    }
     let socket_host_path = format!("/run/jackin/{container_name}.sock");
     let socket_mount = format!("{socket_host_path}:/run/jackin/jackin.sock");
     run_args.extend_from_slice(&["-v", &socket_mount]);

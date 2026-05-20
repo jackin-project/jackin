@@ -3,7 +3,7 @@ title: "jackin-container: In-Container Multiplexer Server"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — Phase 1 cleanup gap closed; container and DinD tear down automatically on clean agent exit. Rust binary, multiplexer server, and desktop bridge remain.
+**Status**: Partially implemented — Phases 1–3 shipped: `supervisor.sh` and tmux removed; `jackin-container` Rust binary runs as PID 1, manages PTY sessions directly, renders the multiplexer status bar (tabs, pane splits), exposes Unix socket at `/run/jackin/jackin.sock`, and is downloaded/built automatically at `jackin load` time. Phase 4 (daemon integration and desktop bridge) remains open.
 
 ## Problem
 
