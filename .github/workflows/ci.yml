@@ -80,7 +80,8 @@ jobs:
           rustflags: ""
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          tool: cargo:cargo-nextest@0.9.136
+          install_args: "cargo:cargo-nextest"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       # When docker/construct/** changes, the published construct:trixie image
@@ -162,17 +163,12 @@ jobs:
           cache-key: validator-${{ matrix.target }}
           rustflags: ""
 
-      - name: Install Zig
+      - name: Install Zig and cargo-zigbuild
         if: matrix.zigbuild
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          tool: zig@0.16.0
-
-      - name: Install cargo-zigbuild
-        if: matrix.zigbuild
-        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        with:
-          tool: cargo:cargo-zigbuild@0.22.3
+          install_args: "zig cargo:cargo-zigbuild"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build validator
         run: |

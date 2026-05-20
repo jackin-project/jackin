@@ -61,7 +61,8 @@ jobs:
           rustflags: ""
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          tool: cargo:cargo-nextest@0.9.136
+          install_args: "cargo:cargo-nextest"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo nextest run
 
   build:
