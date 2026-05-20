@@ -1,16 +1,20 @@
 /// Download, cache, and verify the `jackin-container` binary.
 ///
-/// Acquisition strategy — chosen at runtime based on version:
+/// Acquisition strategy — in priority order:
 ///
-/// **Dev or preview version** (`-dev` or `-preview.` suffix):
+/// **`JACKIN_CONTAINER_BIN=/path`** (env var set):
+///   Use that binary directly. No cache, no download. Intended for local
+///   development and PR verification when the binary was built with
+///   `cargo run --bin build-jackin-container`.
+///
+/// **Cache hit** (`~/.jackin/cache/jackin-container/<version>/linux-<arch>/`):
+///   Use the already-cached binary.
+///
+/// **Dev or preview version** (`-dev` or `-preview.` suffix, cache miss):
 ///   Download from the rolling `preview` GitHub Release tag.
-///   To use a locally-built binary instead, run:
-///   `cargo run --bin build-jackin-container`
 ///
-/// **Stable release** (no `-dev`, no `-preview`):
+/// **Stable release** (no `-dev`, no `-preview`, cache miss):
 ///   Download from the versioned `v<version>` GitHub Release tag.
-///
-/// Cache: `~/.jackin/cache/jackin-container/<version>/linux-<arch>/jackin-container`
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -21,8 +25,24 @@ pub const REQUIRED_VERSION: &str = env!("JACKIN_VERSION");
 
 const ASSET_PREFIX: &str = "jackin-container";
 
-/// Ensure the `jackin-container` binary is available and return its cached path.
+/// Ensure the `jackin-container` binary is available and return its path.
 pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
+    // Explicit override: operator built the binary themselves and told us where it is.
+    if let Some(bin_os) = std::env::var_os("JACKIN_CONTAINER_BIN") {
+        let path = PathBuf::from(bin_os);
+        anyhow::ensure!(
+            is_valid_cached_binary(&path),
+            "JACKIN_CONTAINER_BIN={} does not exist or is not executable",
+            path.display()
+        );
+        crate::debug_log!(
+            "container_binary",
+            "JACKIN_CONTAINER_BIN override: {}",
+            path.display()
+        );
+        return Ok(path);
+    }
+
     let arch = container_arch();
     let cached = cached_binary_path(&paths.cache_dir, REQUIRED_VERSION, arch);
 
