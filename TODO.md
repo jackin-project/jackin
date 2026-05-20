@@ -29,14 +29,6 @@ Markers without a corresponding TODO.md entry are allowed for transient in-fligh
 
 ### External dependencies
 
-#### `lychee-action-sha-pin` — swap unreleased master SHA for a tagged release
-
-- **What:** in [`.github/workflows/docs.yml`](.github/workflows/docs.yml), revert the `lycheeverse/lychee-action` SHA pin from `faea714062690f6c2e6f7f388469ec4fa6d9c4e1` (master, post-v2.8.0) to a SHA from a tagged release.
-- **Why:** SHA-pinning to a tagged release is more discoverable than pinning to a master commit, surfaces release notes during routine dependency review, and keeps the audit trail aligned with what's published in the marketplace.
-- **Tracking:** <https://github.com/lycheeverse/lychee-action/releases> — first tag at or after commit `faea714` (which introduces v0.24.x subfolder-aware install).
-- **Last verified:** 2026-05-01 — latest `lycheeverse/lychee-action` tag is still `v2.8.0`; `faea714` remains current `master` HEAD; pin introduced in [#176](https://github.com/jackin-project/jackin/pull/176). `LYCHEE_VERSION` independently bumped to `v0.24.2` ([release notes](https://github.com/lycheeverse/lychee/releases/tag/lychee-v0.24.2)) — tarball layout unchanged from v0.24.1 (PR [#2165](https://github.com/lycheeverse/lychee/pull/2165) is binstall-metadata only), so the post-v2.8.0 master SHA is still required.
-- **Done when:** a tag at or after `faea714` ships. Replace the SHA in `docs.yml` with that tag's commit SHA, update the inline comment from "post-v2.8.0 master" to the tag name, and re-confirm `LYCHEE_VERSION` matches whatever the new release defaults to (or keep the explicit pin if newer).
-
 #### `shellfirm-aarch64-linux-binary` — switch to prebuilt download once upstream ships aarch64-linux artifact
 
 - **What:** in [`docker/construct/Dockerfile`](docker/construct/Dockerfile), drop the `cargo install shellfirm` step (and the multi-stage `rust:1.95.0-trixie` `security-tools` builder it lives in) in favor of downloading a prebuilt `shellfirm-vX.Y.Z-aarch64-linux.tar.xz` artifact, mirroring the tirith install pattern already in place.
@@ -59,7 +51,7 @@ Markers without a corresponding TODO.md entry are allowed for transient in-fligh
 - **Hypotheses to check (in order):**
   1. **Redirected page returns non-HTML.** The same run reports 9 redirects. One redirected URL might land on a page lychee can't extract from (e.g., raw text, unusual content-type).
   2. **Sitemap entry that yields zero anchors.** Some Starlight pages — landing-style or auto-generated — render with no `<a href>` in body content. Identify by running `curl <url> | grep -c '<a href' ` for each of the 46 URLs and finding the one with zero.
-  3. **Spurious empty arg in the `eval`-ed command.** lychee-action's entrypoint uses `eval lychee … ${ARGS}` (unquoted). If our YAML folded scalar produces an extra empty token, lychee would treat it as an empty input source and warn.
+  3. **Spurious empty argument.** If the shell `run:` command produces an extra empty token when the shell expands the arguments, lychee would treat it as an empty input source and warn.
 - **How to reproduce:**
   ```sh
   curl -fsSL https://jackin.tailrocks.com/sitemap-0.xml \

@@ -8,9 +8,6 @@ description: |
   No lychee cache is restored here — deployed checks always hit live
   URLs so that stale 503s from a previous run never poison the results.
 inputs:
-  lychee-version:
-    description: Pinned lychee version (must match docs.yml LYCHEE_VERSION).
-    required: true
   sitemap-url:
     description: Absolute URL of the deployed sitemap-0.xml to dump.
     required: true
@@ -27,14 +24,11 @@ runs:
   using: composite
   steps:
     # Validate that the URL inputs match an http(s) shape with no
-    # shell-special characters before they flow into the
-    # lycheeverse/lychee-action `args:` block. lychee itself treats
-    # them as URL prefixes / regex remap rules, but a future caller
-    # passing an attacker-controlled value containing quotes or
-    # backslashes could break the embedded `--remap "<url>/(.*) …"`
-    # quoting. Today's two callers pass workflow-env constants and
-    # actions/deploy-pages output, so the check is forward-looking
-    # hardening — fail loud if a future caller deviates.
+    # shell-special characters before they flow into the lychee
+    # `--remap "<url>/(.*) …"` quoting. Today's two callers pass
+    # workflow-env constants and actions/deploy-pages output, so the
+    # check is forward-looking hardening — fail loud if a future caller
+    # deviates.
     - name: Validate URL inputs
       shell: bash
       env:
@@ -52,6 +46,13 @@ runs:
           fi
         done
 
+    - name: Setup lychee via mise
+      uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+      with:
+        working_directory: docs
+        install_args: "lychee"
+        github_token: ${{ inputs.github-token }}
+
     - name: Prepare deployed link check
       shell: bash
       run: mkdir -p lychee
@@ -61,28 +62,19 @@ runs:
       run: sleep 10
 
     - name: Collect deployed docs URLs
-      uses: lycheeverse/lychee-action@faea714062690f6c2e6f7f388469ec4fa6d9c4e1 # master, post-v2.8.0 (subfolder-aware install)
-      with:
-        lycheeVersion: ${{ inputs.lychee-version }}
-        output: lychee/deployed-pages.txt
-        args: >-
-          --dump
-          ${{ inputs.sitemap-url }}
-        fail: true
+      shell: bash
+      run: |
+        lychee --dump "${{ inputs.sitemap-url }}" > lychee/deployed-pages.txt
 
     - name: Check deployed docs links
-      uses: lycheeverse/lychee-action@faea714062690f6c2e6f7f388469ec4fa6d9c4e1 # master, post-v2.8.0 (subfolder-aware install)
-      with:
-        lycheeVersion: ${{ inputs.lychee-version }}
-        args: >-
-          --config docs/lychee.toml
-          --cache=false
-          --include-fragments
-          --remap
-          "${{ inputs.edit-url }}/(.*) file://${{ github.workspace }}/\$1"
-          --remap
-          "${{ inputs.blob-url }}/(.*) file://${{ github.workspace }}/\$1"
-          --files-from lychee/deployed-pages.txt
-        fail: true
+      shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        lychee \
+          --config docs/lychee.toml \
+          --cache=false \
+          --include-fragments \
+          --remap "${{ inputs.edit-url }}/(.*) file://${{ github.workspace }}/\$1" \
+          --remap "${{ inputs.blob-url }}/(.*) file://${{ github.workspace }}/\$1" \
+          --files-from lychee/deployed-pages.txt

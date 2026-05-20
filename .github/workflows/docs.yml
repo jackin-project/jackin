@@ -15,15 +15,6 @@ env:
   DOCS_SITE_URL: https://jackin.tailrocks.com
   JACKIN_REPO_BLOB_URL: https://github.com/jackin-project/jackin/blob/main
   JACKIN_REPO_EDIT_URL: https://github.com/jackin-project/jackin/edit/main
-  # TODO(lychee-action-sha-pin): swap the lycheeverse/lychee-action SHA back
-  # to a tagged release SHA once a tag at or after faea714 ships — see
-  # TODO.md "Follow-ups" → "lychee-action-sha-pin".
-  #
-  # Pinned past lychee-action's v0.23.0 default because v0.24.x is the first
-  # release that extracts <loc> URLs from XML sitemaps (lycheeverse/lychee#2071).
-  # The deploy and check-deployed jobs need that to feed
-  # `--files-from lychee/deployed-pages.txt`.
-  LYCHEE_VERSION: 'v0.24.2'
 
 concurrency:
   group: pages-${{ github.event_name }}-${{ github.ref }}
@@ -110,7 +101,7 @@ jobs:
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
         with:
           working_directory: docs
-          install_args: "bun node"
+          install_args: "bun node lychee"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Cache bun modules
@@ -138,23 +129,17 @@ jobs:
             lychee-${{ runner.os }}-${{ github.workflow }}-
 
       - name: Check built site links
-        uses: lycheeverse/lychee-action@faea714062690f6c2e6f7f388469ec4fa6d9c4e1 # master, post-v2.8.0 (subfolder-aware install)
-        with:
-          lycheeVersion: ${{ env.LYCHEE_VERSION }}
-          args: >-
-            --config docs/lychee.toml
-            --include-fragments
-            --remap
-            "${{ env.DOCS_SITE_URL }}/(.*) file://${{ github.workspace }}/docs/dist/\$1"
-            --remap
-            "${{ env.JACKIN_REPO_EDIT_URL }}/(.*) file://${{ github.workspace }}/\$1"
-            --remap
-            "${{ env.JACKIN_REPO_BLOB_URL }}/(.*) file://${{ github.workspace }}/\$1"
-            --root-dir ${{ github.workspace }}/docs/dist
-            docs/dist/**/*.html
-          fail: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          lychee \
+            --config docs/lychee.toml \
+            --include-fragments \
+            --remap "${{ env.DOCS_SITE_URL }}/(.*) file://${{ github.workspace }}/docs/dist/\$1" \
+            --remap "${{ env.JACKIN_REPO_EDIT_URL }}/(.*) file://${{ github.workspace }}/\$1" \
+            --remap "${{ env.JACKIN_REPO_BLOB_URL }}/(.*) file://${{ github.workspace }}/\$1" \
+            --root-dir "${{ github.workspace }}/docs/dist" \
+            "docs/dist/**/*.html"
 
       - name: Upload artifact
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
@@ -200,7 +185,6 @@ jobs:
       - name: Verify deployed docs links
         uses: ./.github/actions/check-deployed-docs
         with:
-          lychee-version: ${{ env.LYCHEE_VERSION }}
           sitemap-url: ${{ steps.sitemap.outputs.url }}
           edit-url: ${{ env.JACKIN_REPO_EDIT_URL }}
           blob-url: ${{ env.JACKIN_REPO_BLOB_URL }}
@@ -225,7 +209,6 @@ jobs:
       - name: Verify deployed docs links
         uses: ./.github/actions/check-deployed-docs
         with:
-          lychee-version: ${{ env.LYCHEE_VERSION }}
           sitemap-url: ${{ env.DOCS_SITE_URL }}/sitemap-0.xml
           edit-url: ${{ env.JACKIN_REPO_EDIT_URL }}
           blob-url: ${{ env.JACKIN_REPO_BLOB_URL }}
