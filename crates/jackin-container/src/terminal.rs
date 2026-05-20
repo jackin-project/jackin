@@ -408,13 +408,12 @@ impl Perform for VirtualTerminal {
                                     self.current_fg = Color::Ansi(n as u8);
                                     i += 2;
                                 }
-                            } else if ps.get(i + 1).copied() == Some(2) {
-                                if let (Some(&r), Some(&g), Some(&b)) =
+                            } else if ps.get(i + 1).copied() == Some(2)
+                                && let (Some(&r), Some(&g), Some(&b)) =
                                     (ps.get(i + 2), ps.get(i + 3), ps.get(i + 4))
-                                {
-                                    self.current_fg = Color::Rgb(r as u8, g as u8, b as u8);
-                                    i += 4;
-                                }
+                            {
+                                self.current_fg = Color::Rgb(r as u8, g as u8, b as u8);
+                                i += 4;
                             }
                         }
                         39 => {
@@ -429,13 +428,12 @@ impl Perform for VirtualTerminal {
                                     self.current_bg = Color::Ansi(n as u8);
                                     i += 2;
                                 }
-                            } else if ps.get(i + 1).copied() == Some(2) {
-                                if let (Some(&r), Some(&g), Some(&b)) =
+                            } else if ps.get(i + 1).copied() == Some(2)
+                                && let (Some(&r), Some(&g), Some(&b)) =
                                     (ps.get(i + 2), ps.get(i + 3), ps.get(i + 4))
-                                {
-                                    self.current_bg = Color::Rgb(r as u8, g as u8, b as u8);
-                                    i += 4;
-                                }
+                            {
+                                self.current_bg = Color::Rgb(r as u8, g as u8, b as u8);
+                                i += 4;
                             }
                         }
                         49 => {

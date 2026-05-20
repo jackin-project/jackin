@@ -239,32 +239,32 @@ impl Multiplexer {
                 Some(self.compose_frame())
             }
             InputEvent::MousePress {
-                row,
+                row: 0,
                 col,
                 button: 0,
-            } if row == 0 => {
+            } => {
                 // Left click on status bar → tab switch.
-                if let Some(idx) = self.status_bar.tab_at_col(col + 1) {
-                    if idx < self.tabs.len() {
-                        self.active_tab = idx;
-                        if let Some(focused) = self.active_focused_id() {
-                            if let Some(s) = self.sessions.get(&focused) {
-                                s.force_redraw();
-                            }
-                        }
-                        return Some(self.compose_frame());
+                if let Some(idx) = self.status_bar.tab_at_col(col + 1)
+                    && idx < self.tabs.len()
+                {
+                    self.active_tab = idx;
+                    if let Some(focused) = self.active_focused_id()
+                        && let Some(s) = self.sessions.get(&focused)
+                    {
+                        s.force_redraw();
                     }
+                    return Some(self.compose_frame());
                 }
                 None
             }
             InputEvent::MousePress { .. } => {
                 // Mouse in content area — pass through to active session.
-                if let Some(focused) = self.active_focused_id() {
-                    if let Some(session) = self.sessions.get(&focused) {
-                        // Re-encode as the original mouse bytes and send to PTY.
-                        // For now pass-through is handled by the Data path below.
-                        let _ = session;
-                    }
+                if let Some(focused) = self.active_focused_id()
+                    && let Some(session) = self.sessions.get(&focused)
+                {
+                    // Re-encode as the original mouse bytes and send to PTY.
+                    // For now pass-through is handled by the Data path below.
+                    let _ = session;
                 }
                 None
             }
@@ -290,10 +290,10 @@ impl Multiplexer {
                     }
                 } else {
                     // Route raw bytes to the focused session's PTY.
-                    if let Some(focused) = self.active_focused_id() {
-                        if let Some(session) = self.sessions.get(&focused) {
-                            session.send_input(&bytes);
-                        }
+                    if let Some(focused) = self.active_focused_id()
+                        && let Some(session) = self.sessions.get(&focused)
+                    {
+                        session.send_input(&bytes);
                     }
                     None
                 }

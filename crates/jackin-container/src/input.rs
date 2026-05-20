@@ -2,7 +2,6 @@
 ///
 /// Raw bytes from the client terminal are parsed here into
 /// `InputEvent`s which the daemon/compositor then acts on.
-
 /// Parsed input event from the client terminal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputEvent {
@@ -66,12 +65,12 @@ pub fn parse(bytes: &[u8]) -> Vec<InputEvent> {
             }
 
             // SGR mouse: ESC [ < Pm ; Pm ; Pm M/m
-            if bytes[i..].starts_with(b"\x1b[<") {
-                if let Some((ev, len)) = parse_sgr_mouse(&bytes[i..]) {
-                    events.push(ev);
-                    i += len;
-                    continue;
-                }
+            if bytes[i..].starts_with(b"\x1b[<")
+                && let Some((ev, len)) = parse_sgr_mouse(&bytes[i..])
+            {
+                events.push(ev);
+                i += len;
+                continue;
             }
 
             // Unknown escape — pass through as data.

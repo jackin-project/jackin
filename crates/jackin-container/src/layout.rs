@@ -122,58 +122,58 @@ impl PaneTree {
                 }
             }
             Self::HSplit { left, right, .. } => {
-                if let Self::Leaf(lid) = left.as_ref() {
-                    if *lid == id {
-                        let sibling = std::mem::replace(right.as_mut(), Self::Leaf(0));
-                        return (true, Some(sibling));
-                    }
+                if let Self::Leaf(lid) = left.as_ref()
+                    && *lid == id
+                {
+                    let sibling = std::mem::replace(right.as_mut(), Self::Leaf(0));
+                    return (true, Some(sibling));
                 }
-                if let Self::Leaf(rid) = right.as_ref() {
-                    if *rid == id {
-                        let sibling = std::mem::replace(left.as_mut(), Self::Leaf(0));
-                        return (true, Some(sibling));
-                    }
+                if let Self::Leaf(rid) = right.as_ref()
+                    && *rid == id
+                {
+                    let sibling = std::mem::replace(left.as_mut(), Self::Leaf(0));
+                    return (true, Some(sibling));
                 }
                 let (found, replacement) = left.remove_inner(id);
                 if found {
                     if let Some(r) = replacement {
-                        *left = Box::new(r);
+                        **left = r;
                     }
                     return (true, None);
                 }
                 let (found, replacement) = right.remove_inner(id);
                 if found {
                     if let Some(r) = replacement {
-                        *right = Box::new(r);
+                        **right = r;
                     }
                     return (true, None);
                 }
                 (false, None)
             }
             Self::VSplit { top, bottom, .. } => {
-                if let Self::Leaf(tid) = top.as_ref() {
-                    if *tid == id {
-                        let sibling = std::mem::replace(bottom.as_mut(), Self::Leaf(0));
-                        return (true, Some(sibling));
-                    }
+                if let Self::Leaf(tid) = top.as_ref()
+                    && *tid == id
+                {
+                    let sibling = std::mem::replace(bottom.as_mut(), Self::Leaf(0));
+                    return (true, Some(sibling));
                 }
-                if let Self::Leaf(bid) = bottom.as_ref() {
-                    if *bid == id {
-                        let sibling = std::mem::replace(top.as_mut(), Self::Leaf(0));
-                        return (true, Some(sibling));
-                    }
+                if let Self::Leaf(bid) = bottom.as_ref()
+                    && *bid == id
+                {
+                    let sibling = std::mem::replace(top.as_mut(), Self::Leaf(0));
+                    return (true, Some(sibling));
                 }
                 let (found, replacement) = top.remove_inner(id);
                 if found {
                     if let Some(r) = replacement {
-                        *top = Box::new(r);
+                        **top = r;
                     }
                     return (true, None);
                 }
                 let (found, replacement) = bottom.remove_inner(id);
                 if found {
                     if let Some(r) = replacement {
-                        *bottom = Box::new(r);
+                        **bottom = r;
                     }
                     return (true, None);
                 }

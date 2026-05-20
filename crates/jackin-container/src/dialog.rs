@@ -3,7 +3,6 @@
 /// The dialog is rendered as a centered floating overlay on top of the
 /// current compositor frame. The daemon renders it when
 /// `Multiplexer::dialog` is `Some(Dialog)`.
-
 const PALETTE_WIDTH: u16 = 40;
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
