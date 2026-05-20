@@ -57,7 +57,13 @@ pub(super) fn render_list_body(
             if let Some(entry) = instances.get(inst_idx).copied() {
                 let sessions = state.sessions_for_instance(&entry.container_base);
                 let session_load_error = state.has_session_load_error(&entry.container_base);
-                render_instance_details_pane(frame, columns[1], entry, sessions, session_load_error);
+                render_instance_details_pane(
+                    frame,
+                    columns[1],
+                    entry,
+                    sessions,
+                    session_load_error,
+                );
             }
         }
     }
