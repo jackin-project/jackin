@@ -143,24 +143,15 @@ jobs:
           # runner is needed. jackin has no Objective-C or Xcode-SDK-only
           # C deps — bollard uses hyperlocal (Unix socket), iana-time-zone
           # links -framework CoreFoundation which Zig stubs cover.
-          # macOS: -undefined dynamic_lookup defers unresolved framework
-          # symbols (e.g. CoreFoundation) to runtime. Zig ships C stdlib
-          # stubs only — Apple framework stubs are not bundled. The flag
-          # is safe here because all referenced frameworks (CoreFoundation
-          # via iana-time-zone) are guaranteed present on any macOS host.
           - target: aarch64-apple-darwin
             zigbuild_target: aarch64-apple-darwin
-            extra_rustflags: "-C link-arg=-undefined -C link-arg=dynamic_lookup"
           - target: x86_64-apple-darwin
             zigbuild_target: x86_64-apple-darwin
-            extra_rustflags: "-C link-arg=-undefined -C link-arg=dynamic_lookup"
           # Linux targets: glibc 2.17 minimum for broad host compatibility.
           - target: aarch64-unknown-linux-gnu
             zigbuild_target: aarch64-unknown-linux-gnu.2.17
-            extra_rustflags: ""
           - target: x86_64-unknown-linux-gnu
             zigbuild_target: x86_64-unknown-linux-gnu.2.17
-            extra_rustflags: ""
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -179,10 +170,31 @@ jobs:
         uses: taiki-e/install-action@213ccc1a076163c093f914550b94feb90fab916d # v2.79.2
         with:
           tool: cargo-zigbuild
+      - name: Create macOS framework stubs
+        if: contains(matrix.target, 'apple')
+        run: |
+          # Zig ships C stdlib stubs but not Apple framework stubs.
+          # CoreFoundation (pulled by iana-time-zone) is always present
+          # on real macOS, so a minimal empty stub here satisfies the
+          # MachO linker's framework-exists check at compile time.
+          # -undefined dynamic_lookup defers symbol resolution to runtime.
+          stub_dir=/tmp/macos-framework-stubs
+          mkdir -p "${stub_dir}/CoreFoundation.framework"
+          cat > "${stub_dir}/CoreFoundation.framework/CoreFoundation.tbd" <<'TBD'
+          --- !tapi-tbd
+          tbd-version:     4
+          targets:         [ x86_64-macos, arm64-macos ]
+          install-name:    '/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation'
+          current-version: 1454.90
+          exports:
+            - targets:     [ x86_64-macos, arm64-macos ]
+              symbols:     []
+          ...
+          TBD
+          echo "RUSTFLAGS=-C link-arg=-F${stub_dir} -C link-arg=-undefined -C link-arg=dynamic_lookup" >> "$GITHUB_ENV"
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
-          RUSTFLAGS: ${{ matrix.extra_rustflags }}
         run: cargo zigbuild --release --locked --target "$ZIGBUILD_TARGET"
       - name: Package
         env:
