@@ -126,9 +126,28 @@ Include it whenever daemon.rs, client.rs, session.rs, terminal.rs, layout.rs,
 dialog.rs, statusbar.rs, input.rs, pid1.rs, or any other file under
 `crates/jackin-container/src/` is changed.>
 
+Build the binary and wire it up before running `jackin load`. Two options:
+
+**Option A — one shot (recommended):**
+
 ```sh
-# First load builds jackin-container from source via Docker (~2-3 min).
-# Subsequent loads after source edits are incremental (fast).
+eval "$(cargo run --bin build-jackin-container -- --export)"
+```
+
+Builds via `cargo-zigbuild`, caches the result, and sets `JACKIN_CONTAINER_BIN`
+in the current shell so `jackin` uses it directly.
+
+**Option B — two steps:**
+
+```sh
+cargo run --bin build-jackin-container
+# prints: [build] to use: export JACKIN_CONTAINER_BIN=/path/to/binary
+export JACKIN_CONTAINER_BIN=<path printed above>
+```
+
+First build takes ~2-3 min; subsequent builds are incremental. Then smoke:
+
+```sh
 cargo run --bin jackin -- load the-architect . --debug
 ```
 
@@ -141,11 +160,10 @@ Inside the container, verify:
 - <One sentence specific to what this PR changed — e.g. "Split pane rendered
   after `Ctrl+J → Split pane │`" or "Session switch preserved agent output">
 
-To force a full rebuild without waiting for a new commit:
+To force a clean rebuild:
 
 ```sh
-rm -rf ~/.jackin/cache/jackin-container/
-cargo run --bin jackin -- load the-architect . --debug
+eval "$(cargo run --bin build-jackin-container -- --export)"
 ```
 
 ### Documentation

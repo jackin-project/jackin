@@ -122,17 +122,64 @@ Available runtimes are declared via the `JACKIN_SUPPORTED_AGENTS` environment va
 
 `jackin-container` is versioned identically to the jackin CLI — both use the same <RepoFile path="build.rs" /> logic that produces `{cargo_pkg_version}+{7-char-git-sha}`. The host CLI's version string and the binary's `--version` output always match.
 
-**Source checkout (dev builds):** `ensure_available` in <RepoFile path="src/container_binary.rs" /> detects the workspace root by walking up from the running `jackin` binary and looking for `crates/jackin-container/`. When found, it builds via `docker run rust:1.95.0 cargo build -p jackin-container` with the workspace mounted read-only. Cache invalidation is by file mtime: any source file under `crates/jackin-container/` newer than the cached binary triggers a rebuild without requiring a commit.
+### How jackin acquires the binary
 
-**Installed builds (preview / stable):** Downloaded from GitHub Releases — the rolling `preview` tag for `-dev` versions, or the versioned `v<version>` tag for stable releases. Cached at `~/.jackin/cache/jackin-container/<version>/linux-<arch>/jackin-container`. On Linux, the downloaded binary is verified by running `jackin-container --version` and checking the output matches the expected version string.
+`ensure_available` in <RepoFile path="src/container_binary.rs" /> resolves the binary in priority order:
 
-The derived image build (see <RepoFile path="src/derived_image.rs" />) copies the cached binary into the build context so `docker build` does not need network access. The `COPY .jackin-runtime/jackin-container /usr/local/bin/jackin-container` instruction is emitted only when the binary is available; when it is not (e.g. in tests), the instruction is omitted and the image falls back to whatever `/usr/local/bin/jackin-container` the base image provides.
+1. **`JACKIN_CONTAINER_BIN=/path/to/binary` (env var set)** — jackin uses that path directly. No cache lookup, no download. The binary can come from anywhere: a local build, a CI artifact, a closed-source build. jackin validates only that the file exists and is executable.
+
+2. **Cache hit** — if `~/.jackin/cache/jackin-container/<version>/linux-<arch>/jackin-container` exists and is executable, it is used immediately.
+
+3. **Download** — on a cache miss, the binary is downloaded from GitHub Releases: the rolling `preview` tag for `-dev` and `-preview.*` versions, or the versioned `v<version>` tag for stable releases. On Linux the downloaded binary is verified by executing `jackin-container --version` and asserting the output matches the expected version string.
+
+jackin itself has no knowledge of how to build `jackin-container` from source. Build logic lives exclusively in the developer tool described below.
+
+### Building for local development
+
+Use the `build-jackin-container` binary (defined in <RepoFile path="src/bin/build_jackin_container.rs" />) to compile `jackin-container` for Linux and populate the cache. It uses `cargo-zigbuild` with Zig as the linker — no Docker required — and targets a glibc 2.17 floor to match CI:
+
+- `arm64` → `aarch64-unknown-linux-gnu.2.17`
+- `amd64` → `x86_64-unknown-linux-gnu.2.17`
+
+**Option A — one shot (recommended for PR verification):**
+
+```sh
+eval "$(cargo run --bin build-jackin-container -- --export)"
+```
+
+This builds the binary, caches it under `~/.jackin/cache/jackin-container/`, and sets `JACKIN_CONTAINER_BIN` in the current shell so `jackin load` uses it directly — bypassing the cache lookup entirely.
+
+**Option B — two steps (useful when running multiple `jackin load` invocations):**
+
+```sh
+cargo run --bin build-jackin-container
+# prints: [build] to use: export JACKIN_CONTAINER_BIN=/path/to/cached/binary
+export JACKIN_CONTAINER_BIN=/path/to/cached/binary
+```
+
+The binary is written to the standard cache path and subsequent `jackin load` invocations in the same shell reuse it without rebuilding.
+
+**Flags:**
+
+| Flag | Description |
+|---|---|
+| `--arch arm64\|amd64` | Target architecture (default: current host's container arch) |
+| `--export` | Print only `export JACKIN_CONTAINER_BIN=<path>` for `eval` |
+
+Prerequisites: `zig` and `cargo-zigbuild` must be installed. Both are declared in <RepoFile path="mise.toml" />; run `mise install zig cargo:cargo-zigbuild` if missing.
+
+First build takes 2–3 minutes; subsequent builds are incremental via cargo's dependency cache.
+
+### Derived image build
+
+<RepoFile path="src/derived_image.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-container /usr/local/bin/jackin-container` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/usr/local/bin/jackin-container` the base image provides.
 
 ## Relationship to the rest of jackin
 
 | Component | Relationship |
 |---|---|
-| <RepoFile path="src/container_binary.rs" /> | Download / build / cache logic on the host side |
+| <RepoFile path="src/container_binary.rs" /> | Resolves the binary path: `JACKIN_CONTAINER_BIN` override → cache hit → download from GitHub Releases |
+| <RepoFile path="src/bin/build_jackin_container.rs" /> | Developer tool: `cargo run --bin build-jackin-container` — builds via `cargo-zigbuild` and populates the cache |
 | <RepoFile path="src/derived_image.rs" /> | Copies binary into derived image build context |
 | <RepoFile path="src/runtime/launch.rs" /> | Adds socket mount to `docker run`; connects via `docker exec jackin-container` |
 | <RepoFile path="src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-container new` |
