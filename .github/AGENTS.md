@@ -12,9 +12,9 @@ Rules for writing and maintaining workflows under `.github/workflows/` and compo
 - Use `jdx/mise-action` for every tool installation — Rust, Node, Bun, Zig, cargo tools, everything.
 - **Rust toolchain version**: channel declared in `rust-toolchain.toml`. mise reads it automatically via `idiomatic_version_file` — no version pin in `install_args` needed. mise does **not** install `components` from `rust-toolchain.toml`; add a `rustup component add <components>` step after mise when a job needs non-default components (e.g. `rustfmt`, `clippy`).
 - **Cross-compilation targets**: run `rustup target add <target>` after the mise step; `actions-rust-lang/setup-rust-toolchain`'s `target:` parameter is not available.
-- **Cargo-registry tools** (nextest, zigbuild, cross, etc.): pass as `install_args: "cargo:<crate>"`.
+- **Cargo-registry tools used across all jobs** (e.g. `cargo-nextest`): declare in `mise.toml` with a pinned version (`"cargo:cargo-nextest" = "0.9.136"`). Tools needed by only one job (e.g. `cargo-zigbuild`, `cross`) can use `install_args: "cargo:<crate>"` instead.
 - **MSRV override** (the `msrv` CI job only): read the version from `Cargo.toml`'s `rust-version` field at job runtime — never hardcode it. Use `install_args: "rust@${{ steps.msrv.outputs.version }}"` and pin the cargo step with `RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}`.
-- **Multiple tools in one step**: space-separate in `install_args: "rust zig cargo:cargo-nextest"`. Use a GHA expression when the set is matrix-conditional: `install_args: "${{ matrix.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"`.
+- **Multiple tools in one step**: space-separate in `install_args: "rust zig cargo:cargo-zigbuild"`. Use a GHA expression when the set is matrix-conditional: `install_args: "${{ matrix.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"`.
 
 **Locally:** `mise install` from the repo root installs every tool at the version CI uses.
 

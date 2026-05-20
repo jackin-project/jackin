@@ -73,7 +73,7 @@ jobs:
       - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          install_args: "rust cargo:cargo-nextest"
+          install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - run: rustup component add rustfmt clippy
       - run: cargo fmt --check

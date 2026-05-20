@@ -57,7 +57,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          install_args: "rust cargo:cargo-nextest"
+          install_args: "rust"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - run: cargo nextest run
 
