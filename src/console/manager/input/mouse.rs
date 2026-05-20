@@ -174,11 +174,12 @@ pub fn handle_mouse_with_config(
             // the list pane's content area (excluding borders).
             if let Some(row) = list_content_row_index(state, mouse, term_size, seam_x) {
                 state.inline_role_picker = None;
-                let selected = row.to_screen_index(state.workspaces.len());
-                if selected != state.selected {
-                    state.reset_list_scroll();
-                    state.selected = selected;
-                    state.inline_agent_picker = None;
+                if let Some(selected) = state.index_of_row(row) {
+                    if selected != state.selected {
+                        state.reset_list_scroll();
+                        state.selected = selected;
+                        state.inline_agent_picker = None;
+                    }
                 }
             }
         }

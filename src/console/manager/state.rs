@@ -1,7 +1,7 @@
 //! Manager state machine. See docs/superpowers/specs/2026-04-23-workspace-manager-tui-design.md § 3.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -25,19 +25,33 @@ use crate::console::widgets::{
 pub enum ManagerListRow {
     CurrentDirectory,
     SavedWorkspace(usize),
+    /// An active instance under a saved workspace. `(workspace_idx,
+    /// instance_idx)` where `instance_idx` is the position within
+    /// `ManagerState::workspace_active_instances(workspace_idx)`.
+    WorkspaceInstance(usize, usize),
     NewWorkspace,
 }
 
 impl ManagerListRow {
+    /// Screen index in the flat (non-expanded) selectable row list.
+    /// Only valid for `CurrentDirectory`, `SavedWorkspace`, and
+    /// `NewWorkspace` — `WorkspaceInstance` is not reachable at init
+    /// time before any workspace is expanded.
     #[must_use]
     pub const fn to_screen_index(self, saved_count: usize) -> usize {
         match self {
             Self::CurrentDirectory => 0,
             Self::SavedWorkspace(i) => i + 1,
             Self::NewWorkspace => saved_count + 1,
+            Self::WorkspaceInstance(_, _) => {
+                panic!("to_screen_index is not valid for WorkspaceInstance")
+            }
         }
     }
 
+    /// Visual index in the flat (non-expanded) rendered list (includes
+    /// the blank spacer before `NewWorkspace`). Only valid for
+    /// non-`WorkspaceInstance` rows.
     #[must_use]
     pub const fn to_visual_index(self, saved_count: usize) -> usize {
         match self {
@@ -49,6 +63,9 @@ impl ManagerListRow {
                 } else {
                     saved_count + 1
                 }
+            }
+            Self::WorkspaceInstance(_, _) => {
+                panic!("to_visual_index is not valid for WorkspaceInstance")
             }
         }
     }
@@ -102,6 +119,11 @@ pub struct ManagerState<'a> {
     /// this, a persistent parse error would reopen the popup on every
     /// 20 Hz tick — operators would never be able to dismiss it.
     instances_last_error: Option<String>,
+    /// Which saved-workspace indices are expanded in the tree view.
+    pub expanded_workspaces: BTreeSet<usize>,
+    /// Cached sessions per active instance keyed by `container_base`.
+    /// Populated from manifests during `refresh_instances`.
+    pub instance_sessions: HashMap<String, Vec<crate::instance::SessionRecord>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1384,69 +1406,155 @@ impl ManagerState<'_> {
             },
             instances_last_refresh: None,
             instances_last_error: None,
+            expanded_workspaces: BTreeSet::new(),
+            instance_sessions: HashMap::new(),
         }
     }
 
-    /// Total number of rows in the list (current-dir + saved + sentinel).
+    // ── Tree navigation helpers ────────────────────────────────────
+
+    /// Instances that appear in the tree for workspace `ws_idx` — only
+    /// `Active` / `Running` containers are shown.
     #[must_use]
-    pub const fn row_count(&self) -> usize {
-        self.workspaces.len() + 2
+    pub fn workspace_active_instances(
+        &self,
+        ws_idx: usize,
+    ) -> Vec<&crate::instance::InstanceIndexEntry> {
+        let Some(ws) = self.workspaces.get(ws_idx) else {
+            return Vec::new();
+        };
+        let query = crate::instance::InstanceQuery {
+            workspace_name: Some(ws.name.as_str()),
+            workspace_label: ws.name.as_str(),
+            workdir: ws.workdir.as_str(),
+            role_key: None,
+            agent_runtime: None,
+        };
+        self.instances
+            .iter()
+            .filter(|e| {
+                e.matches(query)
+                    && matches!(
+                        e.status,
+                        crate::instance::InstanceStatus::Active
+                            | crate::instance::InstanceStatus::Running
+                    )
+            })
+            .collect()
     }
 
-    /// Index of the "+ New workspace" sentinel row.
+    /// Instances in the tree for the "Current directory" synthetic row.
     #[must_use]
-    pub const fn new_workspace_row_index(&self) -> usize {
-        self.workspaces.len() + 1
+    pub fn current_dir_active_instances(&self) -> Vec<&crate::instance::InstanceIndexEntry> {
+        let current_dir = self.current_dir.as_str();
+        let query = crate::instance::InstanceQuery {
+            workspace_name: None,
+            workspace_label: current_dir,
+            workdir: current_dir,
+            role_key: None,
+            agent_runtime: None,
+        };
+        self.instances
+            .iter()
+            .filter(|e| {
+                e.matches(query)
+                    && matches!(
+                        e.status,
+                        crate::instance::InstanceStatus::Active
+                            | crate::instance::InstanceStatus::Running
+                    )
+            })
+            .collect()
     }
 
-    /// Decode a raw screen-row `usize` into a [`ManagerListRow`]. Returns
-    /// `None` when `idx` is out of range.
-    #[must_use]
-    pub const fn row_at(&self, idx: usize) -> Option<ManagerListRow> {
-        let saved_count = self.workspaces.len();
-        if idx == 0 {
-            Some(ManagerListRow::CurrentDirectory)
-        } else if idx == saved_count + 1 {
-            Some(ManagerListRow::NewWorkspace)
-        } else if idx <= saved_count {
-            Some(ManagerListRow::SavedWorkspace(idx - 1))
-        } else {
-            None
+    /// Flat ordered list of selectable rows accounting for tree expansion.
+    /// Instance rows appear immediately after their parent workspace row.
+    fn selectable_rows_vec(&self) -> Vec<ManagerListRow> {
+        let mut rows = vec![ManagerListRow::CurrentDirectory];
+        for (i, _) in self.workspaces.iter().enumerate() {
+            rows.push(ManagerListRow::SavedWorkspace(i));
+            if self.expanded_workspaces.contains(&i) {
+                let count = self.workspace_active_instances(i).len();
+                for j in 0..count {
+                    rows.push(ManagerListRow::WorkspaceInstance(i, j));
+                }
+            }
         }
+        rows.push(ManagerListRow::NewWorkspace);
+        rows
     }
 
-    /// Decode a visual list row into a logical row. The rendered list keeps a
-    /// blank spacer before "+ New workspace" when saved workspaces exist; that
-    /// spacer is intentionally not selectable.
-    #[must_use]
-    pub const fn row_at_visual_index(&self, idx: usize) -> Option<ManagerListRow> {
-        let saved_count = self.workspaces.len();
-        if idx == 0 {
-            Some(ManagerListRow::CurrentDirectory)
-        } else if idx <= saved_count {
-            Some(ManagerListRow::SavedWorkspace(idx - 1))
-        } else if idx == saved_count + 1 && saved_count > 0 {
-            None
-        } else if (saved_count > 0 && idx == saved_count + 2)
-            || (saved_count == 0 && idx == saved_count + 1)
-        {
-            Some(ManagerListRow::NewWorkspace)
-        } else {
-            None
+    /// Visual row list for rendering — same as `selectable_rows_vec` plus a
+    /// `None` spacer before `NewWorkspace` when saved workspaces exist.
+    pub fn visual_rows_vec(&self) -> Vec<Option<ManagerListRow>> {
+        let mut rows: Vec<Option<ManagerListRow>> =
+            vec![Some(ManagerListRow::CurrentDirectory)];
+        for (i, _) in self.workspaces.iter().enumerate() {
+            rows.push(Some(ManagerListRow::SavedWorkspace(i)));
+            if self.expanded_workspaces.contains(&i) {
+                let count = self.workspace_active_instances(i).len();
+                for j in 0..count {
+                    rows.push(Some(ManagerListRow::WorkspaceInstance(i, j)));
+                }
+            }
         }
+        if !self.workspaces.is_empty() {
+            rows.push(None); // spacer before "+ New workspace"
+        }
+        rows.push(Some(ManagerListRow::NewWorkspace));
+        rows
     }
 
-    /// Selected index in rendered-list coordinates. Differs from `selected`
-    /// only when the blank spacer before "+ New workspace" is present.
+    /// Returns the position of `row` in `selectable_rows_vec`, or `None`.
+    #[must_use]
+    pub fn index_of_row(&self, row: ManagerListRow) -> Option<usize> {
+        self.selectable_rows_vec().iter().position(|r| *r == row)
+    }
+
+    // ── Core navigation ───────────────────────────────────────────
+
+    /// Total number of selectable rows (includes instance rows when expanded).
+    #[must_use]
+    pub fn row_count(&self) -> usize {
+        self.selectable_rows_vec().len()
+    }
+
+    /// Index of the "+ New workspace" sentinel row in the selectable list.
+    #[must_use]
+    pub fn new_workspace_row_index(&self) -> usize {
+        self.selectable_rows_vec().len().saturating_sub(1)
+    }
+
+    /// Decode a selectable-list index into a [`ManagerListRow`].
+    #[must_use]
+    pub fn row_at(&self, idx: usize) -> Option<ManagerListRow> {
+        self.selectable_rows_vec().get(idx).copied()
+    }
+
+    /// Decode a visual-list index (may include the non-selectable spacer)
+    /// into a [`ManagerListRow`]. Returns `None` for the spacer row.
+    #[must_use]
+    pub fn row_at_visual_index(&self, idx: usize) -> Option<ManagerListRow> {
+        self.visual_rows_vec().get(idx).copied().flatten()
+    }
+
+    /// Visual-list index of the currently selected row (for ratatui
+    /// highlight). Differs from `selected` when instance rows are visible.
     #[must_use]
     pub fn visual_selected(&self) -> usize {
-        self.selected_row().to_visual_index(self.workspaces.len())
+        let selected = self.selected_row();
+        self.visual_rows_vec()
+            .iter()
+            .position(|r| r.as_ref() == Some(&selected))
+            .unwrap_or(0)
     }
 
     /// What the operator currently has highlighted.
     #[must_use]
     pub fn selected_row(&self) -> ManagerListRow {
-        self.row_at(self.selected)
+        self.selectable_rows_vec()
+            .get(self.selected)
+            .copied()
             .unwrap_or(ManagerListRow::CurrentDirectory)
     }
 
@@ -1465,13 +1573,48 @@ impl ManagerState<'_> {
     }
 
     /// The [`WorkspaceSummary`] currently highlighted, or `None` when the
-    /// selection is on Current Directory or New Workspace.
+    /// selection is on Current Directory, New Workspace, or a WorkspaceInstance.
     #[must_use]
     pub fn selected_workspace_summary(&self) -> Option<&WorkspaceSummary> {
         if let ManagerListRow::SavedWorkspace(i) = self.selected_row() {
             self.workspaces.get(i)
         } else {
             None
+        }
+    }
+
+    // ── Tree expand / collapse ────────────────────────────────────
+
+    /// Expand the workspace tree node at `ws_idx`. No-op when already
+    /// expanded or when there are no active instances.
+    pub fn expand_workspace(&mut self, ws_idx: usize) {
+        if !self.workspace_active_instances(ws_idx).is_empty() {
+            self.expanded_workspaces.insert(ws_idx);
+        }
+    }
+
+    /// Collapse the workspace tree node at `ws_idx`. When the cursor is
+    /// on a child instance row, jumps up to the workspace row.
+    pub fn collapse_workspace(&mut self, ws_idx: usize) {
+        if !self.expanded_workspaces.contains(&ws_idx) {
+            return;
+        }
+        let was_on_child = matches!(
+            self.selected_row(),
+            ManagerListRow::WorkspaceInstance(w, _) if w == ws_idx
+        );
+        self.expanded_workspaces.remove(&ws_idx);
+        if was_on_child {
+            let rows = self.selectable_rows_vec();
+            self.selected = rows
+                .iter()
+                .position(|r| *r == ManagerListRow::SavedWorkspace(ws_idx))
+                .unwrap_or(0);
+        } else {
+            // Clamp in case removal shrunk the list.
+            self.selected = self
+                .selected
+                .min(self.selectable_rows_vec().len().saturating_sub(1));
         }
     }
 
@@ -1488,9 +1631,35 @@ impl ManagerState<'_> {
             Ok(index) => {
                 self.instances = index.instances;
                 self.instances_last_error = None;
+                // Load recorded sessions for each active/running instance.
+                // These come from persisted manifests and may not reflect live
+                // tmux state, but provide useful context without Docker exec.
+                self.instance_sessions.clear();
+                for entry in &self.instances {
+                    if matches!(
+                        entry.status,
+                        crate::instance::InstanceStatus::Active
+                            | crate::instance::InstanceStatus::Running
+                    ) {
+                        let state_dir = paths.data_dir.join(&entry.container_base);
+                        if let Ok(manifest) =
+                            crate::instance::InstanceManifest::read(&state_dir)
+                        {
+                            if !manifest.sessions.is_empty() {
+                                self.instance_sessions
+                                    .insert(entry.container_base.clone(), manifest.sessions);
+                            }
+                        }
+                    }
+                }
+                // Clamp `selected` after a refresh in case an instance row
+                // that was selected has disappeared.
+                let max = self.row_count().saturating_sub(1);
+                self.selected = self.selected.min(max);
             }
             Err(error) => {
                 self.instances.clear();
+                self.instance_sessions.clear();
                 let message = format!("instance index error: {error}");
                 if self.instances_last_error.as_deref() != Some(&message) {
                     self.list_modal = Some(Modal::ErrorPopup {

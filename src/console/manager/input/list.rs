@@ -24,14 +24,23 @@ pub(super) fn handle_list_key(
     _cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
-    // See ManagerListRow docs for row layout.
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => Ok(InputOutcome::ExitJackin),
-        KeyCode::Left | KeyCode::Char('h' | 'H') => {
+        // Left/Right arrows: tree expand/collapse.
+        // h/l keep horizontal scroll so the details pane stays scrollable.
+        KeyCode::Left => {
+            handle_tree_left(state);
+            Ok(InputOutcome::Continue)
+        }
+        KeyCode::Right => {
+            handle_tree_right(state);
+            Ok(InputOutcome::Continue)
+        }
+        KeyCode::Char('h' | 'H') => {
             scroll_list_horizontal(state, -8);
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Right | KeyCode::Char('l' | 'L') => {
+        KeyCode::Char('l' | 'L') => {
             scroll_list_horizontal(state, 8);
             Ok(InputOutcome::Continue)
         }
@@ -55,7 +64,7 @@ pub(super) fn handle_list_key(
             } else {
                 state.inline_role_picker = None;
                 state.inline_agent_picker = None;
-                let selected = (state.selected + 1).min(state.row_count() - 1);
+                let selected = (state.selected + 1).min(state.row_count().saturating_sub(1));
                 if selected != state.selected {
                     state.reset_list_scroll();
                     state.selected = selected;
@@ -64,13 +73,8 @@ pub(super) fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Enter => match state.selected_row() {
-            ManagerListRow::CurrentDirectory => {
-                // Launch against cwd. Run-loop routes through the same
-                // role-picker stage as LaunchNamed.
-                Ok(InputOutcome::LaunchCurrentDir)
-            }
+            ManagerListRow::CurrentDirectory => Ok(InputOutcome::LaunchCurrentDir),
             ManagerListRow::NewWorkspace => {
-                // Start the create prelude with a FileBrowser modal open.
                 let mut prelude = super::super::state::CreatePreludeState::new();
                 prelude.modal = Some(Modal::FileBrowser {
                     target: FileBrowserTarget::CreateFirstMountSrc,
@@ -85,13 +89,18 @@ pub(super) fn handle_list_key(
                 .map_or(InputOutcome::Continue, |summary| {
                     InputOutcome::LaunchNamed(summary.name.clone())
                 })),
+            // Reconnect to the selected instance.
+            ManagerListRow::WorkspaceInstance(_, _) => Ok(instance_action_outcome(
+                state,
+                ConsoleInstanceAction::Reconnect,
+                "No recoverable instance selected.",
+            )),
         },
         KeyCode::Char('e' | 'E') => {
             match state.selected_row() {
-                ManagerListRow::CurrentDirectory | ManagerListRow::NewWorkspace => {
-                    // Silent no-op — current directory has no config to edit,
-                    // and NewWorkspace is a sentinel.
-                }
+                ManagerListRow::CurrentDirectory
+                | ManagerListRow::NewWorkspace
+                | ManagerListRow::WorkspaceInstance(_, _) => {}
                 ManagerListRow::SavedWorkspace(i) => {
                     if let Some(summary) = state.workspaces.get(i) {
                         let name = summary.name.clone();
@@ -105,19 +114,29 @@ pub(super) fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('n' | 'N') => {
-            let mut prelude = super::super::state::CreatePreludeState::new();
-            prelude.modal = Some(Modal::FileBrowser {
-                target: FileBrowserTarget::CreateFirstMountSrc,
-                state: FileBrowserState::new_from_home()?,
-            });
-            state.stage = ManagerStage::CreatePrelude(prelude);
-            Ok(InputOutcome::Continue)
+            // On an instance row: start a new agent session inside that container.
+            // Elsewhere: open the create-workspace flow.
+            if matches!(state.selected_row(), ManagerListRow::WorkspaceInstance(_, _)) {
+                Ok(instance_action_outcome(
+                    state,
+                    ConsoleInstanceAction::NewSession,
+                    "No running instance selected.",
+                ))
+            } else {
+                let mut prelude = super::super::state::CreatePreludeState::new();
+                prelude.modal = Some(Modal::FileBrowser {
+                    target: FileBrowserTarget::CreateFirstMountSrc,
+                    state: FileBrowserState::new_from_home()?,
+                });
+                state.stage = ManagerStage::CreatePrelude(prelude);
+                Ok(InputOutcome::Continue)
+            }
         }
         KeyCode::Char('d' | 'D') => {
             match state.selected_row() {
-                ManagerListRow::CurrentDirectory | ManagerListRow::NewWorkspace => {
-                    // Silent no-op on the sentinel.
-                }
+                ManagerListRow::CurrentDirectory
+                | ManagerListRow::NewWorkspace
+                | ManagerListRow::WorkspaceInstance(_, _) => {}
                 ManagerListRow::SavedWorkspace(i) => {
                     if let Some(ws) = state.workspaces.get(i) {
                         let name = ws.name.clone();
@@ -160,10 +179,34 @@ pub(super) fn handle_list_key(
             "No purgeable instance for this workspace.",
         )),
         KeyCode::Char('s' | 'S') => {
-            state.stage = ManagerStage::Settings(SettingsState::from_config(config));
+            // Settings only from workspace-level rows, not from instance rows.
+            if !matches!(state.selected_row(), ManagerListRow::WorkspaceInstance(_, _)) {
+                state.stage = ManagerStage::Settings(SettingsState::from_config(config));
+            }
             Ok(InputOutcome::Continue)
         }
         _ => Ok(InputOutcome::Continue),
+    }
+}
+
+/// `→`: expand workspace node, or no-op on instance / other rows.
+fn handle_tree_right(state: &mut ManagerState<'_>) {
+    if let ManagerListRow::SavedWorkspace(i) = state.selected_row() {
+        state.expand_workspace(i);
+    }
+}
+
+/// `←`: collapse expanded workspace, or jump to parent workspace from an
+/// instance row.
+fn handle_tree_left(state: &mut ManagerState<'_>) {
+    match state.selected_row() {
+        ManagerListRow::SavedWorkspace(i) => {
+            state.collapse_workspace(i);
+        }
+        ManagerListRow::WorkspaceInstance(ws_idx, _) => {
+            state.collapse_workspace(ws_idx);
+        }
+        _ => {}
     }
 }
 
@@ -188,6 +231,18 @@ fn selected_instance_container(
     state: &ManagerState<'_>,
     action: ConsoleInstanceAction,
 ) -> Option<String> {
+    // When on a specific instance row, use that instance directly.
+    if let ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) = state.selected_row() {
+        let instances = state.workspace_active_instances(ws_idx);
+        let entry = instances.get(inst_idx)?;
+        return if instance_action_accepts_status(action, entry.status) {
+            Some(entry.container_base.clone())
+        } else {
+            None
+        };
+    }
+    // Otherwise use the workspace-level scope to pick the first matching
+    // instance (legacy workspace-row behaviour).
     let (workspace_name, workspace_label, workdir) = selected_instance_scope(state)?;
     let query = crate::instance::InstanceQuery {
         workspace_name,
@@ -221,6 +276,15 @@ fn selected_instance_scope<'a>(
                 summary.workdir.as_str(),
             )
         }),
+        ManagerListRow::WorkspaceInstance(ws_idx, _) => {
+            state.workspaces.get(ws_idx).map(|ws| {
+                (
+                    Some(ws.name.as_str()),
+                    ws.name.as_str(),
+                    ws.workdir.as_str(),
+                )
+            })
+        }
         ManagerListRow::NewWorkspace => None,
     }
 }

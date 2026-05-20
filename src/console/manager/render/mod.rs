@@ -33,6 +33,10 @@ pub(super) use crate::console::widgets::scrollable::{
     line_width, max_line_width, render_scrollable_block,
 };
 pub(super) use crate::console::widgets::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+/// Distinct accent for live-state surfaces (instances, sessions).
+/// Cyan contrasts clearly with the phosphor-green config panels.
+pub(super) const CYAN: ratatui::style::Color = ratatui::style::Color::Rgb(0, 180, 180);
+pub(super) const CYAN_DIM: ratatui::style::Color = ratatui::style::Color::Rgb(0, 120, 120);
 
 // ── Footer item model ──────────────────────────────────────────────
 //
@@ -361,68 +365,96 @@ pub fn render(
                 } else {
                     // Hidden on current-dir and "+ New workspace" rows because
                     // they have no workspace config.
-                    let show_open_hint =
-                        matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_))
-                            && state
-                                .selected_workspace_summary()
-                                .and_then(|s| config.workspaces.get(&s.name))
-                                .is_some_and(|ws| {
-                                    !super::github_mounts::resolve_for_workspace(ws).is_empty()
-                                });
+                    let is_instance_row = matches!(
+                        state.selected_row(),
+                        ManagerListRow::WorkspaceInstance(_, _)
+                    );
 
-                    let is_saved =
-                        matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_));
-                    let scroll_focused = state.list_scroll_focus.is_some();
-
-                    // When a scrollable block is active, ↑↓/←→ scroll it.
-                    // When no block is focused, ↑↓ navigate the workspace list.
-                    let mut items: Vec<FooterItem> = if scroll_focused {
-                        vec![
-                            FooterItem::Key("\u{2191}\u{2193}/\u{2190}\u{2192}"),
-                            FooterItem::Text("scroll block"),
-                            FooterItem::GroupSep,
-                            FooterItem::Key("Enter"),
-                            FooterItem::Text("launch"),
-                            FooterItem::GroupSep,
-                        ]
-                    } else {
+                    if is_instance_row {
+                        // Instance-row footer: reconnect / new session / shell / purge.
                         vec![
                             FooterItem::Key("\u{2191}\u{2193}"),
                             FooterItem::Sep,
                             FooterItem::Key("Enter"),
-                            FooterItem::Text("launch"),
+                            FooterItem::Text("reconnect"),
+                            FooterItem::Sep,
+                            FooterItem::Key("N"),
+                            FooterItem::Text("new session"),
+                            FooterItem::Sep,
+                            FooterItem::Key("X"),
+                            FooterItem::Text("shell"),
+                            FooterItem::Sep,
+                            FooterItem::Key("P"),
+                            FooterItem::Text("purge"),
                             FooterItem::GroupSep,
+                            FooterItem::Key("\u{2190}"),
+                            FooterItem::Text("back"),
+                            FooterItem::GroupSep,
+                            FooterItem::Key("Q"),
+                            FooterItem::Text("quit"),
                         ]
-                    };
-                    if is_saved {
+                    } else {
+                        let show_open_hint =
+                            matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_))
+                                && state
+                                    .selected_workspace_summary()
+                                    .and_then(|s| config.workspaces.get(&s.name))
+                                    .is_some_and(|ws| {
+                                        !super::github_mounts::resolve_for_workspace(ws).is_empty()
+                                    });
+
+                        let is_saved =
+                            matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_));
+                        let scroll_focused = state.list_scroll_focus.is_some();
+
+                        let mut items: Vec<FooterItem> = if scroll_focused {
+                            vec![
+                                FooterItem::Key("\u{2191}\u{2193}/\u{2190}\u{2192}"),
+                                FooterItem::Text("scroll block"),
+                                FooterItem::GroupSep,
+                                FooterItem::Key("Enter"),
+                                FooterItem::Text("launch"),
+                                FooterItem::GroupSep,
+                            ]
+                        } else {
+                            vec![
+                                FooterItem::Key("\u{2191}\u{2193}"),
+                                FooterItem::Sep,
+                                FooterItem::Key("Enter"),
+                                FooterItem::Text("launch"),
+                                FooterItem::GroupSep,
+                            ]
+                        };
+                        if is_saved {
+                            items.extend([
+                                FooterItem::Key("E"),
+                                FooterItem::Text("edit"),
+                                FooterItem::Sep,
+                            ]);
+                        }
+                        items.extend([FooterItem::Key("N"), FooterItem::Text("new")]);
+                        if is_saved {
+                            items.extend([
+                                FooterItem::Sep,
+                                FooterItem::Key("D"),
+                                FooterItem::Text("delete"),
+                            ]);
+                        }
                         items.extend([
-                            FooterItem::Key("E"),
-                            FooterItem::Text("edit"),
                             FooterItem::Sep,
+                            FooterItem::Key("S"),
+                            FooterItem::Text("settings"),
                         ]);
+                        if show_open_hint {
+                            items.push(FooterItem::Sep);
+                            items.push(FooterItem::Key("O"));
+                            items.push(FooterItem::Text("open in GitHub"));
+                        }
+                        items.push(FooterItem::GroupSep);
+                        items.push(FooterItem::Key("Q"));
+                        items.push(FooterItem::Text("quit"));
+                        items
                     }
-                    items.extend([FooterItem::Key("N"), FooterItem::Text("new")]);
-                    if is_saved {
-                        items.extend([
-                            FooterItem::Sep,
-                            FooterItem::Key("D"),
-                            FooterItem::Text("delete"),
-                        ]);
-                    }
-                    items.extend([
-                        FooterItem::Sep,
-                        FooterItem::Key("S"),
-                        FooterItem::Text("settings"),
-                    ]);
-                    if show_open_hint {
-                        items.push(FooterItem::Sep);
-                        items.push(FooterItem::Key("O"));
-                        items.push(FooterItem::Text("open in GitHub"));
-                    }
-                    items.push(FooterItem::GroupSep);
-                    items.push(FooterItem::Key("Q"));
-                    items.push(FooterItem::Text("quit"));
-                    items
                 }
             }
             ManagerStage::CreatePrelude(_) => vec![
@@ -616,7 +648,7 @@ fn clamp_list_scroll_for_area(
                 &mut state.list_role_global_mounts_scroll_x,
             );
         }
-        ManagerListRow::NewWorkspace => {
+        ManagerListRow::NewWorkspace | ManagerListRow::WorkspaceInstance(_, _) => {
             state.list_mounts_scroll_x = 0;
             state.list_global_mounts_scroll_x = 0;
             state.list_role_global_mounts_scroll_x = 0;
@@ -701,7 +733,7 @@ fn focused_block_still_scrollable(
                 };
                 workspace_mounts_scrollable(ws.mounts.as_slice(), viewport_w)
             }
-            ManagerListRow::NewWorkspace => false,
+            ManagerListRow::NewWorkspace | ManagerListRow::WorkspaceInstance(_, _) => false,
         },
         MountScrollFocus::Global | MountScrollFocus::RoleGlobal => {
             let ManagerListRow::SavedWorkspace(i) = state.selected_row() else {
@@ -755,7 +787,9 @@ fn focused_block_still_scrollable(
                     .workspaces
                     .get(i)
                     .and_then(|s| config.workspaces.get(&s.name)),
-                ManagerListRow::CurrentDirectory | ManagerListRow::NewWorkspace => None,
+                ManagerListRow::CurrentDirectory
+                | ManagerListRow::NewWorkspace
+                | ManagerListRow::WorkspaceInstance(_, _) => None,
             };
             let agent_count = list::agents_block_agent_count(ws_config, config);
             let roles_w = list::agents_block_content_width(ws_config, config);
