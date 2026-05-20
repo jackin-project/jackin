@@ -1,3 +1,4 @@
+use crate::container_binary;
 use crate::derived_image::create_derived_build_context;
 use crate::docker::{CommandRunner, RunOptions};
 use crate::docker_client::DockerApi;
@@ -88,11 +89,20 @@ pub(super) async fn build_agent_image(
         rebuild
     };
 
+    // Ensure the jackin-container binary is available in the local cache.
+    // Downloads from the GitHub preview release if not cached for this version.
+    let jackin_container_binary = container_binary::ensure_available(paths).await.ok();
+    let jackin_container_src = jackin_container_binary.as_ref().and_then(|p| p.to_str());
+
     // create_derived_build_context copies the repo into a temp directory,
     // creating an immutable snapshot.  After this point the shared cached
     // repo can be safely modified by a parallel load.
-    let build =
-        create_derived_build_context(&cached_repo.repo_dir, validated_repo, base_image_override)?;
+    let build = create_derived_build_context(
+        &cached_repo.repo_dir,
+        validated_repo,
+        base_image_override,
+        jackin_container_src,
+    )?;
     drop(repo_lock);
 
     if debug {

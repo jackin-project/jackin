@@ -38,6 +38,10 @@ async fn main() -> Result<()> {
         // Client mode.
         let subcommand = args.get(1).map(String::as_str);
         match subcommand {
+            Some("--version") | Some("-V") => {
+                println!("jackin-container {}", env!("JACKIN_CONTAINER_VERSION"));
+                Ok(())
+            }
             Some("status") => client::run_status().await,
             Some("new") => {
                 let agent = args.get(2).cloned().unwrap_or_default();
