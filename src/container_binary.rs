@@ -46,7 +46,20 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
 
     if is_dev {
         if let Some(workspace) = find_workspace_root() {
-            build_from_source(&workspace, arch, &cached).await?;
+            // For source builds, re-check cache by mtime: if any source file in
+            // crates/jackin-container/src/ is newer than the cached binary,
+            // rebuild. This catches edits made without committing (git hash
+            // stays the same but source changed).
+            let needs_rebuild = !is_valid_cached_binary(&cached)
+                || source_newer_than(&workspace.join("crates/jackin-container"), &cached);
+            if needs_rebuild {
+                build_from_source(&workspace, arch, &cached).await?;
+            } else {
+                crate::debug_log!(
+                    "container_binary",
+                    "source-build cache still fresh for {REQUIRED_VERSION}"
+                );
+            }
             return Ok(cached);
         }
         eprintln!(
@@ -220,6 +233,32 @@ fn linux_platform(arch: &str) -> &'static str {
         "arm64" => "linux/arm64",
         _ => "linux/amd64",
     }
+}
+
+/// Returns true if any file under `src_dir` is newer than `cached_binary`.
+/// Used to detect uncommitted source edits that need a rebuild.
+fn source_newer_than(src_dir: &Path, cached_binary: &Path) -> bool {
+    let Ok(cache_mtime) = std::fs::metadata(cached_binary)
+        .and_then(|m| m.modified())
+    else {
+        return true;
+    };
+    newest_mtime(src_dir).map_or(false, |src_mtime| src_mtime > cache_mtime)
+}
+
+fn newest_mtime(dir: &Path) -> Option<std::time::SystemTime> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return None };
+    entries
+        .flatten()
+        .filter_map(|e| {
+            let meta = e.metadata().ok()?;
+            if meta.is_dir() {
+                newest_mtime(&e.path())
+            } else {
+                meta.modified().ok()
+            }
+        })
+        .max()
 }
 
 fn is_valid_cached_binary(path: &Path) -> bool {
