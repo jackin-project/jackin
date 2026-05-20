@@ -174,16 +174,16 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: /tmp/macos-sdk
-          key: macos-sdk-15.5
+          key: macos-sdk-26.1
       - name: Download macOS SDK
         if: contains(matrix.target, 'apple') && steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p /tmp/macos-sdk
-          curl -fsSL "https://github.com/joseluisq/macosx-sdks/releases/download/15.5/MacOSX15.5.sdk.tar.xz" \
+          curl -fsSL "https://github.com/joseluisq/macosx-sdks/releases/download/15.5/MacOSX26.1.sdk.tar.xz" \
             | tar -xJ -C /tmp/macos-sdk
       - name: Set macOS SDKROOT
         if: contains(matrix.target, 'apple')
-        run: echo "SDKROOT=/tmp/macos-sdk/MacOSX15.5.sdk" >> "$GITHUB_ENV"
+        run: echo "SDKROOT=/tmp/macos-sdk/MacOSX26.1.sdk" >> "$GITHUB_ENV"
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
