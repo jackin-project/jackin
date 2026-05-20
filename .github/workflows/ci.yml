@@ -75,6 +75,16 @@ jobs:
         with:
           install_args: "rust cargo:cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - name: Cache Cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
       - run: rustup component add rustfmt clippy
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
@@ -123,6 +133,16 @@ jobs:
         with:
           install_args: "rust@${{ steps.msrv.outputs.version }}"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - name: Cache Cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
       - name: cargo check on MSRV
         run: cargo check --workspace --all-targets --locked
         env:
@@ -156,6 +176,16 @@ jobs:
           install_args: "${{ matrix.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - run: rustup target add ${{ matrix.target }}
+      - name: Cache Cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
 
       - name: Build validator
         run: |
