@@ -81,7 +81,7 @@ jobs:
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           install_args: "cargo:cargo-nextest"
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       # When docker/construct/** changes, the published construct:trixie image
@@ -168,7 +168,7 @@ jobs:
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
           install_args: "zig cargo:cargo-zigbuild"
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Build validator
         run: |
