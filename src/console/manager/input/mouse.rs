@@ -812,14 +812,16 @@ fn list_scroll_areas(
         state.inline_role_picker.is_some() || state.inline_agent_picker.is_some();
     let agent_count = agents_block_agent_count(Some(workspace), config);
     let roles_h = super::super::render::list::agents_block_height(agent_count);
-    let roles_y = body_y + 3 + mounts_h + global_h + role_global_h + env_h + instances_h;
+    // Running block moved to top: Mounts/Global/RoleGlobal are offset by instances_h.
+    let top_h = instances_h;
+    let roles_y = body_y + top_h + 3 + mounts_h + global_h + role_global_h + env_h;
     let roles_content_w =
         super::super::render::list::agents_block_content_width(Some(workspace), config);
     Some(ListScrollAreas {
         workspace: ScrollArea {
             area: Rect {
                 x: right_x,
-                y: body_y + 3,
+                y: body_y + top_h + 3,
                 width: right_w,
                 height: mounts_h,
             },
@@ -828,7 +830,7 @@ fn list_scroll_areas(
         global: ScrollArea {
             area: Rect {
                 x: right_x,
-                y: body_y + 3 + mounts_h,
+                y: body_y + top_h + 3 + mounts_h,
                 width: right_w,
                 height: global_h,
             },
@@ -837,7 +839,7 @@ fn list_scroll_areas(
         role_global: (role_global_h > 0).then(|| ScrollArea {
             area: Rect {
                 x: right_x,
-                y: body_y + 3 + mounts_h + global_h,
+                y: body_y + top_h + 3 + mounts_h + global_h,
                 width: right_w,
                 height: role_global_h,
             },

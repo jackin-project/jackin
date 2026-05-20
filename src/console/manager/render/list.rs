@@ -247,17 +247,17 @@ fn push_tree_instance_line(
 ) {
     let cursor = if selected { "▸" } else { " " };
     let label = format!("{}  {}", entry.instance_id, entry.role_key);
-    let text_w = 1 + 3 + label.chars().count(); // cursor + "   " indent + label
+    let text_w = 1 + 2 + label.chars().count(); // cursor + "  " indent + label
     *max_w = (*max_w).max(text_w);
 
     let line = if selected {
         Line::from(Span::styled(
-            format!("{cursor}   {label}"),
+            format!("{cursor}  {label}"),
             Style::default().bg(CYAN).fg(Color::Black),
         ))
     } else {
         Line::from(vec![
-            Span::styled(format!("{cursor}   "), Style::default().fg(PHOSPHOR_DIM)),
+            Span::styled(format!("{cursor}  "), Style::default().fg(PHOSPHOR_DIM)),
             Span::styled(label, Style::default().fg(CYAN)),
         ])
     };
@@ -538,18 +538,20 @@ fn render_details_pane(
         &ws.workdir,
     );
 
-    let mut constraints = vec![
+    // Running block is first so live state is immediately visible at the top.
+    let mut constraints = Vec::new();
+    if active_instance_count > 0 {
+        constraints.push(Constraint::Length(COMPACT_INSTANCES_HEIGHT));
+    }
+    constraints.extend([
         Constraint::Length(3),
         Constraint::Length(mount_block_height(mounts)),
-    ];
+    ]);
     if has_global {
         constraints.push(Constraint::Length(global_mount_block_height(&global_rows)));
     }
     if show_envs {
         constraints.push(Constraint::Length(env_block_height(ws_config)));
-    }
-    if active_instance_count > 0 {
-        constraints.push(Constraint::Length(COMPACT_INSTANCES_HEIGHT));
     }
     if !inline_picker_active {
         constraints.push(Constraint::Length(agents_block_height(agent_count)));
@@ -561,6 +563,12 @@ fn render_details_pane(
         .split(area);
 
     let mut idx = 0;
+    if active_instance_count > 0 {
+        let ws_idx = state.workspaces.iter().position(|w| w.name == ws.name);
+        let ws_expanded = ws_idx.is_some_and(|i| state.expanded_workspaces.contains(&i));
+        render_compact_instances_summary(frame, rows[idx], active_instance_count, ws_expanded);
+        idx += 1;
+    }
     render_general_subpanel(frame, rows[idx], ws);
     idx += 1;
     let ws_focused = state.list_scroll_focus == Some(MountScrollFocus::Workspace);
@@ -593,12 +601,6 @@ fn render_details_pane(
     }
     if show_envs {
         render_environments_subpanel(frame, rows[idx], ws_config);
-        idx += 1;
-    }
-    if active_instance_count > 0 {
-        let ws_idx = state.workspaces.iter().position(|w| w.name == ws.name);
-        let ws_expanded = ws_idx.is_some_and(|i| state.expanded_workspaces.contains(&i));
-        render_compact_instances_summary(frame, rows[idx], active_instance_count, ws_expanded);
         idx += 1;
     }
     if !inline_picker_active {
