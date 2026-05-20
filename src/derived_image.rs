@@ -252,6 +252,10 @@ pub fn create_derived_build_context(
     // When Some, the DerivedDockerfile starts with `FROM <image>` rather than
     // the workspace Dockerfile contents (pre-built image fast path).
     base_image_override: Option<&str>,
+    // Path to the pre-downloaded jackin-container binary on the host.
+    // When Some, the binary is copied into the build context and baked into
+    // the derived image at /usr/local/bin/jackin-container.
+    jackin_container_host_path: Option<&str>,
 ) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
     let context_dir = temp_dir.path().join("context");
@@ -260,6 +264,17 @@ pub fn create_derived_build_context(
     let runtime_dir = context_dir.join(".jackin-runtime");
     std::fs::create_dir_all(&runtime_dir)?;
     std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH)?;
+
+    // Copy jackin-container binary into the build context so the Dockerfile
+    // can COPY it into the image without a network fetch at build time.
+    let jackin_container_ctx_path = if let Some(host_path) = jackin_container_host_path {
+        let dst = runtime_dir.join("jackin-container");
+        std::fs::copy(host_path, &dst)
+            .map_err(|e| anyhow::anyhow!("failed to copy jackin-container binary into build context: {e}"))?;
+        Some(".jackin-runtime/jackin-container".to_string())
+    } else {
+        None
+    };
 
     let hooks = validated.manifest.hooks.as_ref();
 
@@ -289,7 +304,7 @@ pub fn create_derived_build_context(
             hooks,
             &supported,
             validated.manifest.claude.as_ref(),
-            None, // jackin-container binary not yet downloaded at test time
+            jackin_container_ctx_path.as_deref(),
         ),
     )?;
     ensure_runtime_assets_are_included(&context_dir, hooks)?;
@@ -929,7 +944,7 @@ source = "hooks/source.sh"
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let build = create_derived_build_context(repo.path(), &validated, None).unwrap();
+        let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
         let dockerignore =
             std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
 
@@ -958,7 +973,7 @@ plugins = []
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let build = create_derived_build_context(repo.path(), &validated, None).unwrap();
+        let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
 
         assert!(build.context_dir.join("Dockerfile").is_file());
         assert!(
@@ -997,7 +1012,7 @@ plugins = []
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let build = create_derived_build_context(repo.path(), &validated, None).unwrap();
+        let build = create_derived_build_context(repo.path(), &validated, None, None).unwrap();
         let dockerignore =
             std::fs::read_to_string(build.context_dir.join(".dockerignore")).unwrap();
 
@@ -1030,6 +1045,7 @@ plugins = []
             repo.path(),
             &validated,
             Some("docker.io/myorg/my-role:latest"),
+            None,
         )
         .unwrap();
 
@@ -1095,7 +1111,7 @@ plugins = []
         .unwrap();
 
         let validated = crate::repo::validate_role_repo(repo.path()).unwrap();
-        let error = create_derived_build_context(repo.path(), &validated, None)
+        let error = create_derived_build_context(repo.path(), &validated, None, None)
             .expect_err("symlinks should be rejected");
 
         assert!(error.to_string().contains("symlink"));
