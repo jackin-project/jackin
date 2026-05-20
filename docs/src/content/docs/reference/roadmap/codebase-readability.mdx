@@ -157,6 +157,17 @@ Split the largest files. Snapshot tests (Phase 1) and DRY extractions (Phase 1.5
 
 The original Phase 2 listed 4 files. The deep audit found **33 files exceed 800 lines**, with **28 files exceeding 1000 lines** (re-baked 2026-05-18).
 
+### Design pages
+
+The four Tier A files with the longest history under this program already have dedicated split-plan pages — they describe the proposed module shape, the existing call sites that block a naïve split, and the snapshot/test gates required before the move:
+
+- [Split `runtime/launch.rs`](/reference/roadmap/split-runtime-launch/) — 7966L, the hardest file in the codebase
+- [Split `console/manager/input/editor.rs`](/reference/roadmap/split-input-editor/) — 4002L, one file per editor tab
+- [Split `operator_env.rs`](/reference/roadmap/split-operator-env/) — 3573L, separate shared API, CLI client, env resolution, diagnostics, and picker metadata
+- [Split `app/mod.rs`](/reference/roadmap/split-app-mod/) — 2932L, separate dispatch from workspace/config command handlers
+
+The remaining Tier A/B/C entries below do not yet have dedicated design pages; the LOC measurements and risk notes are the current planning surface for them.
+
 ### Tier A — files over 2000 lines (14 files, highest priority)
 
 | File | LOC | Key risk | Mega-functions inside |
