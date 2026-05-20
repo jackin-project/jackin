@@ -253,12 +253,12 @@ fn push_tree_instance_line(
     let line = if selected {
         Line::from(Span::styled(
             format!("{cursor}  {label}"),
-            Style::default().bg(CYAN).fg(Color::Black),
+            Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
         ))
     } else {
         Line::from(vec![
             Span::styled(format!("{cursor}  "), Style::default().fg(PHOSPHOR_DIM)),
-            Span::styled(label, Style::default().fg(CYAN)),
+            Span::styled(label, Style::default().fg(PHOSPHOR_GREEN)),
         ])
     };
     lines.push(line);
@@ -929,10 +929,10 @@ fn render_instance_details_pane(
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(CYAN))
+        .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
             format!(" Instance: {} ", entry.instance_id),
-            Style::default().fg(CYAN).add_modifier(Modifier::BOLD),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
 
     let mut lines: Vec<Line<'static>> = Vec::new();
@@ -940,15 +940,12 @@ fn render_instance_details_pane(
     if sessions.is_empty() {
         lines.push(Line::from(Span::styled(
             "  No sessions recorded",
-            Style::default().fg(CYAN_DIM),
+            Style::default().fg(PHOSPHOR_DIM),
         )));
     } else {
         lines.push(Line::from(Span::styled(
-            format!(
-                "  {:<24}  Agent",
-                "Session"
-            ),
-            Style::default().fg(CYAN).add_modifier(Modifier::BOLD),
+            format!("  {:<24}  Agent", "Session"),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         )));
         for session in sessions {
             let name = if session.tmux_name.len() > 24 {
@@ -959,11 +956,11 @@ fn render_instance_details_pane(
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("  {:<24}  ", name),
-                    Style::default().fg(CYAN),
+                    Style::default().fg(PHOSPHOR_GREEN),
                 ),
                 Span::styled(
                     session.agent_runtime.clone(),
-                    Style::default().fg(CYAN_DIM),
+                    Style::default().fg(PHOSPHOR_DIM),
                 ),
             ]));
         }
@@ -972,13 +969,13 @@ fn render_instance_details_pane(
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         "  Enter reconnect  ·  N new session  ·  X shell  ·  P purge",
-        Style::default().fg(CYAN_DIM),
+        Style::default().fg(PHOSPHOR_DIM),
     )));
 
     frame.render_widget(
         Paragraph::new(lines)
             .block(block)
-            .style(Style::default().fg(CYAN)),
+            .style(Style::default().fg(PHOSPHOR_GREEN)),
         area,
     );
 }
