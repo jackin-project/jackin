@@ -17,6 +17,7 @@ use tokio::sync::mpsc;
 use crate::protocol::{ClientMsg, ServerMsg, b64_decode, b64_encode, frame};
 
 /// A connected client handle.
+#[allow(dead_code)]
 pub struct Client {
     pub stream: UnixStream,
 }
@@ -89,6 +90,7 @@ pub fn encode_output(data: &[u8]) -> ServerMsg {
 }
 
 /// Decode input bytes from a ClientMsg::Input.
+#[allow(dead_code)]
 pub fn decode_input(data: &str) -> Vec<u8> {
     b64_decode(data)
 }

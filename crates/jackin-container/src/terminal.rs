@@ -12,6 +12,7 @@ pub struct Cell {
     pub fg: Color,
     pub bg: Color,
     pub bold: bool,
+    #[allow(dead_code)]
     pub underline: bool,
 }
 
@@ -46,6 +47,7 @@ pub struct VirtualTerminal {
     current_bg: Color,
     current_bold: bool,
     current_underline: bool,
+    #[allow(dead_code)]
     in_alt_screen: bool,
     saved_cursor: (u16, u16),
     parser: Parser,
@@ -165,6 +167,7 @@ impl VirtualTerminal {
         buf.extend_from_slice(b"\x1b[0m");
     }
 
+    #[allow(dead_code)]
     pub fn cell(&self, row: u16, col: u16) -> Option<&Cell> {
         self.cells
             .get(row as usize)

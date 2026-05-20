@@ -38,6 +38,7 @@ impl Rect {
     }
 
     /// Whether this rect contains the given (row, col) point (1-based).
+    #[allow(dead_code)]
     pub fn contains(self, r: u16, c: u16) -> bool {
         r >= self.row && r < self.row + self.rows && c >= self.col && c < self.col + self.cols
     }
