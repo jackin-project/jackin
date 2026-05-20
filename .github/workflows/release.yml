@@ -75,7 +75,10 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-
       - name: Install mold linker
-        run: sudo apt-get install -y mold
+        uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # v1.6.0
+        with:
+          packages: mold
+          version: 1.0
       - run: cargo nextest run --color=always
 
   build:
@@ -120,7 +123,10 @@ jobs:
 
       - name: Install mold linker
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y mold
+        uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # v1.6.0
+        with:
+          packages: mold
+          version: 1.0
 
       - name: Install cargo-zigbuild
         if: matrix.zigbuild

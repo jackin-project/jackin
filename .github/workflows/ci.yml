@@ -87,7 +87,10 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-
       - name: Install mold linker
-        run: sudo apt-get install -y mold
+        uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # v1.6.0
+        with:
+          packages: mold
+          version: 1.0
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       # When docker/construct/** changes, the published construct:trixie image
@@ -156,7 +159,10 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-
       - name: Install mold linker
-        run: sudo apt-get install -y mold
+        uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # v1.6.0
+        with:
+          packages: mold
+          version: 1.0
       - name: cargo check on MSRV
         run: cargo check --workspace --all-targets --locked
         env:
@@ -203,7 +209,10 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-
       - name: Install mold linker
-        run: sudo apt-get install -y mold
+        uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # v1.6.0
+        with:
+          packages: mold
+          version: 1.0
 
       - name: Build validator
         run: cargo zigbuild --release --locked --bin jackin-role --target ${{ matrix.target }}.2.17
