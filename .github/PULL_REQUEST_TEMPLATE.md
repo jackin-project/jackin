@@ -119,6 +119,35 @@ expected output where it disambiguates a pass/fail. Replace this block with the
 narrower path when the PR has one (e.g. `cargo run --bin jackin -- load
 <role> <target> --debug`).>
 
+### jackin-container smoke
+
+<Drop this whole subsection when the PR does NOT touch `crates/jackin-container/`.
+Include it whenever daemon.rs, client.rs, session.rs, terminal.rs, layout.rs,
+dialog.rs, statusbar.rs, input.rs, pid1.rs, or any other file under
+`crates/jackin-container/src/` is changed.>
+
+```sh
+# First load builds jackin-container from source via Docker (~2-3 min).
+# Subsequent loads after source edits are incremental (fast).
+cargo run --bin jackin -- load the-architect . --debug
+```
+
+Inside the container, verify:
+
+- Row 0 status bar is visible: `jackin'  [<agent-name>]`
+- Agent TUI starts and renders correctly below the status bar
+- `Ctrl+J` opens the command palette
+- Mouse clicks, arrow keys, and paste reach the agent unmodified
+- <One sentence specific to what this PR changed — e.g. "Split pane rendered
+  after `Ctrl+J → Split pane │`" or "Session switch preserved agent output">
+
+To force a full rebuild without waiting for a new commit:
+
+```sh
+rm -rf ~/.jackin/cache/jackin-container/
+cargo run --bin jackin -- load the-architect . --debug
+```
+
 ### Documentation
 
 <Drop this whole subsection if the PR didn't touch `docs/`.>
