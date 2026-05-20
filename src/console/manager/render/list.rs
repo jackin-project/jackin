@@ -56,7 +56,8 @@ pub(super) fn render_list_body(
             let instances = state.workspace_active_instances(ws_idx);
             if let Some(entry) = instances.get(inst_idx).copied() {
                 let sessions = state.sessions_for_instance(&entry.container_base);
-                render_instance_details_pane(frame, columns[1], entry, sessions);
+                let session_load_error = state.has_session_load_error(&entry.container_base);
+                render_instance_details_pane(frame, columns[1], entry, sessions, session_load_error);
             }
         }
     }
@@ -111,14 +112,13 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
 
         match row {
             ManagerListRow::CurrentDirectory => {
-                let has_instances = state.has_current_dir_active_instances();
                 push_tree_workspace_line(
                     &mut lines,
                     "Current directory",
                     is_selected,
                     WHITE,
                     false,
-                    has_instances,
+                    false, // expansion not yet implemented for CurrentDirectory
                     &mut max_w,
                 );
             }
@@ -896,6 +896,7 @@ fn render_instance_details_pane(
     area: Rect,
     entry: &crate::instance::InstanceIndexEntry,
     sessions: &[crate::instance::SessionRecord],
+    session_load_error: bool,
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
@@ -908,8 +909,13 @@ fn render_instance_details_pane(
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     if sessions.is_empty() {
+        let msg = if session_load_error {
+            "  Sessions unavailable (manifest read error)"
+        } else {
+            "  No sessions recorded"
+        };
         lines.push(Line::from(Span::styled(
-            "  No sessions recorded",
+            msg,
             Style::default().fg(PHOSPHOR_DIM),
         )));
     } else {

@@ -130,7 +130,7 @@ pub(super) fn handle_list_key(
                     state.list_modal = Some(Modal::ErrorPopup {
                         state: crate::console::widgets::error_popup::ErrorPopupState::new(
                             "Instance unavailable",
-                            "Instance stopped; navigate away and back to refresh.",
+                            "Instance no longer active; list refreshes automatically.",
                         ),
                     });
                 }

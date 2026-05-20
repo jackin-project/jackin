@@ -1,7 +1,7 @@
 //! Manager state machine. See docs/superpowers/specs/2026-04-23-workspace-manager-tui-design.md § 3.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -130,6 +130,9 @@ pub struct ManagerState<'a> {
     /// Cached sessions per active instance keyed by `container_base`.
     /// Populated from manifests during `refresh_instances`.
     pub instance_sessions: HashMap<String, Vec<crate::instance::SessionRecord>>,
+    /// Containers whose manifests could not be read during the last
+    /// `refresh_instances` pass. Cleared on every successful index load.
+    instance_session_errors: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1428,6 +1431,7 @@ impl ManagerState<'_> {
             instances_last_error: None,
             expanded_workspaces: BTreeSet::new(),
             instance_sessions: HashMap::new(),
+            instance_session_errors: HashSet::new(),
         }
     }
 
@@ -1626,6 +1630,13 @@ impl ManagerState<'_> {
             .unwrap_or_default()
     }
 
+    /// Returns `true` when the last `refresh_instances` pass failed to read
+    /// the instance manifest for `container_base`.
+    #[must_use]
+    pub fn has_session_load_error(&self, container_base: &str) -> bool {
+        self.instance_session_errors.contains(container_base)
+    }
+
     /// The [`WorkspaceSummary`] currently highlighted, or `None` when the
     /// selection is on Current Directory, New Workspace, or a `WorkspaceInstance`.
     #[must_use]
@@ -1695,6 +1706,7 @@ impl ManagerState<'_> {
                 // These come from persisted manifests and may not reflect live
                 // tmux state, but provide useful context without Docker exec.
                 self.instance_sessions.clear();
+                self.instance_session_errors.clear();
                 for entry in &self.instances {
                     if matches!(
                         entry.status,
@@ -1714,6 +1726,8 @@ impl ManagerState<'_> {
                                     "manifest read failed for {}: {e:#}",
                                     entry.container_base
                                 );
+                                self.instance_session_errors
+                                    .insert(entry.container_base.clone());
                             }
                         }
                     }
@@ -1726,6 +1740,8 @@ impl ManagerState<'_> {
             Err(error) => {
                 self.instances.clear();
                 self.instance_sessions.clear();
+                self.instance_session_errors.clear();
+                self.expanded_workspaces.clear();
                 let message = format!("instance index error: {error}");
                 if self.instances_last_error.as_deref() != Some(&message) {
                     self.list_modal = Some(Modal::ErrorPopup {
