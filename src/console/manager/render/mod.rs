@@ -409,12 +409,12 @@ pub fn render(
                             state.selected_row(),
                             ManagerListRow::SavedWorkspace(i)
                                 if !state.workspace_active_instances(i).is_empty()
-                                    && !state.expanded_workspaces.contains(&i)
+                                    && !state.is_workspace_expanded(i)
                         );
                         let show_collapse_hint = matches!(
                             state.selected_row(),
                             ManagerListRow::SavedWorkspace(i)
-                                if state.expanded_workspaces.contains(&i)
+                                if state.is_workspace_expanded(i)
                         );
                         let scroll_focused = state.list_scroll_focus.is_some();
 

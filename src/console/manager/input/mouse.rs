@@ -7,9 +7,9 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use super::super::super::widgets::file_browser::FileBrowserState;
 use super::super::render::global_mounts::trust_content_width;
 use super::super::render::list::{
-    agents_block_agent_count, env_block_height, global_mounts_block_height,
-    global_mounts_content_width, instance_block_height, mount_block_height, workspace_active_count,
-    workspace_has_any_env, workspace_mounts_content_width,
+    COMPACT_INSTANCES_HEIGHT, agents_block_agent_count, env_block_height,
+    global_mounts_block_height, global_mounts_content_width, mount_block_height,
+    workspace_active_count, workspace_has_any_env, workspace_mounts_content_width,
 };
 #[cfg(test)]
 use super::super::render::max_scroll_offset;
@@ -179,6 +179,7 @@ pub fn handle_mouse_with_config(
                         state.reset_list_scroll();
                         state.selected = selected;
                         state.inline_agent_picker = None;
+                        state.inline_new_session_picker = None;
                     }
                 }
             }
@@ -804,7 +805,7 @@ fn list_scroll_areas(
         summary.workdir.as_str(),
     );
     let instances_h = if instance_count > 0 {
-        instance_block_height()
+        COMPACT_INSTANCES_HEIGHT
     } else {
         0
     };
@@ -868,7 +869,7 @@ fn current_dir_scroll_areas(
     let cwd_str = &state.current_dir;
     let instance_count = workspace_active_count(&state.instances, None, cwd_str, cwd_str);
     let instances_h = if instance_count > 0 {
-        instance_block_height()
+        COMPACT_INSTANCES_HEIGHT
     } else {
         0
     };

@@ -29,10 +29,12 @@ pub(super) fn handle_list_key(
         // Left/Right arrows: tree expand/collapse.
         // h/l keep horizontal scroll so the details pane stays scrollable.
         KeyCode::Left => {
+            state.inline_new_session_picker = None;
             handle_tree_left(state);
             Ok(InputOutcome::Continue)
         }
         KeyCode::Right => {
+            state.inline_new_session_picker = None;
             handle_tree_right(state);
             Ok(InputOutcome::Continue)
         }
@@ -50,6 +52,7 @@ pub(super) fn handle_list_key(
             } else {
                 state.inline_role_picker = None;
                 state.inline_agent_picker = None;
+                state.inline_new_session_picker = None;
                 let selected = state.selected.saturating_sub(1);
                 if selected != state.selected {
                     state.reset_list_scroll();
@@ -64,6 +67,7 @@ pub(super) fn handle_list_key(
             } else {
                 state.inline_role_picker = None;
                 state.inline_agent_picker = None;
+                state.inline_new_session_picker = None;
                 let selected = (state.selected + 1).min(state.row_count().saturating_sub(1));
                 if selected != state.selected {
                     state.reset_list_scroll();
@@ -89,7 +93,6 @@ pub(super) fn handle_list_key(
                 .map_or(InputOutcome::Continue, |summary| {
                     InputOutcome::LaunchNamed(summary.name.clone())
                 })),
-            // Reconnect to the selected instance.
             ManagerListRow::WorkspaceInstance(_, _) => Ok(instance_action_outcome(
                 state,
                 ConsoleInstanceAction::Reconnect,
@@ -123,6 +126,13 @@ pub(super) fn handle_list_key(
                             crate::agent::Agent::ALL.to_vec(),
                         );
                     state.inline_new_session_picker = Some((container, picker));
+                } else {
+                    state.list_modal = Some(Modal::ErrorPopup {
+                        state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                            "Instance unavailable",
+                            "Instance stopped; navigate away and back to refresh.",
+                        ),
+                    });
                 }
                 Ok(InputOutcome::Continue)
             } else {
@@ -182,8 +192,10 @@ pub(super) fn handle_list_key(
             "No purgeable instance for this workspace.",
         )),
         KeyCode::Char('s' | 'S') => {
-            // Settings only from workspace-level rows, not from instance rows.
-            if !matches!(state.selected_row(), ManagerListRow::WorkspaceInstance(_, _)) {
+            if !matches!(
+                state.selected_row(),
+                ManagerListRow::WorkspaceInstance(_, _)
+            ) {
                 state.stage = ManagerStage::Settings(SettingsState::from_config(config));
             }
             Ok(InputOutcome::Continue)
@@ -275,15 +287,13 @@ fn selected_instance_scope<'a>(
                 summary.workdir.as_str(),
             )
         }),
-        ManagerListRow::WorkspaceInstance(ws_idx, _) => {
-            state.workspaces.get(ws_idx).map(|ws| {
-                (
-                    Some(ws.name.as_str()),
-                    ws.name.as_str(),
-                    ws.workdir.as_str(),
-                )
-            })
-        }
+        ManagerListRow::WorkspaceInstance(ws_idx, _) => state.workspaces.get(ws_idx).map(|ws| {
+            (
+                Some(ws.name.as_str()),
+                ws.name.as_str(),
+                ws.workdir.as_str(),
+            )
+        }),
         ManagerListRow::NewWorkspace => None,
     }
 }

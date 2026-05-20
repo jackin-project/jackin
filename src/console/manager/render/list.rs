@@ -55,18 +55,15 @@ pub(super) fn render_list_body(
         ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
             let instances = state.workspace_active_instances(ws_idx);
             if let Some(entry) = instances.get(inst_idx).cloned() {
-                let sessions = state
-                    .instance_sessions
-                    .get(&entry.container_base)
-                    .cloned()
-                    .unwrap_or_default();
-                render_instance_details_pane(frame, columns[1], entry, &sessions);
+                let sessions = state.sessions_for_instance(&entry.container_base);
+                render_instance_details_pane(frame, columns[1], entry, sessions);
             }
         }
     }
 
     if let Some((container, picker)) = state.inline_new_session_picker.as_ref() {
-        let short_id = container.split('-').nth(1).unwrap_or(container.as_str());
+        let short_id = crate::instance::naming::instance_id_from_container_base(container)
+            .unwrap_or(container.as_str());
         render_agent_picker_sidebar(frame, list_area, short_id, picker);
     } else if let Some((role, picker)) = state.inline_agent_picker.as_ref() {
         render_agent_picker_sidebar(frame, list_area, &role.key(), picker);
@@ -127,7 +124,7 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
             }
             ManagerListRow::SavedWorkspace(i) => {
                 let ws = &state.workspaces[*i];
-                let expanded = state.expanded_workspaces.contains(i);
+                let expanded = state.is_workspace_expanded(*i);
                 let has_instances = !state.workspace_active_instances(*i).is_empty();
                 push_tree_workspace_line(
                     &mut lines,
@@ -142,12 +139,7 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
             ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
                 let instances = state.workspace_active_instances(*ws_idx);
                 if let Some(entry) = instances.get(*inst_idx) {
-                    push_tree_instance_line(
-                        &mut lines,
-                        entry,
-                        is_selected,
-                        &mut max_w,
-                    );
+                    push_tree_instance_line(&mut lines, entry, is_selected, &mut max_w);
                 }
             }
             ManagerListRow::NewWorkspace => {
@@ -570,7 +562,7 @@ fn render_details_pane(
     let mut idx = 0;
     if active_instance_count > 0 {
         let ws_idx = state.workspaces.iter().position(|w| w.name == ws.name);
-        let ws_expanded = ws_idx.is_some_and(|i| state.expanded_workspaces.contains(&i));
+        let ws_expanded = ws_idx.is_some_and(|i| state.is_workspace_expanded(i));
         render_compact_instances_summary(frame, rows[idx], active_instance_count, ws_expanded);
         idx += 1;
     }
@@ -749,10 +741,6 @@ pub(in crate::console::manager) fn agents_block_content_width(
 /// Fixed height of the compact running-instances badge (borders + 1 text line).
 pub(in crate::console::manager) const COMPACT_INSTANCES_HEIGHT: u16 = 3;
 
-pub(in crate::console::manager) fn instance_block_height() -> u16 {
-    COMPACT_INSTANCES_HEIGHT
-}
-
 /// Cursor on the synthetic "Current directory" row — mirrors
 /// `workspace::current_dir_workspace`: src=dst=cwd, rw, any role.
 fn render_current_dir_details_pane(
@@ -878,8 +866,8 @@ pub(in crate::console::manager) fn workspace_active_count(
         .count()
 }
 
-/// Compact one-line badge showing how many instances are running.
-/// Rendered in cyan to visually distinguish live state from config panels.
+/// Compact running-instances badge (3 rows: border + count line + border).
+/// Cyan border and text distinguish live state from config panels.
 fn render_compact_instances_summary(frame: &mut Frame, area: Rect, count: usize, expanded: bool) {
     let block = Block::default()
         .borders(Borders::ALL)
@@ -913,7 +901,7 @@ fn render_compact_instances_summary(frame: &mut Frame, area: Rect, count: usize,
 }
 
 /// Right-panel shown when operator selects an instance row in the tree.
-/// Displays recorded sessions from the manifest in a cyan-accented block.
+/// Displays recorded sessions from the manifest in a phosphor-styled block.
 fn render_instance_details_pane(
     frame: &mut Frame,
     area: Rect,
@@ -941,8 +929,9 @@ fn render_instance_details_pane(
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         )));
         for session in sessions {
-            let name = if session.tmux_name.len() > 24 {
-                format!("{}…", &session.tmux_name[..23])
+            let name = if session.tmux_name.chars().count() > 24 {
+                let cut: String = session.tmux_name.chars().take(23).collect();
+                format!("{cut}…")
             } else {
                 session.tmux_name.clone()
             };
@@ -1441,9 +1430,8 @@ mod list_name_scroll_tests {
         let tmp = tempfile::tempdir().unwrap();
         let state = ManagerState::from_config(&config, tmp.path());
 
-        // Rows without active instances use a two-space placeholder so names
-        // align with arrow-rows. Widest row: " " + "  " + "chainargos-blockchain-nodes"
-        // = 30 display cols; selected ▸ (display width 2) pads out to 33.
+        // Rows without active instances: cursor(1) + 2 spaces + name(27) = 30 cols.
+        // The selected highlight adds a trailing-padding span: 30 + 3 = 33.
         let width = list_names_content_width(&state, 19);
 
         assert_eq!(width, 33);
