@@ -1304,6 +1304,19 @@ impl WorkspaceSummary {
     }
 }
 
+fn active_instances_matching<'a>(
+    instances: &'a [crate::instance::InstanceIndexEntry],
+    query: crate::instance::InstanceQuery<'a>,
+) -> impl Iterator<Item = &'a crate::instance::InstanceIndexEntry> {
+    instances.iter().filter(move |e| {
+        e.matches(query)
+            && matches!(
+                e.status,
+                crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
+            )
+    })
+}
+
 impl ManagerState<'_> {
     pub(in crate::console::manager) const fn list_scroll_x_mut(
         &mut self,
@@ -1435,21 +1448,10 @@ impl ManagerState<'_> {
             role_key: None,
             agent_runtime: None,
         };
-        self.instances
-            .iter()
-            .filter(|e| {
-                e.matches(query)
-                    && matches!(
-                        e.status,
-                        crate::instance::InstanceStatus::Active
-                            | crate::instance::InstanceStatus::Running
-                    )
-            })
-            .collect()
+        active_instances_matching(&self.instances, query).collect()
     }
 
     /// Whether workspace `ws_idx` has any Active/Running instances.
-    /// Avoids allocating a `Vec` for the common `is_empty()` check in the render loop.
     #[must_use]
     pub fn has_active_instances(&self, ws_idx: usize) -> bool {
         let Some(ws) = self.workspaces.get(ws_idx) else {
@@ -1462,18 +1464,12 @@ impl ManagerState<'_> {
             role_key: None,
             agent_runtime: None,
         };
-        self.instances.iter().any(|e| {
-            e.matches(query)
-                && matches!(
-                    e.status,
-                    crate::instance::InstanceStatus::Active
-                        | crate::instance::InstanceStatus::Running
-                )
-        })
+        active_instances_matching(&self.instances, query)
+            .next()
+            .is_some()
     }
 
     /// Whether the "Current directory" synthetic row has any Active/Running instances.
-    /// Avoids allocating a `Vec` for the common `is_empty()` check in the render loop.
     #[must_use]
     pub fn has_current_dir_active_instances(&self) -> bool {
         let current_dir = self.current_dir.as_str();
@@ -1484,14 +1480,9 @@ impl ManagerState<'_> {
             role_key: None,
             agent_runtime: None,
         };
-        self.instances.iter().any(|e| {
-            e.matches(query)
-                && matches!(
-                    e.status,
-                    crate::instance::InstanceStatus::Active
-                        | crate::instance::InstanceStatus::Running
-                )
-        })
+        active_instances_matching(&self.instances, query)
+            .next()
+            .is_some()
     }
 
     /// Instances in the tree for the "Current directory" synthetic row.
@@ -1505,17 +1496,7 @@ impl ManagerState<'_> {
             role_key: None,
             agent_runtime: None,
         };
-        self.instances
-            .iter()
-            .filter(|e| {
-                e.matches(query)
-                    && matches!(
-                        e.status,
-                        crate::instance::InstanceStatus::Active
-                            | crate::instance::InstanceStatus::Running
-                    )
-            })
-            .collect()
+        active_instances_matching(&self.instances, query).collect()
     }
 
     /// Flat ordered list of selectable rows accounting for tree expansion.
