@@ -245,9 +245,16 @@ jobs:
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Build
         env:
-          JACKIN_VERSION_OVERRIDE: ${{ needs.source-changed.outputs.sha }}
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
-        run: cargo zigbuild --release --locked -p jackin-container --target "$ZIGBUILD_TARGET"
+          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
+        run: |
+          # Compute version string in the same format as build.rs:
+          # "{CARGO_PKG_VERSION}+{7-char-sha}" so jackin-container --version
+          # matches what the host jackin CLI reports.
+          base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          short_sha=$(printf '%s' "$FULL_SHA" | cut -c1-7)
+          export JACKIN_VERSION_OVERRIDE="${base_version}+${short_sha}"
+          cargo zigbuild --release --locked -p jackin-container --target "$ZIGBUILD_TARGET"
       - name: Publish binary as release asset
         env:
           ARCH: ${{ matrix.arch }}

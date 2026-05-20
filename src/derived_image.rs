@@ -330,7 +330,7 @@ fn ensure_runtime_assets_are_included(
     let mut rules = vec![
         "!.jackin-runtime/".to_string(),
         "!.jackin-runtime/entrypoint.sh".to_string(),
-        "!.jackin-runtime/supervisor.sh".to_string(),
+        "!.jackin-runtime/jackin-container".to_string(),
         "!.jackin-runtime/DerivedDockerfile".to_string(),
     ];
     for entry in hooks.into_iter().flat_map(HooksConfig::entries) {
