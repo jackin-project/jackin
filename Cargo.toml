@@ -54,7 +54,7 @@ futures-util = "0.3"
 [dev-dependencies]
 assert_cmd = "=2.2.2"
 predicates = "=3.1.4"
-tokio = { version = "1", features = ["test-util"] }
+tokio = { version = "=1.52.3", features = ["test-util"] }
 
 [features]
 # `e2e` gates real-Docker smoke tests. Default `cargo nextest run` skips them;
