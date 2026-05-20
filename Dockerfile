@@ -64,13 +64,14 @@ RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     mise install "cargo-binstall@${CARGO_BINSTALL_VERSION}" && \
     mise use -g --pin "cargo-binstall@${CARGO_BINSTALL_VERSION}"
 
+# cargo-binstall downloads prebuilt binaries — avoids compiling from source.
+# Cache mounts preserve the crate registry across layer rebuilds on persistent runners.
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
+    --mount=type=cache,target=/home/agent/.cargo/registry,uid=1000 \
+    --mount=type=cache,target=/home/agent/.cargo/git,uid=1000 \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
-    mise use -g cargo:cargo-nextest && \
-    mise use -g cargo:ast-grep && \
-    mise use -g cargo:rust-script && \
-    mise use -g cargo:just && \
-    mise use -g cargo:bottom
+    . ~/.profile && \
+    cargo binstall --no-confirm cargo-nextest ast-grep rust-script just bottom
 
 RUN curl -fsSL https://get.tessl.io | TESSL_VERSION="$TESSL_VERSION" sh
 
