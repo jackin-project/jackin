@@ -179,7 +179,7 @@ jobs:
         if: contains(matrix.target, 'apple') && steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p /tmp/macos-sdk
-          curl -fsSL "https://github.com/joseluisq/macosx-sdks/releases/download/15.5/MacOSX26.1.sdk.tar.xz" \
+          curl -fsSL "https://github.com/joseluisq/macosx-sdks/releases/download/26.1/MacOSX26.1.sdk.tar.xz" \
             | tar -xJ -C /tmp/macos-sdk
       - name: Set macOS SDKROOT
         if: contains(matrix.target, 'apple')
