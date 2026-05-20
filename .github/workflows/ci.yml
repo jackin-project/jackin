@@ -68,6 +68,7 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
@@ -110,7 +111,7 @@ jobs:
       # running nextest both with and without it would re-execute every
       # non-feature-gated test for no extra coverage.
       - run: cargo check --all-targets
-      - run: cargo nextest run --all-features
+      - run: cargo nextest run --all-features --color=always
 
   msrv:
     needs: changes
@@ -123,6 +124,7 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
@@ -162,6 +164,7 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
+      CARGO_TERM_COLOR: always
     strategy:
       matrix:
         include:
