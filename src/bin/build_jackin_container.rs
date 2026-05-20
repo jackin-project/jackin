@@ -1,9 +1,19 @@
-//! Builds `jackin-container` for Linux via Docker and stores it in the local cache.
+//! Builds `jackin-container` for Linux via cargo-zigbuild and caches the result.
 //!
-//! Usage: `cargo run --bin build-jackin-container [-- --arch arm64|amd64]`
+//! Usage:
+//!   cargo run --bin build-jackin-container [-- [--arch arm64|amd64] [--export]]
 //!
-//! After running this, `jackin load` will find the binary in cache and skip
-//! the GitHub Releases download, enabling fully-offline local verification.
+//! Flags:
+//!   --arch arm64|amd64   Target architecture (default: matches current host container arch)
+//!   --export             Print `export JACKIN_CONTAINER_BIN=<path>` suitable for eval
+//!
+//! Requires: zig and cargo-zigbuild installed (`mise install zig cargo:cargo-zigbuild`)
+//!
+//! After running, `jackin load` will find the binary in the standard cache path
+//! automatically. Or use --export to set `JACKIN_CONTAINER_BIN` explicitly:
+//!
+//!   eval "$(cargo run --bin build-jackin-container -- --export)"
+//!   cargo run --bin jackin -- load the-architect . --debug
 
 use std::path::{Path, PathBuf};
 use std::process;
@@ -14,10 +24,12 @@ use jackin::container_binary::{
 };
 use jackin::paths::JackinPaths;
 
-const RUST_IMAGE: &str = "rust:1.95.0";
+// Compile-time workspace root: reliable even when cwd differs.
+const WORKSPACE_ROOT: &str = env!("CARGO_MANIFEST_DIR");
 
 fn main() -> Result<()> {
-    let arch = parse_arch_arg().unwrap_or_else(|| container_arch().to_string());
+    let Args { arch, export } = parse_args();
+    let arch = arch.unwrap_or_else(|| container_arch().to_string());
 
     let paths = JackinPaths::detect()?;
     let cached = cached_binary_path(&paths.cache_dir, REQUIRED_VERSION, &arch);
@@ -27,101 +39,101 @@ fn main() -> Result<()> {
             .with_context(|| format!("failed to create cache dir {}", parent.display()))?;
     }
 
-    let workspace = find_workspace_root().ok_or_else(|| {
-        anyhow::anyhow!(
-            "cannot find workspace root (directory containing crates/jackin-container/).\n\
-             Run this command from within the jackin source checkout."
-        )
-    })?;
+    let workspace = PathBuf::from(WORKSPACE_ROOT);
+    build_via_zigbuild(&workspace, &arch, &cached)?;
 
-    build_via_docker(&workspace, &arch, &cached)?;
-
-    println!(
-        "jackin-container {REQUIRED_VERSION} linux/{arch} cached at {}",
-        cached.display()
-    );
-    println!("Run `jackin load` (or `cargo run --bin jackin -- load`) to verify.");
+    if export {
+        // Print only the export line — intended for `eval "$(...)"`
+        println!("export JACKIN_CONTAINER_BIN={}", cached.display());
+    } else {
+        eprintln!(
+            "[build] cached at: {}\n\
+             [build] to use:    export JACKIN_CONTAINER_BIN={}",
+            cached.display(),
+            cached.display()
+        );
+    }
     Ok(())
 }
 
-fn parse_arch_arg() -> Option<String> {
+struct Args {
+    arch: Option<String>,
+    export: bool,
+}
+
+fn parse_args() -> Args {
+    let mut arch = None;
+    let mut export = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
-        if arg == "--arch" {
-            return args.next();
-        }
-        if let Some(arch) = arg.strip_prefix("--arch=") {
-            return Some(arch.to_string());
+        match arg.as_str() {
+            "--export" => export = true,
+            "--arch" => arch = args.next(),
+            s if s.starts_with("--arch=") => {
+                arch = Some(s.trim_start_matches("--arch=").to_string());
+            }
+            _ => {}
         }
     }
-    None
+    Args { arch, export }
 }
 
-/// Walk up from cwd to find the repo root (contains `crates/jackin-container/`).
-fn find_workspace_root() -> Option<PathBuf> {
-    let cwd = std::env::current_dir().ok()?;
-    let mut dir = cwd.as_path();
-    for _ in 0..10 {
-        if dir.join("crates").join("jackin-container").is_dir() {
-            return Some(dir.to_path_buf());
-        }
-        dir = dir.parent()?;
+fn zigbuild_target(arch: &str) -> &'static str {
+    match arch {
+        "arm64" => "aarch64-unknown-linux-gnu.2.17",
+        _ => "x86_64-unknown-linux-gnu.2.17",
     }
-    None
 }
 
-fn build_via_docker(workspace: &Path, arch: &str, dest: &Path) -> Result<()> {
-    let platform = linux_platform(arch);
-    let out_dir = dest.parent().expect("dest has parent");
+// The target directory uses the base triple without the glibc version suffix.
+fn target_triple(arch: &str) -> &'static str {
+    match arch {
+        "arm64" => "aarch64-unknown-linux-gnu",
+        _ => "x86_64-unknown-linux-gnu",
+    }
+}
 
+fn build_via_zigbuild(workspace: &Path, arch: &str, dest: &Path) -> Result<()> {
+    let target = zigbuild_target(arch);
     eprintln!(
-        "[build] building jackin-container {REQUIRED_VERSION} for linux/{arch} via Docker \
-         (first build ~2-3 min, subsequent builds incremental)..."
+        "[build] cargo zigbuild -p jackin-container --target {target} ({REQUIRED_VERSION})\n\
+         [build] first build ~2-3 min; subsequent builds incremental via cargo cache"
     );
 
-    let workspace_str = workspace.display().to_string();
-    let out_str = out_dir.display().to_string();
-    let workspace_mount = format!("{workspace_str}:/workspace:ro");
-    let out_mount = format!("{out_str}:/out");
-    let build_cmd = "cd /workspace \
-                     && cargo build --release -p jackin-container 2>&1 \
-                     && cp /workspace/target/release/jackin-container /out/jackin-container";
-
-    let status = process::Command::new("docker")
+    let status = process::Command::new("cargo")
         .args([
-            "run",
-            "--rm",
-            "--platform",
-            platform,
-            "-v",
-            &workspace_mount,
-            "-v",
-            &out_mount,
-            "-v",
-            "jackin-container-build-cache:/root/.cargo/registry",
-            RUST_IMAGE,
-            "sh",
-            "-c",
-            build_cmd,
+            "zigbuild",
+            "--release",
+            "-p",
+            "jackin-container",
+            "--target",
+            target,
         ])
+        .current_dir(workspace)
         .status()
-        .with_context(|| "failed to run docker — is Docker running?")?;
+        .with_context(
+            || "failed to run `cargo zigbuild` — run `mise install zig cargo:cargo-zigbuild`",
+        )?;
 
     anyhow::ensure!(
         status.success(),
-        "docker build of jackin-container failed (exit {status}).\n\
-         Ensure Docker is running and {workspace} is accessible.",
-        workspace = workspace.display()
+        "cargo zigbuild failed for target {target}"
     );
 
-    chmod_executable(dest);
-    eprintln!("[build] jackin-container written to {}", dest.display());
-    Ok(())
-}
+    let built = workspace
+        .join("target")
+        .join(target_triple(arch))
+        .join("release")
+        .join("jackin-container");
 
-fn linux_platform(arch: &str) -> &'static str {
-    match arch {
-        "arm64" => "linux/arm64",
-        _ => "linux/amd64",
-    }
+    anyhow::ensure!(
+        built.exists(),
+        "build succeeded but binary not found at {}",
+        built.display()
+    );
+
+    std::fs::copy(&built, dest)
+        .with_context(|| format!("failed to copy {} to {}", built.display(), dest.display()))?;
+    chmod_executable(dest);
+    Ok(())
 }
