@@ -250,26 +250,20 @@ fn push_tree_instance_line(
 ) {
     let cursor = if selected { "▸" } else { " " };
     let label = format!("{}  {}", entry.instance_id, entry.role_key);
-    let text_w = 1 + 2 + label.chars().count(); // cursor + "  " indent + label
+    let text_w = 1 + 4 + label.chars().count(); // cursor + "    " indent + label
     *max_w = (*max_w).max(text_w);
 
     let line = if selected {
         Line::from(Span::styled(
-            format!("{cursor}  {label}"),
-            Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
+            format!("{cursor}    {label}"),
+            Style::default().bg(CYAN).fg(Color::Black),
         ))
     } else {
         Line::from(vec![
-            Span::styled(format!("{cursor}  "), Style::default().fg(PHOSPHOR_DIM)),
-            Span::styled(
-                entry.instance_id.clone(),
-                Style::default().fg(WHITE),
-            ),
+            Span::styled(format!("{cursor}    "), Style::default().fg(PHOSPHOR_DIM)),
+            Span::styled(entry.instance_id.clone(), Style::default().fg(PHOSPHOR_DIM)),
             Span::styled("  ", Style::default()),
-            Span::styled(
-                entry.role_key.clone(),
-                Style::default().fg(PHOSPHOR_DIM),
-            ),
+            Span::styled(entry.role_key.clone(), Style::default().fg(PHOSPHOR_GREEN)),
         ])
     };
     lines.push(line);
