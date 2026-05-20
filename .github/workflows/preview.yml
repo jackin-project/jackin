@@ -138,29 +138,18 @@ jobs:
     strategy:
       matrix:
         include:
-          # macOS targets cross-compiled from Linux via cargo-zigbuild.
-          # Zig ships macOS SDK stubs (framework libs, libc) so no macOS
-          # runner is needed. jackin has no Objective-C or Xcode-SDK-only
-          # C deps — bollard uses hyperlocal (Unix socket), iana-time-zone
-          # links -framework CoreFoundation which Zig stubs cover.
-          # macOS: -undefined dynamic_lookup defers unresolved framework
-          # symbols (e.g. CoreFoundation) to runtime. Zig ships C stdlib
-          # stubs only — Apple framework stubs are not bundled. The flag
-          # is safe here because all referenced frameworks (CoreFoundation
-          # via iana-time-zone) are guaranteed present on any macOS host.
+          # macOS targets cross-compiled from Linux via cargo-zigbuild +
+          # real macOS SDK. Zig respects SDKROOT for framework lookups;
+          # SDK sourced from joseluisq/macosx-sdks, cached between runs.
           - target: aarch64-apple-darwin
             zigbuild_target: aarch64-apple-darwin
-            extra_rustflags: "-C link-arg=-undefined -C link-arg=dynamic_lookup"
           - target: x86_64-apple-darwin
             zigbuild_target: x86_64-apple-darwin
-            extra_rustflags: "-C link-arg=-undefined -C link-arg=dynamic_lookup"
           # Linux targets: glibc 2.17 minimum for broad host compatibility.
           - target: aarch64-unknown-linux-gnu
             zigbuild_target: aarch64-unknown-linux-gnu.2.17
-            extra_rustflags: ""
           - target: x86_64-unknown-linux-gnu
             zigbuild_target: x86_64-unknown-linux-gnu.2.17
-            extra_rustflags: ""
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -179,10 +168,29 @@ jobs:
         uses: taiki-e/install-action@213ccc1a076163c093f914550b94feb90fab916d # v2.79.2
         with:
           tool: cargo-zigbuild
+      - name: Cache macOS SDK
+        if: contains(matrix.target, 'apple')
+        id: sdk-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: /tmp/macos-sdk
+          key: macos-sdk-26.1
+      - name: Download macOS SDK
+        if: contains(matrix.target, 'apple') && steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/macos-sdk
+          curl -fsSL "https://github.com/joseluisq/macosx-sdks/releases/download/15.5/MacOSX26.1.sdk.tar.xz" \
+            | tar -xJ -C /tmp/macos-sdk
+      - name: Set macOS SDKROOT
+        if: contains(matrix.target, 'apple')
+        run: |
+          echo "SDKROOT=/tmp/macos-sdk/MacOSX26.1.sdk" >> "$GITHUB_ENV"
+          # Pin deployment target so the binary runs on macOS 12+ even
+          # though we build with the latest SDK.
+          echo "MACOSX_DEPLOYMENT_TARGET=12.0" >> "$GITHUB_ENV"
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
-          RUSTFLAGS: ${{ matrix.extra_rustflags }}
         run: cargo zigbuild --release --locked --target "$ZIGBUILD_TARGET"
       - name: Package
         env:
