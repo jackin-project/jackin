@@ -80,7 +80,7 @@ jobs:
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
         with:
           working_directory: docs
-          install_args: "bun"
+          install_args: "bun node"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Cache bun modules
@@ -110,7 +110,7 @@ jobs:
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
         with:
           working_directory: docs
-          install_args: "bun"
+          install_args: "bun node"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Cache bun modules
