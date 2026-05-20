@@ -160,14 +160,11 @@ jobs:
           target: ${{ matrix.target }}
           cache-key: preview-${{ matrix.target }}
           rustflags: ""
-      - name: Install Zig
+      - name: Install Zig and cargo-zigbuild
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          tool: zig@0.16.0
-      - name: Install cargo-zigbuild
-        uses: taiki-e/install-action@213ccc1a076163c093f914550b94feb90fab916d # v2.79.2
-        with:
-          tool: cargo-zigbuild
+          install_args: "zig cargo:cargo-zigbuild"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: Cache macOS SDK
         if: contains(matrix.target, 'apple')
         id: sdk-cache
