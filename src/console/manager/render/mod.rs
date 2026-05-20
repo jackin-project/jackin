@@ -405,6 +405,17 @@ pub fn render(
 
                         let is_saved =
                             matches!(state.selected_row(), ManagerListRow::SavedWorkspace(_));
+                        let show_expand_hint = matches!(
+                            state.selected_row(),
+                            ManagerListRow::SavedWorkspace(i)
+                                if !state.workspace_active_instances(i).is_empty()
+                                    && !state.expanded_workspaces.contains(&i)
+                        );
+                        let show_collapse_hint = matches!(
+                            state.selected_row(),
+                            ManagerListRow::SavedWorkspace(i)
+                                if state.expanded_workspaces.contains(&i)
+                        );
                         let scroll_focused = state.list_scroll_focus.is_some();
 
                         let mut items: Vec<FooterItem> = if scroll_focused {
@@ -445,6 +456,16 @@ pub fn render(
                             FooterItem::Key("S"),
                             FooterItem::Text("settings"),
                         ]);
+                        if show_expand_hint {
+                            items.push(FooterItem::Sep);
+                            items.push(FooterItem::Key("\u{2192}"));
+                            items.push(FooterItem::Text("expand"));
+                        }
+                        if show_collapse_hint {
+                            items.push(FooterItem::Sep);
+                            items.push(FooterItem::Key("\u{2190}"));
+                            items.push(FooterItem::Text("collapse"));
+                        }
                         if show_open_hint {
                             items.push(FooterItem::Sep);
                             items.push(FooterItem::Key("O"));

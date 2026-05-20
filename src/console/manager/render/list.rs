@@ -596,7 +596,9 @@ fn render_details_pane(
         idx += 1;
     }
     if active_instance_count > 0 {
-        render_compact_instances_summary(frame, rows[idx], active_instance_count);
+        let ws_idx = state.workspaces.iter().position(|w| w.name == ws.name);
+        let ws_expanded = ws_idx.is_some_and(|i| state.expanded_workspaces.contains(&i));
+        render_compact_instances_summary(frame, rows[idx], active_instance_count, ws_expanded);
         idx += 1;
     }
     if !inline_picker_active {
@@ -824,7 +826,7 @@ fn render_current_dir_details_pane(
     let agents_row = if active_count == 0 {
         2
     } else {
-        render_compact_instances_summary(frame, rows[2], active_count);
+        render_compact_instances_summary(frame, rows[2], active_count, false);
         3
     };
 
@@ -883,7 +885,7 @@ fn workspace_active_count(
 
 /// Compact one-line badge showing how many instances are running.
 /// Rendered in cyan to visually distinguish live state from config panels.
-fn render_compact_instances_summary(frame: &mut Frame, area: Rect, count: usize) {
+fn render_compact_instances_summary(frame: &mut Frame, area: Rect, count: usize, expanded: bool) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(CYAN))
@@ -899,7 +901,11 @@ fn render_compact_instances_summary(frame: &mut Frame, area: Rect, count: usize)
             Style::default().fg(CYAN),
         ),
         Span::styled(
-            "  ·  → expand tree to manage",
+            if expanded {
+                "  ·  ↓ navigate instances"
+            } else {
+                "  ·  → expand"
+            },
             Style::default().fg(CYAN_DIM),
         ),
     ]);
