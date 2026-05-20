@@ -74,6 +74,8 @@ jobs:
           key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-registry-${{ runner.os }}-
+      - name: Install mold linker
+        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
       - run: cargo nextest run --color=always
 
   build:
@@ -87,9 +89,10 @@ jobs:
             os: macos-latest
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+            zigbuild: true
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            cross: true
+            zigbuild: true
     runs-on: ${{ matrix.os }}
     env:
       VERSION: ${{ needs.check-version.outputs.version }}
@@ -115,19 +118,23 @@ jobs:
           restore-keys: |
             cargo-registry-${{ runner.os }}-
 
-      - name: Install cross
-        if: matrix.cross
+      - name: Install mold linker
+        if: runner.os == 'Linux'
+        uses: rui314/setup-mold@9c9c13bf4c3f1adef0cc596abc155580bcb04444 # v1
+
+      - name: Install cargo-zigbuild
+        if: matrix.zigbuild
         uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          install_args: "cargo:cross"
+          install_args: "zig cargo:cargo-zigbuild"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Build
         env:
           JACKIN_VERSION_OVERRIDE: ${{ needs.check-version.outputs.version }}
         run: |
-          if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --locked --target ${{ matrix.target }}
+          if [ "${{ matrix.zigbuild }}" = "true" ]; then
+            cargo zigbuild --release --locked --target ${{ matrix.target }}.2.17
           else
             cargo build --release --locked --target ${{ matrix.target }}
           fi
