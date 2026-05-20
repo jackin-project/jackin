@@ -8,8 +8,8 @@ use super::super::super::widgets::file_browser::FileBrowserState;
 use super::super::render::global_mounts::trust_content_width;
 use super::super::render::list::{
     agents_block_agent_count, env_block_height, global_mounts_block_height,
-    global_mounts_content_width, instance_block_height, mount_block_height, workspace_has_any_env,
-    workspace_instance_count, workspace_mounts_content_width,
+    global_mounts_content_width, instance_block_height, mount_block_height, workspace_active_count,
+    workspace_has_any_env, workspace_mounts_content_width,
 };
 #[cfg(test)]
 use super::super::render::max_scroll_offset;
@@ -797,14 +797,14 @@ fn list_scroll_areas(
     } else {
         0
     };
-    let instance_count = workspace_instance_count(
+    let instance_count = workspace_active_count(
         &state.instances,
         Some(summary.name.as_str()),
         summary.name.as_str(),
         summary.workdir.as_str(),
     );
     let instances_h = if instance_count > 0 {
-        instance_block_height(instance_count)
+        instance_block_height()
     } else {
         0
     };
@@ -812,7 +812,6 @@ fn list_scroll_areas(
         state.inline_role_picker.is_some() || state.inline_agent_picker.is_some();
     let agent_count = agents_block_agent_count(Some(workspace), config);
     let roles_h = super::super::render::list::agents_block_height(agent_count);
-    // Running block moved to top: Mounts/Global/RoleGlobal are offset by instances_h.
     let top_h = instances_h;
     let roles_y = body_y + top_h + 3 + mounts_h + global_h + role_global_h + env_h;
     let roles_content_w =
@@ -867,9 +866,9 @@ fn current_dir_scroll_areas(
     let mounts = [current_dir_mount(state)];
     let mounts_h = mount_block_height(&mounts);
     let cwd_str = &state.current_dir;
-    let instance_count = workspace_instance_count(&state.instances, None, cwd_str, cwd_str);
+    let instance_count = workspace_active_count(&state.instances, None, cwd_str, cwd_str);
     let instances_h = if instance_count > 0 {
-        instance_block_height(instance_count)
+        instance_block_height()
     } else {
         0
     };

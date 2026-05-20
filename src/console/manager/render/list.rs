@@ -749,9 +749,7 @@ pub(in crate::console::manager) fn agents_block_content_width(
 /// Fixed height of the compact running-instances badge (borders + 1 text line).
 pub(in crate::console::manager) const COMPACT_INSTANCES_HEIGHT: u16 = 3;
 
-/// Kept for mouse.rs scroll-area Y calculations. Returns `COMPACT_INSTANCES_HEIGHT`
-/// when there are instances (replaces the old variable-height table).
-pub(in crate::console::manager) fn instance_block_height(_instance_count: usize) -> u16 {
+pub(in crate::console::manager) fn instance_block_height() -> u16 {
     COMPACT_INSTANCES_HEIGHT
 }
 
@@ -852,19 +850,9 @@ fn render_current_dir_details_pane(
     );
 }
 
-/// Count of operator-relevant instances (any non-purged / non-exited status).
-/// Kept for mouse.rs scroll-area calculations.
-pub(in crate::console::manager) fn workspace_instance_count(
-    instances: &[crate::instance::InstanceIndexEntry],
-    workspace_name: Option<&str>,
-    workspace_label: &str,
-    workdir: &str,
-) -> usize {
-    workspace_active_count(instances, workspace_name, workspace_label, workdir)
-}
-
-/// Count of Active/Running instances — used for the compact summary badge.
-fn workspace_active_count(
+/// Count of Active/Running instances — used for the compact summary badge and
+/// mouse scroll-area Y calculations.
+pub(in crate::console::manager) fn workspace_active_count(
     instances: &[crate::instance::InstanceIndexEntry],
     workspace_name: Option<&str>,
     workspace_label: &str,

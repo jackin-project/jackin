@@ -114,9 +114,6 @@ pub(super) fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('n' | 'N') => {
-            // On an instance row: open the in-sidebar agent picker to choose
-            // which agent to start in the already-running container.
-            // Elsewhere: open the create-workspace flow.
             if let ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) = state.selected_row() {
                 let instances = state.workspace_active_instances(ws_idx);
                 if let Some(entry) = instances.get(inst_idx) {
@@ -195,7 +192,6 @@ pub(super) fn handle_list_key(
     }
 }
 
-/// `→`: expand workspace node, or no-op on instance / other rows.
 fn handle_tree_right(state: &mut ManagerState<'_>) {
     if let ManagerListRow::SavedWorkspace(i) = state.selected_row() {
         state.expand_workspace(i);
@@ -237,7 +233,6 @@ fn selected_instance_container(
     state: &ManagerState<'_>,
     action: ConsoleInstanceAction,
 ) -> Option<String> {
-    // When on a specific instance row, use that instance directly.
     if let ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) = state.selected_row() {
         let instances = state.workspace_active_instances(ws_idx);
         let entry = instances.get(inst_idx)?;
@@ -247,8 +242,6 @@ fn selected_instance_container(
             None
         };
     }
-    // Otherwise use the workspace-level scope to pick the first matching
-    // instance (legacy workspace-row behaviour).
     let (workspace_name, workspace_label, workdir) = selected_instance_scope(state)?;
     let query = crate::instance::InstanceQuery {
         workspace_name,
