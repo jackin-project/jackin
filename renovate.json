@@ -10,6 +10,59 @@
       "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)-trixie$"
     }
   ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["(^|/)Dockerfile$"],
+      "matchStrings": ["ARG RUST_VERSION=(?<currentValue>[\\d.]+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "rust-lang/rust",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["(^|/)Dockerfile$"],
+      "matchStrings": ["ARG NODE_VERSION=(?<currentValue>[\\d.]+)"],
+      "datasourceTemplate": "node-version",
+      "packageNameTemplate": "node"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["(^|/)Dockerfile$"],
+      "matchStrings": ["ARG JAVA_VERSION=oracle-graalvm-(?<currentValue>[\\d.]+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "oracle/graalvm-jdk",
+      "extractVersionTemplate": "^jdk-(?<version>[\\d.]+)",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["(^|/)Dockerfile$"],
+      "matchStrings": ["ARG PROTOC_VERSION=(?<currentValue>[\\d.]+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "protocolbuffers/protobuf",
+      "extractVersionTemplate": "^v(?<version>.+)$",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["(^|/)Dockerfile$"],
+      "matchStrings": ["ARG CARGO_BINSTALL_VERSION=(?<currentValue>[\\d.]+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "cargo-bins/cargo-binstall",
+      "extractVersionTemplate": "^v(?<version>.+)$",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "fileMatch": ["(^|/)Dockerfile$"],
+      "matchStrings": ["ARG CAVEMAN_VERSION=(?<currentValue>[\\d.]+)"],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "JuliusBrussee/caveman",
+      "extractVersionTemplate": "^v(?<version>.+)$",
+      "versioningTemplate": "semver"
+    }
+  ],
   "prHourlyLimit": 0,
   "prConcurrentLimit": 20,
   "commitBody": "Signed-off-by: Renovate Bot <renovate@whitesourcesoftware.com>"
