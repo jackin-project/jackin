@@ -338,25 +338,4 @@ if [ "${JACKIN_DEBUG:-0}" = "1" ]; then
     set -x
 fi
 
-printf '\033[2J\033[H'
-
-# Hide the tmux status bar — jackin containers are single-purpose so the bar
-# adds no value and clutters the agent's full-screen UI.
-tmux set-option -g status off 2>/dev/null || true
-
-# `always` not `on`: agents don't emit the per-app activation escape, so `on`
-# silently fails to forward Shift+Enter.
-tmux set-option -s extended-keys always
-# Paired with extended-keys: advertises extkeys to xterm*-TERM panes so their
-# terminfo queries confirm support.
-tmux set-option -as terminal-features 'xterm*:extkeys'
-tmux set-option -g focus-events on
-# Container panes cannot reach the outer terminal's OSC surface without this;
-# agent desktop notifications and progress bars are silently dropped otherwise.
-tmux set-option -g allow-passthrough on
-# Escape disambiguation delay causes misfired key sequences in agent TUI
-# vi-mode navigation.
-tmux set-option -sg escape-time 0
-tmux set-option -g mouse on
-
 exec "${LAUNCH[@]}"

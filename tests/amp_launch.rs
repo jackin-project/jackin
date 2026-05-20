@@ -90,11 +90,11 @@ agents = ["amp"]
     let run_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+        .find(|call| call.contains("docker run") && call.contains("/run/jackin/"))
         .expect("role docker run should run");
     assert!(
-        !run_cmd.contains("JACKIN_AGENT"),
-        "JACKIN_AGENT must not be in docker run; got: {run_cmd}"
+        run_cmd.contains("JACKIN_AGENT=amp"),
+        "JACKIN_AGENT=amp must be in docker run; got: {run_cmd}"
     );
     assert!(
         run_cmd.contains("-e JACKIN_ROLE=the-architect"),
@@ -189,7 +189,7 @@ agents = ["amp"]
     let run_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+        .find(|call| call.contains("docker run") && call.contains("/run/jackin/"))
         .expect("role docker run should run");
     assert!(
         run_cmd.contains(":/jackin/amp/secrets.json"),

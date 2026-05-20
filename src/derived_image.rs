@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 const ENTRYPOINT_SH: &str = include_str!("../docker/runtime/entrypoint.sh");
-const SUPERVISOR_SH: &str = include_str!("../docker/runtime/supervisor.sh");
 
 #[derive(Debug)]
 pub struct DerivedBuildContext {
@@ -21,6 +20,7 @@ pub fn render_derived_dockerfile(
     hooks: Option<&HooksConfig>,
     supported: &[crate::agent::Agent],
     claude_config: Option<&crate::manifest::ClaudeConfig>,
+    jackin_container_bin: Option<&str>,
 ) -> String {
     use std::fmt::Write as _;
 
@@ -107,6 +107,26 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
         }
     }
 
+    // JACKIN_SUPPORTED_AGENTS is read by jackin-container at startup to populate
+    // the agent picker. It lists only the agents installed in this derived image.
+    let agents_csv: String = supported
+        .iter()
+        .map(|a| a.slug())
+        .collect::<Vec<_>>()
+        .join(",");
+
+    // jackin-container binary installation (downloaded from GitHub Releases by
+    // the host at derived-image build time and placed in .jackin-runtime/).
+    let jackin_container_section = match jackin_container_bin {
+        Some(src) => format!(
+            "\
+COPY {src} /usr/local/bin/jackin-container
+RUN chmod +x /usr/local/bin/jackin-container
+"
+        ),
+        None => String::new(),
+    };
+
     format!(
         "\
 {base_dockerfile}
@@ -133,10 +153,9 @@ RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/de
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 RUN chmod +x /jackin/runtime/entrypoint.sh
-COPY .jackin-runtime/supervisor.sh /jackin/runtime/supervisor.sh
-RUN chmod +x /jackin/runtime/supervisor.sh
+{jackin_container_section}ENV JACKIN_SUPPORTED_AGENTS={agents_csv}
 USER agent
-ENTRYPOINT [\"/jackin/runtime/entrypoint.sh\"]
+ENTRYPOINT [\"/usr/local/bin/jackin-container\"]
 "
     )
 }
@@ -241,7 +260,6 @@ pub fn create_derived_build_context(
     let runtime_dir = context_dir.join(".jackin-runtime");
     std::fs::create_dir_all(&runtime_dir)?;
     std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH)?;
-    std::fs::write(runtime_dir.join("supervisor.sh"), SUPERVISOR_SH)?;
 
     let hooks = validated.manifest.hooks.as_ref();
 
@@ -271,6 +289,7 @@ pub fn create_derived_build_context(
             hooks,
             &supported,
             validated.manifest.claude.as_ref(),
+            None, // jackin-container binary not yet downloaded at test time
         ),
     )?;
     ensure_runtime_assets_are_included(&context_dir, hooks)?;
@@ -354,6 +373,7 @@ mod tests {
             None,
             &[Agent::Claude],
             None,
+            None,
         );
 
         assert!(dockerfile.contains("RUN curl -fsSL https://claude.ai/install.sh | bash"));
@@ -361,10 +381,8 @@ mod tests {
         assert!(
             dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
         );
-        assert!(
-            dockerfile.contains("COPY .jackin-runtime/supervisor.sh /jackin/runtime/supervisor.sh")
-        );
-        assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/entrypoint.sh\"]"));
+        assert!(dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
+        assert!(dockerfile.contains("ENTRYPOINT [\"/usr/local/bin/jackin-container\"]"));
     }
 
     #[test]
@@ -373,6 +391,7 @@ mod tests {
             "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude],
+            None,
             None,
         );
 
@@ -383,9 +402,7 @@ mod tests {
         assert!(
             dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
         );
-        assert!(
-            dockerfile.contains("COPY .jackin-runtime/supervisor.sh /jackin/runtime/supervisor.sh")
-        );
+        assert!(dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
     }
 
     #[test]
@@ -394,6 +411,7 @@ mod tests {
             "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude],
+            None,
             None,
         );
 
@@ -414,6 +432,7 @@ mod tests {
                 preflight: Some("hooks/preflight.sh".to_string()),
             }),
             &[Agent::Claude],
+            None,
             None,
         );
 
@@ -463,6 +482,7 @@ mod tests {
             None,
             &[Agent::Claude],
             None,
+            None,
         );
 
         assert!(!dockerfile.contains("setup-once.sh"));
@@ -479,6 +499,7 @@ mod tests {
             "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Amp, Agent::Claude, Agent::Codex],
+            None,
             None,
         );
 
@@ -500,6 +521,7 @@ mod tests {
             None,
             &[Agent::Amp],
             None,
+            None,
         );
 
         let amp_block_pos = dockerfile.find("ampcode.com/install.sh").unwrap();
@@ -516,6 +538,7 @@ mod tests {
             "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Codex],
+            None,
             None,
         );
 
@@ -537,6 +560,7 @@ mod tests {
             None,
             &[Agent::Codex],
             None,
+            None,
         );
         let last_user = dockerfile
             .lines()
@@ -552,6 +576,7 @@ mod tests {
             None,
             &[Agent::Codex],
             None,
+            None,
         );
 
         assert!(!dockerfile.contains("https://claude.ai/install.sh"));
@@ -565,11 +590,12 @@ mod tests {
             None,
             &[Agent::Claude],
             None,
+            None,
         );
 
         assert!(dockerfile.contains("/home/agent"));
         assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" agent"));
-        assert!(dockerfile.contains("ENTRYPOINT [\"/jackin/runtime/entrypoint.sh\"]"));
+        assert!(dockerfile.contains("ENTRYPOINT [\"/usr/local/bin/jackin-container\"]"));
     }
 
     #[test]
@@ -578,6 +604,7 @@ mod tests {
             "FROM projectjackin/construct:0.1-trixie\n",
             None,
             &[Agent::Claude, Agent::Codex],
+            None,
             None,
         );
 
@@ -670,6 +697,7 @@ mod tests {
             None,
             &[Agent::Claude, Agent::Codex, Agent::Amp, Agent::Opencode],
             None,
+            None,
         );
 
         assert!(dockerfile.contains("/jackin/default-home/.claude"));
@@ -697,6 +725,7 @@ mod tests {
             None,
             &[Agent::Claude],
             Some(&config),
+            None,
         );
 
         let version_pos = dockerfile.find("RUN claude --version").unwrap();
@@ -830,6 +859,7 @@ mod tests {
             }),
             &[Agent::Claude],
             None,
+            None,
         );
 
         assert!(dockerfile.contains("RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks"));
@@ -860,6 +890,7 @@ mod tests {
                 preflight: Some("hooks/preflight.sh".to_string()),
             }),
             &[Agent::Claude],
+            None,
             None,
         );
 
