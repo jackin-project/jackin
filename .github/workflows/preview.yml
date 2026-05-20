@@ -138,11 +138,9 @@ jobs:
     strategy:
       matrix:
         include:
-          # macOS targets cross-compiled from Linux via cargo-zigbuild.
-          # Zig ships macOS SDK stubs (framework libs, libc) so no macOS
-          # runner is needed. jackin has no Objective-C or Xcode-SDK-only
-          # C deps — bollard uses hyperlocal (Unix socket), iana-time-zone
-          # links -framework CoreFoundation which Zig stubs cover.
+          # macOS targets cross-compiled from Linux via cargo-zigbuild +
+          # real macOS SDK. Zig respects SDKROOT for framework lookups;
+          # SDK sourced from joseluisq/macosx-sdks, cached between runs.
           - target: aarch64-apple-darwin
             zigbuild_target: aarch64-apple-darwin
           - target: x86_64-apple-darwin
@@ -170,28 +168,22 @@ jobs:
         uses: taiki-e/install-action@213ccc1a076163c093f914550b94feb90fab916d # v2.79.2
         with:
           tool: cargo-zigbuild
-      - name: Create macOS framework stubs
+      - name: Cache macOS SDK
         if: contains(matrix.target, 'apple')
+        id: sdk-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: /tmp/macos-sdk
+          key: macos-sdk-15.5
+      - name: Download macOS SDK
+        if: contains(matrix.target, 'apple') && steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
-          # Zig ships C stdlib stubs but not Apple framework stubs.
-          # CoreFoundation (pulled by iana-time-zone) is always present
-          # on real macOS, so a minimal empty stub here satisfies the
-          # MachO linker's framework-exists check at compile time.
-          # -undefined dynamic_lookup defers symbol resolution to runtime.
-          stub_dir=/tmp/macos-framework-stubs
-          mkdir -p "${stub_dir}/CoreFoundation.framework"
-          cat > "${stub_dir}/CoreFoundation.framework/CoreFoundation.tbd" <<'TBD'
-          --- !tapi-tbd
-          tbd-version:     4
-          targets:         [ x86_64-macos, arm64-macos ]
-          install-name:    '/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation'
-          current-version: 1454.90
-          exports:
-            - targets:     [ x86_64-macos, arm64-macos ]
-              symbols:     []
-          ...
-          TBD
-          echo "RUSTFLAGS=-C link-arg=-F${stub_dir} -C link-arg=-undefined -C link-arg=dynamic_lookup" >> "$GITHUB_ENV"
+          mkdir -p /tmp/macos-sdk
+          curl -fsSL "https://github.com/joseluisq/macosx-sdks/releases/download/15.5/MacOSX15.5.sdk.tar.xz" \
+            | tar -xJ -C /tmp/macos-sdk
+      - name: Set macOS SDKROOT
+        if: contains(matrix.target, 'apple')
+        run: echo "SDKROOT=/tmp/macos-sdk/MacOSX15.5.sdk" >> "$GITHUB_ENV"
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
