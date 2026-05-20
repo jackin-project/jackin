@@ -49,7 +49,7 @@ pub(super) fn render_list_body(
         }
         ManagerListRow::SavedWorkspace(i) => {
             if let Some(ws) = state.workspaces.get(i).cloned() {
-                render_details_pane(frame, columns[1], &ws, config, state);
+                render_details_pane(frame, columns[1], i, &ws, config, state);
             }
         }
         ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
@@ -111,7 +111,7 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
 
         match row {
             ManagerListRow::CurrentDirectory => {
-                let has_instances = !state.current_dir_active_instances().is_empty();
+                let has_instances = state.has_current_dir_active_instances();
                 push_tree_workspace_line(
                     &mut lines,
                     "Current directory",
@@ -125,7 +125,7 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
             ManagerListRow::SavedWorkspace(i) => {
                 let ws = &state.workspaces[*i];
                 let expanded = state.is_workspace_expanded(*i);
-                let has_instances = !state.workspace_active_instances(*i).is_empty();
+                let has_instances = state.has_active_instances(*i);
                 push_tree_workspace_line(
                     &mut lines,
                     &ws.name,
@@ -497,6 +497,7 @@ pub(in crate::console::manager) fn global_mounts_content_width(
 fn render_details_pane(
     frame: &mut Frame,
     area: Rect,
+    ws_idx: usize,
     ws: &WorkspaceSummary,
     config: &AppConfig,
     state: &mut ManagerState<'_>,
@@ -527,7 +528,6 @@ fn render_details_pane(
         agents_block_agent_count(ws_config, config)
     };
     let show_envs = ws_config.is_some_and(workspace_has_any_env);
-    // Count of running/active instances shown as a compact summary badge.
     let active_instance_count = workspace_active_count(
         &state.instances,
         Some(ws.name.as_str()),
@@ -561,8 +561,7 @@ fn render_details_pane(
 
     let mut idx = 0;
     if active_instance_count > 0 {
-        let ws_idx = state.workspaces.iter().position(|w| w.name == ws.name);
-        let ws_expanded = ws_idx.is_some_and(|i| state.is_workspace_expanded(i));
+        let ws_expanded = state.is_workspace_expanded(ws_idx);
         render_compact_instances_summary(frame, rows[idx], active_instance_count, ws_expanded);
         idx += 1;
     }
@@ -2700,7 +2699,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &mut state);
         })
         .unwrap();
 
@@ -2760,7 +2759,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary(), &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 72, 24), 0, &summary(), &cfg, &mut state);
         })
         .unwrap();
 
@@ -2801,7 +2800,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &mut state);
         })
         .unwrap();
 
@@ -2874,7 +2873,7 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(72, 24);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 72, 24), 0, &summary, &cfg, &mut state);
         })
         .unwrap();
 
@@ -2922,7 +2921,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &mut state);
         })
         .unwrap();
 
@@ -2985,7 +2984,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &mut state);
         })
         .unwrap();
 

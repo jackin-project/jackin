@@ -1448,6 +1448,52 @@ impl ManagerState<'_> {
             .collect()
     }
 
+    /// Whether workspace `ws_idx` has any Active/Running instances.
+    /// Avoids allocating a `Vec` for the common `is_empty()` check in the render loop.
+    #[must_use]
+    pub fn has_active_instances(&self, ws_idx: usize) -> bool {
+        let Some(ws) = self.workspaces.get(ws_idx) else {
+            return false;
+        };
+        let query = crate::instance::InstanceQuery {
+            workspace_name: Some(ws.name.as_str()),
+            workspace_label: ws.name.as_str(),
+            workdir: ws.workdir.as_str(),
+            role_key: None,
+            agent_runtime: None,
+        };
+        self.instances.iter().any(|e| {
+            e.matches(query)
+                && matches!(
+                    e.status,
+                    crate::instance::InstanceStatus::Active
+                        | crate::instance::InstanceStatus::Running
+                )
+        })
+    }
+
+    /// Whether the "Current directory" synthetic row has any Active/Running instances.
+    /// Avoids allocating a `Vec` for the common `is_empty()` check in the render loop.
+    #[must_use]
+    pub fn has_current_dir_active_instances(&self) -> bool {
+        let current_dir = self.current_dir.as_str();
+        let query = crate::instance::InstanceQuery {
+            workspace_name: None,
+            workspace_label: current_dir,
+            workdir: current_dir,
+            role_key: None,
+            agent_runtime: None,
+        };
+        self.instances.iter().any(|e| {
+            e.matches(query)
+                && matches!(
+                    e.status,
+                    crate::instance::InstanceStatus::Active
+                        | crate::instance::InstanceStatus::Running
+                )
+        })
+    }
+
     /// Instances in the tree for the "Current directory" synthetic row.
     #[must_use]
     pub fn current_dir_active_instances(&self) -> Vec<&crate::instance::InstanceIndexEntry> {
