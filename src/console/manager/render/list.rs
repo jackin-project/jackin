@@ -261,7 +261,15 @@ fn push_tree_instance_line(
     } else {
         Line::from(vec![
             Span::styled(format!("{cursor}  "), Style::default().fg(PHOSPHOR_DIM)),
-            Span::styled(label, Style::default().fg(PHOSPHOR_GREEN)),
+            Span::styled(
+                entry.instance_id.clone(),
+                Style::default().fg(WHITE),
+            ),
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                entry.role_key.clone(),
+                Style::default().fg(PHOSPHOR_DIM),
+            ),
         ])
     };
     lines.push(line);
