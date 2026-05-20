@@ -11,7 +11,7 @@ use ratatui::{
 };
 
 use super::super::state::{ManagerListRow, ManagerState, MountScrollFocus, WorkspaceSummary};
-use super::{PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
+use super::{CYAN, CYAN_DIM, PHOSPHOR_DARK, PHOSPHOR_DIM, PHOSPHOR_GREEN, WHITE};
 use crate::config::AppConfig;
 
 #[allow(clippy::too_many_lines)]
@@ -49,12 +49,30 @@ pub(super) fn render_list_body(
         }
         ManagerListRow::SavedWorkspace(i) => {
             if let Some(ws) = state.workspaces.get(i).cloned() {
-                render_details_pane(frame, columns[1], &ws, config, state);
+                render_details_pane(frame, columns[1], i, &ws, config, state);
+            }
+        }
+        ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
+            let instances = state.workspace_active_instances(ws_idx);
+            if let Some(entry) = instances.get(inst_idx).copied() {
+                let sessions = state.sessions_for_instance(&entry.container_base);
+                let session_load_error = state.has_session_load_error(&entry.container_base);
+                render_instance_details_pane(
+                    frame,
+                    columns[1],
+                    entry,
+                    sessions,
+                    session_load_error,
+                );
             }
         }
     }
 
-    if let Some((role, picker)) = state.inline_agent_picker.as_ref() {
+    if let Some((container, picker)) = state.inline_new_session_picker.as_ref() {
+        let short_id = crate::instance::naming::instance_id_from_container_base(container)
+            .unwrap_or(container.as_str());
+        render_agent_picker_sidebar(frame, list_area, short_id, picker);
+    } else if let Some((role, picker)) = state.inline_agent_picker.as_ref() {
         render_agent_picker_sidebar(frame, list_area, &role.key(), picker);
     } else if let Some(picker) = state.inline_role_picker.as_ref() {
         let title = state
@@ -85,60 +103,81 @@ pub(in crate::console::manager) fn list_names_content_width(
 }
 
 fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'static>> {
-    let saved_count = state.workspaces.len();
+    let visual_rows = state.visual_rows_vec();
     let visual_selected = state.visual_selected();
-    let has_saved_workspaces = saved_count > 0;
     let mut max_w = viewport;
+    let mut lines: Vec<Line<'static>> = Vec::with_capacity(visual_rows.len());
 
-    let mut lines = Vec::with_capacity(saved_count + 2 + usize::from(has_saved_workspaces));
+    for visual_row in &visual_rows {
+        let Some(row) = visual_row else {
+            // Non-selectable spacer before "+ New workspace".
+            lines.push(Line::from(""));
+            continue;
+        };
+        let is_selected = lines.len() == visual_selected;
 
-    push_list_name_line(
-        &mut lines,
-        "Current directory",
-        visual_selected == 0,
-        WHITE,
-        &mut max_w,
-    );
-
-    for (i, ws) in state.workspaces.iter().enumerate() {
-        push_list_name_line(
-            &mut lines,
-            &ws.name,
-            visual_selected == i + 1,
-            PHOSPHOR_GREEN,
-            &mut max_w,
-        );
+        match row {
+            ManagerListRow::CurrentDirectory => {
+                push_tree_workspace_line(
+                    &mut lines,
+                    "Current directory",
+                    is_selected,
+                    WHITE,
+                    false,
+                    false, // expansion not yet implemented for CurrentDirectory
+                    &mut max_w,
+                );
+            }
+            ManagerListRow::SavedWorkspace(i) => {
+                let ws = &state.workspaces[*i];
+                let expanded = state.is_workspace_expanded(*i);
+                let has_instances = state.has_active_instances(*i);
+                push_tree_workspace_line(
+                    &mut lines,
+                    &ws.name,
+                    is_selected,
+                    PHOSPHOR_GREEN,
+                    expanded,
+                    has_instances,
+                    &mut max_w,
+                );
+            }
+            ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
+                let instances = state.workspace_active_instances(*ws_idx);
+                if let Some(entry) = instances.get(*inst_idx) {
+                    push_tree_instance_line(&mut lines, entry, is_selected, &mut max_w);
+                }
+            }
+            ManagerListRow::NewWorkspace => {
+                push_tree_workspace_line(
+                    &mut lines,
+                    "+ New workspace",
+                    is_selected,
+                    WHITE,
+                    false,
+                    false,
+                    &mut max_w,
+                );
+            }
+        }
     }
 
-    if has_saved_workspaces {
-        lines.push(Line::from(""));
-    }
-
-    let sentinel_index = if has_saved_workspaces {
-        saved_count + 2
-    } else {
-        1
-    };
-    push_list_name_line(
-        &mut lines,
-        "+ New workspace",
-        visual_selected == sentinel_index,
-        WHITE,
-        &mut max_w,
-    );
-
-    // Unselected rows start with "  " (2 spaces) so add_trailing_padding appends 2
-    // transparent spaces, making content_width = max_w + 2. The selected row starts
-    // with "▸ " (no leading space) so gets no trailing padding and its background
-    // would stop 2 cells short when scrolled. Pad to the full content_width so the
-    // selection highlight fills the entire visible area at every scroll position.
+    // Extend the selected row's highlight to fill the viewport width.
     let content_w = max_w;
     if let Some(line) = lines.get_mut(visual_selected) {
         let current_w = super::line_width(line);
         if current_w < content_w {
+            let bg = if matches!(
+                visual_rows.get(visual_selected),
+                Some(Some(ManagerListRow::WorkspaceInstance(_, _)))
+            ) {
+                CYAN
+            } else {
+                PHOSPHOR_GREEN
+            };
             line.spans.push(Span::styled(
                 " ".repeat(content_w - current_w),
-                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
+                Style::default().bg(bg).fg(Color::Black),
             ));
         }
     }
@@ -146,21 +185,86 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
     lines
 }
 
-fn push_list_name_line(
+/// Workspace / sentinel row. Shows `▶`/`▼` disclosure arrow only when the
+/// workspace has active instances; rows without instances show no indicator.
+fn push_tree_workspace_line(
     lines: &mut Vec<Line<'static>>,
     name: &str,
     selected: bool,
     color: Color,
+    expanded: bool,
+    has_instances: bool,
     max_w: &mut usize,
 ) {
-    let prefix = if selected { "▸ " } else { "  " };
-    let style = if selected {
-        Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)
+    let cursor = if selected { "▸" } else { " " };
+    // Build line as separate spans so line_width measures display columns
+    // correctly for the ▶/▼ glyphs (same approach as the editor render).
+    let line = if has_instances {
+        let arrow = if expanded { "▼" } else { "▶" };
+        let text_w = 1 + 1 + 1 + name.chars().count(); // cursor + arrow + space + name
+        *max_w = (*max_w).max(text_w);
+        if selected {
+            Line::from(vec![
+                Span::styled(cursor, Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)),
+                Span::styled(arrow, Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)),
+                Span::styled(
+                    format!(" {name}"),
+                    Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
+                ),
+            ])
+        } else {
+            Line::from(vec![
+                Span::styled(cursor, Style::default().fg(color)),
+                Span::styled(arrow, Style::default().fg(color)),
+                Span::styled(format!(" {name}"), Style::default().fg(color)),
+            ])
+        }
     } else {
-        Style::default().fg(color)
+        // Two-space placeholder aligns name column with arrow-rows (cursor+arrow+space = 3).
+        let text_w = 3 + name.chars().count(); // cursor + 2 spaces + name
+        *max_w = (*max_w).max(text_w);
+        if selected {
+            Line::from(Span::styled(
+                format!("{cursor}  {name}"),
+                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
+            ))
+        } else {
+            Line::from(Span::styled(
+                format!("{cursor}  {name}"),
+                Style::default().fg(color),
+            ))
+        }
     };
-    *max_w = (*max_w).max(2 + name.chars().count());
-    lines.push(Line::from(Span::styled(format!("{prefix}{name}"), style)));
+    lines.push(line);
+}
+
+/// Indented instance row — shows `instance_id` and `role` only; agent and
+/// status are visible in the right-panel detail pane when the row is selected.
+fn push_tree_instance_line(
+    lines: &mut Vec<Line<'static>>,
+    entry: &crate::instance::InstanceIndexEntry,
+    selected: bool,
+    max_w: &mut usize,
+) {
+    let cursor = if selected { "▸" } else { " " };
+    let label = format!("{}  {}", entry.instance_id, entry.role_key);
+    let text_w = 1 + 4 + label.chars().count(); // cursor + "    " indent + label
+    *max_w = (*max_w).max(text_w);
+
+    let line = if selected {
+        Line::from(Span::styled(
+            format!("{cursor}    {label}"),
+            Style::default().bg(CYAN).fg(Color::Black),
+        ))
+    } else {
+        Line::from(vec![
+            Span::styled(format!("{cursor}    "), Style::default().fg(CYAN_DIM)),
+            Span::styled(entry.instance_id.clone(), Style::default().fg(CYAN_DIM)),
+            Span::styled("  ", Style::default()),
+            Span::styled(entry.role_key.clone(), Style::default().fg(CYAN)),
+        ])
+    };
+    lines.push(line);
 }
 
 fn render_role_picker_sidebar(
@@ -399,6 +503,7 @@ pub(in crate::console::manager) fn global_mounts_content_width(
 fn render_details_pane(
     frame: &mut Frame,
     area: Rect,
+    ws_idx: usize,
     ws: &WorkspaceSummary,
     config: &AppConfig,
     state: &mut ManagerState<'_>,
@@ -429,27 +534,27 @@ fn render_details_pane(
         agents_block_agent_count(ws_config, config)
     };
     let show_envs = ws_config.is_some_and(workspace_has_any_env);
-    let instance_rows = workspace_instance_rows(
+    let active_instance_count = workspace_active_count(
         &state.instances,
         Some(ws.name.as_str()),
         &ws.name,
         &ws.workdir,
     );
 
-    let mut constraints = vec![
+    // Running block is first so live state is immediately visible at the top.
+    let mut constraints = Vec::new();
+    if active_instance_count > 0 {
+        constraints.push(Constraint::Length(COMPACT_INSTANCES_HEIGHT));
+    }
+    constraints.extend([
         Constraint::Length(3),
         Constraint::Length(mount_block_height(mounts)),
-    ];
+    ]);
     if has_global {
         constraints.push(Constraint::Length(global_mount_block_height(&global_rows)));
     }
     if show_envs {
         constraints.push(Constraint::Length(env_block_height(ws_config)));
-    }
-    if !instance_rows.is_empty() {
-        constraints.push(Constraint::Length(instance_block_height(
-            instance_rows.len(),
-        )));
     }
     if !inline_picker_active {
         constraints.push(Constraint::Length(agents_block_height(agent_count)));
@@ -461,6 +566,11 @@ fn render_details_pane(
         .split(area);
 
     let mut idx = 0;
+    if active_instance_count > 0 {
+        let ws_expanded = state.is_workspace_expanded(ws_idx);
+        render_compact_instances_summary(frame, rows[idx], active_instance_count, ws_expanded);
+        idx += 1;
+    }
     render_general_subpanel(frame, rows[idx], ws);
     idx += 1;
     let ws_focused = state.list_scroll_focus == Some(MountScrollFocus::Workspace);
@@ -493,10 +603,6 @@ fn render_details_pane(
     }
     if show_envs {
         render_environments_subpanel(frame, rows[idx], ws_config);
-        idx += 1;
-    }
-    if !instance_rows.is_empty() {
-        render_instances_subpanel(frame, rows[idx], &instance_rows);
         idx += 1;
     }
     if !inline_picker_active {
@@ -637,9 +743,8 @@ pub(in crate::console::manager) fn agents_block_content_width(
     config.roles.keys().map(|k| k.len() + 4).max().unwrap_or(0)
 }
 
-pub(in crate::console::manager) fn instance_block_height(instance_count: usize) -> u16 {
-    (instance_count + 4).min(8) as u16
-}
+/// Fixed height of the compact running-instances badge (borders + 1 text line).
+pub(in crate::console::manager) const COMPACT_INSTANCES_HEIGHT: u16 = 3;
 
 /// Cursor on the synthetic "Current directory" row — mirrors
 /// `workspace::current_dir_workspace`: src=dst=cwd, rw, any role.
@@ -659,16 +764,14 @@ fn render_current_dir_details_pane(
         readonly: false,
         isolation: crate::isolation::MountIsolation::Shared,
     }];
-    let instance_rows = workspace_instance_rows(&state.instances, None, &cwd_str, &cwd_str);
+    let active_count = workspace_active_count(&state.instances, None, &cwd_str, &cwd_str);
 
     let mut constraints = vec![
         Constraint::Length(3),
         Constraint::Length(mount_block_height(&mounts)),
     ];
-    if !instance_rows.is_empty() {
-        constraints.push(Constraint::Length(instance_block_height(
-            instance_rows.len(),
-        )));
+    if active_count > 0 {
+        constraints.push(Constraint::Length(COMPACT_INSTANCES_HEIGHT));
     }
     constraints.push(Constraint::Length(agents_block_height(
         agents_block_agent_count(None, config),
@@ -718,10 +821,10 @@ fn render_current_dir_details_pane(
         ws_focused,
     );
 
-    let agents_row = if instance_rows.is_empty() {
+    let agents_row = if active_count == 0 {
         2
     } else {
-        render_instances_subpanel(frame, rows[2], &instance_rows);
+        render_compact_instances_summary(frame, rows[2], active_count, false);
         3
     };
 
@@ -740,15 +843,9 @@ fn render_current_dir_details_pane(
     );
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct InstanceDisplayRow {
-    id: String,
-    role: String,
-    agent: String,
-    status: String,
-}
-
-pub(in crate::console::manager) fn workspace_instance_count(
+/// Count of Active/Running instances — used for the compact summary badge and
+/// mouse scroll-area Y calculations.
+pub(in crate::console::manager) fn workspace_active_count(
     instances: &[crate::instance::InstanceIndexEntry],
     workspace_name: Option<&str>,
     workspace_label: &str,
@@ -761,90 +858,100 @@ pub(in crate::console::manager) fn workspace_instance_count(
         role_key: None,
         agent_runtime: None,
     };
-    instances
-        .iter()
-        .filter(|e| e.matches(query) && instance_status_is_operator_relevant(e.status))
-        .count()
+    super::super::state::active_instances_matching(instances, query).count()
 }
 
-fn workspace_instance_rows(
-    instances: &[crate::instance::InstanceIndexEntry],
-    workspace_name: Option<&str>,
-    workspace_label: &str,
-    workdir: &str,
-) -> Vec<InstanceDisplayRow> {
-    let query = crate::instance::InstanceQuery {
-        workspace_name,
-        workspace_label,
-        workdir,
-        role_key: None,
-        agent_runtime: None,
-    };
-    instances
-        .iter()
-        .filter(|entry| entry.matches(query) && instance_status_is_operator_relevant(entry.status))
-        .map(|entry| InstanceDisplayRow {
-            id: entry.instance_id.clone(),
-            role: entry.role_key.clone(),
-            agent: entry.agent_runtime.clone(),
-            status: entry.status.short_label().to_string(),
-        })
-        .collect()
+/// Compact running-instances badge (3 rows: border + count line + border).
+/// Cyan border and text distinguish live state from config panels.
+fn render_compact_instances_summary(frame: &mut Frame, area: Rect, count: usize, expanded: bool) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(CYAN))
+        .title(Span::styled(
+            " Running ",
+            Style::default().fg(CYAN).add_modifier(Modifier::BOLD),
+        ));
+    let plural = if count == 1 { "instance" } else { "instances" };
+    let line = Line::from(vec![
+        Span::styled("  ● ", Style::default().fg(CYAN)),
+        Span::styled(
+            format!("{count} {plural} running"),
+            Style::default().fg(CYAN),
+        ),
+        Span::styled(
+            if expanded {
+                "  ·  ↓ navigate instances"
+            } else {
+                "  ·  → expand"
+            },
+            Style::default().fg(CYAN_DIM),
+        ),
+    ]);
+    frame.render_widget(
+        Paragraph::new(vec![line])
+            .block(block)
+            .style(Style::default().fg(CYAN)),
+        area,
+    );
 }
 
-const fn instance_status_is_operator_relevant(status: crate::instance::InstanceStatus) -> bool {
-    !matches!(
-        status,
-        crate::instance::InstanceStatus::CleanExited
-            | crate::instance::InstanceStatus::Superseded
-            | crate::instance::InstanceStatus::Purged
-    )
-}
-
-fn render_instances_subpanel(frame: &mut Frame, area: Rect, rows: &[InstanceDisplayRow]) {
+/// Right-panel shown when operator selects an instance row in the tree.
+/// Displays recorded sessions from the manifest in a phosphor-styled block.
+fn render_instance_details_pane(
+    frame: &mut Frame,
+    area: Rect,
+    entry: &crate::instance::InstanceIndexEntry,
+    sessions: &[crate::instance::SessionRecord],
+    session_load_error: bool,
+) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
         .title(Span::styled(
-            " Instances ",
+            format!(" Instance: {} ", entry.instance_id),
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
         ));
 
-    let id_w = rows
-        .iter()
-        .map(|row| row.id.chars().count())
-        .max()
-        .unwrap_or(8)
-        .max("ID".len());
-    let status_w = rows
-        .iter()
-        .map(|row| row.status.chars().count())
-        .max()
-        .unwrap_or(6)
-        .max("Status".len());
-    let mut lines = vec![Line::from(Span::styled(
-        format!(
-            "  {id:<id_w$}  {status:<status_w$}  Agent  Role",
-            id = "ID",
-            status = "Status"
-        ),
-        Style::default().fg(WHITE),
-    ))];
-    lines.extend(rows.iter().map(|row| {
-        Line::from(vec![
-            Span::raw(format!("  {:<id_w$}  ", row.id)),
-            Span::styled(
-                format!("{:<status_w$}", row.status),
-                Style::default().fg(PHOSPHOR_DIM),
-            ),
-            Span::raw("  "),
-            Span::styled(row.agent.clone(), Style::default().fg(PHOSPHOR_DIM)),
-            Span::raw("  "),
-            Span::raw(row.role.clone()),
-        ])
-    }));
+    let mut lines: Vec<Line<'static>> = Vec::new();
+
+    if sessions.is_empty() {
+        let msg = if session_load_error {
+            "  Sessions unavailable (manifest read error)"
+        } else {
+            "  No sessions recorded"
+        };
+        lines.push(Line::from(Span::styled(
+            msg,
+            Style::default().fg(PHOSPHOR_DIM),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            format!("  {:<24}  Agent", "Session"),
+            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+        )));
+        for session in sessions {
+            let name = if session.tmux_name.chars().count() > 24 {
+                let cut: String = session.tmux_name.chars().take(23).collect();
+                format!("{cut}…")
+            } else {
+                session.tmux_name.clone()
+            };
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {name:<24}  "),
+                    Style::default().fg(PHOSPHOR_GREEN),
+                ),
+                Span::styled(
+                    session.agent_runtime.clone(),
+                    Style::default().fg(PHOSPHOR_DIM),
+                ),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "  r recover  i inspect  p purge",
+        "  Enter reconnect  ·  N new session  ·  X shell  ·  P purge",
         Style::default().fg(PHOSPHOR_DIM),
     )));
 
@@ -1324,10 +1431,12 @@ mod list_name_scroll_tests {
         let tmp = tempfile::tempdir().unwrap();
         let state = ManagerState::from_config(&config, tmp.path());
 
+        // Rows without active instances: cursor(1) + 2 spaces + name(27) = 30 cols.
+        // The selected highlight adds a trailing-padding span: 30 + 3 = 33.
         let width = list_names_content_width(&state, 19);
 
-        assert_eq!(width, 31);
-        assert_eq!(max_offset(width, 19), 12);
+        assert_eq!(width, 33);
+        assert_eq!(max_offset(width, 19), 14);
     }
 
     #[test]
@@ -1353,7 +1462,7 @@ mod list_name_scroll_tests {
             })
             .unwrap();
 
-        assert_eq!(state.list_names_scroll_x, 12);
+        assert_eq!(state.list_names_scroll_x, 14);
     }
 }
 
@@ -2592,7 +2701,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &mut state);
         })
         .unwrap();
 
@@ -2652,7 +2761,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary(), &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 72, 24), 0, &summary(), &cfg, &mut state);
         })
         .unwrap();
 
@@ -2693,7 +2802,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &mut state);
         })
         .unwrap();
 
@@ -2717,7 +2826,7 @@ mod subpanel_padding_tests {
     }
 
     #[test]
-    fn preview_includes_recoverable_instances_from_index() {
+    fn preview_shows_compact_running_badge_for_active_instances() {
         let ws = ws_config_with_allowed(&["alpha"], Some("alpha"));
         let mut cfg = AppConfig::default();
         cfg.workspaces.insert("demo".into(), ws);
@@ -2737,7 +2846,7 @@ mod subpanel_padding_tests {
                 workdir: "/workspace/demo".into(),
                 role_key: "alpha".into(),
                 agent_runtime: "claude".into(),
-                status: crate::instance::InstanceStatus::RestoreAvailable,
+                status: crate::instance::InstanceStatus::Active,
                 updated_at: "2026-05-11T00:00:00Z".into(),
             },
             crate::instance::InstanceIndexEntry {
@@ -2766,18 +2875,18 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(72, 24);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 72, 24), &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 72, 24), 0, &summary, &cfg, &mut state);
         })
         .unwrap();
 
         let joined = buffer_text(term.backend().buffer());
-        assert!(joined.contains("Instances"), "{joined}");
-        assert!(joined.contains("k7p9m2xq"), "{joined}");
-        assert!(joined.contains("restore"), "{joined}");
-        assert!(joined.contains("alpha"), "{joined}");
+        // Compact badge shows the "Running" block title and instance count.
+        assert!(joined.contains("Running"), "{joined}");
+        assert!(joined.contains("1 instance running"), "{joined}");
+        // CleanExited instances are not shown in the compact summary.
         assert!(
             !joined.contains("done0001"),
-            "cleanly exited instances should not occupy the active panel: {joined}"
+            "cleanly exited instances must not appear: {joined}"
         );
     }
 
@@ -2814,7 +2923,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &mut state);
         })
         .unwrap();
 
@@ -2877,7 +2986,7 @@ mod subpanel_padding_tests {
             std::path::Path::new("/tmp"),
         );
         term.draw(|f| {
-            super::render_details_pane(f, Rect::new(0, 0, 60, 24), &summary, &cfg, &mut state);
+            super::render_details_pane(f, Rect::new(0, 0, 60, 24), 0, &summary, &cfg, &mut state);
         })
         .unwrap();
 

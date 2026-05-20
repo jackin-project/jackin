@@ -24,14 +24,25 @@ pub(super) fn handle_list_key(
     _cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
-    // See ManagerListRow docs for row layout.
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => Ok(InputOutcome::ExitJackin),
-        KeyCode::Left | KeyCode::Char('h' | 'H') => {
+        // Left/Right arrows: tree expand/collapse.
+        // h/l keep horizontal scroll so the details pane stays scrollable.
+        KeyCode::Left => {
+            state.inline_new_session_picker = None;
+            handle_tree_left(state);
+            Ok(InputOutcome::Continue)
+        }
+        KeyCode::Right => {
+            state.inline_new_session_picker = None;
+            handle_tree_right(state);
+            Ok(InputOutcome::Continue)
+        }
+        KeyCode::Char('h' | 'H') => {
             scroll_list_horizontal(state, -8);
             Ok(InputOutcome::Continue)
         }
-        KeyCode::Right | KeyCode::Char('l' | 'L') => {
+        KeyCode::Char('l' | 'L') => {
             scroll_list_horizontal(state, 8);
             Ok(InputOutcome::Continue)
         }
@@ -41,6 +52,7 @@ pub(super) fn handle_list_key(
             } else {
                 state.inline_role_picker = None;
                 state.inline_agent_picker = None;
+                state.inline_new_session_picker = None;
                 let selected = state.selected.saturating_sub(1);
                 if selected != state.selected {
                     state.reset_list_scroll();
@@ -55,7 +67,8 @@ pub(super) fn handle_list_key(
             } else {
                 state.inline_role_picker = None;
                 state.inline_agent_picker = None;
-                let selected = (state.selected + 1).min(state.row_count() - 1);
+                state.inline_new_session_picker = None;
+                let selected = (state.selected + 1).min(state.row_count().saturating_sub(1));
                 if selected != state.selected {
                     state.reset_list_scroll();
                     state.selected = selected;
@@ -64,13 +77,8 @@ pub(super) fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Enter => match state.selected_row() {
-            ManagerListRow::CurrentDirectory => {
-                // Launch against cwd. Run-loop routes through the same
-                // role-picker stage as LaunchNamed.
-                Ok(InputOutcome::LaunchCurrentDir)
-            }
+            ManagerListRow::CurrentDirectory => Ok(InputOutcome::LaunchCurrentDir),
             ManagerListRow::NewWorkspace => {
-                // Start the create prelude with a FileBrowser modal open.
                 let mut prelude = super::super::state::CreatePreludeState::new();
                 prelude.modal = Some(Modal::FileBrowser {
                     target: FileBrowserTarget::CreateFirstMountSrc,
@@ -85,13 +93,17 @@ pub(super) fn handle_list_key(
                 .map_or(InputOutcome::Continue, |summary| {
                     InputOutcome::LaunchNamed(summary.name.clone())
                 })),
+            ManagerListRow::WorkspaceInstance(_, _) => Ok(instance_action_outcome(
+                state,
+                ConsoleInstanceAction::Reconnect,
+                "No recoverable instance selected.",
+            )),
         },
         KeyCode::Char('e' | 'E') => {
             match state.selected_row() {
-                ManagerListRow::CurrentDirectory | ManagerListRow::NewWorkspace => {
-                    // Silent no-op — current directory has no config to edit,
-                    // and NewWorkspace is a sentinel.
-                }
+                ManagerListRow::CurrentDirectory
+                | ManagerListRow::NewWorkspace
+                | ManagerListRow::WorkspaceInstance(_, _) => {}
                 ManagerListRow::SavedWorkspace(i) => {
                     if let Some(summary) = state.workspaces.get(i) {
                         let name = summary.name.clone();
@@ -105,19 +117,38 @@ pub(super) fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('n' | 'N') => {
-            let mut prelude = super::super::state::CreatePreludeState::new();
-            prelude.modal = Some(Modal::FileBrowser {
-                target: FileBrowserTarget::CreateFirstMountSrc,
-                state: FileBrowserState::new_from_home()?,
-            });
-            state.stage = ManagerStage::CreatePrelude(prelude);
+            if let ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) = state.selected_row() {
+                let instances = state.workspace_active_instances(ws_idx);
+                if let Some(entry) = instances.get(inst_idx) {
+                    let container = entry.container_base.clone();
+                    let picker =
+                        crate::console::widgets::agent_choice::AgentChoiceState::with_choices(
+                            crate::agent::Agent::ALL.to_vec(),
+                        );
+                    state.inline_new_session_picker = Some((container, picker));
+                } else {
+                    state.list_modal = Some(Modal::ErrorPopup {
+                        state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                            "Instance unavailable",
+                            "Instance no longer active; list refreshes automatically.",
+                        ),
+                    });
+                }
+            } else {
+                let mut prelude = super::super::state::CreatePreludeState::new();
+                prelude.modal = Some(Modal::FileBrowser {
+                    target: FileBrowserTarget::CreateFirstMountSrc,
+                    state: FileBrowserState::new_from_home()?,
+                });
+                state.stage = ManagerStage::CreatePrelude(prelude);
+            }
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('d' | 'D') => {
             match state.selected_row() {
-                ManagerListRow::CurrentDirectory | ManagerListRow::NewWorkspace => {
-                    // Silent no-op on the sentinel.
-                }
+                ManagerListRow::CurrentDirectory
+                | ManagerListRow::NewWorkspace
+                | ManagerListRow::WorkspaceInstance(_, _) => {}
                 ManagerListRow::SavedWorkspace(i) => {
                     if let Some(ws) = state.workspaces.get(i) {
                         let name = ws.name.clone();
@@ -160,10 +191,35 @@ pub(super) fn handle_list_key(
             "No purgeable instance for this workspace.",
         )),
         KeyCode::Char('s' | 'S') => {
-            state.stage = ManagerStage::Settings(SettingsState::from_config(config));
+            if !matches!(
+                state.selected_row(),
+                ManagerListRow::WorkspaceInstance(_, _)
+            ) {
+                state.stage = ManagerStage::Settings(SettingsState::from_config(config));
+            }
             Ok(InputOutcome::Continue)
         }
         _ => Ok(InputOutcome::Continue),
+    }
+}
+
+fn handle_tree_right(state: &mut ManagerState<'_>) {
+    if let ManagerListRow::SavedWorkspace(i) = state.selected_row() {
+        state.expand_workspace(i);
+    }
+}
+
+/// `←`: collapse expanded workspace, or jump to parent workspace from an
+/// instance row.
+fn handle_tree_left(state: &mut ManagerState<'_>) {
+    match state.selected_row() {
+        ManagerListRow::SavedWorkspace(i) => {
+            state.collapse_workspace(i);
+        }
+        ManagerListRow::WorkspaceInstance(ws_idx, _) => {
+            state.collapse_workspace(ws_idx);
+        }
+        _ => {}
     }
 }
 
@@ -188,6 +244,15 @@ fn selected_instance_container(
     state: &ManagerState<'_>,
     action: ConsoleInstanceAction,
 ) -> Option<String> {
+    if let ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) = state.selected_row() {
+        let instances = state.workspace_active_instances(ws_idx);
+        let entry = instances.get(inst_idx)?;
+        return if instance_action_accepts_status(action, entry.status) {
+            Some(entry.container_base.clone())
+        } else {
+            None
+        };
+    }
     let (workspace_name, workspace_label, workdir) = selected_instance_scope(state)?;
     let query = crate::instance::InstanceQuery {
         workspace_name,
@@ -196,14 +261,10 @@ fn selected_instance_container(
         role_key: None,
         agent_runtime: None,
     };
-    state
-        .instances
-        .iter()
-        .filter(|entry| {
-            entry.matches(query) && instance_action_accepts_status(action, entry.status)
-        })
-        .map(|entry| entry.container_base.clone())
-        .next()
+    state.instances.iter().find_map(|entry| {
+        (entry.matches(query) && instance_action_accepts_status(action, entry.status))
+            .then(|| entry.container_base.clone())
+    })
 }
 
 fn selected_instance_scope<'a>(
@@ -221,6 +282,13 @@ fn selected_instance_scope<'a>(
                 summary.workdir.as_str(),
             )
         }),
+        ManagerListRow::WorkspaceInstance(ws_idx, _) => state.workspaces.get(ws_idx).map(|ws| {
+            (
+                Some(ws.name.as_str()),
+                ws.name.as_str(),
+                ws.workdir.as_str(),
+            )
+        }),
         ManagerListRow::NewWorkspace => None,
     }
 }
@@ -233,7 +301,9 @@ const fn instance_action_accepts_status(
         ConsoleInstanceAction::Reconnect | ConsoleInstanceAction::Inspect => {
             !matches!(status, crate::instance::InstanceStatus::Purged)
         }
-        ConsoleInstanceAction::NewSession | ConsoleInstanceAction::Shell => matches!(
+        ConsoleInstanceAction::NewSession
+        | ConsoleInstanceAction::NewSessionWithAgent(_)
+        | ConsoleInstanceAction::Shell => matches!(
             status,
             crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
         ),
@@ -385,6 +455,32 @@ pub(super) fn handle_inline_agent_picker(
             }
             ModalOutcome::Continue => InputOutcome::Continue,
         },
+    }
+}
+
+/// Handle key events while the new-session agent picker is open in the left
+/// sidebar. Commit → dispatch `NewSessionWithAgent`; Cancel/Esc → dismiss.
+pub(super) fn handle_new_session_picker(
+    state: &mut ManagerState<'_>,
+    key: KeyEvent,
+) -> InputOutcome {
+    let Some((container, picker)) = state.inline_new_session_picker.as_mut() else {
+        return InputOutcome::Continue;
+    };
+    match picker.handle_key(key) {
+        ModalOutcome::Commit(agent) => {
+            let container = container.clone();
+            state.inline_new_session_picker = None;
+            InputOutcome::InstanceAction {
+                container,
+                action: crate::console::ConsoleInstanceAction::NewSessionWithAgent(agent),
+            }
+        }
+        ModalOutcome::Cancel => {
+            state.inline_new_session_picker = None;
+            InputOutcome::Continue
+        }
+        ModalOutcome::Continue => InputOutcome::Continue,
     }
 }
 

@@ -3,7 +3,7 @@ title: "Console Agent Session Control"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — Phases 1–3 shipped: instance discovery, console Instances panel, `hardline --shell`, tmux-backed primary session, secondary agent sessions via `hardline --new`, and console `a`/`x` keybindings. Phase 4 (agent runtime status + resource panel integration) remains open.
+**Status**: Partially implemented — instance discovery, console workspace tree-view (expandable instance rows, session pane, `N`/`X`/`P` instance-row actions), `hardline --shell`, tmux-backed primary session, secondary agent sessions via `hardline --new`, and console `a`/`x` keybindings are shipped. Phase 4 (live session reconciliation, agent runtime status, resource panel integration) remains open.
 
 ## Problem
 
@@ -29,7 +29,9 @@ The missing product model is a running container as an isolated collaboration en
 
 ## Shipped
 
-The implemented session substrate is documented in [Container Supervisor and Session Model](/reference/architecture/) (internals) and in the [`jackin hardline` command reference](/commands/hardline/).
+The workspace list is now an expandable tree. Workspace rows with active containers show a running indicator; pressing `→` reveals instance child rows showing instance ID, role, agent, and status. Selecting an instance row opens a session pane listing recorded tmux sessions, with `Enter` (reconnect), `N` (new session with agent picker), `X` (shell), and `P` (purge) actions. `←` collapses the tree and returns to the workspace row. The workspace detail pane shows a compact running-instances badge when the tree is collapsed.
+
+The session substrate and CLI escape hatches are documented in [Container Supervisor and Session Model](/reference/architecture/) (internals) and in the [`jackin hardline` command reference](/commands/hardline/). The console tree-view is documented in [`jackin console`](/commands/console/).
 
 ## Phase 4 — Rich operator coordination *(open)*
 

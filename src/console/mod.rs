@@ -36,6 +36,7 @@ pub enum ConsoleOutcome {
 pub enum ConsoleInstanceAction {
     Reconnect,
     NewSession,
+    NewSessionWithAgent(crate::agent::Agent),
     Shell,
     Inspect,
     Purge,

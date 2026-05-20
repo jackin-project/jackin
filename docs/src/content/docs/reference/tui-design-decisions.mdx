@@ -46,7 +46,7 @@ This rule applies to every tabbed surface that ships; add a `tab_bar_focused: bo
 - Down from the last field in a form's field area is a no-op. Tab is the key that crosses into the button area.
 - Up from the first button in the button area is a no-op. BackTab is the key that crosses back into the field area.
 
-**Exception — tree header expand/collapse:** Right = expand and Left = collapse on tree-style header rows (Secrets AgentHeader, Auth RoleHeader, Environments RoleHeader) is a correct intra-area semantic action. This absorption pattern is intentional and must be preserved.
+**Exception — tree header expand/collapse:** Right = expand and Left = collapse on tree-style header rows (Secrets AgentHeader, Auth RoleHeader, Environments RoleHeader, and workspace manager list rows) is a correct intra-area semantic action. This absorption pattern is intentional and must be preserved. For the workspace manager list specifically: `→` on a workspace row expands it to reveal instance child rows; `←` on an instance row collapses the parent workspace and moves the cursor to it; `←` on an already-expanded workspace row collapses it in place. The `h`/`l` bindings are reserved for horizontal scrolling of the details pane and must not be aliased to expand/collapse.
 
 **Exception — flat button-strip widgets:** Self-contained single-row button widgets (`confirm.rs`, `save_discard.rs`, `mount_dst_choice.rs`, `source_picker.rs`, `scope_picker.rs`) may treat Left / Right as BackTab / Tab equivalents. The entire widget is a single flat area with no area boundary to cross, so there is no violation.
 

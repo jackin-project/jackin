@@ -493,8 +493,9 @@ pub(super) fn commit_editor_save_with_runner<D: crate::docker_client::DockerApi>
                 // Land on the workspace that was just saved.
                 let saved_count = state.workspaces.len();
                 if let Some(idx) = state.workspaces.iter().position(|w| w.name == current_name) {
-                    state.selected =
-                        ManagerListRow::SavedWorkspace(idx).to_screen_index(saved_count);
+                    state.selected = ManagerListRow::SavedWorkspace(idx)
+                        .to_screen_index(saved_count)
+                        .unwrap_or(0);
                 }
             }
         }

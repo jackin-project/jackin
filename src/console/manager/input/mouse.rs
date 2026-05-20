@@ -7,9 +7,9 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use super::super::super::widgets::file_browser::FileBrowserState;
 use super::super::render::global_mounts::trust_content_width;
 use super::super::render::list::{
-    agents_block_agent_count, env_block_height, global_mounts_block_height,
-    global_mounts_content_width, instance_block_height, mount_block_height, workspace_has_any_env,
-    workspace_instance_count, workspace_mounts_content_width,
+    COMPACT_INSTANCES_HEIGHT, agents_block_agent_count, env_block_height,
+    global_mounts_block_height, global_mounts_content_width, mount_block_height,
+    workspace_active_count, workspace_has_any_env, workspace_mounts_content_width,
 };
 #[cfg(test)]
 use super::super::render::max_scroll_offset;
@@ -174,11 +174,13 @@ pub fn handle_mouse_with_config(
             // the list pane's content area (excluding borders).
             if let Some(row) = list_content_row_index(state, mouse, term_size, seam_x) {
                 state.inline_role_picker = None;
-                let selected = row.to_screen_index(state.workspaces.len());
-                if selected != state.selected {
+                if let Some(selected) = state.index_of_row(row)
+                    && selected != state.selected
+                {
                     state.reset_list_scroll();
                     state.selected = selected;
                     state.inline_agent_picker = None;
+                    state.inline_new_session_picker = None;
                 }
             }
         }
@@ -747,6 +749,24 @@ struct ListScrollAreas {
     roles: Option<ScrollArea>,
 }
 
+fn selected_picker_role(state: &ManagerState<'_>) -> Option<crate::selector::RoleSelector> {
+    state
+        .inline_role_picker
+        .as_ref()
+        .and_then(|picker| {
+            picker
+                .list_state
+                .selected
+                .and_then(|idx| picker.filtered.get(idx).cloned())
+        })
+        .or_else(|| {
+            state
+                .inline_agent_picker
+                .as_ref()
+                .map(|(role, _)| role.clone())
+        })
+}
+
 fn list_scroll_areas(
     state: &ManagerState<'_>,
     term_size: Rect,
@@ -763,21 +783,7 @@ fn list_scroll_areas(
     let summary = state.selected_workspace_summary()?;
     let workspace = config.workspaces.get(&summary.name)?;
     let mounts_h = mount_block_height(workspace.mounts.as_slice());
-    let picker_role = state
-        .inline_role_picker
-        .as_ref()
-        .and_then(|picker| {
-            picker
-                .list_state
-                .selected
-                .and_then(|idx| picker.filtered.get(idx).cloned())
-        })
-        .or_else(|| {
-            state
-                .inline_agent_picker
-                .as_ref()
-                .map(|(role, _)| role.clone())
-        });
+    let picker_role = selected_picker_role(state);
     let global_rows = super::super::render::global_rows_for(config, picker_role.as_ref());
     let (global_mounts, role_global_mounts) =
         super::super::render::partition_mounts_by_scope(&global_rows);
@@ -796,14 +802,14 @@ fn list_scroll_areas(
     } else {
         0
     };
-    let instance_count = workspace_instance_count(
+    let instance_count = workspace_active_count(
         &state.instances,
         Some(summary.name.as_str()),
         summary.name.as_str(),
         summary.workdir.as_str(),
     );
     let instances_h = if instance_count > 0 {
-        instance_block_height(instance_count)
+        COMPACT_INSTANCES_HEIGHT
     } else {
         0
     };
@@ -811,14 +817,15 @@ fn list_scroll_areas(
         state.inline_role_picker.is_some() || state.inline_agent_picker.is_some();
     let agent_count = agents_block_agent_count(Some(workspace), config);
     let roles_h = super::super::render::list::agents_block_height(agent_count);
-    let roles_y = body_y + 3 + mounts_h + global_h + role_global_h + env_h + instances_h;
+    let top_h = instances_h;
+    let roles_y = body_y + top_h + 3 + mounts_h + global_h + role_global_h + env_h;
     let roles_content_w =
         super::super::render::list::agents_block_content_width(Some(workspace), config);
     Some(ListScrollAreas {
         workspace: ScrollArea {
             area: Rect {
                 x: right_x,
-                y: body_y + 3,
+                y: body_y + top_h + 3,
                 width: right_w,
                 height: mounts_h,
             },
@@ -827,7 +834,7 @@ fn list_scroll_areas(
         global: ScrollArea {
             area: Rect {
                 x: right_x,
-                y: body_y + 3 + mounts_h,
+                y: body_y + top_h + 3 + mounts_h,
                 width: right_w,
                 height: global_h,
             },
@@ -836,7 +843,7 @@ fn list_scroll_areas(
         role_global: (role_global_h > 0).then(|| ScrollArea {
             area: Rect {
                 x: right_x,
-                y: body_y + 3 + mounts_h + global_h,
+                y: body_y + top_h + 3 + mounts_h + global_h,
                 width: right_w,
                 height: role_global_h,
             },
@@ -864,9 +871,9 @@ fn current_dir_scroll_areas(
     let mounts = [current_dir_mount(state)];
     let mounts_h = mount_block_height(&mounts);
     let cwd_str = &state.current_dir;
-    let instance_count = workspace_instance_count(&state.instances, None, cwd_str, cwd_str);
+    let instance_count = workspace_active_count(&state.instances, None, cwd_str, cwd_str);
     let instances_h = if instance_count > 0 {
-        instance_block_height(instance_count)
+        COMPACT_INSTANCES_HEIGHT
     } else {
         0
     };
