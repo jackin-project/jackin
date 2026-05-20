@@ -1051,13 +1051,16 @@ async fn launch_role_runtime(
     run_args.extend_from_slice(&["--label", &image_label]);
     // Socket mount: host path is keyed by container name so multiple containers
     // can run concurrently without colliding.
-    // Ensure the host-side socket directory exists before Docker tries to mount
-    // it. On macOS /run/jackin/ is not created automatically.
+    // Ensure /run/jackin/ exists on the host, then pre-create the socket path as
+    // an empty regular file. Docker's -v behaviour: if the source path does not
+    // exist it creates a directory there, and the in-container path becomes a
+    // directory. The daemon then cannot remove_file() or bind() at that path
+    // and the client gets EACCES. Pre-creating a regular file forces Docker to
+    // bind-mount a file, so the daemon can unlink it and bind the real socket.
     let socket_dir = std::path::Path::new("/run/jackin");
-    if !socket_dir.exists() {
-        std::fs::create_dir_all(socket_dir).ok(); // best-effort; docker will error if needed
-    }
+    std::fs::create_dir_all(socket_dir).ok();
     let socket_host_path = format!("/run/jackin/{container_name}.sock");
+    std::fs::write(&socket_host_path, b"").ok();
     let socket_mount = format!("{socket_host_path}:/run/jackin/jackin.sock");
     run_args.extend_from_slice(&["-v", &socket_mount]);
     // Forward JACKIN_AGENT so the daemon knows which runtime to launch first.

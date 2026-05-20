@@ -20,7 +20,7 @@ use crate::protocol::{
     AgentState, ClientMsg, ServerMsg, SessionInfo, b64_decode, b64_encode, frame,
 };
 use crate::session::{
-    Session, SessionEvent, available_agents, build_agent_command, build_shell_command, next_id,
+    Session, SessionEvent, available_agents, build_agent_command, build_shell_command,
 };
 use crate::socket;
 use crate::statusbar::{StatusBar, draw_horizontal_border, draw_vertical_border};
@@ -81,7 +81,6 @@ impl Multiplexer {
     }
 
     fn spawn_session(&mut self, agent: Option<String>) -> Result<u64> {
-        let id = next_id();
         let (label, cmd) = match &agent {
             Some(slug) => (
                 capitalize(slug),
@@ -89,8 +88,7 @@ impl Multiplexer {
             ),
             None => ("Shell".to_string(), build_shell_command()),
         };
-        let session = Session::spawn(
-            id,
+        let (session, id) = Session::spawn(
             &label,
             agent.clone(),
             cmd,
@@ -116,7 +114,6 @@ impl Multiplexer {
         };
         let from_id = tab.focused_id;
         let agent_slug = self.sessions.get(&from_id).and_then(|s| s.agent.clone());
-        let new_id = next_id();
         let (label, cmd) = match &agent_slug {
             Some(slug) => (
                 capitalize(slug),
@@ -124,8 +121,7 @@ impl Multiplexer {
             ),
             None => ("Shell".to_string(), build_shell_command()),
         };
-        let session = Session::spawn(
-            new_id,
+        let (session, new_id) = Session::spawn(
             &label,
             agent_slug,
             cmd,

@@ -20,8 +20,6 @@ pub fn next_id() -> u64 {
 }
 
 pub struct Session {
-    #[allow(dead_code)]
-    pub id: u64,
     pub label: String,
     pub agent: Option<String>,
     pub state: AgentState,
@@ -47,14 +45,13 @@ impl Session {
     ///
     /// Returns the session and a receiver for `SessionEvent`s.
     pub fn spawn(
-        id: u64,
         label: impl Into<String>,
         agent: Option<String>,
         cmd: CommandBuilder,
         rows: u16,
         cols: u16,
         event_tx: mpsc::UnboundedSender<SessionEvent>,
-    ) -> Result<Self> {
+    ) -> Result<(Self, u64)> {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -99,7 +96,7 @@ impl Session {
 
         // Reader task: PTY master stdout → SessionEvent::Output.
         let event_tx_output = event_tx.clone();
-        let sid = id;
+        let sid = next_id();
         tokio::task::spawn_blocking(move || {
             let mut reader = master_for_read
                 .lock()
@@ -123,17 +120,19 @@ impl Session {
             drop(child); // ensure child is waited on
         });
 
-        Ok(Session {
-            id,
-            label: label.into(),
-            agent,
-            state: AgentState::Working,
-            vterminal: VirtualTerminal::new(rows, cols),
-            input_tx,
-            pty_master: master,
-            last_output_at: std::time::Instant::now(),
-            alive: true,
-        })
+        Ok((
+            Session {
+                label: label.into(),
+                agent,
+                state: AgentState::Working,
+                vterminal: VirtualTerminal::new(rows, cols),
+                input_tx,
+                pty_master: master,
+                last_output_at: std::time::Instant::now(),
+                alive: true,
+            },
+            sid,
+        ))
     }
 
     pub fn send_input(&self, data: &[u8]) {
