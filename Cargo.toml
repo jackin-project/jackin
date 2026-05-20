@@ -95,3 +95,10 @@ cast_possible_truncation = "allow"
 cast_possible_wrap = "allow"
 cast_sign_loss = "allow"
 cast_precision_loss = "allow"
+
+[profile.dev]
+# Line tables only: ~30-50% smaller artifacts, faster link, stack traces still work.
+debug = 1
+
+[profile.release]
+strip = "symbols"
