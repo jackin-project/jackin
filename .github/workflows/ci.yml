@@ -71,17 +71,11 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
-        with:
-          components: clippy, rustfmt
-          # `-D warnings` is enforced explicitly on the clippy step
-          # below; leaving the action's default RUSTFLAGS would also
-          # apply it to `cargo build`/`cargo check`/`cargo nextest run`.
-          rustflags: ""
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          install_args: "cargo:cargo-nextest"
+          install_args: "rust cargo:cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - run: rustup component add rustfmt clippy
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       # When docker/construct/** changes, the published construct:trixie image
@@ -122,17 +116,17 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+      - name: Read MSRV from Cargo.toml
+        id: msrv
+        run: echo "version=$(sed -n 's/^rust-version = \"\(.*\)\"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          # Override rust-toolchain.toml: this job exists specifically to
-          # verify the floor declared in `Cargo.toml`'s `rust-version`.
-          toolchain: "1.94.0"
-          cache-key: msrv-1.94.0
-          rustflags: ""
+          install_args: "rust@${{ steps.msrv.outputs.version }}"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: cargo check on MSRV
         run: cargo check --workspace --all-targets --locked
         env:
-          RUSTUP_TOOLCHAIN: "1.94.0"
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
 
   build-validator:
     needs: [changes, check]
@@ -157,18 +151,11 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
-      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          target: ${{ matrix.target }}
-          cache-key: validator-${{ matrix.target }}
-          rustflags: ""
-
-      - name: Install Zig and cargo-zigbuild
-        if: matrix.zigbuild
-        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-        with:
-          install_args: "zig cargo:cargo-zigbuild"
+          install_args: "${{ matrix.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - run: rustup target add ${{ matrix.target }}
 
       - name: Build validator
         run: |

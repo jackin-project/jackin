@@ -1,10 +1,11 @@
 [tools]
 bun = "1.3.14"
+"cargo:cargo-nextest" = "0.9.136"
 just = "1.51.0"
 node = "24.15.0"
 zig = "0.16.0"
 # rust is read from `rust-toolchain.toml` via the `idiomatic_version_file`
-# setting below — single source of truth for the toolchain channel.
+# setting below — single source of truth for the toolchain channel and components.
 
 [settings]
 idiomatic_version_file_enable_tools = ["rust"]

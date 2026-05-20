@@ -341,39 +341,14 @@ When a PR ships the last remaining piece of a roadmap item — every feature, su
 
 A `Status: Resolved` roadmap page that still sits in the directory is a smell, not a shipping target. The only legitimate reasons to keep one are (a) genuine remaining work tracked on the same page, or (b) load-bearing inbound links from open roadmap items that still treat the page as an internal contract. Anything else gets retired in the PR that ships the last piece — not deferred to a later cleanup PR, because every later contributor reading the resolved page treats it as authoritative until it is gone.
 
-## Workflow / CI changes (agent-only)
+## Workflow / CI changes (agent-only) — see `.github/AGENTS.md`
 
-CI workflow files (`.github/workflows/*.yml`, `.github/actions/*/action.yml`) have failure modes that are invisible to PR-time CI because most gated jobs do not run on a `pull_request` event. Two rules apply when an agent modifies these files.
+All rules for authoring and modifying CI workflow files live in [`.github/AGENTS.md`](.github/AGENTS.md). Read that file before modifying any workflow. It covers:
 
-### Scope third-party-CLI env vars to the consuming job
-
-Environment variables that a third-party CLI reads as a default-selection — most notably `BUILDX_BUILDER` for `docker buildx`, `DOCKER_BUILDKIT`, `GH_TOKEN` / `GITHUB_TOKEN`, `KUBECONFIG`, `AWS_PROFILE`, `RUSTUP_TOOLCHAIN`, `npm_config_*` — MUST be declared at the job level, not at the workflow level. Setting such a variable at the workflow level leaks it into every job in the file; a job that did not opt into the corresponding tool setup will then fail at runtime when the CLI dereferences the variable against state that does not exist for that job.
-
-Workflow-level `env:` is reserved for in-house naming and paths (`DIGEST_DIR`, `REGISTRY_IMAGE`, internal labels) where the value has no runtime effect on third-party tooling and leaking into all jobs is harmless.
-
-The break in [jackin-project/jackin#266](https://github.com/jackin-project/jackin/pull/266) is the canonical example: a refactor hoisted `BUILDX_BUILDER: jackin-construct` to workflow level. The `publish-manifest` job intentionally creates no buildx builder because `docker buildx imagetools create` / `inspect` are registry-side operations, but with the env var leaked in, every `docker buildx` invocation tried to look up a builder by that name and exited with `ERROR: no builder "jackin-construct" found`. Fixed by moving the env var into the `build` job's `env:` block where the matching `setup-buildx-action` actually creates that builder.
-
-### Hard-gate registry / production publishing to main
-
-Every workflow that writes to a public registry, a tag, a release, a Homebrew formula, or any other production artifact MUST gate the actual publish step on `main`. PRs and dispatches from feature branches are allowed to *build* and *test* but are forbidden from publishing. The canonical pattern in jackin is the `is_publish` flag on the `Construct Image` workflow's `changes` job: it is true only when `event_name == 'push'` (already main-by-construction because `on.push.branches: [main]`) or when `event_name == 'workflow_dispatch' && ref == 'refs/heads/main'`. Login, push-by-digest, digest upload, and the multi-platform manifest publish all gate on `is_publish == 'true'`; the local-only build path gates on `is_publish != 'true'` and runs from any branch.
-
-Equivalent contracts apply to `publish-preview` (Publish Homebrew Preview, hard-gated to dispatch-from-main and to `workflow_run.head_branch == 'main'`), `deploy` (Docs, gated to push-to-main and dispatch-from-main), and `build-validator` (CI, gated to push-to-main and dispatch). A PR-time run of any of these workflows must never produce a registry- or release-visible side effect.
-
-When introducing a new publishing workflow or step, mirror this shape: derive a single `is_publish` (or analogous) boolean once, in the `changes` job, and gate every side-effect step on it. Do not restate the conditions inline at multiple steps — the duplication is exactly how a reviewer or refactor accidentally widens the gate.
-
-### Smoke-test push-only / main-only jobs before requesting merge
-
-Jobs gated to `push to main`, `workflow_dispatch && ref == 'refs/heads/main'`, or `workflow_run.conclusion == 'success' && head_branch == 'main'` do not run on `pull_request` events. Their runtime path is therefore untested by PR-time CI. Examples in jackin today: `build-validator` (CI), `publish-manifest` (Construct Image), `deploy` (Docs), `publish-preview` (Publish Homebrew Preview).
-
-Before requesting merge on a PR that touches such a job — the job's `if:` clause, its `needs:` chain, any env var it consumes, the recipe it ultimately runs, or any composite/reusable action it depends on — the agent must:
-
-1. Trigger the workflow against the PR's feature branch with `gh workflow run <workflow.yml> --ref <branch>`. Every workflow in jackin already declares `workflow_dispatch:` for exactly this purpose.
-2. Wait for the dispatched run with `gh run watch <run-id>` and confirm the touched job succeeded.
-3. Note the run URL in the PR's "Verify locally" section so a reviewer can audit it.
-
-When the gated job's safety rails forbid running it from a feature branch (for example `publish-preview` is hard-gated to dispatch from `main` only because it publishes to a public Homebrew tap), the PR description must explicitly call out the gap and what manual verification was performed instead — at minimum, walking the code path against the production state and naming the assumptions that could not be exercised.
-
-PR-time CI is necessary but not sufficient for workflow-file changes. The smoke-test step closes the largest remaining hole.
+- **mise-only tool installation** — no language-specific setup actions; `jdx/mise-action` everywhere.
+- **Env-var scope** — third-party-CLI env vars at job level, never workflow level.
+- **Publishing gates** — registry / release / Homebrew steps must hard-gate on `main`.
+- **Smoke-testing push-only jobs** — `gh workflow run --ref <branch>` before merge for jobs that don't run on `pull_request`.
 
 ## PR squash merge messages
 

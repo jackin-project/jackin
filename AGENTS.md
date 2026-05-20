@@ -272,3 +272,4 @@ Rules in the files below apply to everyone working in the repo — human and age
 - [DEPRECATED.md](DEPRECATED.md) — ledger of deprecated APIs, CLIs, config values, and usage patterns that are still supported but should eventually be removed.
 - [TODO.md](TODO.md) — small follow-up items (especially upstream dependencies waiting on a fix), the per-PR stale-docs checklist, and the convention for code-level `TODO(<topic>)` markers that link back to this file.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — contribution flow, DCO v1.1 text, and license terms for external contributors.
+- [.github/AGENTS.md](.github/AGENTS.md) — GitHub Actions workflow authoring rules: mise-only tool installation, env-var scope, publish gating, and smoke-testing push-only jobs.
