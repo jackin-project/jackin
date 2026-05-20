@@ -99,7 +99,7 @@ model = "gpt-5"
     let run_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker run") && call.contains("/run/jackin/"))
+        .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
         .expect("role docker run should run");
     assert!(
         run_cmd.contains("JACKIN_AGENT=codex"),
@@ -208,7 +208,7 @@ plugins = []
     let run_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker run") && call.contains("/run/jackin/"))
+        .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
         .expect("role docker run should run");
     assert!(
         run_cmd.contains("JACKIN_AGENT=codex"),
