@@ -78,9 +78,9 @@ jobs:
           # below; leaving the action's default RUSTFLAGS would also
           # apply it to `cargo build`/`cargo check`/`cargo nextest run`.
           rustflags: ""
-      - uses: taiki-e/install-action@213ccc1a076163c093f914550b94feb90fab916d # v2.79.2
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          tool: cargo-nextest
+          tool: cargo:cargo-nextest@0.9.136
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       # When docker/construct/** changes, the published construct:trixie image
@@ -170,9 +170,9 @@ jobs:
 
       - name: Install cargo-zigbuild
         if: matrix.zigbuild
-        uses: taiki-e/install-action@213ccc1a076163c093f914550b94feb90fab916d # v2.79.2
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          tool: cargo-zigbuild
+          tool: cargo:cargo-zigbuild@0.22.3
 
       - name: Build validator
         run: |

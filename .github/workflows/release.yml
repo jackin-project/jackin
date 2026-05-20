@@ -59,9 +59,9 @@ jobs:
         with:
           # Toolchain channel comes from rust-toolchain.toml.
           rustflags: ""
-      - uses: taiki-e/install-action@213ccc1a076163c093f914550b94feb90fab916d # v2.79.2
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          tool: cargo-nextest
+          tool: cargo:cargo-nextest@0.9.136
       - run: cargo nextest run
 
   build:
