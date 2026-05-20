@@ -12,8 +12,6 @@ pub struct Cell {
     pub fg: Color,
     pub bg: Color,
     pub bold: bool,
-    #[allow(dead_code)]
-    pub underline: bool,
 }
 
 impl Default for Cell {
@@ -23,7 +21,6 @@ impl Default for Cell {
             fg: Color::Default,
             bg: Color::Default,
             bold: false,
-            underline: false,
         }
     }
 }
@@ -47,8 +44,6 @@ pub struct VirtualTerminal {
     current_bg: Color,
     current_bold: bool,
     current_underline: bool,
-    #[allow(dead_code)]
-    in_alt_screen: bool,
     saved_cursor: (u16, u16),
     parser: Parser,
 }
@@ -68,7 +63,6 @@ impl VirtualTerminal {
             current_bg: Color::Default,
             current_bold: false,
             current_underline: false,
-            in_alt_screen: false,
             saved_cursor: (0, 0),
             parser: Parser::new(),
         }
@@ -167,13 +161,6 @@ impl VirtualTerminal {
         buf.extend_from_slice(b"\x1b[0m");
     }
 
-    #[allow(dead_code)]
-    pub fn cell(&self, row: u16, col: u16) -> Option<&Cell> {
-        self.cells
-            .get(row as usize)
-            .and_then(|r| r.get(col as usize))
-    }
-
     fn put_char(&mut self, ch: char) {
         let r = self.cursor_row as usize;
         let c = self.cursor_col as usize;
@@ -183,7 +170,6 @@ impl VirtualTerminal {
                 fg: self.current_fg,
                 bg: self.current_bg,
                 bold: self.current_bold,
-                underline: self.current_underline,
             };
         }
         self.cursor_col += 1;
