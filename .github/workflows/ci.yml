@@ -75,6 +75,7 @@ jobs:
         with:
           install_args: "rust cargo:cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - run: rustup component add rustfmt clippy
       - run: cargo fmt --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
       # When docker/construct/** changes, the published construct:trixie image

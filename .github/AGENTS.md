@@ -10,7 +10,7 @@ Rules for writing and maintaining workflows under `.github/workflows/` and compo
 
 **In GitHub Actions workflows:**
 - Use `jdx/mise-action` for every tool installation — Rust, Node, Bun, Zig, cargo tools, everything.
-- **Rust toolchain version and components**: declared in `rust-toolchain.toml` (`channel`, `components`). mise reads this file automatically via `idiomatic_version_file` — no version pin in `install_args` needed for the standard build.
+- **Rust toolchain version**: channel declared in `rust-toolchain.toml`. mise reads it automatically via `idiomatic_version_file` — no version pin in `install_args` needed. mise does **not** install `components` from `rust-toolchain.toml`; add a `rustup component add <components>` step after mise when a job needs non-default components (e.g. `rustfmt`, `clippy`).
 - **Cross-compilation targets**: run `rustup target add <target>` after the mise step; `actions-rust-lang/setup-rust-toolchain`'s `target:` parameter is not available.
 - **Cargo-registry tools** (nextest, zigbuild, cross, etc.): pass as `install_args: "cargo:<crate>"`.
 - **MSRV override** (the `msrv` CI job only): read the version from `Cargo.toml`'s `rust-version` field at job runtime — never hardcode it. Use `install_args: "rust@${{ steps.msrv.outputs.version }}"` and pin the cargo step with `RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}`.
