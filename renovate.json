@@ -13,7 +13,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "fileMatch": ["(^|/)Dockerfile$"],
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
       "matchStrings": ["ARG RUST_VERSION=(?<currentValue>[\\d.]+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "rust-lang/rust",
@@ -21,14 +21,14 @@
     },
     {
       "customType": "regex",
-      "fileMatch": ["(^|/)Dockerfile$"],
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
       "matchStrings": ["ARG NODE_VERSION=(?<currentValue>[\\d.]+)"],
       "datasourceTemplate": "node-version",
       "packageNameTemplate": "node"
     },
     {
       "customType": "regex",
-      "fileMatch": ["(^|/)Dockerfile$"],
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
       "matchStrings": ["ARG JAVA_VERSION=oracle-graalvm-(?<currentValue>[\\d.]+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "oracle/graalvm-jdk",
@@ -37,7 +37,7 @@
     },
     {
       "customType": "regex",
-      "fileMatch": ["(^|/)Dockerfile$"],
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
       "matchStrings": ["ARG PROTOC_VERSION=(?<currentValue>[\\d.]+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "protocolbuffers/protobuf",
@@ -46,7 +46,7 @@
     },
     {
       "customType": "regex",
-      "fileMatch": ["(^|/)Dockerfile$"],
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
       "matchStrings": ["ARG CARGO_BINSTALL_VERSION=(?<currentValue>[\\d.]+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "cargo-bins/cargo-binstall",
@@ -55,7 +55,7 @@
     },
     {
       "customType": "regex",
-      "fileMatch": ["(^|/)Dockerfile$"],
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
       "matchStrings": ["ARG CAVEMAN_VERSION=(?<currentValue>[\\d.]+)"],
       "datasourceTemplate": "github-releases",
       "packageNameTemplate": "JuliusBrussee/caveman",
