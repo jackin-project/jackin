@@ -56,7 +56,9 @@ pub async fn read_msg(stream: &mut UnixStream) -> Option<ClientMsg> {
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await.ok()?;
     let len = u32::from_be_bytes(len_buf) as usize;
-    if len > 4 * 1024 * 1024 { return None; } // 4 MiB sanity guard
+    if len > 4 * 1024 * 1024 {
+        return None;
+    } // 4 MiB sanity guard
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body).await.ok()?;
     serde_json::from_slice(&body).ok()
@@ -81,7 +83,9 @@ pub async fn handle_status_query(
 
 /// Encode raw output bytes for transport in a ServerMsg::Output.
 pub fn encode_output(data: &[u8]) -> ServerMsg {
-    ServerMsg::Output { data: b64_encode(data) }
+    ServerMsg::Output {
+        data: b64_encode(data),
+    }
 }
 
 /// Decode input bytes from a ClientMsg::Input.

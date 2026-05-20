@@ -17,7 +17,13 @@ pub struct Cell {
 
 impl Default for Cell {
     fn default() -> Self {
-        Self { ch: ' ', fg: Color::Default, bg: Color::Default, bold: false, underline: false }
+        Self {
+            ch: ' ',
+            fg: Color::Default,
+            bg: Color::Default,
+            bold: false,
+            underline: false,
+        }
     }
 }
 
@@ -69,7 +75,8 @@ impl VirtualTerminal {
     pub fn resize(&mut self, rows: u16, cols: u16) {
         self.rows = rows;
         self.cols = cols;
-        self.cells.resize(rows as usize, vec![Cell::default(); cols as usize]);
+        self.cells
+            .resize(rows as usize, vec![Cell::default(); cols as usize]);
         for row in &mut self.cells {
             row.resize(cols as usize, Cell::default());
         }
@@ -111,7 +118,9 @@ impl VirtualTerminal {
                     let mut first = true;
 
                     if last_bold && !cell.bold {
-                        if !first { buf.push(b';'); }
+                        if !first {
+                            buf.push(b';');
+                        }
                         buf.extend_from_slice(b"0");
                         first = false;
                         // After reset, also re-emit fg/bg.
@@ -119,21 +128,29 @@ impl VirtualTerminal {
                         last_bg = Color::Default;
                     }
                     if cell.bold && !last_bold {
-                        if !first { buf.push(b';'); }
+                        if !first {
+                            buf.push(b';');
+                        }
                         buf.extend_from_slice(b"1");
                         first = false;
                     }
                     if cell.fg != last_fg {
-                        if !first { buf.push(b';'); }
+                        if !first {
+                            buf.push(b';');
+                        }
                         write_fg(buf, cell.fg);
                         first = false;
                         last_fg = cell.fg;
                     }
                     if cell.bg != last_bg {
-                        if !first { buf.push(b';'); }
+                        if !first {
+                            buf.push(b';');
+                        }
                         write_bg(buf, cell.bg);
                         #[allow(unused_assignments)]
-                        { first = false; }
+                        {
+                            first = false;
+                        }
                         last_bg = cell.bg;
                     }
                     buf.push(b'm');
@@ -190,13 +207,25 @@ impl VirtualTerminal {
 
     fn erase_in_line(&mut self, mode: u16) {
         let r = self.cursor_row as usize;
-        if r >= self.cells.len() { return; }
+        if r >= self.cells.len() {
+            return;
+        }
         let c = self.cursor_col as usize;
         let cols = self.cols as usize;
         match mode {
-            0 => { for col in c..cols { self.cells[r][col] = Cell::default(); } }
-            1 => { for col in 0..=c.min(cols.saturating_sub(1)) { self.cells[r][col] = Cell::default(); } }
-            2 => { self.cells[r] = vec![Cell::default(); cols]; }
+            0 => {
+                for col in c..cols {
+                    self.cells[r][col] = Cell::default();
+                }
+            }
+            1 => {
+                for col in 0..=c.min(cols.saturating_sub(1)) {
+                    self.cells[r][col] = Cell::default();
+                }
+            }
+            2 => {
+                self.cells[r] = vec![Cell::default(); cols];
+            }
             _ => {}
         }
     }
@@ -235,9 +264,15 @@ impl Perform for VirtualTerminal {
 
     fn execute(&mut self, byte: u8) {
         match byte {
-            b'\r' => { self.cursor_col = 0; }
-            b'\n' | b'\x0b' | b'\x0c' => { self.advance_line(); }
-            b'\x08' => { self.cursor_col = self.cursor_col.saturating_sub(1); }
+            b'\r' => {
+                self.cursor_col = 0;
+            }
+            b'\n' | b'\x0b' | b'\x0c' => {
+                self.advance_line();
+            }
+            b'\x08' => {
+                self.cursor_col = self.cursor_col.saturating_sub(1);
+            }
             b'\t' => {
                 let next = (self.cursor_col + 8) & !7;
                 self.cursor_col = next.min(self.cols.saturating_sub(1));
@@ -246,8 +281,15 @@ impl Perform for VirtualTerminal {
         }
     }
 
-    fn csi_dispatch(&mut self, params: &Params, _intermediates: &[u8], _ignore: bool, action: char) {
-        let ps: Vec<u16> = params.iter()
+    fn csi_dispatch(
+        &mut self,
+        params: &Params,
+        _intermediates: &[u8],
+        _ignore: bool,
+        action: char,
+    ) {
+        let ps: Vec<u16> = params
+            .iter()
             .map(|subp| subp.first().copied().unwrap_or(0))
             .collect();
         let p0 = ps.first().copied().unwrap_or(0);
@@ -255,21 +297,43 @@ impl Perform for VirtualTerminal {
 
         match action {
             // Cursor movement
-            'A' => { self.cursor_row = self.cursor_row.saturating_sub(p0.max(1)); }
-            'B' => { self.cursor_row = (self.cursor_row + p0.max(1)).min(self.rows.saturating_sub(1)); }
-            'C' => { self.cursor_col = (self.cursor_col + p0.max(1)).min(self.cols.saturating_sub(1)); }
-            'D' => { self.cursor_col = self.cursor_col.saturating_sub(p0.max(1)); }
-            'E' => { self.cursor_row = (self.cursor_row + p0.max(1)).min(self.rows.saturating_sub(1)); self.cursor_col = 0; }
-            'F' => { self.cursor_row = self.cursor_row.saturating_sub(p0.max(1)); self.cursor_col = 0; }
-            'G' => { self.cursor_col = p0.saturating_sub(1).min(self.cols.saturating_sub(1)); }
+            'A' => {
+                self.cursor_row = self.cursor_row.saturating_sub(p0.max(1));
+            }
+            'B' => {
+                self.cursor_row = (self.cursor_row + p0.max(1)).min(self.rows.saturating_sub(1));
+            }
+            'C' => {
+                self.cursor_col = (self.cursor_col + p0.max(1)).min(self.cols.saturating_sub(1));
+            }
+            'D' => {
+                self.cursor_col = self.cursor_col.saturating_sub(p0.max(1));
+            }
+            'E' => {
+                self.cursor_row = (self.cursor_row + p0.max(1)).min(self.rows.saturating_sub(1));
+                self.cursor_col = 0;
+            }
+            'F' => {
+                self.cursor_row = self.cursor_row.saturating_sub(p0.max(1));
+                self.cursor_col = 0;
+            }
+            'G' => {
+                self.cursor_col = p0.saturating_sub(1).min(self.cols.saturating_sub(1));
+            }
             'H' | 'f' => {
                 self.cursor_row = p0.saturating_sub(1).min(self.rows.saturating_sub(1));
                 self.cursor_col = p1.saturating_sub(1).min(self.cols.saturating_sub(1));
             }
-            'd' => { self.cursor_row = p0.saturating_sub(1).min(self.rows.saturating_sub(1)); }
+            'd' => {
+                self.cursor_row = p0.saturating_sub(1).min(self.rows.saturating_sub(1));
+            }
             // Erase
-            'J' => { self.erase_in_display(p0); }
-            'K' => { self.erase_in_line(p0); }
+            'J' => {
+                self.erase_in_display(p0);
+            }
+            'K' => {
+                self.erase_in_line(p0);
+            }
             // Scroll
             'S' => {
                 let n = p0.max(1) as usize;
@@ -299,12 +363,23 @@ impl Perform for VirtualTerminal {
             'r' => {
                 let top = p0.saturating_sub(1).min(self.rows.saturating_sub(1));
                 let bot = p1.saturating_sub(1).min(self.rows.saturating_sub(1));
-                if top < bot { self.scroll_top = top; self.scroll_bot = bot; }
-                else { self.scroll_top = 0; self.scroll_bot = self.rows.saturating_sub(1); }
+                if top < bot {
+                    self.scroll_top = top;
+                    self.scroll_bot = bot;
+                } else {
+                    self.scroll_top = 0;
+                    self.scroll_bot = self.rows.saturating_sub(1);
+                }
             }
             // Save/restore cursor
-            's' => { self.saved_cursor = (self.cursor_row, self.cursor_col); }
-            'u' => { let (r, c) = self.saved_cursor; self.cursor_row = r; self.cursor_col = c; }
+            's' => {
+                self.saved_cursor = (self.cursor_row, self.cursor_col);
+            }
+            'u' => {
+                let (r, c) = self.saved_cursor;
+                self.cursor_row = r;
+                self.cursor_col = c;
+            }
             // SGR
             'm' => {
                 if ps.is_empty() || (ps.len() == 1 && p0 == 0) {
@@ -323,11 +398,21 @@ impl Perform for VirtualTerminal {
                             self.current_bold = false;
                             self.current_underline = false;
                         }
-                        1 => { self.current_bold = true; }
-                        4 => { self.current_underline = true; }
-                        22 => { self.current_bold = false; }
-                        24 => { self.current_underline = false; }
-                        30..=37 => { self.current_fg = Color::Ansi(ps[i] as u8 - 30); }
+                        1 => {
+                            self.current_bold = true;
+                        }
+                        4 => {
+                            self.current_underline = true;
+                        }
+                        22 => {
+                            self.current_bold = false;
+                        }
+                        24 => {
+                            self.current_underline = false;
+                        }
+                        30..=37 => {
+                            self.current_fg = Color::Ansi(ps[i] as u8 - 30);
+                        }
                         38 => {
                             if ps.get(i + 1).copied() == Some(5) {
                                 if let Some(&n) = ps.get(i + 2) {
@@ -335,14 +420,20 @@ impl Perform for VirtualTerminal {
                                     i += 2;
                                 }
                             } else if ps.get(i + 1).copied() == Some(2) {
-                                if let (Some(&r), Some(&g), Some(&b)) = (ps.get(i+2), ps.get(i+3), ps.get(i+4)) {
+                                if let (Some(&r), Some(&g), Some(&b)) =
+                                    (ps.get(i + 2), ps.get(i + 3), ps.get(i + 4))
+                                {
                                     self.current_fg = Color::Rgb(r as u8, g as u8, b as u8);
                                     i += 4;
                                 }
                             }
                         }
-                        39 => { self.current_fg = Color::Default; }
-                        40..=47 => { self.current_bg = Color::Ansi(ps[i] as u8 - 40); }
+                        39 => {
+                            self.current_fg = Color::Default;
+                        }
+                        40..=47 => {
+                            self.current_bg = Color::Ansi(ps[i] as u8 - 40);
+                        }
                         48 => {
                             if ps.get(i + 1).copied() == Some(5) {
                                 if let Some(&n) = ps.get(i + 2) {
@@ -350,15 +441,23 @@ impl Perform for VirtualTerminal {
                                     i += 2;
                                 }
                             } else if ps.get(i + 1).copied() == Some(2) {
-                                if let (Some(&r), Some(&g), Some(&b)) = (ps.get(i+2), ps.get(i+3), ps.get(i+4)) {
+                                if let (Some(&r), Some(&g), Some(&b)) =
+                                    (ps.get(i + 2), ps.get(i + 3), ps.get(i + 4))
+                                {
                                     self.current_bg = Color::Rgb(r as u8, g as u8, b as u8);
                                     i += 4;
                                 }
                             }
                         }
-                        49 => { self.current_bg = Color::Default; }
-                        90..=97 => { self.current_fg = Color::Ansi(ps[i] as u8 - 90 + 8); }
-                        100..=107 => { self.current_bg = Color::Ansi(ps[i] as u8 - 100 + 8); }
+                        49 => {
+                            self.current_bg = Color::Default;
+                        }
+                        90..=97 => {
+                            self.current_fg = Color::Ansi(ps[i] as u8 - 90 + 8);
+                        }
+                        100..=107 => {
+                            self.current_bg = Color::Ansi(ps[i] as u8 - 100 + 8);
+                        }
                         _ => {}
                     }
                     i += 1;
@@ -384,7 +483,9 @@ impl Perform for VirtualTerminal {
                 if r < self.cells.len() {
                     let cols = self.cols as usize;
                     let row = &mut self.cells[r];
-                    for _ in 0..n { row.insert(c, Cell::default()); }
+                    for _ in 0..n {
+                        row.insert(c, Cell::default());
+                    }
                     row.truncate(cols);
                 }
             }
@@ -408,8 +509,14 @@ impl Perform for VirtualTerminal {
                     self.cursor_row = self.cursor_row.saturating_sub(1);
                 }
             }
-            b'7' => { self.saved_cursor = (self.cursor_row, self.cursor_col); }
-            b'8' => { let (r, c) = self.saved_cursor; self.cursor_row = r; self.cursor_col = c; }
+            b'7' => {
+                self.saved_cursor = (self.cursor_row, self.cursor_col);
+            }
+            b'8' => {
+                let (r, c) = self.saved_cursor;
+                self.cursor_row = r;
+                self.cursor_col = c;
+            }
             _ => {}
         }
     }
@@ -430,7 +537,10 @@ fn write_cursor_pos(buf: &mut Vec<u8>, row: u16, col: u16) {
 }
 
 fn write_u16(buf: &mut Vec<u8>, n: u16) {
-    if n == 0 { buf.push(b'0'); return; }
+    if n == 0 {
+        buf.push(b'0');
+        return;
+    }
     let mut tmp = [0u8; 5];
     let mut i = 5;
     let mut n = n;
@@ -445,13 +555,24 @@ fn write_u16(buf: &mut Vec<u8>, n: u16) {
 fn write_fg(buf: &mut Vec<u8>, color: Color) {
     match color {
         Color::Default => buf.extend_from_slice(b"39"),
-        Color::Ansi(n) if n < 8 => { buf.extend_from_slice(b"3"); write_u16(buf, n as u16); }
-        Color::Ansi(n) if n < 16 => { buf.extend_from_slice(b"9"); write_u16(buf, (n - 8) as u16); }
-        Color::Ansi(n) => { buf.extend_from_slice(b"38;5;"); write_u16(buf, n as u16); }
+        Color::Ansi(n) if n < 8 => {
+            buf.extend_from_slice(b"3");
+            write_u16(buf, n as u16);
+        }
+        Color::Ansi(n) if n < 16 => {
+            buf.extend_from_slice(b"9");
+            write_u16(buf, (n - 8) as u16);
+        }
+        Color::Ansi(n) => {
+            buf.extend_from_slice(b"38;5;");
+            write_u16(buf, n as u16);
+        }
         Color::Rgb(r, g, b) => {
             buf.extend_from_slice(b"38;2;");
-            write_u16(buf, r as u16); buf.push(b';');
-            write_u16(buf, g as u16); buf.push(b';');
+            write_u16(buf, r as u16);
+            buf.push(b';');
+            write_u16(buf, g as u16);
+            buf.push(b';');
             write_u16(buf, b as u16);
         }
     }
@@ -460,13 +581,24 @@ fn write_fg(buf: &mut Vec<u8>, color: Color) {
 fn write_bg(buf: &mut Vec<u8>, color: Color) {
     match color {
         Color::Default => buf.extend_from_slice(b"49"),
-        Color::Ansi(n) if n < 8 => { buf.extend_from_slice(b"4"); write_u16(buf, n as u16); }
-        Color::Ansi(n) if n < 16 => { buf.extend_from_slice(b"10"); write_u16(buf, (n - 8) as u16); }
-        Color::Ansi(n) => { buf.extend_from_slice(b"48;5;"); write_u16(buf, n as u16); }
+        Color::Ansi(n) if n < 8 => {
+            buf.extend_from_slice(b"4");
+            write_u16(buf, n as u16);
+        }
+        Color::Ansi(n) if n < 16 => {
+            buf.extend_from_slice(b"10");
+            write_u16(buf, (n - 8) as u16);
+        }
+        Color::Ansi(n) => {
+            buf.extend_from_slice(b"48;5;");
+            write_u16(buf, n as u16);
+        }
         Color::Rgb(r, g, b) => {
             buf.extend_from_slice(b"48;2;");
-            write_u16(buf, r as u16); buf.push(b';');
-            write_u16(buf, g as u16); buf.push(b';');
+            write_u16(buf, r as u16);
+            buf.push(b';');
+            write_u16(buf, g as u16);
+            buf.push(b';');
             write_u16(buf, b as u16);
         }
     }

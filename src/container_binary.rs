@@ -1,13 +1,11 @@
-/// Download, build, cache, and verify the `jackin-container` binary.
+/// Download, cache, and verify the `jackin-container` binary.
 ///
-/// Acquisition strategy — chosen at runtime based on version and context:
+/// Acquisition strategy — chosen at runtime based on version:
 ///
-/// **Dev version** (`-dev` suffix) AND running from a source checkout:
-///   Build via `docker run rust:1.95 cargo build -p jackin-container` inside
-///   the workspace. No cross-compilation toolchain needed on the host.
-///
-/// **Dev or preview version** AND no source checkout:
+/// **Dev or preview version** (`-dev` or `-preview.` suffix):
 ///   Download from the rolling `preview` GitHub Release tag.
+///   To use a locally-built binary instead, run:
+///   `cargo run --bin build-jackin-container`
 ///
 /// **Stable release** (no `-dev`, no `-preview`):
 ///   Download from the versioned `v<version>` GitHub Release tag.
@@ -21,7 +19,6 @@ use crate::paths::JackinPaths;
 
 pub const REQUIRED_VERSION: &str = env!("JACKIN_VERSION");
 
-const RUST_IMAGE: &str = "rust:1.95.0";
 const ASSET_PREFIX: &str = "jackin-container";
 
 /// Ensure the `jackin-container` binary is available and return its cached path.
@@ -42,32 +39,6 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
             .with_context(|| format!("failed to create cache dir {}", parent.display()))?;
     }
 
-    let is_dev = REQUIRED_VERSION.contains("-dev");
-
-    if is_dev {
-        if let Some(workspace) = find_workspace_root() {
-            // For source builds, re-check cache by mtime: if any source file in
-            // crates/jackin-container/src/ is newer than the cached binary,
-            // rebuild. This catches edits made without committing (git hash
-            // stays the same but source changed).
-            let needs_rebuild = !is_valid_cached_binary(&cached)
-                || source_newer_than(&workspace.join("crates/jackin-container"), &cached);
-            if needs_rebuild {
-                build_from_source(&workspace, arch, &cached).await?;
-            } else {
-                crate::debug_log!(
-                    "container_binary",
-                    "source-build cache still fresh for {REQUIRED_VERSION}"
-                );
-            }
-            return Ok(cached);
-        }
-        eprintln!(
-            "[jackin] dev build: no source workspace found; \
-             downloading jackin-container from preview release..."
-        );
-    }
-
     download_and_cache(REQUIRED_VERSION, arch, &cached).await?;
     Ok(cached)
 }
@@ -83,80 +54,12 @@ pub fn cached_binary_path(cache_dir: &Path, version: &str, arch: &str) -> PathBu
 }
 
 /// Linux arch for the container target, derived from the host machine arch.
-pub fn container_arch() -> &'static str {
+pub const fn container_arch() -> &'static str {
     if cfg!(target_arch = "aarch64") {
         "arm64"
     } else {
         "amd64"
     }
-}
-
-/// Walk up from the running jackin binary to find the workspace root.
-/// Returns Some when the directory contains `crates/jackin-container/`.
-fn find_workspace_root() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let mut dir = exe.parent()?.to_path_buf();
-    for _ in 0..10 {
-        if dir.join("crates").join("jackin-container").is_dir() {
-            return Some(dir);
-        }
-        dir = dir.parent()?.to_path_buf();
-    }
-    None
-}
-
-/// Build `jackin-container` for Linux inside Docker from the workspace source.
-async fn build_from_source(workspace: &Path, arch: &str, dest: &Path) -> Result<()> {
-    eprintln!(
-        "[jackin] building jackin-container {REQUIRED_VERSION} for linux/{arch} from source \
-         (first build ~2-3 min, cached after)..."
-    );
-
-    let out_dir = dest.parent().expect("dest has parent");
-    let build_cmd = "cd /workspace && \
-                     cargo build --release -p jackin-container 2>&1 && \
-                     cp /workspace/target/release/jackin-container /out/jackin-container";
-
-    let workspace_str = workspace.display().to_string();
-    let out_str = out_dir.display().to_string();
-    let workspace_mount = format!("{}:/workspace:ro", workspace_str);
-    let out_mount = format!("{}:/out", out_str);
-
-    let status = tokio::process::Command::new("docker")
-        .args([
-            "run",
-            "--rm",
-            "--platform",
-            linux_platform(arch),
-            "-v",
-            &workspace_mount,
-            "-v",
-            &out_mount,
-            "-v",
-            "jackin-container-build-cache:/root/.cargo/registry",
-            RUST_IMAGE,
-            "sh",
-            "-c",
-            build_cmd,
-        ])
-        .status()
-        .await
-        .context("failed to run docker to build jackin-container from source")?;
-
-    if !status.success() {
-        anyhow::bail!(
-            "docker build of jackin-container failed.\n\
-             Check Docker is running and the workspace at {} is accessible.",
-            workspace.display()
-        );
-    }
-
-    chmod_executable(dest);
-    eprintln!(
-        "[jackin] jackin-container built and cached at {}",
-        dest.display()
-    );
-    Ok(())
 }
 
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
@@ -183,8 +86,9 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         anyhow::bail!(
             "jackin-container {version} not found in GitHub Releases.\n\
              \n\
-             Developing locally? Run jackin from the workspace checkout so it\n\
-             builds jackin-container from source via Docker instead.\n\
+             Developing locally? Build and cache it first:\n\
+               cargo run --bin build-jackin-container\n\
+             Then retry `jackin load`.\n\
              \n\
              Using an installed (Homebrew) jackin? The CI preview build may not\n\
              have completed yet. Wait a few minutes and retry, or check:\n\
@@ -215,9 +119,7 @@ fn download_url(version: &str, arch: &str) -> String {
     if version.contains("-dev") || version.contains("-preview.") {
         format!("https://github.com/jackin-project/jackin/releases/download/preview/{asset}")
     } else {
-        format!(
-            "https://github.com/jackin-project/jackin/releases/download/v{version}/{asset}"
-        )
+        format!("https://github.com/jackin-project/jackin/releases/download/v{version}/{asset}")
     }
 }
 
@@ -228,49 +130,15 @@ fn linux_target(arch: &str) -> &'static str {
     }
 }
 
-fn linux_platform(arch: &str) -> &'static str {
-    match arch {
-        "arm64" => "linux/arm64",
-        _ => "linux/amd64",
-    }
-}
-
-/// Returns true if any file under `src_dir` is newer than `cached_binary`.
-/// Used to detect uncommitted source edits that need a rebuild.
-fn source_newer_than(src_dir: &Path, cached_binary: &Path) -> bool {
-    let Ok(cache_mtime) = std::fs::metadata(cached_binary)
-        .and_then(|m| m.modified())
-    else {
-        return true;
-    };
-    newest_mtime(src_dir).map_or(false, |src_mtime| src_mtime > cache_mtime)
-}
-
-fn newest_mtime(dir: &Path) -> Option<std::time::SystemTime> {
-    let Ok(entries) = std::fs::read_dir(dir) else { return None };
-    entries
-        .flatten()
-        .filter_map(|e| {
-            let meta = e.metadata().ok()?;
-            if meta.is_dir() {
-                newest_mtime(&e.path())
-            } else {
-                meta.modified().ok()
-            }
-        })
-        .max()
-}
-
-fn is_valid_cached_binary(path: &Path) -> bool {
+pub fn is_valid_cached_binary(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt as _;
     path.is_file()
         && path
             .metadata()
-            .map(|m| m.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
+            .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
 }
 
-fn chmod_executable(path: &Path) {
+pub fn chmod_executable(path: &Path) {
     use std::os::unix::fs::PermissionsExt as _;
     if let Ok(meta) = std::fs::metadata(path) {
         let mut perms = meta.permissions();
@@ -343,18 +211,5 @@ mod tests {
         assert_eq!(linux_target("arm64"), "aarch64-unknown-linux-gnu");
         assert_eq!(linux_target("amd64"), "x86_64-unknown-linux-gnu");
         assert_eq!(linux_target("x86_64"), "x86_64-unknown-linux-gnu");
-    }
-
-    #[test]
-    fn find_workspace_root_returns_some_in_dev() {
-        // When running tests from the workspace, the binary is under target/
-        // and find_workspace_root should locate the workspace root.
-        // This test passes in a dev checkout and is a no-op in CI installs.
-        let root = find_workspace_root();
-        if root.is_some() {
-            assert!(
-                root.unwrap().join("crates").join("jackin-container").is_dir()
-            );
-        }
     }
 }

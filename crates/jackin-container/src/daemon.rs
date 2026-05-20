@@ -16,8 +16,12 @@ use tokio::time::{Duration, interval};
 use crate::dialog::{Dialog, DialogAction, PaletteCommand};
 use crate::input::{ArrowDir, InputEvent, parse};
 use crate::layout::{Direction, Rect, Tab};
-use crate::protocol::{AgentState, ClientMsg, ServerMsg, SessionInfo, b64_decode, b64_encode, frame};
-use crate::session::{Session, SessionEvent, available_agents, build_agent_command, build_shell_command, next_id};
+use crate::protocol::{
+    AgentState, ClientMsg, ServerMsg, SessionInfo, b64_decode, b64_encode, frame,
+};
+use crate::session::{
+    Session, SessionEvent, available_agents, build_agent_command, build_shell_command, next_id,
+};
 use crate::socket;
 use crate::statusbar::{StatusBar, draw_horizontal_border, draw_vertical_border};
 
@@ -79,7 +83,10 @@ impl Multiplexer {
     fn spawn_session(&mut self, agent: Option<String>) -> Result<u64> {
         let id = next_id();
         let (label, cmd) = match &agent {
-            Some(slug) => (capitalize(slug), build_agent_command(slug, &self.env_passthrough)),
+            Some(slug) => (
+                capitalize(slug),
+                build_agent_command(slug, &self.env_passthrough),
+            ),
             None => ("Shell".to_string(), build_shell_command()),
         };
         let session = Session::spawn(
@@ -104,12 +111,17 @@ impl Multiplexer {
     }
 
     fn split_focused(&mut self, horizontal: bool) -> Result<()> {
-        let Some(tab) = self.tabs.get(self.active_tab) else { return Ok(()); };
+        let Some(tab) = self.tabs.get(self.active_tab) else {
+            return Ok(());
+        };
         let from_id = tab.focused_id;
         let agent_slug = self.sessions.get(&from_id).and_then(|s| s.agent.clone());
         let new_id = next_id();
         let (label, cmd) = match &agent_slug {
-            Some(slug) => (capitalize(slug), build_agent_command(slug, &self.env_passthrough)),
+            Some(slug) => (
+                capitalize(slug),
+                build_agent_command(slug, &self.env_passthrough),
+            ),
             None => ("Shell".to_string(), build_shell_command()),
         };
         let session = Session::spawn(
@@ -134,7 +146,9 @@ impl Multiplexer {
     }
 
     fn close_focused_pane(&mut self) {
-        let Some(tab) = self.tabs.get_mut(self.active_tab) else { return };
+        let Some(tab) = self.tabs.get_mut(self.active_tab) else {
+            return;
+        };
         let id = tab.focused_id;
         let all = tab.tree.all_ids();
         let next_focus = all.iter().find(|&&sid| sid != id).copied();
@@ -167,7 +181,9 @@ impl Multiplexer {
             }
             return;
         }
-        let leaves: Vec<(u64, Rect)> = self.tabs.iter()
+        let leaves: Vec<(u64, Rect)> = self
+            .tabs
+            .iter()
             .flat_map(|tab| tab.tree.leaves(content_rect))
             .collect();
         for (id, rect) in leaves {
@@ -190,7 +206,9 @@ impl Multiplexer {
     }
 
     fn move_focus(&mut self, dir: ArrowDir) {
-        let Some(tab) = self.tabs.get(self.active_tab) else { return };
+        let Some(tab) = self.tabs.get(self.active_tab) else {
+            return;
+        };
         let content_rect = Rect::new(1, 0, self.content_rows, self.term_cols);
         let d = match dir {
             ArrowDir::Left => Direction::Left,
@@ -224,7 +242,11 @@ impl Multiplexer {
                 self.move_focus(dir);
                 Some(self.compose_frame())
             }
-            InputEvent::MousePress { row, col, button: 0 } if row == 0 => {
+            InputEvent::MousePress {
+                row,
+                col,
+                button: 0,
+            } if row == 0 => {
                 // Left click on status bar → tab switch.
                 if let Some(idx) = self.status_bar.tab_at_col(col + 1) {
                     if idx < self.tabs.len() {
@@ -258,9 +280,7 @@ impl Multiplexer {
                             self.dialog = None;
                             Some(self.compose_frame())
                         }
-                        DialogAction::Redraw => {
-                            Some(self.compose_frame())
-                        }
+                        DialogAction::Redraw => Some(self.compose_frame()),
                         DialogAction::Command(cmd) => {
                             let result = self.handle_palette_command(cmd);
                             self.dialog = None;
@@ -287,14 +307,25 @@ impl Multiplexer {
 
     fn handle_palette_command(&mut self, cmd: PaletteCommand) -> Option<Vec<u8>> {
         match cmd {
-            PaletteCommand::SplitHorizontal => { let _ = self.split_focused(true); }
-            PaletteCommand::SplitVertical => { let _ = self.split_focused(false); }
+            PaletteCommand::SplitHorizontal => {
+                let _ = self.split_focused(true);
+            }
+            PaletteCommand::SplitVertical => {
+                let _ = self.split_focused(false);
+            }
             PaletteCommand::NewTab | PaletteCommand::NewSession => {
                 let agents = self.available_agents.clone();
-                self.dialog = Some(Dialog::AgentPicker { agents, selected: 0 });
+                self.dialog = Some(Dialog::AgentPicker {
+                    agents,
+                    selected: 0,
+                });
             }
-            PaletteCommand::ClosePane => { self.close_focused_pane(); }
-            PaletteCommand::ZoomPane => { self.toggle_zoom(); }
+            PaletteCommand::ClosePane => {
+                self.close_focused_pane();
+            }
+            PaletteCommand::ZoomPane => {
+                self.toggle_zoom();
+            }
         }
         None
     }
@@ -303,10 +334,15 @@ impl Multiplexer {
         let mut buf = Vec::with_capacity(65536);
         buf.extend_from_slice(b"\x1b[?25l");
 
-        let states: Vec<(u64, AgentState)> = self.sessions.iter()
-            .map(|(&id, s)| (id, s.state))
-            .collect();
-        self.status_bar.render(&mut buf, self.term_cols, &self.tabs, self.active_tab, &states);
+        let states: Vec<(u64, AgentState)> =
+            self.sessions.iter().map(|(&id, s)| (id, s.state)).collect();
+        self.status_bar.render(
+            &mut buf,
+            self.term_cols,
+            &self.tabs,
+            self.active_tab,
+            &states,
+        );
 
         let content_rect = Rect::new(1, 0, self.content_rows, self.term_cols);
         let focused_id = self.active_focused_id();
@@ -326,11 +362,23 @@ impl Multiplexer {
                     let is_active = Some(*id) == focused_id;
                     let right_edge = rect.col + rect.cols;
                     if right_edge < self.term_cols {
-                        draw_vertical_border(&mut buf, right_edge, rect.row, rect.row + rect.rows.saturating_sub(1), is_active);
+                        draw_vertical_border(
+                            &mut buf,
+                            right_edge,
+                            rect.row,
+                            rect.row + rect.rows.saturating_sub(1),
+                            is_active,
+                        );
                     }
                     let bot_edge = rect.row + rect.rows;
                     if bot_edge < self.term_rows {
-                        draw_horizontal_border(&mut buf, bot_edge, rect.col, rect.col + rect.cols.saturating_sub(1), is_active);
+                        draw_horizontal_border(
+                            &mut buf,
+                            bot_edge,
+                            rect.col,
+                            rect.col + rect.cols.saturating_sub(1),
+                            is_active,
+                        );
                     }
                 }
             }
@@ -346,13 +394,16 @@ impl Multiplexer {
 
     fn session_infos(&self) -> Vec<SessionInfo> {
         let focused = self.active_focused_id();
-        self.sessions.iter().map(|(&id, s)| SessionInfo {
-            id,
-            label: s.label.clone(),
-            agent: s.agent.clone(),
-            state: s.state,
-            active: Some(id) == focused,
-        }).collect()
+        self.sessions
+            .iter()
+            .map(|(&id, s)| SessionInfo {
+                id,
+                label: s.label.clone(),
+                agent: s.agent.clone(),
+                state: s.state,
+                active: Some(id) == focused,
+            })
+            .collect()
     }
 }
 
@@ -360,10 +411,12 @@ impl Multiplexer {
 pub async fn run_daemon(initial_agent: String) -> Result<()> {
     crate::pid1::install_sigchld_reaper();
 
-    let rows = std::env::var("JACKIN_ROWS").ok()
+    let rows = std::env::var("JACKIN_ROWS")
+        .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(24u16);
-    let cols = std::env::var("JACKIN_COLS").ok()
+    let cols = std::env::var("JACKIN_COLS")
+        .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(80u16);
 

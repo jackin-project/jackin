@@ -15,7 +15,7 @@ const BRAND_BG: &str = "\x1b[48;5;46m";
 const BRAND_FG: &str = "\x1b[38;5;16m"; // near-black
 const BRAND_BOLD: &str = "\x1b[1m";
 
-const TAB_ACTIVE_FG: &str = "\x1b[38;5;46m";  // green text
+const TAB_ACTIVE_FG: &str = "\x1b[38;5;46m"; // green text
 const TAB_ACTIVE_BOLD: &str = "\x1b[1m";
 const TAB_INACTIVE_FG: &str = "\x1b[38;5;245m"; // grey
 const TAB_SEP: &str = "  ";
@@ -28,7 +28,9 @@ pub struct StatusBar {
 
 impl StatusBar {
     pub fn new() -> Self {
-        Self { tab_regions: Vec::new() }
+        Self {
+            tab_regions: Vec::new(),
+        }
     }
 
     /// Render the status bar into `buf`, returning ANSI escape sequences
@@ -87,7 +89,9 @@ impl StatusBar {
             buf.extend_from_slice(TAB_SEP.as_bytes());
 
             col = tab_end + TAB_SEP.len() as u16;
-            if col >= cols { break; }
+            if col >= cols {
+                break;
+            }
         }
 
         buf.extend_from_slice(RESET.as_bytes());
@@ -95,7 +99,9 @@ impl StatusBar {
 
     /// Return the tab index clicked at column `c` (1-based), if any.
     pub fn tab_at_col(&self, c: u16) -> Option<usize> {
-        self.tab_regions.iter().position(|&(start, end)| c >= start && c < end)
+        self.tab_regions
+            .iter()
+            .position(|&(start, end)| c >= start && c < end)
     }
 }
 
@@ -103,10 +109,14 @@ fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> String {
     // Check if any session in this tab is blocked (most urgent state).
     let ids = tab.tree.all_ids();
     let has_blocked = ids.iter().any(|id| {
-        states.iter().any(|(sid, st)| sid == id && *st == AgentState::Blocked)
+        states
+            .iter()
+            .any(|(sid, st)| sid == id && *st == AgentState::Blocked)
     });
     let has_done = ids.iter().any(|id| {
-        states.iter().any(|(sid, st)| sid == id && *st == AgentState::Done)
+        states
+            .iter()
+            .any(|(sid, st)| sid == id && *st == AgentState::Done)
     });
 
     if has_blocked {
@@ -121,7 +131,11 @@ fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> String {
 /// Draw a vertical border line at column `col` for rows `from_row..=to_row`.
 /// Used to separate panes in an HSplit.
 pub fn draw_vertical_border(buf: &mut Vec<u8>, col: u16, from_row: u16, to_row: u16, active: bool) {
-    let color = if active { "\x1b[38;5;46m" } else { "\x1b[38;5;238m" };
+    let color = if active {
+        "\x1b[38;5;46m"
+    } else {
+        "\x1b[38;5;238m"
+    };
     for row in from_row..=to_row {
         // Move to row, col (1-based).
         buf.extend_from_slice(b"\x1b[");
@@ -136,8 +150,18 @@ pub fn draw_vertical_border(buf: &mut Vec<u8>, col: u16, from_row: u16, to_row: 
 }
 
 /// Draw a horizontal border line at row `row` for cols `from_col..=to_col`.
-pub fn draw_horizontal_border(buf: &mut Vec<u8>, row: u16, from_col: u16, to_col: u16, active: bool) {
-    let color = if active { "\x1b[38;5;46m" } else { "\x1b[38;5;238m" };
+pub fn draw_horizontal_border(
+    buf: &mut Vec<u8>,
+    row: u16,
+    from_col: u16,
+    to_col: u16,
+    active: bool,
+) {
+    let color = if active {
+        "\x1b[38;5;46m"
+    } else {
+        "\x1b[38;5;238m"
+    };
     buf.extend_from_slice(b"\x1b[");
     write_dec(buf, row + 1);
     buf.push(b';');
@@ -151,10 +175,17 @@ pub fn draw_horizontal_border(buf: &mut Vec<u8>, row: u16, from_col: u16, to_col
 }
 
 fn write_dec(buf: &mut Vec<u8>, n: u16) {
-    if n == 0 { buf.push(b'0'); return; }
+    if n == 0 {
+        buf.push(b'0');
+        return;
+    }
     let mut tmp = [0u8; 5];
     let mut i = 5;
     let mut v = n;
-    while v > 0 { i -= 1; tmp[i] = b'0' + (v % 10) as u8; v /= 10; }
+    while v > 0 {
+        i -= 1;
+        tmp[i] = b'0' + (v % 10) as u8;
+        v /= 10;
+    }
     buf.extend_from_slice(&tmp[i..]);
 }

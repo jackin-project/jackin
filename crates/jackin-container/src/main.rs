@@ -30,9 +30,7 @@ async fn main() -> Result<()> {
     if is_pid1 {
         // Daemon mode: parse the initial agent from JACKIN_AGENT env or args.
         let agent = std::env::var("JACKIN_AGENT")
-            .unwrap_or_else(|_| {
-                args.get(1).cloned().unwrap_or_else(|| "claude".to_string())
-            });
+            .unwrap_or_else(|_| args.get(1).cloned().unwrap_or_else(|| "claude".to_string()));
         daemon::run_daemon(agent).await
     } else {
         // Client mode.

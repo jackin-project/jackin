@@ -56,7 +56,11 @@ pub fn parse(bytes: &[u8]) -> Vec<InputEvent> {
                 let btn = bytes[i + 3].saturating_sub(32);
                 let col = u16::from(bytes[i + 4].saturating_sub(32).saturating_sub(1));
                 let row = u16::from(bytes[i + 5].saturating_sub(32).saturating_sub(1));
-                events.push(InputEvent::MousePress { col, row, button: btn & 0x3 });
+                events.push(InputEvent::MousePress {
+                    col,
+                    row,
+                    button: btn & 0x3,
+                });
                 i += 6;
                 continue;
             }
@@ -132,7 +136,9 @@ fn parse_sgr_mouse(bytes: &[u8]) -> Option<(InputEvent, usize)> {
         .split(|&b| b == b';')
         .filter_map(|p| std::str::from_utf8(p).ok().and_then(|s| s.parse().ok()))
         .collect();
-    if params.len() < 3 { return None; }
+    if params.len() < 3 {
+        return None;
+    }
     let button = params[0] as u8;
     let col = (params[1] as u16).saturating_sub(1);
     let row = (params[2] as u16).saturating_sub(1);
