@@ -70,6 +70,7 @@ fi
 
 cd jackin
 mise trust
+mise install
 git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
 git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
 ```
