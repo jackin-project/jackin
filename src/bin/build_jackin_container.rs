@@ -93,7 +93,30 @@ fn target_triple(arch: &str) -> &'static str {
     }
 }
 
+fn check_zigbuild_installed() -> Result<()> {
+    // `cargo --list` prints one subcommand per line; zigbuild appears as "    zigbuild".
+    let out = process::Command::new("cargo")
+        .arg("--list")
+        .output()
+        .with_context(|| "failed to run `cargo --list`")?;
+    let found = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|l| l.trim() == "zigbuild");
+    anyhow::ensure!(
+        found,
+        "cargo-zigbuild is not installed.\n\
+         Install it with:\n\
+           mise install zig cargo:cargo-zigbuild\n\
+         or, without mise:\n\
+           cargo install cargo-zigbuild\n\
+           brew install zig  (or equivalent)"
+    );
+    Ok(())
+}
+
 fn build_via_zigbuild(workspace: &Path, arch: &str, dest: &Path) -> Result<()> {
+    check_zigbuild_installed()?;
+
     let target = zigbuild_target(arch);
     eprintln!(
         "[build] cargo zigbuild -p jackin-container --target {target} ({REQUIRED_VERSION})\n\
@@ -111,9 +134,7 @@ fn build_via_zigbuild(workspace: &Path, arch: &str, dest: &Path) -> Result<()> {
         ])
         .current_dir(workspace)
         .status()
-        .with_context(
-            || "failed to run `cargo zigbuild` — run `mise install zig cargo:cargo-zigbuild`",
-        )?;
+        .with_context(|| "failed to spawn `cargo zigbuild`")?;
 
     anyhow::ensure!(
         status.success(),
