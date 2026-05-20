@@ -1702,13 +1702,12 @@ async fn handle_console_instance_action(
                         "cannot start a new agent session in `{container}` because its instance manifest is missing"
                     )
                 })?;
-            let selected_agent = if let console::ConsoleInstanceAction::NewSessionWithAgent(agent) =
-                action
-            {
-                agent
-            } else {
-                resolve_new_session_agent(paths, config, &manifest)?
-            };
+            let selected_agent =
+                if let console::ConsoleInstanceAction::NewSessionWithAgent(agent) = action {
+                    agent
+                } else {
+                    resolve_new_session_agent(paths, config, &manifest)?
+                };
             runtime::reconcile_keep_awake(paths, docker, runner).await;
             let result = runtime::spawn_agent_session(
                 paths,
