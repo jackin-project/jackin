@@ -1049,20 +1049,12 @@ async fn launch_role_runtime(
     // agent sessions run. The operator connects via `docker exec -it jackin-container`.
     let image_label = format!("jackin.image={image}");
     run_args.extend_from_slice(&["--label", &image_label]);
-    // Socket mount: host path is keyed by container name so multiple containers
-    // can run concurrently without colliding.
-    // Ensure /run/jackin/ exists on the host, then pre-create the socket path as
-    // an empty regular file. Docker's -v behaviour: if the source path does not
-    // exist it creates a directory there, and the in-container path becomes a
-    // directory. The daemon then cannot remove_file() or bind() at that path
-    // and the client gets EACCES. Pre-creating a regular file forces Docker to
-    // bind-mount a file, so the daemon can unlink it and bind the real socket.
-    let socket_dir = std::path::Path::new("/run/jackin");
-    std::fs::create_dir_all(socket_dir).ok();
-    let socket_host_path = format!("/run/jackin/{container_name}.sock");
-    std::fs::write(&socket_host_path, b"").ok();
-    let socket_mount = format!("{socket_host_path}:/run/jackin/jackin.sock");
-    run_args.extend_from_slice(&["-v", &socket_mount]);
+    // No host-side socket bind-mount. Docker pre-creates the bind-mount target
+    // directory as root:root 755 when the source path doesn't exist, so the
+    // daemon (running as agent) cannot create files there and start_listener
+    // fails with EACCES. The daemon creates /run/jackin/ itself on the
+    // container's tmpfs — agent-owned, fully writable. Host-side socket access
+    // for a future jackin daemon is tracked under the jackin-container roadmap.
     // Forward JACKIN_AGENT so the daemon knows which runtime to launch first.
     run_args.extend_from_slice(&["-e", &jackin_agent_env]);
     run_args.push(image);
@@ -4474,7 +4466,9 @@ echo "pulled $2"
         let command = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d --name ") && call.contains("/run/jackin/"))
+            .find(|call| {
+                call.contains("docker run -d --name ") && call.contains("jackin.kind=role")
+            })
             .expect("expected role docker run command");
         arg_after(command, "--name")
     }
@@ -4483,7 +4477,9 @@ echo "pulled $2"
         let command = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d --name ") && !call.contains("/run/jackin/"))
+            .find(|call| {
+                call.contains("docker run -d --name ") && call.contains("jackin.kind=dind")
+            })
             .expect("expected DinD docker run command");
         arg_after(command, "--name")
     }
@@ -4659,7 +4655,7 @@ plugins = ["code-review@claude-plugins-official"]
             .find(|call| {
                 call.contains("docker run -d --name jk-")
                     && call.contains("thearchitect")
-                    && call.contains("/run/jackin/")
+                    && call.contains("jackin.kind=role")
             })
             .unwrap();
         let container_name = launched_role_container_name(&runner);
@@ -4820,7 +4816,7 @@ trusted = true
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(run_cmd.contains(&format!("{}:/test-data:ro", mount_src.display())));
     }
@@ -4976,7 +4972,7 @@ model = "gpt-5"
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains("JACKIN_AGENT=codex"),
@@ -5056,7 +5052,7 @@ agents = ["codex"]
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .expect("role docker run should fire even without OPENAI_API_KEY");
         assert!(
             run_cmd.contains("JACKIN_AGENT=codex"),
@@ -5129,7 +5125,7 @@ plugins = []
         let run_call = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(run_call.contains(&format!("--workdir {}", workspace.workdir)));
         assert!(run_call.contains(&format!(
@@ -5618,7 +5614,7 @@ plugins = []
         let mut config = AppConfig::load_or_init(&paths).unwrap();
         let selector = RoleSelector::new(None, "agent-smith");
         let mut runner = FakeRunner {
-            fail_on: vec!["/run/jackin/".to_string()],
+            fail_on: vec!["jackin.kind=role".to_string()],
             capture_queue: VecDeque::from(vec![
                 String::new(),
                 String::new(),
@@ -5858,7 +5854,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains(&format!("DOCKER_HOST=tcp://{dind}:2376")),
@@ -5939,7 +5935,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         let dind = dind_env_from_run_cmd(run_cmd);
         assert!(run_cmd.contains("HTTPS_PROXY=http://proxy.internal:8305"));
@@ -6055,7 +6051,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap()
             .clone();
         (run_cmd, temp)
@@ -6125,7 +6121,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(run_cmd.contains("jackin.display_name=Agent Smith"));
     }
@@ -6183,7 +6179,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains("--label jackin.keep_awake=true"),
@@ -6245,7 +6241,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             !run_cmd.contains("jackin.keep_awake"),
@@ -6304,7 +6300,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         let dind = dind_env_from_run_cmd(run_cmd);
         assert!(run_cmd.contains("-e JACKIN=1"));
@@ -6429,7 +6425,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(run_cmd.contains("-e JACKIN_DEBUG=1"));
     }
@@ -6478,7 +6474,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains("-e JACKIN_GIT_COAUTHOR_TRAILER=1"),
@@ -6529,7 +6525,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             !run_cmd.contains("JACKIN_GIT_COAUTHOR_TRAILER"),
@@ -6581,7 +6577,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(run_cmd.contains("-e JACKIN_GIT_DCO=1"), "{run_cmd}");
     }
@@ -6684,7 +6680,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains("-e OPERATOR_SMOKE=smoke-literal"),
@@ -6780,7 +6776,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains(
@@ -6868,7 +6864,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains("-e OPERATOR_SMOKE=operator-wins"),
@@ -6959,7 +6955,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains("-e FROM_HOST=from-host-env"),
@@ -7061,7 +7057,7 @@ plugins = []
         let run_cmd = runner
             .recorded
             .iter()
-            .find(|call| call.contains("docker run -d") && call.contains("/run/jackin/"))
+            .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
             run_cmd.contains("-e OPERATOR_TOKEN=resolved-op-token"),
