@@ -2,6 +2,7 @@
 bun = "1.3.14"
 just = "1.51.0"
 node = "24.15.0"
+zig = "0.16.0"
 # rust is read from `rust-toolchain.toml` via the `idiomatic_version_file`
 # setting below — single source of truth for the toolchain channel.
 

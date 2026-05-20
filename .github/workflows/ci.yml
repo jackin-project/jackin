@@ -164,9 +164,9 @@ jobs:
 
       - name: Install Zig
         if: matrix.zigbuild
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          version: "0.16.0"
+          tool: zig@0.16.0
 
       - name: Install cargo-zigbuild
         if: matrix.zigbuild
