@@ -4,7 +4,6 @@
 /// connect here to query session state or attach a client terminal.
 ///
 /// Protocol: 4-byte big-endian length-prefixed JSON frames (see protocol.rs).
-
 pub const SOCKET_PATH: &str = "/run/jackin/jackin.sock";
 
 use std::path::Path;

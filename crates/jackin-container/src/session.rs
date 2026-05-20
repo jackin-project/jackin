@@ -86,10 +86,7 @@ impl Session {
                 .take_writer()
                 .expect("failed to get PTY writer");
             let rt = tokio::runtime::Handle::current();
-            loop {
-                let Some(data) = rt.block_on(input_rx.recv()) else {
-                    break;
-                };
+            while let Some(data) = rt.block_on(input_rx.recv()) {
                 let _ = std::io::Write::write_all(&mut writer, &data);
             }
         });

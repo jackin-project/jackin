@@ -155,7 +155,8 @@ RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/de
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 RUN chmod +x /jackin/runtime/entrypoint.sh
-{jackin_container_section}ENV JACKIN_SUPPORTED_AGENTS={agents_csv}
+{jackin_container_section}RUN mkdir -p /run/jackin && chown agent:agent /run/jackin
+ENV JACKIN_SUPPORTED_AGENTS={agents_csv}
 USER agent
 ENTRYPOINT [\"/usr/local/bin/jackin-container\"]
 "
