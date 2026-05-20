@@ -119,7 +119,6 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
                     WHITE,
                     false,
                     has_instances,
-                    false,
                     &mut max_w,
                 );
             }
@@ -134,7 +133,6 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
                     PHOSPHOR_GREEN,
                     expanded,
                     has_instances,
-                    true,
                     &mut max_w,
                 );
             }
@@ -155,7 +153,6 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
                     "+ New workspace",
                     is_selected,
                     WHITE,
-                    false,
                     false,
                     false,
                     &mut max_w,
@@ -187,8 +184,8 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
     lines
 }
 
-/// Workspace / sentinel row with optional expand indicator and running indicator.
-#[allow(clippy::too_many_arguments)]
+/// Workspace / sentinel row. Shows `▶`/`▼` disclosure arrow only when the
+/// workspace has active instances; rows without instances show no indicator.
 fn push_tree_workspace_line(
     lines: &mut Vec<Line<'static>>,
     name: &str,
@@ -196,55 +193,51 @@ fn push_tree_workspace_line(
     color: Color,
     expanded: bool,
     has_instances: bool,
-    expandable: bool,
     max_w: &mut usize,
 ) {
-    // ASCII tree indicators keep display width = char count, avoiding
-    // unicode-width ambiguity with symbols like ▶/▼ (sometimes 2 cols).
-    let expand_icon: &str = if !expandable {
-        "  "
-    } else if expanded {
-        "v "
-    } else {
-        "> "
-    };
-    let running_dot = if has_instances { "* " } else { "  " };
     let cursor = if selected { "▸" } else { " " };
-    let text = format!("{cursor}{expand_icon}{running_dot}{name}");
-    *max_w = (*max_w).max(text.chars().count());
-
-    let line = if selected {
-        let dot_color = if has_instances { CYAN } else { PHOSPHOR_GREEN };
-        Line::from(vec![
-            Span::styled(
-                format!("{cursor}{expand_icon}"),
-                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
-            ),
-            Span::styled(
-                running_dot.to_string(),
-                Style::default().bg(PHOSPHOR_GREEN).fg(dot_color),
-            ),
-            Span::styled(
-                name.to_string(),
-                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
-            ),
-        ])
-    } else {
-        let dot_style = if has_instances {
-            Style::default().fg(CYAN)
+    // Build line as separate spans so line_width measures display columns
+    // correctly for the ▶/▼ glyphs (same approach as the editor render).
+    let line = if has_instances {
+        let arrow = if expanded { "▼" } else { "▶" };
+        let text_w = 1 + 1 + 1 + name.chars().count(); // cursor + arrow + space + name
+        *max_w = (*max_w).max(text_w);
+        if selected {
+            Line::from(vec![
+                Span::styled(cursor, Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)),
+                Span::styled(arrow, Style::default().bg(PHOSPHOR_GREEN).fg(CYAN)),
+                Span::styled(
+                    format!(" {name}"),
+                    Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
+                ),
+            ])
         } else {
-            Style::default().fg(color)
-        };
-        Line::from(vec![
-            Span::styled(format!("{cursor}{expand_icon}"), Style::default().fg(color)),
-            Span::styled(running_dot.to_string(), dot_style),
-            Span::styled(name.to_string(), Style::default().fg(color)),
-        ])
+            Line::from(vec![
+                Span::styled(cursor, Style::default().fg(color)),
+                Span::styled(arrow, Style::default().fg(CYAN)),
+                Span::styled(format!(" {name}"), Style::default().fg(color)),
+            ])
+        }
+    } else {
+        let text_w = 1 + name.chars().count(); // cursor + name
+        *max_w = (*max_w).max(text_w);
+        if selected {
+            Line::from(Span::styled(
+                format!("{cursor} {name}"),
+                Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
+            ))
+        } else {
+            Line::from(Span::styled(
+                format!("{cursor} {name}"),
+                Style::default().fg(color),
+            ))
+        }
     };
     lines.push(line);
 }
 
-/// Indented instance row under an expanded workspace.
+/// Indented instance row — shows `instance_id` and `role` only; agent and
+/// status are visible in the right-panel detail pane when the row is selected.
 fn push_tree_instance_line(
     lines: &mut Vec<Line<'static>>,
     entry: &crate::instance::InstanceIndexEntry,
@@ -252,21 +245,18 @@ fn push_tree_instance_line(
     max_w: &mut usize,
 ) {
     let cursor = if selected { "▸" } else { " " };
-    let label = format!(
-        "{}  {}  {}  {}",
-        entry.instance_id, entry.role_key, entry.agent_runtime, entry.status.short_label()
-    );
-    let text = format!("{cursor}    {label}");
-    *max_w = (*max_w).max(text.chars().count());
+    let label = format!("{}  {}", entry.instance_id, entry.role_key);
+    let text_w = 1 + 3 + label.chars().count(); // cursor + "   " indent + label
+    *max_w = (*max_w).max(text_w);
 
     let line = if selected {
         Line::from(Span::styled(
-            format!("{cursor}    {label}"),
+            format!("{cursor}   {label}"),
             Style::default().bg(CYAN).fg(Color::Black),
         ))
     } else {
         Line::from(vec![
-            Span::styled(format!("{cursor}    "), Style::default().fg(PHOSPHOR_DIM)),
+            Span::styled(format!("{cursor}   "), Style::default().fg(PHOSPHOR_DIM)),
             Span::styled(label, Style::default().fg(CYAN)),
         ])
     };
@@ -1452,14 +1442,14 @@ mod list_name_scroll_tests {
         let tmp = tempfile::tempdir().unwrap();
         let state = ManagerState::from_config(&config, tmp.path());
 
-        // Tree format adds cursor + expand-icon + running-dot prefix.
-        // ▸ cursor has display width 2; padding fills selected row to match
-        // the widest row — so content width is 33 (5 prefix chars where the
-        // selected-row ▸ costs 2 display columns + 27-char name).
+        // Without active instances the rows have no disclosure arrow, so
+        // the widest row is " " + " " + "chainargos-blockchain-nodes" = 29
+        // display cols; the selected ▸ cursor (display width 2) pushes
+        // the padded row out to 31.
         let width = list_names_content_width(&state, 19);
 
-        assert_eq!(width, 33);
-        assert_eq!(max_offset(width, 19), 14);
+        assert_eq!(width, 31);
+        assert_eq!(max_offset(width, 19), 12);
     }
 
     #[test]
@@ -1485,7 +1475,7 @@ mod list_name_scroll_tests {
             })
             .unwrap();
 
-        assert_eq!(state.list_names_scroll_x, 14);
+        assert_eq!(state.list_names_scroll_x, 12);
     }
 }
 
