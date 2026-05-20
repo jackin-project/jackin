@@ -341,9 +341,9 @@ When a PR ships the last remaining piece of a roadmap item — every feature, su
 
 A `Status: Resolved` roadmap page that still sits in the directory is a smell, not a shipping target. The only legitimate reasons to keep one are (a) genuine remaining work tracked on the same page, or (b) load-bearing inbound links from open roadmap items that still treat the page as an internal contract. Anything else gets retired in the PR that ships the last piece — not deferred to a later cleanup PR, because every later contributor reading the resolved page treats it as authoritative until it is gone.
 
-## Workflow / CI changes (agent-only) — see `.github/WORKFLOWS.md`
+## Workflow / CI changes (agent-only) — see `.github/AGENTS.md`
 
-All rules for authoring and modifying CI workflow files live in [`.github/WORKFLOWS.md`](.github/WORKFLOWS.md). Read that file before modifying any workflow. It covers:
+All rules for authoring and modifying CI workflow files live in [`.github/AGENTS.md`](.github/AGENTS.md). Read that file before modifying any workflow. It covers:
 
 - **mise-only tool installation** — no language-specific setup actions; `jdx/mise-action` everywhere.
 - **Env-var scope** — third-party-CLI env vars at job level, never workflow level.
