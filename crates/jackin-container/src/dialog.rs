@@ -7,7 +7,7 @@
 const PALETTE_WIDTH: u16 = 40;
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
-const BG_DARK: &str = "\x1b[48;5;235m";  // very dark grey background
+const BG_DARK: &str = "\x1b[48;5;235m"; // very dark grey background
 const FG_GREEN: &str = "\x1b[38;5;46m";
 const FG_WHITE: &str = "\x1b[38;5;255m";
 const FG_GREY: &str = "\x1b[38;5;244m";
@@ -15,8 +15,13 @@ const SELECTED_BG: &str = "\x1b[48;5;238m"; // selected row background
 
 #[derive(Debug, Clone)]
 pub enum Dialog {
-    CommandPalette { selected: usize },
-    AgentPicker { agents: Vec<String>, selected: usize },
+    CommandPalette {
+        selected: usize,
+    },
+    AgentPicker {
+        agents: Vec<String>,
+        selected: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,12 +47,15 @@ pub enum PaletteCommand {
 }
 
 const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
-    (PaletteCommand::NewSession,      "New agent session"),
-    (PaletteCommand::SplitHorizontal, "Split pane │ (side by side)"),
-    (PaletteCommand::SplitVertical,   "Split pane ─ (top / bottom)"),
-    (PaletteCommand::NewTab,          "New tab"),
-    (PaletteCommand::ZoomPane,        "Zoom / unzoom pane"),
-    (PaletteCommand::ClosePane,       "Close pane"),
+    (PaletteCommand::NewSession, "New agent session"),
+    (
+        PaletteCommand::SplitHorizontal,
+        "Split pane │ (side by side)",
+    ),
+    (PaletteCommand::SplitVertical, "Split pane ─ (top / bottom)"),
+    (PaletteCommand::NewTab, "New tab"),
+    (PaletteCommand::ZoomPane, "Zoom / unzoom pane"),
+    (PaletteCommand::ClosePane, "Close pane"),
 ];
 
 impl Dialog {
@@ -59,12 +67,16 @@ impl Dialog {
                     b"\x1b" | b"q" => DialogAction::Dismiss,
                     b"\x1b[A" | b"k" => {
                         // Up
-                        if *selected > 0 { *selected -= 1; }
+                        if *selected > 0 {
+                            *selected -= 1;
+                        }
                         DialogAction::Redraw
                     }
                     b"\x1b[B" | b"j" => {
                         // Down
-                        if *selected + 1 < PALETTE_ITEMS.len() { *selected += 1; }
+                        if *selected + 1 < PALETTE_ITEMS.len() {
+                            *selected += 1;
+                        }
                         DialogAction::Redraw
                     }
                     b"\r" | b"\n" => {
@@ -78,11 +90,15 @@ impl Dialog {
                 match key {
                     b"\x1b" | b"q" => DialogAction::Dismiss,
                     b"\x1b[A" | b"k" => {
-                        if *selected > 0 { *selected -= 1; }
+                        if *selected > 0 {
+                            *selected -= 1;
+                        }
                         DialogAction::Redraw
                     }
                     b"\x1b[B" | b"j" => {
-                        if *selected + 1 < agents.len() + 1 { *selected += 1; }
+                        if *selected + 1 < agents.len() + 1 {
+                            *selected += 1;
+                        }
                         DialogAction::Redraw
                     }
                     b"\r" | b"\n" => {
@@ -142,11 +158,19 @@ fn render_palette(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, selected: u
         // Pad to width.
         let used = label_bytes.len() + 2;
         let pad = (width as usize).saturating_sub(used + 2);
-        for _ in 0..pad { buf.push(b' '); }
+        for _ in 0..pad {
+            buf.push(b' ');
+        }
         buf.extend_from_slice(RESET.as_bytes());
     }
 
-    render_hint(buf, start_row + height - 1, start_col, width, "↑↓ navigate  Enter confirm  Esc dismiss");
+    render_hint(
+        buf,
+        start_row + height - 1,
+        start_col,
+        width,
+        "↑↓ navigate  Enter confirm  Esc dismiss",
+    );
 }
 
 fn render_agent_picker(
@@ -184,11 +208,19 @@ fn render_agent_picker(
         buf.push(b' ');
         buf.extend_from_slice(label.as_bytes());
         let pad = (width as usize).saturating_sub(label.len() + 4);
-        for _ in 0..pad { buf.push(b' '); }
+        for _ in 0..pad {
+            buf.push(b' ');
+        }
         buf.extend_from_slice(RESET.as_bytes());
     }
 
-    render_hint(buf, start_row + height - 1, start_col, width, "↑↓ navigate  Enter launch  Esc dismiss");
+    render_hint(
+        buf,
+        start_row + height - 1,
+        start_col,
+        width,
+        "↑↓ navigate  Enter launch  Esc dismiss",
+    );
 }
 
 fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, title: &str) {
@@ -204,7 +236,9 @@ fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, ti
     buf.extend_from_slice(FG_GREEN.as_bytes());
     buf.extend_from_slice(" ".as_bytes());
     let title_len = title.len() as u16 + 4; // ┌ + spaces + title + space
-    for _ in title_len..(width - 1) { buf.extend_from_slice("─".as_bytes()); }
+    for _ in title_len..(width - 1) {
+        buf.extend_from_slice("─".as_bytes());
+    }
     buf.extend_from_slice("┐".as_bytes());
 
     // Side borders + interior.
@@ -213,7 +247,9 @@ fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, ti
         buf.extend_from_slice(BG_DARK.as_bytes());
         buf.extend_from_slice(FG_GREEN.as_bytes());
         buf.extend_from_slice("│".as_bytes());
-        for _ in 1..(width - 1) { buf.push(b' '); }
+        for _ in 1..(width - 1) {
+            buf.push(b' ');
+        }
         buf.extend_from_slice("│".as_bytes());
         buf.extend_from_slice(RESET.as_bytes());
     }
@@ -223,7 +259,9 @@ fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, ti
     buf.extend_from_slice(BG_DARK.as_bytes());
     buf.extend_from_slice(FG_GREEN.as_bytes());
     buf.extend_from_slice("└".as_bytes());
-    for _ in 1..(width - 1) { buf.extend_from_slice("─".as_bytes()); }
+    for _ in 1..(width - 1) {
+        buf.extend_from_slice("─".as_bytes());
+    }
     buf.extend_from_slice("┘".as_bytes());
     buf.extend_from_slice(RESET.as_bytes());
 }
@@ -246,10 +284,17 @@ fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
 }
 
 fn write_dec(buf: &mut Vec<u8>, n: u16) {
-    if n == 0 { buf.push(b'0'); return; }
+    if n == 0 {
+        buf.push(b'0');
+        return;
+    }
     let mut tmp = [0u8; 5];
     let mut i = 5;
     let mut v = n;
-    while v > 0 { i -= 1; tmp[i] = b'0' + (v % 10) as u8; v /= 10; }
+    while v > 0 {
+        i -= 1;
+        tmp[i] = b'0' + (v % 10) as u8;
+        v /= 10;
+    }
     buf.extend_from_slice(&tmp[i..]);
 }

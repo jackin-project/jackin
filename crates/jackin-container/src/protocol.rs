@@ -29,7 +29,11 @@ pub enum ServerMsg {
     /// Raw terminal output to display (base64-encoded).
     Output { data: String },
     /// Redraw the full screen from the daemon's compositor.
-    Redraw { rows: u16, cols: u16, screen: Vec<String> },
+    Redraw {
+        rows: u16,
+        cols: u16,
+        screen: Vec<String>,
+    },
     /// Current session inventory (response to Status or on change).
     SessionList { sessions: Vec<SessionInfo> },
     /// Daemon is shutting down.
@@ -78,11 +82,21 @@ pub fn b64_encode(data: &[u8]) -> String {
         let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
         let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
         let n = (b0 << 16) | (b1 << 8) | b2;
-        let _ = write!(out, "{}{}{}{}",
+        let _ = write!(
+            out,
+            "{}{}{}{}",
             ALPHABET[((n >> 18) & 0x3f) as usize] as char,
             ALPHABET[((n >> 12) & 0x3f) as usize] as char,
-            if chunk.len() > 1 { ALPHABET[((n >> 6) & 0x3f) as usize] as char } else { '=' },
-            if chunk.len() > 2 { ALPHABET[(n & 0x3f) as usize] as char } else { '=' },
+            if chunk.len() > 1 {
+                ALPHABET[((n >> 6) & 0x3f) as usize] as char
+            } else {
+                '='
+            },
+            if chunk.len() > 2 {
+                ALPHABET[(n & 0x3f) as usize] as char
+            } else {
+                '='
+            },
         );
     }
     out
@@ -108,8 +122,12 @@ pub fn b64_decode(s: &str) -> Vec<u8> {
         let b2 = val(chunk.get(2).copied().unwrap_or(0));
         let b3 = val(chunk.get(3).copied().unwrap_or(0));
         out.push((b0 << 2) | (b1 >> 4));
-        if chunk.len() > 2 { out.push((b1 << 4) | (b2 >> 2)); }
-        if chunk.len() > 3 { out.push((b2 << 6) | b3); }
+        if chunk.len() > 2 {
+            out.push((b1 << 4) | (b2 >> 2));
+        }
+        if chunk.len() > 3 {
+            out.push((b2 << 6) | b3);
+        }
     }
     out
 }

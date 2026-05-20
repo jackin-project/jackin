@@ -1,9 +1,9 @@
 pub mod agent;
 pub mod app;
 pub mod cli;
-pub mod container_binary;
 pub mod config;
 pub mod console;
+pub mod container_binary;
 pub mod derived_image;
 pub mod docker;
 pub mod docker_client;

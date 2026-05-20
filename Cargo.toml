@@ -23,6 +23,10 @@ path = "src/main.rs"
 name = "jackin-role"
 path = "src/bin/role.rs"
 
+[[bin]]
+name = "build-jackin-container"
+path = "src/bin/build_jackin_container.rs"
+
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive", "color", "env"] }

@@ -6,8 +6,16 @@
 #[derive(Debug, Clone)]
 pub enum PaneTree {
     Leaf(u64),
-    HSplit { left: Box<PaneTree>, right: Box<PaneTree>, ratio: f32 },
-    VSplit { top: Box<PaneTree>, bottom: Box<PaneTree>, ratio: f32 },
+    HSplit {
+        left: Box<PaneTree>,
+        right: Box<PaneTree>,
+        ratio: f32,
+    },
+    VSplit {
+        top: Box<PaneTree>,
+        bottom: Box<PaneTree>,
+        ratio: f32,
+    },
 }
 
 /// A concrete rectangle in terminal coordinates (1-based row/col).
@@ -21,13 +29,17 @@ pub struct Rect {
 
 impl Rect {
     pub const fn new(row: u16, col: u16, rows: u16, cols: u16) -> Self {
-        Self { row, col, rows, cols }
+        Self {
+            row,
+            col,
+            rows,
+            cols,
+        }
     }
 
     /// Whether this rect contains the given (row, col) point (1-based).
     pub fn contains(self, r: u16, c: u16) -> bool {
-        r >= self.row && r < self.row + self.rows
-            && c >= self.col && c < self.col + self.cols
+        r >= self.row && r < self.row + self.rows && c >= self.col && c < self.col + self.cols
     }
 }
 
@@ -40,7 +52,8 @@ impl PaneTree {
                 let left_cols = ((rect.cols as f32 * ratio).round() as u16).max(1);
                 let right_cols = rect.cols.saturating_sub(left_cols + 1); // +1 for border
                 let left_rect = Rect::new(rect.row, rect.col, rect.rows, left_cols);
-                let right_rect = Rect::new(rect.row, rect.col + left_cols + 1, rect.rows, right_cols);
+                let right_rect =
+                    Rect::new(rect.row, rect.col + left_cols + 1, rect.rows, right_cols);
                 let mut v = left.leaves(left_rect);
                 v.extend(right.leaves(right_rect));
                 v
@@ -107,8 +120,11 @@ impl PaneTree {
     fn remove_inner(&mut self, id: u64) -> (bool, Option<PaneTree>) {
         match self {
             Self::Leaf(lid) => {
-                if *lid == id { (true, None) }
-                else { (false, None) }
+                if *lid == id {
+                    (true, None)
+                } else {
+                    (false, None)
+                }
             }
             Self::HSplit { left, right, .. } => {
                 if let Self::Leaf(lid) = left.as_ref() {
@@ -125,12 +141,16 @@ impl PaneTree {
                 }
                 let (found, replacement) = left.remove_inner(id);
                 if found {
-                    if let Some(r) = replacement { *left = Box::new(r); }
+                    if let Some(r) = replacement {
+                        *left = Box::new(r);
+                    }
                     return (true, None);
                 }
                 let (found, replacement) = right.remove_inner(id);
                 if found {
-                    if let Some(r) = replacement { *right = Box::new(r); }
+                    if let Some(r) = replacement {
+                        *right = Box::new(r);
+                    }
                     return (true, None);
                 }
                 (false, None)
@@ -150,12 +170,16 @@ impl PaneTree {
                 }
                 let (found, replacement) = top.remove_inner(id);
                 if found {
-                    if let Some(r) = replacement { *top = Box::new(r); }
+                    if let Some(r) = replacement {
+                        *top = Box::new(r);
+                    }
                     return (true, None);
                 }
                 let (found, replacement) = bottom.remove_inner(id);
                 if found {
-                    if let Some(r) = replacement { *bottom = Box::new(r); }
+                    if let Some(r) = replacement {
+                        *bottom = Box::new(r);
+                    }
                     return (true, None);
                 }
                 (false, None)
@@ -167,17 +191,22 @@ impl PaneTree {
     pub fn adjacent(&self, rect: Rect, from_id: u64, dir: Direction) -> Option<u64> {
         let leaves = self.leaves(rect);
         let from_rect = leaves.iter().find(|(id, _)| *id == from_id)?.1;
-        let (fr, fc) = (from_rect.row + from_rect.rows / 2, from_rect.col + from_rect.cols / 2);
-        let candidates: Vec<_> = leaves.iter()
+        let (fr, fc) = (
+            from_rect.row + from_rect.rows / 2,
+            from_rect.col + from_rect.cols / 2,
+        );
+        let candidates: Vec<_> = leaves
+            .iter()
             .filter(|(id, _)| *id != from_id)
             .filter(|(_, r)| match dir {
-                Direction::Left  => r.col + r.cols < fc,
+                Direction::Left => r.col + r.cols < fc,
                 Direction::Right => r.col > fc,
-                Direction::Up    => r.row + r.rows < fr,
-                Direction::Down  => r.row > fr,
+                Direction::Up => r.row + r.rows < fr,
+                Direction::Down => r.row > fr,
             })
             .collect();
-        candidates.into_iter()
+        candidates
+            .into_iter()
             .min_by_key(|(_, r)| {
                 let cr = r.row + r.rows / 2;
                 let cc = r.col + r.cols / 2;

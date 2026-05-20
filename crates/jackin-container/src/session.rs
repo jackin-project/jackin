@@ -1,10 +1,10 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 /// PTY session management — one session per pane leaf.
 ///
 /// Each session owns a PTY pair and a child process (agent or shell).
 /// Output is captured into a VirtualTerminal so we can re-render on
 /// session switch without re-running the process.
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result};
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
@@ -56,14 +56,20 @@ impl Session {
     ) -> Result<Self> {
         let pty_system = native_pty_system();
         let pair = pty_system
-            .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+            .openpty(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
             .context("failed to open PTY")?;
 
         let master = pair.master;
         let slave = pair.slave;
 
         // Spawn the child process in the slave side of the PTY.
-        let child = slave.spawn_command(cmd)
+        let child = slave
+            .spawn_command(cmd)
             .context("failed to spawn session process")?;
         drop(slave);
 
@@ -76,12 +82,16 @@ impl Session {
 
         // Writer task: forward input_rx → PTY master stdin.
         tokio::task::spawn_blocking(move || {
-            let mut writer = master_for_write.lock().unwrap()
+            let mut writer = master_for_write
+                .lock()
+                .unwrap()
                 .take_writer()
                 .expect("failed to get PTY writer");
             let rt = tokio::runtime::Handle::current();
             loop {
-                let Some(data) = rt.block_on(input_rx.recv()) else { break };
+                let Some(data) = rt.block_on(input_rx.recv()) else {
+                    break;
+                };
                 let _ = std::io::Write::write_all(&mut writer, &data);
             }
         });
@@ -90,7 +100,9 @@ impl Session {
         let event_tx_output = event_tx.clone();
         let sid = id;
         tokio::task::spawn_blocking(move || {
-            let mut reader = master_for_read.lock().unwrap()
+            let mut reader = master_for_read
+                .lock()
+                .unwrap()
                 .try_clone_reader()
                 .expect("failed to clone PTY reader");
             let mut buf = [0u8; 4096];
@@ -99,7 +111,10 @@ impl Session {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
                         let data = buf[..n].to_vec();
-                        let _ = event_tx_output.send(SessionEvent::Output { session_id: sid, data });
+                        let _ = event_tx_output.send(SessionEvent::Output {
+                            session_id: sid,
+                            data,
+                        });
                     }
                 }
             }
@@ -126,14 +141,24 @@ impl Session {
 
     pub fn resize(&self, rows: u16, cols: u16) {
         if let Ok(master) = self.pty_master.lock() {
-            let _ = master.resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 });
+            let _ = master.resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            });
         }
     }
 
     /// Send SIGWINCH to force the child to redraw after a switch.
     pub fn force_redraw(&self) {
         if let Ok(master) = self.pty_master.lock() {
-            let size = master.get_size().unwrap_or(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 });
+            let size = master.get_size().unwrap_or(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            });
             let _ = master.resize(size);
         }
     }

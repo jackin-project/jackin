@@ -63,9 +63,9 @@ fn parse_jackin_sessions(output: &str) -> Vec<AgentSession> {
             }
             // Extract label (second word-group after the [id]).
             let name = trimmed
-                .splitn(3, ']')
+                .split(']')
                 .nth(1)
-                .and_then(|rest| rest.trim().split_whitespace().next())
+                .and_then(|rest| rest.split_whitespace().next())
                 .unwrap_or(trimmed)
                 .to_string();
             Some(AgentSession { name })
@@ -91,15 +91,6 @@ fn set_role_terminal_title(paths: &JackinPaths, container_name: &str) {
     let title = InstanceManifest::read(&paths.data_dir.join(container_name))
         .map_or_else(|_| container_name.to_string(), |m| m.role_display_name);
     crate::tui::set_terminal_title(&title);
-}
-
-/// 6-hex-digit session ID from nanoseconds — ~16M distinct values per ms.
-pub(super) fn short_session_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.subsec_nanos());
-    format!("{:06x}", ts & 0x00ff_ffff)
 }
 
 /// `TMUX=` prevents nested-session warnings when the operator's host terminal
@@ -230,9 +221,16 @@ pub async fn spawn_agent_session(
     // jackin-container reads these from the environment when it spawns the
     // session via the entrypoint. We forward them to the exec environment so
     // the client can pass them on to the daemon's new-session request.
-    let agent_env = format!("{}={}", crate::env_model::JACKIN_AGENT_ENV_NAME, agent.slug());
+    let agent_env = format!(
+        "{}={}",
+        crate::env_model::JACKIN_AGENT_ENV_NAME,
+        agent.slug()
+    );
     let coauthor_env = git_coauthor_trailer.then(|| {
-        format!("{}=1", crate::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME)
+        format!(
+            "{}=1",
+            crate::env_model::JACKIN_GIT_COAUTHOR_TRAILER_ENV_NAME
+        )
     });
     let dco_env = git_dco.then(|| format!("{}=1", crate::env_model::JACKIN_GIT_DCO_ENV_NAME));
 

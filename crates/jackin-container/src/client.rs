@@ -17,8 +17,7 @@ pub async fn run_client(new_session_agent: Option<String>) -> Result<()> {
     let (rows, cols) = terminal_size();
 
     // Enable raw mode on stdin.
-    crossterm::terminal::enable_raw_mode()
-        .context("failed to enable raw mode")?;
+    crossterm::terminal::enable_raw_mode().context("failed to enable raw mode")?;
     // Enable mouse reporting.
     let mut stdout = std::io::stdout();
     stdout.write_all(b"\x1b[?1003h\x1b[?1006h")?; // SGR + any-event mouse

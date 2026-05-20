@@ -15,55 +15,52 @@ pub struct DerivedBuildContext {
 /// Caller must pass a `HooksConfig` whose paths have already passed
 /// `validate_role_repo` — paths are interpolated directly into Dockerfile
 /// `COPY` instructions with no further sanitization here.
-pub fn render_derived_dockerfile(
-    base_dockerfile: &str,
-    hooks: Option<&HooksConfig>,
-    supported: &[crate::agent::Agent],
-    claude_config: Option<&crate::manifest::ClaudeConfig>,
-    jackin_container_bin: Option<&str>,
-) -> String {
+fn render_hook_section(hooks: Option<&HooksConfig>) -> String {
     use std::fmt::Write as _;
 
-    let mut hook_section = String::new();
     let source_hook_declared = hooks.is_some_and(|h| h.source.is_some());
     let mut entries = hooks.into_iter().flat_map(HooksConfig::entries).peekable();
-    if entries.peek().is_some() {
-        // chown only /jackin/state — agent writes the marker here.
-        // /jackin/runtime/hooks gets per-file ownership from
-        // `COPY --chown=agent:agent` below; the dir itself stays root.
-        hook_section.push_str(
-            "\
+    if entries.peek().is_none() {
+        return String::new();
+    }
+
+    let mut section = String::new();
+    // chown only /jackin/state — agent writes the marker here.
+    // /jackin/runtime/hooks gets per-file ownership from
+    // `COPY --chown=agent:agent` below; the dir itself stays root.
+    section.push_str(
+        "\
 USER root
 RUN mkdir -p /jackin/runtime/hooks /jackin/state/hooks \\
     && chown -R agent:agent /jackin/state
 USER agent
 ",
-        );
-        for entry in entries {
-            write!(
-                hook_section,
-                "\
+    );
+    for entry in entries {
+        write!(
+            section,
+            "\
 COPY --chown=agent:agent {src} /jackin/runtime/hooks/{dst}
 RUN chmod +x /jackin/runtime/hooks/{dst}
 ",
-                src = entry.path,
-                dst = entry.filename,
-            )
-            .expect("writing to String is infallible");
-        }
-        if source_hook_declared {
-            // `docker exec zsh` inherits the image ENV but none of PID 1's
-            // runtime exports, so operator shells miss the source-hook
-            // exports the entrypoint applied to the agent. The marker is
-            // namespaced and exported only after a successful source so a
-            // failed hook does not leave a sticky guard that hides
-            // re-source attempts from nested subshells (mirrors the rc
-            // capture + `trap - ERR` clear the entrypoint does at
-            // docker/runtime/entrypoint.sh:172-181). The outer
-            // `grep -q ... ||` keeps the file single-shimmed across
-            // derived-from-derived builds via `base_image_override`.
-            #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
-            const ZSHENV_SOURCE_SHIM: &str = "\
+            src = entry.path,
+            dst = entry.filename,
+        )
+        .expect("writing to String is infallible");
+    }
+    if source_hook_declared {
+        // `docker exec zsh` inherits the image ENV but none of PID 1's
+        // runtime exports, so operator shells miss the source-hook
+        // exports the entrypoint applied to the agent. The marker is
+        // namespaced and exported only after a successful source so a
+        // failed hook does not leave a sticky guard that hides
+        // re-source attempts from nested subshells (mirrors the rc
+        // capture + `trap - ERR` clear the entrypoint does at
+        // docker/runtime/entrypoint.sh:172-181). The outer
+        // `grep -q ... ||` keeps the file single-shimmed across
+        // derived-from-derived builds via `base_image_override`.
+        #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
+        const ZSHENV_SOURCE_SHIM: &str = "\
 RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
     || printf '%s\\n' \\
     'if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\" ] && [ -f /jackin/runtime/hooks/source.sh ]; then' \\
@@ -78,19 +75,26 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
     '  unset __jackin_rc' \\
     'fi' >> /home/agent/.zshenv
 ";
-            hook_section.push_str(ZSHENV_SOURCE_SHIM);
-        }
+        section.push_str(ZSHENV_SOURCE_SHIM);
     }
+    section
+}
+
+pub fn render_derived_dockerfile(
+    base_dockerfile: &str,
+    hooks: Option<&HooksConfig>,
+    supported: &[crate::agent::Agent],
+    claude_config: Option<&crate::manifest::ClaudeConfig>,
+    jackin_container_bin: Option<&str>,
+) -> String {
+    let hook_section = render_hook_section(hooks);
 
     // Concatenate per-agent install blocks in a stable order (Claude
     // first when present, Codex second, Amp third, Kimi fourth,
-    // OpenCode fifth). Each block declares
-    // its own `ARG JACKIN_CACHE_BUST=0` (see the per-agent blocks returned
-    // by `Agent::install_block`), so layer cache keys advance
-    // independently when `--build-arg JACKIN_CACHE_BUST=<ts>` is
-    // passed. The stable ordering is for deterministic Dockerfile
-    // output (helps `docker build` cache reuse and keeps diffs
-    // reviewable).
+    // OpenCode fifth). Each block declares its own `ARG JACKIN_CACHE_BUST=0`
+    // (see the per-agent blocks returned by `Agent::install_block`), so layer
+    // cache keys advance independently when `--build-arg JACKIN_CACHE_BUST=<ts>`
+    // is passed. Stable ordering keeps diffs reviewable.
     let mut install_blocks = String::new();
     let mut sorted: Vec<crate::agent::Agent> = supported.to_vec();
     sorted.sort_by_key(|h| match h {
@@ -115,17 +119,15 @@ RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
         .collect::<Vec<_>>()
         .join(",");
 
-    // jackin-container binary installation (downloaded from GitHub Releases by
-    // the host at derived-image build time and placed in .jackin-runtime/).
-    let jackin_container_section = match jackin_container_bin {
-        Some(src) => format!(
+    // jackin-container binary (pre-downloaded by host, placed in .jackin-runtime/).
+    let jackin_container_section = jackin_container_bin.map_or_else(String::new, |src| {
+        format!(
             "\
 COPY {src} /usr/local/bin/jackin-container
 RUN chmod +x /usr/local/bin/jackin-container
 "
-        ),
-        None => String::new(),
-    };
+        )
+    });
 
     format!(
         "\
@@ -269,8 +271,9 @@ pub fn create_derived_build_context(
     // can COPY it into the image without a network fetch at build time.
     let jackin_container_ctx_path = if let Some(host_path) = jackin_container_host_path {
         let dst = runtime_dir.join("jackin-container");
-        std::fs::copy(host_path, &dst)
-            .map_err(|e| anyhow::anyhow!("failed to copy jackin-container binary into build context: {e}"))?;
+        std::fs::copy(host_path, &dst).map_err(|e| {
+            anyhow::anyhow!("failed to copy jackin-container binary into build context: {e}")
+        })?;
         Some(".jackin-runtime/jackin-container".to_string())
     } else {
         None

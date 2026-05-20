@@ -3,7 +3,7 @@
 /// Linux: when a process whose parent has exited becomes an orphan, it is
 /// re-parented to PID 1. PID 1 MUST call waitpid to reap those zombies or
 /// they accumulate in the process table. Tokio does not do this automatically.
-use nix::sys::signal::{Signal, SigSet};
+use nix::sys::signal::{SigSet, Signal};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::Pid;
 
