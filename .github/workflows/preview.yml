@@ -36,8 +36,9 @@ jobs:
           # the rest of this workflow's run blocks.
           DISPATCH_SHA: ${{ github.sha }}
           WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "sha=${DISPATCH_SHA}" >> "$GITHUB_OUTPUT"
           else
             echo "sha=${WORKFLOW_RUN_SHA}" >> "$GITHUB_OUTPUT"
@@ -51,33 +52,31 @@ jobs:
       - name: Classify changed paths
         id: filter
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "source=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          sha="${{ steps.source.outputs.sha }}"
+          sha="$SOURCE_SHA"
 
-          # Diff base for the source-change classification is the
-          # previously-published preview SHA, not the current head's
-          # first parent. A multi-commit push (rebase merge, linear
-          # merge, direct push of N commits) can land a source change
-          # in an earlier commit and a docs-only final commit;
-          # classifying against `${sha}^1` would see only the docs and
-          # silently skip a real publish. The prior SHA is read out of
-          # the live homebrew-tap formula on raw.githubusercontent.com
-          # — no checkout of the tap repo required.
+          # Diff base is the previously-published preview SHA, read from the
+          # leading "# source-sha: <40-hex>" comment in the live formula.
+          # A multi-commit push can land a source change in an earlier commit
+          # and a docs-only final commit; classifying against the prior
+          # published SHA (not sha^1) catches those cases correctly.
           old_sha=""
           formula_err=""
           if formula_body=$(curl -fsSL --max-time 30 "https://raw.githubusercontent.com/jackin-project/homebrew-tap/main/Formula/jackin-preview.rb" 2>&1); then
             # Strict 40-hex-char regex: a captive-portal HTML response
-            # that happens to return HTTP 200 will not match here, so the
-            # downstream "old_sha empty" branch handles that case as a
-            # legitimate "no prior preview" rather than as a silent skip.
-            old_sha=$(printf '%s\n' "$formula_body" | sed -n 's|^[[:space:]]*url "https://github.com/jackin-project/jackin/archive/\([0-9a-f]\{40\}\)\.tar\.gz"$|\1|p' | head -1)
+            # returning HTTP 200 will not match, so the downstream
+            # "old_sha empty" branch handles that as "no prior preview".
+            old_sha=$(printf '%s\n' "$formula_body" | sed -n 's|^[[:space:]]*# source-sha: \([0-9a-f]\{40\}\)$|\1|p' | head -1)
           else
             formula_err="$formula_body"
             echo "::warning::failed to fetch homebrew-tap formula: ${formula_err}; falling open"
@@ -99,9 +98,8 @@ jobs:
           # Capture the diff via command substitution wrapped in `if !`,
           # which suppresses `set -e` propagation so we can branch on
           # the exit code explicitly. stderr is captured to a separate
-          # variable so a benign git warning (e.g. an ambiguous-ref
-          # warning written to stderr while exit is still 0) cannot
-          # contaminate the file list the case statement scans.
+          # variable so a benign git warning cannot contaminate the file
+          # list the case statement scans.
           diff_err=""
           if ! { diff_files=$(git diff --name-only "${old_sha}...${sha}" 2>/tmp/diff.err); }; then
             diff_err=$(cat /tmp/diff.err)
@@ -112,10 +110,7 @@ jobs:
 
           source=false
           while IFS= read -r path; do
-            # Skip the trailing-newline empty iteration — an empty path
-            # cannot match any of the source globs, but the explicit
-            # guard prevents a future maintainer from accidentally
-            # adding a wildcard that would match it.
+            # Skip the trailing-newline empty iteration.
             [ -z "$path" ] && continue
             # Path globs are intentionally a subset of ci.yml's `rust:`
             # filter: tests/** and .github/workflows/ci.yml change the
@@ -133,39 +128,108 @@ jobs:
 
           echo "source=$source" >> "$GITHUB_OUTPUT"
 
-  publish-preview:
+  build-preview:
     needs: source-changed
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+    strategy:
+      matrix:
+        include:
+          # macOS targets cross-compiled from Linux via cargo-zigbuild.
+          # Zig ships macOS SDK stubs (framework libs, libc) so no macOS
+          # runner is needed. jackin has no Objective-C or Xcode-SDK-only
+          # C deps — bollard uses hyperlocal (Unix socket), iana-time-zone
+          # links -framework CoreFoundation which Zig stubs cover.
+          - target: aarch64-apple-darwin
+            zigbuild_target: aarch64-apple-darwin
+          - target: x86_64-apple-darwin
+            zigbuild_target: x86_64-apple-darwin
+          # Linux targets: glibc 2.17 minimum for broad host compatibility.
+          - target: aarch64-unknown-linux-gnu
+            zigbuild_target: aarch64-unknown-linux-gnu.2.17
+          - target: x86_64-unknown-linux-gnu
+            zigbuild_target: x86_64-unknown-linux-gnu.2.17
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.source-changed.outputs.sha }}
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          target: ${{ matrix.target }}
+          cache-key: preview-${{ matrix.target }}
+          rustflags: ""
+      - name: Install Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: "0.13.0"
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@213ccc1a076163c093f914550b94feb90fab916d # v2.79.2
+        with:
+          tool: cargo-zigbuild
+      - name: Build
+        env:
+          ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
+        run: cargo zigbuild --release --locked --target "$ZIGBUILD_TARGET"
+      - name: Package
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          archive="jackin-preview-${TARGET}.tar.gz"
+          tar -czf "$archive" \
+            -C "target/${TARGET}/release" \
+            jackin jackin-role
+          sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jackin-preview-${{ matrix.target }}
+          path: |
+            jackin-preview-${{ matrix.target }}.tar.gz
+            jackin-preview-${{ matrix.target }}.tar.gz.sha256
+
+  publish-preview:
+    needs: [source-changed, build-preview]
+    if: needs.source-changed.outputs.source == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ needs.source-changed.outputs.sha }}
           fetch-depth: 0
 
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
       - name: Verify source SHA is on main
         if: github.event_name == 'workflow_run'
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
         run: |
           # Use GitHub's compare API instead of mutating the local checkout.
           # A prior run published preview.1 for f6327ae because the runner
           # behaved like it only had a one-commit checkout even with
           # fetch-depth: 0, so local git ancestry checks were no longer
           # reliable enough for preview versioning.
-          full_sha="${{ needs.source-changed.outputs.sha }}"
           compare_status=$(
             curl -fsSL \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
               -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/compare/${full_sha}...main" |
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/compare/${FULL_SHA}...main" |
               jq -er '.status'
           )
 
           case "$compare_status" in
             identical|ahead) ;;
             *)
-              echo "::error::source SHA ${full_sha} is not on main (compare status: ${compare_status})"
+              echo "::error::source SHA ${FULL_SHA} is not on main (compare status: ${compare_status})"
               exit 1
               ;;
           esac
@@ -174,11 +238,11 @@ jobs:
         id: meta
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
         run: |
           base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           base_version=${base_version%-dev}
-          full_sha="${{ needs.source-changed.outputs.sha }}"
-          short_sha=$(printf '%s' "$full_sha" | cut -c1-7)
+          short_sha=$(printf '%s' "$FULL_SHA" | cut -c1-7)
           # Derive the preview counter from GitHub's server-side commit history
           # instead of `git rev-list --count HEAD` so the version stays
           # monotonic even if the runner checkout is unexpectedly shallow.
@@ -188,7 +252,7 @@ jobs:
               --arg query "$graphql_query" \
               --arg owner "$GITHUB_REPOSITORY_OWNER" \
               --arg name "${GITHUB_REPOSITORY#*/}" \
-              --arg oid "$full_sha" \
+              --arg oid "$FULL_SHA" \
               '{query: $query, variables: {owner: $owner, name: $name, oid: $oid}}' |
               curl -fsSL \
                 -H "Authorization: Bearer $GITHUB_TOKEN" \
@@ -197,16 +261,34 @@ jobs:
                 https://api.github.com/graphql |
               jq -er '.data.repository.object.history.totalCount'
           )
-          tarball_url="https://github.com/jackin-project/jackin/archive/${full_sha}.tar.gz"
-          curl -fL "$tarball_url" -o jackin-preview.tar.gz
-          sha256=$(shasum -a 256 jackin-preview.tar.gz | awk '{print $1}')
           {
-            echo "full_sha=$full_sha"
+            echo "full_sha=$FULL_SHA"
             echo "short_sha=$short_sha"
             echo "version=${base_version}-preview.${commit_count}+${short_sha}"
-            echo "tarball_url=$tarball_url"
-            echo "sha256=$sha256"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Publish preview GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          SHA: ${{ needs.source-changed.outputs.sha }}
+        run: |
+          # Delete existing preview release and its tag so the new release
+          # can claim the `preview` tag at the current SHA.
+          gh release delete preview --yes --cleanup-tag 2>/dev/null || true
+          gh release create preview \
+            --prerelease \
+            --target "$SHA" \
+            --title "Preview ${VERSION}" \
+            --notes "Preview build from [${SHA:0:7}](https://github.com/${GITHUB_REPOSITORY}/commit/${SHA})." \
+            artifacts/jackin-preview-*.tar.gz \
+            artifacts/jackin-preview-*.tar.gz.sha256
+
+      - name: Read platform SHA256s
+        id: shas
+        run: |
+          echo "arm64_macos=$(cat artifacts/jackin-preview-aarch64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
+          echo "x86_macos=$(cat artifacts/jackin-preview-x86_64-apple-darwin.tar.gz.sha256)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -224,38 +306,46 @@ jobs:
         id: prev
         run: |
           old_sha=$(
-            sed -n 's|^[[:space:]]*url "https://github.com/jackin-project/jackin/archive/\([0-9a-f]\{40\}\)\.tar\.gz"$|\1|p' \
+            sed -n 's|^[[:space:]]*# source-sha: \([0-9a-f]\{40\}\)$|\1|p' \
               homebrew-tap/Formula/jackin-preview.rb | head -1
           )
           echo "old_sha=${old_sha}" >> "$GITHUB_OUTPUT"
 
       - name: Rewrite preview formula
         env:
-          TARBALL_URL: ${{ steps.meta.outputs.tarball_url }}
           VERSION: ${{ steps.meta.outputs.version }}
-          SHA256: ${{ steps.meta.outputs.sha256 }}
+          FULL_SHA: ${{ steps.meta.outputs.full_sha }}
+          ARM64_SHA256: ${{ steps.shas.outputs.arm64_macos }}
+          X86_SHA256: ${{ steps.shas.outputs.x86_macos }}
         run: |
           cat > homebrew-tap/Formula/jackin-preview.rb <<EOF
+          # source-sha: ${FULL_SHA}
           class JackinPreview < Formula
             desc "CLI for orchestrating autonomous AI coding agents in isolated sandboxed environments — reproducible, scoped, and fully under your control"
             homepage "https://github.com/jackin-project/jackin"
-            url "${TARBALL_URL}"
             version "${VERSION}"
-            sha256 "${SHA256}"
             license "Apache-2.0"
 
-            depends_on "rust" => :build
-            depends_on "docker" => :optional
+            on_macos do
+              on_arm do
+                url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-preview-aarch64-apple-darwin.tar.gz"
+                sha256 "${ARM64_SHA256}"
+              end
+              on_intel do
+                url "https://github.com/jackin-project/jackin/releases/download/preview/jackin-preview-x86_64-apple-darwin.tar.gz"
+                sha256 "${X86_SHA256}"
+              end
+            end
 
             conflicts_with "jackin-project/tap/jackin", because: "preview and stable install the same binary"
 
             def install
-              ENV["JACKIN_VERSION_OVERRIDE"] = version.to_s
-              system "cargo", "install", *std_cargo_args
+              bin.install "jackin"
+              bin.install "jackin-role"
             end
 
             test do
-              assert_match version.to_s, shell_output("#{bin}/jackin --version")
+              system "#{bin}/jackin", "--version"
             end
           end
           EOF
