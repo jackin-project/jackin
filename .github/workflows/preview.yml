@@ -183,7 +183,11 @@ jobs:
             | tar -xJ -C /tmp/macos-sdk
       - name: Set macOS SDKROOT
         if: contains(matrix.target, 'apple')
-        run: echo "SDKROOT=/tmp/macos-sdk/MacOSX26.1.sdk" >> "$GITHUB_ENV"
+        run: |
+          echo "SDKROOT=/tmp/macos-sdk/MacOSX26.1.sdk" >> "$GITHUB_ENV"
+          # Pin deployment target so the binary runs on macOS 12+ even
+          # though we build with the latest SDK.
+          echo "MACOSX_DEPLOYMENT_TARGET=12.0" >> "$GITHUB_ENV"
       - name: Build
         env:
           ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
