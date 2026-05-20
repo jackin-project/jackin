@@ -115,14 +115,17 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+      - name: Read MSRV from Cargo.toml
+        id: msrv
+        run: echo "version=$(sed -n 's/^rust-version = \"\(.*\)\"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          install_args: "rust@1.94.0"
+          install_args: "rust@${{ steps.msrv.outputs.version }}"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - name: cargo check on MSRV
         run: cargo check --workspace --all-targets --locked
         env:
-          RUSTUP_TOOLCHAIN: "1.94.0"
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
 
   build-validator:
     needs: [changes, check]

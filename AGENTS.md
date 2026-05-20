@@ -80,23 +80,6 @@ Rationale: Rust's ecosystem is one of the project's leverage points. The communi
 
 When you do hand-roll something this rule covers, leave a comment explaining why (crate unavailable, scope tiny, dependency cost specifically rejected) so a later maintainer can replace it without re-debating the decision.
 
-## Tool installation: always use mise (hard rule)
-
-**All tools — in CI and locally — must be installed through mise. Never add `actions-rust-lang/setup-rust-toolchain`, `dtolnay/rust-toolchain`, `actions/setup-node`, `actions/setup-go`, `actions/setup-python`, or any other language-specific setup action to a workflow.**
-
-`mise.toml` is the single source of truth for tool versions. This gives local development and CI identical environments, one place to bump versions, and one mental model for every contributor and agent.
-
-**In GitHub Actions workflows:**
-- Use `jdx/mise-action` for every tool installation — Rust, Node, Bun, Zig, cargo tools, everything.
-- **Rust toolchain version and components**: declared in `rust-toolchain.toml` (`channel`, `components`). mise reads this file automatically via `idiomatic_version_file` — no version pin in `install_args` needed for the standard build.
-- **Cross-compilation targets**: run `rustup target add <target>` after the mise step; `actions-rust-lang/setup-rust-toolchain`'s `target:` parameter is not available.
-- **Cargo-registry tools** (nextest, zigbuild, cross, etc.): pass as `install_args: "cargo:<crate>"`.
-- **MSRV override** (the `msrv` CI job only): use `install_args: "rust@<version>"` to install a specific toolchain, then pin the cargo step with `RUSTUP_TOOLCHAIN: "<version>"`.
-- **Multiple tools in one step**: space-separate in `install_args: "rust zig cargo:cargo-nextest"`. Use a GHA expression when the set is matrix-conditional: `install_args: "${{ matrix.zigbuild && 'rust zig cargo:cargo-zigbuild' || 'rust' }}"`.
-
-**Locally:** `mise install` from the repo root installs every tool at the version CI uses.
-
-
 ## Changelog (agent-only)
 
 **Do not add entries to `CHANGELOG.md` until the first tagged release.**
@@ -289,3 +272,4 @@ Rules in the files below apply to everyone working in the repo — human and age
 - [DEPRECATED.md](DEPRECATED.md) — ledger of deprecated APIs, CLIs, config values, and usage patterns that are still supported but should eventually be removed.
 - [TODO.md](TODO.md) — small follow-up items (especially upstream dependencies waiting on a fix), the per-PR stale-docs checklist, and the convention for code-level `TODO(<topic>)` markers that link back to this file.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — contribution flow, DCO v1.1 text, and license terms for external contributors.
+- [.github/WORKFLOWS.md](.github/WORKFLOWS.md) — GitHub Actions workflow authoring rules: mise-only tool installation, env-var scope, publish gating, and smoke-testing push-only jobs.
