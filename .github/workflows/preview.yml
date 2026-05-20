@@ -160,6 +160,16 @@ jobs:
           install_args: "rust zig cargo:cargo-zigbuild"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - run: rustup target add ${{ matrix.target }}
+      - name: Cache Cargo registry
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
       - name: Cache macOS SDK
         if: contains(matrix.target, 'apple')
         id: sdk-cache
