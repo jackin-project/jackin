@@ -55,13 +55,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
-        with:
-          # Toolchain channel comes from rust-toolchain.toml.
-          rustflags: ""
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          install_args: "cargo:cargo-nextest"
+          install_args: "rust cargo:cargo-nextest"
           github_token: ${{ secrets.GH_READONLY_TOKEN }}
       - run: cargo nextest run
 
@@ -85,16 +81,18 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
         with:
-          # Toolchain channel comes from rust-toolchain.toml.
-          target: ${{ matrix.target }}
-          cache-key: ${{ matrix.target }}
-          rustflags: ""
+          install_args: "rust"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - run: rustup target add ${{ matrix.target }}
 
       - name: Install cross
         if: matrix.cross
-        run: cargo install cross --locked
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          install_args: "cargo:cross"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
 
       - name: Build
         env:

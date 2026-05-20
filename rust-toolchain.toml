@@ -1,7 +1,8 @@
-# Source of truth for the latest tested Rust channel.
+# Source of truth for the latest tested Rust channel and required components.
 # Read by rustup, rust-analyzer, mise (via idiomatic_version_file),
-# and CI (via actions-rust-lang/setup-rust-toolchain).
+# and CI (via jdx/mise-action).
 # MSRV floor is `rust-version` in Cargo.toml, verified by the `msrv` CI job.
 
 [toolchain]
 channel = "1.95.0"
+components = ["clippy", "rustfmt"]
