@@ -54,7 +54,7 @@ pub(super) fn render_list_body(
         }
         ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) => {
             let instances = state.workspace_active_instances(ws_idx);
-            if let Some(entry) = instances.get(inst_idx).cloned() {
+            if let Some(entry) = instances.get(inst_idx).copied() {
                 let sessions = state.sessions_for_instance(&entry.container_base);
                 render_instance_details_pane(frame, columns[1], entry, sessions);
             }
@@ -926,7 +926,7 @@ fn render_instance_details_pane(
             };
             lines.push(Line::from(vec![
                 Span::styled(
-                    format!("  {:<24}  ", name),
+                    format!("  {name:<24}  "),
                     Style::default().fg(PHOSPHOR_GREEN),
                 ),
                 Span::styled(

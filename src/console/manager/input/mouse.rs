@@ -174,13 +174,13 @@ pub fn handle_mouse_with_config(
             // the list pane's content area (excluding borders).
             if let Some(row) = list_content_row_index(state, mouse, term_size, seam_x) {
                 state.inline_role_picker = None;
-                if let Some(selected) = state.index_of_row(row) {
-                    if selected != state.selected {
-                        state.reset_list_scroll();
-                        state.selected = selected;
-                        state.inline_agent_picker = None;
-                        state.inline_new_session_picker = None;
-                    }
+                if let Some(selected) = state.index_of_row(row)
+                    && selected != state.selected
+                {
+                    state.reset_list_scroll();
+                    state.selected = selected;
+                    state.inline_agent_picker = None;
+                    state.inline_new_session_picker = None;
                 }
             }
         }
@@ -749,6 +749,24 @@ struct ListScrollAreas {
     roles: Option<ScrollArea>,
 }
 
+fn selected_picker_role(state: &ManagerState<'_>) -> Option<crate::selector::RoleSelector> {
+    state
+        .inline_role_picker
+        .as_ref()
+        .and_then(|picker| {
+            picker
+                .list_state
+                .selected
+                .and_then(|idx| picker.filtered.get(idx).cloned())
+        })
+        .or_else(|| {
+            state
+                .inline_agent_picker
+                .as_ref()
+                .map(|(role, _)| role.clone())
+        })
+}
+
 fn list_scroll_areas(
     state: &ManagerState<'_>,
     term_size: Rect,
@@ -765,21 +783,7 @@ fn list_scroll_areas(
     let summary = state.selected_workspace_summary()?;
     let workspace = config.workspaces.get(&summary.name)?;
     let mounts_h = mount_block_height(workspace.mounts.as_slice());
-    let picker_role = state
-        .inline_role_picker
-        .as_ref()
-        .and_then(|picker| {
-            picker
-                .list_state
-                .selected
-                .and_then(|idx| picker.filtered.get(idx).cloned())
-        })
-        .or_else(|| {
-            state
-                .inline_agent_picker
-                .as_ref()
-                .map(|(role, _)| role.clone())
-        });
+    let picker_role = selected_picker_role(state);
     let global_rows = super::super::render::global_rows_for(config, picker_role.as_ref());
     let (global_mounts, role_global_mounts) =
         super::super::render::partition_mounts_by_scope(&global_rows);

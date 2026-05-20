@@ -1627,7 +1627,7 @@ impl ManagerState<'_> {
     }
 
     /// The [`WorkspaceSummary`] currently highlighted, or `None` when the
-    /// selection is on Current Directory, New Workspace, or a WorkspaceInstance.
+    /// selection is on Current Directory, New Workspace, or a `WorkspaceInstance`.
     #[must_use]
     pub fn selected_workspace_summary(&self) -> Option<&WorkspaceSummary> {
         if let ManagerListRow::SavedWorkspace(i) = self.selected_row() {

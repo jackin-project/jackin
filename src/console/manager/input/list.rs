@@ -134,7 +134,6 @@ pub(super) fn handle_list_key(
                         ),
                     });
                 }
-                Ok(InputOutcome::Continue)
             } else {
                 let mut prelude = super::super::state::CreatePreludeState::new();
                 prelude.modal = Some(Modal::FileBrowser {
@@ -142,8 +141,8 @@ pub(super) fn handle_list_key(
                     state: FileBrowserState::new_from_home()?,
                 });
                 state.stage = ManagerStage::CreatePrelude(prelude);
-                Ok(InputOutcome::Continue)
             }
+            Ok(InputOutcome::Continue)
         }
         KeyCode::Char('d' | 'D') => {
             match state.selected_row() {
