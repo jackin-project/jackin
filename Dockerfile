@@ -16,17 +16,16 @@ ARG CAVEMAN_VERSION=1.7.0
 
 # `libclang-dev` is required by Rust crates with `bindgen` build-deps
 # (rdkafka-sys et al.) used in the ChainArgos monorepo.
-RUN sudo apt-get update && \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    sudo apt-get update && \
     sudo apt-get install -y --no-install-recommends \
     build-essential \
     libclang-dev \
     libssl-dev \
     openssl \
     pkg-config && \
-    sudo apt-get autoremove -y && \
-    sudo rm -rf /var/lib/apt/* \
-               /var/cache/apt/* \
-               /tmp/*
+    sudo apt-get autoremove -y
 
 USER agent
 
@@ -39,16 +38,8 @@ RUN mkdir -p /home/agent/.gradle
 
 # Per-tool RUNs are deliberate: bumping one ARG only invalidates that
 # tool's layer. Trips hadolint DL3059; the cache reuse is worth it.
-RUN --mount=type=secret,id=github_token,uid=1000,required=false \
-    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
-    mise install "node@${NODE_VERSION}" && \
-    mise use -g --pin "node@${NODE_VERSION}"
-
-RUN --mount=type=secret,id=github_token,uid=1000,required=false \
-    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
-    mise install "rust@${RUST_VERSION}" && \
-    mise use -g --pin "rust@${RUST_VERSION}"
-
+# Ordered slowest-to-download / most-stable first so a Rust or Node bump
+# does not re-download the large Java runtime.
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "java@${JAVA_VERSION}" && \
@@ -58,6 +49,16 @@ RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
     mise install "protoc@${PROTOC_VERSION}" && \
     mise use -g --pin "protoc@${PROTOC_VERSION}"
+
+RUN --mount=type=secret,id=github_token,uid=1000,required=false \
+    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
+    mise install "node@${NODE_VERSION}" && \
+    mise use -g --pin "node@${NODE_VERSION}"
+
+RUN --mount=type=secret,id=github_token,uid=1000,required=false \
+    GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
+    mise install "rust@${RUST_VERSION}" && \
+    mise use -g --pin "rust@${RUST_VERSION}"
 
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
