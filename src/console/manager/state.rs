@@ -34,7 +34,9 @@ pub enum ManagerListRow {
 
 impl ManagerListRow {
     /// Screen index in the selectable row list. Returns `None` for
-    /// `WorkspaceInstance` — instance rows have no fixed position.
+    /// `WorkspaceInstance` — instance rows are injected mid-list when their
+    /// parent is expanded, so they have no fixed position. Use `index_of_row`
+    /// instead when the caller may hold an instance row.
     #[must_use]
     pub const fn to_screen_index(self, saved_count: usize) -> Option<usize> {
         match self {
@@ -45,9 +47,9 @@ impl ManagerListRow {
         }
     }
 
-    /// Visual-list position including the blank spacer before
-    /// `NewWorkspace`. Returns `None` for `WorkspaceInstance` — use
-    /// `visual_rows_vec` + `visual_selected` instead.
+    /// Visual-list position including the blank spacer before `NewWorkspace`.
+    /// Returns `None` for `WorkspaceInstance` — same reason as `to_screen_index`.
+    /// Use `visual_rows_vec` + `visual_selected` for instance row lookups.
     #[must_use]
     pub const fn to_visual_index(self, saved_count: usize) -> Option<usize> {
         match self {
@@ -1304,7 +1306,7 @@ impl WorkspaceSummary {
     }
 }
 
-fn active_instances_matching<'a>(
+pub(super) fn active_instances_matching<'a>(
     instances: &'a [crate::instance::InstanceIndexEntry],
     query: crate::instance::InstanceQuery<'a>,
 ) -> impl Iterator<Item = &'a crate::instance::InstanceIndexEntry> {
@@ -1451,7 +1453,6 @@ impl ManagerState<'_> {
         active_instances_matching(&self.instances, query).collect()
     }
 
-    /// Whether workspace `ws_idx` has any Active/Running instances.
     #[must_use]
     pub fn has_active_instances(&self, ws_idx: usize) -> bool {
         let Some(ws) = self.workspaces.get(ws_idx) else {
@@ -1469,7 +1470,6 @@ impl ManagerState<'_> {
             .is_some()
     }
 
-    /// Whether the "Current directory" synthetic row has any Active/Running instances.
     #[must_use]
     pub fn has_current_dir_active_instances(&self) -> bool {
         let current_dir = self.current_dir.as_str();
@@ -1583,7 +1583,7 @@ impl ManagerState<'_> {
                     "visual_selected: {:?} not in visual list, clamping to 0",
                     selected
                 );
-                0
+                0 // CurrentDirectory is always row 0 and is never removed
             })
     }
 
@@ -1668,7 +1668,7 @@ impl ManagerState<'_> {
                         "console",
                         "collapse_workspace: ws_idx={ws_idx} not in selectable rows, clamping to 0"
                     );
-                    0
+                    0 // CurrentDirectory is always row 0 and is never removed
                 });
         } else {
             // Clamp in case removal shrunk the list.

@@ -262,14 +262,10 @@ fn selected_instance_container(
         role_key: None,
         agent_runtime: None,
     };
-    state
-        .instances
-        .iter()
-        .filter(|entry| {
-            entry.matches(query) && instance_action_accepts_status(action, entry.status)
-        })
-        .map(|entry| entry.container_base.clone())
-        .next()
+    state.instances.iter().find_map(|entry| {
+        (entry.matches(query) && instance_action_accepts_status(action, entry.status))
+            .then(|| entry.container_base.clone())
+    })
 }
 
 fn selected_instance_scope<'a>(

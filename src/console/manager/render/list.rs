@@ -852,17 +852,7 @@ pub(in crate::console::manager) fn workspace_active_count(
         role_key: None,
         agent_runtime: None,
     };
-    instances
-        .iter()
-        .filter(|e| {
-            e.matches(query)
-                && matches!(
-                    e.status,
-                    crate::instance::InstanceStatus::Active
-                        | crate::instance::InstanceStatus::Running
-                )
-        })
-        .count()
+    super::super::state::active_instances_matching(instances, query).count()
 }
 
 /// Compact running-instances badge (3 rows: border + count line + border).
