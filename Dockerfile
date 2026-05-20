@@ -12,7 +12,8 @@ ARG JAVA_VERSION=oracle-graalvm-25.0.1
 ARG PROTOC_VERSION=34.1
 ARG CARGO_BINSTALL_VERSION=1.19.1
 ARG TESSL_VERSION=0.77.0
-ARG CAVEMAN_VERSION=1.7.0
+ARG CTX7_VERSION=0.4.2
+ARG CAVEMAN_VERSION=1.8.2
 
 # `libclang-dev` is required by Rust crates with `bindgen` build-deps
 # (rdkafka-sys et al.) used in the ChainArgos monorepo.
@@ -78,32 +79,37 @@ RUN curl -fsSL https://get.tessl.io | TESSL_VERSION="$TESSL_VERSION" sh
 
 RUN --mount=type=secret,id=github_token,uid=1000,required=false \
     GITHUB_TOKEN=${GITHUB_TOKEN:-$(cat /run/secrets/github_token 2>/dev/null)} \
-    mise exec "node@${NODE_VERSION}" -- npm install -g ctx7
+    mise exec "node@${NODE_VERSION}" -- npm install -g "ctx7@${CTX7_VERSION}"
 
-# Caveman bypasses the root `install.sh` because its per-agent
-# detection probes find no agent CLI at image-build time (jackin
-# injects them at launch). The pinned release archive is unpacked
-# before running the hook installer so the installer copies files from
-# the tag instead of downloading from upstream `main`.
+# Caveman ≥1.8.0 native opencode plugin needs repoRoot (a local clone);
+# curl-pipe can't do it. Shallow-clone at the pinned tag, run bin/install.js.
 #
-# `bash -e` forces fail-fast inside the upstream installer regardless
-# of its own error-handling. `test -f` lines guard against the
-# silent-empty-install failure mode.
+# Agent CLIs aren't on PATH at build time (jackin injects them per-container),
+# so auto-detection finds nothing — `--only` forces each target. `--no-mcp-shrink`
+# skips registration that needs the claude CLI; preflight.sh re-runs it at
+# container start.
+#
+# Codex and Amp skip the unified installer: it dispatches `skills add ... --yes
+# --all` without `--global`, and `--yes` suppresses the scope prompt so the CLI
+# defaults to project scope. At build time cwd is `/`, which `USER agent` can't
+# write, and the silent failure doesn't fail the overall installer (it only
+# exits non-zero when *every* detected agent fails). Explicit `--global` writes
+# the canonical tree at `${HOME}/.agents/skills/caveman/`, which is the path
+# `hooks/preflight.sh::verify_codex_caveman_skills` checks. The trailing
+# `test -f` is the smoke check that catches a future regression.
 RUN . ~/.profile && \
     mkdir -p "${HOME}/.claude" "${HOME}/.codex" && \
-    curl -fsSL "https://github.com/JuliusBrussee/caveman/archive/refs/tags/v${CAVEMAN_VERSION}.tar.gz" \
-      | tar -xz -C /tmp && \
-    bash -e "/tmp/caveman-${CAVEMAN_VERSION}/hooks/install.sh" && \
-    rm -rf "/tmp/caveman-${CAVEMAN_VERSION}" && \
+    git clone --depth 1 --branch "v${CAVEMAN_VERSION}" https://github.com/JuliusBrussee/caveman.git /tmp/caveman && \
+    node /tmp/caveman/bin/install.js --only claude --only opencode --no-mcp-shrink && \
     test -f "${HOME}/.claude/hooks/caveman-statusline.sh" && \
     test -f "${HOME}/.claude/hooks/caveman-activate.js" && \
     test -f "${HOME}/.claude/hooks/caveman-mode-tracker.js" && \
+    test -f "${HOME}/.config/opencode/plugins/caveman/plugin.js" && \
     cd "${HOME}" && \
-    echo "[caveman] installing codex profile" && \
     npx -y skills add "JuliusBrussee/caveman#v${CAVEMAN_VERSION}" -a codex --yes --global && \
-    echo "[caveman] installing amp profile" && \
     npx -y skills add "JuliusBrussee/caveman#v${CAVEMAN_VERSION}" -a amp --yes --global && \
-    test -f "${HOME}/.agents/skills/caveman/SKILL.md"
+    test -f "${HOME}/.agents/skills/caveman/SKILL.md" && \
+    rm -rf /tmp/caveman
 
 COPY --chown=agent:agent zshrc.d/docker-helpers.zsh /home/agent/.zshrc.d/docker-helpers.zsh
 RUN echo 'source /home/agent/.zshrc.d/docker-helpers.zsh' >> /home/agent/.zshrc

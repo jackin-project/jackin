@@ -61,6 +61,13 @@
       "packageNameTemplate": "JuliusBrussee/caveman",
       "extractVersionTemplate": "^v(?<version>.+)$",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": ["ARG CTX7_VERSION=(?<currentValue>[\\d.]+)"],
+      "datasourceTemplate": "npm",
+      "packageNameTemplate": "ctx7"
     }
   ],
   "prHourlyLimit": 0,
