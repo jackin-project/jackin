@@ -205,7 +205,7 @@ fn push_tree_workspace_line(
         if selected {
             Line::from(vec![
                 Span::styled(cursor, Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)),
-                Span::styled(arrow, Style::default().bg(PHOSPHOR_GREEN).fg(CYAN)),
+                Span::styled(arrow, Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black)),
                 Span::styled(
                     format!(" {name}"),
                     Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
@@ -214,21 +214,22 @@ fn push_tree_workspace_line(
         } else {
             Line::from(vec![
                 Span::styled(cursor, Style::default().fg(color)),
-                Span::styled(arrow, Style::default().fg(CYAN)),
+                Span::styled(arrow, Style::default().fg(color)),
                 Span::styled(format!(" {name}"), Style::default().fg(color)),
             ])
         }
     } else {
-        let text_w = 1 + name.chars().count(); // cursor + name
+        // Two-space placeholder aligns name column with arrow-rows (cursor+arrow+space = 3).
+        let text_w = 3 + name.chars().count(); // cursor + 2 spaces + name
         *max_w = (*max_w).max(text_w);
         if selected {
             Line::from(Span::styled(
-                format!("{cursor} {name}"),
+                format!("{cursor}  {name}"),
                 Style::default().bg(PHOSPHOR_GREEN).fg(Color::Black),
             ))
         } else {
             Line::from(Span::styled(
-                format!("{cursor} {name}"),
+                format!("{cursor}  {name}"),
                 Style::default().fg(color),
             ))
         }
@@ -1442,14 +1443,13 @@ mod list_name_scroll_tests {
         let tmp = tempfile::tempdir().unwrap();
         let state = ManagerState::from_config(&config, tmp.path());
 
-        // Without active instances the rows have no disclosure arrow, so
-        // the widest row is " " + " " + "chainargos-blockchain-nodes" = 29
-        // display cols; the selected ▸ cursor (display width 2) pushes
-        // the padded row out to 31.
+        // Rows without active instances use a two-space placeholder so names
+        // align with arrow-rows. Widest row: " " + "  " + "chainargos-blockchain-nodes"
+        // = 30 display cols; selected ▸ (display width 2) pads out to 33.
         let width = list_names_content_width(&state, 19);
 
-        assert_eq!(width, 31);
-        assert_eq!(max_offset(width, 19), 12);
+        assert_eq!(width, 33);
+        assert_eq!(max_offset(width, 19), 14);
     }
 
     #[test]
@@ -1475,7 +1475,7 @@ mod list_name_scroll_tests {
             })
             .unwrap();
 
-        assert_eq!(state.list_names_scroll_x, 12);
+        assert_eq!(state.list_names_scroll_x, 14);
     }
 }
 
