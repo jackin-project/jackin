@@ -114,8 +114,27 @@ fn check_zigbuild_installed() -> Result<()> {
     Ok(())
 }
 
+fn ensure_rustup_target(triple: &str) -> Result<()> {
+    let out = process::Command::new("rustup")
+        .args(["target", "list", "--installed"])
+        .output()
+        .with_context(|| "failed to run `rustup target list --installed`")?;
+    let installed = String::from_utf8_lossy(&out.stdout);
+    if installed.lines().any(|l| l.trim() == triple) {
+        return Ok(());
+    }
+    eprintln!("[build] installing rustup target {triple}...");
+    let status = process::Command::new("rustup")
+        .args(["target", "add", triple])
+        .status()
+        .with_context(|| format!("failed to run `rustup target add {triple}`"))?;
+    anyhow::ensure!(status.success(), "rustup target add {triple} failed");
+    Ok(())
+}
+
 fn build_via_zigbuild(workspace: &Path, arch: &str, dest: &Path) -> Result<()> {
     check_zigbuild_installed()?;
+    ensure_rustup_target(target_triple(arch))?;
 
     let target = zigbuild_target(arch);
     eprintln!(
