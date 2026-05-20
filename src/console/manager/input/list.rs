@@ -114,14 +114,20 @@ pub(super) fn handle_list_key(
             Ok(InputOutcome::Continue)
         }
         KeyCode::Char('n' | 'N') => {
-            // On an instance row: start a new agent session inside that container.
+            // On an instance row: open the in-sidebar agent picker to choose
+            // which agent to start in the already-running container.
             // Elsewhere: open the create-workspace flow.
-            if matches!(state.selected_row(), ManagerListRow::WorkspaceInstance(_, _)) {
-                Ok(instance_action_outcome(
-                    state,
-                    ConsoleInstanceAction::NewSession,
-                    "No running instance selected.",
-                ))
+            if let ManagerListRow::WorkspaceInstance(ws_idx, inst_idx) = state.selected_row() {
+                let instances = state.workspace_active_instances(ws_idx);
+                if let Some(entry) = instances.get(inst_idx) {
+                    let container = entry.container_base.clone();
+                    let picker =
+                        crate::console::widgets::agent_choice::AgentChoiceState::with_choices(
+                            crate::agent::Agent::ALL.to_vec(),
+                        );
+                    state.inline_new_session_picker = Some((container, picker));
+                }
+                Ok(InputOutcome::Continue)
             } else {
                 let mut prelude = super::super::state::CreatePreludeState::new();
                 prelude.modal = Some(Modal::FileBrowser {
@@ -297,7 +303,9 @@ const fn instance_action_accepts_status(
         ConsoleInstanceAction::Reconnect | ConsoleInstanceAction::Inspect => {
             !matches!(status, crate::instance::InstanceStatus::Purged)
         }
-        ConsoleInstanceAction::NewSession | ConsoleInstanceAction::Shell => matches!(
+        ConsoleInstanceAction::NewSession
+        | ConsoleInstanceAction::NewSessionWithAgent(_)
+        | ConsoleInstanceAction::Shell => matches!(
             status,
             crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
         ),
@@ -449,6 +457,32 @@ pub(super) fn handle_inline_agent_picker(
             }
             ModalOutcome::Continue => InputOutcome::Continue,
         },
+    }
+}
+
+/// Handle key events while the new-session agent picker is open in the left
+/// sidebar. Commit → dispatch `NewSessionWithAgent`; Cancel/Esc → dismiss.
+pub(super) fn handle_new_session_picker(
+    state: &mut ManagerState<'_>,
+    key: KeyEvent,
+) -> InputOutcome {
+    let Some((container, picker)) = state.inline_new_session_picker.as_mut() else {
+        return InputOutcome::Continue;
+    };
+    match picker.handle_key(key) {
+        ModalOutcome::Commit(agent) => {
+            let container = container.clone();
+            state.inline_new_session_picker = None;
+            InputOutcome::InstanceAction {
+                container,
+                action: crate::console::ConsoleInstanceAction::NewSessionWithAgent(agent),
+            }
+        }
+        ModalOutcome::Cancel => {
+            state.inline_new_session_picker = None;
+            InputOutcome::Continue
+        }
+        ModalOutcome::Continue => InputOutcome::Continue,
     }
 }
 

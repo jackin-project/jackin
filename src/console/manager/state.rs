@@ -86,6 +86,13 @@ pub struct ManagerState<'a> {
         crate::selector::RoleSelector,
         crate::console::widgets::agent_choice::AgentChoiceState,
     )>,
+    /// Agent picker opened when the operator presses `N` on an instance row
+    /// to start a new session in the running container. Carries the target
+    /// `container_base` so the commit can dispatch the right action.
+    pub inline_new_session_picker: Option<(
+        String,
+        crate::console::widgets::agent_choice::AgentChoiceState,
+    )>,
     pub list_mounts_scroll_x: u16,
     pub list_mounts_scroll_y: u16,
     pub list_global_mounts_scroll_x: u16,
@@ -1383,6 +1390,7 @@ impl ManagerState<'_> {
             list_modal: None,
             inline_role_picker: None,
             inline_agent_picker: None,
+            inline_new_session_picker: None,
             list_mounts_scroll_x: 0,
             list_mounts_scroll_y: 0,
             list_global_mounts_scroll_x: 0,

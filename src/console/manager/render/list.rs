@@ -65,7 +65,10 @@ pub(super) fn render_list_body(
         }
     }
 
-    if let Some((role, picker)) = state.inline_agent_picker.as_ref() {
+    if let Some((container, picker)) = state.inline_new_session_picker.as_ref() {
+        let short_id = container.split('-').nth(1).unwrap_or(container.as_str());
+        render_agent_picker_sidebar(frame, list_area, short_id, picker);
+    } else if let Some((role, picker)) = state.inline_agent_picker.as_ref() {
         render_agent_picker_sidebar(frame, list_area, &role.key(), picker);
     } else if let Some(picker) = state.inline_role_picker.as_ref() {
         let title = state

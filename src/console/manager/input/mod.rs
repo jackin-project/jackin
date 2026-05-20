@@ -64,6 +64,9 @@ pub fn handle_key(
     if state.list_modal.is_some() {
         return Ok(list::handle_list_modal(state, key));
     }
+    if state.inline_new_session_picker.is_some() {
+        return Ok(list::handle_new_session_picker(state, key));
+    }
     if state.inline_agent_picker.is_some() {
         return Ok(list::handle_inline_agent_picker(state, key));
     }
