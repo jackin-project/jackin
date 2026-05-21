@@ -3,7 +3,7 @@ title: "jackin-container: In-Container Multiplexer Server"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — Phases 1–3 shipped: `supervisor.sh` and tmux removed; `jackin-container` Rust binary runs as PID 1, manages PTY sessions directly, renders the multiplexer status bar (tabs, pane splits), exposes Unix socket at `/run/jackin/jackin.sock`, and is downloaded/built automatically at `jackin load` time. Phase 4 (daemon integration and desktop bridge) remains open.
+**Status**: Partially implemented — Phases 1–2 shipped (improved bash supervisor with cleanup, `jackin-container` Rust binary skeleton, PID 1 zombie reaping, structured session inventory over Unix socket at `/run/jackin/jackin.sock`, host-side cache and derived-image install path). Phase 3 (in-container PTY multiplexer replacing tmux) was landed once as a proof-of-concept but the implementation is unusable for modern TUI agents — the hand-rolled VT emulator ignores alt-screen and other DEC private modes, the `Ctrl+J` shortcut collides with raw `0x0A` (line feed), and the daemon exits when the last PTY dies (kills the container as PID 1). Phase 3 is being **completely rewritten** against the `vt100` crate with a tmux-style prefix-key model, a persistent server, binary hot-path framing, and [zellij](https://github.com/zellij-org/zellij) as the architectural reference. Phase 4 (daemon integration and desktop bridge) remains open.
 
 ## Problem
 
@@ -64,7 +64,7 @@ docker run ... -v /run/jackin/<instance-id>.sock:/run/jackin/jackin.sock ...
 
 One socket file per instance on the host, named by instance ID.
 
-**Protocol:** Newline-delimited JSON. Each request is one JSON object followed by `\n`. Each response is one JSON object followed by `\n`. No framing, no length prefix — connection-per-request for v1.
+**Protocol:** The same socket carries two channel types distinguished by the first request the client sends. The **control channel** is newline-delimited JSON, connection-per-request, used for `status` / `session.create` / `session.kill` / `session.title` / `events`. The **attach channel** is a persistent connection using tag-plus-length-prefix binary framing for hot-path PTY bytes. The two channels share the socket so the host needs only one mount. See "Wire protocol" under "Multiplexer architecture (Phase 3)" below for the binary frame layout.
 
 ### Session management API
 
@@ -98,7 +98,7 @@ The two-stage `done` / `idle` split is important: a `done` slot should not be au
 
 **Phase 2** (Rust binary, tmux still present): the binary watches the tmux server socket at `/tmp/tmux-<uid>/default` via `inotify`. Socket deleted → all sessions ended → exit 0. This replaces the 1-second bash polling loop from Phase 1.
 
-**Phase 3** (multiplexer phase): the binary owns session lifecycle directly. No tmux. When the last session exits cleanly, the binary exits 0. When `SIGTERM` arrives, all sessions are terminated then the binary exits.
+**Phase 3** (multiplexer phase): the binary owns session lifecycle directly. No tmux. The daemon **persists across session death** — when an agent exits, its tab is marked `exited` and the operator can respawn, switch tabs, or detach; the container does not die because PID 1 lost its child. The daemon only exits when `SIGTERM` arrives (`docker stop`), at which point it terminates each session in order, drains output to attached clients, then exits 0. This is the inverse of the first Phase 3 attempt, which called `std::process::exit(0)` from PID 1 the moment the last session died and so collapsed the entire container on first agent crash.
 
 ### Why replace tmux
 
@@ -108,6 +108,295 @@ The two-stage `done` / `idle` split is important: a `done` slot should not be au
 - tmux adds binary size to the image, startup overhead, and a dependency Jackin does not control.
 
 A purpose-built multiplexer in `jackin-container` gives Jackin a clean control plane: structured socket, typed events, agent-state inference, and no external process to coordinate with.
+
+### Multiplexer architecture (Phase 3)
+
+This section defines the multiplexer architecture in detail. The first Phase 3 attempt is being replaced wholesale — every module is either rewritten or deleted — so this section is the spec the rewrite implements rather than a description of code that exists today.
+
+#### Why the first attempt is being rewritten
+
+The first attempt produced a working PID 1 binary that opens PTYs, draws a status bar, manages a binary pane tree, and frames messages over a Unix socket. The shape was right; the *execution* was not. Five categories of defect make the result unusable for modern TUI agents and force a ground-up rewrite rather than incremental fixes:
+
+1. **Hand-rolled VT emulator without alt-screen support.** <RepoFile path="crates/jackin-container/src/terminal.rs" /> implements the `vte::Perform` trait but its `csi_dispatch` ignores the `h` and `l` actions and never inspects the `?` intermediate, so every DEC private mode is silently dropped — including `\x1b[?1049h` (alternate screen), `\x1b[?25h/l` (cursor visibility), `\x1b[?1` (application cursor keys), `\x1b[?2004` (bracketed paste), and `\x1b[?1000-1006` (mouse modes). Modern TUIs enter alt-screen, expect application cursor keys, and round-trip bracketed paste; without them the visible pane is at best garbled and at worst blank. Repairing the emulator would mean reimplementing most of `vt100` or `alacritty_terminal`. A real VT state library is the right answer.
+2. **`Ctrl+J = 0x0A = line feed`.** <RepoFile path="crates/jackin-container/src/input.rs" /> intercepts byte `0x0A` and opens the command palette. That byte is identical to a literal newline; any LF in pasted text, in canonical-mode input, or from a TUI emitting `\n` opens the palette and is consumed. Operators effectively cannot send Enter to the agent on any terminal that doesn't strictly send `\r` for the return key. The fix is a tmux-style prefix-key state machine, not a single hardcoded byte.
+3. **Daemon exits when all sessions die.** <RepoFile path="crates/jackin-container/src/daemon.rs" /> calls `std::process::exit(0)` once `sessions.values().all(|s| !s.alive)` becomes true. Because the daemon is PID 1, that one call brings down every other process in the container and ends the container itself. An agent that crashes during the first second of launch — common while iterating on roles — looks to the operator like "jackin keeps exiting on me." The daemon must persist until `SIGTERM`.
+4. **Mouse passthrough is a literal no-op.** The `InputEvent::MousePress { .. }` branch in <RepoFile path="crates/jackin-container/src/daemon.rs" /> outside row 0 reads `let _ = session;` and returns `None`; the mouse event is discarded. The branch above it correctly handles row-0 (tab strip) clicks. The body for "anywhere else" was never written.
+5. **Hot-path framing is full-screen redraw, base64, and JSON.** Every PTY chunk runs `compose_frame` which rebuilds the entire `rows × cols` cell grid as ANSI, encodes the result with a hand-rolled base64 (also a violation of the "prefer libraries" rule in `AGENTS.md`), wraps the base64 in a JSON `ServerMsg::Output`, and length-prefixes the result. An 80×24 TUI redrawing at 60 Hz amounts to megabytes per second of structurally pointless re-encoding between two processes that share a kernel. The right shape is: send PTY bytes through almost unchanged on the hot path, and only run the full-screen compose path on tab switch, pane switch, or client reattach.
+
+The same module also leaks several smaller defects — single-tab borders are always drawn, status-bar tabs append `●`/`○` after the click-region width is computed (so click targets drift), the reattach path drops the outbound channel sender, the PTY writer task uses `rt.block_on(input_rx.recv())` inside `spawn_blocking`, and the client never propagates `SIGWINCH` — but the five categories above are the load-bearing ones. The rewrite addresses all of them by changing the architecture, not by patching the existing modules.
+
+#### Architectural reference: zellij
+
+[Zellij](https://github.com/zellij-org/zellij) is the closest architectural reference for the rewrite. It is Apache-2.0 (we may study and adapt its design freely), it is written in Rust, and it solves the same problem at much larger scope. The pieces of zellij's design jackin adopts:
+
+- **Client-server split over a Unix domain socket.** The server owns all PTYs, all VT state, all tabs/panes; the client owns user input and rendering. Multiple clients can attach to one server. Detach and reattach leave PTYs running.
+- **Typed instruction bus.** Inside the server, dedicated threads (PTY I/O, screen state, plugins) talk over MPSC channels carrying typed enums (`PtyInstruction`, `ScreenInstruction`). Jackin's server is single-threaded enough that the bus is overkill, but the *typed-enum-over-channel* shape is exactly what the existing tokio `select!` loop in <RepoFile path="crates/jackin-container/src/daemon.rs" /> should converge on.
+- **Per-pane VT state, replayed on switch.** The server keeps a `vt100::Screen` for every pane, including non-visible ones. PTY output is fed to the screen regardless of focus; switching tabs replays the target pane via `Screen::contents_formatted()` rather than asking the application to redraw.
+- **Binary protocol on the hot path.** Zellij uses protobuf; jackin uses simpler tag-plus-length-prefix binary framing. The point is not protobuf — it is "don't put base64-inside-JSON on the hot path."
+
+Zellij carries scope jackin explicitly does not need (multi-client collaboration, plugins via WASM, scrollback search, copy-mode regex, etc.). The rewrite cherry-picks the structural pieces and leaves the rest.
+
+#### Concepts to borrow from herdr (license-safe restatement)
+
+The [Herdr](https://github.com/ogulcancelik/herdr) study under "Prior art: Herdr" below already lists the conceptual borrows for the agent-state model, status roll-up, notification suppression, sound escalation, blocking `wait` semantics, and PTY heuristics. The multiplexer rewrite adds three structural borrows on top of those — drawn from herdr's UI shape, not its code:
+
+- **Top-of-screen brand header + tab strip.** Row 0 of the host terminal renders ` jackin' ` on the left followed by one tab per active jackin session. Active tab gets the brand-green underline/bold; inactive tabs are dimmed; tab labels include the rolled-up state glyph. Operators sharing a screen recognise the brand pill at a glance.
+- **Empty initial state when no agent is preselected.** When `JACKIN_AGENT` is not set at daemon launch, the multiplexer comes up with the brand header, zero tabs, and a centred hint listing the agents from `JACKIN_SUPPORTED_AGENTS` plus `Shell`. The operator picks one with the prefix key and the first tab spawns into that selection. When `JACKIN_AGENT` is set, the daemon spawns the first tab with that agent automatically — matching the historical tmux `docker exec tmux new -A` behaviour.
+- **Per-tab "most urgent" state roll-up.** A tab containing any `blocked` pane is `blocked`; otherwise any `done` pane makes it `done`; otherwise `working`; otherwise `idle`. Same urgency order herdr uses. This drives the tab-strip glyph and feeds the future `agent-state-changed` event stream.
+
+These are *interface* borrows. Herdr's internal layout (workspaces, sidebar, pane-focus suppression rules, ghostty embedding, kitty graphics passthrough, plugin hooks) is not part of jackin's scope and is not copied.
+
+#### Tab and pane model
+
+The model is deliberately a strict subset of tmux:
+
+- A **session** is one running `jackin-container` daemon. There is exactly one session per jackin instance and it lives for the lifetime of the container.
+- A **tab** is a named top-level container. Each tab has a label (the agent's display name when first launched) and a pane tree. The tab strip in row 0 lists every tab in creation order; the operator switches with prefix bindings or by clicking.
+- A **pane** is one PTY plus the `vt100::Screen` that mirrors it. A tab starts as a single pane; splitting a pane creates a sibling. The pane tree is a binary tree of `HSplit { left, right, ratio }` / `VSplit { top, bottom, ratio }` / `Leaf(pane_id)`. The existing tree in <RepoFile path="crates/jackin-container/src/layout.rs" /> already has the right shape; the rewrite keeps it and fixes border-math edge cases (no border when a tab has a single leaf; bottom row math respects the status-bar offset).
+
+The model has **no `window` layer between tab and pane** even though tmux does. Tmux's window concept exists primarily because tmux predates the modern tabs-and-splits idiom; jackin starts from that idiom and does not need the historical layer. The model has **no workspace layer above session** even though herdr does. Workspaces only make sense when one server hosts many projects at once; jackin's server hosts exactly one container.
+
+#### VT state via `vt100`
+
+The hand-rolled emulator in <RepoFile path="crates/jackin-container/src/terminal.rs" /> is **deleted**. Replaced by [`vt100`](https://docs.rs/vt100/) — a maintained Rust crate explicitly designed for "tmux-like" use cases. It gives the rewrite all of the following for free:
+
+- Full DEC private mode handling — alt-screen, cursor visibility, application cursor keys, bracketed paste, mouse modes.
+- A `Screen` type with scrollback, attributes (fg, bg, bold, italic, underline, reverse, blink, strike, dim), and cursor state.
+- `Screen::contents_formatted()` and `Screen::contents_diff()` — emit the minimal ANSI byte sequence to bring a target terminal to the screen's current state, or to diff between two states. This is the primitive jackin's tab-switch and reattach paths use.
+- `Screen::set_size(rows, cols)` — correct resize semantics including alt-screen and reflow handling.
+
+The Apache-2.0 license is compatible with `jackin-container`'s Apache-2.0. The crate is well-maintained, has no transitive dependency surprise, and is the canonical choice in the Rust ecosystem for this job — exactly the pattern `AGENTS.md`'s "Prefer libraries over hand-rolled parsers" rule demands.
+
+`alacritty_terminal` is a heavier alternative offering scrollback search and selection state. Jackin's first rewrite does not need either; `vt100` is the right scope.
+
+#### Render model: hot path and cold path
+
+The render path is split in two:
+
+**Hot path — active pane bytes**. When the PTY for the currently focused pane in the currently active tab emits bytes, the server:
+
+1. Feeds the bytes into the pane's `vt100::Parser` so the `Screen` stays current. This is cheap and unavoidable; it is what makes tab switches work later.
+2. Writes the bytes to the attached client almost verbatim, prefixed only by a cursor-position move (`\x1b[<r>;<c>H`) that translates the pane's `(0, 0)` to the pane rect's origin in the host terminal.
+3. Skips compose-frame entirely. No JSON, no base64, no full-screen redraw.
+
+This is the path that runs 60 Hz inside an active Claude Code TUI. It must be effectively a byte-copy.
+
+**Cold path — UI changes**. When the operator switches tabs, switches panes, toggles zoom, opens the palette, splits a pane, or attaches a fresh client, the server runs the full compose path:
+
+1. Render row 0 status bar.
+2. For each visible pane in the active tab, call `vt100::Screen::contents_formatted()` and emit the result at the pane's rect origin.
+3. Render any pane borders (only when the tab has more than one leaf).
+4. Render dialog overlay if one is open.
+5. Position the host terminal cursor at the focused pane's `Screen::cursor_position()` and honour `Screen::hide_cursor()`.
+
+The status bar additionally redraws on a slow timer (1 Hz is more than enough) and on the agent-state transition events, never on every PTY byte. The first attempt redrew the entire bar on every tick, which is what produced the visible jitter.
+
+#### Input model: prefix key
+
+Input handling is a small state machine, not a hardcoded byte intercept:
+
+- **Idle state** — every byte from the client is forwarded to the focused pane's PTY, except the configured prefix (`Ctrl+B` by default, matching tmux; configurable via env var or future config field).
+- **Prefix-awaiting state** — entered after the prefix byte arrives. The next key is consumed by the multiplexer and mapped to a command (see table below). If the next byte is the prefix again, a literal prefix byte is forwarded to the pane (`Ctrl+B Ctrl+B` → literal `Ctrl+B`). After one command key, state returns to Idle.
+- **Palette state** — entered by `prefix + Space` or `prefix + :`; renders the centred command palette; up/down/enter/escape consumed locally; everything else forwarded to the palette controller.
+- **Dialog state** — entered by palette actions that need a sub-pick (e.g. `New session` shows the agent picker). Same key handling as palette state.
+
+Default prefix bindings (subject to refinement during implementation):
+
+| Key after prefix | Action |
+|---|---|
+| `c` | New tab (opens agent picker) |
+| `n` / `p` | Next / previous tab |
+| `0`–`9` | Jump to tab N |
+| `"` | Split current pane horizontally (top / bottom) |
+| `%` | Split current pane vertically (side by side) |
+| `h` `j` `k` `l` or arrow keys | Move pane focus |
+| `z` | Toggle zoom on focused pane |
+| `x` | Kill focused pane (collapses tab if last pane) |
+| `&` | Kill focused tab |
+| `d` | Detach client (PTYs keep running) |
+| `Space` or `:` | Open command palette |
+| `r` | Force redraw |
+| Prefix again | Literal prefix byte to PTY |
+
+`Ctrl+J` is **not** a default binding. It is reserved as an opt-in alternate prefix that experienced operators may enable when they accept the `0x0A` collision risk; the default never assigns it.
+
+#### Wire protocol
+
+The protocol is split by purpose:
+
+- **Control channel** — connection-per-request, newline-delimited JSON, for `status`, `session.create`, `session.kill`, `session.title`, `events`. This is what the host CLI and the future daemon use. Existing Phase 2 callers keep working.
+- **Attach channel** — persistent connection per attached client, framed binary. Each frame is `[1-byte tag][4-byte big-endian length][payload]`. Tags cover `hello { rows, cols }`, `resize { rows, cols }`, `input_bytes`, `output_bytes`, `command { json }`, `welcome { session_count }`, `session_list { json }`, `shutdown`. Payload of `input_bytes` and `output_bytes` is raw PTY bytes — no base64, no JSON nesting on the hot path. Payload of `command` is JSON only because the command vocabulary is open-ended; it is used at human keystroke rate, not 60 Hz.
+
+The hand-rolled base64 in <RepoFile path="crates/jackin-container/src/protocol.rs" /> is removed. If any future feature ever needs base64 (e.g. embedding a binary blob inside a JSON event), the `base64` crate is added — but no current code path needs it.
+
+#### Resize, detach, reattach
+
+- **Resize.** The client listens for `SIGWINCH` (via `tokio::signal::unix` or `signal-hook-tokio`), reads the new size with `crossterm::terminal::size`, and sends a `resize` frame. The server resizes every PTY in the affected layout via `MasterPty::resize`, calls `Screen::set_size` on each, and replays the active pane via `Screen::contents_formatted`. The first attempt's `Hello { rows, cols }` is preserved as the initial handshake; the missing piece is the runtime propagation.
+- **Detach.** `prefix + d` makes the client send a `detach` frame and exit cleanly, restoring its own terminal. The server drops the client slot but keeps every PTY running. The host can `docker exec jackin-container` to spawn a fresh client which reattaches over the same socket.
+- **Reattach.** A new client sending `hello` while one is already attached takes over; the server sends a `shutdown` frame to the old client (which restores its terminal and exits), then sends a full `contents_formatted` replay of the active pane to the new client. Concurrent attach (multiple clients viewing the same session) is **out of scope** for the first rewrite; the takeover model is sufficient for jackin's single-operator use case and avoids the multi-client cursor-and-input arbitration zellij has to solve.
+
+#### Status bar
+
+Row 0 of the host terminal is owned by the multiplexer. Layout left to right:
+
+```
+ jackin'   [Claude ●]  [Codex]  [Shell]                                 detach: Ctrl+B d
+```
+
+The ` jackin' ` brand pill uses the bright-green background defined in <RepoFile path="crates/jackin-container/src/statusbar.rs" /> (kept from the first attempt). Each tab is rendered as ` Label ` with the rolled-up state glyph appended *before* the click-region width is computed (the existing bug appends it after, so click regions drift on `●`/`○`). The active tab uses bold + brand-green foreground; inactive tabs use dimmed grey.
+
+The right side of the bar shows the current prefix-mode hint (`detach: Ctrl+B d` in Idle state, `prefix…` in Prefix-awaiting state). The hint is the only piece of the bar that updates on prefix key transitions; the tab strip updates on session lifecycle and state-change events.
+
+When the bar is wider than the host terminal, tabs past the right edge are clipped and an overflow indicator (`›`) is shown. Tab navigation via prefix bindings still works on clipped tabs.
+
+#### Initial state
+
+When the daemon starts:
+
+1. If `JACKIN_AGENT` is set in the environment (the normal case driven by `jackin load`), the daemon spawns one tab running that agent. This matches today's operator expectation that `jackin load the-architect .` immediately drops them into Claude Code.
+2. If `JACKIN_AGENT` is unset *and* `JACKIN_SUPPORTED_AGENTS` lists at least one agent, the daemon comes up empty — row 0 brand bar, no tabs, no panes — and renders a centred picker hint listing each agent in `JACKIN_SUPPORTED_AGENTS` plus `Shell`. The first prefix-action or click chooses the first tab.
+3. If `JACKIN_SUPPORTED_AGENTS` is unset or empty, the daemon spawns a single `Shell` tab. This is the safe fallback for derived images that lack any agent CLI.
+
+This pattern lets `jackin load <role> .` keep its existing direct-into-agent UX while leaving room for `jackin console` to launch the multiplexer with no preselected agent.
+
+#### Module map
+
+The rewrite produces this layout under `crates/jackin-container/src/`:
+
+| Module | Role |
+|---|---|
+| `main.rs` | Mode selection (PID 1 → daemon, otherwise client subcommand) |
+| `daemon.rs` | Server event loop: tokio `select!` over PTY events, attach-channel frames, control-channel requests, timer ticks |
+| `client.rs` | Attach-client loop: raw mode, SIGWINCH, prefix-key state machine, attach-channel write |
+| `pid1.rs` | `SIGCHLD` reaper thread (kept verbatim from the first attempt — correct) |
+| `socket.rs` | Unix socket bind, control-channel accept, attach-channel accept |
+| `protocol/control.rs` | Newline-delimited JSON request/response types for `status`, `session.create`, etc. |
+| `protocol/attach.rs` | Tag-plus-length binary framing for the attach channel |
+| `session.rs` | One PTY + one `vt100::Screen` + state-inference timer; `Session::spawn`, `Session::feed_pty`, `Session::render_replay` |
+| `layout.rs` | Pane tree (kept, border math fixed) |
+| `tab.rs` | Tab struct + tab strip ordering |
+| `statusbar.rs` | Row 0 renderer (rewritten to fix label width drift and add prefix-mode hint) |
+| `input.rs` | Prefix-key state machine + mouse SGR re-encoder |
+| `dialog.rs` | Command palette + agent picker (kept; revisit ergonomics in Phase 3b) |
+
+Files deleted: `terminal.rs` (replaced by `vt100` crate); base64 helpers in `protocol.rs` (replaced by binary attach channel).
+
+#### Sub-phases of the Phase 3 rewrite
+
+The rewrite lands as one cohesive PR (this one) because the defects are interlocked — fixing one without the others leaves the binary unusable for testing — but the work breaks into reviewable sub-phases. Each sub-phase passes `cargo nextest run` and `cargo clippy --all-targets --all-features -- -D warnings` on its own.
+
+- **Phase 3a — Replace VT.** Drop `crates/jackin-container/src/terminal.rs`. Add `vt100 = "0.16"` to <RepoFile path="crates/jackin-container/Cargo.toml" />. Wire each `Session` to its own `vt100::Parser` + `Screen`. Replace `compose_frame`'s per-pane cell-loop with `Screen::contents_formatted` calls. Tab switch and reattach now emit `Screen::contents_formatted` instead of `force_redraw`'s PTY-resize hack.
+- **Phase 3b — Prefix-key input.** Replace the `0x0A` palette intercept and the standalone Alt+arrow shortcut with the prefix-key state machine described above. Default prefix `Ctrl+B`. The command palette still exists, opened by `prefix + Space`. Update <RepoFile path="crates/jackin-container/src/input.rs" /> and the dialog dispatch in <RepoFile path="crates/jackin-container/src/daemon.rs" />.
+- **Phase 3c — Persistent server + binary attach channel.** Remove the `process::exit(0)` on all-sessions-dead. On agent exit, mark the tab `exited`, keep the `Screen` for replay, allow `prefix + r` to respawn. Replace the JSON + base64 attach-channel output frames with the tag-plus-length binary frames defined above. Keep the existing control channel for `status`. Remove the hand-rolled base64 helper. Fix the reattach outbound-channel bug.
+- **Phase 3d — Resize, mouse, status bar polish.** Add client-side `SIGWINCH` listener and `resize` frame. Fix the mouse passthrough no-op (re-encode in SGR mouse form and write to the focused PTY). Fix the status bar tab-label width drift. Add the right-side prefix-mode hint.
+
+Phase 3a is the load-bearing one — it unblocks every TUI agent. Phase 3b removes the worst input bug (Enter being swallowed). Phase 3c makes the daemon robust enough to live inside a long-running container. Phase 3d is polish that the rewrite cannot ship without but that doesn't change the architecture.
+
+#### Tests required
+
+- **VT contract tests.** Round-trip alt-screen entry and exit through `vt100::Screen` and assert that `contents_formatted` after `\x1b[?1049h … \x1b[?1049l` reproduces the pre-alt-screen content. Smoke an entire Claude Code-style frame (alt-screen + bracketed paste + application cursor keys) and assert no information loss.
+- **Prefix state machine tests.** Lone prefix byte → consumed, no PTY output. `prefix + prefix` → exactly one prefix byte forwarded. `prefix + c` → `NewSession` command emitted, no bytes forwarded. Plain LF in the input stream → forwarded to PTY (regression guard for the `Ctrl+J = 0x0A` bug).
+- **Persistence tests.** Spawn a session, send it `exit\n`, observe `Exited` event, assert daemon is still running and the tab is marked `exited`. Send `SIGTERM` to the daemon, assert all PTYs are reaped and the daemon exits 0.
+- **Reattach tests.** Connect a client, attach to a session, write some bytes that update the `Screen`, disconnect, reconnect. Assert the new client receives a `contents_formatted` replay matching the screen state.
+- **Resize tests.** Send a `resize` frame, assert every PTY is resized via `MasterPty::resize`, every `Screen` via `set_size`, and the active pane is replayed at the new dimensions.
+- **Mouse passthrough tests.** Send an SGR mouse press in row 5 — assert it is re-encoded relative to the focused pane's origin and arrives at the pane's PTY. Send a press in row 0 — assert it is consumed by the tab-strip hit-test.
+- **Control-channel regression tests.** The existing `status` command in <RepoFile path="crates/jackin-container/src/client.rs" /> keeps working unchanged. The host-side smoke tests for the launch path continue to pass without modification.
+
+#### Terminal compatibility: tmux setting parity
+
+The first tmux integration carried five non-default option choices that the operator had pinned over time to keep agent TUIs working. The new multiplexer must reproduce the same observable behaviour from day one — without those equivalents, the rewrite would regress on real workflows the operator already depends on. Each tmux option below is paired with the explicit jackin-container behaviour that replaces it.
+
+**Extended keys (always-on, advertised to the agent)**.
+
+```sh
+tmux set-option -s extended-keys always
+tmux set-option -as terminal-features 'xterm*:extkeys'
+```
+
+`extended-keys always` is required (not `on`) because agent TUIs do not emit the per-app activation escape that `on` waits for; without `always`, `Shift+Enter` and other extended-key combinations silently fail. `terminal-features 'xterm*:extkeys'` advertises extkeys support to anything reading terminfo via `TERM=xterm*`.
+
+**Jackin equivalent.** The attach channel transports raw bytes both directions, so the multiplexer never needs to negotiate extended keys at all — it forwards exactly what the outer terminal sends, including the kitty keyboard protocol (`\x1b[>1u` / `\x1b[<u`), the xterm modifyOtherKeys sequences (`\x1b[>4;2m`), and the CSI-u-encoded modifier-plus-key sequences. The PTY allocated to each agent inherits `TERM` from `JACKIN_CONTAINER_TERM` (default `xterm-256color`, falling back to whatever the outer terminal advertises if set). When a TUI queries `kitty_keyboard` or `modifyOtherKeys` via DECRQM, the response comes from the agent's own behaviour, not from the multiplexer — the multiplexer must never strip or rewrite those sequences. The corresponding test asserts that a `Shift+Enter` keypress (CSI-u sequence `\x1b[13;2u`) round-trips unchanged from client stdin to the PTY.
+
+**Focus events**.
+
+```sh
+tmux set-option -g focus-events on
+```
+
+Agents like Claude Code and Codex rely on focus-in / focus-out events (`\x1b[I` / `\x1b[O`) to pause animations, drop polling, and avoid stealing the operator's attention when the operator switches to another window.
+
+**Jackin equivalent.** The client subscribes to focus-event reporting from the outer terminal on attach (`\x1b[?1004h`) and disables it on detach (`\x1b[?1004l`). Incoming focus events are routed to the focused pane in the active tab — and *only* to that pane; an unfocused tab's agent should not believe it is focused. The server keeps a per-pane "outer-terminal-focused" flag and synthesises `\x1b[I` / `\x1b[O` when the operator switches tabs or splits panes, so each agent's focus state matches what a human would expect when they look at that pane.
+
+**OSC passthrough (desktop notifications, progress bars, clipboard, titles)**.
+
+```sh
+tmux set-option -g allow-passthrough on
+```
+
+Without OSC passthrough, agent desktop notifications (`\x1b]9;…\x07`), progress reports (OSC 9;4 — ConEmu progress; OSC 99 — kitty progress), clipboard writes (OSC 52), and window titles (OSC 0/1/2) are silently dropped at the multiplexer boundary.
+
+**Jackin equivalent.** OSC sequences emitted by an agent's PTY are forwarded to the attached client *only* when the originating pane is the focused pane in the active tab — same rule herdr uses, and the right rule because two backgrounded agents both writing the window title would otherwise fight. The multiplexer parses each OSC payload enough to (a) capture OSC 0/1/2 into the per-pane title field (used by the tab strip and the `session.title` API), (b) forward OSC 52 unconditionally for the focused pane (clipboard intent is explicit and the user issued it), and (c) forward OSC 9/9;4/99 (notifications, progress) only for the focused pane to avoid notification spam from backgrounded agents. Non-recognised OSC sequences are passed through unchanged. The `vt100` crate exposes an `osc_dispatch` hook that the multiplexer wires into this routing layer.
+
+**Zero escape disambiguation delay**.
+
+```sh
+tmux set-option -sg escape-time 0
+```
+
+The default delay tmux waits after `ESC` to disambiguate `ESC` from the start of an escape sequence causes misfires in vi-mode navigation inside agent TUIs (especially in the agent's command palette).
+
+**Jackin equivalent.** The client forwards `ESC` immediately as part of whatever larger sequence (or lone `ESC`) it sits in — the multiplexer does not buffer for disambiguation. Sequence boundaries are determined by the `vte` state machine inside `vt100`, which already handles `ESC` semantics correctly. There is no jackin equivalent of `escape-time` because the architecture removes the need for it.
+
+**Mouse support, including motion**.
+
+```sh
+tmux set-option -g mouse on
+```
+
+Mouse clicks, drags, and scroll events must reach agent TUIs that opt into mouse reporting via `\x1b[?1000h` through `\x1b[?1006h`.
+
+**Jackin equivalent.** The client sets the outer terminal to "any-event tracking + SGR mouse" (`\x1b[?1003h\x1b[?1006h`) on attach. The multiplexer parses each mouse event: row 0 events hit-test against the tab-strip click regions; events below row 0 are re-encoded in SGR form with the row adjusted relative to the focused pane's rect origin and written to that pane's PTY. The buggy `let _ = session;` no-op from the first attempt is fixed by this re-encode path. Mouse modes the agent enables via DEC private mode are tracked in `vt100::Screen::mouse_protocol_mode`; the multiplexer forwards events the agent has actually asked for.
+
+The setting parity above is a regression contract: each tmux behaviour the operator pinned has a matching jackin-container behaviour. The tests under "Tests required" assert each contract separately so future refactors cannot drop one silently.
+
+#### Ghostty compatibility
+
+The operator runs jackin inside [Ghostty](https://ghostty.org/), the outer terminal. Ghostty's feature set is wider than xterm's, so the multiplexer must transport Ghostty's richer keyboard, color, and graphics protocols intact rather than fall back to a lowest-common-denominator subset.
+
+**Kitty keyboard protocol** is the load-bearing one. Ghostty implements the kitty keyboard protocol (CSI-u sequences with disambiguated modifiers, full key release reporting, all-event mode). Modern agent TUIs query for it on startup with `\x1b[?u`. The multiplexer must:
+
+- Forward the agent's `\x1b[>{flags}u` and `\x1b[<{n}u` push/pop sequences to the outer terminal unchanged, so Ghostty switches the keyboard protocol level to what the agent asked for.
+- Forward Ghostty's responses (encoded keys, including modifier-plus-key combinations that legacy terminals cannot encode at all — `Ctrl+Shift+Tab`, `Alt+/`, etc.) to the agent's PTY unchanged.
+- Not intercept any byte inside a CSI-u sequence. The prefix-key state machine recognises the configured prefix byte at sequence boundaries only.
+
+**True-color and color queries.** Ghostty supports 24-bit color and replies to `\x1b]10` / `\x1b]11` (foreground/background queries) and `\x1b]4;<n>;?\x07` (palette queries). Agents query these to theme themselves to the outer terminal's palette. The multiplexer forwards both directions verbatim and uses `vt100::Screen`'s 24-bit color cell model so attribute fidelity is preserved through tab-switch replay.
+
+**Kitty graphics protocol.** Ghostty supports the kitty graphics protocol (APC escape sequences for inline images). Agents that render diagrams or screenshots inline emit `\x1b_G…\x1b\\`. The multiplexer treats APC sequences exactly like OSC: forward unchanged for the focused pane only; ignore for backgrounded panes (an image emitted by a background pane should not appear in another pane's region). The `vt100` parser delivers APC payloads via the `hook` / `put` / `unhook` callbacks; the multiplexer captures the bytes and re-emits them to the client when that pane is the focused pane being rendered. APC sequences are explicitly not "replayed" on tab switch — only what the agent currently has on screen matters, and Ghostty handles redraw of already-emitted images itself.
+
+**Bracketed paste**. Ghostty wraps pasted text in `\x1b[200~` / `\x1b[201~` when the agent has enabled bracketed paste (`\x1b[?2004h`). The multiplexer must forward these wrappers untouched to the pane's PTY. This is one of the DEC private modes the first hand-rolled VT silently dropped; `vt100::Screen::bracketed_paste_mode()` tracks the agent's intent and the multiplexer respects it on the input direction.
+
+**Synchronised output (BSU/ESU)**. Ghostty supports the "synchronised output" mode (`\x1b[?2026h/l` — also called BSU/ESU). Agents that draw in many small writes wrap each frame in synchronised-output markers so the outer terminal renders the frame atomically and the operator does not see partial paints. The multiplexer must forward both directions of these markers when the focused pane is the active one. For non-focused panes the markers are still consumed by `vt100`'s parser (so the `Screen` updates atomically internally) but no client output is emitted, which is the desired behaviour anyway — backgrounded panes have no client surface to paint.
+
+**OSC 52 clipboard.** Ghostty supports OSC 52 clipboard writes. The multiplexer forwards them per the OSC passthrough rules above (focused pane only). This gives agents that copy code blocks or commands a real clipboard hand-off — without it, the "copy to clipboard" button on Claude Code's output silently does nothing.
+
+**OSC 8 hyperlinks.** Ghostty renders `\x1b]8;;<url>\x1b\\` clickable. Forwarded unchanged for the focused pane.
+
+**Theme query (OSC 10/11/4) and dark/light mode (DCS $q… for tmux is irrelevant here; Ghostty exposes mode via OSC).** Forwarded unchanged. The multiplexer does not interpret the outer terminal's theme; agents that want to adapt query directly.
+
+**Sixel graphics**. Not currently used by the in-scope agent TUIs but Ghostty supports it. Treated identically to kitty graphics: forwarded for the focused pane, ignored for backgrounded panes, not replayed on switch.
+
+The unifying rule across every Ghostty feature is: **the multiplexer's job is to be a transparent pipe for whatever escape sequences the agent and the outer terminal negotiate, while owning row 0 and the prefix-key boundary**. Anything else it tries to interpret will eventually break a feature Ghostty supports that jackin does not yet know about. The `vt100` crate's job is to keep enough state to replay panes on switch and detect activity for the agent-state heuristic — it is not an oracle for what to pass through, and the multiplexer should not gate features on `vt100` understanding them.
+
+A regression test runs an end-to-end smoke against Ghostty's reported features: emit `\x1b[?u` (kitty keyboard query) from a synthetic PTY, capture the client output, assert the byte sequence reaches the outer-terminal-facing stream unchanged. Repeat for OSC 52, OSC 9, OSC 8, BSU/ESU, and the kitty graphics protocol header. The test does not require an actual Ghostty instance — it only asserts the bytes survive the multiplexer round-trip.
+
+#### What does not change
+
+- The host-side `docker run` mount of `/run/jackin/<instance-id>.sock:/run/jackin/jackin.sock`. The socket location, ownership, and lifetime are unchanged.
+- The derived image build pipeline that downloads or builds `jackin-container` and installs it at `/usr/local/bin/jackin-container`. <RepoFile path="src/bin/build_jackin_container.rs" /> stays as-is.
+- The Phase 2 `status` API on the control channel. Existing host callers do not need to change.
+- The `JACKIN_SUPPORTED_AGENTS` and `JACKIN_AGENT` env-var contract between the derived image and the daemon.
+- The PID 1 zombie-reaping logic in <RepoFile path="crates/jackin-container/src/pid1.rs" />.
+- The four-state agent-state model (`working` / `blocked` / `done` / `idle`) and its roll-up rules.
 
 ### Host-side changes per phase
 
@@ -168,18 +457,28 @@ Two companion fixes in the host-side Rust code were required to make the cleanup
 - Update `hardline --inspect` and console session inventory to use socket path.
 - Remove <RepoFile path="docker/runtime/supervisor.sh" /> (pre-release; no migration shim needed).
 
-### Phase 3 — In-container multiplexer *(replace tmux)*
+### Phase 3 — In-container multiplexer *(replace tmux — rewrite in flight)*
 
-- Implement PTY session management in `jackin-container`: spawn PTY sessions, manage their lifecycle, reap child processes.
-- Implement agent state inference from PTY output and foreground process state (working / blocked / done / idle). Design the silence threshold and process-state heuristic.
+The first Phase 3 attempt landed PID 1 ownership, the PTY layer, a binary pane tree, a status bar, a Unix socket attach channel, and the dockerfile changes that drop tmux from the derived image. That work is preserved where it is sound (the layout tree, the `SIGCHLD` reaper, the host-side mount changes, the build pipeline). The pieces that are unusable for modern TUI agents — the hand-rolled VT, the `0x0A` palette shortcut, the daemon's exit-on-last-session, the mouse no-op, the JSON-plus-base64 hot path — are rewritten against the architecture defined in "Multiplexer architecture (Phase 3)" above. The rewrite lands as one cohesive change in the active Phase 3 pull request, broken into four reviewable sub-phases:
+
+- **Phase 3a — Replace the VT.** Delete <RepoFile path="crates/jackin-container/src/terminal.rs" />. Add `vt100` to <RepoFile path="crates/jackin-container/Cargo.toml" />. Hold one `vt100::Parser` plus `vt100::Screen` per `Session`. Switch the tab/pane switch and reattach paths to `Screen::contents_formatted`. Honour `Screen::hide_cursor` and `Screen::cursor_position` when positioning the host cursor.
+- **Phase 3b — Prefix-key input.** Replace the `0x0A` palette intercept with the prefix-key state machine. Default prefix `Ctrl+B`. Default bindings as listed in "Input model: prefix key" above. Add the "Escape forwards immediately" rule (zero-delay disambiguation).
+- **Phase 3c — Persistent server + binary attach channel.** Remove the `std::process::exit(0)` on all-sessions-dead. On agent exit, mark the tab `exited`, keep the screen for replay, allow respawn via prefix bindings. Replace the JSON-plus-base64 attach-channel output with the tag-plus-length binary format defined in "Wire protocol". Drop the hand-rolled base64 from <RepoFile path="crates/jackin-container/src/protocol.rs" />. Fix the reattach outbound-channel drop.
+- **Phase 3d — Resize, mouse, terminal compatibility, status bar polish.** Add the client-side `SIGWINCH` listener and `resize` frames. Fix the mouse passthrough no-op. Wire focus events, OSC/APC passthrough rules, BSU/ESU, kitty-keyboard pass-through, and OSC 52 routing per "Terminal compatibility: tmux setting parity" and "Ghostty compatibility" above. Fix the status bar tab-label width drift. Add the right-side prefix-mode hint.
+
+Phase 3 also keeps the control-channel work the first attempt completed:
+
+- Implement agent state inference from PTY output and foreground process state (`working` / `blocked` / `done` / `idle`). Design the silence threshold and process-state heuristic.
 - Implement the two-stage `done` / `idle` split and the operator-acknowledgement mechanism.
-- Expand socket API: `session.create`, `session.kill`, `session.title`, `session.attach`, `events`.
-- Implement event stream: `session-started`, `session-ended`, `all-sessions-ended`, `agent-state-changed`.
-- Implement workspace-level status roll-up (`blocked > working > done > idle`) on the host side, consuming events from the socket.
+- Expand control-channel API: `session.create`, `session.kill`, `session.title`, `events`.
+- Implement event stream: `session-started`, `session-ended`, `agent-state-changed`.
+- Implement per-tab status roll-up (`blocked > working > done > idle`) on the host side, consuming events from the control channel.
 - Remove `tmux` from the derived image (<RepoFile path="docker/construct/Dockerfile" />).
-- Replace all `docker exec tmux ...` call sites in the host CLI with socket API calls.
+- Replace all `docker exec tmux …` call sites in the host CLI with control-channel calls.
 - Update console session panel to consume `agent-state-changed` events rather than polling.
 - Update attention prompts to subscribe to `blocked` state events rather than doing PTY polling from the host.
+
+`session.attach` is intentionally *not* on the control channel — attach is the persistent binary attach channel defined in "Wire protocol". The first attempt accidentally collapsed the two into one socket; the rewrite separates them.
 
 ### Phase 4 — Daemon integration and desktop app bridge *(deferred)*
 
