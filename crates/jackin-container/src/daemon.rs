@@ -399,6 +399,7 @@ impl Multiplexer {
                 col,
                 button: 0,
             } => {
+                // 1) Click on a tab cell switches active tab.
                 if let Some(idx) = self.status_bar.tab_at_col(col + 1)
                     && idx < self.tabs.len()
                     && idx != self.active_tab
@@ -406,6 +407,18 @@ impl Multiplexer {
                     let prev = self.active_focused_id();
                     self.active_tab = idx;
                     self.synthesise_focus_swap(prev, self.active_focused_id());
+                    return Some(self.compose_frame());
+                }
+                // 2) Click on the right-side hint acts as a
+                //    palette-key gesture — gives the operator a
+                //    mouse fallback when the keyboard shortcut
+                //    isn't reaching the parser.
+                if self.status_bar.hint_at(1, col + 1) {
+                    self.dialog = if self.dialog.is_some() {
+                        None
+                    } else {
+                        Some(Dialog::CommandPalette { selected: 0 })
+                    };
                     return Some(self.compose_frame());
                 }
                 None

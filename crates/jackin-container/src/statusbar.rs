@@ -30,9 +30,9 @@ const BRAND_FG: &str = "\x1b[38;2;0;0;0m"; // black
 const BRAND_BOLD: &str = "\x1b[1m";
 
 const TAB_BG_INACTIVE: &str = "\x1b[48;2;30;30;30m"; // subtle dark grey
-const TAB_BG_ACTIVE: &str = "\x1b[48;2;0;80;18m"; // PHOSPHOR_DARK
+const TAB_BG_ACTIVE: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN (brand)
 const TAB_FG_INACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE
-const TAB_FG_ACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE
+const TAB_FG_ACTIVE: &str = "\x1b[38;2;0;0;0m"; // BLACK on bright green
 const TAB_UNDERLINE_FG: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const BOLD: &str = "\x1b[1m";
 
@@ -53,6 +53,11 @@ pub enum PrefixMode {
 
 pub struct StatusBar {
     pub tab_regions: Vec<(u16, u16)>,
+    /// Click region (1-based, inclusive-exclusive) covering the
+    /// right-side `menu: …` hint. A mouse press in this region acts
+    /// as a clickable shortcut for the palette key — useful when the
+    /// keyboard shortcut isn't reaching the parser for any reason.
+    pub hint_region: Option<(u16, u16)>,
     pub prefix_mode: PrefixMode,
     pub prefix_label: String,
     pub palette_label: String,
@@ -69,10 +74,26 @@ impl StatusBar {
     pub fn new() -> Self {
         Self {
             tab_regions: Vec::new(),
+            hint_region: None,
             prefix_mode: PrefixMode::Idle,
             prefix_label: "Ctrl+B".to_string(),
             palette_label: "Ctrl+\\".to_string(),
             prefix_enabled: false,
+        }
+    }
+
+    /// Return `true` when the (1-based) click at `(row, col)` falls
+    /// inside the menu hint region. The daemon treats that as an
+    /// alternate-path "open palette" gesture so the operator never
+    /// loses access to the menu when the keyboard shortcut isn't
+    /// reaching the parser.
+    pub fn hint_at(&self, row: u16, col: u16) -> bool {
+        if row != 1 {
+            return false;
+        }
+        match self.hint_region {
+            Some((start, end)) => col >= start && col < end,
+            None => false,
         }
     }
 
@@ -94,6 +115,7 @@ impl StatusBar {
         sessions_state: &[(u64, AgentState)],
     ) {
         self.tab_regions.clear();
+        self.hint_region = None;
 
         // ── Row 0: brand pill + tabs + hint ─────────────────────────
         buf.extend_from_slice(b"\x1b[1;1H\x1b[2K");
@@ -148,6 +170,8 @@ impl StatusBar {
             buf.extend_from_slice(HINT_FG.as_bytes());
             buf.extend_from_slice(hint.as_bytes());
             buf.extend_from_slice(RESET.as_bytes());
+            // 1-based, inclusive-exclusive — matches `tab_regions`.
+            self.hint_region = Some((hint_start, hint_start + hint_cols));
         }
 
         // Overflow indicator before the hint.

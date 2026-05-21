@@ -160,6 +160,20 @@ impl InputParser {
                     self.state = State::Idle;
                 }
                 State::EscStart => {
+                    // If the byte right after `ESC` is the palette
+                    // shortcut, the operator's likely intent is
+                    // "dismiss whatever was open, then open the
+                    // menu." Discard the buffered `ESC` and fire
+                    // OpenPalette so the menu opens reliably even
+                    // when the two bytes arrive in the same chunk
+                    // (rapid keystrokes, or after a dialog
+                    // dismissed via `Esc`).
+                    if Some(b) == self.palette_key {
+                        self.seq.clear();
+                        events.push(InputEvent::OpenPalette);
+                        self.state = State::Idle;
+                        continue;
+                    }
                     self.seq.push(b);
                     match b {
                         b'[' => self.state = State::Csi,
