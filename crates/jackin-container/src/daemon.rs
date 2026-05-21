@@ -349,6 +349,51 @@ impl Multiplexer {
         self.tabs.get(self.active_tab).map(|t| t.focused_id)
     }
 
+    /// Derive the label that should appear in the tab strip for `tab`
+    /// given the current pane contents. Operator's mental model is
+    /// "what kinds of things am I running in here?", so the label
+    /// tracks the kind makeup instead of pinning to the first
+    /// session spawned: a single-agent tab carries that agent's
+    /// name; shells-only is `Shell`; two distinct agents is
+    /// `Agents`; any agent + any shell is `Mix`.
+    fn tab_display_label(&self, tab: &Tab) -> String {
+        let mut agent_slugs: Vec<String> = Vec::new();
+        let mut has_shell = false;
+        for id in tab.tree.all_ids() {
+            if let Some(s) = self.sessions.get(&id) {
+                match &s.agent {
+                    Some(slug) => {
+                        if !agent_slugs.iter().any(|s| s == slug) {
+                            agent_slugs.push(slug.clone());
+                        }
+                    }
+                    None => has_shell = true,
+                }
+            }
+        }
+        match (agent_slugs.len(), has_shell) {
+            (0, _) => "Shell".to_string(),
+            (1, false) => capitalize(&agent_slugs[0]),
+            (1, true) => "Mix".to_string(),
+            (_, false) => "Agents".to_string(),
+            (_, true) => "Mix".to_string(),
+        }
+    }
+
+    /// Rewrite each tab's `label` based on the current pane contents.
+    /// Cheap (clones a few short strings) and easier to reason about
+    /// than dispatching incremental updates from every spawn / split
+    /// / remove site.
+    fn refresh_tab_labels(&mut self) {
+        let mut new_labels = Vec::with_capacity(self.tabs.len());
+        for tab in &self.tabs {
+            new_labels.push(self.tab_display_label(tab));
+        }
+        for (tab, label) in self.tabs.iter_mut().zip(new_labels) {
+            tab.label = label;
+        }
+    }
+
     /// True when nothing the operator could attach to is still alive.
     /// `sessions.is_empty()` covers the operator-explicitly-killed-all
     /// case; `all !alive` covers the natural-exit case (every agent /
@@ -861,6 +906,10 @@ impl Multiplexer {
         let mut buf = Vec::with_capacity(65536);
         buf.extend_from_slice(b"\x1b[?25l");
 
+        // Tab labels track the pane makeup. Done here (not on every
+        // spawn / split / remove) so the rule lives in one place.
+        self.refresh_tab_labels();
+
         let states: Vec<(u64, AgentState)> =
             self.sessions.iter().map(|(&id, s)| (id, s.state)).collect();
         self.status_bar.render(
@@ -1216,6 +1265,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 for session in mux.sessions.values_mut() {
                     session.refresh_state();
                 }
+                mux.refresh_tab_labels();
                 let mut sbuf = b"\x1b7".to_vec();
                 let states: Vec<(u64, AgentState)> = mux.sessions.iter()
                     .map(|(&id, s)| (id, s.state))
