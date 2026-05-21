@@ -253,6 +253,57 @@ This does not apply to:
 - Inspection commands the operator runs (`pgrep`, `pmset`, `cat`, `ls`) — those aren't jackin invocations.
 - Production recommendations or scripted automation (debug output is too noisy for those).
 
+## Testing `jackin-container` changes locally (agent-only)
+
+`jackin-container` is the in-container multiplexer binary at `crates/jackin-container/`. Whenever a PR touches any file under `crates/jackin-container/`, the test plan **must** include a live `jackin load` smoke test — unit tests and CI alone are not sufficient because the multiplexer only works end-to-end when running as PID 1 inside a container.
+
+### How the local build works
+
+When jackin is run from a source checkout and the version contains `-dev`, `ensure_available` in `src/container_binary.rs` automatically:
+1. Detects the workspace root by looking for `crates/jackin-container/` above the binary.
+2. Checks whether any source file under `crates/jackin-container/` is newer than the cached binary.
+3. If newer (or no cache): runs `docker run rust:1.95.0 cargo build -p jackin-container` with the workspace mounted read-only. First build ~2–3 min; incremental rebuilds are fast via Docker layer cache.
+4. Caches the result at `~/.jackin/cache/jackin-container/<version>/linux-<arch>/jackin-container`.
+
+No cross-compilation toolchain is required — Docker handles the Linux target.
+
+### Standard smoke test for jackin-container PRs
+
+```bash
+# Build jackin from source first
+cargo build --bin jackin
+
+# Load a role — this builds jackin-container if needed, then starts the container.
+cargo run --bin jackin -- load the-architect . --debug
+```
+
+Inside the container the operator should see:
+- Row 0 status bar: `jackin'  [Claude]` (or the configured agent)
+- Agent TUI starts normally (Claude Code, Codex, etc.)
+- `Ctrl+J` opens the command palette
+- `Alt+arrows` moves pane focus after a split
+- Pasting and extended-key sequences reach the agent unmodified
+
+If the jackin-container build step prints a Docker error, the operator should paste the full `--debug` output.
+
+### Forcing a rebuild without committing
+
+Editing a source file under `crates/jackin-container/src/` is enough — `ensure_available` compares file mtimes and rebuilds when any source file is newer than the cached binary. There is no need to `git add` or commit first.
+
+To manually clear the cache and force a full rebuild:
+
+```bash
+rm -rf ~/.jackin/cache/jackin-container/
+```
+
+### What to assert in the PR "Verify locally" section
+
+A PR that changes `crates/jackin-container/` must include a "Verify locally" entry that covers:
+- The build step ran (first-time or incremental) without errors.
+- The status bar appeared at row 0 after `jackin load`.
+- The specific behavior changed by the PR was observed to work (e.g. "Ctrl+J opened the command palette", "pane split rendered correctly", "session switch preserved agent output").
+- Existing agent session behavior was not regressed (agent TUI renders, mouse events reach the agent).
+
 ## TUI design decisions (agent-only)
 
 All TUI design rules — navigation conventions, W3C ARIA Tabs pattern, focusability, component reuse, color palette, modal sizing, scroll semantics, hint/footer rules, and more — live in [`docs/src/content/docs/reference/tui-design-decisions.mdx`](docs/src/content/docs/reference/tui-design-decisions.mdx).

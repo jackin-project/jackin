@@ -1,3 +1,7 @@
+[workspace]
+members = ["crates/jackin-container"]
+resolver = "2"
+
 [package]
 name = "jackin"
 version = "0.6.0-dev"
@@ -18,6 +22,10 @@ path = "src/main.rs"
 [[bin]]
 name = "jackin-role"
 path = "src/bin/role.rs"
+
+[[bin]]
+name = "build-jackin-container"
+path = "src/bin/build_jackin_container.rs"
 
 [dependencies]
 anyhow = "1.0"

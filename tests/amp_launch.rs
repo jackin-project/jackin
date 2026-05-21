@@ -51,7 +51,8 @@ agents = ["amp"]
 
     let validated = jackin::repo::validate_role_repo(&repo_dir).unwrap();
     let build =
-        jackin::derived_image::create_derived_build_context(&repo_dir, &validated, None).unwrap();
+        jackin::derived_image::create_derived_build_context(&repo_dir, &validated, None, None)
+            .unwrap();
     let dockerfile = std::fs::read_to_string(&build.dockerfile_path).unwrap();
     assert!(dockerfile.contains("ampcode.com/install.sh"));
     assert!(dockerfile.contains("RUN amp --version"));
@@ -90,11 +91,11 @@ agents = ["amp"]
     let run_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+        .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
         .expect("role docker run should run");
     assert!(
-        !run_cmd.contains("JACKIN_AGENT"),
-        "JACKIN_AGENT must not be in docker run; got: {run_cmd}"
+        run_cmd.contains("JACKIN_AGENT=amp"),
+        "JACKIN_AGENT=amp must be in docker run; got: {run_cmd}"
     );
     assert!(
         run_cmd.contains("-e JACKIN_ROLE=the-architect"),
@@ -189,7 +190,7 @@ agents = ["amp"]
     let run_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker run -d") && call.contains("supervisor.sh"))
+        .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
         .expect("role docker run should run");
     assert!(
         run_cmd.contains(":/jackin/amp/secrets.json"),

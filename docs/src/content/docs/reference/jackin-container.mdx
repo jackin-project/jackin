@@ -1,0 +1,195 @@
+---
+title: "jackin-container: In-Container Multiplexer"
+---
+
+import RepoFile from '../../../components/RepoFile.astro'
+import { Aside } from '@astrojs/starlight/components'
+
+`jackin-container` is the binary that runs as PID 1 inside every jackin-managed container. It is a purpose-built terminal multiplexer for AI agent workflows — not a general-purpose tool, but one shaped specifically around the problems that arise when running multiple autonomous agents in an isolated environment.
+
+## The problem it solves
+
+When jackin used tmux as the session layer, three structural limitations became apparent:
+
+**No structured session inventory.** Querying which agents were running required `docker exec <container> tmux list-sessions` from the host — a subprocess round-trip that returns a string jackin then had to parse. There was no typed interface; every session management operation went through shell command construction and string output parsing.
+
+**No agent-state awareness.** tmux knows about terminal sessions and windows. It has no concept of whether the process inside a pane is working, waiting for input, or finished. jackin could not ask "is this agent blocked?" without reading raw PTY output from outside the container.
+
+**No event stream.** The host could not subscribe to "a session ended" without polling. The only reliable signal was the container stopping, which was too coarse — a container could be running with zero active sessions.
+
+These three gaps are why observability, attention prompts, and future desktop integration were hard to build on top of tmux. Every feature that needed to know what agents were doing required another `docker exec tmux ...` round-trip with output parsing.
+
+## Why build it in-house
+
+The closest public reference is [Herdr](https://github.com/ogulcancelik/herdr) — a Rust multiplexer purpose-built for AI coding agents with four-state status tracking, a Unix socket API, and workspace-level roll-ups. Herdr cannot be embedded in jackin: it is AGPL-3.0, which conflicts with jackin's Apache-2.0 license.
+
+Beyond the license, Herdr wraps **bare host processes**. jackin wraps **Docker containers**. When Herdr sees `docker attach` rather than the agent process, its PTY heuristics degrade — it is watching the wrong process. `jackin-container` runs *inside* the container and reads the agent's PTY output directly, which is exactly where the heuristics need to run.
+
+Building it in-house gives jackin a control plane that is:
+
+- **Typed and structured.** The socket speaks newline-delimited JSON. The host asks for a session list and gets a typed response, not a string to parse.
+- **Agent-aware.** The multiplexer owns every PTY session from spawn to exit. It sees the output directly and can infer state (working / blocked / done / idle) without guessing.
+- **Event-driven.** When a session ends, the binary sends an event. The host does not poll.
+- **Dependency-free in the image.** tmux is no longer installed in the construct image. The derived image only needs `jackin-container` at `/usr/local/bin/jackin-container`.
+
+## Architecture
+
+`jackin-container` operates in two modes, determined at startup by whether `PID == 1`:
+
+**Daemon mode (PID 1).** The binary is the container's init process. It:
+- Reaps zombie children (mandatory for PID 1 — processes re-parented to PID 1 when their parent exits must be waited on or they accumulate as zombies in the process table)
+- Spawns PTY sessions for each agent (one session per pane leaf in the layout tree)
+- Renders the status bar and compositor output
+- Listens on `/run/jackin/jackin.sock` for client connections and host CLI queries
+
+**Client mode (PID ≠ 1).** When the operator runs `docker exec -it <container> jackin-container`, the binary connects to the daemon socket, bridges the operator's terminal to the active session, and handles multiplexer commands locally before forwarding raw input to the PTY.
+
+### Socket interface
+
+The daemon listens at `/run/jackin/jackin.sock` inside the container. On the host, the socket is bind-mounted per-instance:
+
+```
+docker run ... -v /run/jackin/<instance-id>.sock:/run/jackin/jackin.sock ...
+```
+
+One socket file per running instance on the host. The socket uses 4-byte big-endian length-prefixed JSON frames.
+
+Current API:
+
+| Message | Direction | Purpose |
+|---|---|---|
+| `Hello` | client → daemon | Announce terminal size; initiates attach |
+| `Input` | client → daemon | Forward raw keystrokes (base64-encoded) |
+| `Resize` | client → daemon | Terminal window resized |
+| `NewSession` | client → daemon | Spawn a new agent or shell session |
+| `SwitchSession` | client → daemon | Switch active session by ID |
+| `KillSession` | client → daemon | Terminate a session by ID |
+| `Status` | client → daemon | Request current session list (one-shot query) |
+| `Welcome` | daemon → client | Handshake response |
+| `Output` | daemon → client | Terminal bytes to render (base64-encoded) |
+| `SessionList` | daemon → client | Typed session inventory |
+| `Shutdown` | daemon → client | All sessions exited; client should exit |
+
+### Layout model
+
+Each tab owns a binary tree of panes. Any leaf can be split into two children (`HSplit` or `VSplit`) with a configurable ratio. The operator can build an arbitrary N×M grid by successive splits. The active pane receives input; all other panes continue running.
+
+```
+Tab
+└── HSplit (ratio: 0.5)
+    ├── Leaf → Claude session
+    └── VSplit (ratio: 0.5)
+        ├── Leaf → Codex session
+        └── Leaf → Shell
+```
+
+### Virtual terminal emulator
+
+Each pane owns a `VirtualTerminal` — a cell grid updated by a `vte` parser that processes the PTY output stream. When the operator switches sessions, the compositor re-renders the new session's grid to the host terminal. This preserves the visual state of all sessions, not just the active one.
+
+### Status bar
+
+Row 0 of the host terminal is owned by `jackin-container` and never yielded to agent sessions. It renders:
+
+- **`jackin'` brand pill** — bright-green background, near-black text. Always visible. When an operator shares their screen, others can immediately see the container is running inside jackin.
+- **Session tabs** — one tab per session. Active tab is bold and green. Inactive tabs are grey. Mouse-clickable. Tabs show a `●` dot when the session has unseen activity.
+
+The status bar is drawn after hiding the cursor, and the cursor is restored after the draw. It never causes the pane content to repaint unnecessarily.
+
+### Input routing
+
+```
+Key press arrives
+  │
+  ├─ Row 0 mouse click → tab switch
+  ├─ Ctrl+J → command palette (open or close)
+  ├─ Alt+Arrow → move pane focus
+  ├─ Command palette open → palette key handler
+  └─ Everything else → active pane PTY stdin
+```
+
+`Ctrl+J` is the only key intercepted from the input stream in normal mode. Everything else — including all agent-specific shortcuts, bracketed paste, mouse events, and extended key sequences — is forwarded unmodified to the active PTY.
+
+<Aside type="caution">
+The agent's terminal experience is the highest-priority constraint. No multiplexer feature may intercept, transform, or drop input that the agent should receive. See the [Multiplexer Design Rules](/reference/multiplexer-design-rules/) for the full passthrough contract.
+</Aside>
+
+### Agent discovery
+
+Available runtimes are declared via the `JACKIN_SUPPORTED_AGENTS` environment variable baked into the derived image at build time. The variable is a comma-separated list of agent slugs matching the agents installed in the image (e.g. `claude,codex`). The daemon reads this at startup to populate the agent picker in the command palette.
+
+## Distribution and versioning
+
+`jackin-container` is versioned identically to the jackin CLI — both use the same <RepoFile path="build.rs" /> logic that produces `{cargo_pkg_version}+{7-char-git-sha}`. The host CLI's version string and the binary's `--version` output always match.
+
+### How jackin acquires the binary
+
+`ensure_available` in <RepoFile path="src/container_binary.rs" /> resolves the binary in priority order:
+
+1. **`JACKIN_CONTAINER_BIN=/path/to/binary` (env var set)** — jackin uses that path directly. No cache lookup, no download. The binary can come from anywhere: a local build, a CI artifact, a closed-source build. jackin validates only that the file exists and is executable.
+
+2. **Cache hit** — if `~/.jackin/cache/jackin-container/<version>/linux-<arch>/jackin-container` exists and is executable, it is used immediately.
+
+3. **Download** — on a cache miss, the binary is downloaded from GitHub Releases: the rolling `preview` tag for `-dev` and `-preview.*` versions, or the versioned `v<version>` tag for stable releases. On Linux the downloaded binary is verified by executing `jackin-container --version` and asserting the output matches the expected version string.
+
+jackin itself has no knowledge of how to build `jackin-container` from source. Build logic lives exclusively in the developer tool described below.
+
+### Building for local development
+
+Use the `build-jackin-container` binary (defined in <RepoFile path="src/bin/build_jackin_container.rs" />) to compile `jackin-container` for Linux and populate the cache. It uses `cargo-zigbuild` with Zig as the linker — no Docker required — and targets a glibc 2.17 floor to match CI:
+
+- `arm64` → `aarch64-unknown-linux-gnu.2.17`
+- `amd64` → `x86_64-unknown-linux-gnu.2.17`
+
+**Option A — one shot (recommended for PR verification):**
+
+```sh
+eval "$(cargo run --bin build-jackin-container -- --export)"
+```
+
+This builds the binary, caches it under `~/.jackin/cache/jackin-container/`, and sets `JACKIN_CONTAINER_BIN` in the current shell so `jackin load` uses it directly — bypassing the cache lookup entirely.
+
+**Option B — two steps (useful when running multiple `jackin load` invocations):**
+
+```sh
+cargo run --bin build-jackin-container
+# prints: [build] to use: export JACKIN_CONTAINER_BIN=/path/to/cached/binary
+export JACKIN_CONTAINER_BIN=/path/to/cached/binary
+```
+
+The binary is written to the standard cache path and subsequent `jackin load` invocations in the same shell reuse it without rebuilding.
+
+**Flags:**
+
+| Flag | Description |
+|---|---|
+| `--arch arm64\|amd64` | Target architecture (default: current host's container arch) |
+| `--export` | Print only `export JACKIN_CONTAINER_BIN=<path>` for `eval` |
+
+Prerequisites: `zig` and `cargo-zigbuild` must be installed. Both are declared in <RepoFile path="mise.toml" />; run `mise install zig cargo:cargo-zigbuild` if missing.
+
+First build takes 2–3 minutes; subsequent builds are incremental via cargo's dependency cache.
+
+### Derived image build
+
+<RepoFile path="src/derived_image.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-container /usr/local/bin/jackin-container` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/usr/local/bin/jackin-container` the base image provides.
+
+## Relationship to the rest of jackin
+
+| Component | Relationship |
+|---|---|
+| <RepoFile path="src/container_binary.rs" /> | Resolves the binary path: `JACKIN_CONTAINER_BIN` override → cache hit → download from GitHub Releases |
+| <RepoFile path="src/bin/build_jackin_container.rs" /> | Developer tool: `cargo run --bin build-jackin-container` — builds via `cargo-zigbuild` and populates the cache |
+| <RepoFile path="src/derived_image.rs" /> | Copies binary into derived image build context |
+| <RepoFile path="src/runtime/launch.rs" /> | Adds socket mount to `docker run`; connects via `docker exec jackin-container` |
+| <RepoFile path="src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-container new` |
+| <RepoFile path="src/isolation/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
+| [Agent runtime status roadmap item](/reference/roadmap/agent-runtime-status/) | Will consume agent-state events from the socket once the event stream is implemented |
+| [jackin daemon roadmap item](/reference/roadmap/jackin-daemon/) | The daemon will subscribe to each container's socket and maintain a cross-instance session index |
+| [Multiplexer Design Rules](/reference/multiplexer-design-rules/) | Passthrough contract, input routing rules, verification checklist |
+
+## See also
+
+- [Multiplexer Design Rules](/reference/multiplexer-design-rules/) — the non-negotiable passthrough contract and per-feature verification checklist
+- [jackin-container roadmap item](/reference/roadmap/jackin-container-binary/) — original problem statement, Herdr evaluation, phased implementation plan
+- [Agent Orchestrator Research](/reference/roadmap/agent-orchestrator-research/) — comparative analysis of Herdr and other tools that informed the design

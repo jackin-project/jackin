@@ -59,6 +59,16 @@ Use the real PR number, repository URL, branch name, and verification commands f
 
 Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Tests only when there is a relevant automated test command. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. If the PR changes a CLI command or TUI surface, the User Smoke block must include the exact command that opens that changed surface from the checkout, plus any setup commands needed to make the changed rows/options visible. Prose like "open the console and verify the tab" is incomplete unless it is preceded by the command the operator should paste and the state-seeding commands needed for the UI to show the changed behavior. If the PR has no narrower manual path, use the console as the baseline smoke command: `cargo run --bin jackin -- console --debug`. For launch/runtime flows, prefer a command that hits the changed path, such as `cargo run --bin jackin -- load <role> <target> --debug`. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
 
+### jackin-container PRs
+
+Any PR that touches `crates/jackin-container/` (the in-container multiplexer binary) requires a `### jackin-container smoke` block in the Verify locally section, in addition to the standard User Smoke block. Unit tests and CI do not cover end-to-end multiplexer behavior; a live `jackin load` that enters the container is the only way to verify the status bar, input routing, pane splits, and session switching work correctly.
+
+The smoke block must include `cargo run --bin jackin -- load the-architect . --debug`. The first run builds `jackin-container` from source via Docker (~2–3 min); subsequent runs after source edits are incremental. Editing any file under `crates/jackin-container/src/` invalidates the cache automatically by mtime — no commit required. To force a full rebuild: `rm -rf ~/.jackin/cache/jackin-container/`.
+
+The block must also state what the PR changed and what the operator should specifically verify inside the container, beyond the baseline checklist (status bar visible, `Ctrl+J` palette opens, agent TUI renders, keystrokes pass through).
+
+A `crates/jackin-container/` PR without this block is incomplete. Unit tests passing is necessary but not sufficient.
+
 ### Documentation-only PRs
 
 Documentation PRs (changes under `docs/**` only — `.mdx` files, `astro.config.ts` sidebar, theme/CSS) must verify by running the docs site **locally** in addition to checkout, not by pointing the operator at the GitHub Files-changed tab.

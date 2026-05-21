@@ -72,6 +72,7 @@ cd jackin
 mise trust
 git fetch -f origin <BRANCH_NAME>:refs/remotes/origin/<BRANCH_NAME>
 git checkout -B <BRANCH_NAME> refs/remotes/origin/<BRANCH_NAME>
+mise install
 ```
 
 ### Isolation
@@ -118,6 +119,53 @@ cargo run --bin jackin -- console --debug
 expected output where it disambiguates a pass/fail. Replace this block with the
 narrower path when the PR has one (e.g. `cargo run --bin jackin -- load
 <role> <target> --debug`).>
+
+### jackin-container smoke
+
+<Drop this whole subsection when the PR does NOT touch `crates/jackin-container/`.
+Include it whenever daemon.rs, client.rs, session.rs, terminal.rs, layout.rs,
+dialog.rs, statusbar.rs, input.rs, pid1.rs, or any other file under
+`crates/jackin-container/src/` is changed.>
+
+Build the binary and wire it up before running `jackin load`. Two options:
+
+**Option A — one shot (recommended):**
+
+```sh
+eval "$(cargo run --bin build-jackin-container -- --export)"
+```
+
+Builds via `cargo-zigbuild`, caches the result, and sets `JACKIN_CONTAINER_BIN`
+in the current shell so `jackin` uses it directly.
+
+**Option B — two steps:**
+
+```sh
+cargo run --bin build-jackin-container
+# prints: [build] to use: export JACKIN_CONTAINER_BIN=/path/to/binary
+export JACKIN_CONTAINER_BIN=<path printed above>
+```
+
+First build takes ~2-3 min; subsequent builds are incremental. Then smoke:
+
+```sh
+cargo run --bin jackin -- load the-architect . --debug
+```
+
+Inside the container, verify:
+
+- Row 0 status bar is visible: `jackin'  [<agent-name>]`
+- Agent TUI starts and renders correctly below the status bar
+- `Ctrl+J` opens the command palette
+- Mouse clicks, arrow keys, and paste reach the agent unmodified
+- <One sentence specific to what this PR changed — e.g. "Split pane rendered
+  after `Ctrl+J → Split pane │`" or "Session switch preserved agent output">
+
+To force a clean rebuild:
+
+```sh
+eval "$(cargo run --bin build-jackin-container -- --export)"
+```
 
 ### Documentation
 

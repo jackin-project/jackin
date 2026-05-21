@@ -120,7 +120,7 @@ jobs:
             # src/, docker/runtime/) MUST drift together with ci.yml
             # — when adding a new build input there, add it here too.
             case "$path" in
-              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/**|docker/runtime/**)
+              .github/workflows/preview.yml|Cargo.toml|Cargo.lock|rust-toolchain.toml|build.rs|src/**|docker/runtime/**|crates/**)
                 source=true
                 ;;
             esac
@@ -211,8 +211,66 @@ jobs:
             jackin-preview-${{ matrix.target }}.tar.gz
             jackin-preview-${{ matrix.target }}.tar.gz.sha256
 
+
+  build-jackin-container:
+    needs: source-changed
+    if: needs.source-changed.outputs.source == 'true'
+    runs-on: ubuntu-latest
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            zigbuild_target: aarch64-unknown-linux-gnu.2.17
+            arch: arm64
+          - target: x86_64-unknown-linux-gnu
+            zigbuild_target: x86_64-unknown-linux-gnu.2.17
+            arch: amd64
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.source-changed.outputs.sha }}
+      - uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
+      - uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
+        with:
+          target: ${{ matrix.target }}
+          cache-key: preview-container-${{ matrix.target }}
+          rustflags: ""
+      - name: Install Zig and cargo-zigbuild
+        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        with:
+          install_args: "zig cargo:cargo-zigbuild"
+          github_token: ${{ secrets.GH_READONLY_TOKEN }}
+      - name: Build
+        env:
+          ZIGBUILD_TARGET: ${{ matrix.zigbuild_target }}
+          FULL_SHA: ${{ needs.source-changed.outputs.sha }}
+        run: |
+          # Compute version string in the same format as build.rs:
+          # "{CARGO_PKG_VERSION}+{7-char-sha}" so jackin-container --version
+          # matches what the host jackin CLI reports.
+          base_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          short_sha=$(printf '%s' "$FULL_SHA" | cut -c1-7)
+          export JACKIN_VERSION_OVERRIDE="${base_version}+${short_sha}"
+          cargo zigbuild --release --locked -p jackin-container --target "$ZIGBUILD_TARGET"
+      - name: Publish binary as release asset
+        env:
+          ARCH: ${{ matrix.arch }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          cp "target/${TARGET}/release/jackin-container" "jackin-container-${TARGET}"
+          sha256sum "jackin-container-${TARGET}" | awk '{print $1}' > "jackin-container-${TARGET}.sha256"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jackin-container-${{ matrix.target }}
+          path: |
+            jackin-container-${{ matrix.target }}
+            jackin-container-${{ matrix.target }}.sha256
+
   publish-preview:
-    needs: [source-changed, build-preview]
+    needs: [source-changed, build-preview, build-jackin-container]
     if: needs.source-changed.outputs.source == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -303,7 +361,9 @@ jobs:
             --title "Preview ${VERSION}" \
             --notes "Preview build from [${SHA:0:7}](https://github.com/${GITHUB_REPOSITORY}/commit/${SHA})." \
             artifacts/jackin-preview-*.tar.gz \
-            artifacts/jackin-preview-*.tar.gz.sha256
+            artifacts/jackin-preview-*.tar.gz.sha256 \
+            artifacts/jackin-container-* \
+            artifacts/jackin-container-*.sha256
 
       - name: Read platform SHA256s
         id: shas
