@@ -32,6 +32,11 @@ pub enum InputEvent {
     /// `PrefixCommand::Palette`, which fires only after the prefix
     /// gesture; the daemon collapses both into the same dialog open.
     OpenPalette,
+    /// Resize the focused pane in `dir` by one step. Emitted by
+    /// `Alt+Shift+Arrow` so the operator can drag a split without
+    /// reaching for the mouse. Steps are ratio-based (~5%) so the
+    /// gesture is independent of terminal size.
+    ResizePane(ArrowDir),
     FocusIn,
     FocusOut,
 }
@@ -373,6 +378,26 @@ fn classify_csi(seq: &[u8]) -> Option<InputEvent> {
         return Some(InputEvent::FocusOut);
     }
     // Arrow keys: ESC [ A/B/C/D — *not* intercepted; forwarded to PTY.
+    // Arrow with modifier: ESC [ 1 ; <mod> A/B/C/D — Alt+Shift = mod 4.
+    // `Alt+Shift+Arrow` is reserved for multiplexer pane resize so it
+    // does not collide with agents that consume `Alt+Arrow` (word
+    // navigation) or `Shift+Arrow` (selection extend).
+    if let Some(rest) = seq.strip_prefix(b"\x1b[1;")
+        && let Some(&final_byte) = rest.last()
+        && matches!(final_byte, b'A' | b'B' | b'C' | b'D')
+    {
+        let body = &rest[..rest.len() - 1];
+        if body == b"4" {
+            let dir = match final_byte {
+                b'A' => ArrowDir::Up,
+                b'B' => ArrowDir::Down,
+                b'C' => ArrowDir::Right,
+                b'D' => ArrowDir::Left,
+                _ => unreachable!(),
+            };
+            return Some(InputEvent::ResizePane(dir));
+        }
+    }
     // SGR mouse: ESC [ < ... M/m
     if let Some(rest) = seq.strip_prefix(b"\x1b[<")
         && let Some(final_byte) = rest.last()

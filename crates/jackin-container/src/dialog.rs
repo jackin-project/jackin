@@ -32,6 +32,18 @@ const SELECT_FG: &str = "\x1b[38;2;0;0;0m"; // BLACK fg
 const SELECT_MARK: &str = "▸ ";
 const UNSELECT_MARK: &str = "  ";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PickerIntent {
+    /// Spawn the chosen agent / shell as a brand-new tab.
+    NewTab,
+    /// Split the focused pane side-by-side and spawn the chosen
+    /// agent / shell in the new pane.
+    SplitHorizontal,
+    /// Split the focused pane top/bottom and spawn the chosen
+    /// agent / shell in the new pane.
+    SplitVertical,
+}
+
 #[derive(Debug, Clone)]
 pub enum Dialog {
     CommandPalette {
@@ -40,6 +52,7 @@ pub enum Dialog {
     AgentPicker {
         agents: Vec<String>,
         selected: usize,
+        intent: PickerIntent,
     },
 }
 
@@ -47,8 +60,12 @@ pub enum Dialog {
 pub enum DialogAction {
     /// User confirmed a command-palette item.
     Command(PaletteCommand),
-    /// User picked an agent slug (or "shell").
-    SpawnAgent { agent: Option<String> },
+    /// User picked an agent slug (or "shell"). `intent` tells the
+    /// daemon whether to spawn it as a tab or as a split pane.
+    SpawnAgent {
+        agent: Option<String>,
+        intent: PickerIntent,
+    },
     /// User dismissed with Escape.
     Dismiss,
     /// Dialog is still open; redraw.
@@ -116,7 +133,9 @@ impl Dialog {
                     }
                     DialogAction::Redraw
                 }
-                Self::AgentPicker { agents, selected } => {
+                Self::AgentPicker {
+                    agents, selected, ..
+                } => {
                     if *selected + 1 < agents.len() + 1 {
                         *selected += 1;
                     }
@@ -144,7 +163,11 @@ impl Dialog {
                 }
                 _ => DialogAction::Redraw,
             },
-            Self::AgentPicker { agents, selected } => match key {
+            Self::AgentPicker {
+                agents,
+                selected,
+                intent,
+            } => match key {
                 b"k" => {
                     if *selected > 0 {
                         *selected -= 1;
@@ -163,7 +186,10 @@ impl Dialog {
                     } else {
                         None // Shell
                     };
-                    DialogAction::SpawnAgent { agent }
+                    DialogAction::SpawnAgent {
+                        agent,
+                        intent: *intent,
+                    }
                 }
                 _ => DialogAction::Redraw,
             },
@@ -177,8 +203,12 @@ impl Dialog {
             Self::CommandPalette { selected } => {
                 render_palette(buf, term_rows, term_cols, *selected);
             }
-            Self::AgentPicker { agents, selected } => {
-                render_agent_picker(buf, term_rows, term_cols, agents, *selected);
+            Self::AgentPicker {
+                agents,
+                selected,
+                intent,
+            } => {
+                render_agent_picker(buf, term_rows, term_cols, agents, *selected, *intent);
             }
         }
     }
@@ -246,7 +276,8 @@ const PICKER_HINT: &[HintSpan<'static>] = &[
 
 fn render_palette(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, selected: usize) {
     let items = PALETTE_ITEMS;
-    let height = items.len() as u16 + 5;
+    // Box rows: top border + blank pad + items + blank pad + bottom border.
+    let height = items.len() as u16 + 4;
     let width = PALETTE_WIDTH;
     let start_row = (term_rows.saturating_sub(height)) / 2;
     let start_col = (term_cols.saturating_sub(width)) / 2;
@@ -262,13 +293,7 @@ fn render_palette(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, selected: u
             i == selected,
         );
     }
-    render_hint(
-        buf,
-        start_row + height - 2,
-        start_col + 1,
-        width,
-        PALETTE_HINT,
-    );
+    render_bottom_hint(buf, term_rows, term_cols, PALETTE_HINT);
 }
 
 fn render_agent_picker(
@@ -277,19 +302,28 @@ fn render_agent_picker(
     term_cols: u16,
     agents: &[String],
     selected: usize,
+    intent: PickerIntent,
 ) {
-    let item_count = agents.len() + 1; // +1 for Shell
-    let height = item_count as u16 + 5;
+    // Render rows: agents + separator + Shell. Selection space is
+    // `agents.len() + 1` (the separator is not selectable).
+    let render_row_count = agents.len() as u16 + 2; // agents + separator + shell
+    let height = render_row_count + 4;
     let width = PALETTE_WIDTH;
     let start_row = (term_rows.saturating_sub(height)) / 2;
     let start_col = (term_cols.saturating_sub(width)) / 2;
 
-    render_box(buf, start_row, start_col, height, width, "Launch session");
+    let title = match intent {
+        PickerIntent::NewTab => "Launch session",
+        PickerIntent::SplitHorizontal => "Split pane │  (side by side)",
+        PickerIntent::SplitVertical => "Split pane ─  (top / bottom)",
+    };
+    render_box(buf, start_row, start_col, height, width, title);
 
-    let mut all_items: Vec<String> = agents.to_vec();
-    all_items.push("Shell".to_string());
-
-    for (i, label) in all_items.iter().enumerate() {
+    // Agent rows. Each agent slug is mapped through
+    // `jackin_tui::agent_display_name` so labels match the console
+    // TUI's `agent_picker_label` (Title case + `OpenCode` spelling).
+    for (i, slug) in agents.iter().enumerate() {
+        let label = jackin_tui::agent_display_name(slug.as_str()).unwrap_or(slug.as_str());
         render_row(
             buf,
             start_row + 2 + i as u16,
@@ -299,14 +333,52 @@ fn render_agent_picker(
             i == selected,
         );
     }
-
-    render_hint(
+    // Separator row between agents and Shell. Non-selectable.
+    render_separator(
         buf,
-        start_row + height - 2,
+        start_row + 2 + agents.len() as u16,
         start_col + 1,
         width,
-        PICKER_HINT,
+        "shell",
     );
+    // Shell row at the final selection slot.
+    render_row(
+        buf,
+        start_row + 2 + agents.len() as u16 + 1,
+        start_col + 1,
+        width,
+        "Shell",
+        selected == agents.len(),
+    );
+
+    render_bottom_hint(buf, term_rows, term_cols, PICKER_HINT);
+}
+
+/// Non-selectable visual divider inside the agent picker — `── shell ──`
+/// in dim phosphor-green. Sets the operator's expectation that the
+/// row below the divider is a different *kind* of session, not just
+/// another agent.
+fn render_separator(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, label: &str) {
+    move_to(buf, row, col);
+    buf.extend_from_slice(BG_DARK.as_bytes());
+    buf.extend_from_slice(FG_BORDER.as_bytes());
+    // Interior width: `width - 2` cols.
+    let interior = (width as usize).saturating_sub(2);
+    let label_with_pad = format!(" {label} ");
+    let label_cols = label_with_pad.chars().count();
+    let total_dashes = interior.saturating_sub(label_cols);
+    let left_dashes = total_dashes / 2;
+    let right_dashes = total_dashes - left_dashes;
+    for _ in 0..left_dashes {
+        buf.extend_from_slice("─".as_bytes());
+    }
+    buf.extend_from_slice(FG_DIM.as_bytes());
+    buf.extend_from_slice(label_with_pad.as_bytes());
+    buf.extend_from_slice(FG_BORDER.as_bytes());
+    for _ in 0..right_dashes {
+        buf.extend_from_slice("─".as_bytes());
+    }
+    buf.extend_from_slice(RESET.as_bytes());
 }
 
 /// Render one row of a palette/picker list at `(row, col)` spanning
@@ -387,50 +459,59 @@ fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, ti
     buf.extend_from_slice(RESET.as_bytes());
 }
 
-/// Render the dedicated hint row inside the box (above the bottom
-/// border). Each `HintSpan` carries its own colour so hotkeys read
-/// distinct from labels — same convention as the console TUI footer.
-/// Clipping is done by **display column count**, not byte count, so
-/// multibyte glyphs (`↑↓`, `·`) survive a tight width without
-/// truncating mid-string.
-fn render_hint(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, spans: &[HintSpan<'_>]) {
-    move_to(buf, row, col);
+/// Compute the visual column width of a hint span row. Matches the
+/// formatting in `render_bottom_hint` so centring is exact.
+fn hint_span_cols(spans: &[HintSpan<'_>]) -> usize {
+    spans
+        .iter()
+        .map(|s| match s {
+            HintSpan::Key(k) => k.chars().count(),
+            HintSpan::Text(t) => 1 /* leading space */ + t.chars().count(),
+            HintSpan::Sep => 3,
+            HintSpan::GroupSep => 3,
+        })
+        .sum()
+}
+
+/// Paint the hint row centred on the **terminal's last row**, on top of
+/// the agent / shell content beneath the dialog box. Lives outside the
+/// box so the box border ends cleanly and the hint reads as the
+/// global-footer pattern jackin's console TUI uses.
+fn render_bottom_hint(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, spans: &[HintSpan<'_>]) {
+    let total = hint_span_cols(spans);
+    if total >= term_cols as usize || term_rows == 0 {
+        return;
+    }
+    let start_col = ((term_cols as usize - total) / 2) as u16;
+    let row = term_rows - 1;
+    move_to(buf, row, start_col);
     buf.extend_from_slice(BG_DARK.as_bytes());
-    let interior = (width as usize).saturating_sub(2);
-    let mut cols_used = 0usize;
     for span in spans {
-        let (text, style) = match span {
-            HintSpan::Key(k) => (
-                std::borrow::Cow::Borrowed(*k),
-                Some([BG_DARK, FG_WHITE, BOLD]),
-            ),
-            HintSpan::Text(t) => (
-                std::borrow::Cow::Owned(format!(" {t}")),
-                Some([BG_DARK, FG_GREEN, ""]),
-            ),
-            HintSpan::Sep => (
-                std::borrow::Cow::Borrowed(" · "),
-                Some([BG_DARK, FG_BORDER, ""]),
-            ),
-            HintSpan::GroupSep => (std::borrow::Cow::Borrowed("   "), None),
-        };
-        let cols = text.chars().count();
-        if cols_used + cols > interior {
-            break;
-        }
-        if let Some(styles) = style {
-            for s in styles {
-                if !s.is_empty() {
-                    buf.extend_from_slice(s.as_bytes());
-                }
+        match span {
+            HintSpan::Key(k) => {
+                buf.extend_from_slice(BG_DARK.as_bytes());
+                buf.extend_from_slice(FG_WHITE.as_bytes());
+                buf.extend_from_slice(BOLD.as_bytes());
+                buf.extend_from_slice(k.as_bytes());
+                buf.extend_from_slice(RESET.as_bytes());
             }
-        } else {
-            buf.extend_from_slice(BG_DARK.as_bytes());
-            buf.extend_from_slice(FG_GREEN.as_bytes());
+            HintSpan::Text(t) => {
+                buf.extend_from_slice(BG_DARK.as_bytes());
+                buf.extend_from_slice(FG_GREEN.as_bytes());
+                buf.push(b' ');
+                buf.extend_from_slice(t.as_bytes());
+                buf.extend_from_slice(RESET.as_bytes());
+            }
+            HintSpan::Sep => {
+                buf.extend_from_slice(BG_DARK.as_bytes());
+                buf.extend_from_slice(FG_BORDER.as_bytes());
+                buf.extend_from_slice(" · ".as_bytes());
+                buf.extend_from_slice(RESET.as_bytes());
+            }
+            HintSpan::GroupSep => {
+                buf.extend_from_slice("   ".as_bytes());
+            }
         }
-        buf.extend_from_slice(text.as_bytes());
-        buf.extend_from_slice(RESET.as_bytes());
-        cols_used += cols;
     }
     let _ = FG_DIM; // reserved for future Dyn spans (e.g., "N items selected")
 }

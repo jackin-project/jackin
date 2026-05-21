@@ -62,6 +62,22 @@ pub struct TabCell<'a> {
 /// jackin-container both follow this spacing.
 pub const TAB_GAP: u16 = 1;
 
+/// Title-case display name for an agent slug. Mirrors the console
+/// TUI's `agent_picker_label` so both surfaces use the same casing.
+/// Returns `None` for unrecognised slugs so callers can fall back to
+/// the raw slug rather than silently displaying a wrong label.
+#[must_use]
+pub fn agent_display_name(slug: &str) -> Option<&'static str> {
+    match slug {
+        "claude" => Some("Claude"),
+        "codex" => Some("Codex"),
+        "amp" => Some("Amp"),
+        "kimi" => Some("Kimi"),
+        "opencode" => Some("OpenCode"),
+        _ => None,
+    }
+}
+
 /// Build a row of `TabCell` descriptors from `(label, active)` pairs,
 /// starting at `start_col`. Used by both consumers to compute
 /// click-region bounds and to know where to paint the active-tab

@@ -20,7 +20,7 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
 
-use crate::dialog::{Dialog, DialogAction, PaletteCommand};
+use crate::dialog::{Dialog, DialogAction, PaletteCommand, PickerIntent};
 use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, Tab};
 use crate::protocol::attach::{ClientFrame, ServerFrame, encode_server, read_client_frame};
@@ -211,12 +211,15 @@ impl Multiplexer {
         Ok(id)
     }
 
-    fn split_focused(&mut self, horizontal: bool) -> Result<()> {
+    /// Split the focused pane and spawn a session of the operator's
+    /// choice inside it. `agent_slug = None` opens a shell. Used by
+    /// the AgentPicker → Split flow so the operator picks the new
+    /// pane's identity instead of cloning the source pane's agent.
+    fn split_focused_into(&mut self, horizontal: bool, agent_slug: Option<String>) -> Result<()> {
         let Some(tab) = self.tabs.get(self.active_tab) else {
             return Ok(());
         };
         let from_id = tab.focused_id;
-        let agent_slug = self.sessions.get(&from_id).and_then(|s| s.agent.clone());
         let (label, cmd) = match &agent_slug {
             Some(slug) => (
                 capitalize(slug),
@@ -242,6 +245,18 @@ impl Multiplexer {
         tab.focused_id = new_id;
         self.resize_panes();
         Ok(())
+    }
+
+    /// Split the focused pane and clone the source pane's agent into
+    /// the new pane. Kept for the tmux-style `Ctrl+B %` / `Ctrl+B "`
+    /// prefix bindings, which spawn-and-go without an agent picker.
+    fn split_focused(&mut self, horizontal: bool) -> Result<()> {
+        let Some(tab) = self.tabs.get(self.active_tab) else {
+            return Ok(());
+        };
+        let from_id = tab.focused_id;
+        let agent_slug = self.sessions.get(&from_id).and_then(|s| s.agent.clone());
+        self.split_focused_into(horizontal, agent_slug)
     }
 
     fn close_focused_pane(&mut self) {
@@ -310,6 +325,24 @@ impl Multiplexer {
         self.sessions.is_empty() || self.sessions.values().all(|s| !s.alive)
     }
 
+    /// Adjust the split that contains the focused pane along `dir` by
+    /// 5% of the parent rectangle. Triggered by `Alt+Shift+Arrow`.
+    fn resize_focused(&mut self, dir: ArrowDir) {
+        let Some(tab_idx) = self.tabs.get(self.active_tab).map(|_| self.active_tab) else {
+            return;
+        };
+        let focused = self.tabs[tab_idx].focused_id;
+        let d = match dir {
+            ArrowDir::Left => Direction::Left,
+            ArrowDir::Right => Direction::Right,
+            ArrowDir::Up => Direction::Up,
+            ArrowDir::Down => Direction::Down,
+        };
+        if self.tabs[tab_idx].tree.resize(focused, d, 0.05) {
+            self.resize_panes();
+        }
+    }
+
     fn move_focus(&mut self, dir: ArrowDir) {
         let Some(tab) = self.tabs.get(self.active_tab) else {
             return;
@@ -375,6 +408,10 @@ impl Multiplexer {
                 Some(self.compose_frame())
             }
             InputEvent::PrefixCommand(cmd) => self.handle_prefix_command(cmd),
+            InputEvent::ResizePane(dir) => {
+                self.resize_focused(dir);
+                Some(self.compose_frame())
+            }
             InputEvent::FocusIn | InputEvent::FocusOut => {
                 // Forward focus events to the focused pane's PTY so the
                 // agent can pause/resume animations. Synthesised events
@@ -392,14 +429,16 @@ impl Multiplexer {
                 }
                 None
             }
-            InputEvent::MousePress { button, .. } if button == 64 || button == 65 => {
-                // SGR mouse wheel: 64 = wheel up, 65 = wheel down.
-                // The multiplexer intercepts the wheel for scrollback
-                // navigation rather than forwarding to the agent —
-                // most agents have no notion of multiplexer-level
-                // history, and scrollback is the operator UX the
-                // wheel naturally maps to.
-                let delta = if button == 64 { 3 } else { -3 };
+            InputEvent::MousePress { button, .. } if is_wheel_button(button) => {
+                // SGR mouse wheel: bits 6/7 indicate wheel events, with
+                // low bits selecting direction (even = up, odd = down)
+                // and modifier flags possibly OR'd in (shift = +4, alt
+                // = +8, ctrl = +16). Buttons 64–95 cover every wheel
+                // variant — never forward any of them to the PTY,
+                // because shells and pre-mount agents never asked for
+                // mouse mode and the SGR bytes would surface as
+                // garbage text at the prompt.
+                let delta = if (button & 1) == 0 { 3 } else { -3 };
                 if let Some(focused) = self.active_focused_id()
                     && let Some(session) = self.sessions.get_mut(&focused)
                 {
@@ -437,10 +476,28 @@ impl Multiplexer {
                 None
             }
             InputEvent::MousePress { col, row, button } => {
+                // Left-click inside a non-focused pane swaps focus to
+                // that pane. Without this, two split panes are stuck
+                // in their initial focus and keyboard input only ever
+                // reaches one of them — the operator has no
+                // keyboard-free way to switch panes.
+                let switched = if button == 0 {
+                    self.focus_pane_at(row, col)
+                } else {
+                    false
+                };
                 // Re-encode mouse press relative to the focused pane's
-                // rect origin and forward to its PTY in SGR mouse form.
+                // rect origin and forward to its PTY in SGR mouse form
+                // — but only if that pane's program actually opted
+                // into a mouse protocol. Forwarding mouse bytes to a
+                // shell prompt prints `;col;rowM` garbage to the
+                // command line.
                 self.forward_mouse_to_focused_pane(col, row, button);
-                None
+                if switched {
+                    Some(self.compose_frame())
+                } else {
+                    None
+                }
             }
             InputEvent::Data(bytes) => {
                 if let Some(ref mut dialog) = self.dialog {
@@ -459,9 +516,19 @@ impl Multiplexer {
                             self.handle_palette_command(cmd);
                             Some(self.compose_frame())
                         }
-                        DialogAction::SpawnAgent { agent } => {
-                            let _ = self.spawn_session(agent);
+                        DialogAction::SpawnAgent { agent, intent } => {
                             self.dialog = None;
+                            match intent {
+                                PickerIntent::NewTab => {
+                                    let _ = self.spawn_session(agent);
+                                }
+                                PickerIntent::SplitHorizontal => {
+                                    let _ = self.split_focused_into(true, agent);
+                                }
+                                PickerIntent::SplitVertical => {
+                                    let _ = self.split_focused_into(false, agent);
+                                }
+                            }
                             Some(self.compose_frame())
                         }
                     }
@@ -497,6 +564,7 @@ impl Multiplexer {
                 self.dialog = Some(Dialog::AgentPicker {
                     agents,
                     selected: 0,
+                    intent: PickerIntent::NewTab,
                 });
             }
             PrefixCommand::NextTab => self.next_tab(),
@@ -527,6 +595,16 @@ impl Multiplexer {
         let Some(focused) = self.active_focused_id() else {
             return;
         };
+        let Some(session) = self.sessions.get(&focused) else {
+            return;
+        };
+        // Drop mouse-press forwarding when the focused program never
+        // opted into a mouse protocol. Shells (zsh, bash) leave mouse
+        // mode off and would print the raw SGR bytes as command-line
+        // garbage. Agents pre-mount or after exit also leave it off.
+        if !session.mouse_enabled() {
+            return;
+        }
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         let pane_rect = if let Some(zoom_id) = self.zoomed {
             if zoom_id == focused {
@@ -556,11 +634,36 @@ impl Multiplexer {
         }
         let local_row = row - rect.row;
         let local_col = col - rect.col;
-        // SGR mouse press: ESC [ < button ; col+1 ; row+1 M
         let buf = format!("\x1b[<{};{};{}M", button, local_col + 1, local_row + 1);
-        if let Some(session) = self.sessions.get(&focused) {
-            session.send_input(buf.as_bytes());
+        session.send_input(buf.as_bytes());
+    }
+
+    /// Switch focus to the pane the operator clicked on, if it differs
+    /// from the current focus. Returns `true` when the focus actually
+    /// changed so the caller can trigger a redraw.
+    fn focus_pane_at(&mut self, row: u16, col: u16) -> bool {
+        if row < STATUS_BAR_ROWS {
+            return false;
         }
+        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let Some(tab) = self.tabs.get(self.active_tab) else {
+            return false;
+        };
+        let prev = tab.focused_id;
+        let leaves = tab.tree.leaves(content_rect);
+        for (id, rect) in leaves {
+            if row >= rect.row
+                && row < rect.row + rect.rows
+                && col >= rect.col
+                && col < rect.col + rect.cols
+                && id != prev
+            {
+                self.tabs[self.active_tab].focused_id = id;
+                self.synthesise_focus_swap(Some(prev), Some(id));
+                return true;
+            }
+        }
+        false
     }
 
     fn handle_palette_command(&mut self, cmd: PaletteCommand) -> Option<Vec<u8>> {
@@ -571,10 +674,20 @@ impl Multiplexer {
         self.dialog = None;
         match cmd {
             PaletteCommand::SplitHorizontal => {
-                let _ = self.split_focused(true);
+                let agents = self.available_agents.clone();
+                self.dialog = Some(Dialog::AgentPicker {
+                    agents,
+                    selected: 0,
+                    intent: PickerIntent::SplitHorizontal,
+                });
             }
             PaletteCommand::SplitVertical => {
-                let _ = self.split_focused(false);
+                let agents = self.available_agents.clone();
+                self.dialog = Some(Dialog::AgentPicker {
+                    agents,
+                    selected: 0,
+                    intent: PickerIntent::SplitVertical,
+                });
             }
             PaletteCommand::NewTab => {
                 // Always show the agent picker — even when the role
@@ -586,6 +699,7 @@ impl Multiplexer {
                 self.dialog = Some(Dialog::AgentPicker {
                     agents,
                     selected: 0,
+                    intent: PickerIntent::NewTab,
                 });
             }
             PaletteCommand::NextTab => self.next_tab(),
@@ -650,31 +764,44 @@ impl Multiplexer {
                 if let Some(session) = self.sessions.get_mut(id) {
                     let offset = session.scrollback_offset;
                     let filled = session.scrollback_filled();
+                    // Unfocused panes render dim so the operator can
+                    // see at a glance which pane keystrokes will reach.
+                    // The dialog overlay applies the same dim to all
+                    // panes; this adds per-pane dim when multiple
+                    // panes share the tab and no dialog is open.
+                    let pane_focused = Some(*id) == focused_id;
+                    let dim_this_pane = dim_panes || (needs_borders && !pane_focused);
                     render_pane(
                         session.screen(),
                         rect.row,
                         rect.col,
                         rect.rows,
                         rect.cols,
-                        dim_panes,
+                        dim_this_pane,
                         &mut buf,
                     );
                     draw_scrollbar(
                         &mut buf, rect.row, rect.col, rect.rows, rect.cols, offset, filled,
                     );
-                    if Some(*id) == focused_id {
+                    if pane_focused {
                         focused_pane_rect = Some(*rect);
                     }
                 }
                 if needs_borders {
                     let is_active = Some(*id) == focused_id;
+                    // `rect.rows` is the pane's height inside the
+                    // content area, so the border spans `[rect.row,
+                    // rect.row + rect.rows)` — subtracting
+                    // `STATUS_BAR_ROWS` again here cut the border two
+                    // rows short and left a visible gap above the
+                    // bottom of the screen.
                     let right_edge = rect.col + rect.cols;
                     if right_edge < self.term_cols {
                         draw_vertical_border(
                             &mut buf,
                             right_edge,
                             rect.row,
-                            rect.row + rect.rows.saturating_sub(STATUS_BAR_ROWS),
+                            rect.row + rect.rows,
                             is_active,
                         );
                     }
@@ -1027,4 +1154,14 @@ fn capitalize(s: &str) -> String {
         None => String::new(),
         Some(f) => f.to_uppercase().to_string() + c.as_str(),
     }
+}
+
+/// SGR mouse wheel events set bit 6 of the button byte. Every value in
+/// `64..=95` is a wheel event with some combination of modifier flags
+/// (shift = +4, alt = +8, ctrl = +16). Forwarding any of them to an
+/// agent or shell that did not request mouse mode dumps the raw SGR
+/// bytes at the prompt — so the multiplexer always intercepts the
+/// wheel for scrollback regardless of modifiers.
+fn is_wheel_button(button: u8) -> bool {
+    (64..96).contains(&button)
 }

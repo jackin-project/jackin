@@ -210,6 +210,63 @@ impl PaneTree {
             .map(|(id, _)| *id)
     }
 
+    /// Nudge the split ratio of the nearest split whose orientation
+    /// matches `dir`. Walks the tree to find the deepest split that
+    /// contains `leaf_id` on the side we want to grow / shrink, then
+    /// adjusts its ratio by `delta` (positive = grow current pane,
+    /// negative = shrink). Clamps to `[0.05, 0.95]` so neither child
+    /// can collapse to zero cols / rows.
+    pub fn resize(&mut self, leaf_id: u64, dir: Direction, delta: f32) -> bool {
+        match self {
+            Self::Leaf(_) => false,
+            Self::HSplit { left, right, ratio } => {
+                let left_has = left.all_ids().contains(&leaf_id);
+                if matches!(dir, Direction::Left | Direction::Right) {
+                    // Only adjust this split's ratio when the
+                    // requested direction crosses *this* split. If
+                    // the leaf and the direction's target are both
+                    // inside `left`, recurse — let the deeper split
+                    // own the resize.
+                    let crosses_this = if left_has {
+                        matches!(dir, Direction::Right)
+                    } else {
+                        matches!(dir, Direction::Left)
+                    };
+                    if crosses_this {
+                        let signed = if left_has { delta } else { -delta };
+                        *ratio = (*ratio + signed).clamp(0.05, 0.95);
+                        return true;
+                    }
+                }
+                if left_has {
+                    left.resize(leaf_id, dir, delta)
+                } else {
+                    right.resize(leaf_id, dir, delta)
+                }
+            }
+            Self::VSplit { top, bottom, ratio } => {
+                let top_has = top.all_ids().contains(&leaf_id);
+                if matches!(dir, Direction::Up | Direction::Down) {
+                    let crosses_this = if top_has {
+                        matches!(dir, Direction::Down)
+                    } else {
+                        matches!(dir, Direction::Up)
+                    };
+                    if crosses_this {
+                        let signed = if top_has { delta } else { -delta };
+                        *ratio = (*ratio + signed).clamp(0.05, 0.95);
+                        return true;
+                    }
+                }
+                if top_has {
+                    top.resize(leaf_id, dir, delta)
+                } else {
+                    bottom.resize(leaf_id, dir, delta)
+                }
+            }
+        }
+    }
+
     pub fn all_ids(&self) -> Vec<u64> {
         match self {
             Self::Leaf(id) => vec![*id],

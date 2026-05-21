@@ -328,6 +328,19 @@ impl Session {
         let _ = self.input_tx.send(data.to_vec());
     }
 
+    /// True when the session's program has enabled an SGR mouse
+    /// protocol (any variant past `None`). Used by the daemon to decide
+    /// whether to forward a mouse press to the PTY: forwarding to a
+    /// program that did not opt in (a shell prompt, an agent before its
+    /// TUI mounts) leaks the raw SGR bytes as visible text — the
+    /// operator sees `;col;rowM` garbage at the prompt.
+    pub fn mouse_enabled(&self) -> bool {
+        !matches!(
+            self.parser.screen().mouse_protocol_mode(),
+            vt100::MouseProtocolMode::None
+        )
+    }
+
     pub fn screen(&self) -> &vt100::Screen {
         self.parser.screen()
     }
