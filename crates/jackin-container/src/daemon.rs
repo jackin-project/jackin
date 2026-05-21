@@ -149,6 +149,36 @@ impl Multiplexer {
         self.resize_panes();
     }
 
+    /// Drop the session whose PTY just exited. Removes the pane from
+    /// the owning tab's tree, focuses a sibling if any remain, and
+    /// removes the tab itself when its last pane is gone. Same
+    /// semantic as `close_focused_pane` but driven by the agent
+    /// process exiting instead of an explicit operator action — keeps
+    /// `○ Done` tabs from piling up after every agent quits.
+    fn remove_exited_session(&mut self, session_id: u64) {
+        let owning_tab = self
+            .tabs
+            .iter()
+            .position(|t| t.tree.all_ids().contains(&session_id));
+        if let Some(tab_idx) = owning_tab {
+            self.tabs[tab_idx].tree.remove(session_id);
+            let remaining = self.tabs[tab_idx].tree.all_ids();
+            if remaining.is_empty() {
+                self.tabs.remove(tab_idx);
+                if self.active_tab >= self.tabs.len() {
+                    self.active_tab = self.tabs.len().saturating_sub(1);
+                }
+            } else if self.tabs[tab_idx].focused_id == session_id
+                && let Some(&next_focus) = remaining.first()
+            {
+                self.tabs[tab_idx].focused_id = next_focus;
+            }
+        }
+        self.sessions.remove(&session_id);
+        self.zoomed = self.zoomed.filter(|&id| id != session_id);
+        self.resize_panes();
+    }
+
     pub fn spawn_initial(&mut self, agent: &str) -> Result<u64> {
         self.spawn_session(Some(agent.to_string()))
     }
@@ -813,10 +843,11 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                         }
                     }
                     SessionEvent::Exited { session_id } => {
-                        if let Some(session) = mux.sessions.get_mut(&session_id) {
-                            session.alive = false;
-                            session.state = AgentState::Done;
-                        }
+                        // Remove the pane / tab immediately rather than
+                        // leaving a stale `○ Done` placeholder behind.
+                        // Matches the operator's mental model: "agent
+                        // exited → its tab is gone."
+                        mux.remove_exited_session(session_id);
                         let frame_data = mux.compose_frame();
                         mux.send_output(frame_data);
                         // When the last live session exits — whether
