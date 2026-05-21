@@ -408,15 +408,24 @@ impl Multiplexer {
         if old == new {
             return;
         }
+        // Only TUI agents — those that have switched to the alternate
+        // screen — get synthesised focus events. Shells and pre-mount
+        // agents leave the focus-event-reporting mode off, so writing
+        // `\x1b[I` / `\x1b[O` into their PTY surfaces as literal
+        // `[I` / `[O` text at the prompt when the operator hops
+        // between tabs.
         if let Some(o) = old
             && let Some(s) = self.sessions.get(&o)
+            && s.screen().alternate_screen()
         {
             s.send_input(b"\x1b[O");
         }
         if let Some(n) = new
             && let Some(s) = self.sessions.get(&n)
         {
-            s.send_input(b"\x1b[I");
+            if s.screen().alternate_screen() {
+                s.send_input(b"\x1b[I");
+            }
             // Re-emit modes the new focused agent has live so the
             // outer terminal switches in sync with the visible pane.
             if let Some(tx) = &self.attached_out {
@@ -458,9 +467,13 @@ impl Multiplexer {
             }
             InputEvent::FocusIn | InputEvent::FocusOut => {
                 // Forward focus events to the focused pane's PTY so the
-                // agent can pause/resume animations. Synthesised events
-                // on tab/pane focus changes are not implemented here yet
-                // — Phase 3d wires that up.
+                // agent can pause/resume animations — but only when
+                // the agent's TUI is live (alternate screen on).
+                // Forwarding to a shell would surface `[I` / `[O`
+                // as literal text at the prompt.
+                if self.dialog.is_some() {
+                    return None;
+                }
                 let bytes = if matches!(event, InputEvent::FocusIn) {
                     b"\x1b[I".as_ref()
                 } else {
@@ -468,6 +481,7 @@ impl Multiplexer {
                 };
                 if let Some(focused) = self.active_focused_id()
                     && let Some(session) = self.sessions.get(&focused)
+                    && session.screen().alternate_screen()
                 {
                     session.send_input(bytes);
                 }
@@ -518,6 +532,18 @@ impl Multiplexer {
                 // Any non-wheel mouse event with the dialog up that
                 // did not land on a row is swallowed so it never
                 // reaches the agent underneath.
+                None
+            }
+            InputEvent::MouseRelease { .. } if self.dialog.is_some() => {
+                // Drop the release that pairs with a press the dialog
+                // already absorbed. Letting it through would surface
+                // the raw `\x1b[<...m` bytes at the focused pane's
+                // prompt as garbage text the moment the dialog
+                // dismisses (e.g. click-outside-to-close).
+                None
+            }
+            InputEvent::MouseRelease { col, row, button } => {
+                self.forward_mouse_to_focused_pane_with_kind(col, row, button, false);
                 None
             }
             InputEvent::MousePress { button, .. } if is_wheel_button(button) => {
@@ -690,16 +716,28 @@ impl Multiplexer {
     }
 
     fn forward_mouse_to_focused_pane(&mut self, col: u16, row: u16, button: u8) {
+        self.forward_mouse_to_focused_pane_with_kind(col, row, button, true);
+    }
+
+    /// Re-encode an SGR mouse event in the focused pane's local
+    /// coordinate space and forward to its PTY. `press = true` emits
+    /// the `M` final, `false` emits `m` (release). Forwarding is
+    /// gated by `session.mouse_enabled()` so shells and pre-mount
+    /// agents never see raw mouse bytes leak out as command-line
+    /// garbage.
+    fn forward_mouse_to_focused_pane_with_kind(
+        &mut self,
+        col: u16,
+        row: u16,
+        button: u8,
+        press: bool,
+    ) {
         let Some(focused) = self.active_focused_id() else {
             return;
         };
         let Some(session) = self.sessions.get(&focused) else {
             return;
         };
-        // Drop mouse-press forwarding when the focused program never
-        // opted into a mouse protocol. Shells (zsh, bash) leave mouse
-        // mode off and would print the raw SGR bytes as command-line
-        // garbage. Agents pre-mount or after exit also leave it off.
         if !session.mouse_enabled() {
             return;
         }
@@ -732,7 +770,14 @@ impl Multiplexer {
         }
         let local_row = row - rect.row;
         let local_col = col - rect.col;
-        let buf = format!("\x1b[<{};{};{}M", button, local_col + 1, local_row + 1);
+        let final_byte = if press { 'M' } else { 'm' };
+        let buf = format!(
+            "\x1b[<{};{};{}{}",
+            button,
+            local_col + 1,
+            local_row + 1,
+            final_byte
+        );
         session.send_input(buf.as_bytes());
     }
 

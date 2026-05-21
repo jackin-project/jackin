@@ -27,6 +27,15 @@ pub enum InputEvent {
         row: u16,
         button: u8,
     },
+    /// SGR mouse release (`\x1b[< ... m`). Carries the same fields as
+    /// `MousePress` so the daemon can drop both press and release on
+    /// the same gate: shells and pre-mount agents that never enabled
+    /// any mouse protocol must not see the raw SGR bytes as input.
+    MouseRelease {
+        col: u16,
+        row: u16,
+        button: u8,
+    },
     PrefixCommand(PrefixCommand),
     /// Direct one-key shortcut → open the palette dialog. Distinct from
     /// `PrefixCommand::Palette`, which fires only after the prefix
@@ -417,9 +426,7 @@ fn classify_csi(seq: &[u8]) -> Option<InputEvent> {
             if *final_byte == b'M' {
                 return Some(InputEvent::MousePress { col, row, button });
             }
-            // Mouse release — forward as-is so the agent's mouse handler
-            // sees the matching `m` for its own state.
-            return None;
+            return Some(InputEvent::MouseRelease { col, row, button });
         }
     }
     None
