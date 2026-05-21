@@ -1,6 +1,6 @@
 /// Input parser regressions.
 ///
-/// Two parallel models: default Ctrl+J palette key; opt-in Ctrl+B
+/// Two parallel models: default `Ctrl+\` palette key; opt-in Ctrl+B
 /// prefix mode. Tests exercise both.
 use jackin_container::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 
@@ -13,15 +13,24 @@ fn parse_prefix_only(bytes: &[u8]) -> Vec<InputEvent> {
 }
 
 #[test]
-fn ctrl_j_opens_palette_in_default_mode() {
-    let events = parse_default(b"\n");
+fn ctrl_backslash_opens_palette_in_default_mode() {
+    let events = parse_default(b"\x1c");
     assert_eq!(events, vec![InputEvent::OpenPalette]);
 }
 
 #[test]
-fn ctrl_j_palette_disabled_lets_lf_through() {
-    let events = InputParser::new(None, None).parse(b"\n");
+fn lone_lf_reaches_pty_in_default_mode() {
+    // Multi-line input continuation (`\n`) must reach the agent —
+    // the previous `Ctrl+J` default ate every LF and broke Claude
+    // Code / Codex multi-line entry.
+    let events = parse_default(b"\n");
     assert_eq!(events, vec![InputEvent::Data(b"\n".to_vec())]);
+}
+
+#[test]
+fn palette_key_disabled_lets_ctrl_backslash_through() {
+    let events = InputParser::new(None, None).parse(b"\x1c");
+    assert_eq!(events, vec![InputEvent::Data(b"\x1c".to_vec())]);
 }
 
 #[test]
@@ -67,10 +76,10 @@ fn sgr_mouse_press_emits_mouse_event() {
 }
 
 #[test]
-fn bracketed_paste_protects_ctrl_j_byte() {
-    // Pasted text containing LF must NOT open the palette.
+fn bracketed_paste_protects_palette_byte() {
+    // Pasted text containing the palette byte must NOT open the palette.
     let mut parser = InputParser::default();
-    let events = parser.parse(b"before\x1b[200~hello\nworld\n\x1b[201~after");
+    let events = parser.parse(b"before\x1b[200~hello\x1cworld\x1c\x1b[201~after");
     let opens = events
         .iter()
         .filter(|e| matches!(e, InputEvent::OpenPalette))
@@ -83,7 +92,7 @@ fn bracketed_paste_protects_ctrl_j_byte() {
             _ => Vec::new(),
         })
         .collect();
-    assert_eq!(combined, b"before\x1b[200~hello\nworld\n\x1b[201~after");
+    assert_eq!(combined, b"before\x1b[200~hello\x1cworld\x1c\x1b[201~after");
 }
 
 #[test]

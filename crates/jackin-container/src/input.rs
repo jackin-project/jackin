@@ -2,19 +2,22 @@
 ///
 /// Two parallel models are supported:
 ///
-/// - **Palette key (default `Ctrl+J`)** — one keystroke opens the
+/// - **Palette key (default `Ctrl+\`)** — one keystroke opens the
 ///   command palette and the operator picks an action from a list,
 ///   launcher-style. This is the primary UX and the only model the
-///   default status-bar hint advertises. Collision-safe because raw-mode
-///   `Enter` sends `\r` (not `\n`), bracketed paste protects pasted `\n`,
-///   and a literal `Ctrl+J Ctrl+J` forwards one LF byte to the PTY.
+///   default status-bar hint advertises. `Ctrl+\` is the byte `0x1C`
+///   — no agent uses it as an editing key, it never appears in agent
+///   output, and raw-mode terminals never emit it as content (the
+///   `SIGQUIT` semantic only applies in cooked mode).
 ///
 /// - **Prefix key (opt-in via `JACKIN_PREFIX=C-b`)** — tmux-style
 ///   prefix + command-key for operators who prefer direct keyboard
 ///   navigation. Disabled by default.
 ///
 /// Both models can run simultaneously when both env vars are set.
-/// `JACKIN_PALETTE_KEY=none` disables the palette key.
+/// `JACKIN_PALETTE_KEY=none` disables the palette key entirely;
+/// `JACKIN_PALETTE_KEY=C-j` restores the old (broken-on-multi-line)
+/// behaviour for operators who explicitly want it.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputEvent {
@@ -127,11 +130,10 @@ impl InputParser {
             match self.state {
                 State::Idle => {
                     if Some(b) == self.palette_key {
-                        // Ctrl+J (or configured key) → immediate palette
-                        // open. The collision risk with literal LF is
-                        // mitigated by bracketed paste (paste content
-                        // protected) and by raw-mode Enter sending `\r`
-                        // not `\n`. Operators needing literal LF set
+                        // Default `Ctrl+\` (or configured key) →
+                        // immediate palette open. Bracketed paste
+                        // already excluded above; operators needing
+                        // a literal palette byte set
                         // `JACKIN_PALETTE_KEY=none`.
                         flush(&mut data, &mut events);
                         events.push(InputEvent::OpenPalette);
@@ -249,28 +251,52 @@ fn default_prefix() -> Option<u8> {
     parse_prefix(&s)
 }
 
-/// Palette key defaults to `Ctrl+J` (`0x0A`). Set `JACKIN_PALETTE_KEY`
-/// to override; set it to the literal string `none` to disable the
-/// direct-palette shortcut entirely.
+/// Palette key defaults to `Ctrl+\` (`0x1C`). Picked because raw-mode
+/// terminals never emit it as content (cooked-mode SIGQUIT semantics
+/// don't apply in raw mode), no agent uses it as an editing key, and
+/// it sits one finger from `Enter` on US/UK layouts. The earlier
+/// `Ctrl+J` default collided with the literal LF byte agents and
+/// shells use for multi-line input continuation.
+///
+/// Set `JACKIN_PALETTE_KEY` to override (e.g. `C-]`, `C-g`, `C-j`);
+/// set it to the literal string `none` to disable the direct-palette
+/// shortcut entirely.
 fn default_palette_key() -> Option<u8> {
     match std::env::var("JACKIN_PALETTE_KEY") {
-        Err(_) => Some(0x0A),
+        Err(_) => Some(0x1C),
         Ok(s) if s.eq_ignore_ascii_case("none") => None,
-        Ok(s) => parse_prefix(&s).or(Some(0x0A)),
+        Ok(s) => parse_prefix(&s).or(Some(0x1C)),
     }
 }
 
-/// Accept `C-a` … `C-z` (case-insensitive), a single ASCII control char
-/// in hex form `0xNN`, or a single literal byte. Returns `None` on parse
-/// error so the caller falls back to the default.
+/// Accept:
+/// - `C-a` … `C-z` (case-insensitive) — `Ctrl+letter`, maps to `0x01..=0x1A`
+/// - `C-\` / `C-]` / `C-^` / `C-_` — `Ctrl+symbol`, maps to `0x1C..=0x1F`
+/// - `C-Space` or `C-@` — `Ctrl+Space` / `Ctrl+@`, maps to `0x00`
+/// - A single ASCII control byte in hex form `0xNN`
+/// - A single literal byte
+///
+/// Returns `None` on parse error so the caller falls back to the default.
 pub fn parse_prefix(s: &str) -> Option<u8> {
     let s = s.trim();
     if let Some(rest) = s.strip_prefix("C-").or_else(|| s.strip_prefix("c-")) {
+        if rest.eq_ignore_ascii_case("space") || rest == "@" {
+            return Some(0x00);
+        }
         let c = rest.chars().next()?;
         if c.is_ascii_alphabetic() {
             let upper = c.to_ascii_uppercase() as u8;
             return Some(upper - b'A' + 1);
         }
+        // ASCII control-byte mapping for non-letter `Ctrl+symbol`:
+        //   Ctrl+\ → 0x1C, Ctrl+] → 0x1D, Ctrl+^ → 0x1E, Ctrl+_ → 0x1F
+        return match c {
+            '\\' => Some(0x1C),
+            ']' => Some(0x1D),
+            '^' => Some(0x1E),
+            '_' => Some(0x1F),
+            _ => None,
+        };
     }
     if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         return u8::from_str_radix(hex, 16).ok();
@@ -355,22 +381,30 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_j_opens_palette_by_default() {
-        let events = parse_all_default(b"\n");
+    fn ctrl_backslash_opens_palette_by_default() {
+        let events = parse_all_default(b"\x1c");
         assert_eq!(events, vec![InputEvent::OpenPalette]);
     }
 
     #[test]
-    fn palette_key_disabled_lets_lf_through() {
-        let events = InputParser::new(None, None).parse(b"\n");
+    fn lone_lf_passes_through_with_default_palette_key() {
+        // Ctrl+J = `\n` is no longer the palette key, so multi-line
+        // input continuation reaches the PTY unchanged.
+        let events = parse_all_default(b"\n");
         assert_eq!(events, vec![InputEvent::Data(b"\n".to_vec())]);
     }
 
     #[test]
-    fn pasted_text_with_lf_does_not_open_palette() {
-        // Bracketed paste protects the LF inside paste content.
+    fn palette_key_disabled_lets_ctrl_backslash_through() {
+        let events = InputParser::new(None, None).parse(b"\x1c");
+        assert_eq!(events, vec![InputEvent::Data(b"\x1c".to_vec())]);
+    }
+
+    #[test]
+    fn pasted_text_with_palette_key_does_not_open_palette() {
+        // Bracketed paste protects the palette byte inside paste content.
         let mut parser = InputParser::default();
-        let events = parser.parse(b"\x1b[200~hello\nworld\n\x1b[201~");
+        let events = parser.parse(b"\x1b[200~hello\x1cworld\x1c\x1b[201~");
         let opens = events
             .iter()
             .filter(|e| matches!(e, InputEvent::OpenPalette))

@@ -2,22 +2,28 @@
 ///
 /// Layout: ` jackin' ` brand pill, then a tab strip with a state glyph
 /// appended to each tab label, then a right-aligned hint. The hint
-/// shows `menu: Ctrl+J` by default; when the opt-in prefix mode is
-/// enabled it shows `menu: Ctrl+J  prefix: Ctrl+B`. While the operator
+/// shows `menu: Ctrl+\\` by default; when the opt-in prefix mode is
+/// enabled it shows `menu: Ctrl+\\  prefix: Ctrl+B`. While the operator
 /// holds the prefix key the hint becomes `prefix…`. When tabs
 /// overflow the terminal width an overflow indicator (`›`) appears
 /// at the right edge.
 use crate::layout::Tab;
 use crate::protocol::AgentState;
 
-const BRAND_BG: &str = "\x1b[48;5;46m";
-const BRAND_FG: &str = "\x1b[38;5;16m";
+const BRAND_BG: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN bg
+const BRAND_FG: &str = "\x1b[38;2;0;0;0m"; // black
 const BRAND_BOLD: &str = "\x1b[1m";
 
-const TAB_ACTIVE_FG: &str = "\x1b[38;5;46m";
+// Tabs share a dark phosphor-green background so they stand out
+// against the terminal's default (often black) background. The active
+// tab keeps the same background and adds a white bold label + white
+// underline; the inactive tabs use a dimmer phosphor-green label.
+const TAB_BG: &str = "\x1b[48;2;0;80;18m"; // PHOSPHOR_DARK bg
+const TAB_ACTIVE_FG: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const TAB_ACTIVE_BOLD: &str = "\x1b[1m";
-const TAB_INACTIVE_FG: &str = "\x1b[38;5;245m";
-const HINT_FG: &str = "\x1b[38;5;244m";
+const TAB_ACTIVE_UNDERLINE: &str = "\x1b[4m";
+const TAB_INACTIVE_FG: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
+const HINT_FG: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
 const RESET: &str = "\x1b[0m";
 
 const TAB_SEP: &str = "  ";
@@ -50,7 +56,7 @@ impl StatusBar {
             tab_regions: Vec::new(),
             prefix_mode: PrefixMode::Idle,
             prefix_label: "Ctrl+B".to_string(),
-            palette_label: "Ctrl+J".to_string(),
+            palette_label: "Ctrl+\\".to_string(),
             prefix_enabled: false,
         }
     }
@@ -110,11 +116,12 @@ impl StatusBar {
 
             self.tab_regions.push((tab_start, tab_end));
 
+            buf.extend_from_slice(TAB_BG.as_bytes());
             if i == active_tab {
                 buf.extend_from_slice(TAB_ACTIVE_BOLD.as_bytes());
+                buf.extend_from_slice(TAB_ACTIVE_UNDERLINE.as_bytes());
                 buf.extend_from_slice(TAB_ACTIVE_FG.as_bytes());
             } else {
-                buf.extend_from_slice(RESET.as_bytes());
                 buf.extend_from_slice(TAB_INACTIVE_FG.as_bytes());
             }
             buf.push(b' ');
@@ -258,7 +265,7 @@ mod tests {
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &[], 0, &[]);
         let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains("menu: Ctrl+J"), "missing idle hint: {s:?}");
+        assert!(s.contains("menu: Ctrl+\\"), "missing idle hint: {s:?}");
     }
 
     #[test]
@@ -269,7 +276,7 @@ mod tests {
         bar.render(&mut buf, 80, &[], 0, &[]);
         let s = String::from_utf8_lossy(&buf);
         assert!(
-            s.contains("menu: Ctrl+J") && s.contains("prefix: Ctrl+B"),
+            s.contains("menu: Ctrl+\\") && s.contains("prefix: Ctrl+B"),
             "missing combined hint: {s:?}"
         );
     }

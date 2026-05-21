@@ -323,7 +323,7 @@ impl Multiplexer {
     fn handle_input(&mut self, event: InputEvent) -> Option<Vec<u8>> {
         match event {
             InputEvent::OpenPalette => {
-                // Toggle: second Ctrl+J while palette open closes it.
+                // Toggle: second palette-key press closes the dialog.
                 if self.dialog.is_some() {
                     self.dialog = None;
                 } else {
