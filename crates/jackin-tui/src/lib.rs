@@ -45,6 +45,14 @@ pub const BLACK: Rgb = Rgb::new(0, 0, 0);
 /// White used for titles, hotkey glyphs, and the active-tab underline.
 pub const WHITE: Rgb = Rgb::new(255, 255, 255);
 
+/// Almost-invisible dim background for the input band inside a
+/// text-input dialog. Picked so the input region is visible even when
+/// empty without competing with the dialog's PHOSPHOR_DARK border.
+/// Used by the host TUI's `text_input` widget and the
+/// `jackin-container` rename dialog so both surfaces share the same
+/// "this is where you type" cue.
+pub const INPUT_BG_DIM: Rgb = Rgb::new(20, 24, 22);
+
 /// Per-tab descriptor consumed by both ratatui and ANSI tab
 /// renderers. `cell_cols` is the number of display columns the cell
 /// occupies including its left/right padding spaces.
@@ -238,6 +246,176 @@ pub fn shorten_home(path: &str) -> String {
         format!("~{rest}")
     } else {
         path.to_string()
+    }
+}
+
+/// Shared ANSI helpers + a centred text-input dialog renderer. The
+/// host TUI uses ratatui directly; the in-container multiplexer
+/// emits raw ANSI. Keeping the visual recipe (border style, title
+/// formatting, dim-bg input band, inverted cursor block, footer hint
+/// placement) in one place stops the two surfaces from drifting
+/// apart when one side picks up a tweak the other forgets.
+pub mod ansi {
+    use super::{INPUT_BG_DIM, PHOSPHOR_DARK, PHOSPHOR_GREEN, Rgb, WHITE};
+    use std::io::Write as _;
+
+    /// Pure-black background for modal overlays. Matches the
+    /// `BG_DARK` constant the in-container dialog renderer uses.
+    pub const BG_DARK: &str = "\x1b[48;2;0;0;0m";
+    pub const RESET: &str = "\x1b[0m";
+    pub const BOLD: &str = "\x1b[1m";
+    pub const INVERSE: &str = "\x1b[7m";
+
+    /// Emit a `1;1`-origin cursor positioning sequence.
+    pub fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
+        let _ = write!(buf, "\x1b[{};{}H", row + 1, col + 1);
+    }
+
+    /// Emit an SGR for a foreground RGB triple.
+    pub fn fg(buf: &mut Vec<u8>, rgb: Rgb) {
+        let _ = write!(buf, "\x1b[38;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
+    }
+
+    /// Emit an SGR for a background RGB triple.
+    pub fn bg(buf: &mut Vec<u8>, rgb: Rgb) {
+        let _ = write!(buf, "\x1b[48;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
+    }
+
+    /// Centred text-input dialog matching the host TUI's
+    /// `text_input` widget. Dialog spans 60% of `term_cols` (clamped
+    /// to `[40, 100]`) and is 5 rows tall: top border, pad, input
+    /// band, pad, bottom border.
+    ///
+    /// `cursor_col` is the byte offset into `value` where the caret
+    /// should sit; multi-byte glyphs are not split (only ASCII cases
+    /// are required by the rename modal today).
+    pub fn render_text_input_dialog(
+        buf: &mut Vec<u8>,
+        term_rows: u16,
+        term_cols: u16,
+        label: &str,
+        value: &str,
+        cursor_byte: usize,
+    ) -> TextInputDialogRect {
+        let width = (term_cols * 60 / 100).clamp(40, 100);
+        let height: u16 = 5;
+        let row = term_rows.saturating_sub(height) / 2;
+        let col = term_cols.saturating_sub(width) / 2;
+
+        // Top border with ` Label ` callout in WHITE+BOLD.
+        move_to(buf, row, col);
+        buf.extend_from_slice(BG_DARK.as_bytes());
+        fg(buf, PHOSPHOR_DARK);
+        buf.extend_from_slice("┌─ ".as_bytes());
+        fg(buf, WHITE);
+        buf.extend_from_slice(BOLD.as_bytes());
+        buf.extend_from_slice(label.as_bytes());
+        buf.extend_from_slice(RESET.as_bytes());
+        buf.extend_from_slice(BG_DARK.as_bytes());
+        fg(buf, PHOSPHOR_DARK);
+        buf.push(b' ');
+        let consumed = 3 /* "┌─ " */ + label.chars().count() as u16 + 1 /* " " */;
+        for _ in consumed..(width - 1) {
+            buf.extend_from_slice("─".as_bytes());
+        }
+        buf.extend_from_slice("┐".as_bytes());
+
+        // Pad row above input.
+        move_to(buf, row + 1, col);
+        buf.extend_from_slice(BG_DARK.as_bytes());
+        fg(buf, PHOSPHOR_DARK);
+        buf.extend_from_slice("│".as_bytes());
+        for _ in 1..(width - 1) {
+            buf.push(b' ');
+        }
+        buf.extend_from_slice("│".as_bytes());
+
+        // Input row: side borders, then a dim-BG band that spans
+        // (inner_width - 2) cells, with a 1-cell pad on each side so
+        // the value doesn't touch the band's left edge.
+        move_to(buf, row + 2, col);
+        buf.extend_from_slice(BG_DARK.as_bytes());
+        fg(buf, PHOSPHOR_DARK);
+        buf.extend_from_slice("│".as_bytes());
+        buf.push(b' ');
+        bg(buf, INPUT_BG_DIM);
+        let band_cols = (width as usize).saturating_sub(4);
+        // Paint the dim band.
+        for _ in 0..band_cols {
+            buf.push(b' ');
+        }
+        // Reposition to the band's start to overlay the value + caret.
+        move_to(buf, row + 2, col + 2);
+        bg(buf, INPUT_BG_DIM);
+        fg(buf, WHITE);
+        let cursor_byte = cursor_byte.min(value.len());
+        let (before, after) = value.split_at(cursor_byte);
+        buf.extend_from_slice(before.as_bytes());
+        // Caret as inverse single space (or the next char rendered
+        // inverted); when `after` is empty, paint an inverse space.
+        buf.extend_from_slice(INVERSE.as_bytes());
+        fg(buf, PHOSPHOR_GREEN);
+        if let Some(c) = after.chars().next() {
+            let mut b = [0u8; 4];
+            let s = c.encode_utf8(&mut b);
+            buf.extend_from_slice(s.as_bytes());
+            buf.extend_from_slice(RESET.as_bytes());
+            buf.extend_from_slice(BG_DARK.as_bytes());
+            bg(buf, INPUT_BG_DIM);
+            fg(buf, WHITE);
+            let tail = &after[c.len_utf8()..];
+            buf.extend_from_slice(tail.as_bytes());
+        } else {
+            buf.push(b' ');
+            buf.extend_from_slice(RESET.as_bytes());
+            buf.extend_from_slice(BG_DARK.as_bytes());
+            bg(buf, INPUT_BG_DIM);
+        }
+        // Restore band style + right pad + right border.
+        buf.extend_from_slice(RESET.as_bytes());
+        buf.extend_from_slice(BG_DARK.as_bytes());
+        fg(buf, PHOSPHOR_DARK);
+        move_to(buf, row + 2, col + width - 2);
+        buf.push(b' ');
+        buf.extend_from_slice("│".as_bytes());
+
+        // Pad row below input.
+        move_to(buf, row + 3, col);
+        buf.extend_from_slice(BG_DARK.as_bytes());
+        fg(buf, PHOSPHOR_DARK);
+        buf.extend_from_slice("│".as_bytes());
+        for _ in 1..(width - 1) {
+            buf.push(b' ');
+        }
+        buf.extend_from_slice("│".as_bytes());
+
+        // Bottom border.
+        move_to(buf, row + height - 1, col);
+        buf.extend_from_slice(BG_DARK.as_bytes());
+        fg(buf, PHOSPHOR_DARK);
+        buf.extend_from_slice("└".as_bytes());
+        for _ in 1..(width - 1) {
+            buf.extend_from_slice("─".as_bytes());
+        }
+        buf.extend_from_slice("┘".as_bytes());
+        buf.extend_from_slice(RESET.as_bytes());
+
+        TextInputDialogRect {
+            row,
+            col,
+            width,
+            height,
+        }
+    }
+
+    /// Returned by `render_text_input_dialog` so callers can hit-test
+    /// clicks against the dialog box.
+    #[derive(Debug, Clone, Copy)]
+    pub struct TextInputDialogRect {
+        pub row: u16,
+        pub col: u16,
+        pub width: u16,
+        pub height: u16,
     }
 }
 

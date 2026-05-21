@@ -462,34 +462,18 @@ const RENAME_HINT: &[HintSpan<'static>] = &[
 /// buffer plus a blinking-style trailing `▌` caret. Width matches the
 /// other dialogs so the operator's eye does not have to re-anchor.
 fn render_rename_tab(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, input: &str) {
-    let width = PALETTE_WIDTH;
-    let height: u16 = 5;
-    let start_row = (term_rows.saturating_sub(height)) / 2;
-    let start_col = (term_cols.saturating_sub(width)) / 2;
-
-    render_box(buf, start_row, start_col, height, width, "Rename tab");
-
-    // Input row at the box interior (row index 2 from top: top border +
-    // blank pad + input). Render: `▸ <text>▌` then pad to interior end.
-    let row = start_row + 2;
-    let col = start_col + 1;
-    move_to(buf, row, col);
-    buf.extend_from_slice(BG_DARK.as_bytes());
-    buf.extend_from_slice(FG_GREEN.as_bytes());
-    let prefix = "  ";
-    buf.extend_from_slice(prefix.as_bytes());
-    buf.extend_from_slice(FG_WHITE.as_bytes());
-    buf.extend_from_slice(input.as_bytes());
-    // Caret marker so the operator can see the text input is live.
-    buf.extend_from_slice(FG_GREEN.as_bytes());
-    buf.extend_from_slice("▌".as_bytes());
-    let used = prefix.chars().count() + input.chars().count() + 1; // +1 for caret
-    let max_interior = (width as usize).saturating_sub(2);
-    for _ in used..max_interior {
-        buf.push(b' ');
-    }
-    buf.extend_from_slice(RESET.as_bytes());
-
+    // Single source of truth for the dialog visual recipe lives in
+    // `jackin_tui::ansi` so this dialog matches the host TUI's
+    // `text_input` widget (used by the workspace-environments editor).
+    let cursor_byte = input.len();
+    jackin_tui::ansi::render_text_input_dialog(
+        buf,
+        term_rows,
+        term_cols,
+        "Rename tab",
+        input,
+        cursor_byte,
+    );
     render_bottom_hint(buf, term_rows, term_cols, RENAME_HINT);
 }
 
