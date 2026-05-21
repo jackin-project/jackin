@@ -4,12 +4,27 @@
 /// the `vt100::Parser` whose `Screen` mirrors the agent's view. The
 /// parser is the source of truth for re-rendering on tab switch, pane
 /// switch, and client reattach.
+///
+/// The parser is constructed with an `OscCapture` callback that
+/// preserves OSC and unhandled-CSI byte sequences as the agent emits
+/// them. The daemon drains the captured payloads after each PTY chunk
+/// and forwards them to the attached client *only* when the session
+/// owns the focused pane in the active tab — the routing rule the
+/// roadmap calls out under "OSC passthrough". Without this layer the
+/// `vt100` parser silently consumes OSC, so agent desktop
+/// notifications (OSC 9), clipboard writes (OSC 52), window titles
+/// (OSC 0/1/2), hyperlinks (OSC 8), kitty-keyboard protocol switches
+/// (`\x1b[>{n}u`), synchronised output markers (`\x1b[?2026h/l`), and
+/// every other terminal extension the operator's outer terminal
+/// understands would vanish at the multiplexer boundary.
+use std::io::Write as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tokio::sync::mpsc;
+use vt100::{Callbacks, Screen};
 
 use crate::protocol::AgentState;
 
@@ -19,11 +34,106 @@ pub fn next_id() -> u64 {
     NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }
 
+/// `vt100::Callbacks` impl that captures OSC and unhandled-CSI byte
+/// sequences for later focused-pane forwarding to the attached client.
+#[derive(Default)]
+pub struct OscCapture {
+    pub pending: Vec<Vec<u8>>,
+    pub title: Option<String>,
+    pub icon_name: Option<String>,
+}
+
+impl OscCapture {
+    pub fn drain(&mut self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut self.pending)
+    }
+}
+
+impl Callbacks for OscCapture {
+    fn set_window_title(&mut self, _: &mut Screen, title: &[u8]) {
+        if let Ok(s) = std::str::from_utf8(title) {
+            self.title = Some(s.to_string());
+        }
+        let mut osc = b"\x1b]2;".to_vec();
+        osc.extend_from_slice(title);
+        osc.extend_from_slice(b"\x07");
+        self.pending.push(osc);
+    }
+
+    fn set_window_icon_name(&mut self, _: &mut Screen, icon_name: &[u8]) {
+        if let Ok(s) = std::str::from_utf8(icon_name) {
+            self.icon_name = Some(s.to_string());
+        }
+        let mut osc = b"\x1b]1;".to_vec();
+        osc.extend_from_slice(icon_name);
+        osc.extend_from_slice(b"\x07");
+        self.pending.push(osc);
+    }
+
+    fn copy_to_clipboard(&mut self, _: &mut Screen, ty: &[u8], data: &[u8]) {
+        let mut osc = b"\x1b]52;".to_vec();
+        osc.extend_from_slice(ty);
+        osc.push(b';');
+        osc.extend_from_slice(data);
+        osc.extend_from_slice(b"\x07");
+        self.pending.push(osc);
+    }
+
+    fn unhandled_osc(&mut self, _: &mut Screen, params: &[&[u8]]) {
+        let mut osc = b"\x1b]".to_vec();
+        for (i, p) in params.iter().enumerate() {
+            if i > 0 {
+                osc.push(b';');
+            }
+            osc.extend_from_slice(p);
+        }
+        osc.extend_from_slice(b"\x07");
+        self.pending.push(osc);
+    }
+
+    fn unhandled_csi(
+        &mut self,
+        _: &mut Screen,
+        i1: Option<u8>,
+        i2: Option<u8>,
+        params: &[&[u16]],
+        c: char,
+    ) {
+        // Re-emit verbatim. vt100 routes here only for CSI sequences
+        // it does not itself handle — kitty-keyboard push/pop
+        // (`\x1b[>{n}u` / `\x1b[<{n}u`), `modifyOtherKeys`
+        // (`\x1b[>4;{n}m`), synchronised-output (`\x1b[?2026h/l`),
+        // and any other extension the outer terminal understands but
+        // `vt100` does not.
+        let mut buf = b"\x1b[".to_vec();
+        if let Some(b) = i1 {
+            buf.push(b);
+        }
+        if let Some(b) = i2 {
+            buf.push(b);
+        }
+        for (idx, sub) in params.iter().enumerate() {
+            if idx > 0 {
+                buf.push(b';');
+            }
+            for (jdx, n) in sub.iter().enumerate() {
+                if jdx > 0 {
+                    buf.push(b':');
+                }
+                let _ = write!(buf, "{}", n);
+            }
+        }
+        let mut tmp = [0u8; 4];
+        buf.extend_from_slice(c.encode_utf8(&mut tmp).as_bytes());
+        self.pending.push(buf);
+    }
+}
+
 pub struct Session {
     pub label: String,
     pub agent: Option<String>,
     pub state: AgentState,
-    pub parser: vt100::Parser,
+    pub parser: vt100::Parser<OscCapture>,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     pub last_output_at: std::time::Instant,
@@ -125,7 +235,7 @@ impl Session {
                 label: label.into(),
                 agent,
                 state: AgentState::Working,
-                parser: vt100::Parser::new(rows, cols, 0),
+                parser: vt100::Parser::new_with_callbacks(rows, cols, 0, OscCapture::default()),
                 input_tx,
                 pty_master: master,
                 last_output_at: std::time::Instant::now(),
@@ -148,6 +258,19 @@ impl Session {
         self.parser.process(bytes);
         self.last_output_at = std::time::Instant::now();
         self.state = AgentState::Working;
+    }
+
+    /// Drain the OSC / unhandled-CSI byte sequences the parser captured
+    /// during the last `feed_pty` call. The daemon forwards these to
+    /// the attached client only when this session owns the focused
+    /// pane in the active tab — see `OscCapture` for the routing
+    /// rationale.
+    pub fn drain_passthrough(&mut self) -> Vec<Vec<u8>> {
+        self.parser.callbacks_mut().drain()
+    }
+
+    pub fn title(&self) -> Option<&str> {
+        self.parser.callbacks().title.as_deref()
     }
 
     pub fn resize(&mut self, rows: u16, cols: u16) {
