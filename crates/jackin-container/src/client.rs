@@ -118,8 +118,17 @@ pub async fn run_status() -> Result<()> {
     Ok(())
 }
 
+/// Return the outer terminal size as `(rows, cols)`.
+///
+/// `crossterm::terminal::size()` returns `(columns, rows)`. Failing to
+/// flip the pair lands the agent's PTY with `rows` and `cols` swapped:
+/// a 50-row × 200-col terminal becomes a 200-row × 50-col PTY, the
+/// status bar renders at 50 cols, and agent output wraps far too
+/// short. The fix is one line — keep the flip explicit so a future
+/// reader sees the convention difference at the call site.
 fn terminal_size() -> (u16, u16) {
-    crossterm::terminal::size().unwrap_or((24, 80))
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+    (rows, cols)
 }
 
 struct RawModeGuard;
