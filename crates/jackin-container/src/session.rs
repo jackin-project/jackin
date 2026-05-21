@@ -105,9 +105,24 @@ impl Callbacks for OscCapture {
         params: &[&[u16]],
         c: char,
     ) {
+        // Kitty-keyboard push (`\x1b[>{n}u`) and pop (`\x1b[<{n}u`) are
+        // NOT forwarded to the outer terminal. The outer terminal is
+        // shared across panes; if one agent flips it into kitty mode,
+        // every other pane (a shell, a pre-mount agent, a different
+        // agent that does not use kitty keys) starts receiving
+        // operator keystrokes in `\x1b[<code>;<mod>u` form and
+        // surfaces them as garbage at the prompt. The agent's own
+        // vt100 still parses kitty key sequences inside its own
+        // screen state — we just keep the outer terminal in plain
+        // CSI mode so shells stay sane. Trade-off: an operator
+        // typing Shift+Enter into a backgrounded agent sees plain
+        // Enter; that is acceptable next to "Shell prints
+        // `t16;1:3u` when I type t".
+        if c == 'u' && matches!(i1, Some(b'>') | Some(b'<')) {
+            return;
+        }
         // Re-emit verbatim. vt100 routes here only for CSI sequences
-        // it does not itself handle — kitty-keyboard push/pop
-        // (`\x1b[>{n}u` / `\x1b[<{n}u`), `modifyOtherKeys`
+        // it does not itself handle — `modifyOtherKeys`
         // (`\x1b[>4;{n}m`), synchronised-output (`\x1b[?2026h/l`),
         // and any other extension the outer terminal understands but
         // `vt100` does not.

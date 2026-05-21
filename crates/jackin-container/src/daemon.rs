@@ -1007,7 +1007,14 @@ impl Multiplexer {
                     &mut buf,
                 );
                 draw_scrollbar(
-                    &mut buf, inner.row, inner.col, inner.rows, inner.cols, offset, filled,
+                    &mut buf,
+                    inner.row,
+                    inner.col,
+                    inner.rows,
+                    inner.cols,
+                    offset,
+                    filled,
+                    Some(zoom_id) == focused_id,
                 );
                 if Some(zoom_id) == focused_id {
                     focused_pane_rect = Some(inner);
@@ -1055,7 +1062,14 @@ impl Multiplexer {
                         &mut buf,
                     );
                     draw_scrollbar(
-                        &mut buf, inner.row, inner.col, inner.rows, inner.cols, offset, filled,
+                        &mut buf,
+                        inner.row,
+                        inner.col,
+                        inner.rows,
+                        inner.cols,
+                        offset,
+                        filled,
+                        pane_focused,
                     );
                     if pane_focused {
                         focused_pane_rect = Some(inner);

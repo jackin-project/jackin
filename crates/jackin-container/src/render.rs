@@ -97,6 +97,7 @@ pub fn render_pane(
 /// looking at: bottom row → live tail; top row → oldest line in the
 /// scrollback. Track = dark phosphor-green `│`; thumb = bright
 /// phosphor-green `█`.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_scrollbar(
     buf: &mut Vec<u8>,
     pane_row: u16,
@@ -105,6 +106,7 @@ pub fn draw_scrollbar(
     pane_cols: u16,
     offset: usize,
     filled: usize,
+    focused: bool,
 ) {
     if pane_rows == 0 || pane_cols == 0 || filled == 0 {
         return;
@@ -112,23 +114,31 @@ pub fn draw_scrollbar(
     let col = pane_col + pane_cols - 1;
     let pane_rows_us = pane_rows as usize;
     let total = filled + pane_rows_us; // history + viewport
-    // Thumb height: how big the viewport is relative to total. Floor at 1.
     let thumb_rows = ((pane_rows_us * pane_rows_us) / total)
         .max(1)
         .min(pane_rows_us);
     let unscrolled_room = pane_rows_us - thumb_rows;
-    // Thumb position: offset=0 → bottom; offset=filled → top.
-    // Early `filled == 0` return above guarantees the divisor is non-zero.
     let thumb_top_from_bottom = (offset * unscrolled_room).checked_div(filled).unwrap_or(0);
     let thumb_top = unscrolled_room.saturating_sub(thumb_top_from_bottom);
+
+    // Active pane uses the brand phosphor-green for its scrollbar so
+    // the operator's eye lands on the same colour everywhere "active"
+    // is signalled (border, tab pill, list selection). Inactive panes
+    // use the same neutral gray as their border so the scrollbar reads
+    // as chrome instead of pretending to be the focus target.
+    let (thumb_color, track_color) = if focused {
+        ("\x1b[0;38;2;0;255;65m", "\x1b[0;38;2;0;80;18m")
+    } else {
+        ("\x1b[0;38;2;160;160;160m", "\x1b[0;38;2;80;80;80m")
+    };
 
     for r in 0..pane_rows_us {
         let _ = write!(buf, "\x1b[{};{}H", pane_row + r as u16 + 1, col + 1);
         if r >= thumb_top && r < thumb_top + thumb_rows {
-            buf.extend_from_slice(b"\x1b[0;38;2;0;255;65m");
+            buf.extend_from_slice(thumb_color.as_bytes());
             buf.extend_from_slice("█".as_bytes());
         } else {
-            buf.extend_from_slice(b"\x1b[0;38;2;0;80;18m");
+            buf.extend_from_slice(track_color.as_bytes());
             buf.extend_from_slice("│".as_bytes());
         }
     }

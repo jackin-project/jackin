@@ -63,14 +63,26 @@ fn osc_9_notification_is_re_emitted() {
 }
 
 #[test]
-fn unhandled_csi_kitty_keyboard_push_is_re_emitted() {
-    // `\x1b[>1u` — push kitty keyboard protocol flags. vt100 doesn't
-    // track this; without re-emission the outer terminal stays in
-    // legacy encoding and the agent gets degraded key encoding back.
+fn unhandled_csi_kitty_keyboard_push_is_suppressed() {
+    // `\x1b[>1u` — push kitty keyboard protocol flags. NOT forwarded
+    // to the outer terminal because doing so leaves every other pane
+    // (shells, pre-mount agents) receiving operator keystrokes in
+    // kitty-CSI-u form and surfacing them as garbage text. The
+    // agent's own vt100 parses kitty keys inside its own screen
+    // state; the outer terminal stays in plain CSI mode.
     let drained = drained(b"\x1b[>1u");
     assert!(
-        drained.iter().any(|f| f == b"\x1b[>1u"),
-        "drained: {drained:?}"
+        drained.iter().all(|f| f != b"\x1b[>1u"),
+        "kitty push must not reach the outer terminal: {drained:?}"
+    );
+}
+
+#[test]
+fn unhandled_csi_kitty_keyboard_pop_is_suppressed() {
+    let drained = drained(b"\x1b[<u");
+    assert!(
+        drained.iter().all(|f| f != b"\x1b[<u"),
+        "kitty pop must not reach the outer terminal: {drained:?}"
     );
 }
 
