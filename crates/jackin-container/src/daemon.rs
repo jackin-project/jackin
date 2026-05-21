@@ -321,21 +321,16 @@ impl Multiplexer {
     fn resize_panes(&mut self) {
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         if let Some(zoom_id) = self.zoomed {
-            let (rows, cols) = (self.content_rows, self.term_cols);
+            let inner = inset_rect(&content_rect, 1);
             if let Some(session) = self.sessions.get_mut(&zoom_id) {
-                session.resize(rows, cols);
+                session.resize(inner.rows, inner.cols);
             }
             return;
         }
         for tab in &self.tabs {
             let leaves = tab.tree.leaves(content_rect);
-            let needs_borders = leaves.len() > 1;
             for (id, rect) in leaves {
-                let inner = if needs_borders {
-                    inset_rect(&rect, 1)
-                } else {
-                    rect
-                };
+                let inner = inset_rect(&rect, 1);
                 if let Some(session) = self.sessions.get_mut(&id) {
                     session.resize(inner.rows, inner.cols);
                 }
@@ -746,28 +741,27 @@ impl Multiplexer {
             return;
         }
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
-        let (outer, needs_borders) = if let Some(zoom_id) = self.zoomed {
+        let outer = if let Some(zoom_id) = self.zoomed {
             if zoom_id == focused {
-                (Some(content_rect), false)
+                Some(content_rect)
             } else {
-                (None, false)
+                None
             }
         } else {
-            let leaves = self
-                .tabs
+            self.tabs
                 .get(self.active_tab)
-                .map(|tab| tab.tree.leaves(content_rect))
-                .unwrap_or_default();
-            let needs_borders = leaves.len() > 1;
-            (
-                leaves.into_iter().find(|(id, _)| *id == focused).map(|(_, r)| r),
-                needs_borders,
-            )
+                .and_then(|tab| {
+                    tab.tree
+                        .leaves(content_rect)
+                        .into_iter()
+                        .find(|(id, _)| *id == focused)
+                })
+                .map(|(_, r)| r)
         };
         let Some(outer) = outer else {
             return;
         };
-        let inner = if needs_borders { inset_rect(&outer, 1) } else { outer };
+        let inner = inset_rect(&outer, 1);
         if row < inner.row || row >= inner.row + inner.rows {
             return;
         }
@@ -886,45 +880,59 @@ impl Multiplexer {
         let dim_panes = self.dialog.is_some();
 
         if let Some(zoom_id) = self.zoomed {
+            let outer = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+            let inner = inset_rect(&outer, 1);
             if let Some(session) = self.sessions.get_mut(&zoom_id) {
-                let rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
                 let offset = session.scrollback_offset;
                 let filled = session.scrollback_filled();
                 render_pane(
                     session.screen(),
-                    rect.row,
-                    rect.col,
-                    rect.rows,
-                    rect.cols,
+                    inner.row,
+                    inner.col,
+                    inner.rows,
+                    inner.cols,
                     dim_panes,
                     &mut buf,
                 );
                 draw_scrollbar(
-                    &mut buf, rect.row, rect.col, rect.rows, rect.cols, offset, filled,
+                    &mut buf, inner.row, inner.col, inner.rows, inner.cols, offset, filled,
                 );
                 if Some(zoom_id) == focused_id {
-                    focused_pane_rect = Some(rect);
+                    focused_pane_rect = Some(inner);
                 }
+            }
+            if let Some(session) = self.sessions.get(&zoom_id) {
+                let title = session.title().unwrap_or(session.label.as_str());
+                draw_pane_box(
+                    &mut buf,
+                    outer.row,
+                    outer.col,
+                    outer.rows,
+                    outer.cols,
+                    title,
+                    Some(zoom_id) == focused_id,
+                );
             }
         } else if let Some(tab) = self.tabs.get(self.active_tab) {
             let leaves = tab.tree.leaves(content_rect);
-            let needs_borders = leaves.len() > 1;
+            let multi_pane = leaves.len() > 1;
             for (id, rect) in &leaves {
                 let pane_focused = Some(*id) == focused_id;
-                let inner = if needs_borders {
-                    inset_rect(rect, 1)
-                } else {
-                    *rect
-                };
+                // Always draw a pane box, even for the single-pane
+                // case — matches zellij's "every pane is framed"
+                // convention and gives the operator a reliable place
+                // to read the live `OSC 2` title.
+                let inner = inset_rect(rect, 1);
                 if let Some(session) = self.sessions.get_mut(id) {
                     let offset = session.scrollback_offset;
                     let filled = session.scrollback_filled();
                     // Unfocused panes render dim so the operator can
-                    // see at a glance which pane keystrokes will reach.
-                    // The dialog overlay applies the same dim to all
-                    // panes; this adds per-pane dim when multiple
-                    // panes share the tab and no dialog is open.
-                    let dim_this_pane = dim_panes || (needs_borders && !pane_focused);
+                    // see at a glance which pane keystrokes will
+                    // reach. The dialog overlay applies the same
+                    // dim to all panes; this adds per-pane dim only
+                    // when there is more than one pane to choose
+                    // between.
+                    let dim_this_pane = dim_panes || (multi_pane && !pane_focused);
                     render_pane(
                         session.screen(),
                         inner.row,
@@ -941,15 +949,7 @@ impl Multiplexer {
                         focused_pane_rect = Some(inner);
                     }
                 }
-                if needs_borders
-                    && let Some(session) = self.sessions.get(id)
-                {
-                    // Title prefers the agent's live `OSC 2` window
-                    // title — agents like Claude Code update theirs
-                    // as they switch context (Working / Plan mode /
-                    // file name). Fall back to the static session
-                    // label (Claude / Codex / Shell / etc.) when the
-                    // agent hasn't set one yet.
+                if let Some(session) = self.sessions.get(id) {
                     let title = session.title().unwrap_or(session.label.as_str());
                     draw_pane_box(
                         &mut buf,
