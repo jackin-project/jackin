@@ -664,11 +664,14 @@ pub(in crate::console::manager) fn sidebar_inputs_for_current_dir<'a>(
     config: &AppConfig,
     state: &ManagerState<'_>,
 ) -> SidebarInputs<'a> {
+    // The synthetic current-dir workspace has no role binding, so only
+    // unscoped global mounts apply — matches `current_dir_workspace`
+    // behaviour at launch time.
     SidebarInputs {
         workdir: cwd_str,
         mounts,
         ws_config: None,
-        global_rows: Vec::new(),
+        global_rows: super::global_rows_for(config, None),
         picker_role_label: String::new(),
         instance_count: workspace_active_count(&state.instances, None, cwd_str, cwd_str),
         instance_expanded: state.current_dir_expanded,
