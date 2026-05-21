@@ -249,6 +249,51 @@ pub fn shorten_home(path: &str) -> String {
     }
 }
 
+/// Computed thumb position + length for a vertical scrollbar. Shared
+/// math between the host TUI's ratatui-based scrollable blocks and
+/// the in-container multiplexer's raw-ANSI overlay, so both surfaces
+/// pick the same thumb size and the same proportional position for
+/// the same (track_rows, content_filled, offset) triple.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VerticalThumb {
+    /// 0-based row inside the track where the thumb starts.
+    pub thumb_top: u16,
+    /// Number of rows the thumb spans. Always ≥ 1 when there is any
+    /// scrollback; clamps to `track_rows` when nearly everything is
+    /// off-screen.
+    pub thumb_rows: u16,
+}
+
+/// Compute thumb geometry for a vertical scrollbar.
+///
+/// - `track_rows`: how many rows the scrollbar track spans
+///   (typically the pane's interior height, excluding the top and
+///   bottom border rows).
+/// - `filled`: lines of scrollback currently held beyond the visible
+///   region.
+/// - `offset`: how many lines the operator has scrolled back from
+///   the live tail. `0` parks the thumb at the bottom of the track;
+///   `filled` parks it at the top.
+///
+/// Returns `None` when there is no thumb to draw (`track_rows == 0`
+/// or `filled == 0`).
+#[must_use]
+pub fn vertical_thumb(track_rows: u16, filled: usize, offset: usize) -> Option<VerticalThumb> {
+    if track_rows == 0 || filled == 0 {
+        return None;
+    }
+    let track = track_rows as usize;
+    let total = filled + track;
+    let thumb_rows = ((track * track) / total).max(1).min(track);
+    let unscrolled_room = track - thumb_rows;
+    let thumb_top_from_bottom = (offset * unscrolled_room).checked_div(filled).unwrap_or(0);
+    let thumb_top = unscrolled_room.saturating_sub(thumb_top_from_bottom);
+    Some(VerticalThumb {
+        thumb_top: thumb_top as u16,
+        thumb_rows: thumb_rows as u16,
+    })
+}
+
 /// Shared ANSI helpers + a centred text-input dialog renderer. The
 /// host TUI uses ratatui directly; the in-container multiplexer
 /// emits raw ANSI. Keeping the visual recipe (border style, title

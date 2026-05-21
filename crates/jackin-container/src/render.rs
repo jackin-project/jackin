@@ -108,18 +108,19 @@ pub fn draw_scrollbar(
     filled: usize,
     focused: bool,
 ) {
-    if pane_rows == 0 || pane_cols == 0 || filled == 0 {
+    // Constrain the track to the pane's interior rows so the
+    // top-right `┐` and bottom-right `┘` corners stay intact. Without
+    // this guard the thumb overwrote one of the corners whenever the
+    // scrollback was at the live tail (or the top), producing the
+    // visible "scrollbar sticks out past the pane" symptom.
+    let interior_rows = pane_rows.saturating_sub(2);
+    let Some(thumb) = jackin_tui::vertical_thumb(interior_rows, filled, offset) else {
+        return;
+    };
+    if pane_cols == 0 {
         return;
     }
     let col = pane_col + pane_cols - 1;
-    let pane_rows_us = pane_rows as usize;
-    let total = filled + pane_rows_us;
-    let thumb_rows = ((pane_rows_us * pane_rows_us) / total)
-        .max(1)
-        .min(pane_rows_us);
-    let unscrolled_room = pane_rows_us - thumb_rows;
-    let thumb_top_from_bottom = (offset * unscrolled_room).checked_div(filled).unwrap_or(0);
-    let thumb_top = unscrolled_room.saturating_sub(thumb_top_from_bottom);
 
     // Active pane uses the brand phosphor-green; inactive panes a
     // neutral gray that matches their inactive border colour.
@@ -129,8 +130,11 @@ pub fn draw_scrollbar(
         "\x1b[0;38;2;160;160;160m"
     };
 
-    for r in thumb_top..(thumb_top + thumb_rows).min(pane_rows_us) {
-        let _ = write!(buf, "\x1b[{};{}H", pane_row + r as u16 + 1, col + 1);
+    // Thumb rows are 0-based relative to the interior; skip the top
+    // border row by adding 1 to `pane_row`.
+    let track_start_row = pane_row + 1;
+    for r in 0..thumb.thumb_rows {
+        let _ = write!(buf, "\x1b[{};{}H", track_start_row + thumb.thumb_top + r + 1, col + 1);
         buf.extend_from_slice(thumb_color.as_bytes());
         buf.extend_from_slice("█".as_bytes());
     }
