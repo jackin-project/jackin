@@ -70,6 +70,9 @@ pub enum DialogAction {
     Dismiss,
     /// Dialog is still open; redraw.
     Redraw,
+    /// Mouse event lands somewhere with no semantic effect (border,
+    /// padding row). Swallow it so it does not reach the focused pane.
+    Consume,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,6 +199,88 @@ impl Dialog {
         }
     }
 
+    /// Dispatch a left-click at `(row, col)` against the dialog's
+    /// hit regions. Clicks outside the box dismiss the dialog;
+    /// clicks on a row select that row and immediately confirm;
+    /// clicks on the border or padding rows are consumed so they do
+    /// not leak through to the focused pane underneath.
+    pub fn handle_click(
+        &mut self,
+        row: u16,
+        col: u16,
+        term_rows: u16,
+        term_cols: u16,
+    ) -> DialogAction {
+        let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
+        let inside_box = row >= box_row
+            && row < box_row + height
+            && col >= box_col
+            && col < box_col + width;
+        if !inside_box {
+            return DialogAction::Dismiss;
+        }
+        // First content row sits two rows down from the top border
+        // (top border + blank pad). Rows above and below the item
+        // list are decorative.
+        let first_item_row = box_row + 2;
+        let item_count = match self {
+            Self::CommandPalette { .. } => PALETTE_ITEMS.len() as u16,
+            // Agent picker rows: agents + separator + Shell. The
+            // separator row is non-selectable.
+            Self::AgentPicker { agents, .. } => agents.len() as u16 + 2,
+        };
+        if row < first_item_row || row >= first_item_row + item_count {
+            return DialogAction::Consume;
+        }
+        let row_idx = (row - first_item_row) as usize;
+        match self {
+            Self::CommandPalette { selected } => {
+                *selected = row_idx;
+                let cmd = PALETTE_ITEMS[row_idx].0.clone();
+                DialogAction::Command(cmd)
+            }
+            Self::AgentPicker {
+                agents,
+                selected,
+                intent,
+            } => {
+                // The separator sits immediately after the last
+                // agent; clicking it is a no-op. Shell sits one
+                // row past the separator.
+                if row_idx == agents.len() {
+                    return DialogAction::Consume;
+                }
+                if row_idx > agents.len() {
+                    *selected = agents.len();
+                    return DialogAction::SpawnAgent {
+                        agent: None,
+                        intent: *intent,
+                    };
+                }
+                *selected = row_idx;
+                DialogAction::SpawnAgent {
+                    agent: Some(agents[row_idx].clone()),
+                    intent: *intent,
+                }
+            }
+        }
+    }
+
+    /// Box geometry the dialog will render with for `term_rows` /
+    /// `term_cols`. Returned as `(row, col, height, width)`. Kept
+    /// next to the render functions so any layout change updates
+    /// both surfaces at once.
+    fn box_rect(&self, term_rows: u16, term_cols: u16) -> (u16, u16, u16, u16) {
+        let width = PALETTE_WIDTH;
+        let height = match self {
+            Self::CommandPalette { .. } => PALETTE_ITEMS.len() as u16 + 4,
+            Self::AgentPicker { agents, .. } => agents.len() as u16 + 2 + 4,
+        };
+        let row = (term_rows.saturating_sub(height)) / 2;
+        let col = (term_cols.saturating_sub(width)) / 2;
+        (row, col, height, width)
+    }
+
     /// Render the dialog overlay into `buf`.
     /// `term_rows` and `term_cols` are the host terminal dimensions.
     pub fn render(&self, buf: &mut Vec<u8>, term_rows: u16, term_cols: u16) {
@@ -282,7 +367,7 @@ fn render_palette(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, selected: u
     let start_row = (term_rows.saturating_sub(height)) / 2;
     let start_col = (term_cols.saturating_sub(width)) / 2;
 
-    render_box(buf, start_row, start_col, height, width, "jackin' commands");
+    render_box(buf, start_row, start_col, height, width, "Menu");
     for (i, (_, label)) in items.iter().enumerate() {
         render_row(
             buf,
@@ -313,7 +398,7 @@ fn render_agent_picker(
     let start_col = (term_cols.saturating_sub(width)) / 2;
 
     let title = match intent {
-        PickerIntent::NewTab => "Launch session",
+        PickerIntent::NewTab => "New tab",
         PickerIntent::SplitHorizontal => "Split pane │  (side by side)",
         PickerIntent::SplitVertical => "Split pane ─  (top / bottom)",
     };
@@ -397,15 +482,17 @@ fn render_row(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, label: &str, se
         buf.extend_from_slice(FG_GREEN.as_bytes());
         buf.extend_from_slice(UNSELECT_MARK.as_bytes());
     }
-    // Both markers occupy 2 display columns; the row interior is
-    // `width - 2` columns wide, so labels and trailing pad share
-    // `width - 4` columns.
+    // Row interior is `width - 2` cols (excluding both side borders).
+    // The marker takes the first 2; the label and trailing pad fill
+    // the remaining `width - 4`. Drawing one cell more here would
+    // overwrite the right border `│` painted by `render_box`,
+    // making the dialog look like its right edge dropped out.
     let max_label_cols = (width as usize).saturating_sub(4);
     let label_cols = label.chars().count();
     let truncated_cols = label_cols.min(max_label_cols);
     let label_take: String = label.chars().take(truncated_cols).collect();
     buf.extend_from_slice(label_take.as_bytes());
-    let pad_cols = max_label_cols.saturating_sub(truncated_cols) + 1; // +1 trailing pad column
+    let pad_cols = max_label_cols.saturating_sub(truncated_cols);
     for _ in 0..pad_cols {
         buf.push(b' ');
     }

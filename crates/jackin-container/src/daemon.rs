@@ -407,8 +407,19 @@ impl Multiplexer {
                 }
                 Some(self.compose_frame())
             }
-            InputEvent::PrefixCommand(cmd) => self.handle_prefix_command(cmd),
+            InputEvent::PrefixCommand(cmd) => {
+                // While a dialog is open the prefix gesture's payload
+                // must not reach the focused pane — operator's intent
+                // is to act on the dialog, not the agent underneath.
+                if self.dialog.is_some() {
+                    return None;
+                }
+                self.handle_prefix_command(cmd)
+            }
             InputEvent::ResizePane(dir) => {
+                if self.dialog.is_some() {
+                    return None;
+                }
                 self.resize_focused(dir);
                 Some(self.compose_frame())
             }
@@ -429,6 +440,53 @@ impl Multiplexer {
                 }
                 None
             }
+            InputEvent::MousePress { col, row, button }
+                if self.dialog.is_some() && button == 0 && !is_wheel_button(button) =>
+            {
+                // Mouse handling while a dialog overlay is up:
+                //   click on a row  → select + confirm
+                //   click on border / padding → swallowed
+                //   click anywhere outside the box → dismiss
+                let term_rows = self.term_rows;
+                let term_cols = self.term_cols;
+                let action = self
+                    .dialog
+                    .as_mut()
+                    .expect("dialog presence checked")
+                    .handle_click(row, col, term_rows, term_cols);
+                match action {
+                    DialogAction::Dismiss => {
+                        self.dialog = None;
+                        Some(self.compose_frame())
+                    }
+                    DialogAction::Redraw | DialogAction::Consume => Some(self.compose_frame()),
+                    DialogAction::Command(cmd) => {
+                        self.handle_palette_command(cmd);
+                        Some(self.compose_frame())
+                    }
+                    DialogAction::SpawnAgent { agent, intent } => {
+                        self.dialog = None;
+                        match intent {
+                            PickerIntent::NewTab => {
+                                let _ = self.spawn_session(agent);
+                            }
+                            PickerIntent::SplitHorizontal => {
+                                let _ = self.split_focused_into(true, agent);
+                            }
+                            PickerIntent::SplitVertical => {
+                                let _ = self.split_focused_into(false, agent);
+                            }
+                        }
+                        Some(self.compose_frame())
+                    }
+                }
+            }
+            InputEvent::MousePress { .. } if self.dialog.is_some() => {
+                // Any non-wheel mouse event with the dialog up that
+                // did not land on a row is swallowed so it never
+                // reaches the agent underneath.
+                None
+            }
             InputEvent::MousePress { button, .. } if is_wheel_button(button) => {
                 // SGR mouse wheel: bits 6/7 indicate wheel events, with
                 // low bits selecting direction (even = up, odd = down)
@@ -437,7 +495,13 @@ impl Multiplexer {
                 // variant — never forward any of them to the PTY,
                 // because shells and pre-mount agents never asked for
                 // mouse mode and the SGR bytes would surface as
-                // garbage text at the prompt.
+                // garbage text at the prompt. Dialog overlay swallows
+                // the wheel too so background pane scrollback does
+                // not move while the operator is interacting with
+                // the modal.
+                if self.dialog.is_some() {
+                    return None;
+                }
                 let delta = if (button & 1) == 0 { 3 } else { -3 };
                 if let Some(focused) = self.active_focused_id()
                     && let Some(session) = self.sessions.get_mut(&focused)
@@ -531,6 +595,7 @@ impl Multiplexer {
                             }
                             Some(self.compose_frame())
                         }
+                        DialogAction::Consume => Some(self.compose_frame()),
                     }
                 } else {
                     // Any keyboard input from the operator returns the
