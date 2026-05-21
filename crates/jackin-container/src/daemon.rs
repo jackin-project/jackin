@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
 
 use crate::dialog::{Dialog, DialogAction, PaletteCommand};
-use crate::input::{ArrowDir, InputEvent, parse};
+use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, Tab};
 use crate::protocol::{
     AgentState, ClientMsg, ServerMsg, SessionInfo, b64_decode, b64_encode, frame,
@@ -40,6 +40,8 @@ pub struct Multiplexer {
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     event_rx: mpsc::UnboundedReceiver<SessionEvent>,
     zoomed: Option<u64>,
+    input_parser: InputParser,
+    detach_requested: bool,
 }
 
 impl Multiplexer {
@@ -74,7 +76,49 @@ impl Multiplexer {
             event_tx,
             event_rx,
             zoomed: None,
+            input_parser: InputParser::default(),
+            detach_requested: false,
         }
+    }
+
+    fn next_tab(&mut self) {
+        if self.tabs.is_empty() {
+            return;
+        }
+        self.active_tab = (self.active_tab + 1) % self.tabs.len();
+    }
+
+    fn prev_tab(&mut self) {
+        if self.tabs.is_empty() {
+            return;
+        }
+        self.active_tab = if self.active_tab == 0 {
+            self.tabs.len() - 1
+        } else {
+            self.active_tab - 1
+        };
+    }
+
+    fn jump_tab(&mut self, idx: usize) {
+        if idx < self.tabs.len() {
+            self.active_tab = idx;
+        }
+    }
+
+    fn close_focused_tab(&mut self) {
+        if self.active_tab >= self.tabs.len() {
+            return;
+        }
+        let tab_ids = self.tabs[self.active_tab].tree.all_ids();
+        for id in tab_ids {
+            self.sessions.remove(&id);
+        }
+        self.tabs.remove(self.active_tab);
+        if self.active_tab >= self.tabs.len() {
+            self.active_tab = self.tabs.len().saturating_sub(1);
+        }
+        self.zoomed = None;
+        self.resize_panes();
     }
 
     pub fn spawn_initial(&mut self, agent: &str) -> Result<u64> {
@@ -220,19 +264,23 @@ impl Multiplexer {
     /// Returns bytes to send to the client (e.g. redraws), if any.
     fn handle_input(&mut self, event: InputEvent) -> Option<Vec<u8>> {
         match event {
-            InputEvent::CommandPalette => {
-                if self.dialog.is_some() {
-                    // Ctrl+J while dialog is open → close dialog and redraw.
-                    self.dialog = None;
-                    Some(self.compose_frame())
+            InputEvent::PrefixCommand(cmd) => self.handle_prefix_command(cmd),
+            InputEvent::FocusIn | InputEvent::FocusOut => {
+                // Forward focus events to the focused pane's PTY so the
+                // agent can pause/resume animations. Synthesised events
+                // on tab/pane focus changes are not implemented here yet
+                // — Phase 3d wires that up.
+                let bytes = if matches!(event, InputEvent::FocusIn) {
+                    b"\x1b[I".as_ref()
                 } else {
-                    self.dialog = Some(Dialog::CommandPalette { selected: 0 });
-                    Some(self.compose_frame())
+                    b"\x1b[O".as_ref()
+                };
+                if let Some(focused) = self.active_focused_id()
+                    && let Some(session) = self.sessions.get(&focused)
+                {
+                    session.send_input(bytes);
                 }
-            }
-            InputEvent::AltArrow(dir) => {
-                self.move_focus(dir);
-                Some(self.compose_frame())
+                None
             }
             InputEvent::MousePress {
                 row: 0,
@@ -248,15 +296,10 @@ impl Multiplexer {
                 }
                 None
             }
-            InputEvent::MousePress { .. } => {
-                // Mouse in content area — pass through to active session.
-                if let Some(focused) = self.active_focused_id()
-                    && let Some(session) = self.sessions.get(&focused)
-                {
-                    // Re-encode as the original mouse bytes and send to PTY.
-                    // For now pass-through is handled by the Data path below.
-                    let _ = session;
-                }
+            InputEvent::MousePress { col, row, button } => {
+                // Re-encode mouse press relative to the focused pane's
+                // rect origin and forward to its PTY in SGR mouse form.
+                self.forward_mouse_to_focused_pane(col, row, button);
                 None
             }
             InputEvent::Data(bytes) => {
@@ -280,7 +323,6 @@ impl Multiplexer {
                         }
                     }
                 } else {
-                    // Route raw bytes to the focused session's PTY.
                     if let Some(focused) = self.active_focused_id()
                         && let Some(session) = self.sessions.get(&focused)
                     {
@@ -289,6 +331,79 @@ impl Multiplexer {
                     None
                 }
             }
+        }
+    }
+
+    fn handle_prefix_command(&mut self, cmd: PrefixCommand) -> Option<Vec<u8>> {
+        match cmd {
+            PrefixCommand::NewTab => {
+                let agents = self.available_agents.clone();
+                self.dialog = Some(Dialog::AgentPicker {
+                    agents,
+                    selected: 0,
+                });
+            }
+            PrefixCommand::NextTab => self.next_tab(),
+            PrefixCommand::PrevTab => self.prev_tab(),
+            PrefixCommand::JumpTab(i) => self.jump_tab(i),
+            PrefixCommand::SplitTopBottom => {
+                let _ = self.split_focused(false);
+            }
+            PrefixCommand::SplitSideBySide => {
+                let _ = self.split_focused(true);
+            }
+            PrefixCommand::MoveFocus(dir) => self.move_focus(dir),
+            PrefixCommand::ZoomToggle => self.toggle_zoom(),
+            PrefixCommand::KillPane => self.close_focused_pane(),
+            PrefixCommand::KillTab => self.close_focused_tab(),
+            PrefixCommand::Detach => {
+                self.detach_requested = true;
+            }
+            PrefixCommand::Palette => {
+                self.dialog = Some(Dialog::CommandPalette { selected: 0 });
+            }
+            PrefixCommand::Redraw => {}
+        }
+        Some(self.compose_frame())
+    }
+
+    fn forward_mouse_to_focused_pane(&mut self, col: u16, row: u16, button: u8) {
+        let Some(focused) = self.active_focused_id() else {
+            return;
+        };
+        let content_rect = Rect::new(1, 0, self.content_rows, self.term_cols);
+        let pane_rect = if let Some(zoom_id) = self.zoomed {
+            if zoom_id == focused {
+                Some(content_rect)
+            } else {
+                None
+            }
+        } else {
+            self.tabs
+                .get(self.active_tab)
+                .and_then(|tab| {
+                    tab.tree
+                        .leaves(content_rect)
+                        .into_iter()
+                        .find(|(id, _)| *id == focused)
+                })
+                .map(|(_, rect)| rect)
+        };
+        let Some(rect) = pane_rect else {
+            return;
+        };
+        if row < rect.row || row >= rect.row + rect.rows {
+            return;
+        }
+        if col < rect.col || col >= rect.col + rect.cols {
+            return;
+        }
+        let local_row = row - rect.row;
+        let local_col = col - rect.col;
+        // SGR mouse press: ESC [ < button ; col+1 ; row+1 M
+        let buf = format!("\x1b[<{};{};{}M", button, local_col + 1, local_row + 1);
+        if let Some(session) = self.sessions.get(&focused) {
+            session.send_input(buf.as_bytes());
         }
     }
 
@@ -499,11 +614,15 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 match msg {
                     ClientMsg::Input { data } => {
                         let bytes = b64_decode(&data);
-                        let events = parse(&bytes);
+                        let events = mux.input_parser.parse(&bytes);
                         for event in events {
                             if let Some(redraw) = mux.handle_input(event) {
                                 let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&redraw) }));
                             }
+                        }
+                        if mux.detach_requested {
+                            mux.detach_requested = false;
+                            let _ = out_tx.send(frame(&ServerMsg::Shutdown));
                         }
                     }
                     ClientMsg::Resize { rows, cols } => {
