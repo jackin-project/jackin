@@ -1733,9 +1733,17 @@ async fn handle_console_instance_action(
             );
             Ok(())
         }
+        console::ConsoleInstanceAction::Stop => {
+            runtime::eject_role(&container, docker).await?;
+            runtime::reconcile_keep_awake(paths, docker, runner).await;
+            println!("Stopped {container}.");
+            Ok(())
+        }
         console::ConsoleInstanceAction::Purge => {
+            runtime::eject_role(&container, docker).await?;
             runtime::purge_container_state(paths, &container, docker, runner).await?;
-            println!("Purged state for {container}.");
+            runtime::reconcile_keep_awake(paths, docker, runner).await;
+            println!("Ejected and purged {container}.");
             Ok(())
         }
     }

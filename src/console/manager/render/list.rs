@@ -522,15 +522,93 @@ pub(in crate::console::manager) fn global_mounts_content_width(
     super::max_line_width(&lines)
 }
 
-#[allow(clippy::too_many_lines)]
-fn render_details_pane(
-    frame: &mut Frame,
+/// Shared inputs for the right-pane sidebar. Saved-workspace rows and the
+/// synthetic "Current directory" row both build one of these and feed it
+/// through `compute_sidebar_layout` → `render_sidebar_body` so the panel
+/// order, heights, and mouse hit-boxes can never drift between renderer
+/// and mouse handler.
+pub(in crate::console::manager) struct SidebarInputs<'a> {
+    pub workdir: &'a str,
+    pub mounts: &'a [crate::workspace::MountConfig],
+    pub ws_config: Option<&'a crate::workspace::WorkspaceConfig>,
+    pub global_rows: Vec<crate::config::GlobalMountRow>,
+    pub picker_role_label: String,
+    pub instance_count: usize,
+    pub instance_expanded: bool,
+    pub inline_picker_active: bool,
+    pub show_envs: bool,
+    pub agent_count: usize,
+}
+
+/// Rect for each rendered block. `None` panels are skipped in both render
+/// and hit-test.
+pub(in crate::console::manager) struct SidebarLayout {
+    pub instances: Option<Rect>,
+    pub general: Rect,
+    pub mounts: Rect,
+    pub global: Option<Rect>,
+    pub role_global: Option<Rect>,
+    pub env: Option<Rect>,
+    pub roles: Option<Rect>,
+}
+
+pub(in crate::console::manager) fn compute_sidebar_layout(
     area: Rect,
-    ws_idx: usize,
-    ws: &WorkspaceSummary,
-    config: &AppConfig,
-    state: &mut ManagerState<'_>,
-) {
+    inputs: &SidebarInputs<'_>,
+) -> SidebarLayout {
+    let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
+    // Renderer convention: when only the global section is present (or both
+    // sections are empty), the "Global mounts" header still renders alone.
+    // When only the role-global section is present, the role header takes
+    // the lone slot. Matches `render_global_mounts_subpanel`.
+    let show_global_header = !global_rows.is_empty() || role_global_rows.is_empty();
+    let show_global = !inputs.global_rows.is_empty() && show_global_header;
+    let show_role_global = !role_global_rows.is_empty();
+    let show_roles = !inputs.inline_picker_active;
+
+    let mut constraints = Vec::new();
+    if inputs.instance_count > 0 {
+        constraints.push(Constraint::Length(COMPACT_INSTANCES_HEIGHT));
+    }
+    constraints.push(Constraint::Length(3));
+    constraints.push(Constraint::Length(mount_block_height(inputs.mounts)));
+    if show_global {
+        constraints.push(Constraint::Length(global_mount_rows_height(&global_rows)));
+    }
+    if show_role_global {
+        constraints.push(Constraint::Length(global_mount_rows_height(
+            &role_global_rows,
+        )));
+    }
+    if inputs.show_envs {
+        constraints.push(Constraint::Length(env_block_height(inputs.ws_config)));
+    }
+    if show_roles {
+        constraints.push(Constraint::Length(agents_block_height(inputs.agent_count)));
+    }
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+    let mut iter = rows.iter().copied();
+
+    SidebarLayout {
+        instances: (inputs.instance_count > 0).then(|| iter.next().expect("instances slot")),
+        general: iter.next().expect("general slot"),
+        mounts: iter.next().expect("mounts slot"),
+        global: show_global.then(|| iter.next().expect("global slot")),
+        role_global: show_role_global.then(|| iter.next().expect("role-global slot")),
+        env: inputs.show_envs.then(|| iter.next().expect("env slot")),
+        roles: show_roles.then(|| iter.next().expect("roles slot")),
+    }
+}
+
+pub(in crate::console::manager) fn sidebar_inputs_for_workspace<'a>(
+    ws: &'a WorkspaceSummary,
+    config: &'a AppConfig,
+    state: &ManagerState<'_>,
+) -> SidebarInputs<'a> {
     let ws_config = config.workspaces.get(&ws.name);
     let mounts = ws_config.map_or(&[][..], |w| w.mounts.as_slice());
     let picker_role = state
@@ -543,12 +621,11 @@ fn render_details_pane(
                 .as_ref()
                 .map(|(role, _)| role.clone())
         });
-    let global_rows: Vec<crate::config::GlobalMountRow> = if ws_config.is_some() {
+    let global_rows = if ws_config.is_some() {
         super::global_rows_for(config, picker_role.as_ref())
     } else {
         Vec::new()
     };
-    let has_global = !global_rows.is_empty();
     let inline_picker_active =
         state.inline_role_picker.is_some() || state.inline_agent_picker.is_some();
     let agent_count = if inline_picker_active {
@@ -556,90 +633,126 @@ fn render_details_pane(
     } else {
         agents_block_agent_count(ws_config, config)
     };
-    let show_envs = ws_config.is_some_and(workspace_has_any_env);
-    let active_instance_count = workspace_active_count(
-        &state.instances,
-        Some(ws.name.as_str()),
-        &ws.name,
-        &ws.workdir,
-    );
+    SidebarInputs {
+        workdir: ws.workdir.as_str(),
+        mounts,
+        ws_config,
+        global_rows,
+        picker_role_label: picker_role
+            .as_ref()
+            .map_or_else(String::new, crate::selector::RoleSelector::key),
+        instance_count: workspace_active_count(
+            &state.instances,
+            Some(ws.name.as_str()),
+            &ws.name,
+            &ws.workdir,
+        ),
+        instance_expanded: state
+            .workspaces
+            .iter()
+            .position(|s| s.name == ws.name)
+            .is_some_and(|idx| state.is_workspace_expanded(idx)),
+        inline_picker_active,
+        show_envs: ws_config.is_some_and(workspace_has_any_env),
+        agent_count,
+    }
+}
 
-    // Running block is first so live state is immediately visible at the top.
-    let mut constraints = Vec::new();
-    if active_instance_count > 0 {
-        constraints.push(Constraint::Length(COMPACT_INSTANCES_HEIGHT));
+pub(in crate::console::manager) fn sidebar_inputs_for_current_dir<'a>(
+    cwd_str: &'a str,
+    mounts: &'a [crate::workspace::MountConfig],
+    config: &AppConfig,
+    state: &ManagerState<'_>,
+) -> SidebarInputs<'a> {
+    SidebarInputs {
+        workdir: cwd_str,
+        mounts,
+        ws_config: None,
+        global_rows: Vec::new(),
+        picker_role_label: String::new(),
+        instance_count: workspace_active_count(&state.instances, None, cwd_str, cwd_str),
+        instance_expanded: state.current_dir_expanded,
+        inline_picker_active: false,
+        show_envs: false,
+        agent_count: agents_block_agent_count(None, config),
     }
-    constraints.extend([
-        Constraint::Length(3),
-        Constraint::Length(mount_block_height(mounts)),
-    ]);
-    if has_global {
-        constraints.push(Constraint::Length(global_mount_block_height(&global_rows)));
-    }
-    if show_envs {
-        constraints.push(Constraint::Length(env_block_height(ws_config)));
-    }
-    if !inline_picker_active {
-        constraints.push(Constraint::Length(agents_block_height(agent_count)));
-    }
+}
 
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(area);
-
-    let mut idx = 0;
-    if active_instance_count > 0 {
-        let ws_expanded = state.is_workspace_expanded(ws_idx);
-        render_compact_instances_summary(frame, rows[idx], active_instance_count, ws_expanded);
-        idx += 1;
+fn render_sidebar_body(
+    frame: &mut Frame,
+    layout: &SidebarLayout,
+    inputs: &SidebarInputs<'_>,
+    config: &AppConfig,
+    state: &mut ManagerState<'_>,
+) {
+    if let Some(area) = layout.instances {
+        render_compact_instances_summary(frame, area, inputs.instance_count, inputs.instance_expanded);
     }
-    render_general_subpanel(frame, rows[idx], ws);
-    idx += 1;
+    render_general_subpanel(frame, layout.general, inputs.workdir);
     let ws_focused = state.list_scroll_focus == Some(MountScrollFocus::Workspace);
     render_mounts_subpanel(
         frame,
-        rows[idx],
-        mounts,
+        layout.mounts,
+        inputs.mounts,
         &mut state.list_mounts_scroll_x,
         &mut state.list_mounts_scroll_y,
         ws_focused,
     );
-    idx += 1;
-    if has_global {
-        let role_label = picker_role
-            .as_ref()
-            .map_or_else(String::new, crate::selector::RoleSelector::key);
+    if layout.global.is_some() || layout.role_global.is_some() {
         let global_focused = state.list_scroll_focus;
-        render_global_mounts_subpanel(
-            frame,
-            rows[idx],
-            &role_label,
-            &global_rows,
-            &mut state.list_global_mounts_scroll_x,
-            &mut state.list_global_mounts_scroll_y,
-            &mut state.list_role_global_mounts_scroll_x,
-            &mut state.list_role_global_mounts_scroll_y,
-            global_focused,
-        );
-        idx += 1;
+        let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
+        if let Some(area) = layout.global {
+            render_global_mount_rows_section(
+                frame,
+                area,
+                " Global mounts ",
+                &global_rows,
+                &mut state.list_global_mounts_scroll_x,
+                &mut state.list_global_mounts_scroll_y,
+                global_focused == Some(MountScrollFocus::Global),
+            );
+        }
+        if let Some(area) = layout.role_global {
+            let title = format!(" Role global mounts · {} ", inputs.picker_role_label);
+            render_global_mount_rows_section(
+                frame,
+                area,
+                &title,
+                &role_global_rows,
+                &mut state.list_role_global_mounts_scroll_x,
+                &mut state.list_role_global_mounts_scroll_y,
+                global_focused == Some(MountScrollFocus::RoleGlobal),
+            );
+        }
     }
-    if show_envs {
-        render_environments_subpanel(frame, rows[idx], ws_config);
-        idx += 1;
+    if let Some(area) = layout.env {
+        render_environments_subpanel(frame, area, inputs.ws_config);
     }
-    if !inline_picker_active {
+    if let Some(area) = layout.roles {
         let roles_focused = state.list_scroll_focus == Some(MountScrollFocus::Roles);
         render_agents_subpanel_scrollable(
             frame,
-            rows[idx],
-            ws_config,
+            area,
+            inputs.ws_config,
             config,
             &mut state.list_roles_scroll_x,
             &mut state.list_roles_scroll_y,
             roles_focused,
         );
     }
+}
+
+fn render_details_pane(
+    frame: &mut Frame,
+    area: Rect,
+    _ws_idx: usize,
+    ws: &WorkspaceSummary,
+    config: &AppConfig,
+    state: &mut ManagerState<'_>,
+) {
+    let inputs = sidebar_inputs_for_workspace(ws, config, state);
+    let layout = compute_sidebar_layout(area, &inputs);
+    render_sidebar_body(frame, &layout, &inputs, config, state);
 }
 
 fn selected_picker_role(
@@ -669,18 +782,6 @@ pub(in crate::console::manager) fn mount_block_height(
             .sum()
     };
     (data_rows + 2 + 1).min(12) as u16
-}
-
-fn global_mount_block_height(rows: &[crate::config::GlobalMountRow]) -> u16 {
-    let (global, scoped) = split_global_mount_rows(rows);
-    let mut h = 0;
-    if !global.is_empty() || scoped.is_empty() {
-        h += global_mount_rows_height(&global);
-    }
-    if !scoped.is_empty() {
-        h += global_mount_rows_height(&scoped);
-    }
-    h
 }
 
 fn global_mount_rows_height(rows: &[&crate::config::GlobalMountRow]) -> u16 {
@@ -714,13 +815,22 @@ pub(in crate::console::manager) fn global_mounts_block_height(
     (global_mounts_content_height(mounts) + 2).min(12) as u16
 }
 
-fn split_global_mount_rows(
+pub(in crate::console::manager) fn split_global_mount_rows_pub(
     rows: &[crate::config::GlobalMountRow],
 ) -> (
     Vec<&crate::config::GlobalMountRow>,
     Vec<&crate::config::GlobalMountRow>,
 ) {
     rows.iter().partition(|row| row.scope.is_none())
+}
+
+fn split_global_mount_rows(
+    rows: &[crate::config::GlobalMountRow],
+) -> (
+    Vec<&crate::config::GlobalMountRow>,
+    Vec<&crate::config::GlobalMountRow>,
+) {
+    split_global_mount_rows_pub(rows)
 }
 
 /// Caller is expected to have gated on `workspace_has_any_env` —
@@ -779,99 +889,15 @@ fn render_current_dir_details_pane(
     state: &mut ManagerState<'_>,
 ) {
     let cwd_str = cwd.display().to_string();
-    let workdir_short = crate::tui::shorten_home(&cwd_str);
-
     let mounts = [crate::workspace::MountConfig {
         src: cwd_str.clone(),
         dst: cwd_str.clone(),
         readonly: false,
         isolation: crate::isolation::MountIsolation::Shared,
     }];
-    let active_count = workspace_active_count(&state.instances, None, &cwd_str, &cwd_str);
-
-    // Block order: Running (if any) → General → Mounts → Roles. The
-    // Running badge sits at the top so live state is the first thing
-    // the operator sees when they open the cwd workspace — matches the
-    // saved-workspace pane's "Running block is first" ordering.
-    let mut constraints = Vec::new();
-    if active_count > 0 {
-        constraints.push(Constraint::Length(COMPACT_INSTANCES_HEIGHT));
-    }
-    constraints.extend([
-        Constraint::Length(3),
-        Constraint::Length(mount_block_height(&mounts)),
-    ]);
-    constraints.push(Constraint::Length(agents_block_height(
-        agents_block_agent_count(None, config),
-    )));
-
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(area);
-
-    let mut idx = 0;
-    if active_count > 0 {
-        render_compact_instances_summary(frame, rows[idx], active_count, false);
-        idx += 1;
-    }
-
-    // General — titled the same as the saved-workspace pane so the
-    // sub-panel titles (General / Mounts / Roles) match across both
-    // panes. The "Current directory" signpost is already visible as
-    // the left-list row label, so repeating it here was redundant.
-    //
-    // The Environments block is omitted entirely here: the synthetic
-    // cwd workspace has no env vars, and the saved-workspace pane
-    // applies the same omit-when-empty rule, so behaviour is uniform.
-    let general_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
-        .title(Span::styled(
-            " General ",
-            Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
-        ));
-    // Two-space prefix keeps the label aligned with Mounts and Roles — see
-    // `render_general_subpanel` for the shared convention.
-    let general_lines = vec![Line::from(vec![
-        Span::raw("  "),
-        Span::styled("Working dir ", Style::default().fg(WHITE)),
-        Span::raw(workdir_short),
-    ])];
-    frame.render_widget(
-        Paragraph::new(general_lines)
-            .block(general_block)
-            .style(Style::default().fg(PHOSPHOR_GREEN)),
-        rows[idx],
-    );
-    idx += 1;
-
-    let ws_focused = state.list_scroll_focus == Some(MountScrollFocus::Workspace);
-    render_mounts_subpanel(
-        frame,
-        rows[idx],
-        &mounts,
-        &mut state.list_mounts_scroll_x,
-        &mut state.list_mounts_scroll_y,
-        ws_focused,
-    );
-    idx += 1;
-
-    let agents_row = idx;
-
-    // Roles block — reuse the no-`ws_config` branch of the shared renderer,
-    // which lists every globally-configured role (without per-role
-    // overrides since the cwd workspace has none).
-    let roles_focused = state.list_scroll_focus == Some(MountScrollFocus::Roles);
-    render_agents_subpanel_scrollable(
-        frame,
-        rows[agents_row],
-        None,
-        config,
-        &mut state.list_roles_scroll_x,
-        &mut state.list_roles_scroll_y,
-        roles_focused,
-    );
+    let inputs = sidebar_inputs_for_current_dir(&cwd_str, &mounts, config, state);
+    let layout = compute_sidebar_layout(area, &inputs);
+    render_sidebar_body(frame, &layout, &inputs, config, state);
 }
 
 /// Count of Active/Running instances — used for the compact summary badge and
@@ -1063,7 +1089,7 @@ fn render_sentinel_description_pane(frame: &mut Frame, area: Rect) {
     frame.render_widget(Paragraph::new(why_lines).block(why_block), rows[1]);
 }
 
-fn render_general_subpanel(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary) {
+fn render_general_subpanel(frame: &mut Frame, area: Rect, workdir: &str) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(PHOSPHOR_DARK))
@@ -1076,14 +1102,10 @@ fn render_general_subpanel(frame: &mut Frame, area: Rect, ws: &WorkspaceSummary)
     // Roles sub-panels (see `SUBPANEL_CONTENT_INDENT`). Without the prefix the
     // label sat flush against the block's left border, breaking column
     // alignment with the other two blocks in the same pane.
-    //
-    // The `Last used` row used to live here; it now sits at the top of the
-    // Roles sub-panel where it semantically belongs (role-identity data,
-    // not path/workspace-identity data).
     let lines = vec![Line::from(vec![
         Span::raw("  "),
         Span::styled("Working dir ", Style::default().fg(WHITE)),
-        Span::raw(crate::tui::shorten_home(&ws.workdir)),
+        Span::raw(crate::tui::shorten_home(workdir)),
     ])];
 
     let p = Paragraph::new(lines)
@@ -1129,65 +1151,6 @@ fn render_mounts_subpanel(
         focused,
         Some(" Mounts "),
     );
-}
-
-#[allow(clippy::too_many_arguments)]
-fn render_global_mounts_subpanel(
-    frame: &mut Frame,
-    area: Rect,
-    role: &str,
-    rows: &[crate::config::GlobalMountRow],
-    global_scroll_x: &mut u16,
-    global_scroll_y: &mut u16,
-    role_scroll_x: &mut u16,
-    role_scroll_y: &mut u16,
-    focused: Option<MountScrollFocus>,
-) {
-    let (global, scoped) = split_global_mount_rows(rows);
-    let chunks = {
-        let constraints: Vec<Constraint> = {
-            let mut c = Vec::new();
-            if !global.is_empty() || scoped.is_empty() {
-                c.push(Constraint::Length(global_mount_rows_height(&global)));
-            }
-            if !scoped.is_empty() {
-                c.push(Constraint::Length(global_mount_rows_height(&scoped)));
-            }
-            c
-        };
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(constraints)
-            .split(area)
-    };
-    let mut chunk_iter = chunks.iter();
-    if (!global.is_empty() || scoped.is_empty())
-        && let Some(chunk) = chunk_iter.next()
-    {
-        render_global_mount_rows_section(
-            frame,
-            *chunk,
-            " Global mounts ",
-            &global,
-            global_scroll_x,
-            global_scroll_y,
-            focused == Some(MountScrollFocus::Global),
-        );
-    }
-    if !scoped.is_empty()
-        && let Some(chunk) = chunk_iter.next()
-    {
-        let title = format!(" Role global mounts · {role} ");
-        render_global_mount_rows_section(
-            frame,
-            *chunk,
-            &title,
-            &scoped,
-            role_scroll_x,
-            role_scroll_y,
-            focused == Some(MountScrollFocus::RoleGlobal),
-        );
-    }
 }
 
 fn render_global_mount_rows_section(
@@ -1867,7 +1830,7 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(40, 4);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_general_subpanel(f, Rect::new(0, 0, 40, 4), &summary());
+            render_general_subpanel(f, Rect::new(0, 0, 40, 4), &summary().workdir);
         })
         .unwrap();
         let general_col = first_content_indent(&term).expect("general has content");
@@ -2095,7 +2058,7 @@ mod subpanel_padding_tests {
         let backend = TestBackend::new(60, 4);
         let mut term = Terminal::new(backend).unwrap();
         term.draw(|f| {
-            render_general_subpanel(f, Rect::new(0, 0, 60, 4), &s);
+            render_general_subpanel(f, Rect::new(0, 0, 60, 4), &s.workdir);
         })
         .unwrap();
 

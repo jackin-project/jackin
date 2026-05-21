@@ -372,7 +372,7 @@ pub fn render(
                     );
 
                     if is_instance_row {
-                        // Instance-row footer: reconnect / new session / shell / purge.
+                        // Instance-row footer: reconnect / new session / shell / stop / purge.
                         vec![
                             FooterItem::Key("\u{2191}\u{2193}"),
                             FooterItem::Sep,
@@ -384,6 +384,9 @@ pub fn render(
                             FooterItem::Sep,
                             FooterItem::Key("X"),
                             FooterItem::Text("shell"),
+                            FooterItem::Sep,
+                            FooterItem::Key("T"),
+                            FooterItem::Text("stop"),
                             FooterItem::Sep,
                             FooterItem::Key("P"),
                             FooterItem::Text("purge"),

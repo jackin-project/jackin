@@ -193,6 +193,11 @@ pub(super) fn handle_list_key(
             ConsoleInstanceAction::Purge,
             "No purgeable instance for this workspace.",
         )),
+        KeyCode::Char('t' | 'T') => Ok(instance_action_outcome(
+            state,
+            ConsoleInstanceAction::Stop,
+            "No running instance to stop.",
+        )),
         KeyCode::Char('s' | 'S') => {
             if !matches!(
                 state.selected_row(),
@@ -325,12 +330,11 @@ const fn instance_action_accepts_status(
             status,
             crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
         ),
-        ConsoleInstanceAction::Purge => !matches!(
+        ConsoleInstanceAction::Stop => matches!(
             status,
-            crate::instance::InstanceStatus::Active
-                | crate::instance::InstanceStatus::Running
-                | crate::instance::InstanceStatus::Purged
+            crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
         ),
+        ConsoleInstanceAction::Purge => !matches!(status, crate::instance::InstanceStatus::Purged),
     }
 }
 

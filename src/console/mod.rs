@@ -39,6 +39,7 @@ pub enum ConsoleInstanceAction {
     NewSessionWithAgent(crate::agent::Agent),
     Shell,
     Inspect,
+    Stop,
     Purge,
 }
 
