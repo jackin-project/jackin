@@ -326,7 +326,7 @@ impl Session {
         let master = pair.master;
         let slave = pair.slave;
 
-        let child = slave
+        let mut child = slave
             .spawn_command(cmd)
             .context("failed to spawn session process")?;
         drop(slave);
@@ -350,6 +350,7 @@ impl Session {
         });
 
         let event_tx_output = event_tx.clone();
+        let event_tx_exit = event_tx.clone();
         let sid = next_id();
         tokio::task::spawn_blocking(move || {
             let mut reader = master_for_read
@@ -385,8 +386,34 @@ impl Session {
                     }
                 }
             }
-            let _ = event_tx_output.send(SessionEvent::Exited { session_id: sid });
-            drop(child);
+        });
+
+        // Child-reaper task: blocks on `child.wait()` and emits the
+        // Exited event the moment the child process is reaped, even
+        // if the PTY master never returns EOF.
+        //
+        // Why this is separate from the reader task: when the
+        // foreground process exec'd into another binary and that
+        // binary forks subprocesses (Claude Code spawning git, npm,
+        // background watchers), those subprocesses inherit the slave
+        // PTY fd. The slave only fully closes once *all* fd holders
+        // exit, so the master read blocks indefinitely after the
+        // foreground agent quits while the lingering subprocess
+        // keeps the fd alive. The reader-EOF-only design left the
+        // pane stuck in this case.
+        //
+        // `child.wait()` blocks until the foreground process is
+        // reaped — the exact moment the operator's perspective says
+        // "the agent exited." Sending Exited here lets the daemon
+        // remove the pane immediately; the reader task (still
+        // blocked on master) becomes a leak that ends when the
+        // multiplexer process itself exits.
+        tokio::task::spawn_blocking(move || {
+            let status = child.wait();
+            eprintln!(
+                "[jackin-container] session {sid}: child reaped: {status:?}",
+            );
+            let _ = event_tx_exit.send(SessionEvent::Exited { session_id: sid });
         });
 
         Ok((
