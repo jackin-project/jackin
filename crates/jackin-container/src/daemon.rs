@@ -331,6 +331,12 @@ impl Multiplexer {
             self.tabs.push(Tab::new_single(tab_label, id));
             self.active_tab = self.tabs.len() - 1;
         }
+        // Reflow so the new pane's PTY gets the correct interior
+        // dimensions (outer rect minus border rows/cols). Without
+        // this, the session keeps its initial `content_rows ×
+        // term_cols` guess and the agent draws its bottom rows
+        // past the pane's bottom border.
+        self.resize_panes();
         Ok(id)
     }
 
