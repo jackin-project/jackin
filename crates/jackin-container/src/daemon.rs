@@ -272,6 +272,14 @@ impl Multiplexer {
         self.tabs.get(self.active_tab).map(|t| t.focused_id)
     }
 
+    /// True when nothing the operator could attach to is still alive.
+    /// `sessions.is_empty()` covers the operator-explicitly-killed-all
+    /// case; `all !alive` covers the natural-exit case (every agent /
+    /// shell process closed its PTY).
+    fn no_live_sessions(&self) -> bool {
+        self.sessions.is_empty() || self.sessions.values().all(|s| !s.alive)
+    }
+
     fn move_focus(&mut self, dir: ArrowDir) {
         let Some(tab) = self.tabs.get(self.active_tab) else {
             return;
@@ -716,6 +724,10 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                         let _ = tx.send(encode_server(ServerFrame::Shutdown));
                     }
                 }
+                if mux.no_live_sessions() {
+                    drain_and_exit(&mut mux).await;
+                    return Ok(());
+                }
             }
 
             // PTY output or exit event from a session.
@@ -748,11 +760,17 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                             session.alive = false;
                             session.state = AgentState::Done;
                         }
-                        // The daemon does NOT exit when the last session
-                        // dies. The container survives; the operator can
-                        // reattach and respawn with `prefix + c`.
                         let frame_data = mux.compose_frame();
                         mux.send_output(frame_data);
+                        // When the last live session exits — whether
+                        // the operator typed `/exit` in the agent or
+                        // the agent crashed — there is nothing left to
+                        // attach to. Tear down the container so the
+                        // host cleanup path fires.
+                        if mux.no_live_sessions() {
+                            drain_and_exit(&mut mux).await;
+                            return Ok(());
+                        }
                     }
                 }
             }
@@ -832,6 +850,17 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
 
 /// Per-client connection handler: bidirectional bridge between the socket
 /// and the main daemon loop.
+/// Send `Shutdown` to the attached client and pause briefly so the
+/// frame actually leaves the socket before PID 1 exits. Called when
+/// the daemon decides to tear the container down (last session died,
+/// last pane killed, or SIGTERM arrived).
+async fn drain_and_exit(mux: &mut Multiplexer) {
+    if let Some(tx) = mux.attached_out.take() {
+        let _ = tx.send(encode_server(ServerFrame::Shutdown));
+    }
+    tokio::time::sleep(Duration::from_millis(200)).await;
+}
+
 async fn handle_attach_client(
     mut stream: UnixStream,
     mut out_rx: mpsc::UnboundedReceiver<Vec<u8>>,
