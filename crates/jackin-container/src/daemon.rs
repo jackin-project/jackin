@@ -1467,6 +1467,14 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(80u16);
 
+    // Initialise the file logger before anything else can emit a
+    // diagnostic. Failures fall back to stderr-only, so this is safe
+    // to call unconditionally.
+    crate::logging::init();
+    crate::clog!(
+        "daemon start: rows={rows} cols={cols} initial_agent={initial_agent:?}"
+    );
+
     let mut mux = Multiplexer::new(rows, cols);
     // Spawn the first tab. Treat any spawn error as fatal at boot —
     // it usually means the entrypoint binary is missing from the
@@ -1474,13 +1482,13 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
     // would hide the real problem behind a blank screen.
     if !initial_agent.is_empty() {
         if let Err(err) = mux.spawn_initial(&initial_agent) {
-            eprintln!(
-                "[jackin-container] initial agent spawn failed (agent={initial_agent:?}): {err:?}"
+            crate::clog!(
+                "initial agent spawn failed (agent={initial_agent:?}): {err:?}"
             );
             return Err(err);
         }
     } else if let Err(err) = mux.spawn_session(None) {
-        eprintln!("[jackin-container] initial shell spawn failed: {err:?}");
+        crate::clog!("initial shell spawn failed: {err:?}");
         return Err(err);
     }
 
@@ -1509,8 +1517,8 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
         Ok(raw) => match raw.parse::<u64>() {
             Ok(ms) => Duration::from_millis(ms),
             Err(_) => {
-                eprintln!(
-                    "[jackin-container] {ENV_ESCAPE_TIME}={raw:?} ignored (not a positive integer); using default {} ms",
+                crate::clog!(
+                    "{ENV_ESCAPE_TIME}={raw:?} ignored (not a positive integer); using default {} ms",
                     DEFAULT_ESCAPE_TIME.as_millis()
                 );
                 DEFAULT_ESCAPE_TIME

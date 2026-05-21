@@ -71,6 +71,11 @@ pub struct StatusBar {
     pub prefix_label: String,
     pub palette_label: String,
     pub prefix_enabled: bool,
+    /// `role · container-name` displayed on the right side of row 1
+    /// so the operator can always tell which container they are
+    /// attached to and which role it runs. Resolved at startup from
+    /// `JACKIN_ROLE` and the container's `HOSTNAME`.
+    pub identity_label: String,
 }
 
 impl Default for StatusBar {
@@ -88,6 +93,7 @@ impl StatusBar {
             prefix_label: "Ctrl+B".to_string(),
             palette_label: "Ctrl+\\".to_string(),
             prefix_enabled: false,
+            identity_label: resolve_identity_label(),
         }
     }
 
@@ -233,7 +239,7 @@ impl StatusBar {
             buf.extend_from_slice(RESET.as_bytes());
         }
 
-        // ── Row 1: active-tab underline ─────────────────────────────
+        // ── Row 1: active-tab underline + identity label ────────────
         buf.extend_from_slice(b"\x1b[2;1H\x1b[2K");
         for cell in &cells {
             let cell_end_0based = cell.start_col + cell.cell_cols;
@@ -249,6 +255,22 @@ impl StatusBar {
                 }
                 buf.extend_from_slice(RESET.as_bytes());
                 break;
+            }
+        }
+        // Identity label (role · container name) sits on the right
+        // side of row 1 so the operator can always tell which
+        // container they are attached to. Truncate when it would
+        // collide with the active-tab underline; skip entirely when
+        // the terminal is too narrow.
+        if !self.identity_label.is_empty() {
+            let label_cols = self.identity_label.chars().count() as u16;
+            let trailing_pad: u16 = 1;
+            if cols > label_cols + trailing_pad {
+                let start = cols.saturating_sub(label_cols + trailing_pad);
+                move_to(buf, 2, start + 1);
+                buf.extend_from_slice(HINT_FG.as_bytes());
+                buf.extend_from_slice(self.identity_label.as_bytes());
+                buf.extend_from_slice(RESET.as_bytes());
             }
         }
     }
@@ -475,6 +497,24 @@ pub fn draw_pane_box(
 
 fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
     let _ = write!(buf, "\x1b[{};{}H", row, col);
+}
+
+/// Build the row-1 identity label from the container's env.
+/// `JACKIN_ROLE` carries the role key set by the host CLI when it
+/// launched the container; `HOSTNAME` carries the container's
+/// docker-assigned name (`jk-<short>-<workspace>-<role>`). When
+/// either is missing the function falls back to the value that is
+/// present; when both are missing it returns an empty string so the
+/// renderer skips the label entirely.
+fn resolve_identity_label() -> String {
+    let role = std::env::var("JACKIN_ROLE").ok();
+    let host = std::env::var("HOSTNAME").ok();
+    match (role, host) {
+        (Some(r), Some(h)) if !r.is_empty() && !h.is_empty() => format!("{r} · {h}"),
+        (Some(r), _) if !r.is_empty() => r,
+        (_, Some(h)) if !h.is_empty() => h,
+        _ => String::new(),
+    }
 }
 
 #[cfg(test)]

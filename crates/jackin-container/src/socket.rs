@@ -38,7 +38,7 @@ pub fn start_listener() -> Result<mpsc::UnboundedReceiver<UnixStream>> {
                     let _ = tx.send(stream);
                 }
                 Err(e) => {
-                    eprintln!("[jackin-container] socket accept error: {e}");
+                    crate::clog!("socket accept error: {e}");
                 }
             }
         }

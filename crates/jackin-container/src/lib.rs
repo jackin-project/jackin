@@ -8,6 +8,7 @@ pub mod daemon;
 pub mod dialog;
 pub mod input;
 pub mod layout;
+pub mod logging;
 pub mod pid1;
 pub mod protocol;
 pub mod render;

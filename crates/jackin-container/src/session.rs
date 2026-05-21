@@ -362,12 +362,12 @@ impl Session {
             loop {
                 match std::io::Read::read(&mut reader, &mut buf) {
                     Ok(0) => {
-                        eprintln!("[jackin-container] session {sid}: PTY read EOF");
+                        crate::clog!("session {sid}: PTY read EOF");
                         break;
                     }
                     Err(e) => {
-                        eprintln!(
-                            "[jackin-container] session {sid}: PTY read error: {e} (errno={:?})",
+                        crate::clog!(
+                            "session {sid}: PTY read error: {e} (errno={:?})",
                             e.raw_os_error()
                         );
                         break;
@@ -410,9 +410,7 @@ impl Session {
         // multiplexer process itself exits.
         tokio::task::spawn_blocking(move || {
             let status = child.wait();
-            eprintln!(
-                "[jackin-container] session {sid}: child reaped: {status:?}",
-            );
+            crate::clog!("session {sid}: child reaped: {status:?}");
             let _ = event_tx_exit.send(SessionEvent::Exited { session_id: sid });
         });
 
