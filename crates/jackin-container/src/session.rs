@@ -103,7 +103,19 @@ impl Session {
             let mut buf = [0u8; 4096];
             loop {
                 match std::io::Read::read(&mut reader, &mut buf) {
-                    Ok(0) | Err(_) => break,
+                    Ok(0) => {
+                        eprintln!(
+                            "[jackin-container] session {sid}: PTY read returned Ok(0) (EOF)"
+                        );
+                        break;
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[jackin-container] session {sid}: PTY read error: {e} (errno={:?})",
+                            e.raw_os_error()
+                        );
+                        break;
+                    }
                     Ok(n) => {
                         let data = buf[..n].to_vec();
                         let _ = event_tx_output.send(SessionEvent::Output {
@@ -113,6 +125,7 @@ impl Session {
                     }
                 }
             }
+            eprintln!("[jackin-container] session {sid}: sending Exited event");
             let _ = event_tx_output.send(SessionEvent::Exited { session_id: sid });
             drop(child); // ensure child is waited on
         });
