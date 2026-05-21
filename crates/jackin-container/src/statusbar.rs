@@ -31,7 +31,7 @@ const BRAND_BOLD: &str = "\x1b[1m";
 
 const TAB_BG_INACTIVE: &str = "\x1b[48;2;30;30;30m"; // subtle dark grey
 const TAB_BG_ACTIVE: &str = "\x1b[48;2;0;80;18m"; // PHOSPHOR_DARK
-const TAB_FG_INACTIVE: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
+const TAB_FG_INACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const TAB_FG_ACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const TAB_UNDERLINE_FG: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const BOLD: &str = "\x1b[1m";
@@ -226,6 +226,10 @@ impl StatusBar {
     }
 }
 
+/// Always render the state-glyph slot — `●`, `○`, or a space when
+/// the tab is in `Working`/`Idle`. Reserving the slot keeps every tab
+/// cell at a stable width across state transitions, so the tab strip
+/// doesn't reflow every time an agent finishes responding.
 fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> String {
     let ids = tab.tree.all_ids();
     let has_blocked = ids.iter().any(|id| {
@@ -239,13 +243,14 @@ fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> String {
             .any(|(sid, st)| sid == id && *st == AgentState::Done)
     });
 
-    if has_blocked {
-        format!("{} ●", tab.label)
+    let glyph = if has_blocked {
+        '●'
     } else if has_done {
-        format!("{} ○", tab.label)
+        '○'
     } else {
-        tab.label.clone()
-    }
+        ' '
+    };
+    format!("{} {}", tab.label, glyph)
 }
 
 /// Vertical pane border at column `col` for rows `from_row..=to_row`.

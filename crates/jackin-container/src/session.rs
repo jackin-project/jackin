@@ -264,12 +264,20 @@ impl Session {
 
     /// Scroll the view by `delta` lines. Positive = scroll up (into
     /// history); negative = scroll down (toward live tail).
-    /// Clamped to `[0, SCROLLBACK_LEN]`.
+    ///
+    /// Up-scroll is clamped to the **actual filled scrollback** at
+    /// call time. Without this clamp, scrolling past the top would
+    /// silently inflate `scrollback_offset` while vt100 clamped
+    /// itself to the filled count — and subsequent down-scrolls
+    /// would have to chew through the phantom distance before the
+    /// visible view moved. Operator's symptom was "I scrolled too
+    /// far up, scrolling back down doesn't react for a while."
     pub fn scroll_by(&mut self, delta: i32) {
         let new = if delta > 0 {
+            let filled = self.scrollback_filled();
             self.scrollback_offset
                 .saturating_add(delta as usize)
-                .min(SCROLLBACK_LEN)
+                .min(filled)
         } else {
             self.scrollback_offset.saturating_sub((-delta) as usize)
         };
