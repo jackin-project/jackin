@@ -90,57 +90,52 @@ const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
 impl Dialog {
     /// Handle a raw key byte and return the resulting action.
     pub fn handle_key(&mut self, key: &[u8]) -> DialogAction {
+        if is_dismiss_key(key) {
+            return DialogAction::Dismiss;
+        }
         match self {
-            Self::CommandPalette { selected } => {
-                match key {
-                    b"\x1b" | b"q" => DialogAction::Dismiss,
-                    b"\x1b[A" | b"k" => {
-                        // Up
-                        if *selected > 0 {
-                            *selected -= 1;
-                        }
-                        DialogAction::Redraw
+            Self::CommandPalette { selected } => match key {
+                b"\x1b[A" | b"k" => {
+                    if *selected > 0 {
+                        *selected -= 1;
                     }
-                    b"\x1b[B" | b"j" => {
-                        // Down
-                        if *selected + 1 < PALETTE_ITEMS.len() {
-                            *selected += 1;
-                        }
-                        DialogAction::Redraw
-                    }
-                    b"\r" | b"\n" => {
-                        let cmd = PALETTE_ITEMS[*selected].0.clone();
-                        DialogAction::Command(cmd)
-                    }
-                    _ => DialogAction::Redraw,
+                    DialogAction::Redraw
                 }
-            }
-            Self::AgentPicker { agents, selected } => {
-                match key {
-                    b"\x1b" | b"q" => DialogAction::Dismiss,
-                    b"\x1b[A" | b"k" => {
-                        if *selected > 0 {
-                            *selected -= 1;
-                        }
-                        DialogAction::Redraw
+                b"\x1b[B" | b"j" => {
+                    if *selected + 1 < PALETTE_ITEMS.len() {
+                        *selected += 1;
                     }
-                    b"\x1b[B" | b"j" => {
-                        if *selected + 1 < agents.len() + 1 {
-                            *selected += 1;
-                        }
-                        DialogAction::Redraw
-                    }
-                    b"\r" | b"\n" => {
-                        let agent = if *selected < agents.len() {
-                            Some(agents[*selected].clone())
-                        } else {
-                            None // Shell
-                        };
-                        DialogAction::SpawnAgent { agent }
-                    }
-                    _ => DialogAction::Redraw,
+                    DialogAction::Redraw
                 }
-            }
+                b"\r" | b"\n" => {
+                    let cmd = PALETTE_ITEMS[*selected].0.clone();
+                    DialogAction::Command(cmd)
+                }
+                _ => DialogAction::Redraw,
+            },
+            Self::AgentPicker { agents, selected } => match key {
+                b"\x1b[A" | b"k" => {
+                    if *selected > 0 {
+                        *selected -= 1;
+                    }
+                    DialogAction::Redraw
+                }
+                b"\x1b[B" | b"j" => {
+                    if *selected + 1 < agents.len() + 1 {
+                        *selected += 1;
+                    }
+                    DialogAction::Redraw
+                }
+                b"\r" | b"\n" => {
+                    let agent = if *selected < agents.len() {
+                        Some(agents[*selected].clone())
+                    } else {
+                        None // Shell
+                    };
+                    DialogAction::SpawnAgent { agent }
+                }
+                _ => DialogAction::Redraw,
+            },
         }
     }
 
@@ -156,6 +151,22 @@ impl Dialog {
             }
         }
     }
+}
+
+/// Universal dialog-dismiss keys. Operators reach for `Esc` and `q`
+/// most often, but Backspace, Delete, and `Ctrl+C` are common
+/// muscle-memory fallbacks. Uppercase `Q` is included so a shift-key
+/// slip doesn't trap the operator inside the dialog.
+fn is_dismiss_key(key: &[u8]) -> bool {
+    matches!(
+        key,
+        b"\x1b"      // Esc
+        | b"q"
+        | b"Q"
+        | b"\x03"   // Ctrl+C
+        | b"\x7f"   // Backspace
+        | b"\x08" // Ctrl+H / older Backspace
+    )
 }
 
 /// One footer-hint span. Mirrors the console TUI's `FooterItem` model
