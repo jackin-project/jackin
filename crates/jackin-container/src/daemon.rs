@@ -133,6 +133,7 @@ impl Multiplexer {
         if self.tabs.is_empty() {
             return;
         }
+        self.cancel_drag();
         let prev = self.active_focused_id();
         self.active_tab = (self.active_tab + 1) % self.tabs.len();
         self.synthesise_focus_swap(prev, self.active_focused_id());
@@ -142,6 +143,7 @@ impl Multiplexer {
         if self.tabs.is_empty() {
             return;
         }
+        self.cancel_drag();
         let prev = self.active_focused_id();
         self.active_tab = if self.active_tab == 0 {
             self.tabs.len() - 1
@@ -153,10 +155,20 @@ impl Multiplexer {
 
     fn jump_tab(&mut self, idx: usize) {
         if idx < self.tabs.len() && idx != self.active_tab {
+            self.cancel_drag();
             let prev = self.active_focused_id();
             self.active_tab = idx;
             self.synthesise_focus_swap(prev, self.active_focused_id());
         }
+    }
+
+    /// Clear any in-flight mouse-drag resize. Called whenever the
+    /// daemon mutates state that the drag's saved `rect` no longer
+    /// describes (tab swap, outer-terminal resize, dialog open). The
+    /// alternative was re-validating the drag on every motion event,
+    /// which is more code than just dropping the drag.
+    fn cancel_drag(&mut self) {
+        self.drag = None;
     }
 
     fn close_focused_tab(&mut self) {
@@ -347,7 +359,7 @@ impl Multiplexer {
     fn resize_panes(&mut self) {
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         if let Some(zoom_id) = self.zoomed {
-            let inner = inset_rect(&content_rect, 1);
+            let inner = content_rect.shrink(1);
             if let Some(session) = self.sessions.get_mut(&zoom_id) {
                 session.resize(inner.rows, inner.cols);
             }
@@ -356,7 +368,7 @@ impl Multiplexer {
         for tab in &self.tabs {
             let leaves = tab.tree.leaves(content_rect);
             for (id, rect) in leaves {
-                let inner = inset_rect(&rect, 1);
+                let inner = rect.shrink(1);
                 if let Some(session) = self.sessions.get_mut(&id) {
                     session.resize(inner.rows, inner.cols);
                 }
@@ -365,6 +377,8 @@ impl Multiplexer {
     }
 
     fn resize(&mut self, rows: u16, cols: u16) {
+        // Outer-terminal resize invalidates the drag's saved rect.
+        self.cancel_drag();
         self.term_rows = rows;
         self.term_cols = cols;
         self.content_rows = rows.saturating_sub(STATUS_BAR_ROWS);
@@ -524,7 +538,7 @@ impl Multiplexer {
     fn handle_input(&mut self, event: InputEvent) -> Option<Vec<u8>> {
         match event {
             InputEvent::OpenPalette => {
-                // Toggle: second palette-key press closes the dialog.
+                self.cancel_drag();
                 if self.dialog.is_some() {
                     self.dialog = None;
                 } else {
@@ -689,6 +703,7 @@ impl Multiplexer {
                         })
                         .is_some();
                     if is_double {
+                        self.cancel_drag();
                         let initial = self.tabs[idx].custom_label.clone().unwrap_or_default();
                         let input = jackin_tui::TextField::new(initial)
                             .with_max_chars(crate::dialog::MAX_CUSTOM_LABEL_LEN);
@@ -701,6 +716,7 @@ impl Multiplexer {
                     }
                     self.last_tab_click = Some((idx, now));
                     if idx != self.active_tab {
+                        self.cancel_drag();
                         let prev = self.active_focused_id();
                         self.active_tab = idx;
                         self.synthesise_focus_swap(prev, self.active_focused_id());
@@ -901,7 +917,7 @@ impl Multiplexer {
         let Some(outer) = outer else {
             return;
         };
-        let inner = inset_rect(&outer, 1);
+        let inner = outer.shrink(1);
         if row < inner.row || row >= inner.row + inner.rows {
             return;
         }
@@ -1067,7 +1083,7 @@ impl Multiplexer {
 
         if let Some(zoom_id) = self.zoomed {
             let outer = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
-            let inner = inset_rect(&outer, 1);
+            let inner = outer.shrink(1);
             if let Some(session) = self.sessions.get_mut(&zoom_id) {
                 let offset = session.scrollback_offset;
                 let filled = session.scrollback_filled();
@@ -1115,7 +1131,7 @@ impl Multiplexer {
                 // case — matches zellij's "every pane is framed"
                 // convention and gives the operator a reliable place
                 // to read the live `OSC 2` title.
-                let inner = inset_rect(rect, 1);
+                let inner = rect.shrink(1);
                 if let Some(session) = self.sessions.get_mut(id) {
                     let offset = session.scrollback_offset;
                     let filled = session.scrollback_filled();
@@ -1468,15 +1484,24 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             mux.detach_requested = true;
         }
         ClientFrame::FocusIn => {
-            if let Some(focused) = mux.active_focused_id()
+            // The outer terminal regained focus. Forward to the focused
+            // pane only when no dialog is intercepting input — a modal
+            // is the operator's foreground, not the agent. Same
+            // alternate-screen gate as the keyboard path so primary
+            // shells do not see literal `[I`.
+            if mux.dialog.is_none()
+                && let Some(focused) = mux.active_focused_id()
                 && let Some(s) = mux.sessions.get(&focused)
+                && s.screen().alternate_screen()
             {
                 s.send_input(b"\x1b[I");
             }
         }
         ClientFrame::FocusOut => {
-            if let Some(focused) = mux.active_focused_id()
+            if mux.dialog.is_none()
+                && let Some(focused) = mux.active_focused_id()
                 && let Some(s) = mux.sessions.get(&focused)
+                && s.screen().alternate_screen()
             {
                 s.send_input(b"\x1b[O");
             }
@@ -1517,18 +1542,6 @@ async fn handle_attach_client(
             }
         }
     }
-}
-
-/// Shrink `rect` by `n` cells on every side. Clamps to a zero rect
-/// when `n` is larger than the half-extent so callers never read
-/// negative dimensions back. Used by the pane renderer to compute
-/// the interior region inside the bordered box.
-fn inset_rect(rect: &Rect, n: u16) -> Rect {
-    let inset_rows = rect.rows.saturating_sub(n * 2);
-    let inset_cols = rect.cols.saturating_sub(n * 2);
-    let inset_row = if rect.rows >= n * 2 { rect.row + n } else { rect.row };
-    let inset_col = if rect.cols >= n * 2 { rect.col + n } else { rect.col };
-    Rect::new(inset_row, inset_col, inset_rows, inset_cols)
 }
 
 fn capitalize(s: &str) -> String {

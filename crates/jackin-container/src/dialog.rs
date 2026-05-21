@@ -146,14 +146,13 @@ impl Dialog {
         if let Self::RenameTab { tab_idx, input } = self {
             return rename_tab_handle_key(*tab_idx, input, key);
         }
+        // From here on, only the list-style dialogs reach this code
+        // path. The arrow / dismiss / character branches do not need
+        // to enumerate `RenameTab` — the early return above is the
+        // single source of truth for that variant.
         if is_dismiss_key(key) {
             return DialogAction::Dismiss;
         }
-        // Accept both CSI (`\x1b[A/B`) and SS3 (`\x1bOA/B`) arrow
-        // forms. Application-cursor-keys mode (DEC `?1`) — which
-        // every modern agent enables — switches the outer terminal
-        // to the SS3 form, so dialogs that only matched the CSI form
-        // silently dropped every arrow keypress.
         if is_arrow_up(key) {
             return match self {
                 Self::CommandPalette { selected } | Self::AgentPicker { selected, .. } => {
@@ -162,7 +161,7 @@ impl Dialog {
                     }
                     DialogAction::Redraw
                 }
-                Self::RenameTab { .. } => unreachable!("RenameTab handled at top"),
+                Self::RenameTab { .. } => DialogAction::Redraw,
             };
         }
         if is_arrow_down(key) {
@@ -181,11 +180,11 @@ impl Dialog {
                     }
                     DialogAction::Redraw
                 }
-                Self::RenameTab { .. } => unreachable!("RenameTab handled at top"),
+                Self::RenameTab { .. } => DialogAction::Redraw,
             };
         }
         match self {
-            Self::RenameTab { .. } => unreachable!("RenameTab handled at top"),
+            Self::RenameTab { .. } => DialogAction::Redraw,
             Self::CommandPalette { selected } => match key {
                 b"k" => {
                     if *selected > 0 {
@@ -273,7 +272,11 @@ impl Dialog {
             // Agent picker rows: agents + separator + Shell. The
             // separator row is non-selectable.
             Self::AgentPicker { agents, .. } => agents.len() as u16 + 2,
-            Self::RenameTab { .. } => unreachable!("RenameTab handled above"),
+            // RenameTab is handled by the early consume-on-click
+            // return above. Treat the post-check as "no rows" so the
+            // outer match still type-checks without a panicky
+            // unreachable!.
+            Self::RenameTab { .. } => 0,
         };
         if row < first_item_row || row >= first_item_row + item_count {
             return DialogAction::Consume;
@@ -309,7 +312,12 @@ impl Dialog {
                     intent: *intent,
                 }
             }
-            Self::RenameTab { .. } => unreachable!("RenameTab handled above"),
+            // Same fallthrough as `item_count` above: RenameTab clicks
+            // were already handled by the early Consume return so this
+            // arm cannot fire in practice. Return Consume rather than
+            // panic so a future refactor that drops the early return
+            // degrades cleanly.
+            Self::RenameTab { .. } => DialogAction::Consume,
         }
     }
 

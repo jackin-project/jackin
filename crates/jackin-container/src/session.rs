@@ -47,6 +47,20 @@ pub struct OscCapture {
     pub pending: Vec<Vec<u8>>,
     pub title: Option<String>,
     pub icon_name: Option<String>,
+    /// Kitty keyboard protocol stack pushed by this session. Each
+    /// `\x1b[>{n}u` from the PTY appends; `\x1b[<{n}u` pops. The
+    /// daemon mirrors the *top* of this stack onto the outer
+    /// terminal whenever this session becomes the focused pane and
+    /// pops it back to the previous stack on focus-out. Empty stack
+    /// = "agent never asked for kitty kb" → outer terminal stays in
+    /// plain CSI mode.
+    pub kitty_kb_stack: Vec<u16>,
+    /// Whether the session currently has DEC private mode `?2026`
+    /// (synchronised output) active. Tracked here because vt100
+    /// 0.16 does not expose it directly. The daemon reads this on
+    /// every PTY tick and defers status-bar + frame redraws while
+    /// it's true so an agent's atomic frame window is not torn.
+    pub sync_output: bool,
 }
 
 impl OscCapture {
@@ -105,27 +119,59 @@ impl Callbacks for OscCapture {
         params: &[&[u16]],
         c: char,
     ) {
-        // Kitty-keyboard push (`\x1b[>{n}u`) and pop (`\x1b[<{n}u`) are
-        // NOT forwarded to the outer terminal. The outer terminal is
-        // shared across panes; if one agent flips it into kitty mode,
-        // every other pane (a shell, a pre-mount agent, a different
-        // agent that does not use kitty keys) starts receiving
-        // operator keystrokes in `\x1b[<code>;<mod>u` form and
-        // surfaces them as garbage at the prompt. The agent's own
-        // vt100 still parses kitty key sequences inside its own
-        // screen state — we just keep the outer terminal in plain
-        // CSI mode so shells stay sane. Trade-off: an operator
-        // typing Shift+Enter into a backgrounded agent sees plain
-        // Enter; that is acceptable next to "Shell prints
-        // `t16;1:3u` when I type t".
-        if c == 'u' && matches!(i1, Some(b'>') | Some(b'<')) {
+        // Kitty-keyboard push (`\x1b[>{n}u`) and pop (`\x1b[<{n}u`)
+        // are now tracked per-pane via `kitty_kb_pushes` and
+        // re-applied to the outer terminal on focus swap by
+        // `Session::drain_mode_transitions` / `current_mode_state`.
+        // Forwarding them through this generic passthrough would
+        // race with the focus-swap restore: an agent that pushes
+        // `\x1b[>1u` while focused must NOT leave the outer
+        // terminal in that mode the moment focus moves to a shell.
+        if c == 'u' && i1 == Some(b'>') {
+            // Capture the latest desired flag set. Subsequent
+            // pushes from the same pane stack on top of the
+            // previous one — match the kitty spec.
+            let flags = params
+                .first()
+                .and_then(|p| p.first())
+                .copied()
+                .unwrap_or(1);
+            self.kitty_kb_stack.push(flags);
             return;
+        }
+        if c == 'u' && i1 == Some(b'<') {
+            // Pop `n` entries (default 1) — matches `\x1b[<{n}u`.
+            let n = params
+                .first()
+                .and_then(|p| p.first())
+                .copied()
+                .unwrap_or(1) as usize;
+            for _ in 0..n.min(self.kitty_kb_stack.len()) {
+                self.kitty_kb_stack.pop();
+            }
+            return;
+        }
+        // Synchronised-output mode (DEC `?2026`) is tracked by the
+        // separate `sync_output` flag below — never re-emit it from
+        // the generic passthrough or the outer terminal sees the
+        // start/end markers twice (once from us, once from vt100's
+        // own internal pipeline), which collapses BSU's atomic
+        // window.
+        if c == 'h' || c == 'l' {
+            let private = i1 == Some(b'?');
+            let on = c == 'h';
+            if private
+                && let Some(first) = params.first().and_then(|p| p.first())
+                && *first == 2026
+            {
+                self.sync_output = on;
+                return;
+            }
         }
         // Re-emit verbatim. vt100 routes here only for CSI sequences
         // it does not itself handle — `modifyOtherKeys`
-        // (`\x1b[>4;{n}m`), synchronised-output (`\x1b[?2026h/l`),
-        // and any other extension the outer terminal understands but
-        // `vt100` does not.
+        // (`\x1b[>4;{n}m`) and any other extension the outer
+        // terminal understands but `vt100` does not.
         let mut buf = b"\x1b[".to_vec();
         if let Some(b) = i1 {
             buf.push(b);

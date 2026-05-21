@@ -96,13 +96,16 @@ fn unhandled_csi_modify_other_keys_is_re_emitted() {
 }
 
 #[test]
-fn unhandled_csi_bsu_esu_is_re_emitted() {
-    // Synchronised output markers — agents wrap each frame so the
-    // outer terminal paints atomically.
+fn unhandled_csi_bsu_esu_is_suppressed() {
+    // Synchronised output (`?2026`) is tracked separately on the
+    // session and consumed by the daemon's render-defer logic; the
+    // generic OSC/CSI passthrough must NOT re-emit the start/end
+    // markers, or the outer terminal sees BSU/ESU twice and the
+    // atomic frame collapses.
     let drained = drained(b"\x1b[?2026h");
     assert!(
-        drained.iter().any(|f| f == b"\x1b[?2026h"),
-        "drained: {drained:?}"
+        drained.iter().all(|f| f != b"\x1b[?2026h"),
+        "?2026h must not be re-emitted: {drained:?}"
     );
 }
 

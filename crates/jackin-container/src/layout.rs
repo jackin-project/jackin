@@ -36,6 +36,19 @@ impl Rect {
             cols,
         }
     }
+
+    /// Shrink the rectangle by `n` cells on every side. Clamps to a
+    /// zero-area rect when the inset would invert the dimensions —
+    /// callers downstream check `rows == 0 || cols == 0` and skip
+    /// rendering in that case, so a zero rect is safer than a panic.
+    pub const fn shrink(&self, n: u16) -> Self {
+        let two_n = n.saturating_mul(2);
+        let rows = self.rows.saturating_sub(two_n);
+        let cols = self.cols.saturating_sub(two_n);
+        let row = if self.rows >= two_n { self.row + n } else { self.row };
+        let col = if self.cols >= two_n { self.col + n } else { self.col };
+        Self { row, col, rows, cols }
+    }
 }
 
 impl PaneTree {

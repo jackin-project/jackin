@@ -223,9 +223,9 @@ impl StatusBar {
             self.hint_region = Some((hint_start, hint_start + hint_cols));
         }
 
-        // Overflow indicator before the hint.
-        if let Some(start) = clipped_at {
-            let _ = start;
+        // Overflow indicator before the hint when at least one tab
+        // got clipped past the right edge.
+        if clipped_at.is_some() {
             let pos = cols.saturating_sub(reserve_right);
             move_to(buf, 1, pos);
             buf.extend_from_slice(HINT_FG.as_bytes());
