@@ -40,24 +40,33 @@ impl Rect {
 
 impl PaneTree {
     /// Walk the tree and return `(session_id, rect)` for every leaf.
+    /// Each leaf's rect is the **outer** rectangle the pane occupies,
+    /// including the cells the renderer paints its border on when
+    /// the tab has more than one pane. The renderer subtracts a
+    /// one-cell inset before laying out the agent's content.
+    /// Adjacent panes share no gap — their borders sit immediately
+    /// next to each other, matching zellij's `││` interior look.
     pub fn leaves(&self, rect: Rect) -> Vec<(u64, Rect)> {
         match self {
             Self::Leaf(id) => vec![(*id, rect)],
             Self::HSplit { left, right, ratio } => {
-                let left_cols = ((rect.cols as f32 * ratio).round() as u16).max(1);
-                let right_cols = rect.cols.saturating_sub(left_cols + 1); // +1 for border
+                let left_cols = ((rect.cols as f32 * ratio).round() as u16)
+                    .max(1)
+                    .min(rect.cols.saturating_sub(1));
+                let right_cols = rect.cols - left_cols;
                 let left_rect = Rect::new(rect.row, rect.col, rect.rows, left_cols);
-                let right_rect =
-                    Rect::new(rect.row, rect.col + left_cols + 1, rect.rows, right_cols);
+                let right_rect = Rect::new(rect.row, rect.col + left_cols, rect.rows, right_cols);
                 let mut v = left.leaves(left_rect);
                 v.extend(right.leaves(right_rect));
                 v
             }
             Self::VSplit { top, bottom, ratio } => {
-                let top_rows = ((rect.rows as f32 * ratio).round() as u16).max(1);
-                let bot_rows = rect.rows.saturating_sub(top_rows + 1);
+                let top_rows = ((rect.rows as f32 * ratio).round() as u16)
+                    .max(1)
+                    .min(rect.rows.saturating_sub(1));
+                let bot_rows = rect.rows - top_rows;
                 let top_rect = Rect::new(rect.row, rect.col, top_rows, rect.cols);
-                let bot_rect = Rect::new(rect.row + top_rows + 1, rect.col, bot_rows, rect.cols);
+                let bot_rect = Rect::new(rect.row + top_rows, rect.col, bot_rows, rect.cols);
                 let mut v = top.leaves(top_rect);
                 v.extend(bottom.leaves(bot_rect));
                 v

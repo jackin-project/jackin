@@ -30,7 +30,7 @@ use crate::session::{
     Session, SessionEvent, available_agents, build_agent_command, build_shell_command,
 };
 use crate::socket;
-use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_horizontal_border, draw_vertical_border};
+use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_pane_box};
 
 pub struct Multiplexer {
     sessions: HashMap<u64, Session>,
@@ -327,14 +327,18 @@ impl Multiplexer {
             }
             return;
         }
-        let leaves: Vec<(u64, Rect)> = self
-            .tabs
-            .iter()
-            .flat_map(|tab| tab.tree.leaves(content_rect))
-            .collect();
-        for (id, rect) in leaves {
-            if let Some(session) = self.sessions.get_mut(&id) {
-                session.resize(rect.rows, rect.cols);
+        for tab in &self.tabs {
+            let leaves = tab.tree.leaves(content_rect);
+            let needs_borders = leaves.len() > 1;
+            for (id, rect) in leaves {
+                let inner = if needs_borders {
+                    inset_rect(&rect, 1)
+                } else {
+                    rect
+                };
+                if let Some(session) = self.sessions.get_mut(&id) {
+                    session.resize(inner.rows, inner.cols);
+                }
             }
         }
     }
@@ -742,34 +746,36 @@ impl Multiplexer {
             return;
         }
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
-        let pane_rect = if let Some(zoom_id) = self.zoomed {
+        let (outer, needs_borders) = if let Some(zoom_id) = self.zoomed {
             if zoom_id == focused {
-                Some(content_rect)
+                (Some(content_rect), false)
             } else {
-                None
+                (None, false)
             }
         } else {
-            self.tabs
+            let leaves = self
+                .tabs
                 .get(self.active_tab)
-                .and_then(|tab| {
-                    tab.tree
-                        .leaves(content_rect)
-                        .into_iter()
-                        .find(|(id, _)| *id == focused)
-                })
-                .map(|(_, rect)| rect)
+                .map(|tab| tab.tree.leaves(content_rect))
+                .unwrap_or_default();
+            let needs_borders = leaves.len() > 1;
+            (
+                leaves.into_iter().find(|(id, _)| *id == focused).map(|(_, r)| r),
+                needs_borders,
+            )
         };
-        let Some(rect) = pane_rect else {
+        let Some(outer) = outer else {
             return;
         };
-        if row < rect.row || row >= rect.row + rect.rows {
+        let inner = if needs_borders { inset_rect(&outer, 1) } else { outer };
+        if row < inner.row || row >= inner.row + inner.rows {
             return;
         }
-        if col < rect.col || col >= rect.col + rect.cols {
+        if col < inner.col || col >= inner.col + inner.cols {
             return;
         }
-        let local_row = row - rect.row;
-        let local_col = col - rect.col;
+        let local_row = row - inner.row;
+        let local_col = col - inner.col;
         let final_byte = if press { 'M' } else { 'm' };
         let buf = format!(
             "\x1b[<{};{};{}{}",
@@ -904,6 +910,12 @@ impl Multiplexer {
             let leaves = tab.tree.leaves(content_rect);
             let needs_borders = leaves.len() > 1;
             for (id, rect) in &leaves {
+                let pane_focused = Some(*id) == focused_id;
+                let inner = if needs_borders {
+                    inset_rect(rect, 1)
+                } else {
+                    *rect
+                };
                 if let Some(session) = self.sessions.get_mut(id) {
                     let offset = session.scrollback_offset;
                     let filled = session.scrollback_filled();
@@ -912,52 +924,42 @@ impl Multiplexer {
                     // The dialog overlay applies the same dim to all
                     // panes; this adds per-pane dim when multiple
                     // panes share the tab and no dialog is open.
-                    let pane_focused = Some(*id) == focused_id;
                     let dim_this_pane = dim_panes || (needs_borders && !pane_focused);
                     render_pane(
                         session.screen(),
-                        rect.row,
-                        rect.col,
-                        rect.rows,
-                        rect.cols,
+                        inner.row,
+                        inner.col,
+                        inner.rows,
+                        inner.cols,
                         dim_this_pane,
                         &mut buf,
                     );
                     draw_scrollbar(
-                        &mut buf, rect.row, rect.col, rect.rows, rect.cols, offset, filled,
+                        &mut buf, inner.row, inner.col, inner.rows, inner.cols, offset, filled,
                     );
                     if pane_focused {
-                        focused_pane_rect = Some(*rect);
+                        focused_pane_rect = Some(inner);
                     }
                 }
-                if needs_borders {
-                    let is_active = Some(*id) == focused_id;
-                    // `rect.rows` is the pane's height inside the
-                    // content area, so the border spans `[rect.row,
-                    // rect.row + rect.rows)` — subtracting
-                    // `STATUS_BAR_ROWS` again here cut the border two
-                    // rows short and left a visible gap above the
-                    // bottom of the screen.
-                    let right_edge = rect.col + rect.cols;
-                    if right_edge < self.term_cols {
-                        draw_vertical_border(
-                            &mut buf,
-                            right_edge,
-                            rect.row,
-                            rect.row + rect.rows,
-                            is_active,
-                        );
-                    }
-                    let bot_edge = rect.row + rect.rows;
-                    if bot_edge < self.term_rows {
-                        draw_horizontal_border(
-                            &mut buf,
-                            bot_edge,
-                            rect.col,
-                            rect.col + rect.cols.saturating_sub(1),
-                            is_active,
-                        );
-                    }
+                if needs_borders
+                    && let Some(session) = self.sessions.get(id)
+                {
+                    // Title prefers the agent's live `OSC 2` window
+                    // title — agents like Claude Code update theirs
+                    // as they switch context (Working / Plan mode /
+                    // file name). Fall back to the static session
+                    // label (Claude / Codex / Shell / etc.) when the
+                    // agent hasn't set one yet.
+                    let title = session.title().unwrap_or(session.label.as_str());
+                    draw_pane_box(
+                        &mut buf,
+                        rect.row,
+                        rect.col,
+                        rect.rows,
+                        rect.cols,
+                        title,
+                        pane_focused,
+                    );
                 }
             }
         }
@@ -1314,6 +1316,18 @@ async fn handle_attach_client(
             }
         }
     }
+}
+
+/// Shrink `rect` by `n` cells on every side. Clamps to a zero rect
+/// when `n` is larger than the half-extent so callers never read
+/// negative dimensions back. Used by the pane renderer to compute
+/// the interior region inside the bordered box.
+fn inset_rect(rect: &Rect, n: u16) -> Rect {
+    let inset_rows = rect.rows.saturating_sub(n * 2);
+    let inset_cols = rect.cols.saturating_sub(n * 2);
+    let inset_row = if rect.rows >= n * 2 { rect.row + n } else { rect.row };
+    let inset_col = if rect.cols >= n * 2 { rect.col + n } else { rect.col };
+    Rect::new(inset_row, inset_col, inset_rows, inset_cols)
 }
 
 fn capitalize(s: &str) -> String {

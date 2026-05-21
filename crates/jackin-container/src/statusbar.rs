@@ -383,48 +383,93 @@ fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> (String, TabGlyph) {
     (tab.label.clone(), glyph)
 }
 
-/// Phosphor-green is reserved for content highlights (selection bars,
-/// active tab pill, brand). Pane borders use a neutral mid-gray so the
-/// split structure reads as chrome instead of competing with the
-/// agent's output. Active pane gets a slightly lighter shade than
-/// inactive so focus is still visible without painting the screen
-/// green.
-const BORDER_ACTIVE: &str = "\x1b[38;2;160;160;160m"; // light gray
+/// Active pane border uses jackin's brand highlight (phosphor-green) so
+/// it matches the row-0 brand pill and the focused list-item bar in
+/// the console TUI — an operator scanning the screen sees the same
+/// colour cue everywhere "this is what's selected right now" applies.
+/// Inactive panes keep a neutral gray so they read as chrome and do
+/// not compete with the focused pane. Title text in the top border
+/// stays bright white when the pane is focused so the operator can
+/// locate the keystroke target at a glance.
+const BORDER_ACTIVE: &str = "\x1b[38;2;0;255;65m"; // PHOSPHOR_GREEN
 const BORDER_INACTIVE: &str = "\x1b[38;2;80;80;80m"; // dim gray
+const TITLE_ACTIVE: &str = "\x1b[1;38;2;255;255;255m"; // bright white, bold
+const TITLE_INACTIVE: &str = "\x1b[38;2;160;160;160m"; // mid gray
 
-/// Vertical pane border at column `col` for rows `from_row..=to_row`.
-pub fn draw_vertical_border(buf: &mut Vec<u8>, col: u16, from_row: u16, to_row: u16, active: bool) {
-    let color = if active {
+/// Draw a full bordered box around a pane: `┌─ title ─┐` top, `│` sides,
+/// `└──┘` bottom. The pane's PTY content renders into the box
+/// **interior** (`rect` shrunk by one cell on every side). Title shows
+/// what's running inside the pane — the operator's `label` for the
+/// session (`Claude` / `Codex` / `Amp` / `OpenCode` / `Kimi` / `Shell`).
+/// Mirrors zellij's pane chrome so an operator coming from there has
+/// the same visual cue stack here.
+pub fn draw_pane_box(
+    buf: &mut Vec<u8>,
+    row: u16,
+    col: u16,
+    rows: u16,
+    cols: u16,
+    title: &str,
+    active: bool,
+) {
+    if rows < 2 || cols < 2 {
+        return;
+    }
+    let border = if active {
         BORDER_ACTIVE
     } else {
         BORDER_INACTIVE
     };
-    for row in from_row..=to_row {
-        move_to(buf, row + 1, col + 1);
-        buf.extend_from_slice(color.as_bytes());
+    let title_color = if active {
+        TITLE_ACTIVE
+    } else {
+        TITLE_INACTIVE
+    };
+    let interior_cols = cols.saturating_sub(2);
+    let title_cols = title.chars().count() as u16;
+    // Top border: `┌─ title ─` then dashes filling to `┐`. Title is
+    // omitted entirely when the pane is too narrow to fit the
+    // `┌─ X ─┐` minimum (8 cols of chrome).
+    move_to(buf, row + 1, col + 1);
+    buf.extend_from_slice(border.as_bytes());
+    buf.extend_from_slice("┌".as_bytes());
+    let title_fits = title_cols + 4 <= interior_cols;
+    let mut consumed: u16 = 0;
+    if title_fits {
+        buf.extend_from_slice("─".as_bytes());
+        buf.push(b' ');
+        buf.extend_from_slice(title_color.as_bytes());
+        buf.extend_from_slice(title.as_bytes());
+        buf.extend_from_slice(RESET.as_bytes());
+        buf.extend_from_slice(border.as_bytes());
+        buf.push(b' ');
+        consumed = 2 + title_cols + 1;
+    }
+    for _ in consumed..interior_cols {
+        buf.extend_from_slice("─".as_bytes());
+    }
+    buf.extend_from_slice("┐".as_bytes());
+    buf.extend_from_slice(RESET.as_bytes());
+
+    // Side borders.
+    for r in 1..(rows - 1) {
+        move_to(buf, row + r + 1, col + 1);
+        buf.extend_from_slice(border.as_bytes());
+        buf.extend_from_slice("│".as_bytes());
+        move_to(buf, row + r + 1, col + cols);
+        buf.extend_from_slice(border.as_bytes());
         buf.extend_from_slice("│".as_bytes());
         buf.extend_from_slice(RESET.as_bytes());
     }
-}
 
-/// Horizontal pane border at row `row` for cols `from_col..=to_col`.
-pub fn draw_horizontal_border(
-    buf: &mut Vec<u8>,
-    row: u16,
-    from_col: u16,
-    to_col: u16,
-    active: bool,
-) {
-    let color = if active {
-        BORDER_ACTIVE
-    } else {
-        BORDER_INACTIVE
-    };
-    move_to(buf, row + 1, from_col + 1);
-    buf.extend_from_slice(color.as_bytes());
-    for _ in from_col..=to_col {
+    // Bottom border.
+    move_to(buf, row + rows, col + 1);
+    buf.extend_from_slice(border.as_bytes());
+    buf.extend_from_slice("└".as_bytes());
+    for _ in 0..interior_cols {
         buf.extend_from_slice("─".as_bytes());
     }
+    buf.extend_from_slice("┘".as_bytes());
     buf.extend_from_slice(RESET.as_bytes());
 }
 
