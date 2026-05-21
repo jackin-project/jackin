@@ -19,9 +19,18 @@ pub async fn run_client(_new_session_agent: Option<String>) -> Result<()> {
 
     crossterm::terminal::enable_raw_mode().context("failed to enable raw mode")?;
     let mut stdout = std::io::stdout();
-    // Mouse: any-event tracking + SGR encoding.
-    // Focus events: in / out.
-    stdout.write_all(b"\x1b[?1003h\x1b[?1006h\x1b[?1004h")?;
+    // Enter the alternate-screen buffer so the multiplexer's draw
+    // calls do not append to the outer terminal's scrollback. Without
+    // this:
+    //  - the operator can scroll the host terminal past the live
+    //    daemon output and see stale frame history pile up;
+    //  - text selection in the host terminal spans those stale rows
+    //    AND the live frame, picking up content far outside the
+    //    intended pane;
+    //  - resize re-draws stack on top of old ones because the host
+    //    keeps the old content above the cursor.
+    // Mouse: any-event tracking + SGR encoding. Focus events on.
+    stdout.write_all(b"\x1b[?1049h\x1b[2J\x1b[H\x1b[?1003h\x1b[?1006h\x1b[?1004h")?;
     stdout.flush()?;
 
     let _cleanup = RawModeGuard;
@@ -136,8 +145,11 @@ struct RawModeGuard;
 impl Drop for RawModeGuard {
     fn drop(&mut self) {
         let _ = crossterm::terminal::disable_raw_mode();
-        // Disable mouse, focus events, restore cursor.
-        let _ = std::io::stdout().write_all(b"\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?25h");
+        // Disable mouse, focus events, restore cursor, leave the
+        // alternate-screen buffer so the operator's host terminal
+        // returns to whatever was there before `jackin load`.
+        let _ = std::io::stdout()
+            .write_all(b"\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?25h\x1b[?1049l");
         let _ = std::io::stdout().flush();
     }
 }
