@@ -368,6 +368,7 @@ pub fn render(
                     let is_instance_row = matches!(
                         state.selected_row(),
                         ManagerListRow::WorkspaceInstance(_, _)
+                            | ManagerListRow::CurrentDirectoryInstance(_)
                     );
 
                     if is_instance_row {
@@ -613,7 +614,7 @@ fn clamp_list_scroll_for_area(
     let viewport = scroll_viewport_width(columns[1]);
 
     match state.selected_row() {
-        ManagerListRow::CurrentDirectory => {
+        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
             let cwd = cwd.display().to_string();
             let mounts = [crate::workspace::MountConfig {
                 src: cwd.clone(),
@@ -754,7 +755,9 @@ fn focused_block_still_scrollable(
                 };
                 workspace_mounts_scrollable(ws.mounts.as_slice(), viewport_w)
             }
-            ManagerListRow::NewWorkspace | ManagerListRow::WorkspaceInstance(_, _) => false,
+            ManagerListRow::NewWorkspace
+            | ManagerListRow::WorkspaceInstance(_, _)
+            | ManagerListRow::CurrentDirectoryInstance(_) => false,
         },
         MountScrollFocus::Global | MountScrollFocus::RoleGlobal => {
             let ManagerListRow::SavedWorkspace(i) = state.selected_row() else {
@@ -809,6 +812,7 @@ fn focused_block_still_scrollable(
                     .get(i)
                     .and_then(|s| config.workspaces.get(&s.name)),
                 ManagerListRow::CurrentDirectory
+                | ManagerListRow::CurrentDirectoryInstance(_)
                 | ManagerListRow::NewWorkspace
                 | ManagerListRow::WorkspaceInstance(_, _) => None,
             };

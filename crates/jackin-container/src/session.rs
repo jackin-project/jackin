@@ -599,12 +599,16 @@ impl Session {
     /// starts from a clean baseline. Cheap to send unconditionally
     /// because each `?...l` against a not-set mode is a no-op.
     pub fn focus_swap_reset() -> &'static [u8] {
-        // Order: kitty kb pop, focus events off, every mouse mode
-        // off + SGR encoding off, bracketed paste off, app-cursor
-        // off. Cursor visibility is *not* in here — `current_mode_state`
-        // unconditionally emits `?25h` or `?25l` next, so a reset
-        // toggle would only cause the operator's cursor to flash.
-        b"\x1b[<u\x1b[?1004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[?1l"
+        // Reset only modes the *agent* may have switched on. The
+        // client owns mouse reporting (`?1000`/`?1002`/`?1003`/`?1006`),
+        // focus reporting (`?1004`), and alt-screen (`?1049`) for
+        // its own UI (tab clicks, drag-resize, focus swap detection);
+        // disabling those here drops the multiplexer's ability to
+        // receive mouse / focus events for the rest of the session.
+        // Cursor visibility is also out — `current_mode_state`
+        // unconditionally re-asserts `?25h` or `?25l` next, so a
+        // reset toggle would only flash the cursor.
+        b"\x1b[<u\x1b[?2004l\x1b[?1l"
     }
 
     pub fn title(&self) -> Option<&str> {

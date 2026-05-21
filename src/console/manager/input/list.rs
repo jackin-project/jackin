@@ -93,7 +93,8 @@ pub(super) fn handle_list_key(
                 .map_or(InputOutcome::Continue, |summary| {
                     InputOutcome::LaunchNamed(summary.name.clone())
                 })),
-            ManagerListRow::WorkspaceInstance(_, _) => Ok(instance_action_outcome(
+            ManagerListRow::WorkspaceInstance(_, _)
+            | ManagerListRow::CurrentDirectoryInstance(_) => Ok(instance_action_outcome(
                 state,
                 ConsoleInstanceAction::Reconnect,
                 "No recoverable instance selected.",
@@ -102,6 +103,7 @@ pub(super) fn handle_list_key(
         KeyCode::Char('e' | 'E') => {
             match state.selected_row() {
                 ManagerListRow::CurrentDirectory
+                | ManagerListRow::CurrentDirectoryInstance(_)
                 | ManagerListRow::NewWorkspace
                 | ManagerListRow::WorkspaceInstance(_, _) => {}
                 ManagerListRow::SavedWorkspace(i) => {
@@ -147,6 +149,7 @@ pub(super) fn handle_list_key(
         KeyCode::Char('d' | 'D') => {
             match state.selected_row() {
                 ManagerListRow::CurrentDirectory
+                | ManagerListRow::CurrentDirectoryInstance(_)
                 | ManagerListRow::NewWorkspace
                 | ManagerListRow::WorkspaceInstance(_, _) => {}
                 ManagerListRow::SavedWorkspace(i) => {
@@ -194,6 +197,7 @@ pub(super) fn handle_list_key(
             if !matches!(
                 state.selected_row(),
                 ManagerListRow::WorkspaceInstance(_, _)
+                    | ManagerListRow::CurrentDirectoryInstance(_)
             ) {
                 state.stage = ManagerStage::Settings(SettingsState::from_config(config));
             }
@@ -204,12 +208,14 @@ pub(super) fn handle_list_key(
 }
 
 fn handle_tree_right(state: &mut ManagerState<'_>) {
-    if let ManagerListRow::SavedWorkspace(i) = state.selected_row() {
-        state.expand_workspace(i);
+    match state.selected_row() {
+        ManagerListRow::SavedWorkspace(i) => state.expand_workspace(i),
+        ManagerListRow::CurrentDirectory => state.expand_current_dir(),
+        _ => {}
     }
 }
 
-/// `←`: collapse expanded workspace, or jump to parent workspace from an
+/// `←`: collapse expanded workspace / cwd, or jump to parent row from an
 /// instance row.
 fn handle_tree_left(state: &mut ManagerState<'_>) {
     match state.selected_row() {
@@ -219,7 +225,10 @@ fn handle_tree_left(state: &mut ManagerState<'_>) {
         ManagerListRow::WorkspaceInstance(ws_idx, _) => {
             state.collapse_workspace(ws_idx);
         }
-        _ => {}
+        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
+            state.collapse_current_dir();
+        }
+        ManagerListRow::NewWorkspace => {}
     }
 }
 
@@ -253,6 +262,15 @@ fn selected_instance_container(
             None
         };
     }
+    if let ManagerListRow::CurrentDirectoryInstance(inst_idx) = state.selected_row() {
+        let instances = state.current_dir_active_instances();
+        let entry = instances.get(inst_idx)?;
+        return if instance_action_accepts_status(action, entry.status) {
+            Some(entry.container_base.clone())
+        } else {
+            None
+        };
+    }
     let (workspace_name, workspace_label, workdir) = selected_instance_scope(state)?;
     let query = crate::instance::InstanceQuery {
         workspace_name,
@@ -271,7 +289,7 @@ fn selected_instance_scope<'a>(
     state: &'a ManagerState<'_>,
 ) -> Option<(Option<&'a str>, &'a str, &'a str)> {
     match state.selected_row() {
-        ManagerListRow::CurrentDirectory => {
+        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
             let current_dir = state.current_dir.as_str();
             Some((None, current_dir, current_dir))
         }

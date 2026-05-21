@@ -24,6 +24,10 @@ use crate::console::widgets::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ManagerListRow {
     CurrentDirectory,
+    /// An active instance under the synthetic "Current directory" row.
+    /// `instance_idx` is the position within
+    /// `ManagerState::current_dir_active_instances`.
+    CurrentDirectoryInstance(usize),
     SavedWorkspace(usize),
     /// An active instance under a saved workspace. `(workspace_idx,
     /// instance_idx)` where `instance_idx` is the position within
@@ -43,7 +47,7 @@ impl ManagerListRow {
             Self::CurrentDirectory => Some(0),
             Self::SavedWorkspace(i) => Some(i + 1),
             Self::NewWorkspace => Some(saved_count + 1),
-            Self::WorkspaceInstance(_, _) => None,
+            Self::WorkspaceInstance(_, _) | Self::CurrentDirectoryInstance(_) => None,
         }
     }
 
@@ -62,7 +66,7 @@ impl ManagerListRow {
                     Some(saved_count + 1)
                 }
             }
-            Self::WorkspaceInstance(_, _) => None,
+            Self::WorkspaceInstance(_, _) | Self::CurrentDirectoryInstance(_) => None,
         }
     }
 }
@@ -127,6 +131,10 @@ pub struct ManagerState<'a> {
     /// the lifetime of this `ManagerState` instance — workspace changes
     /// always fully rebuild state, clearing this set.
     pub expanded_workspaces: BTreeSet<usize>,
+    /// Whether the synthetic "Current directory" row is expanded to
+    /// show its active instances. Mirrors `expanded_workspaces` for
+    /// the one-off cwd row, which has no index into `workspaces`.
+    pub current_dir_expanded: bool,
     /// Cached sessions per active instance keyed by `container_base`.
     /// Populated from manifests during `refresh_instances`.
     pub instance_sessions: HashMap<String, Vec<crate::instance::SessionRecord>>,
@@ -1430,6 +1438,7 @@ impl ManagerState<'_> {
             instances_last_refresh: None,
             instances_last_error: None,
             expanded_workspaces: BTreeSet::new(),
+            current_dir_expanded: false,
             instance_sessions: HashMap::new(),
             instance_session_errors: HashSet::new(),
         }
@@ -1507,6 +1516,12 @@ impl ManagerState<'_> {
     /// Instance rows appear immediately after their parent workspace row.
     fn selectable_rows_vec(&self) -> Vec<ManagerListRow> {
         let mut rows = vec![ManagerListRow::CurrentDirectory];
+        if self.current_dir_expanded {
+            let count = self.current_dir_active_instances().len();
+            for j in 0..count {
+                rows.push(ManagerListRow::CurrentDirectoryInstance(j));
+            }
+        }
         for (i, _) in self.workspaces.iter().enumerate() {
             rows.push(ManagerListRow::SavedWorkspace(i));
             if self.expanded_workspaces.contains(&i) {
@@ -1524,6 +1539,12 @@ impl ManagerState<'_> {
     /// `None` spacer before `NewWorkspace` when saved workspaces exist.
     pub fn visual_rows_vec(&self) -> Vec<Option<ManagerListRow>> {
         let mut rows: Vec<Option<ManagerListRow>> = vec![Some(ManagerListRow::CurrentDirectory)];
+        if self.current_dir_expanded {
+            let count = self.current_dir_active_instances().len();
+            for j in 0..count {
+                rows.push(Some(ManagerListRow::CurrentDirectoryInstance(j)));
+            }
+        }
         for (i, _) in self.workspaces.iter().enumerate() {
             rows.push(Some(ManagerListRow::SavedWorkspace(i)));
             if self.expanded_workspaces.contains(&i) {
@@ -1655,6 +1676,28 @@ impl ManagerState<'_> {
     pub fn expand_workspace(&mut self, ws_idx: usize) {
         if !self.workspace_active_instances(ws_idx).is_empty() {
             self.expanded_workspaces.insert(ws_idx);
+        }
+    }
+
+    /// Expand the synthetic "Current directory" row. No-op when
+    /// already expanded or when no instances point at the cwd.
+    pub fn expand_current_dir(&mut self) {
+        if self.has_current_dir_active_instances() {
+            self.current_dir_expanded = true;
+        }
+    }
+
+    /// Collapse the synthetic "Current directory" row. When the
+    /// cursor is on one of its instance children, jumps the cursor
+    /// up to the parent row first.
+    pub fn collapse_current_dir(&mut self) {
+        if !self.current_dir_expanded {
+            return;
+        }
+        let was_on_child = matches!(self.selected_row(), ManagerListRow::CurrentDirectoryInstance(_));
+        self.current_dir_expanded = false;
+        if was_on_child {
+            self.selected = 0; // CurrentDirectory is always row 0
         }
     }
 

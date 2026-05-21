@@ -66,6 +66,20 @@ pub(super) fn render_list_body(
                 );
             }
         }
+        ManagerListRow::CurrentDirectoryInstance(inst_idx) => {
+            let instances = state.current_dir_active_instances();
+            if let Some(entry) = instances.get(inst_idx).copied() {
+                let sessions = state.sessions_for_instance(&entry.container_base);
+                let session_load_error = state.has_session_load_error(&entry.container_base);
+                render_instance_details_pane(
+                    frame,
+                    columns[1],
+                    entry,
+                    sessions,
+                    session_load_error,
+                );
+            }
+        }
     }
 
     if let Some((container, picker)) = state.inline_new_session_picker.as_ref() {
@@ -123,10 +137,16 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
                     "Current directory",
                     is_selected,
                     WHITE,
-                    false,
-                    false, // expansion not yet implemented for CurrentDirectory
+                    state.current_dir_expanded,
+                    state.has_current_dir_active_instances(),
                     &mut max_w,
                 );
+            }
+            ManagerListRow::CurrentDirectoryInstance(inst_idx) => {
+                let instances = state.current_dir_active_instances();
+                if let Some(entry) = instances.get(*inst_idx) {
+                    push_tree_instance_line(&mut lines, entry, is_selected, &mut max_w);
+                }
             }
             ManagerListRow::SavedWorkspace(i) => {
                 let ws = &state.workspaces[*i];
@@ -169,7 +189,10 @@ fn list_name_lines(state: &ManagerState<'_>, viewport: usize) -> Vec<Line<'stati
         if current_w < content_w {
             let bg = if matches!(
                 visual_rows.get(visual_selected),
-                Some(Some(ManagerListRow::WorkspaceInstance(_, _)))
+                Some(Some(
+                    ManagerListRow::WorkspaceInstance(_, _)
+                        | ManagerListRow::CurrentDirectoryInstance(_)
+                ))
             ) {
                 CYAN
             } else {
