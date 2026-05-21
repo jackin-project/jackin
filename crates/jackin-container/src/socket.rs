@@ -13,7 +13,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 
-use crate::protocol::{ClientMsg, ServerMsg, b64_encode, frame};
+use crate::protocol::{ClientMsg, ServerMsg, frame};
 
 /// Start the Unix socket listener. Returns a receiver of newly-connected
 /// clients. The caller (daemon) accepts clients from the channel.
@@ -73,11 +73,4 @@ pub async fn handle_status_query(
 ) {
     let msg = ServerMsg::SessionList { sessions };
     let _ = write_msg(&mut stream, &msg).await;
-}
-
-/// Encode raw output bytes for transport in a ServerMsg::Output.
-pub fn encode_output(data: &[u8]) -> ServerMsg {
-    ServerMsg::Output {
-        data: b64_encode(data),
-    }
 }

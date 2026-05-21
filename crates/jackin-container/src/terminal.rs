@@ -81,6 +81,10 @@ impl VirtualTerminal {
         self.cursor_col = self.cursor_col.min(cols.saturating_sub(1));
     }
 
+    pub fn cursor_pos(&self) -> (u16, u16) {
+        (self.cursor_row, self.cursor_col)
+    }
+
     pub fn process(&mut self, bytes: &[u8]) {
         // vte::Perform requires &mut self but Parser::advance takes (&mut Perform, byte).
         // We need to temporarily own the parser, process, then restore it.
