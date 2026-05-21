@@ -92,10 +92,15 @@ pub enum PaletteCommand {
 /// "New tab" — both opened the agent picker and spawned a new tab
 /// for the chosen agent or Shell. The single `New tab` entry now
 /// owns that path.
+/// Next/Previous tab are not exposed in the palette: the operator
+/// already clicks tabs directly in the status bar, and the
+/// keyboard-driven shortcut for cycle-tab is the tmux-style prefix
+/// gesture (`Ctrl+B n` / `Ctrl+B p`). Keeping list entries that only
+/// duplicate those existing paths bloats the modal with no new
+/// capability. `PaletteCommand::NextTab` / `PrevTab` stay in the enum
+/// so prefix-mode bindings continue to work.
 const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (PaletteCommand::NewTab, "New tab"),
-    (PaletteCommand::NextTab, "Next tab"),
-    (PaletteCommand::PrevTab, "Previous tab"),
     (
         PaletteCommand::SplitHorizontal,
         "Split pane │ (side by side)",
