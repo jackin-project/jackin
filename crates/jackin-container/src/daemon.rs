@@ -102,6 +102,13 @@ struct SelectionState {
 
 const DOUBLE_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
+/// `JACKIN_ESCAPE_TIME` env var — operator-tunable in milliseconds.
+const ENV_ESCAPE_TIME: &str = "JACKIN_ESCAPE_TIME";
+
+/// 50 ms matches tmux's default. Below human perception while
+/// surviving slow ssh / paste chunks.
+const DEFAULT_ESCAPE_TIME: std::time::Duration = std::time::Duration::from_millis(50);
+
 impl Multiplexer {
     pub fn new(rows: u16, cols: u16) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
@@ -544,14 +551,14 @@ impl Multiplexer {
         // `[O` text at the prompt.
         if let Some(o) = old
             && let Some(s) = self.sessions.get(&o)
-            && s.parser.callbacks().focus_events
+            && s.focus_events_enabled()
         {
             s.send_input(b"\x1b[O");
         }
         if let Some(n) = new
             && let Some(s) = self.sessions.get(&n)
         {
-            if s.parser.callbacks().focus_events {
+            if s.focus_events_enabled() {
                 s.send_input(b"\x1b[I");
             }
             // Reset the outer terminal to a known baseline, then
@@ -614,7 +621,7 @@ impl Multiplexer {
                 };
                 if let Some(focused) = self.active_focused_id()
                     && let Some(session) = self.sessions.get(&focused)
-                    && session.parser.callbacks().focus_events
+                    && session.focus_events_enabled()
                 {
                     session.send_input(bytes);
                 }
@@ -1089,7 +1096,7 @@ impl Multiplexer {
                 // base64-encoded payload. The outer terminal
                 // (Ghostty / iTerm2 / kitty / wezterm) writes the
                 // decoded bytes to the system clipboard.
-                let encoded = base64_encode(text.as_bytes());
+                let encoded = jackin_tui::base64_encode(text.as_bytes());
                 let bytes = format!("\x1b]52;c;{}\x07", encoded).into_bytes();
                 let _ = tx.send(encode_server(ServerFrame::Output(bytes)));
             }
@@ -1226,9 +1233,13 @@ impl Multiplexer {
         if let Some(zoom_id) = self.zoomed {
             let outer = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
             let inner = outer.shrink(1);
+            let mut filled_for_scrollbar = 0usize;
+            let mut offset_for_scrollbar = 0usize;
             if let Some(session) = self.sessions.get_mut(&zoom_id) {
                 let offset = session.scrollback_offset;
                 let filled = session.scrollback_filled();
+                filled_for_scrollbar = filled;
+                offset_for_scrollbar = offset;
                 render_pane(
                     session.screen(),
                     inner.row,
@@ -1238,22 +1249,16 @@ impl Multiplexer {
                     dim_panes,
                     &mut buf,
                 );
-                draw_scrollbar(
-                    &mut buf,
-                    inner.row,
-                    inner.col,
-                    inner.rows,
-                    inner.cols,
-                    offset,
-                    filled,
-                    Some(zoom_id) == focused_id,
-                );
                 if Some(zoom_id) == focused_id {
                     focused_pane_rect = Some(inner);
                 }
             }
             if let Some(session) = self.sessions.get(&zoom_id) {
                 let title = session.title().unwrap_or(session.label.as_str());
+                // Zoom mode shows exactly one pane — same single-pane
+                // gray treatment as the unzoomed single-pane case
+                // unless the pane has scrollback to advertise.
+                let highlight_focus = filled_for_scrollbar > 0;
                 draw_pane_box(
                     &mut buf,
                     outer.row,
@@ -1261,7 +1266,17 @@ impl Multiplexer {
                     outer.rows,
                     outer.cols,
                     title,
-                    Some(zoom_id) == focused_id,
+                    Some(zoom_id) == focused_id && highlight_focus,
+                );
+                draw_scrollbar(
+                    &mut buf,
+                    outer.row,
+                    outer.col,
+                    outer.rows,
+                    outer.cols,
+                    offset_for_scrollbar,
+                    filled_for_scrollbar,
+                    Some(zoom_id) == focused_id && highlight_focus,
                 );
             }
         } else if let Some(tab) = self.tabs.get(self.active_tab) {
@@ -1274,15 +1289,13 @@ impl Multiplexer {
                 // convention and gives the operator a reliable place
                 // to read the live `OSC 2` title.
                 let inner = rect.shrink(1);
+                let mut filled_for_scrollbar = 0usize;
+                let mut offset_for_scrollbar = 0usize;
                 if let Some(session) = self.sessions.get_mut(id) {
                     let offset = session.scrollback_offset;
                     let filled = session.scrollback_filled();
-                    // Unfocused panes render dim so the operator can
-                    // see at a glance which pane keystrokes will
-                    // reach. The dialog overlay applies the same
-                    // dim to all panes; this adds per-pane dim only
-                    // when there is more than one pane to choose
-                    // between.
+                    filled_for_scrollbar = filled;
+                    offset_for_scrollbar = offset;
                     let dim_this_pane = dim_panes || (multi_pane && !pane_focused);
                     render_pane(
                         session.screen(),
@@ -1293,35 +1306,30 @@ impl Multiplexer {
                         dim_this_pane,
                         &mut buf,
                     );
-                    draw_scrollbar(
-                        &mut buf,
-                        inner.row,
-                        inner.col,
-                        inner.rows,
-                        inner.cols,
-                        offset,
-                        filled,
-                        pane_focused,
-                    );
                     if pane_focused {
                         focused_pane_rect = Some(inner);
                     }
                 }
                 if let Some(session) = self.sessions.get(id) {
                     // Title precedence: agent's OSC 2 window title →
-                    // shell's OSC 7 cwd → static `Session::label`. The
-                    // OSC 7 fallback matches zellij's "Shell tab title
-                    // shows the cwd" behaviour for sessions that
-                    // don't bother setting a window title.
+                    // shell's OSC 7 cwd → static `Session::label`.
                     let title_owned: String;
                     let title: &str = if let Some(t) = session.title() {
                         t
                     } else if let Some(cwd) = session.cwd() {
-                        title_owned = shorten_cwd(cwd);
+                        title_owned = jackin_tui::shorten_home(cwd);
                         &title_owned
                     } else {
                         session.label.as_str()
                     };
+                    // The phosphor-green focus highlight is reserved
+                    // for chrome the operator can actually *do*
+                    // something with — multiple panes (focus
+                    // matters) or a pane with scrollback (the wheel
+                    // matters). A lone, non-scrollable pane stays
+                    // gray so the brand colour does not compete with
+                    // the agent's own content for attention.
+                    let highlight_focus = multi_pane || filled_for_scrollbar > 0;
                     draw_pane_box(
                         &mut buf,
                         rect.row,
@@ -1329,7 +1337,21 @@ impl Multiplexer {
                         rect.rows,
                         rect.cols,
                         title,
-                        pane_focused,
+                        pane_focused && highlight_focus,
+                    );
+                    // Scrollbar overlays the right border column, so
+                    // it has to be drawn AFTER the pane box paints
+                    // the border. Non-thumb rows leave the border
+                    // intact; thumb rows replace `│` with `█`.
+                    draw_scrollbar(
+                        &mut buf,
+                        rect.row,
+                        rect.col,
+                        rect.rows,
+                        rect.cols,
+                        offset_for_scrollbar,
+                        filled_for_scrollbar,
+                        pane_focused && highlight_focus,
                     );
                 }
             }
@@ -1444,17 +1466,14 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
     // Inbound: attach handler tasks → main loop.
     let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<ClientFrame>();
 
-    /// Operator's escape-time. 50 ms is the tmux default and matches
-    /// the round-trip the operator perceives as "instant" while still
-    /// covering chunky paste / ssh links. Set via `JACKIN_ESCAPE_TIME`
-    /// (milliseconds).
-    fn escape_time() -> Duration {
-        std::env::var("JACKIN_ESCAPE_TIME")
-            .ok()
-            .and_then(|s| s.parse::<u64>().ok())
-            .map(Duration::from_millis)
-            .unwrap_or_else(|| Duration::from_millis(50))
-    }
+    // Resolve the operator's escape-time once at startup. Reading
+    // the env var inside the event loop was a per-iteration syscall
+    // for a value that never changes for the lifetime of the daemon.
+    let escape_time = std::env::var(ENV_ESCAPE_TIME)
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(DEFAULT_ESCAPE_TIME);
 
     loop {
         // Arm a one-shot timer whenever the input parser holds a
@@ -1462,7 +1481,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
         // a CSI sequence across two TCP chunks gets the Esc stranded
         // and the agent never sees the arrow / fn-key.
         let esc_deadline = if mux.input_parser.esc_pending() {
-            Some(tokio::time::Instant::now() + escape_time())
+            Some(tokio::time::Instant::now() + escape_time)
         } else {
             None
         };
@@ -1693,7 +1712,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             if mux.dialog.is_none()
                 && let Some(focused) = mux.active_focused_id()
                 && let Some(s) = mux.sessions.get(&focused)
-                && s.parser.callbacks().focus_events
+                && s.focus_events_enabled()
             {
                 s.send_input(b"\x1b[I");
             }
@@ -1702,7 +1721,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             if mux.dialog.is_none()
                 && let Some(focused) = mux.active_focused_id()
                 && let Some(s) = mux.sessions.get(&focused)
-                && s.parser.callbacks().focus_events
+                && s.focus_events_enabled()
             {
                 s.send_input(b"\x1b[O");
             }
@@ -1791,56 +1810,12 @@ fn canonical_selection(sel: &SelectionState) -> (u16, u16, u16, u16) {
     }
 }
 
-/// Pure-Rust base64 encoder (RFC 4648 standard alphabet, no padding
-/// stripping). Used for OSC 52 clipboard payloads. We avoid pulling
-/// in the `base64` crate because this is the only call site and the
-/// encoder is ~30 lines.
-fn base64_encode(input: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
-    let mut i = 0;
-    while i + 3 <= input.len() {
-        let b0 = input[i];
-        let b1 = input[i + 1];
-        let b2 = input[i + 2];
-        out.push(ALPHABET[(b0 >> 2) as usize] as char);
-        out.push(ALPHABET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
-        out.push(ALPHABET[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
-        out.push(ALPHABET[(b2 & 0x3f) as usize] as char);
-        i += 3;
-    }
-    let rem = input.len() - i;
-    if rem == 1 {
-        let b0 = input[i];
-        out.push(ALPHABET[(b0 >> 2) as usize] as char);
-        out.push(ALPHABET[((b0 & 0x03) << 4) as usize] as char);
-        out.push('=');
-        out.push('=');
-    } else if rem == 2 {
-        let b0 = input[i];
-        let b1 = input[i + 1];
-        out.push(ALPHABET[(b0 >> 2) as usize] as char);
-        out.push(ALPHABET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
-        out.push(ALPHABET[((b1 & 0x0f) << 2) as usize] as char);
-        out.push('=');
-    }
-    out
-}
+// `base64_encode` lives in `jackin_tui` — shared with any future
+// surface that needs RFC 4648 base64 output.
 
-/// Replace the operator's `$HOME` prefix with `~` so the pane title
-/// shows `~/Projects/...` instead of `/Users/foo/Projects/...`.
-/// Mirrors zellij's title compaction. Falls back to the raw path when
-/// `$HOME` is unset or not a prefix.
-fn shorten_cwd(cwd: &str) -> String {
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = home.to_string_lossy().to_string();
-        if !home.is_empty() && cwd.starts_with(&home) {
-            return format!("~{}", &cwd[home.len()..]);
-        }
-    }
-    cwd.to_string()
-}
+// `shorten_cwd` lives in `jackin_tui::shorten_home` — both the
+// multiplexer's pane-box title and any future console-side
+// directory display want the same compaction.
 
 /// Paint an inverse-video highlight over every cell inside the
 /// selection rectangle. Emitted after `render_pane` so the agent's

@@ -217,6 +217,68 @@ impl TextField {
     }
 }
 
+/// Shorten an absolute path by replacing the operator's `$HOME`
+/// prefix with `~`. Shared between the in-container multiplexer's
+/// pane-box title and the console TUI's path display so both
+/// surfaces collapse the home directory the same way.
+#[must_use]
+pub fn shorten_home(path: &str) -> String {
+    let Some(home) = std::env::var_os("HOME") else {
+        return path.to_string();
+    };
+    let home = home.to_string_lossy().into_owned();
+    if home.is_empty() || !path.starts_with(&home) {
+        return path.to_string();
+    }
+    let rest = &path[home.len()..];
+    // Only collapse when the next character after `$HOME` is a path
+    // separator (or end of string). Otherwise `/Users/alice.notmine`
+    // would incorrectly compact to `~.notmine`.
+    if rest.is_empty() || rest.starts_with('/') {
+        format!("~{rest}")
+    } else {
+        path.to_string()
+    }
+}
+
+/// RFC 4648 base64 encoder with the standard alphabet and `=`
+/// padding. Used by the multiplexer for OSC 52 clipboard payloads
+/// and available for any future surface that needs it. Pure stdlib
+/// so jackin-tui keeps its zero-dep posture.
+#[must_use]
+pub fn base64_encode(input: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    let mut i = 0;
+    while i + 3 <= input.len() {
+        let b0 = input[i];
+        let b1 = input[i + 1];
+        let b2 = input[i + 2];
+        out.push(ALPHABET[(b0 >> 2) as usize] as char);
+        out.push(ALPHABET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        out.push(ALPHABET[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
+        out.push(ALPHABET[(b2 & 0x3f) as usize] as char);
+        i += 3;
+    }
+    let rem = input.len() - i;
+    if rem == 1 {
+        let b0 = input[i];
+        out.push(ALPHABET[(b0 >> 2) as usize] as char);
+        out.push(ALPHABET[((b0 & 0x03) << 4) as usize] as char);
+        out.push('=');
+        out.push('=');
+    } else if rem == 2 {
+        let b0 = input[i];
+        let b1 = input[i + 1];
+        out.push(ALPHABET[(b0 >> 2) as usize] as char);
+        out.push(ALPHABET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        out.push(ALPHABET[((b1 & 0x0f) << 2) as usize] as char);
+        out.push('=');
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,6 +320,27 @@ mod tests {
         assert!(!f.is_valid());
         let f = f.with_allow_empty(true);
         assert!(f.is_valid());
+    }
+
+    #[test]
+    fn base64_rfc4648_test_vectors() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn shorten_home_returns_path_when_no_match() {
+        // Use the actual `HOME` from the test environment without
+        // mutating it. Anything not starting with `$HOME` is
+        // returned unchanged, which is the only branch we can
+        // verify reliably without an `unsafe` env-var write (the
+        // crate's lints forbid `unsafe`).
+        let home = std::env::var("HOME").unwrap_or_default();
+        let alien = if home == "/" { "etc/hosts".to_string() } else { format!("{home}.notmine") };
+        assert_eq!(shorten_home(&alien), alien);
     }
 
     #[test]

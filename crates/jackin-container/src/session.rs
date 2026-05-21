@@ -59,13 +59,16 @@ fn percent_decode_lossy(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// `JACKIN_OSC52` env-var name — operator opt-out switch for agent
+/// clipboard writes. Matches tmux's `set-clipboard on|off`.
+const ENV_OSC52: &str = "JACKIN_OSC52";
+
 /// Whether the daemon honours `OSC 52` clipboard writes from PTYs.
 /// `JACKIN_OSC52=deny` turns it off; anything else (including unset)
-/// leaves the existing forward behaviour intact. Matches tmux's
-/// `set-clipboard on|off` control.
+/// leaves the forward behaviour intact.
 fn osc52_allowed() -> bool {
     !matches!(
-        std::env::var("JACKIN_OSC52").as_deref(),
+        std::env::var(ENV_OSC52).as_deref(),
         Ok("deny") | Ok("off") | Ok("no")
     )
 }
@@ -502,6 +505,14 @@ impl Session {
             self.parser.screen().mouse_protocol_mode(),
             vt100::MouseProtocolMode::None
         )
+    }
+
+    /// True when the session enabled DEC private mode `?1004` (focus
+    /// event reporting). Daemon-facing accessor so the multiplexer
+    /// does not have to reach through `parser.callbacks()` at every
+    /// focus-swap / FocusIn / FocusOut decision site.
+    pub fn focus_events_enabled(&self) -> bool {
+        self.parser.callbacks().focus_events
     }
 
     pub fn screen(&self) -> &vt100::Screen {

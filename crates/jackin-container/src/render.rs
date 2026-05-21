@@ -98,6 +98,12 @@ pub fn render_pane(
 /// scrollback. Track = dark phosphor-green `│`; thumb = bright
 /// phosphor-green `█`.
 #[allow(clippy::too_many_arguments)]
+/// Paint the scrollbar thumb onto the pane's right *border* column —
+/// `outer_col + outer_cols - 1`, the same column the box's `│`
+/// already drew on. Only thumb rows are emitted: non-thumb rows keep
+/// the box border underneath so the scrollbar reads as a textured
+/// border, not as a duplicate vertical line. The whole call is a
+/// no-op when there is no scrollback to scroll into.
 pub fn draw_scrollbar(
     buf: &mut Vec<u8>,
     pane_row: u16,
@@ -113,7 +119,7 @@ pub fn draw_scrollbar(
     }
     let col = pane_col + pane_cols - 1;
     let pane_rows_us = pane_rows as usize;
-    let total = filled + pane_rows_us; // history + viewport
+    let total = filled + pane_rows_us;
     let thumb_rows = ((pane_rows_us * pane_rows_us) / total)
         .max(1)
         .min(pane_rows_us);
@@ -121,26 +127,18 @@ pub fn draw_scrollbar(
     let thumb_top_from_bottom = (offset * unscrolled_room).checked_div(filled).unwrap_or(0);
     let thumb_top = unscrolled_room.saturating_sub(thumb_top_from_bottom);
 
-    // Active pane uses the brand phosphor-green for its scrollbar so
-    // the operator's eye lands on the same colour everywhere "active"
-    // is signalled (border, tab pill, list selection). Inactive panes
-    // use the same neutral gray as their border so the scrollbar reads
-    // as chrome instead of pretending to be the focus target.
-    let (thumb_color, track_color) = if focused {
-        ("\x1b[0;38;2;0;255;65m", "\x1b[0;38;2;0;80;18m")
+    // Active pane uses the brand phosphor-green; inactive panes a
+    // neutral gray that matches their inactive border colour.
+    let thumb_color = if focused {
+        "\x1b[0;38;2;0;255;65m"
     } else {
-        ("\x1b[0;38;2;160;160;160m", "\x1b[0;38;2;80;80;80m")
+        "\x1b[0;38;2;160;160;160m"
     };
 
-    for r in 0..pane_rows_us {
+    for r in thumb_top..(thumb_top + thumb_rows).min(pane_rows_us) {
         let _ = write!(buf, "\x1b[{};{}H", pane_row + r as u16 + 1, col + 1);
-        if r >= thumb_top && r < thumb_top + thumb_rows {
-            buf.extend_from_slice(thumb_color.as_bytes());
-            buf.extend_from_slice("█".as_bytes());
-        } else {
-            buf.extend_from_slice(track_color.as_bytes());
-            buf.extend_from_slice("│".as_bytes());
-        }
+        buf.extend_from_slice(thumb_color.as_bytes());
+        buf.extend_from_slice("█".as_bytes());
     }
     buf.extend_from_slice(b"\x1b[0m");
 }
