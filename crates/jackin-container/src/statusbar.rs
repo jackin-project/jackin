@@ -34,6 +34,7 @@ const TAB_BG_ACTIVE: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN (brand)
 const TAB_FG_INACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE
 const TAB_FG_ACTIVE: &str = "\x1b[38;2;0;0;0m"; // BLACK on bright green
 const TAB_UNDERLINE_FG: &str = "\x1b[38;2;255;255;255m"; // WHITE
+const GLYPH_BLOCKED_FG: &str = "\x1b[38;2;255;60;60m"; // bright red — "waiting for operator"
 const BOLD: &str = "\x1b[1m";
 
 const HINT_FG: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
@@ -134,13 +135,18 @@ impl StatusBar {
         let hint_cols = hint.chars().count() as u16;
         let reserve_right: u16 = hint_cols + 2; // 1 col padding + 1 trailing space
 
-        // Build labels including the state glyph, then lay them out.
-        let labels: Vec<(String, bool)> = tabs
+        // Build labels (including the reserved glyph slot) and the
+        // per-tab glyph kind, then lay them out for stable width.
+        let labels: Vec<(String, TabGlyph, bool)> = tabs
             .iter()
             .enumerate()
-            .map(|(i, tab)| (tab_label(tab, sessions_state), i == active_tab))
+            .map(|(i, tab)| {
+                let (label, glyph) = tab_label(tab, sessions_state);
+                (label, glyph, i == active_tab)
+            })
             .collect();
-        let label_refs: Vec<(&str, bool)> = labels.iter().map(|(l, a)| (l.as_str(), *a)).collect();
+        let label_refs: Vec<(&str, bool)> =
+            labels.iter().map(|(l, _, a)| (l.as_str(), *a)).collect();
 
         // First cell starts after brand pill + pad. Layout uses 0-based
         // columns; statusbar render uses 1-based, so we offset by 1
@@ -150,14 +156,13 @@ impl StatusBar {
         let max_tab_col = cols.saturating_sub(reserve_right);
 
         let mut clipped_at: Option<u16> = None;
-        for cell in &cells {
+        for (cell, (_, glyph, _)) in cells.iter().zip(labels.iter()) {
             let cell_end_0based = cell.start_col + cell.cell_cols;
             if cell_end_0based > max_tab_col {
                 clipped_at = Some(cell.start_col);
                 break;
             }
-            self.emit_tab_row0(buf, cell);
-            // Click region: 1-based, inclusive-exclusive.
+            self.emit_tab_row0(buf, cell, *glyph);
             let region_start = cell.start_col + 1;
             let region_end = region_start + cell.cell_cols;
             self.tab_regions.push((region_start, region_end));
@@ -204,9 +209,11 @@ impl StatusBar {
         }
     }
 
-    fn emit_tab_row0(&self, buf: &mut Vec<u8>, cell: &TabCell<'_>) {
+    fn emit_tab_row0(&self, buf: &mut Vec<u8>, cell: &TabCell<'_>, glyph: TabGlyph) {
         // Position cursor at the cell's first column (1-based).
         move_to(buf, 1, cell.start_col + 1);
+        // Apply tab bg + fg first; the Blocked glyph overrides fg
+        // locally and restores it before the trailing pad.
         if cell.active {
             buf.extend_from_slice(TAB_BG_ACTIVE.as_bytes());
             buf.extend_from_slice(TAB_FG_ACTIVE.as_bytes());
@@ -216,7 +223,31 @@ impl StatusBar {
             buf.extend_from_slice(TAB_FG_INACTIVE.as_bytes());
         }
         buf.push(b' ');
-        buf.extend_from_slice(cell.label.as_bytes());
+        // `cell.label` is `"<name> <glyph>"`. Render the name portion
+        // (everything except the trailing 2 chars) in the tab's
+        // foreground colour; then re-paint the glyph slot with its
+        // own colour for the Blocked variant.
+        let label_cols = cell.label.chars().count();
+        let prefix_cols = label_cols.saturating_sub(2);
+        let prefix: String = cell.label.chars().take(prefix_cols).collect();
+        buf.extend_from_slice(prefix.as_bytes());
+        buf.push(b' ');
+        match glyph {
+            TabGlyph::None => buf.push(b' '),
+            TabGlyph::Done => buf.extend_from_slice("○".as_bytes()),
+            TabGlyph::Blocked => {
+                buf.extend_from_slice(GLYPH_BLOCKED_FG.as_bytes());
+                buf.extend_from_slice(BOLD.as_bytes());
+                buf.extend_from_slice("●".as_bytes());
+                // Restore tab fg so any trailing padding inside the
+                // cell stays the right colour.
+                if cell.active {
+                    buf.extend_from_slice(TAB_FG_ACTIVE.as_bytes());
+                } else {
+                    buf.extend_from_slice(TAB_FG_INACTIVE.as_bytes());
+                }
+            }
+        }
         buf.push(b' ');
         buf.extend_from_slice(RESET.as_bytes());
         // TAB_GAP cells between tabs render with no background, so the
@@ -250,11 +281,37 @@ impl StatusBar {
     }
 }
 
-/// Always render the state-glyph slot — `●`, `○`, or a space when
-/// the tab is in `Working`/`Idle`. Reserving the slot keeps every tab
-/// cell at a stable width across state transitions, so the tab strip
-/// doesn't reflow every time an agent finishes responding.
-fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> String {
+/// State glyph the status-bar paints in the rightmost slot of a tab
+/// cell. The `●` Blocked variant is rendered in red so the operator
+/// can spot "agent is waiting for you" without reading labels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TabGlyph {
+    /// `Working` / `Idle` — single space placeholder. The slot is
+    /// always reserved so cell width stays stable across state
+    /// transitions.
+    None,
+    /// `Done` — `○`, default tab foreground colour.
+    Done,
+    /// `Blocked` — `●`, rendered in bright red as the high-visibility
+    /// "agent waiting" indicator.
+    Blocked,
+}
+
+impl TabGlyph {
+    fn ch(self) -> char {
+        match self {
+            Self::None => ' ',
+            Self::Done => '○',
+            Self::Blocked => '●',
+        }
+    }
+}
+
+/// Resolve the state glyph for a tab from its sessions' aggregate
+/// state. The display label is always rendered as `"<name> <glyph>"`
+/// (with the slot reserved as a space when no special state holds);
+/// the glyph itself is painted separately so colours can attach.
+fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> (String, TabGlyph) {
     let ids = tab.tree.all_ids();
     let has_blocked = ids.iter().any(|id| {
         states
@@ -268,13 +325,13 @@ fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> String {
     });
 
     let glyph = if has_blocked {
-        '●'
+        TabGlyph::Blocked
     } else if has_done {
-        '○'
+        TabGlyph::Done
     } else {
-        ' '
+        TabGlyph::None
     };
-    format!("{} {}", tab.label, glyph)
+    (format!("{} {}", tab.label, glyph.ch()), glyph)
 }
 
 /// Vertical pane border at column `col` for rows `from_row..=to_row`.
