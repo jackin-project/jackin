@@ -262,18 +262,33 @@ impl InputParser {
             }
         }
         flush(&mut data, &mut events);
-        // Lone Esc — a single `\x1b` byte with no following sequence
-        // byte — must reach the dialog layer as a `Data` event so
-        // dismiss-on-Esc works. Without this flush the parser stays
-        // in `EscStart` indefinitely and `\x1b` is buffered forever.
-        // Multi-byte CSI / OSC / DCS sequences are still buffered
-        // across chunks because their state is `Csi` / `Osc` /
-        // `OtherEsc`, not `EscStart`.
-        if matches!(self.state, State::EscStart) && !self.seq.is_empty() {
-            events.push(InputEvent::Data(std::mem::take(&mut self.seq)));
-            self.state = State::Idle;
-        }
+        // Note: an unfinished `\x1b` in `EscStart` is NOT flushed at
+        // end of chunk. Doing so split `ESC [ A` across two TCP
+        // chunks into a lone Esc + a stray `[A`, breaking arrow
+        // keys under any pasting / slow link. The daemon arms an
+        // escape-timeout timer (default 50 ms) instead — see
+        // `Self::escape_deadline` / `Self::flush_pending_esc`.
         events
+    }
+
+    /// Best-effort drain for a buffered `EscStart` that did not
+    /// complete within the operator's escape-time. Emits the lone
+    /// `\x1b` as a `Data` event and returns to `Idle` so dismiss-on-
+    /// Esc works in dialogs and the agent receives the bare Esc the
+    /// operator actually pressed.
+    pub fn flush_pending_esc(&mut self) -> Vec<InputEvent> {
+        if matches!(self.state, State::EscStart) && !self.seq.is_empty() {
+            let seq = std::mem::take(&mut self.seq);
+            self.state = State::Idle;
+            return vec![InputEvent::Data(seq)];
+        }
+        Vec::new()
+    }
+
+    /// Whether the parser is mid-escape and the daemon should arm an
+    /// `escape-time` timer. Cleared after `flush_pending_esc`.
+    pub fn esc_pending(&self) -> bool {
+        matches!(self.state, State::EscStart) && !self.seq.is_empty()
     }
 }
 

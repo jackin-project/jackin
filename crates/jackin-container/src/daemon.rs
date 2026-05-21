@@ -1444,7 +1444,28 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
     // Inbound: attach handler tasks → main loop.
     let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<ClientFrame>();
 
+    /// Operator's escape-time. 50 ms is the tmux default and matches
+    /// the round-trip the operator perceives as "instant" while still
+    /// covering chunky paste / ssh links. Set via `JACKIN_ESCAPE_TIME`
+    /// (milliseconds).
+    fn escape_time() -> Duration {
+        std::env::var("JACKIN_ESCAPE_TIME")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .map(Duration::from_millis)
+            .unwrap_or_else(|| Duration::from_millis(50))
+    }
+
     loop {
+        // Arm a one-shot timer whenever the input parser holds a
+        // pending `\x1b`. Without it, `ESC` followed by the rest of
+        // a CSI sequence across two TCP chunks gets the Esc stranded
+        // and the agent never sees the arrow / fn-key.
+        let esc_deadline = if mux.input_parser.esc_pending() {
+            Some(tokio::time::Instant::now() + escape_time())
+        } else {
+            None
+        };
         tokio::select! {
             biased;
 
@@ -1578,6 +1599,23 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                             drain_and_exit(&mut mux).await;
                             return Ok(());
                         }
+                    }
+                }
+            }
+
+            // Escape-time fired: the operator's `\x1b` did not get a
+            // follow-up byte in time, so emit it as a bare Data event.
+            // Dialogs treat it as dismiss; agents see the lone Esc.
+            _ = async {
+                match esc_deadline {
+                    Some(d) => tokio::time::sleep_until(d).await,
+                    None => std::future::pending().await,
+                }
+            }, if esc_deadline.is_some() => {
+                let events = mux.input_parser.flush_pending_esc();
+                for event in events {
+                    if let Some(redraw) = mux.handle_input(event) {
+                        mux.send_output(redraw);
                     }
                 }
             }
