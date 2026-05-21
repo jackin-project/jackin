@@ -80,6 +80,13 @@ enum State {
     Csi,
     Osc,
     OtherEsc,
+    /// SS3 — `\x1b O <final>`. Application-cursor-keys mode (DEC `?1`)
+    /// makes arrow keys emit SS3 sequences instead of the CSI form,
+    /// and every modern agent enables that mode. Without recognising
+    /// SS3 atomically the parser splits the sequence into two `Data`
+    /// events and dialogs that match the 3-byte form never see the
+    /// arrow.
+    Ss3,
 }
 
 impl Default for InputParser {
@@ -178,14 +185,25 @@ impl InputParser {
                     match b {
                         b'[' => self.state = State::Csi,
                         b']' => self.state = State::Osc,
+                        b'O' => self.state = State::Ss3,
                         b'P' | b'_' | b'X' | b'^' => self.state = State::OtherEsc,
                         _ => {
-                            // ESC + single byte sequences (e.g. ESC O X = SS3).
-                            // Emit and return to Idle.
+                            // ESC + single byte sequences that aren't
+                            // CSI / OSC / SS3 / DCS. Emit and return.
                             events.push(InputEvent::Data(std::mem::take(&mut self.seq)));
                             self.state = State::Idle;
                         }
                     }
+                }
+                State::Ss3 => {
+                    self.seq.push(b);
+                    let seq = std::mem::take(&mut self.seq);
+                    if let Some(ev) = classify_csi(&seq) {
+                        events.push(ev);
+                    } else {
+                        events.push(InputEvent::Data(seq));
+                    }
+                    self.state = State::Idle;
                 }
                 State::Csi => {
                     self.seq.push(b);

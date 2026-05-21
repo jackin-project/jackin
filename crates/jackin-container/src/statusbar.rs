@@ -38,6 +38,14 @@ const GLYPH_BLOCKED_FG: &str = "\x1b[38;2;255;60;60m"; // bright red — "waitin
 const BOLD: &str = "\x1b[1m";
 
 const HINT_FG: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
+// Right-hand menu button: dark phosphor-green pill with white bold
+// text. Matches the brand pill's visual register so the operator
+// reads it as "this is a clickable jackin' control", not "this is
+// a hint string."
+const BUTTON_BG_IDLE: &str = "\x1b[48;2;0;80;18m"; // PHOSPHOR_DARK
+const BUTTON_FG_IDLE: &str = "\x1b[38;2;255;255;255m"; // WHITE
+const BUTTON_BG_AWAITING: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN (highlight)
+const BUTTON_FG_AWAITING: &str = "\x1b[38;2;0;0;0m"; // BLACK
 const RESET: &str = "\x1b[0m";
 
 const BRAND_TEXT: &str = " jackin' ";
@@ -131,7 +139,7 @@ impl StatusBar {
             buf.push(b' ');
         }
 
-        let hint = self.right_hint();
+        let hint = self.button_text();
         let hint_cols = hint.chars().count() as u16;
         let reserve_right: u16 = hint_cols + 2; // 1 col padding + 1 trailing space
 
@@ -198,11 +206,17 @@ impl StatusBar {
             self.tab_regions.push((region_start, region_end));
         }
 
-        // Right-side hint.
+        // Right-side menu button.
         let hint_start = cols.saturating_sub(hint_cols);
         if hint_start > 0 {
             move_to(buf, 1, hint_start);
-            buf.extend_from_slice(HINT_FG.as_bytes());
+            let (bg, fg) = match self.prefix_mode {
+                PrefixMode::Idle => (BUTTON_BG_IDLE, BUTTON_FG_IDLE),
+                PrefixMode::Awaiting => (BUTTON_BG_AWAITING, BUTTON_FG_AWAITING),
+            };
+            buf.extend_from_slice(bg.as_bytes());
+            buf.extend_from_slice(fg.as_bytes());
+            buf.extend_from_slice(BOLD.as_bytes());
             buf.extend_from_slice(hint.as_bytes());
             buf.extend_from_slice(RESET.as_bytes());
             // 1-based, inclusive-exclusive — matches `tab_regions`.
@@ -298,19 +312,23 @@ impl StatusBar {
         }
     }
 
-    fn right_hint(&self) -> String {
+    /// Render the right-hand menu **button**. The hamburger glyph
+    /// (`☰`) + label + key combo, with a dark-green pill background
+    /// in idle state and an inverted bright-green highlight when the
+    /// optional prefix gesture is mid-way through.
+    fn button_text(&self) -> String {
         match self.prefix_mode {
             PrefixMode::Idle => {
                 if self.prefix_enabled {
                     format!(
-                        "menu: {}  prefix: {}",
+                        " ☰ Menu {} · prefix {} ",
                         self.palette_label, self.prefix_label
                     )
                 } else {
-                    format!("menu: {}", self.palette_label)
+                    format!(" ☰ Menu {} ", self.palette_label)
                 }
             }
-            PrefixMode::Awaiting => "prefix…".to_string(),
+            PrefixMode::Awaiting => " prefix… ".to_string(),
         }
     }
 
@@ -438,7 +456,7 @@ mod tests {
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &[], 0, &[]);
         let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains("menu: Ctrl+\\"), "missing idle hint: {s:?}");
+        assert!(s.contains("Menu Ctrl+\\"), "missing idle hint: {s:?}");
     }
 
     #[test]
@@ -449,7 +467,7 @@ mod tests {
         bar.render(&mut buf, 80, &[], 0, &[]);
         let s = String::from_utf8_lossy(&buf);
         assert!(
-            s.contains("menu: Ctrl+\\") && s.contains("prefix: Ctrl+B"),
+            s.contains("Menu Ctrl+\\") && s.contains("prefix Ctrl+B"),
             "missing combined hint: {s:?}"
         );
     }

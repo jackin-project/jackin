@@ -93,15 +93,46 @@ impl Dialog {
         if is_dismiss_key(key) {
             return DialogAction::Dismiss;
         }
-        match self {
-            Self::CommandPalette { selected } => match key {
-                b"\x1b[A" | b"k" => {
+        // Accept both CSI (`\x1b[A/B`) and SS3 (`\x1bOA/B`) arrow
+        // forms. Application-cursor-keys mode (DEC `?1`) — which
+        // every modern agent enables — switches the outer terminal
+        // to the SS3 form, so dialogs that only matched the CSI form
+        // silently dropped every arrow keypress.
+        if is_arrow_up(key) {
+            return match self {
+                Self::CommandPalette { selected } | Self::AgentPicker { selected, .. } => {
                     if *selected > 0 {
                         *selected -= 1;
                     }
                     DialogAction::Redraw
                 }
-                b"\x1b[B" | b"j" => {
+            };
+        }
+        if is_arrow_down(key) {
+            return match self {
+                Self::CommandPalette { selected } => {
+                    if *selected + 1 < PALETTE_ITEMS.len() {
+                        *selected += 1;
+                    }
+                    DialogAction::Redraw
+                }
+                Self::AgentPicker { agents, selected } => {
+                    if *selected + 1 < agents.len() + 1 {
+                        *selected += 1;
+                    }
+                    DialogAction::Redraw
+                }
+            };
+        }
+        match self {
+            Self::CommandPalette { selected } => match key {
+                b"k" => {
+                    if *selected > 0 {
+                        *selected -= 1;
+                    }
+                    DialogAction::Redraw
+                }
+                b"j" => {
                     if *selected + 1 < PALETTE_ITEMS.len() {
                         *selected += 1;
                     }
@@ -114,13 +145,13 @@ impl Dialog {
                 _ => DialogAction::Redraw,
             },
             Self::AgentPicker { agents, selected } => match key {
-                b"\x1b[A" | b"k" => {
+                b"k" => {
                     if *selected > 0 {
                         *selected -= 1;
                     }
                     DialogAction::Redraw
                 }
-                b"\x1b[B" | b"j" => {
+                b"j" => {
                     if *selected + 1 < agents.len() + 1 {
                         *selected += 1;
                     }
@@ -157,6 +188,14 @@ impl Dialog {
 /// most often, but Backspace, Delete, and `Ctrl+C` are common
 /// muscle-memory fallbacks. Uppercase `Q` is included so a shift-key
 /// slip doesn't trap the operator inside the dialog.
+fn is_arrow_up(key: &[u8]) -> bool {
+    matches!(key, b"\x1b[A" | b"\x1bOA")
+}
+
+fn is_arrow_down(key: &[u8]) -> bool {
+    matches!(key, b"\x1b[B" | b"\x1bOB")
+}
+
 fn is_dismiss_key(key: &[u8]) -> bool {
     matches!(
         key,
