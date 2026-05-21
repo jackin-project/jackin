@@ -27,6 +27,7 @@ crossterm = "0.29"
 portable-pty = "0.9"
 nix = { version = "0.31", features = ["term", "signal", "process"] }
 vt100 = "0.16"
+jackin-tui = { path = "../jackin-tui" }
 
 [dev-dependencies]
 tempfile = "3"

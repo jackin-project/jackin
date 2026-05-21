@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/jackin-container"]
+members = ["crates/jackin-container", "crates/jackin-tui"]
 resolver = "2"
 
 [package]
@@ -29,6 +29,7 @@ path = "src/bin/build_jackin_container.rs"
 
 [dependencies]
 anyhow = "1.0"
+jackin-tui = { path = "crates/jackin-tui" }
 clap = { version = "4.5", features = ["derive", "color", "env"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

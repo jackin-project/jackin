@@ -118,9 +118,7 @@ pub fn draw_scrollbar(
     let unscrolled_room = pane_rows_us - thumb_rows;
     // Thumb position: offset=0 → bottom; offset=filled → top.
     // Early `filled == 0` return above guarantees the divisor is non-zero.
-    let thumb_top_from_bottom = (offset * unscrolled_room)
-        .checked_div(filled)
-        .unwrap_or(0);
+    let thumb_top_from_bottom = (offset * unscrolled_room).checked_div(filled).unwrap_or(0);
     let thumb_top = unscrolled_room.saturating_sub(thumb_top_from_bottom);
 
     for r in 0..pane_rows_us {

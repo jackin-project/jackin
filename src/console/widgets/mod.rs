@@ -7,13 +7,32 @@
 //! exposes only a single shared `dir_style`). All are consumed by both
 //! the manager (PR 2) and the Secrets tab (PR 3).
 
+use jackin_tui as tui_palette;
 use ratatui::style::Color;
 
 /// Canonical phosphor-green palette used across every TUI surface.
-pub(crate) const PHOSPHOR_GREEN: Color = Color::Rgb(0, 255, 65);
-pub(crate) const PHOSPHOR_DIM: Color = Color::Rgb(0, 140, 30);
-pub(crate) const PHOSPHOR_DARK: Color = Color::Rgb(0, 80, 18);
-pub(crate) const WHITE: Color = Color::Rgb(255, 255, 255);
+/// Sourced from the shared `jackin-tui` crate so the console TUI and
+/// the in-container multiplexer can't drift apart.
+pub(crate) const PHOSPHOR_GREEN: Color = Color::Rgb(
+    tui_palette::PHOSPHOR_GREEN.r,
+    tui_palette::PHOSPHOR_GREEN.g,
+    tui_palette::PHOSPHOR_GREEN.b,
+);
+pub(crate) const PHOSPHOR_DIM: Color = Color::Rgb(
+    tui_palette::PHOSPHOR_DIM.r,
+    tui_palette::PHOSPHOR_DIM.g,
+    tui_palette::PHOSPHOR_DIM.b,
+);
+pub(crate) const PHOSPHOR_DARK: Color = Color::Rgb(
+    tui_palette::PHOSPHOR_DARK.r,
+    tui_palette::PHOSPHOR_DARK.g,
+    tui_palette::PHOSPHOR_DARK.b,
+);
+pub(crate) const WHITE: Color = Color::Rgb(
+    tui_palette::WHITE.r,
+    tui_palette::WHITE.g,
+    tui_palette::WHITE.b,
+);
 
 pub mod agent_choice;
 pub mod auth_panel;

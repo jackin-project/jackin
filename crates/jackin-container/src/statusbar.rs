@@ -1,12 +1,27 @@
-/// Status bar rendered at row 0 of the host terminal.
+/// Status bar rendered at rows 0–1 of the host terminal.
 ///
-/// Layout: ` jackin' ` brand pill, then a tab strip with a state glyph
-/// appended to each tab label, then a right-aligned hint. The hint
-/// shows `menu: Ctrl+\\` by default; when the opt-in prefix mode is
-/// enabled it shows `menu: Ctrl+\\  prefix: Ctrl+B`. While the operator
-/// holds the prefix key the hint becomes `prefix…`. When tabs
-/// overflow the terminal width an overflow indicator (`›`) appears
-/// at the right edge.
+/// Mirrors the jackin console TUI's tab strip (`render_tab_strip` in
+/// `src/console/manager/render/editor.rs`):
+///
+/// - Row 0: ` jackin' ` brand pill, then tab cells, then a
+///   right-aligned hint.
+/// - Row 1: a thick `━` underline beneath the active tab cell only;
+///   blank elsewhere. The underline carries the operator's focus
+///   signal — the same pattern the console uses below "General /
+///   Mounts / Roles / Environments / Auth."
+///
+/// Inactive tab cells get a `PHOSPHOR_DARK` background so they stand
+/// out against the terminal's default-black background. Active tab
+/// has the same dark-green background with a white bold label, plus
+/// the row-1 underline.
+///
+/// Layout columns come from `jackin_tui::lay_out_tabs`, so the
+/// console TUI and the multiplexer cannot drift on cell sizing /
+/// click-region maths.
+use std::io::Write as _;
+
+use jackin_tui::{TAB_GAP, TabCell, lay_out_tabs};
+
 use crate::layout::Tab;
 use crate::protocol::AgentState;
 
@@ -14,21 +29,21 @@ const BRAND_BG: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN bg
 const BRAND_FG: &str = "\x1b[38;2;0;0;0m"; // black
 const BRAND_BOLD: &str = "\x1b[1m";
 
-// Tabs share a dark phosphor-green background so they stand out
-// against the terminal's default (often black) background. The active
-// tab keeps the same background and adds a white bold label + white
-// underline; the inactive tabs use a dimmer phosphor-green label.
-const TAB_BG: &str = "\x1b[48;2;0;80;18m"; // PHOSPHOR_DARK bg
-const TAB_ACTIVE_FG: &str = "\x1b[38;2;255;255;255m"; // WHITE
-const TAB_ACTIVE_BOLD: &str = "\x1b[1m";
-const TAB_ACTIVE_UNDERLINE: &str = "\x1b[4m";
-const TAB_INACTIVE_FG: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
+const TAB_BG_INACTIVE: &str = "\x1b[48;2;30;30;30m"; // subtle dark grey
+const TAB_BG_ACTIVE: &str = "\x1b[48;2;0;80;18m"; // PHOSPHOR_DARK
+const TAB_FG_INACTIVE: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
+const TAB_FG_ACTIVE: &str = "\x1b[38;2;255;255;255m"; // WHITE
+const TAB_UNDERLINE_FG: &str = "\x1b[38;2;255;255;255m"; // WHITE
+const BOLD: &str = "\x1b[1m";
+
 const HINT_FG: &str = "\x1b[38;2;0;140;30m"; // PHOSPHOR_DIM
 const RESET: &str = "\x1b[0m";
 
-const TAB_SEP: &str = "  ";
 const BRAND_TEXT: &str = " jackin' ";
 const BRAND_PAD_COLS: u16 = 1; // single space between brand pill and first tab
+
+/// Rows the status bar occupies. Content rect starts at row 2.
+pub const STATUS_BAR_ROWS: u16 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrefixMode {
@@ -69,8 +84,7 @@ impl StatusBar {
         self.prefix_enabled = enabled;
     }
 
-    /// Render the status bar at row 0. Returns the cumulative byte buffer
-    /// the caller appends to the wire frame.
+    /// Render the status bar at rows 0–1 of the host terminal.
     pub fn render(
         &mut self,
         buf: &mut Vec<u8>,
@@ -81,6 +95,7 @@ impl StatusBar {
     ) {
         self.tab_regions.clear();
 
+        // ── Row 0: brand pill + tabs + hint ─────────────────────────
         buf.extend_from_slice(b"\x1b[1;1H\x1b[2K");
 
         // Brand pill.
@@ -97,44 +112,47 @@ impl StatusBar {
         let hint_cols = hint.chars().count() as u16;
         let reserve_right: u16 = hint_cols + 2; // 1 col padding + 1 trailing space
 
-        // Track 1-based column where the next tab cell begins.
-        let mut col: u16 = (BRAND_TEXT.chars().count() as u16) + BRAND_PAD_COLS + 1;
+        // Build labels including the state glyph, then lay them out.
+        let labels: Vec<(String, bool)> = tabs
+            .iter()
+            .enumerate()
+            .map(|(i, tab)| (tab_label(tab, sessions_state), i == active_tab))
+            .collect();
+        let label_refs: Vec<(&str, bool)> = labels.iter().map(|(l, a)| (l.as_str(), *a)).collect();
+
+        // First cell starts after brand pill + pad. Layout uses 0-based
+        // columns; statusbar render uses 1-based, so we offset by 1
+        // when emitting cursor positions.
+        let start_col_0based = (BRAND_TEXT.chars().count() as u16) + BRAND_PAD_COLS;
+        let cells = lay_out_tabs(&label_refs, start_col_0based);
         let max_tab_col = cols.saturating_sub(reserve_right);
-        let mut clipped = false;
 
-        for (i, tab) in tabs.iter().enumerate() {
-            let label = tab_label(tab, sessions_state);
-            let label_cols = label.chars().count() as u16;
-            let tab_cell_cols = label_cols + 2; // single space pad on each side
-            let tab_start = col;
-            let tab_end = col + tab_cell_cols;
-
-            if tab_end > max_tab_col {
-                clipped = true;
+        let mut clipped_at: Option<u16> = None;
+        for cell in &cells {
+            let cell_end_0based = cell.start_col + cell.cell_cols;
+            if cell_end_0based > max_tab_col {
+                clipped_at = Some(cell.start_col);
                 break;
             }
-
-            self.tab_regions.push((tab_start, tab_end));
-
-            buf.extend_from_slice(TAB_BG.as_bytes());
-            if i == active_tab {
-                buf.extend_from_slice(TAB_ACTIVE_BOLD.as_bytes());
-                buf.extend_from_slice(TAB_ACTIVE_UNDERLINE.as_bytes());
-                buf.extend_from_slice(TAB_ACTIVE_FG.as_bytes());
-            } else {
-                buf.extend_from_slice(TAB_INACTIVE_FG.as_bytes());
-            }
-            buf.push(b' ');
-            buf.extend_from_slice(label.as_bytes());
-            buf.push(b' ');
-            buf.extend_from_slice(RESET.as_bytes());
-            buf.extend_from_slice(TAB_SEP.as_bytes());
-            col = tab_end + TAB_SEP.chars().count() as u16;
+            self.emit_tab_row0(buf, cell);
+            // Click region: 1-based, inclusive-exclusive.
+            let region_start = cell.start_col + 1;
+            let region_end = region_start + cell.cell_cols;
+            self.tab_regions.push((region_start, region_end));
         }
 
-        // Overflow indicator at the right edge.
-        if clipped {
-            // Position immediately before the hint.
+        // Right-side hint.
+        let hint_start = cols.saturating_sub(hint_cols);
+        if hint_start > 0 {
+            move_to(buf, 1, hint_start);
+            buf.extend_from_slice(HINT_FG.as_bytes());
+            buf.extend_from_slice(hint.as_bytes());
+            buf.extend_from_slice(RESET.as_bytes());
+        }
+
+        // Overflow indicator before the hint.
+        if let Some(start) = clipped_at {
+            let _ = start;
             let pos = cols.saturating_sub(reserve_right);
             move_to(buf, 1, pos);
             buf.extend_from_slice(HINT_FG.as_bytes());
@@ -142,13 +160,45 @@ impl StatusBar {
             buf.extend_from_slice(RESET.as_bytes());
         }
 
-        // Right-side prefix-mode hint.
-        let hint_start = cols.saturating_sub(hint_cols);
-        if hint_start > 0 {
-            move_to(buf, 1, hint_start);
-            buf.extend_from_slice(HINT_FG.as_bytes());
-            buf.extend_from_slice(hint.as_bytes());
-            buf.extend_from_slice(RESET.as_bytes());
+        // ── Row 1: active-tab underline ─────────────────────────────
+        buf.extend_from_slice(b"\x1b[2;1H\x1b[2K");
+        for cell in &cells {
+            let cell_end_0based = cell.start_col + cell.cell_cols;
+            if cell_end_0based > max_tab_col {
+                break;
+            }
+            if cell.active {
+                move_to(buf, 2, cell.start_col + 1);
+                buf.extend_from_slice(TAB_UNDERLINE_FG.as_bytes());
+                buf.extend_from_slice(BOLD.as_bytes());
+                for _ in 0..cell.cell_cols {
+                    buf.extend_from_slice("━".as_bytes());
+                }
+                buf.extend_from_slice(RESET.as_bytes());
+                break;
+            }
+        }
+    }
+
+    fn emit_tab_row0(&self, buf: &mut Vec<u8>, cell: &TabCell<'_>) {
+        // Position cursor at the cell's first column (1-based).
+        move_to(buf, 1, cell.start_col + 1);
+        if cell.active {
+            buf.extend_from_slice(TAB_BG_ACTIVE.as_bytes());
+            buf.extend_from_slice(TAB_FG_ACTIVE.as_bytes());
+            buf.extend_from_slice(BOLD.as_bytes());
+        } else {
+            buf.extend_from_slice(TAB_BG_INACTIVE.as_bytes());
+            buf.extend_from_slice(TAB_FG_INACTIVE.as_bytes());
+        }
+        buf.push(b' ');
+        buf.extend_from_slice(cell.label.as_bytes());
+        buf.push(b' ');
+        buf.extend_from_slice(RESET.as_bytes());
+        // TAB_GAP cells between tabs render with no background, so the
+        // separation is naturally visible against the surrounding row.
+        for _ in 0..TAB_GAP {
+            buf.push(b' ');
         }
     }
 
@@ -201,9 +251,9 @@ fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> String {
 /// Vertical pane border at column `col` for rows `from_row..=to_row`.
 pub fn draw_vertical_border(buf: &mut Vec<u8>, col: u16, from_row: u16, to_row: u16, active: bool) {
     let color = if active {
-        "\x1b[38;5;46m"
+        "\x1b[38;2;0;255;65m"
     } else {
-        "\x1b[38;5;238m"
+        "\x1b[38;2;0;80;18m"
     };
     for row in from_row..=to_row {
         move_to(buf, row + 1, col + 1);
@@ -222,9 +272,9 @@ pub fn draw_horizontal_border(
     active: bool,
 ) {
     let color = if active {
-        "\x1b[38;5;46m"
+        "\x1b[38;2;0;255;65m"
     } else {
-        "\x1b[38;5;238m"
+        "\x1b[38;2;0;80;18m"
     };
     move_to(buf, row + 1, from_col + 1);
     buf.extend_from_slice(color.as_bytes());
@@ -235,7 +285,6 @@ pub fn draw_horizontal_border(
 }
 
 fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
-    use std::io::Write as _;
     let _ = write!(buf, "\x1b[{};{}H", row, col);
 }
 
@@ -289,5 +338,17 @@ mod tests {
         bar.render(&mut buf, 80, &[], 0, &[]);
         let s = String::from_utf8_lossy(&buf);
         assert!(s.contains("prefix…"), "missing awaiting hint: {s:?}");
+    }
+
+    #[test]
+    fn active_tab_emits_row1_underline() {
+        let mut bar = StatusBar::new();
+        let tabs = vec![Tab::new_single("Claude", 1)];
+        let mut buf = Vec::new();
+        bar.render(&mut buf, 80, &tabs, 0, &[]);
+        let s = String::from_utf8_lossy(&buf);
+        // Row 1 = ANSI row 2 (1-based). Underline uses `━`.
+        assert!(s.contains("\x1b[2;"), "row 2 cursor move missing: {s:?}");
+        assert!(s.contains("━"), "underline glyph missing: {s:?}");
     }
 }

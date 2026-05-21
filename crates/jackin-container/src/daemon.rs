@@ -30,7 +30,7 @@ use crate::session::{
     Session, SessionEvent, available_agents, build_agent_command, build_shell_command,
 };
 use crate::socket;
-use crate::statusbar::{StatusBar, draw_horizontal_border, draw_vertical_border};
+use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_horizontal_border, draw_vertical_border};
 
 pub struct Multiplexer {
     sessions: HashMap<u64, Session>,
@@ -54,7 +54,7 @@ pub struct Multiplexer {
 impl Multiplexer {
     pub fn new(rows: u16, cols: u16) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let content_rows = rows.saturating_sub(1);
+        let content_rows = rows.saturating_sub(STATUS_BAR_ROWS);
         let agents = available_agents();
 
         let env_passthrough: Vec<(String, String)> = [
@@ -241,7 +241,7 @@ impl Multiplexer {
     }
 
     fn resize_panes(&mut self) {
-        let content_rect = Rect::new(1, 0, self.content_rows, self.term_cols);
+        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         if let Some(zoom_id) = self.zoomed {
             let (rows, cols) = (self.content_rows, self.term_cols);
             if let Some(session) = self.sessions.get_mut(&zoom_id) {
@@ -264,7 +264,7 @@ impl Multiplexer {
     fn resize(&mut self, rows: u16, cols: u16) {
         self.term_rows = rows;
         self.term_cols = cols;
-        self.content_rows = rows.saturating_sub(1);
+        self.content_rows = rows.saturating_sub(STATUS_BAR_ROWS);
         self.resize_panes();
     }
 
@@ -284,7 +284,7 @@ impl Multiplexer {
         let Some(tab) = self.tabs.get(self.active_tab) else {
             return;
         };
-        let content_rect = Rect::new(1, 0, self.content_rows, self.term_cols);
+        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         let d = match dir {
             ArrowDir::Left => Direction::Left,
             ArrowDir::Right => Direction::Right,
@@ -471,7 +471,7 @@ impl Multiplexer {
         let Some(focused) = self.active_focused_id() else {
             return;
         };
-        let content_rect = Rect::new(1, 0, self.content_rows, self.term_cols);
+        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         let pane_rect = if let Some(zoom_id) = self.zoomed {
             if zoom_id == focused {
                 Some(content_rect)
@@ -558,7 +558,7 @@ impl Multiplexer {
             &states,
         );
 
-        let content_rect = Rect::new(1, 0, self.content_rows, self.term_cols);
+        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         let focused_id = self.active_focused_id();
         let mut focused_pane_rect: Option<Rect> = None;
 
@@ -568,7 +568,7 @@ impl Multiplexer {
 
         if let Some(zoom_id) = self.zoomed {
             if let Some(session) = self.sessions.get_mut(&zoom_id) {
-                let rect = Rect::new(1, 0, self.content_rows, self.term_cols);
+                let rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
                 let offset = session.scrollback_offset;
                 let filled = session.scrollback_filled();
                 render_pane(
@@ -618,7 +618,7 @@ impl Multiplexer {
                             &mut buf,
                             right_edge,
                             rect.row,
-                            rect.row + rect.rows.saturating_sub(1),
+                            rect.row + rect.rows.saturating_sub(STATUS_BAR_ROWS),
                             is_active,
                         );
                     }

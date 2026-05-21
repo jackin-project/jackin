@@ -1299,6 +1299,7 @@ dependencies = [
  "dockerfile-parser-rs",
  "fs2",
  "futures-util",
+ "jackin-tui",
  "nix 0.31.3",
  "open",
  "owo-colors",
@@ -1327,6 +1328,7 @@ version = "0.6.0-dev"
 dependencies = [
  "anyhow",
  "crossterm",
+ "jackin-tui",
  "nix 0.31.3",
  "portable-pty",
  "serde",
@@ -1335,6 +1337,10 @@ dependencies = [
  "tokio",
  "vt100",
 ]
+
+[[package]]
+name = "jackin-tui"
+version = "0.6.0-dev"
 
 [[package]]
 name = "js-sys"
