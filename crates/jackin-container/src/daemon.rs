@@ -57,6 +57,10 @@ pub struct Multiplexer {
     /// presses the left button on a shared pane border; updated on
     /// every motion event; cleared on release.
     drag: Option<DragState>,
+    /// Active mouse text selection on a pane whose program ignored
+    /// the mouse. Updated on every motion event; copied to the
+    /// outer clipboard via OSC 52 on release.
+    selection: Option<SelectionState>,
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +75,29 @@ struct DragState {
     /// drag because spawns / closes block on dialog input and the
     /// daemon does not reflow during a drag.
     rect: Rect,
+}
+
+/// Mouse-driven text selection on a pane whose program never asked
+/// for a mouse protocol (shells, post-exit agents). Modelled on
+/// zellij's behaviour: drag inside the pane body paints an inverse
+/// highlight; release base64-encodes the selected text and writes it
+/// to the operator's clipboard via OSC 52. Cleared on any focus
+/// change, tab swap, or dialog open.
+#[derive(Debug, Clone)]
+struct SelectionState {
+    session_id: u64,
+    /// Pane's inner content rectangle at selection-start time. Stays
+    /// stable through the drag (a resize / reflow cancels the
+    /// selection in the same places `DragState` is cancelled).
+    inner: Rect,
+    /// 0-based grid coordinates relative to the pane's inner area,
+    /// captured at press time. Stays put during the drag.
+    anchor_row: u16,
+    anchor_col: u16,
+    /// Latest grid coordinate the operator's cursor reached. Updated
+    /// on every motion event.
+    end_row: u16,
+    end_col: u16,
 }
 
 const DOUBLE_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
@@ -116,6 +143,7 @@ impl Multiplexer {
             attached_out: None,
             last_tab_click: None,
             drag: None,
+            selection: None,
         }
     }
 
@@ -169,6 +197,7 @@ impl Multiplexer {
     /// which is more code than just dropping the drag.
     fn cancel_drag(&mut self) {
         self.drag = None;
+        self.selection = None;
     }
 
     fn close_focused_tab(&mut self) {
@@ -658,6 +687,11 @@ impl Multiplexer {
                     self.drag = None;
                     return Some(self.compose_frame());
                 }
+                // Commit any active text selection: copy to clipboard
+                // and clear the highlight.
+                if self.selection.is_some() && (button & 0b11) == 0 {
+                    return self.finalize_selection();
+                }
                 self.forward_mouse_to_focused_pane_with_kind(col, row, button, false);
                 None
             }
@@ -740,11 +774,17 @@ impl Multiplexer {
             }
             InputEvent::MousePress { col, row, button } => {
                 // SGR motion event with the left button still held
-                // (`button == 32`) drives an active resize drag if
-                // one is in flight. Treat it as the drag update
-                // path; do not focus-switch or forward to PTY.
-                if button == 32 && self.drag.is_some() {
-                    return self.drag_motion(row, col);
+                // (`button == 32`) drives an in-flight resize drag or
+                // selection drag if one is active. Treat it as the
+                // drag/selection update path; do not focus-switch or
+                // forward to PTY.
+                if button == 32 {
+                    if self.drag.is_some() {
+                        return self.drag_motion(row, col);
+                    }
+                    if self.selection.is_some() {
+                        return self.selection_motion(row, col);
+                    }
                 }
                 if button == 0 {
                     // Press on a shared pane border starts a drag —
@@ -752,6 +792,12 @@ impl Multiplexer {
                     if let Some(state) = self.detect_drag_start(row, col) {
                         self.drag = Some(state);
                         return None;
+                    }
+                    // Press inside a pane whose program never asked
+                    // for a mouse protocol starts a text selection.
+                    if let Some(state) = self.detect_selection_start(row, col) {
+                        self.selection = Some(state);
+                        return Some(self.compose_frame());
                     }
                 }
                 let switched = if button == 0 {
@@ -953,6 +999,87 @@ impl Multiplexer {
             orient,
             rect,
         })
+    }
+
+    /// Test whether the click at `(row, col)` lands inside the inner
+    /// content area of a pane whose program never opted into a
+    /// mouse protocol. If so, this is the start of a text selection
+    /// (zellij-style "drag in shell pane → copy to clipboard").
+    fn detect_selection_start(&self, row: u16, col: u16) -> Option<SelectionState> {
+        if row < STATUS_BAR_ROWS {
+            return None;
+        }
+        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let (id, outer) = if let Some(zoom_id) = self.zoomed {
+            (zoom_id, content_rect)
+        } else {
+            let tab = self.tabs.get(self.active_tab)?;
+            tab.tree
+                .leaves(content_rect)
+                .into_iter()
+                .find(|(_, r)| {
+                    row >= r.row && row < r.row + r.rows && col >= r.col && col < r.col + r.cols
+                })?
+        };
+        let inner = outer.shrink(1);
+        if row < inner.row
+            || row >= inner.row + inner.rows
+            || col < inner.col
+            || col >= inner.col + inner.cols
+        {
+            return None;
+        }
+        let session = self.sessions.get(&id)?;
+        if session.mouse_enabled() {
+            // Pane's program wants the mouse — defer to PTY forward.
+            return None;
+        }
+        let anchor_row = row - inner.row;
+        let anchor_col = col - inner.col;
+        Some(SelectionState {
+            session_id: id,
+            inner,
+            anchor_row,
+            anchor_col,
+            end_row: anchor_row,
+            end_col: anchor_col,
+        })
+    }
+
+    /// Update the active selection's end-cell to the new motion
+    /// position. Clamps to the inner pane rect so a drag that leaves
+    /// the pane still produces a reasonable highlight.
+    fn selection_motion(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
+        let sel = self.selection.as_mut()?;
+        let inner = sel.inner;
+        let clamped_row = row.clamp(inner.row, inner.row + inner.rows.saturating_sub(1));
+        let clamped_col = col.clamp(inner.col, inner.col + inner.cols.saturating_sub(1));
+        sel.end_row = clamped_row - inner.row;
+        sel.end_col = clamped_col - inner.col;
+        Some(self.compose_frame())
+    }
+
+    /// Commit the active selection: extract the selected text from
+    /// the source session's `vt100` grid, emit OSC 52 to the
+    /// attached client (which the outer terminal turns into a
+    /// real clipboard write), and clear the highlight.
+    fn finalize_selection(&mut self) -> Option<Vec<u8>> {
+        let sel = self.selection.take()?;
+        if let Some(session) = self.sessions.get(&sel.session_id) {
+            let text = selection_text(session.screen(), &sel);
+            if !text.is_empty()
+                && let Some(tx) = &self.attached_out
+            {
+                // OSC 52 with `c` selection (clipboard) and a
+                // base64-encoded payload. The outer terminal
+                // (Ghostty / iTerm2 / kitty / wezterm) writes the
+                // decoded bytes to the system clipboard.
+                let encoded = base64_encode(text.as_bytes());
+                let bytes = format!("\x1b]52;c;{}\x07", encoded).into_bytes();
+                let _ = tx.send(encode_server(ServerFrame::Output(bytes)));
+            }
+        }
+        Some(self.compose_frame())
     }
 
     /// Apply a drag motion at `(row, col)` against the active drag's
@@ -1166,7 +1293,20 @@ impl Multiplexer {
                     }
                 }
                 if let Some(session) = self.sessions.get(id) {
-                    let title = session.title().unwrap_or(session.label.as_str());
+                    // Title precedence: agent's OSC 2 window title →
+                    // shell's OSC 7 cwd → static `Session::label`. The
+                    // OSC 7 fallback matches zellij's "Shell tab title
+                    // shows the cwd" behaviour for sessions that
+                    // don't bother setting a window title.
+                    let title_owned: String;
+                    let title: &str = if let Some(t) = session.title() {
+                        t
+                    } else if let Some(cwd) = session.cwd() {
+                        title_owned = shorten_cwd(cwd);
+                        &title_owned
+                    } else {
+                        session.label.as_str()
+                    };
                     draw_pane_box(
                         &mut buf,
                         rect.row,
@@ -1177,6 +1317,15 @@ impl Multiplexer {
                         pane_focused,
                     );
                 }
+            }
+            // Paint the selection highlight on top of pane content
+            // (but underneath the pane box so the inverse stops at
+            // the inner edge). The selection lives on a specific
+            // pane, so resolve the screen + inner rect once.
+            if let Some(sel) = &self.selection
+                && let Some(session) = self.sessions.get(&sel.session_id)
+            {
+                paint_selection_highlight(&mut buf, session.screen(), sel);
             }
         }
 
@@ -1541,6 +1690,143 @@ async fn handle_attach_client(
                 if stream.write_all(&bytes).await.is_err() { break; }
             }
         }
+    }
+}
+
+/// Extract the text inside `sel` from the source pane's `vt100`
+/// screen. Walks every cell between anchor and end in row-major
+/// order (with newlines between rows) and concatenates the cell
+/// contents. Whitespace at the trailing edge of each row is trimmed
+/// so the operator's clipboard doesn't fill with padding spaces.
+fn selection_text(screen: &vt100::Screen, sel: &SelectionState) -> String {
+    let (start_row, start_col, end_row, end_col) = canonical_selection(sel);
+    let (screen_rows, screen_cols) = screen.size();
+    let max_row = (screen_rows.saturating_sub(1)).min(end_row);
+    let mut out = String::new();
+    for r in start_row..=max_row {
+        let from_col = if r == start_row { start_col } else { 0 };
+        let to_col = if r == end_row {
+            end_col
+        } else {
+            screen_cols.saturating_sub(1)
+        };
+        let mut row_text = String::new();
+        for c in from_col..=to_col {
+            if let Some(cell) = screen.cell(r, c)
+                && cell.has_contents()
+            {
+                row_text.push_str(cell.contents());
+            } else {
+                row_text.push(' ');
+            }
+        }
+        out.push_str(row_text.trim_end());
+        if r != max_row {
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// Normalise a selection into `(start_row, start_col, end_row, end_col)`
+/// in top-left → bottom-right order, regardless of which direction the
+/// operator dragged.
+fn canonical_selection(sel: &SelectionState) -> (u16, u16, u16, u16) {
+    if (sel.anchor_row, sel.anchor_col) <= (sel.end_row, sel.end_col) {
+        (sel.anchor_row, sel.anchor_col, sel.end_row, sel.end_col)
+    } else {
+        (sel.end_row, sel.end_col, sel.anchor_row, sel.anchor_col)
+    }
+}
+
+/// Pure-Rust base64 encoder (RFC 4648 standard alphabet, no padding
+/// stripping). Used for OSC 52 clipboard payloads. We avoid pulling
+/// in the `base64` crate because this is the only call site and the
+/// encoder is ~30 lines.
+fn base64_encode(input: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
+    let mut i = 0;
+    while i + 3 <= input.len() {
+        let b0 = input[i];
+        let b1 = input[i + 1];
+        let b2 = input[i + 2];
+        out.push(ALPHABET[(b0 >> 2) as usize] as char);
+        out.push(ALPHABET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        out.push(ALPHABET[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
+        out.push(ALPHABET[(b2 & 0x3f) as usize] as char);
+        i += 3;
+    }
+    let rem = input.len() - i;
+    if rem == 1 {
+        let b0 = input[i];
+        out.push(ALPHABET[(b0 >> 2) as usize] as char);
+        out.push(ALPHABET[((b0 & 0x03) << 4) as usize] as char);
+        out.push('=');
+        out.push('=');
+    } else if rem == 2 {
+        let b0 = input[i];
+        let b1 = input[i + 1];
+        out.push(ALPHABET[(b0 >> 2) as usize] as char);
+        out.push(ALPHABET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        out.push(ALPHABET[((b1 & 0x0f) << 2) as usize] as char);
+        out.push('=');
+    }
+    out
+}
+
+/// Replace the operator's `$HOME` prefix with `~` so the pane title
+/// shows `~/Projects/...` instead of `/Users/foo/Projects/...`.
+/// Mirrors zellij's title compaction. Falls back to the raw path when
+/// `$HOME` is unset or not a prefix.
+fn shorten_cwd(cwd: &str) -> String {
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = home.to_string_lossy().to_string();
+        if !home.is_empty() && cwd.starts_with(&home) {
+            return format!("~{}", &cwd[home.len()..]);
+        }
+    }
+    cwd.to_string()
+}
+
+/// Paint an inverse-video highlight over every cell inside the
+/// selection rectangle. Emitted after `render_pane` so the agent's
+/// content is preserved underneath — the operator sees the same
+/// glyphs but on a reversed colour pair, which is the universal
+/// "this is selected" cue.
+fn paint_selection_highlight(buf: &mut Vec<u8>, screen: &vt100::Screen, sel: &SelectionState) {
+    let (start_row, start_col, end_row, end_col) = canonical_selection(sel);
+    let inner = sel.inner;
+    for r in start_row..=end_row {
+        let from_col = if r == start_row { start_col } else { 0 };
+        let to_col = if r == end_row {
+            end_col
+        } else {
+            inner.cols.saturating_sub(1)
+        };
+        if to_col < from_col {
+            continue;
+        }
+        let abs_row = inner.row + r;
+        let abs_col = inner.col + from_col;
+        let _ = std::io::Write::write_fmt(
+            buf,
+            format_args!("\x1b[{};{}H", abs_row + 1, abs_col + 1),
+        );
+        // Inverse SGR — preserves whatever fg/bg the underlying cell
+        // carried so the operator still reads the selected text.
+        buf.extend_from_slice(b"\x1b[7m");
+        for c in from_col..=to_col {
+            if let Some(cell) = screen.cell(r, c)
+                && cell.has_contents()
+            {
+                buf.extend_from_slice(cell.contents().as_bytes());
+            } else {
+                buf.push(b' ');
+            }
+        }
+        buf.extend_from_slice(b"\x1b[0m");
     }
 }
 

@@ -36,6 +36,38 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 /// viewport, so this stays generous.
 pub const SCROLLBACK_LEN: usize = 10_000;
 
+/// Decode `%xx` escapes in an OSC-7 cwd payload back to UTF-8. The
+/// shell's `\x1b]7;file://<host>/<percent-encoded-path>` always
+/// percent-encodes anything past ASCII alnum + `/`; without decoding
+/// the operator sees `%20` in the pane title instead of a space.
+fn percent_decode_lossy(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hex = &bytes[i + 1..i + 3];
+            if let (Some(h), Some(l)) = (hex_digit(hex[0]), hex_digit(hex[1])) {
+                out.push((h << 4) | l);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn hex_digit(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
 pub fn next_id() -> u64 {
     NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }
@@ -61,6 +93,18 @@ pub struct OscCapture {
     /// every PTY tick and defers status-bar + frame redraws while
     /// it's true so an agent's atomic frame window is not torn.
     pub sync_output: bool,
+    /// Whether the session enabled DEC private mode `?1004` (focus
+    /// event reporting). vt100 does not track this; we capture it
+    /// here from `unhandled_csi` and consult it before synthesising
+    /// `\x1b[I` / `\x1b[O` on focus swap.
+    pub focus_events: bool,
+    /// Most recently announced working directory, captured from
+    /// `OSC 7` (`\x1b]7;file://<host>/<path>\x07`). Modern shells
+    /// (zsh + starship, bash + PROMPT_COMMAND, fish) emit this on
+    /// every prompt; the daemon surfaces it as the pane box title
+    /// when the agent has not set an `OSC 2` of its own, matching
+    /// zellij's "Shell title shows cwd" convention.
+    pub cwd: Option<String>,
 }
 
 impl OscCapture {
@@ -100,6 +144,30 @@ impl Callbacks for OscCapture {
     }
 
     fn unhandled_osc(&mut self, _: &mut Screen, params: &[&[u8]]) {
+        // OSC 7 — current working directory. Shells emit
+        // `\x1b]7;file://<host>/<percent-encoded-path>\x07` on
+        // every prompt. Capture the path locally so the pane box
+        // title can fall back to it; forward verbatim so an outer
+        // terminal that understands OSC 7 (Ghostty, iTerm2) also
+        // gets the hint.
+        if let Some(first) = params.first()
+            && *first == b"7"
+            && let Some(rest) = params.get(1)
+            && let Ok(s) = std::str::from_utf8(rest)
+        {
+            if let Some(idx) = s.find('/') {
+                let after_scheme = &s[idx..];
+                let path_start = after_scheme
+                    .find('/')
+                    .map(|i| i + 1)
+                    .and_then(|i| after_scheme.get(i..))
+                    .unwrap_or(after_scheme);
+                let decoded = percent_decode_lossy(path_start);
+                self.cwd = Some(decoded);
+            } else {
+                self.cwd = Some(s.to_string());
+            }
+        }
         let mut osc = b"\x1b]".to_vec();
         for (i, p) in params.iter().enumerate() {
             if i > 0 {
@@ -469,6 +537,11 @@ impl Session {
 
     pub fn title(&self) -> Option<&str> {
         self.parser.callbacks().title.as_deref()
+    }
+
+    /// Most recently announced working directory (OSC 7), if any.
+    pub fn cwd(&self) -> Option<&str> {
+        self.parser.callbacks().cwd.as_deref()
     }
 
     pub fn resize(&mut self, rows: u16, cols: u16) {
