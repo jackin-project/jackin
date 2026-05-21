@@ -28,9 +28,12 @@ async fn main() -> Result<()> {
     let is_pid1 = std::process::id() == 1;
 
     if is_pid1 {
-        // Daemon mode: parse the initial agent from JACKIN_AGENT env or args.
+        // Daemon mode. `JACKIN_AGENT` selects the initial agent;
+        // unset → daemon starts with no preselected agent and the first
+        // tab spawns a Shell as the safe fallback (operator can replace
+        // it via `prefix + c`).
         let agent = std::env::var("JACKIN_AGENT")
-            .unwrap_or_else(|_| args.get(1).cloned().unwrap_or_else(|| "claude".to_string()));
+            .unwrap_or_else(|_| args.get(1).cloned().unwrap_or_default());
         daemon::run_daemon(agent).await
     } else {
         // Client mode.
