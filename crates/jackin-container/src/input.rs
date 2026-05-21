@@ -214,6 +214,17 @@ impl InputParser {
             }
         }
         flush(&mut data, &mut events);
+        // Lone Esc — a single `\x1b` byte with no following sequence
+        // byte — must reach the dialog layer as a `Data` event so
+        // dismiss-on-Esc works. Without this flush the parser stays
+        // in `EscStart` indefinitely and `\x1b` is buffered forever.
+        // Multi-byte CSI / OSC / DCS sequences are still buffered
+        // across chunks because their state is `Csi` / `Osc` /
+        // `OtherEsc`, not `EscStart`.
+        if matches!(self.state, State::EscStart) && !self.seq.is_empty() {
+            events.push(InputEvent::Data(std::mem::take(&mut self.seq)));
+            self.state = State::Idle;
+        }
         events
     }
 }

@@ -381,8 +381,11 @@ impl Multiplexer {
                         }
                         DialogAction::Redraw => Some(self.compose_frame()),
                         DialogAction::Command(cmd) => {
+                            // `handle_palette_command` owns the dialog
+                            // state — it closes the dialog by default
+                            // and overwrites it when the command opens
+                            // a sub-dialog (e.g. NewTab → agent picker).
                             self.handle_palette_command(cmd);
-                            self.dialog = None;
                             Some(self.compose_frame())
                         }
                         DialogAction::SpawnAgent { agent } => {
@@ -477,6 +480,11 @@ impl Multiplexer {
     }
 
     fn handle_palette_command(&mut self, cmd: PaletteCommand) -> Option<Vec<u8>> {
+        // Default: close the dialog after the command runs. Commands
+        // that need a follow-up choice (e.g. NewTab → "which agent?")
+        // overwrite `self.dialog` themselves AFTER this reset, so the
+        // sub-dialog survives this handler.
+        self.dialog = None;
         match cmd {
             PaletteCommand::SplitHorizontal => {
                 let _ = self.split_focused(true);
@@ -485,6 +493,11 @@ impl Multiplexer {
                 let _ = self.split_focused(false);
             }
             PaletteCommand::NewTab => {
+                // Always show the agent picker — even when the role
+                // declares a single agent. The operator must
+                // explicitly choose between that agent and a Shell;
+                // jumping straight into the agent would surprise an
+                // operator who picked "New tab" to open a shell.
                 let agents = self.available_agents.clone();
                 self.dialog = Some(Dialog::AgentPicker {
                     agents,
