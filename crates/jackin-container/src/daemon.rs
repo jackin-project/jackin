@@ -248,10 +248,13 @@ impl Multiplexer {
                 self.tabs.remove(tab_idx);
                 if was_active {
                     // Move to the tab on the left when it exists;
-                    // otherwise stay at the new index (which is the
-                    // tab that used to sit to the right). Clamp so
-                    // `active_tab` stays in bounds when the last
-                    // tab was the one that died.
+                    // otherwise stay at index 0 (the leftmost tab
+                    // remaining, which was the next-right neighbour
+                    // before the removal). `saturating_sub(1)`
+                    // collapses both "go left" and "no-left, stay
+                    // at 0" into the same expression. Clamp again
+                    // so `active_tab` stays in bounds if the last
+                    // tab in the strip just vanished.
                     self.active_tab = tab_idx.saturating_sub(1);
                     if self.active_tab >= self.tabs.len() {
                         self.active_tab = self.tabs.len().saturating_sub(1);
@@ -534,27 +537,32 @@ impl Multiplexer {
         if old == new {
             return;
         }
-        // Only TUI agents — those that have switched to the alternate
-        // screen — get synthesised focus events. Shells and pre-mount
-        // agents leave the focus-event-reporting mode off, so writing
-        // `\x1b[I` / `\x1b[O` into their PTY surfaces as literal
-        // `[I` / `[O` text at the prompt when the operator hops
-        // between tabs.
+        // Synthetic `\x1b[I` / `\x1b[O` to the agent's PTY only
+        // when the agent enabled focus-event reporting (DEC ?1004).
+        // Shells and pre-mount agents leave it off; writing the
+        // bytes into their PTY would surface as literal `[I` /
+        // `[O` text at the prompt.
         if let Some(o) = old
             && let Some(s) = self.sessions.get(&o)
-            && s.screen().alternate_screen()
+            && s.parser.callbacks().focus_events
         {
             s.send_input(b"\x1b[O");
         }
         if let Some(n) = new
             && let Some(s) = self.sessions.get(&n)
         {
-            if s.screen().alternate_screen() {
+            if s.parser.callbacks().focus_events {
                 s.send_input(b"\x1b[I");
             }
-            // Re-emit modes the new focused agent has live so the
-            // outer terminal switches in sync with the visible pane.
+            // Reset the outer terminal to a known baseline, then
+            // re-emit every mode the new pane wants live.
+            // Without the reset, mouse / focus / kitty / bracketed-
+            // paste from the previous focused pane would leak into
+            // shells and pre-TUI agents.
             if let Some(tx) = &self.attached_out {
+                let _ = tx.send(encode_server(ServerFrame::Output(
+                    crate::session::Session::focus_swap_reset().to_vec(),
+                )));
                 for bytes in s.current_mode_state() {
                     let _ = tx.send(encode_server(ServerFrame::Output(bytes)));
                 }
@@ -592,11 +600,10 @@ impl Multiplexer {
                 Some(self.compose_frame())
             }
             InputEvent::FocusIn | InputEvent::FocusOut => {
-                // Forward focus events to the focused pane's PTY so the
-                // agent can pause/resume animations — but only when
-                // the agent's TUI is live (alternate screen on).
-                // Forwarding to a shell would surface `[I` / `[O`
-                // as literal text at the prompt.
+                // Forward only when the focused agent actually
+                // requested focus events (`?1004h`) — shells and
+                // pre-mount agents leave the mode off and would
+                // surface `[I` / `[O` as literal text at the prompt.
                 if self.dialog.is_some() {
                     return None;
                 }
@@ -607,7 +614,7 @@ impl Multiplexer {
                 };
                 if let Some(focused) = self.active_focused_id()
                     && let Some(session) = self.sessions.get(&focused)
-                    && session.screen().alternate_screen()
+                    && session.parser.callbacks().focus_events
                 {
                     session.send_input(bytes);
                 }
@@ -785,6 +792,14 @@ impl Multiplexer {
                     if self.selection.is_some() {
                         return self.selection_motion(row, col);
                     }
+                    // No drag / selection in flight: motion events
+                    // belong to the focused pane only if it asked
+                    // for any-event tracking (`?1003h`) or
+                    // button-motion tracking (`?1002h`). Forwarding
+                    // them blindly would dump SGR bytes into shells
+                    // that ignored mouse mode.
+                    self.forward_mouse_to_focused_pane(col, row, button);
+                    return None;
                 }
                 if button == 0 {
                     // Press on a shared pane border starts a drag —
@@ -1633,15 +1648,14 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             mux.detach_requested = true;
         }
         ClientFrame::FocusIn => {
-            // The outer terminal regained focus. Forward to the focused
-            // pane only when no dialog is intercepting input — a modal
-            // is the operator's foreground, not the agent. Same
-            // alternate-screen gate as the keyboard path so primary
-            // shells do not see literal `[I`.
+            // Forward only when no dialog is intercepting input AND
+            // the focused session actually asked for focus reports
+            // (`?1004h`). Without the gate, primary-screen shells
+            // surface `[I` as literal text at the prompt.
             if mux.dialog.is_none()
                 && let Some(focused) = mux.active_focused_id()
                 && let Some(s) = mux.sessions.get(&focused)
-                && s.screen().alternate_screen()
+                && s.parser.callbacks().focus_events
             {
                 s.send_input(b"\x1b[I");
             }
@@ -1650,7 +1664,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             if mux.dialog.is_none()
                 && let Some(focused) = mux.active_focused_id()
                 && let Some(s) = mux.sessions.get(&focused)
-                && s.screen().alternate_screen()
+                && s.parser.callbacks().focus_events
             {
                 s.send_input(b"\x1b[O");
             }

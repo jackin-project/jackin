@@ -59,6 +59,17 @@ fn percent_decode_lossy(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// Whether the daemon honours `OSC 52` clipboard writes from PTYs.
+/// `JACKIN_OSC52=deny` turns it off; anything else (including unset)
+/// leaves the existing forward behaviour intact. Matches tmux's
+/// `set-clipboard on|off` control.
+fn osc52_allowed() -> bool {
+    !matches!(
+        std::env::var("JACKIN_OSC52").as_deref(),
+        Ok("deny") | Ok("off") | Ok("no")
+    )
+}
+
 fn hex_digit(b: u8) -> Option<u8> {
     match b {
         b'0'..=b'9' => Some(b - b'0'),
@@ -135,12 +146,18 @@ impl Callbacks for OscCapture {
     }
 
     fn copy_to_clipboard(&mut self, _: &mut Screen, ty: &[u8], data: &[u8]) {
-        let mut osc = b"\x1b]52;".to_vec();
-        osc.extend_from_slice(ty);
-        osc.push(b';');
-        osc.extend_from_slice(data);
-        osc.extend_from_slice(b"\x07");
-        self.pending.push(osc);
+        // Operator can disable agent-driven clipboard writes when
+        // running an untrusted role: `JACKIN_OSC52=deny`. Default is
+        // `allow` to match the pre-gate behaviour. tmux exposes the
+        // same control as `set-clipboard on|off`.
+        if osc52_allowed() {
+            let mut osc = b"\x1b]52;".to_vec();
+            osc.extend_from_slice(ty);
+            osc.push(b';');
+            osc.extend_from_slice(data);
+            osc.extend_from_slice(b"\x07");
+            self.pending.push(osc);
+        }
     }
 
     fn unhandled_osc(&mut self, _: &mut Screen, params: &[&[u8]]) {
@@ -219,21 +236,29 @@ impl Callbacks for OscCapture {
             }
             return;
         }
-        // Synchronised-output mode (DEC `?2026`) is tracked by the
-        // separate `sync_output` flag below — never re-emit it from
-        // the generic passthrough or the outer terminal sees the
-        // start/end markers twice (once from us, once from vt100's
-        // own internal pipeline), which collapses BSU's atomic
-        // window.
+        // Private-mode set / reset that we track separately from
+        // vt100. `?2026` (synchronised output) and `?1004` (focus
+        // events) are NOT forwarded through the generic passthrough
+        // — the daemon mirrors them onto the outer terminal via the
+        // focus-swap restore path so backgrounded panes don't leak
+        // their state.
         if c == 'h' || c == 'l' {
             let private = i1 == Some(b'?');
             let on = c == 'h';
             if private
                 && let Some(first) = params.first().and_then(|p| p.first())
-                && *first == 2026
             {
-                self.sync_output = on;
-                return;
+                match *first {
+                    2026 => {
+                        self.sync_output = on;
+                        return;
+                    }
+                    1004 => {
+                        self.focus_events = on;
+                        return;
+                    }
+                    _ => {}
+                }
             }
         }
         // Re-emit verbatim. vt100 routes here only for CSI sequences
@@ -523,16 +548,74 @@ impl Session {
         out
     }
 
-    /// Snapshot of every mode the daemon should restore on the
-    /// outer terminal when an attach client connects. Mirrors the
-    /// "what does the agent currently want?" set so a reattach
-    /// looks identical to a brand-new attach.
+    /// Snapshot of every mode the daemon should restore on the outer
+    /// terminal when this pane becomes focused or an attach client
+    /// connects. Covers bracketed paste (`?2004`), focus events
+    /// (`?1004`), the active mouse protocol (`?1000`/`?1002`/`?1003`)
+    /// with SGR encoding (`?1006`), application cursor keys (`?1`),
+    /// DECTCEM cursor visibility (`?25`), and the top of the kitty
+    /// keyboard stack (`\x1b[>{flags}u`). The daemon emits this
+    /// after the focus-swap reset so the outer terminal mirrors the
+    /// new pane's expectations without leaking the previous pane's.
     pub fn current_mode_state(&self) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
-        if self.parser.screen().bracketed_paste() {
+        let screen = self.parser.screen();
+        if screen.bracketed_paste() {
             out.push(b"\x1b[?2004h".to_vec());
         }
+        if self.parser.callbacks().focus_events {
+            out.push(b"\x1b[?1004h".to_vec());
+        }
+        if screen.application_cursor() {
+            out.push(b"\x1b[?1h".to_vec());
+        }
+        // Mouse protocol — enable the specific mode the agent asked
+        // for plus SGR encoding so our `\x1b[<...M/m` reports decode
+        // on the agent's side. Without the encoding line, agents
+        // that only handle SGR (claude code, lazygit) would receive
+        // the wrong bytes.
+        use vt100::MouseProtocolMode;
+        match screen.mouse_protocol_mode() {
+            MouseProtocolMode::None => {}
+            MouseProtocolMode::Press => {
+                out.push(b"\x1b[?9h".to_vec());
+            }
+            MouseProtocolMode::PressRelease => {
+                out.push(b"\x1b[?1000h\x1b[?1006h".to_vec());
+            }
+            MouseProtocolMode::ButtonMotion => {
+                out.push(b"\x1b[?1002h\x1b[?1006h".to_vec());
+            }
+            MouseProtocolMode::AnyMotion => {
+                out.push(b"\x1b[?1003h\x1b[?1006h".to_vec());
+            }
+        }
+        // Kitty keyboard — restore the most recently pushed level
+        // for this pane. Empty stack = "no kitty kb on outer terminal".
+        if let Some(&flags) = self.parser.callbacks().kitty_kb_stack.last() {
+            out.push(format!("\x1b[>{flags}u").into_bytes());
+        }
+        // Cursor visibility — honour `\x1b[?25l` so an agent that
+        // hides its cursor mid-render does not leave a stale block
+        // visible after focus swap.
+        if screen.hide_cursor() {
+            out.push(b"\x1b[?25l".to_vec());
+        }
         out
+    }
+
+    /// Outer-terminal reset sequence applied just before a focus
+    /// swap restores the new pane's mode state. Disables every mode
+    /// the previous pane's agent might have left on so the new pane
+    /// starts from a clean baseline. Cheap to send unconditionally
+    /// because each `?...l` against a not-set mode is a no-op.
+    pub fn focus_swap_reset() -> &'static [u8] {
+        // Order: kitty kb pop, focus events off, every mouse mode
+        // off + SGR encoding off, bracketed paste off, cursor reset
+        // visible, app-cursor off. The cursor stays visible by
+        // default; the next `current_mode_state` re-asserts hide if
+        // the incoming pane wants that.
+        b"\x1b[<u\x1b[?1004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[?25h\x1b[?1l"
     }
 
     pub fn title(&self) -> Option<&str> {
