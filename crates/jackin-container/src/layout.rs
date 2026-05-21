@@ -314,6 +314,89 @@ pub enum Direction {
     Down,
 }
 
+#[cfg(test)]
+mod rect_shrink_tests {
+    use super::Rect;
+
+    #[test]
+    fn shrink_inside_normal_rect() {
+        let r = Rect::new(5, 10, 20, 30);
+        let s = r.shrink(1);
+        assert_eq!((s.row, s.col, s.rows, s.cols), (6, 11, 18, 28));
+    }
+
+    #[test]
+    fn shrink_clamps_to_zero_when_too_narrow() {
+        let r = Rect::new(5, 10, 1, 1);
+        let s = r.shrink(1);
+        // Width and height drop to zero; row/col stay put so callers
+        // get a valid (if empty) rectangle.
+        assert_eq!((s.rows, s.cols), (0, 0));
+        assert_eq!((s.row, s.col), (5, 10));
+    }
+
+    #[test]
+    fn shrink_by_zero_is_noop() {
+        let r = Rect::new(2, 3, 7, 11);
+        let s = r.shrink(0);
+        assert_eq!((s.row, s.col, s.rows, s.cols), (2, 3, 7, 11));
+    }
+}
+
+#[cfg(test)]
+mod border_at_tests {
+    use super::{Direction, PaneTree, Rect, SplitOrient};
+
+    #[test]
+    fn border_at_horizontal_split_returns_path_and_orient() {
+        let mut tree = PaneTree::Leaf(1);
+        tree.split_h(1, 2);
+        let rect = Rect::new(0, 0, 10, 20);
+        // Boundary cols sit either side of col=10 (left=9, right=10).
+        let hit = tree.border_at(rect, 5, 10).expect("boundary hit");
+        let (path, orient, _) = hit;
+        assert!(path.is_empty(), "boundary at the root split");
+        assert_eq!(orient, SplitOrient::Horizontal);
+    }
+
+    #[test]
+    fn border_at_vertical_split_returns_correct_orient() {
+        let mut tree = PaneTree::Leaf(1);
+        tree.split_v(1, 2);
+        let rect = Rect::new(0, 0, 10, 20);
+        // Boundary row at row=5.
+        let hit = tree.border_at(rect, 5, 4).expect("boundary hit");
+        assert_eq!(hit.1, SplitOrient::Vertical);
+    }
+
+    #[test]
+    fn border_at_returns_none_for_pane_interior() {
+        let mut tree = PaneTree::Leaf(1);
+        tree.split_h(1, 2);
+        let rect = Rect::new(0, 0, 10, 20);
+        // Click at col 3 is inside the left pane, not on the
+        // boundary.
+        assert!(tree.border_at(rect, 5, 3).is_none());
+    }
+
+    #[test]
+    fn set_ratio_at_clamps_to_safe_range() {
+        let mut tree = PaneTree::Leaf(1);
+        tree.split_h(1, 2);
+        assert!(tree.set_ratio_at(&[], 0.001));
+        if let PaneTree::HSplit { ratio, .. } = tree {
+            assert!(ratio >= 0.05);
+        } else {
+            panic!("expected HSplit");
+        }
+    }
+
+    // Direction is only referenced via the test alias to keep this
+    // module's `use` block tidy; no runtime assertion needs it.
+    #[allow(dead_code)]
+    fn _direction_referenced(_: Direction) {}
+}
+
 /// Orientation of a pane split. Used by the mouse-drag resize path
 /// so the daemon knows whether the operator's drag delta should be
 /// applied against `cols` (H-split) or `rows` (V-split).

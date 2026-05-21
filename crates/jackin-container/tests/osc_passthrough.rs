@@ -63,6 +63,52 @@ fn osc_9_notification_is_re_emitted() {
 }
 
 #[test]
+fn osc_7_cwd_is_captured_and_percent_decoded() {
+    // Shell with starship: `\x1b]7;file://host/Users/alice/My%20Code\x07`
+    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
+    p.process(b"\x1b]7;file://localhost/Users/alice/My%20Code\x07");
+    assert_eq!(
+        p.callbacks().cwd.as_deref(),
+        Some("/Users/alice/My Code"),
+        "OSC 7 must percent-decode and strip the host"
+    );
+}
+
+#[test]
+fn osc_7_rejects_malformed_payload() {
+    // Bare text without a `file://` scheme must not silently
+    // overwrite the captured cwd — that surface is reserved for
+    // valid URLs only.
+    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
+    p.process(b"\x1b]7;random-text\x07");
+    assert!(p.callbacks().cwd.is_none());
+}
+
+#[test]
+fn kitty_kb_stack_tracks_push_and_pop() {
+    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
+    p.process(b"\x1b[>1u\x1b[>3u");
+    assert_eq!(p.callbacks().kitty_kb_stack, vec![1u16, 3]);
+    // vte's CSI state machine treats `<` as a private marker only
+    // when an explicit numeric param follows. Use the spec's full
+    // form `\x1b[<{n}u` for portable pop, matching what kitty's own
+    // docs prescribe.
+    p.process(b"\x1b[<1u");
+    assert_eq!(p.callbacks().kitty_kb_stack, vec![1u16]);
+    p.process(b"\x1b[<5u"); // over-pop bounded by stack length
+    assert!(p.callbacks().kitty_kb_stack.is_empty());
+}
+
+#[test]
+fn focus_events_flag_tracks_dec_1004() {
+    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
+    p.process(b"\x1b[?1004h");
+    assert!(p.callbacks().focus_events);
+    p.process(b"\x1b[?1004l");
+    assert!(!p.callbacks().focus_events);
+}
+
+#[test]
 fn unhandled_csi_kitty_keyboard_push_is_suppressed() {
     // `\x1b[>1u` — push kitty keyboard protocol flags. NOT forwarded
     // to the outer terminal because doing so leaves every other pane
@@ -96,16 +142,15 @@ fn unhandled_csi_modify_other_keys_is_re_emitted() {
 }
 
 #[test]
-fn unhandled_csi_bsu_esu_is_suppressed() {
-    // Synchronised output (`?2026`) is tracked separately on the
-    // session and consumed by the daemon's render-defer logic; the
-    // generic OSC/CSI passthrough must NOT re-emit the start/end
-    // markers, or the outer terminal sees BSU/ESU twice and the
-    // atomic frame collapses.
+fn unhandled_csi_bsu_esu_is_forwarded() {
+    // Synchronised output (`?2026`) is not tracked locally — vt100
+    // does not handle it, and we have no render-defer logic in the
+    // daemon yet. Forward verbatim so an outer terminal that
+    // understands BSU/ESU still gets to apply atomic frames.
     let drained = drained(b"\x1b[?2026h");
     assert!(
-        drained.iter().all(|f| f != b"\x1b[?2026h"),
-        "?2026h must not be re-emitted: {drained:?}"
+        drained.iter().any(|f| f == b"\x1b[?2026h"),
+        "?2026h must reach the outer terminal: {drained:?}"
     );
 }
 

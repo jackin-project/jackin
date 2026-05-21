@@ -197,11 +197,11 @@ impl Multiplexer {
         }
     }
 
-    /// Clear any in-flight mouse-drag resize. Called whenever the
-    /// daemon mutates state that the drag's saved `rect` no longer
-    /// describes (tab swap, outer-terminal resize, dialog open). The
-    /// alternative was re-validating the drag on every motion event,
-    /// which is more code than just dropping the drag.
+    /// Clear any in-flight pointer gesture — drag-resize or text
+    /// selection. Called whenever the daemon mutates state that the
+    /// saved geometry no longer describes (tab swap, outer-terminal
+    /// resize, pane reflow, dialog open). Cheaper than re-validating
+    /// each gesture on every motion event.
     fn cancel_drag(&mut self) {
         self.drag = None;
         self.selection = None;
@@ -236,6 +236,13 @@ impl Multiplexer {
     /// before they opened that tab, not to the next-tab-to-the-right
     /// (which feels like a stack push).
     fn remove_exited_session(&mut self, session_id: u64) {
+        // Any in-flight selection / drag-resize was anchored to a
+        // pane that may be about to disappear (or whose siblings
+        // are about to reflow). Drop the gesture so the next motion
+        // event does not paint stale geometry.
+        if self.selection.as_ref().is_some_and(|s| s.session_id == session_id) {
+            self.selection = None;
+        }
         let owning_tab = self
             .tabs
             .iter()
@@ -326,6 +333,9 @@ impl Multiplexer {
     /// the AgentPicker → Split flow so the operator picks the new
     /// pane's identity instead of cloning the source pane's agent.
     fn split_focused_into(&mut self, horizontal: bool, agent_slug: Option<String>) -> Result<()> {
+        // Any selection / drag-resize is anchored to a specific pane
+        // rect that this reflow is about to invalidate.
+        self.cancel_drag();
         let Some(tab) = self.tabs.get(self.active_tab) else {
             return Ok(());
         };
@@ -370,6 +380,7 @@ impl Multiplexer {
     }
 
     fn close_focused_pane(&mut self) {
+        self.cancel_drag();
         let Some(tab) = self.tabs.get_mut(self.active_tab) else {
             return;
         };
@@ -1096,7 +1107,8 @@ impl Multiplexer {
                 // base64-encoded payload. The outer terminal
                 // (Ghostty / iTerm2 / kitty / wezterm) writes the
                 // decoded bytes to the system clipboard.
-                let encoded = jackin_tui::base64_encode(text.as_bytes());
+                use base64::Engine as _;
+                let encoded = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
                 let bytes = format!("\x1b]52;c;{}\x07", encoded).into_bytes();
                 let _ = tx.send(encode_server(ServerFrame::Output(bytes)));
             }
@@ -1469,11 +1481,22 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
     // Resolve the operator's escape-time once at startup. Reading
     // the env var inside the event loop was a per-iteration syscall
     // for a value that never changes for the lifetime of the daemon.
-    let escape_time = std::env::var(ENV_ESCAPE_TIME)
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(Duration::from_millis)
-        .unwrap_or(DEFAULT_ESCAPE_TIME);
+    // A present-but-unparseable env var emits a debug line so the
+    // operator can see their config was rejected rather than
+    // silently falling back to the default.
+    let escape_time = match std::env::var(ENV_ESCAPE_TIME) {
+        Ok(raw) => match raw.parse::<u64>() {
+            Ok(ms) => Duration::from_millis(ms),
+            Err(_) => {
+                eprintln!(
+                    "[jackin-container] {ENV_ESCAPE_TIME}={raw:?} ignored (not a positive integer); using default {} ms",
+                    DEFAULT_ESCAPE_TIME.as_millis()
+                );
+                DEFAULT_ESCAPE_TIME
+            }
+        },
+        Err(_) => DEFAULT_ESCAPE_TIME,
+    };
 
     loop {
         // Arm a one-shot timer whenever the input parser holds a
@@ -1771,16 +1794,21 @@ async fn handle_attach_client(
 /// so the operator's clipboard doesn't fill with padding spaces.
 fn selection_text(screen: &vt100::Screen, sel: &SelectionState) -> String {
     let (start_row, start_col, end_row, end_col) = canonical_selection(sel);
-    let (screen_rows, screen_cols) = screen.size();
-    let max_row = (screen_rows.saturating_sub(1)).min(end_row);
+    let (screen_rows, _) = screen.size();
+    // Both the visual highlight and this extractor use the pane's
+    // *inner* cols — without this match the painted highlight and
+    // the copied text would disagree on which columns were
+    // selected when the agent grid is sized differently from the
+    // inner rect (mid-resize race).
+    let cols_for_full_row = sel.inner.cols.saturating_sub(1);
+    let max_row = screen_rows.saturating_sub(1).min(end_row);
+    if start_row > max_row {
+        return String::new();
+    }
     let mut out = String::new();
     for r in start_row..=max_row {
         let from_col = if r == start_row { start_col } else { 0 };
-        let to_col = if r == end_row {
-            end_col
-        } else {
-            screen_cols.saturating_sub(1)
-        };
+        let to_col = if r == end_row { end_col } else { cols_for_full_row };
         let mut row_text = String::new();
         for c in from_col..=to_col {
             if let Some(cell) = screen.cell(r, c)
@@ -1810,12 +1838,7 @@ fn canonical_selection(sel: &SelectionState) -> (u16, u16, u16, u16) {
     }
 }
 
-// `base64_encode` lives in `jackin_tui` — shared with any future
-// surface that needs RFC 4648 base64 output.
 
-// `shorten_cwd` lives in `jackin_tui::shorten_home` — both the
-// multiplexer's pane-box title and any future console-side
-// directory display want the same compaction.
 
 /// Paint an inverse-video highlight over every cell inside the
 /// selection rectangle. Emitted after `render_pane` so the agent's

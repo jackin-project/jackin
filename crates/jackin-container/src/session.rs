@@ -36,27 +36,20 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 /// viewport, so this stays generous.
 pub const SCROLLBACK_LEN: usize = 10_000;
 
-/// Decode `%xx` escapes in an OSC-7 cwd payload back to UTF-8. The
-/// shell's `\x1b]7;file://<host>/<percent-encoded-path>` always
-/// percent-encodes anything past ASCII alnum + `/`; without decoding
-/// the operator sees `%20` in the pane title instead of a space.
-fn percent_decode_lossy(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            let hex = &bytes[i + 1..i + 3];
-            if let (Some(h), Some(l)) = (hex_digit(hex[0]), hex_digit(hex[1])) {
-                out.push((h << 4) | l);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(bytes[i]);
-        i += 1;
+/// Parse an `OSC 7` payload into a local-filesystem path. `OSC 7`
+/// canonically arrives as `file://<host>/<percent-encoded-path>`;
+/// `url::Url` does the percent-decoding and host-stripping in one
+/// pass. Returns `None` for any payload that does not parse as a
+/// `file://` URL — silently trusting arbitrary text would let an
+/// agent overwrite the pane title with whatever it pleased.
+fn parse_osc7(payload: &str) -> Option<String> {
+    let url = url::Url::parse(payload).ok()?;
+    if url.scheme() != "file" {
+        return None;
     }
-    String::from_utf8_lossy(&out).into_owned()
+    url.to_file_path()
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
 /// `JACKIN_OSC52` env-var name — operator opt-out switch for agent
@@ -73,14 +66,6 @@ fn osc52_allowed() -> bool {
     )
 }
 
-fn hex_digit(b: u8) -> Option<u8> {
-    match b {
-        b'0'..=b'9' => Some(b - b'0'),
-        b'a'..=b'f' => Some(b - b'a' + 10),
-        b'A'..=b'F' => Some(b - b'A' + 10),
-        _ => None,
-    }
-}
 
 pub fn next_id() -> u64 {
     NEXT_ID.fetch_add(1, Ordering::Relaxed)
@@ -101,12 +86,6 @@ pub struct OscCapture {
     /// = "agent never asked for kitty kb" → outer terminal stays in
     /// plain CSI mode.
     pub kitty_kb_stack: Vec<u16>,
-    /// Whether the session currently has DEC private mode `?2026`
-    /// (synchronised output) active. Tracked here because vt100
-    /// 0.16 does not expose it directly. The daemon reads this on
-    /// every PTY tick and defers status-bar + frame redraws while
-    /// it's true so an agent's atomic frame window is not torn.
-    pub sync_output: bool,
     /// Whether the session enabled DEC private mode `?1004` (focus
     /// event reporting). vt100 does not track this; we capture it
     /// here from `unhandled_csi` and consult it before synthesising
@@ -166,27 +145,17 @@ impl Callbacks for OscCapture {
     fn unhandled_osc(&mut self, _: &mut Screen, params: &[&[u8]]) {
         // OSC 7 — current working directory. Shells emit
         // `\x1b]7;file://<host>/<percent-encoded-path>\x07` on
-        // every prompt. Capture the path locally so the pane box
-        // title can fall back to it; forward verbatim so an outer
-        // terminal that understands OSC 7 (Ghostty, iTerm2) also
-        // gets the hint.
+        // every prompt. Use `url::Url` to handle host stripping +
+        // percent-decoding in one go; reject anything that does
+        // not parse as a `file://` URL so an agent cannot
+        // overwrite the pane title with arbitrary text.
         if let Some(first) = params.first()
             && *first == b"7"
             && let Some(rest) = params.get(1)
             && let Ok(s) = std::str::from_utf8(rest)
+            && let Some(path) = parse_osc7(s)
         {
-            if let Some(idx) = s.find('/') {
-                let after_scheme = &s[idx..];
-                let path_start = after_scheme
-                    .find('/')
-                    .map(|i| i + 1)
-                    .and_then(|i| after_scheme.get(i..))
-                    .unwrap_or(after_scheme);
-                let decoded = percent_decode_lossy(path_start);
-                self.cwd = Some(decoded);
-            } else {
-                self.cwd = Some(s.to_string());
-            }
+            self.cwd = Some(path);
         }
         let mut osc = b"\x1b]".to_vec();
         for (i, p) in params.iter().enumerate() {
@@ -208,13 +177,13 @@ impl Callbacks for OscCapture {
         c: char,
     ) {
         // Kitty-keyboard push (`\x1b[>{n}u`) and pop (`\x1b[<{n}u`)
-        // are now tracked per-pane via `kitty_kb_pushes` and
+        // are tracked per-pane in `OscCapture::kitty_kb_stack` and
         // re-applied to the outer terminal on focus swap by
-        // `Session::drain_mode_transitions` / `current_mode_state`.
-        // Forwarding them through this generic passthrough would
-        // race with the focus-swap restore: an agent that pushes
-        // `\x1b[>1u` while focused must NOT leave the outer
-        // terminal in that mode the moment focus moves to a shell.
+        // `Session::current_mode_state`. Forwarding them through
+        // this generic passthrough would race with the focus-swap
+        // restore: an agent that pushes `\x1b[>1u` while focused
+        // must NOT leave the outer terminal in that mode the
+        // moment focus moves to a shell.
         if c == 'u' && i1 == Some(b'>') {
             // Capture the latest desired flag set. Subsequent
             // pushes from the same pane stack on top of the
@@ -239,30 +208,19 @@ impl Callbacks for OscCapture {
             }
             return;
         }
-        // Private-mode set / reset that we track separately from
-        // vt100. `?2026` (synchronised output) and `?1004` (focus
-        // events) are NOT forwarded through the generic passthrough
-        // — the daemon mirrors them onto the outer terminal via the
-        // focus-swap restore path so backgrounded panes don't leak
-        // their state.
-        if c == 'h' || c == 'l' {
-            let private = i1 == Some(b'?');
-            let on = c == 'h';
-            if private
-                && let Some(first) = params.first().and_then(|p| p.first())
-            {
-                match *first {
-                    2026 => {
-                        self.sync_output = on;
-                        return;
-                    }
-                    1004 => {
-                        self.focus_events = on;
-                        return;
-                    }
-                    _ => {}
-                }
-            }
+        // `?1004` (focus events) is captured here so the daemon
+        // can restore it on focus swap; vt100 does not surface the
+        // flag. NOT forwarded through the generic passthrough —
+        // the daemon writes the `?1004h/l` itself when the new
+        // focused pane wants it, so backgrounded panes can't leak
+        // their state to the outer terminal.
+        if (c == 'h' || c == 'l')
+            && i1 == Some(b'?')
+            && let Some(first) = params.first().and_then(|p| p.first())
+            && *first == 1004
+        {
+            self.focus_events = c == 'h';
+            return;
         }
         // Re-emit verbatim. vt100 routes here only for CSI sequences
         // it does not itself handle — `modifyOtherKeys`
@@ -606,12 +564,17 @@ impl Session {
         if let Some(&flags) = self.parser.callbacks().kitty_kb_stack.last() {
             out.push(format!("\x1b[>{flags}u").into_bytes());
         }
-        // Cursor visibility — honour `\x1b[?25l` so an agent that
-        // hides its cursor mid-render does not leave a stale block
-        // visible after focus swap.
-        if screen.hide_cursor() {
-            out.push(b"\x1b[?25l".to_vec());
-        }
+        // Cursor visibility — always emit the new pane's desired
+        // state so the outer terminal does not carry over the
+        // previous pane's hidden cursor. Sending the opposite of
+        // what the agent wants here would either leave a stale
+        // block from the previous pane visible, or hide the
+        // cursor an interactive shell needs.
+        out.push(if screen.hide_cursor() {
+            b"\x1b[?25l".to_vec()
+        } else {
+            b"\x1b[?25h".to_vec()
+        });
         out
     }
 
@@ -622,11 +585,11 @@ impl Session {
     /// because each `?...l` against a not-set mode is a no-op.
     pub fn focus_swap_reset() -> &'static [u8] {
         // Order: kitty kb pop, focus events off, every mouse mode
-        // off + SGR encoding off, bracketed paste off, cursor reset
-        // visible, app-cursor off. The cursor stays visible by
-        // default; the next `current_mode_state` re-asserts hide if
-        // the incoming pane wants that.
-        b"\x1b[<u\x1b[?1004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[?25h\x1b[?1l"
+        // off + SGR encoding off, bracketed paste off, app-cursor
+        // off. Cursor visibility is *not* in here — `current_mode_state`
+        // unconditionally emits `?25h` or `?25l` next, so a reset
+        // toggle would only cause the operator's cursor to flash.
+        b"\x1b[<u\x1b[?1004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[?1l"
     }
 
     pub fn title(&self) -> Option<&str> {

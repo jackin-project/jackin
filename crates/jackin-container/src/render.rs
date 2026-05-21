@@ -83,27 +83,21 @@ pub fn render_pane(
     buf.extend_from_slice(b"\x1b[0m");
 }
 
-/// Draw a 1-column vertical scrollbar on the right edge of a pane —
-/// **but only when there is actually scrollback to scroll into**.
+/// Paint the scrollbar thumb onto the pane's right border column
+/// (`outer_col + outer_cols - 1`) on top of the box's `│` characters.
+/// Only thumb rows are emitted: non-thumb rows keep the box border
+/// underneath so the scrollbar reads as a textured border, not as a
+/// duplicate vertical line. `filled == 0` suppresses the call
+/// entirely so alt-screen agents and fresh shells keep their full
+/// border.
 ///
-/// `filled` is the number of lines currently in the primary grid's
-/// scrollback buffer. When `filled == 0` (alt-screen agents like
-/// Claude Code, or a fresh shell that hasn't scrolled yet), the
-/// scrollbar is suppressed and the pane keeps its full width — no
-/// "you can scroll" hint when there's nothing to scroll into.
-///
-/// Thumb height is proportional to viewport / total, and the thumb's
-/// position represents which slice of the history the operator is
-/// looking at: bottom row → live tail; top row → oldest line in the
-/// scrollback. Track = dark phosphor-green `│`; thumb = bright
-/// phosphor-green `█`.
+/// Thumb height is proportional to viewport / total; thumb position
+/// represents the slice of history the operator is looking at
+/// (bottom row → live tail, top row → oldest scrollback line).
+/// Thumb colour is phosphor-green for focused panes, gray for the
+/// rest — matches the surrounding border so focus and chrome
+/// agree.
 #[allow(clippy::too_many_arguments)]
-/// Paint the scrollbar thumb onto the pane's right *border* column —
-/// `outer_col + outer_cols - 1`, the same column the box's `│`
-/// already drew on. Only thumb rows are emitted: non-thumb rows keep
-/// the box border underneath so the scrollbar reads as a textured
-/// border, not as a duplicate vertical line. The whole call is a
-/// no-op when there is no scrollback to scroll into.
 pub fn draw_scrollbar(
     buf: &mut Vec<u8>,
     pane_row: u16,

@@ -241,44 +241,6 @@ pub fn shorten_home(path: &str) -> String {
     }
 }
 
-/// RFC 4648 base64 encoder with the standard alphabet and `=`
-/// padding. Used by the multiplexer for OSC 52 clipboard payloads
-/// and available for any future surface that needs it. Pure stdlib
-/// so jackin-tui keeps its zero-dep posture.
-#[must_use]
-pub fn base64_encode(input: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
-    let mut i = 0;
-    while i + 3 <= input.len() {
-        let b0 = input[i];
-        let b1 = input[i + 1];
-        let b2 = input[i + 2];
-        out.push(ALPHABET[(b0 >> 2) as usize] as char);
-        out.push(ALPHABET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
-        out.push(ALPHABET[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
-        out.push(ALPHABET[(b2 & 0x3f) as usize] as char);
-        i += 3;
-    }
-    let rem = input.len() - i;
-    if rem == 1 {
-        let b0 = input[i];
-        out.push(ALPHABET[(b0 >> 2) as usize] as char);
-        out.push(ALPHABET[((b0 & 0x03) << 4) as usize] as char);
-        out.push('=');
-        out.push('=');
-    } else if rem == 2 {
-        let b0 = input[i];
-        let b1 = input[i + 1];
-        out.push(ALPHABET[(b0 >> 2) as usize] as char);
-        out.push(ALPHABET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
-        out.push(ALPHABET[((b1 & 0x0f) << 2) as usize] as char);
-        out.push('=');
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,15 +282,6 @@ mod tests {
         assert!(!f.is_valid());
         let f = f.with_allow_empty(true);
         assert!(f.is_valid());
-    }
-
-    #[test]
-    fn base64_rfc4648_test_vectors() {
-        assert_eq!(base64_encode(b""), "");
-        assert_eq!(base64_encode(b"f"), "Zg==");
-        assert_eq!(base64_encode(b"fo"), "Zm8=");
-        assert_eq!(base64_encode(b"foo"), "Zm9v");
-        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
     }
 
     #[test]

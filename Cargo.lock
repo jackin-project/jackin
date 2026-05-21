@@ -1327,14 +1327,17 @@ name = "jackin-container"
 version = "0.6.0-dev"
 dependencies = [
  "anyhow",
+ "base64",
  "crossterm",
  "jackin-tui",
  "nix 0.31.3",
+ "percent-encoding",
  "portable-pty",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
+ "url",
  "vt100",
 ]
 

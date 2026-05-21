@@ -267,7 +267,7 @@ impl InputParser {
         // chunks into a lone Esc + a stray `[A`, breaking arrow
         // keys under any pasting / slow link. The daemon arms an
         // escape-timeout timer (default 50 ms) instead — see
-        // `Self::escape_deadline` / `Self::flush_pending_esc`.
+        // `Self::esc_pending` / `Self::flush_pending_esc`.
         events
     }
 
