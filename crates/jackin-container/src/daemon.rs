@@ -20,6 +20,9 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
+
 use crate::dialog::{Dialog, DialogAction, PaletteCommand, PickerIntent};
 use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, SplitOrient, Tab};
@@ -197,11 +200,8 @@ impl Multiplexer {
         }
     }
 
-    /// Clear any in-flight pointer gesture — drag-resize or text
-    /// selection. Called whenever the daemon mutates state that the
-    /// saved geometry no longer describes (tab swap, outer-terminal
-    /// resize, pane reflow, dialog open). Cheaper than re-validating
-    /// each gesture on every motion event.
+    /// Drop saved gesture state when the pane geometry it referenced
+    /// is about to change. Cheaper than per-motion re-validation.
     fn cancel_drag(&mut self) {
         self.drag = None;
         self.selection = None;
@@ -1107,8 +1107,7 @@ impl Multiplexer {
                 // base64-encoded payload. The outer terminal
                 // (Ghostty / iTerm2 / kitty / wezterm) writes the
                 // decoded bytes to the system clipboard.
-                use base64::Engine as _;
-                let encoded = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
+                let encoded = BASE64.encode(text.as_bytes());
                 let bytes = format!("\x1b]52;c;{}\x07", encoded).into_bytes();
                 let _ = tx.send(encode_server(ServerFrame::Output(bytes)));
             }
@@ -1795,11 +1794,8 @@ async fn handle_attach_client(
 fn selection_text(screen: &vt100::Screen, sel: &SelectionState) -> String {
     let (start_row, start_col, end_row, end_col) = canonical_selection(sel);
     let (screen_rows, _) = screen.size();
-    // Both the visual highlight and this extractor use the pane's
-    // *inner* cols — without this match the painted highlight and
-    // the copied text would disagree on which columns were
-    // selected when the agent grid is sized differently from the
-    // inner rect (mid-resize race).
+    // Must match `paint_selection_highlight`'s bound — without this
+    // the painted highlight and the copied text disagree mid-resize.
     let cols_for_full_row = sel.inner.cols.saturating_sub(1);
     let max_row = screen_rows.saturating_sub(1).min(end_row);
     if start_row > max_row {

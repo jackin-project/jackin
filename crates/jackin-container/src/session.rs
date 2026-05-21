@@ -36,6 +36,12 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 /// viewport, so this stays generous.
 pub const SCROLLBACK_LEN: usize = 10_000;
 
+/// Per-pane cap on the kitty-keyboard push depth. A buggy or hostile
+/// agent that loops `\x1b[>1u` would otherwise grow `kitty_kb_stack`
+/// without bound. 64 is well past any real terminal program's nested
+/// keymap-mode depth.
+const KITTY_KB_STACK_CAP: usize = 64;
+
 /// Parse an `OSC 7` payload into a local-filesystem path. `OSC 7`
 /// canonically arrives as `file://<host>/<percent-encoded-path>`;
 /// `url::Url` does the percent-decoding and host-stripping in one
@@ -85,24 +91,39 @@ pub struct OscCapture {
     /// pops it back to the previous stack on focus-out. Empty stack
     /// = "agent never asked for kitty kb" → outer terminal stays in
     /// plain CSI mode.
-    pub kitty_kb_stack: Vec<u16>,
+    pub(crate) kitty_kb_stack: Vec<u16>,
     /// Whether the session enabled DEC private mode `?1004` (focus
     /// event reporting). vt100 does not track this; we capture it
     /// here from `unhandled_csi` and consult it before synthesising
     /// `\x1b[I` / `\x1b[O` on focus swap.
-    pub focus_events: bool,
+    pub(crate) focus_events: bool,
     /// Most recently announced working directory, captured from
     /// `OSC 7` (`\x1b]7;file://<host>/<path>\x07`). Modern shells
     /// (zsh + starship, bash + PROMPT_COMMAND, fish) emit this on
     /// every prompt; the daemon surfaces it as the pane box title
     /// when the agent has not set an `OSC 2` of its own, matching
     /// zellij's "Shell title shows cwd" convention.
-    pub cwd: Option<String>,
+    pub(crate) cwd: Option<String>,
 }
 
 impl OscCapture {
     pub fn drain(&mut self) -> Vec<Vec<u8>> {
         std::mem::take(&mut self.pending)
+    }
+
+    /// Read-only access for tests and the daemon. Mutation flows
+    /// through the `vt100::Callbacks` impl below — never let
+    /// outside code flip these flags directly.
+    pub fn focus_events(&self) -> bool {
+        self.focus_events
+    }
+
+    pub fn kitty_kb_stack(&self) -> &[u16] {
+        &self.kitty_kb_stack
+    }
+
+    pub fn cwd(&self) -> Option<&str> {
+        self.cwd.as_deref()
     }
 }
 
@@ -185,19 +206,17 @@ impl Callbacks for OscCapture {
         // must NOT leave the outer terminal in that mode the
         // moment focus moves to a shell.
         if c == 'u' && i1 == Some(b'>') {
-            // Capture the latest desired flag set. Subsequent
-            // pushes from the same pane stack on top of the
-            // previous one — match the kitty spec.
             let flags = params
                 .first()
                 .and_then(|p| p.first())
                 .copied()
                 .unwrap_or(1);
-            self.kitty_kb_stack.push(flags);
+            if self.kitty_kb_stack.len() < KITTY_KB_STACK_CAP {
+                self.kitty_kb_stack.push(flags);
+            }
             return;
         }
         if c == 'u' && i1 == Some(b'<') {
-            // Pop `n` entries (default 1) — matches `\x1b[<{n}u`.
             let n = params
                 .first()
                 .and_then(|p| p.first())
@@ -208,12 +227,8 @@ impl Callbacks for OscCapture {
             }
             return;
         }
-        // `?1004` (focus events) is captured here so the daemon
-        // can restore it on focus swap; vt100 does not surface the
-        // flag. NOT forwarded through the generic passthrough —
-        // the daemon writes the `?1004h/l` itself when the new
-        // focused pane wants it, so backgrounded panes can't leak
-        // their state to the outer terminal.
+        // `?1004` is intercepted because vt100 does not surface
+        // the flag and the daemon's focus-swap restore needs it.
         if (c == 'h' || c == 'l')
             && i1 == Some(b'?')
             && let Some(first) = params.first().and_then(|p| p.first())
@@ -470,7 +485,7 @@ impl Session {
     /// does not have to reach through `parser.callbacks()` at every
     /// focus-swap / FocusIn / FocusOut decision site.
     pub fn focus_events_enabled(&self) -> bool {
-        self.parser.callbacks().focus_events
+        self.parser.callbacks().focus_events()
     }
 
     pub fn screen(&self) -> &vt100::Screen {
@@ -532,7 +547,7 @@ impl Session {
         if screen.bracketed_paste() {
             out.push(b"\x1b[?2004h".to_vec());
         }
-        if self.parser.callbacks().focus_events {
+        if self.parser.callbacks().focus_events() {
             out.push(b"\x1b[?1004h".to_vec());
         }
         if screen.application_cursor() {
@@ -561,7 +576,7 @@ impl Session {
         }
         // Kitty keyboard — restore the most recently pushed level
         // for this pane. Empty stack = "no kitty kb on outer terminal".
-        if let Some(&flags) = self.parser.callbacks().kitty_kb_stack.last() {
+        if let Some(&flags) = self.parser.callbacks().kitty_kb_stack().last() {
             out.push(format!("\x1b[>{flags}u").into_bytes());
         }
         // Cursor visibility — always emit the new pane's desired
@@ -598,7 +613,7 @@ impl Session {
 
     /// Most recently announced working directory (OSC 7), if any.
     pub fn cwd(&self) -> Option<&str> {
-        self.parser.callbacks().cwd.as_deref()
+        self.parser.callbacks().cwd()
     }
 
     pub fn resize(&mut self, rows: u16, cols: u16) {

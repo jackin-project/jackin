@@ -68,7 +68,7 @@ fn osc_7_cwd_is_captured_and_percent_decoded() {
     let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
     p.process(b"\x1b]7;file://localhost/Users/alice/My%20Code\x07");
     assert_eq!(
-        p.callbacks().cwd.as_deref(),
+        p.callbacks().cwd(),
         Some("/Users/alice/My Code"),
         "OSC 7 must percent-decode and strip the host"
     );
@@ -81,31 +81,42 @@ fn osc_7_rejects_malformed_payload() {
     // valid URLs only.
     let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
     p.process(b"\x1b]7;random-text\x07");
-    assert!(p.callbacks().cwd.is_none());
+    assert!(p.callbacks().cwd().is_none());
 }
 
 #[test]
 fn kitty_kb_stack_tracks_push_and_pop() {
     let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
     p.process(b"\x1b[>1u\x1b[>3u");
-    assert_eq!(p.callbacks().kitty_kb_stack, vec![1u16, 3]);
+    assert_eq!(p.callbacks().kitty_kb_stack(), &[1u16, 3]);
     // vte's CSI state machine treats `<` as a private marker only
     // when an explicit numeric param follows. Use the spec's full
     // form `\x1b[<{n}u` for portable pop, matching what kitty's own
     // docs prescribe.
     p.process(b"\x1b[<1u");
-    assert_eq!(p.callbacks().kitty_kb_stack, vec![1u16]);
+    assert_eq!(p.callbacks().kitty_kb_stack(), &[1u16]);
     p.process(b"\x1b[<5u"); // over-pop bounded by stack length
-    assert!(p.callbacks().kitty_kb_stack.is_empty());
+    assert!(p.callbacks().kitty_kb_stack().is_empty());
+}
+
+#[test]
+fn kitty_kb_stack_caps_pathological_push() {
+    // A buggy or hostile agent loops `\x1b[>1u`. The stack must
+    // not grow without bound; cap is documented as 64.
+    let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
+    for _ in 0..200 {
+        p.process(b"\x1b[>1u");
+    }
+    assert!(p.callbacks().kitty_kb_stack().len() <= 64);
 }
 
 #[test]
 fn focus_events_flag_tracks_dec_1004() {
     let mut p = Parser::new_with_callbacks(24, 80, 0, OscCapture::default());
     p.process(b"\x1b[?1004h");
-    assert!(p.callbacks().focus_events);
+    assert!(p.callbacks().focus_events());
     p.process(b"\x1b[?1004l");
-    assert!(!p.callbacks().focus_events);
+    assert!(!p.callbacks().focus_events());
 }
 
 #[test]
