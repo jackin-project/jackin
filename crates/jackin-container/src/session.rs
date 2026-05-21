@@ -159,6 +159,14 @@ pub struct Session {
     /// then arrives one `\n`-terminated chunk at a time, which agents
     /// treat as multiple separate messages.
     pub bracketed_paste_active: bool,
+    /// `true` once the PTY has produced any output. Stays `false`
+    /// during the brief window between `Session::spawn` and the
+    /// child's first write — when the parser's cursor sits at (0, 0)
+    /// of a blank primary screen with no agent UI drawn yet. The
+    /// daemon gates `\x1b[?25h` (cursor visible) on this so a
+    /// freshly-split pane does not paint a stray blinking cursor
+    /// inside an otherwise empty rectangle.
+    pub received_output: bool,
 }
 
 pub enum SessionEvent {
@@ -268,6 +276,7 @@ impl Session {
                 alive: true,
                 scrollback_offset: 0,
                 bracketed_paste_active: false,
+                received_output: false,
             },
             sid,
         ))
@@ -347,6 +356,9 @@ impl Session {
 
     /// Feed PTY bytes into the VT parser and update activity timestamps.
     pub fn feed_pty(&mut self, bytes: &[u8]) {
+        if !bytes.is_empty() {
+            self.received_output = true;
+        }
         self.parser.process(bytes);
         self.last_output_at = std::time::Instant::now();
         self.state = AgentState::Working;

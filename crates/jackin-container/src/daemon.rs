@@ -823,26 +823,43 @@ impl Multiplexer {
             dialog.render(&mut buf, self.term_rows, self.term_cols);
         }
 
-        // Position cursor at the focused pane's screen cursor; honour
-        // the agent's hide-cursor request when no dialog is open.
+        // Position cursor at the focused pane's screen cursor only when
+        // the pane has something the operator can actually type into.
+        // Show conditions, all must hold:
+        //   1. No dialog is open (already gated above).
+        //   2. Focused session has produced PTY output. A pane that
+        //      just spawned (or split-into-shell that hasn't drawn its
+        //      first prompt yet) paints a stray blinking cursor at
+        //      `(0, 0)` of an empty rectangle otherwise.
+        //   3. The agent did not request cursor hidden (`\x1b[?25l`).
+        //   4. The operator is not browsing scrollback — the live VT
+        //      cursor position is meaningless against history rows.
+        // When any rule fails we emit `\x1b[?25l` so no second cursor
+        // remains visible anywhere else in the multiplexer chrome.
         if self.dialog.is_none() {
+            let mut showed = false;
             if let (Some(fid), Some(rect)) = (focused_id, focused_pane_rect)
                 && let Some(session) = self.sessions.get(&fid)
             {
                 let screen = session.screen();
-                let (vt_row, vt_col) = screen.cursor_position();
-                use std::io::Write as _;
-                let _ = write!(
-                    buf,
-                    "\x1b[{};{}H",
-                    rect.row + vt_row + 1,
-                    rect.col + vt_col + 1
-                );
-                if !screen.hide_cursor() {
+                let live_input = session.received_output
+                    && session.scrollback_offset == 0
+                    && !screen.hide_cursor();
+                if live_input {
+                    let (vt_row, vt_col) = screen.cursor_position();
+                    use std::io::Write as _;
+                    let _ = write!(
+                        buf,
+                        "\x1b[{};{}H",
+                        rect.row + vt_row + 1,
+                        rect.col + vt_col + 1
+                    );
                     buf.extend_from_slice(b"\x1b[?25h");
+                    showed = true;
                 }
-            } else {
-                buf.extend_from_slice(b"\x1b[?25h");
+            }
+            if !showed {
+                buf.extend_from_slice(b"\x1b[?25l");
             }
         }
 
