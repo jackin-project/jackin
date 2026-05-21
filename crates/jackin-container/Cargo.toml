@@ -10,6 +10,10 @@ repository = "https://github.com/jackin-project/jackin"
 license = "Apache-2.0"
 publish = false
 
+[lib]
+name = "jackin_container"
+path = "src/lib.rs"
+
 [[bin]]
 name = "jackin-container"
 path = "src/main.rs"
