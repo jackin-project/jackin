@@ -1158,15 +1158,23 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
             // Periodic state refresh: re-render the status bar so the tab
             // strip's state glyph follows the four-state model. The full
             // pane bodies stay where they are.
+            //
+            // The buffer is wrapped in `DECSC` (`\x1b7`) / `DECRC`
+            // (`\x1b8`) so the terminal saves the active pane's
+            // cursor position before painting the status bar and
+            // restores it afterwards. Without this guard the cursor
+            // visibly jumps to the tab strip every tick and parks
+            // there as a phantom block until the next pane redraw.
             _ = state_ticker.tick() => {
                 for session in mux.sessions.values_mut() {
                     session.refresh_state();
                 }
-                let mut sbuf = Vec::new();
+                let mut sbuf = b"\x1b7".to_vec();
                 let states: Vec<(u64, AgentState)> = mux.sessions.iter()
                     .map(|(&id, s)| (id, s.state))
                     .collect();
                 mux.status_bar.render(&mut sbuf, mux.term_cols, &mux.tabs, mux.active_tab, &states);
+                sbuf.extend_from_slice(b"\x1b8");
                 mux.send_output(sbuf);
             }
         }
