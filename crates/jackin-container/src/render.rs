@@ -82,15 +82,20 @@ pub fn render_pane(
     buf.extend_from_slice(b"\x1b[0m");
 }
 
-/// Draw a 1-column vertical scrollbar on the right edge of a pane.
-/// Track is dim phosphor-green, thumb is bright phosphor-green. The
-/// thumb's position represents which slice of the scrollback the
-/// operator is currently viewing: bottom row → live tail; top row →
-/// oldest line still in scrollback. The bar is drawn on top of the
-/// pane's last column, so cells underneath the thumb are overwritten
-/// — agents almost never put load-bearing content in the rightmost
-/// column, and the always-visible "you can scroll up" cue is the
-/// trade the operator asked for.
+/// Draw a 1-column vertical scrollbar on the right edge of a pane —
+/// **but only when there is actually scrollback to scroll into**.
+///
+/// `filled` is the number of lines currently in the primary grid's
+/// scrollback buffer. When `filled == 0` (alt-screen agents like
+/// Claude Code, or a fresh shell that hasn't scrolled yet), the
+/// scrollbar is suppressed and the pane keeps its full width — no
+/// "you can scroll" hint when there's nothing to scroll into.
+///
+/// Thumb height is proportional to viewport / total, and the thumb's
+/// position represents which slice of the history the operator is
+/// looking at: bottom row → live tail; top row → oldest line in the
+/// scrollback. Track = dark phosphor-green `│`; thumb = bright
+/// phosphor-green `█`.
 pub fn draw_scrollbar(
     buf: &mut Vec<u8>,
     pane_row: u16,
@@ -98,31 +103,32 @@ pub fn draw_scrollbar(
     pane_rows: u16,
     pane_cols: u16,
     offset: usize,
-    scrollback_max: usize,
+    filled: usize,
 ) {
-    if pane_rows == 0 || pane_cols == 0 {
+    if pane_rows == 0 || pane_cols == 0 || filled == 0 {
         return;
     }
     let col = pane_col + pane_cols - 1;
-    let total = scrollback_max.saturating_add(pane_rows as usize).max(1);
-    // Thumb height proportional to viewport / total.
-    let thumb_rows = ((pane_rows as usize * pane_rows as usize) / total)
+    let pane_rows_us = pane_rows as usize;
+    let total = filled + pane_rows_us; // history + viewport
+    // Thumb height: how big the viewport is relative to total. Floor at 1.
+    let thumb_rows = ((pane_rows_us * pane_rows_us) / total)
         .max(1)
-        .min(pane_rows as usize);
-    // Thumb's top row: offset=0 → bottom of bar; offset=max → top.
-    let unscrolled_room = pane_rows as usize - thumb_rows;
-    let scrolled_room = scrollback_max.max(1);
-    let thumb_top_from_bottom = (offset * unscrolled_room) / scrolled_room;
-    let thumb_top = (pane_rows as usize - thumb_rows).saturating_sub(thumb_top_from_bottom);
+        .min(pane_rows_us);
+    let unscrolled_room = pane_rows_us - thumb_rows;
+    // Thumb position: offset=0 → bottom; offset=filled → top.
+    // Early `filled == 0` return above guarantees the divisor is non-zero.
+    let thumb_top_from_bottom = (offset * unscrolled_room)
+        .checked_div(filled)
+        .unwrap_or(0);
+    let thumb_top = unscrolled_room.saturating_sub(thumb_top_from_bottom);
 
-    for r in 0..pane_rows as usize {
+    for r in 0..pane_rows_us {
         let _ = write!(buf, "\x1b[{};{}H", pane_row + r as u16 + 1, col + 1);
         if r >= thumb_top && r < thumb_top + thumb_rows {
-            // Thumb segment — bright phosphor-green.
             buf.extend_from_slice(b"\x1b[0;38;2;0;255;65m");
             buf.extend_from_slice("█".as_bytes());
         } else {
-            // Track segment — dark phosphor-green.
             buf.extend_from_slice(b"\x1b[0;38;2;0;80;18m");
             buf.extend_from_slice("│".as_bytes());
         }

@@ -26,7 +26,6 @@ use crate::layout::{Direction, Rect, Tab};
 use crate::protocol::attach::{ClientFrame, ServerFrame, encode_server, read_client_frame};
 use crate::protocol::control::{AgentState, SessionInfo};
 use crate::render::{draw_scrollbar, render_pane};
-use crate::session::SCROLLBACK_LEN;
 use crate::session::{
     Session, SessionEvent, available_agents, build_agent_command, build_shell_command,
 };
@@ -568,8 +567,10 @@ impl Multiplexer {
         let dim_panes = self.dialog.is_some();
 
         if let Some(zoom_id) = self.zoomed {
-            if let Some(session) = self.sessions.get(&zoom_id) {
+            if let Some(session) = self.sessions.get_mut(&zoom_id) {
                 let rect = Rect::new(1, 0, self.content_rows, self.term_cols);
+                let offset = session.scrollback_offset;
+                let filled = session.scrollback_filled();
                 render_pane(
                     session.screen(),
                     rect.row,
@@ -580,13 +581,7 @@ impl Multiplexer {
                     &mut buf,
                 );
                 draw_scrollbar(
-                    &mut buf,
-                    rect.row,
-                    rect.col,
-                    rect.rows,
-                    rect.cols,
-                    session.scrollback_offset,
-                    SCROLLBACK_LEN,
+                    &mut buf, rect.row, rect.col, rect.rows, rect.cols, offset, filled,
                 );
                 if Some(zoom_id) == focused_id {
                     focused_pane_rect = Some(rect);
@@ -596,7 +591,9 @@ impl Multiplexer {
             let leaves = tab.tree.leaves(content_rect);
             let needs_borders = leaves.len() > 1;
             for (id, rect) in &leaves {
-                if let Some(session) = self.sessions.get(id) {
+                if let Some(session) = self.sessions.get_mut(id) {
+                    let offset = session.scrollback_offset;
+                    let filled = session.scrollback_filled();
                     render_pane(
                         session.screen(),
                         rect.row,
@@ -607,13 +604,7 @@ impl Multiplexer {
                         &mut buf,
                     );
                     draw_scrollbar(
-                        &mut buf,
-                        rect.row,
-                        rect.col,
-                        rect.rows,
-                        rect.cols,
-                        session.scrollback_offset,
-                        SCROLLBACK_LEN,
+                        &mut buf, rect.row, rect.col, rect.rows, rect.cols, offset, filled,
                     );
                     if Some(*id) == focused_id {
                         focused_pane_rect = Some(*rect);

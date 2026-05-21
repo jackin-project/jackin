@@ -285,6 +285,26 @@ impl Session {
         }
     }
 
+    /// Number of scrollback lines currently filled in the primary
+    /// grid. Probed by setting the scrollback to `usize::MAX` — vt100
+    /// clamps it to the actual filled count, which we read back via
+    /// `Screen::scrollback`. The saved offset is restored so this is
+    /// safe to call from a render path.
+    ///
+    /// Returns `0` while the alternate screen is active, because alt
+    /// grid has no scrollback by design — the agent owns the whole
+    /// surface and there is nothing for the operator to scroll into.
+    pub fn scrollback_filled(&mut self) -> usize {
+        if self.parser.screen().alternate_screen() {
+            return 0;
+        }
+        let saved = self.parser.screen().scrollback();
+        self.parser.screen_mut().set_scrollback(usize::MAX);
+        let filled = self.parser.screen().scrollback();
+        self.parser.screen_mut().set_scrollback(saved);
+        filled
+    }
+
     pub fn send_input(&self, data: &[u8]) {
         let _ = self.input_tx.send(data.to_vec());
     }
