@@ -69,13 +69,17 @@ impl Multiplexer {
         .filter_map(|&k| std::env::var(k).ok().map(|v| (k.to_string(), v)))
         .collect();
 
+        let input_parser = InputParser::default();
+        let mut status_bar = StatusBar::new();
+        status_bar.set_prefix_enabled(input_parser.prefix_enabled());
+
         Self {
             sessions: HashMap::new(),
             tabs: Vec::new(),
             active_tab: 0,
             term_rows: rows,
             term_cols: cols,
-            status_bar: StatusBar::new(),
+            status_bar,
             dialog: None,
             content_rows,
             available_agents: agents,
@@ -83,7 +87,7 @@ impl Multiplexer {
             event_tx,
             event_rx,
             zoomed: None,
-            input_parser: InputParser::default(),
+            input_parser,
             detach_requested: false,
             attached_out: None,
         }
@@ -310,6 +314,15 @@ impl Multiplexer {
     /// Returns bytes to send to the client (e.g. redraws), if any.
     fn handle_input(&mut self, event: InputEvent) -> Option<Vec<u8>> {
         match event {
+            InputEvent::OpenPalette => {
+                // Toggle: second Ctrl+J while palette open closes it.
+                if self.dialog.is_some() {
+                    self.dialog = None;
+                } else {
+                    self.dialog = Some(Dialog::CommandPalette { selected: 0 });
+                }
+                Some(self.compose_frame())
+            }
             InputEvent::PrefixCommand(cmd) => self.handle_prefix_command(cmd),
             InputEvent::FocusIn | InputEvent::FocusOut => {
                 // Forward focus events to the focused pane's PTY so the
@@ -470,11 +483,13 @@ impl Multiplexer {
                     selected: 0,
                 });
             }
-            PaletteCommand::ClosePane => {
-                self.close_focused_pane();
-            }
-            PaletteCommand::ZoomPane => {
-                self.toggle_zoom();
+            PaletteCommand::NextTab => self.next_tab(),
+            PaletteCommand::PrevTab => self.prev_tab(),
+            PaletteCommand::ClosePane => self.close_focused_pane(),
+            PaletteCommand::CloseTab => self.close_focused_tab(),
+            PaletteCommand::ZoomPane => self.toggle_zoom(),
+            PaletteCommand::Detach => {
+                self.detach_requested = true;
             }
         }
         None

@@ -37,24 +37,32 @@ pub enum DialogAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaletteCommand {
+    NewSession,
+    NewTab,
+    NextTab,
+    PrevTab,
     SplitHorizontal,
     SplitVertical,
-    NewTab,
-    NewSession,
-    ClosePane,
     ZoomPane,
+    ClosePane,
+    CloseTab,
+    Detach,
 }
 
 const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (PaletteCommand::NewSession, "New agent session"),
+    (PaletteCommand::NewTab, "New tab"),
+    (PaletteCommand::NextTab, "Next tab"),
+    (PaletteCommand::PrevTab, "Previous tab"),
     (
         PaletteCommand::SplitHorizontal,
         "Split pane │ (side by side)",
     ),
     (PaletteCommand::SplitVertical, "Split pane ─ (top / bottom)"),
-    (PaletteCommand::NewTab, "New tab"),
     (PaletteCommand::ZoomPane, "Zoom / unzoom pane"),
     (PaletteCommand::ClosePane, "Close pane"),
+    (PaletteCommand::CloseTab, "Close tab"),
+    (PaletteCommand::Detach, "Detach"),
 ];
 
 impl Dialog {

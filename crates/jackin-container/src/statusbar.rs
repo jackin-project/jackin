@@ -1,10 +1,12 @@
 /// Status bar rendered at row 0 of the host terminal.
 ///
 /// Layout: ` jackin' ` brand pill, then a tab strip with a state glyph
-/// appended to each tab label, then a right-aligned prefix-mode hint
-/// (`detach: Ctrl+B d` in idle state, `prefix…` immediately after the
-/// prefix byte arrives). When tabs overflow the terminal width an
-/// overflow indicator (`›`) appears at the right edge.
+/// appended to each tab label, then a right-aligned hint. The hint
+/// shows `menu: Ctrl+J` by default; when the opt-in prefix mode is
+/// enabled it shows `menu: Ctrl+J  prefix: Ctrl+B`. While the operator
+/// holds the prefix key the hint becomes `prefix…`. When tabs
+/// overflow the terminal width an overflow indicator (`›`) appears
+/// at the right edge.
 use crate::layout::Tab;
 use crate::protocol::AgentState;
 
@@ -32,6 +34,8 @@ pub struct StatusBar {
     pub tab_regions: Vec<(u16, u16)>,
     pub prefix_mode: PrefixMode,
     pub prefix_label: String,
+    pub palette_label: String,
+    pub prefix_enabled: bool,
 }
 
 impl Default for StatusBar {
@@ -46,11 +50,17 @@ impl StatusBar {
             tab_regions: Vec::new(),
             prefix_mode: PrefixMode::Idle,
             prefix_label: "Ctrl+B".to_string(),
+            palette_label: "Ctrl+J".to_string(),
+            prefix_enabled: false,
         }
     }
 
     pub fn set_prefix_mode(&mut self, mode: PrefixMode) {
         self.prefix_mode = mode;
+    }
+
+    pub fn set_prefix_enabled(&mut self, enabled: bool) {
+        self.prefix_enabled = enabled;
     }
 
     /// Render the status bar at row 0. Returns the cumulative byte buffer
@@ -137,7 +147,16 @@ impl StatusBar {
 
     fn right_hint(&self) -> String {
         match self.prefix_mode {
-            PrefixMode::Idle => format!("detach: {} d", self.prefix_label),
+            PrefixMode::Idle => {
+                if self.prefix_enabled {
+                    format!(
+                        "menu: {}  prefix: {}",
+                        self.palette_label, self.prefix_label
+                    )
+                } else {
+                    format!("menu: {}", self.palette_label)
+                }
+            }
             PrefixMode::Awaiting => "prefix…".to_string(),
         }
     }
@@ -234,12 +253,25 @@ mod tests {
     }
 
     #[test]
-    fn idle_hint_renders_detach_label() {
+    fn idle_hint_renders_palette_label() {
         let mut bar = StatusBar::new();
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &[], 0, &[]);
         let s = String::from_utf8_lossy(&buf);
-        assert!(s.contains("detach: Ctrl+B d"), "missing idle hint: {s:?}");
+        assert!(s.contains("menu: Ctrl+J"), "missing idle hint: {s:?}");
+    }
+
+    #[test]
+    fn idle_hint_includes_prefix_when_enabled() {
+        let mut bar = StatusBar::new();
+        bar.set_prefix_enabled(true);
+        let mut buf = Vec::new();
+        bar.render(&mut buf, 80, &[], 0, &[]);
+        let s = String::from_utf8_lossy(&buf);
+        assert!(
+            s.contains("menu: Ctrl+J") && s.contains("prefix: Ctrl+B"),
+            "missing combined hint: {s:?}"
+        );
     }
 
     #[test]

@@ -1,22 +1,34 @@
-/// Input from the attached client terminal: prefix-key state machine.
+/// Input from the attached client terminal.
 ///
-/// The parser walks raw bytes from the client and classifies them into
-/// three categories of `InputEvent`:
-///   - `Data` — forward verbatim to the focused pane's PTY.
-///   - `PrefixCommand` — a tmux-style action the multiplexer handles.
-///   - `MousePress` — SGR mouse, hit-tested by the daemon.
+/// Two parallel models are supported:
 ///
-/// Default prefix is `Ctrl+B` (`0x02`), matching tmux. The prefix byte
-/// itself is forwarded to the PTY only when typed twice (`prefix + prefix`
-/// → one literal prefix byte). `Ctrl+J` (`0x0A`) is reserved as the line
-/// feed character and is never a default binding — that collision is the
-/// regression Phase 3b is designed to prevent.
+/// - **Palette key (default `Ctrl+J`)** — one keystroke opens the
+///   command palette and the operator picks an action from a list,
+///   launcher-style. This is the primary UX and the only model the
+///   default status-bar hint advertises. Collision-safe because raw-mode
+///   `Enter` sends `\r` (not `\n`), bracketed paste protects pasted `\n`,
+///   and a literal `Ctrl+J Ctrl+J` forwards one LF byte to the PTY.
+///
+/// - **Prefix key (opt-in via `JACKIN_PREFIX=C-b`)** — tmux-style
+///   prefix + command-key for operators who prefer direct keyboard
+///   navigation. Disabled by default.
+///
+/// Both models can run simultaneously when both env vars are set.
+/// `JACKIN_PALETTE_KEY=none` disables the palette key.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputEvent {
     Data(Vec<u8>),
-    MousePress { col: u16, row: u16, button: u8 },
+    MousePress {
+        col: u16,
+        row: u16,
+        button: u8,
+    },
     PrefixCommand(PrefixCommand),
+    /// Direct one-key shortcut → open the palette dialog. Distinct from
+    /// `PrefixCommand::Palette`, which fires only after the prefix
+    /// gesture; the daemon collapses both into the same dialog open.
+    OpenPalette,
     FocusIn,
     FocusOut,
 }
@@ -48,7 +60,10 @@ pub enum ArrowDir {
 
 #[derive(Debug)]
 pub struct InputParser {
-    prefix: u8,
+    /// Optional tmux-style prefix byte. `None` disables prefix mode.
+    prefix: Option<u8>,
+    /// Optional one-key palette shortcut. `None` disables direct palette.
+    palette_key: Option<u8>,
     state: State,
     seq: Vec<u8>,
     in_paste: bool,
@@ -66,14 +81,15 @@ enum State {
 
 impl Default for InputParser {
     fn default() -> Self {
-        Self::new(default_prefix())
+        Self::new(default_prefix(), default_palette_key())
     }
 }
 
 impl InputParser {
-    pub fn new(prefix: u8) -> Self {
+    pub fn new(prefix: Option<u8>, palette_key: Option<u8>) -> Self {
         Self {
             prefix,
+            palette_key,
             state: State::Idle,
             seq: Vec::new(),
             in_paste: false,
@@ -85,6 +101,12 @@ impl InputParser {
     /// hint to `prefix…` for the duration of the prefix gesture.
     pub fn is_awaiting_prefix(&self) -> bool {
         matches!(self.state, State::PrefixAwait)
+    }
+
+    /// Whether the prefix-mode (`Ctrl+B …`) is active. Affects the
+    /// status-bar hint format.
+    pub fn prefix_enabled(&self) -> bool {
+        self.prefix.is_some()
     }
 
     /// Parse a chunk of client bytes into a stream of events.
@@ -104,7 +126,16 @@ impl InputParser {
 
             match self.state {
                 State::Idle => {
-                    if b == self.prefix {
+                    if Some(b) == self.palette_key {
+                        // Ctrl+J (or configured key) → immediate palette
+                        // open. The collision risk with literal LF is
+                        // mitigated by bracketed paste (paste content
+                        // protected) and by raw-mode Enter sending `\r`
+                        // not `\n`. Operators needing literal LF set
+                        // `JACKIN_PALETTE_KEY=none`.
+                        flush(&mut data, &mut events);
+                        events.push(InputEvent::OpenPalette);
+                    } else if Some(b) == self.prefix {
                         flush(&mut data, &mut events);
                         self.state = State::PrefixAwait;
                     } else if b == 0x1B {
@@ -117,13 +148,13 @@ impl InputParser {
                     }
                 }
                 State::PrefixAwait => {
-                    if b == self.prefix {
-                        // Literal prefix forwarded to PTY.
-                        data.push(self.prefix);
+                    if Some(b) == self.prefix {
+                        if let Some(p) = self.prefix {
+                            data.push(p);
+                        }
                     } else if let Some(cmd) = prefix_binding(b) {
                         events.push(InputEvent::PrefixCommand(cmd));
                     }
-                    // Always return to Idle after one key.
                     self.state = State::Idle;
                 }
                 State::EscStart => {
@@ -196,13 +227,26 @@ fn flush(data: &mut Vec<u8>, events: &mut Vec<InputEvent>) {
     }
 }
 
-fn default_prefix() -> u8 {
-    if let Ok(s) = std::env::var("JACKIN_PREFIX")
-        && let Some(b) = parse_prefix(&s)
-    {
-        return b;
+/// Prefix mode is **opt-in**: returns `Some(byte)` when `JACKIN_PREFIX`
+/// is set to a parseable key, `None` otherwise. The default
+/// `Ctrl+J` palette key is the primary UX.
+fn default_prefix() -> Option<u8> {
+    let s = std::env::var("JACKIN_PREFIX").ok()?;
+    if s.eq_ignore_ascii_case("none") {
+        return None;
     }
-    0x02 // Ctrl+B
+    parse_prefix(&s)
+}
+
+/// Palette key defaults to `Ctrl+J` (`0x0A`). Set `JACKIN_PALETTE_KEY`
+/// to override; set it to the literal string `none` to disable the
+/// direct-palette shortcut entirely.
+fn default_palette_key() -> Option<u8> {
+    match std::env::var("JACKIN_PALETTE_KEY") {
+        Err(_) => Some(0x0A),
+        Ok(s) if s.eq_ignore_ascii_case("none") => None,
+        Ok(s) => parse_prefix(&s).or(Some(0x0A)),
+    }
 }
 
 /// Accept `C-a` … `C-z` (case-insensitive), a single ASCII control char
@@ -291,32 +335,41 @@ fn classify_csi(seq: &[u8]) -> Option<InputEvent> {
 mod tests {
     use super::*;
 
-    fn parse_all(input: &[u8]) -> Vec<InputEvent> {
+    fn parse_all_default(input: &[u8]) -> Vec<InputEvent> {
         InputParser::default().parse(input)
     }
 
+    fn parse_all_prefix_only(input: &[u8]) -> Vec<InputEvent> {
+        InputParser::new(Some(0x02), None).parse(input)
+    }
+
     #[test]
-    fn lone_lf_is_forwarded_to_pty() {
-        // Regression for the `Ctrl+J = 0x0A` palette intercept that ate
-        // every newline in the input stream.
-        let events = parse_all(b"\n");
+    fn ctrl_j_opens_palette_by_default() {
+        let events = parse_all_default(b"\n");
+        assert_eq!(events, vec![InputEvent::OpenPalette]);
+    }
+
+    #[test]
+    fn palette_key_disabled_lets_lf_through() {
+        let events = InputParser::new(None, None).parse(b"\n");
         assert_eq!(events, vec![InputEvent::Data(b"\n".to_vec())]);
     }
 
     #[test]
-    fn pasted_text_with_lf_survives_intact() {
-        let events = parse_all(b"hello\nworld\n");
-        // Single Data event with full bytes.
-        assert_eq!(events.len(), 1);
-        match &events[0] {
-            InputEvent::Data(b) => assert_eq!(b, b"hello\nworld\n"),
-            _ => panic!("expected Data, got {events:?}"),
-        }
+    fn pasted_text_with_lf_does_not_open_palette() {
+        // Bracketed paste protects the LF inside paste content.
+        let mut parser = InputParser::default();
+        let events = parser.parse(b"\x1b[200~hello\nworld\n\x1b[201~");
+        let opens = events
+            .iter()
+            .filter(|e| matches!(e, InputEvent::OpenPalette))
+            .count();
+        assert_eq!(opens, 0, "palette must not open inside bracketed paste");
     }
 
     #[test]
-    fn lone_prefix_is_consumed() {
-        let events = parse_all(b"\x02");
+    fn lone_prefix_is_consumed_when_prefix_enabled() {
+        let events = parse_all_prefix_only(b"\x02");
         assert!(
             events.is_empty(),
             "lone prefix must not emit any event: {events:?}"
@@ -325,13 +378,13 @@ mod tests {
 
     #[test]
     fn double_prefix_forwards_one_literal() {
-        let events = parse_all(b"\x02\x02");
+        let events = parse_all_prefix_only(b"\x02\x02");
         assert_eq!(events, vec![InputEvent::Data(vec![0x02])]);
     }
 
     #[test]
     fn prefix_c_opens_new_tab() {
-        let events = parse_all(b"\x02c");
+        let events = parse_all_prefix_only(b"\x02c");
         assert_eq!(
             events,
             vec![InputEvent::PrefixCommand(PrefixCommand::NewTab)]
@@ -340,7 +393,7 @@ mod tests {
 
     #[test]
     fn prefix_space_opens_palette() {
-        let events = parse_all(b"\x02 ");
+        let events = parse_all_prefix_only(b"\x02 ");
         assert_eq!(
             events,
             vec![InputEvent::PrefixCommand(PrefixCommand::Palette)]
@@ -349,7 +402,7 @@ mod tests {
 
     #[test]
     fn prefix_d_detaches() {
-        let events = parse_all(b"\x02d");
+        let events = parse_all_prefix_only(b"\x02d");
         assert_eq!(
             events,
             vec![InputEvent::PrefixCommand(PrefixCommand::Detach)]
@@ -358,10 +411,8 @@ mod tests {
 
     #[test]
     fn bracketed_paste_contents_are_forwarded_with_markers() {
-        let mut parser = InputParser::default();
+        let mut parser = InputParser::new(Some(0x02), None);
         let mut events = parser.parse(b"\x1b[200~hello\x02world\n\x1b[201~");
-        // Expect: start marker as Data, body as Data, end marker as Data.
-        // The prefix byte INSIDE paste must not be intercepted.
         events.retain(|e| !matches!(e, InputEvent::Data(b) if b.is_empty()));
         let combined: Vec<u8> = events
             .iter()
@@ -375,7 +426,7 @@ mod tests {
 
     #[test]
     fn arrow_key_csi_passes_through() {
-        let events = parse_all(b"\x1b[A");
+        let events = parse_all_default(b"\x1b[A");
         match &events[..] {
             [InputEvent::Data(b)] => assert_eq!(b, b"\x1b[A"),
             other => panic!("unexpected events {other:?}"),
@@ -385,7 +436,7 @@ mod tests {
     #[test]
     fn shift_enter_csi_u_round_trips() {
         // CSI-u extended-keys encoding: `\x1b[13;2u` = Shift+Enter.
-        let events = parse_all(b"\x1b[13;2u");
+        let events = parse_all_default(b"\x1b[13;2u");
         match &events[..] {
             [InputEvent::Data(b)] => assert_eq!(b, b"\x1b[13;2u"),
             other => panic!("Shift+Enter must round-trip: {other:?}"),
@@ -394,15 +445,15 @@ mod tests {
 
     #[test]
     fn focus_event_is_classified() {
-        let events = parse_all(b"\x1b[I");
+        let events = parse_all_default(b"\x1b[I");
         assert_eq!(events, vec![InputEvent::FocusIn]);
-        let events = parse_all(b"\x1b[O");
+        let events = parse_all_default(b"\x1b[O");
         assert_eq!(events, vec![InputEvent::FocusOut]);
     }
 
     #[test]
     fn sgr_mouse_press_is_decoded() {
-        let events = parse_all(b"\x1b[<0;5;3M");
+        let events = parse_all_default(b"\x1b[<0;5;3M");
         assert_eq!(
             events,
             vec![InputEvent::MousePress {

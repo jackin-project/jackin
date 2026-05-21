@@ -21,8 +21,8 @@ fn brand_pill_renders_first() {
     let mut bar = StatusBar::new();
     let s = render(&mut bar, 80, &[], 0, &[]);
     let brand = s.find("jackin'").expect("brand text missing");
-    let detach = s.find("detach:").expect("idle hint missing");
-    assert!(brand < detach);
+    let menu = s.find("menu:").expect("idle hint missing");
+    assert!(brand < menu);
 }
 
 #[test]
@@ -41,7 +41,8 @@ fn tab_click_region_includes_state_glyph_width() {
 fn prefix_mode_swap_changes_hint() {
     let mut bar = StatusBar::new();
     let s = render(&mut bar, 80, &[], 0, &[]);
-    assert!(s.contains("detach: Ctrl+B d"));
+    assert!(s.contains("menu: Ctrl+J"));
+    bar.set_prefix_enabled(true);
     bar.set_prefix_mode(PrefixMode::Awaiting);
     let s = render(&mut bar, 80, &[], 0, &[]);
     assert!(s.contains("prefix…"));
