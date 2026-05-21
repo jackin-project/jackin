@@ -103,23 +103,29 @@ impl Multiplexer {
         if self.tabs.is_empty() {
             return;
         }
+        let prev = self.active_focused_id();
         self.active_tab = (self.active_tab + 1) % self.tabs.len();
+        self.synthesise_focus_swap(prev, self.active_focused_id());
     }
 
     fn prev_tab(&mut self) {
         if self.tabs.is_empty() {
             return;
         }
+        let prev = self.active_focused_id();
         self.active_tab = if self.active_tab == 0 {
             self.tabs.len() - 1
         } else {
             self.active_tab - 1
         };
+        self.synthesise_focus_swap(prev, self.active_focused_id());
     }
 
     fn jump_tab(&mut self, idx: usize) {
-        if idx < self.tabs.len() {
+        if idx < self.tabs.len() && idx != self.active_tab {
+            let prev = self.active_focused_id();
             self.active_tab = idx;
+            self.synthesise_focus_swap(prev, self.active_focused_id());
         }
     }
 
@@ -273,8 +279,30 @@ impl Multiplexer {
             ArrowDir::Up => Direction::Up,
             ArrowDir::Down => Direction::Down,
         };
+        let prev = tab.focused_id;
         if let Some(next_id) = tab.tree.adjacent(content_rect, tab.focused_id, d) {
             self.tabs[self.active_tab].focused_id = next_id;
+            self.synthesise_focus_swap(Some(prev), Some(next_id));
+        }
+    }
+
+    /// Synthesise `\x1b[O` / `\x1b[I` to track which pane the operator
+    /// is actually looking at. Agents that watch focus events use them
+    /// to pause polling / animations; without synthesis, a backgrounded
+    /// pane thinks it is still focused.
+    fn synthesise_focus_swap(&self, old: Option<u64>, new: Option<u64>) {
+        if old == new {
+            return;
+        }
+        if let Some(o) = old
+            && let Some(s) = self.sessions.get(&o)
+        {
+            s.send_input(b"\x1b[O");
+        }
+        if let Some(n) = new
+            && let Some(s) = self.sessions.get(&n)
+        {
+            s.send_input(b"\x1b[I");
         }
     }
 
@@ -305,11 +333,13 @@ impl Multiplexer {
                 col,
                 button: 0,
             } => {
-                // Left click on status bar → tab switch.
                 if let Some(idx) = self.status_bar.tab_at_col(col + 1)
                     && idx < self.tabs.len()
+                    && idx != self.active_tab
                 {
+                    let prev = self.active_focused_id();
                     self.active_tab = idx;
+                    self.synthesise_focus_swap(prev, self.active_focused_id());
                     return Some(self.compose_frame());
                 }
                 None
@@ -724,6 +754,18 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                 if let Some(redraw) = mux.handle_input(event) {
                     mux.send_output(redraw);
                 }
+            }
+            // Reflect prefix-await state in the status bar so the right
+            // hint switches between `detach: …` and `prefix…`.
+            let mode = if mux.input_parser.is_awaiting_prefix() {
+                crate::statusbar::PrefixMode::Awaiting
+            } else {
+                crate::statusbar::PrefixMode::Idle
+            };
+            if mux.status_bar.prefix_mode != mode {
+                mux.status_bar.set_prefix_mode(mode);
+                let frame_data = mux.compose_frame();
+                mux.send_output(frame_data);
             }
         }
         ClientFrame::Command(_payload) => {
