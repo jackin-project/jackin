@@ -1500,16 +1500,26 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
         Err(_) => DEFAULT_ESCAPE_TIME,
     };
 
+    // Persistent escape-time deadline. Set when the parser first
+    // enters `EscStart` (one Esc with no follow-up yet). Cleared once
+    // the parser leaves `EscStart` (because either the rest of a CSI
+    // sequence arrived or `flush_pending_esc` ran).
+    //
+    // Recomputing this each iteration as `now() + escape_time` is
+    // wrong: a chatty PTY (a TUI agent with a spinner) wakes the
+    // select loop dozens of times per second, and a fresh deadline
+    // each wake-up never lapses before the next PTY output resets it.
+    // Symptom was "press Esc, dialog never dismisses while an agent
+    // is producing output."
+    let mut esc_deadline: Option<tokio::time::Instant> = None;
     loop {
-        // Arm a one-shot timer whenever the input parser holds a
-        // pending `\x1b`. Without it, `ESC` followed by the rest of
-        // a CSI sequence across two TCP chunks gets the Esc stranded
-        // and the agent never sees the arrow / fn-key.
-        let esc_deadline = if mux.input_parser.esc_pending() {
-            Some(tokio::time::Instant::now() + escape_time)
+        if mux.input_parser.esc_pending() {
+            if esc_deadline.is_none() {
+                esc_deadline = Some(tokio::time::Instant::now() + escape_time);
+            }
         } else {
-            None
-        };
+            esc_deadline = None;
+        }
         tokio::select! {
             biased;
 
@@ -1656,6 +1666,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                     None => std::future::pending().await,
                 }
             }, if esc_deadline.is_some() => {
+                esc_deadline = None;
                 let events = mux.input_parser.flush_pending_esc();
                 for event in events {
                     if let Some(redraw) = mux.handle_input(event) {
