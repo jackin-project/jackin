@@ -690,9 +690,11 @@ impl Multiplexer {
                         .is_some();
                     if is_double {
                         let initial = self.tabs[idx].custom_label.clone().unwrap_or_default();
+                        let input = jackin_tui::TextField::new(initial)
+                            .with_max_chars(crate::dialog::MAX_CUSTOM_LABEL_LEN);
                         self.dialog = Some(Dialog::RenameTab {
                             tab_idx: idx,
-                            input: initial,
+                            input,
                         });
                         self.last_tab_click = None;
                         return Some(self.compose_frame());

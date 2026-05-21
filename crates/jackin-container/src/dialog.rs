@@ -61,12 +61,15 @@ pub enum Dialog {
         intent: PickerIntent,
     },
     /// Text-input modal opened when the operator double-clicks a tab.
-    /// `tab_idx` records which tab to rename. `input` is the current
-    /// buffer; Enter commits it, Esc cancels, empty input clears any
-    /// previous custom label so the tab returns to auto-naming.
+    /// `tab_idx` records which tab to rename. `input` reuses the
+    /// shared `jackin_tui::TextField` so the buffer + cursor + max
+    /// length live in the same place the console TUI will pull from
+    /// when its modal stack switches off ratatui_textarea. Enter
+    /// commits; Esc cancels; empty input clears any previous custom
+    /// label so the tab returns to auto-naming.
     RenameTab {
         tab_idx: usize,
-        input: String,
+        input: jackin_tui::TextField,
     },
 }
 
@@ -342,7 +345,7 @@ impl Dialog {
                 render_agent_picker(buf, term_rows, term_cols, agents, *selected, *intent);
             }
             Self::RenameTab { input, .. } => {
-                render_rename_tab(buf, term_rows, term_cols, input);
+                render_rename_tab(buf, term_rows, term_cols, input.value());
             }
         }
     }
@@ -350,25 +353,27 @@ impl Dialog {
 
 /// Edit a rename-tab input buffer in response to a raw key chunk.
 /// Enter commits, Esc cancels, Backspace removes the trailing char,
-/// any other printable ASCII char appends until `MAX_CUSTOM_LABEL_LEN`
-/// is reached. Arrow / function / CSI escapes are swallowed so they
-/// don't leak into the buffer.
-fn rename_tab_handle_key(tab_idx: usize, input: &mut String, key: &[u8]) -> DialogAction {
+/// any other printable ASCII char appends. Length cap and printable
+/// filter live inside `jackin_tui::TextField` so this handler only
+/// needs to dispatch key bytes — the buffer math is shared with the
+/// console TUI surface.
+fn rename_tab_handle_key(
+    tab_idx: usize,
+    input: &mut jackin_tui::TextField,
+    key: &[u8],
+) -> DialogAction {
     match key {
         b"\x1b" | b"\x03" => DialogAction::Dismiss,
         b"\r" | b"\n" => DialogAction::RenameTab {
             tab_idx,
-            label: input.trim().to_string(),
+            label: input.trimmed_value(),
         },
         b"\x7f" | b"\x08" => {
-            input.pop();
+            input.backspace();
             DialogAction::Redraw
         }
-        bytes if bytes.len() == 1 => {
-            let b = bytes[0];
-            if (0x20..0x7f).contains(&b) && input.chars().count() < MAX_CUSTOM_LABEL_LEN {
-                input.push(b as char);
-            }
+        bytes if bytes.len() == 1 && (0x20..0x7f).contains(&bytes[0]) => {
+            input.insert_char(bytes[0] as char);
             DialogAction::Redraw
         }
         _ => DialogAction::Redraw,

@@ -100,9 +100,173 @@ pub fn lay_out_tabs<'a>(labels: &[(&'a str, bool)], start_col: u16) -> Vec<TabCe
     out
 }
 
+/// Cross-surface single-line text-input model. Holds the buffer,
+/// cursor position (in bytes), an optional max length, and an
+/// optional forbidden set used for duplicate detection. Pure data +
+/// pure-Rust methods — no ratatui, no crossterm — so the same struct
+/// can drive ratatui-rendered modals in the console TUI and ANSI
+/// modals in jackin-container.
+///
+/// Cursor is a byte offset to keep `insert_char` cheap; the public
+/// edit operations advance/retreat by one char each so multi-byte
+/// glyphs are not split.
+#[derive(Debug, Clone)]
+pub struct TextField {
+    value: String,
+    cursor: usize,
+    max_chars: Option<usize>,
+    forbidden: Vec<String>,
+    allow_empty: bool,
+}
+
+impl Default for TextField {
+    fn default() -> Self {
+        Self::new("")
+    }
+}
+
+impl TextField {
+    pub fn new(initial: impl Into<String>) -> Self {
+        let value: String = initial.into();
+        let cursor = value.len();
+        Self {
+            value,
+            cursor,
+            max_chars: None,
+            forbidden: Vec::new(),
+            allow_empty: false,
+        }
+    }
+
+    pub fn with_max_chars(mut self, n: usize) -> Self {
+        self.max_chars = Some(n);
+        self
+    }
+
+    pub fn with_forbidden(mut self, forbidden: Vec<String>) -> Self {
+        self.forbidden = forbidden;
+        self
+    }
+
+    pub fn with_allow_empty(mut self, allow: bool) -> Self {
+        self.allow_empty = allow;
+        self
+    }
+
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+
+    pub fn trimmed_value(&self) -> String {
+        self.value.trim().to_string()
+    }
+
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    pub fn len_chars(&self) -> usize {
+        self.value.chars().count()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.value.is_empty()
+    }
+
+    /// Insert a single character at the cursor. Rejects the insert
+    /// when `max_chars` is set and the buffer is already full. Control
+    /// chars (NUL, ESC, DEL, etc.) are silently dropped — callers
+    /// should pre-filter to printable input.
+    pub fn insert_char(&mut self, c: char) {
+        if c.is_control() {
+            return;
+        }
+        if let Some(max) = self.max_chars
+            && self.len_chars() >= max
+        {
+            return;
+        }
+        self.value.insert(self.cursor, c);
+        self.cursor += c.len_utf8();
+    }
+
+    /// Remove the character before the cursor.
+    pub fn backspace(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let prev_char_start = self.value[..self.cursor]
+            .char_indices()
+            .next_back()
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        self.value.replace_range(prev_char_start..self.cursor, "");
+        self.cursor = prev_char_start;
+    }
+
+    /// True when the trimmed value matches `forbidden` (non-empty).
+    pub fn is_duplicate(&self) -> bool {
+        let v = self.trimmed_value();
+        !v.is_empty() && self.forbidden.iter().any(|f| f == &v)
+    }
+
+    pub fn is_valid(&self) -> bool {
+        let v = self.trimmed_value();
+        let empty_ok = self.allow_empty || !v.is_empty();
+        empty_ok && !self.forbidden.iter().any(|f| f == &v)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_field_insert_appends() {
+        let mut f = TextField::new("");
+        f.insert_char('a');
+        f.insert_char('b');
+        assert_eq!(f.value(), "ab");
+        assert_eq!(f.cursor(), 2);
+    }
+
+    #[test]
+    fn text_field_backspace_removes_one_char() {
+        let mut f = TextField::new("abc");
+        f.backspace();
+        assert_eq!(f.value(), "ab");
+    }
+
+    #[test]
+    fn text_field_max_chars_caps_buffer() {
+        let mut f = TextField::new("").with_max_chars(2);
+        f.insert_char('a');
+        f.insert_char('b');
+        f.insert_char('c');
+        assert_eq!(f.value(), "ab");
+    }
+
+    #[test]
+    fn text_field_duplicate_detection_trims() {
+        let f = TextField::new("  foo  ").with_forbidden(vec!["foo".into()]);
+        assert!(f.is_duplicate());
+    }
+
+    #[test]
+    fn text_field_is_valid_requires_non_empty_by_default() {
+        let f = TextField::new("");
+        assert!(!f.is_valid());
+        let f = f.with_allow_empty(true);
+        assert!(f.is_valid());
+    }
+
+    #[test]
+    fn text_field_control_chars_are_ignored() {
+        let mut f = TextField::new("");
+        f.insert_char('\n');
+        f.insert_char('\x1b');
+        assert!(f.is_empty());
+    }
 
     #[test]
     fn lay_out_tabs_packs_cells_with_single_gap() {
