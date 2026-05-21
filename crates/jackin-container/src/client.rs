@@ -1,26 +1,26 @@
-/// Interactive client mode — runs when PID != 1.
-///
-/// Connects to the daemon socket, forwards stdin → daemon, writes
-/// daemon output → stdout. Also handles local rendering for the
-/// Ctrl+J command palette (sends commands to daemon via socket).
+/// Attach client — runs inside the container when `jackin-container` is
+/// invoked with PID != 1. Sets the host terminal into raw mode, opens
+/// the Unix socket, negotiates the binary attach channel, and shuttles
+/// bytes between the operator's terminal and the multiplexer daemon.
 use std::io::Write;
 
 use anyhow::{Context, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
-use crate::protocol::{ClientMsg, ServerMsg, b64_decode, b64_encode, frame};
+use crate::protocol::attach::{ClientFrame, ServerFrame, encode_client, read_server_frame};
+use crate::protocol::control::{ClientMsg, ServerMsg, frame as control_frame};
 use crate::socket::SOCKET_PATH;
 
-/// Connect to the running daemon and run the interactive client loop.
-pub async fn run_client(new_session_agent: Option<String>) -> Result<()> {
+/// Connect to the running daemon and run the interactive attach client.
+pub async fn run_client(_new_session_agent: Option<String>) -> Result<()> {
     let (rows, cols) = terminal_size();
 
-    // Enable raw mode on stdin.
     crossterm::terminal::enable_raw_mode().context("failed to enable raw mode")?;
-    // Enable mouse reporting.
     let mut stdout = std::io::stdout();
-    stdout.write_all(b"\x1b[?1003h\x1b[?1006h")?; // SGR + any-event mouse
+    // Mouse: any-event tracking + SGR encoding.
+    // Focus events: in / out.
+    stdout.write_all(b"\x1b[?1003h\x1b[?1006h\x1b[?1004h")?;
     stdout.flush()?;
 
     let _cleanup = RawModeGuard;
@@ -29,63 +29,45 @@ pub async fn run_client(new_session_agent: Option<String>) -> Result<()> {
         .await
         .context("cannot connect to jackin-container daemon — is it running?")?;
 
-    // Handshake.
-    let hello = frame(&ClientMsg::Hello { rows, cols });
-    stream.write_all(&hello).await?;
+    stream
+        .write_all(&encode_client(ClientFrame::Hello { rows, cols }))
+        .await?;
 
-    // If caller wants a new session, send that after welcome.
-    let mut pending_new_session = new_session_agent;
-
-    // Split stream for concurrent read/write.
-    // We use a manual loop with select! over stdin + socket.
     let mut stdin_buf = [0u8; 4096];
-    let mut sock_len_buf = [0u8; 4];
+    let mut tag_buf = [0u8; 1];
     let mut tokio_stdin = tokio::io::stdin();
 
     loop {
         tokio::select! {
-            // Read from socket (daemon → terminal).
-            result = stream.read_exact(&mut sock_len_buf) => {
+            // Read attach frame from daemon → stdout.
+            result = stream.read_exact(&mut tag_buf) => {
                 if result.is_err() { break; }
-                let len = u32::from_be_bytes(sock_len_buf) as usize;
-                if len > 4 * 1024 * 1024 { break; }
-                let mut body = vec![0u8; len];
-                if stream.read_exact(&mut body).await.is_err() { break; }
-                let Ok(msg) = serde_json::from_slice::<ServerMsg>(&body) else { continue };
-                match msg {
-                    ServerMsg::Output { data } => {
-                        let bytes = b64_decode(&data);
+                let tag = tag_buf[0];
+                let Ok(Some(frame)) = read_server_frame(&mut stream, tag).await else {
+                    break;
+                };
+                match frame {
+                    ServerFrame::Output(bytes) => {
                         let mut stdout = std::io::stdout();
                         let _ = stdout.write_all(&bytes);
                         let _ = stdout.flush();
                     }
-                    ServerMsg::Shutdown => {
-                        // Daemon is done — restore terminal and exit.
-                        break;
+                    ServerFrame::Shutdown => break,
+                    ServerFrame::Bell => {
+                        let _ = std::io::stdout().write_all(b"\x07");
+                        let _ = std::io::stdout().flush();
                     }
-                    ServerMsg::SessionList { .. } => {}
-                    _ => {}
-                }
-
-                // After welcome, send pending new-session request.
-                if let Some(agent) = pending_new_session.take() {
-                    let msg = if agent.is_empty() {
-                        frame(&ClientMsg::NewSession { agent: None })
-                    } else {
-                        frame(&ClientMsg::NewSession { agent: Some(agent) })
-                    };
-                    let _ = stream.write_all(&msg).await;
+                    ServerFrame::Welcome { .. } | ServerFrame::SessionList(_) => {}
                 }
             }
 
-            // Read from stdin (terminal → daemon).
+            // Read stdin → daemon as Input frame.
             result = tokio_stdin.read(&mut stdin_buf) => {
                 let n = match result {
                     Ok(0) | Err(_) => break,
                     Ok(n) => n,
                 };
-                let data = b64_encode(&stdin_buf[..n]);
-                let msg = frame(&ClientMsg::Input { data });
+                let msg = encode_client(ClientFrame::Input(stdin_buf[..n].to_vec()));
                 if stream.write_all(&msg).await.is_err() { break; }
             }
         }
@@ -100,10 +82,9 @@ pub async fn run_status() -> Result<()> {
         .await
         .context("cannot connect to jackin-container daemon")?;
 
-    let msg = frame(&ClientMsg::Status);
+    let msg = control_frame(&ClientMsg::Status);
     stream.write_all(&msg).await?;
 
-    // Read response.
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;
     let len = u32::from_be_bytes(len_buf) as usize;
@@ -111,18 +92,17 @@ pub async fn run_status() -> Result<()> {
     stream.read_exact(&mut body).await?;
 
     let msg: ServerMsg = serde_json::from_slice(&body)?;
-    if let ServerMsg::SessionList { sessions } = msg {
-        println!("Sessions: {}", sessions.len());
-        for s in &sessions {
-            println!(
-                "  [{}] {} ({}) state={} active={}",
-                s.id,
-                s.label,
-                s.agent.as_deref().unwrap_or("shell"),
-                s.state.label(),
-                s.active,
-            );
-        }
+    let ServerMsg::SessionList { sessions } = msg;
+    println!("Sessions: {}", sessions.len());
+    for s in &sessions {
+        println!(
+            "  [{}] {} ({}) state={} active={}",
+            s.id,
+            s.label,
+            s.agent.as_deref().unwrap_or("shell"),
+            s.state.label(),
+            s.active,
+        );
     }
 
     Ok(())
@@ -132,16 +112,13 @@ fn terminal_size() -> (u16, u16) {
     crossterm::terminal::size().unwrap_or((24, 80))
 }
 
-/// RAII guard to restore the terminal on drop.
 struct RawModeGuard;
 
 impl Drop for RawModeGuard {
     fn drop(&mut self) {
         let _ = crossterm::terminal::disable_raw_mode();
-        // Disable mouse reporting.
-        let _ = std::io::stdout().write_all(b"\x1b[?1003l\x1b[?1006l");
-        // Show cursor.
-        let _ = std::io::stdout().write_all(b"\x1b[?25h");
+        // Disable mouse, focus events, restore cursor.
+        let _ = std::io::stdout().write_all(b"\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?25h");
         let _ = std::io::stdout().flush();
     }
 }

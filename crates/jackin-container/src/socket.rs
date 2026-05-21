@@ -1,9 +1,11 @@
 /// Unix domain socket server.
 ///
-/// Listens on `/run/jackin/jackin.sock`. Host CLI and future daemon
-/// connect here to query session state or attach a client terminal.
-///
-/// Protocol: 4-byte big-endian length-prefixed JSON frames (see protocol.rs).
+/// Listens on `/run/jackin/jackin.sock`. Two protocols share the socket:
+/// the **control channel** (length-prefixed JSON, used by the host CLI
+/// for one-shot queries) and the **attach channel** (binary tag+length
+/// frames, used by interactive clients). The two are disambiguated by
+/// the first byte of the connection — `0x00` means a length prefix
+/// (control), anything else is an attach-channel tag.
 pub const SOCKET_PATH: &str = "/run/jackin/jackin.sock";
 
 use std::path::Path;
@@ -13,7 +15,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 
-use crate::protocol::{ClientMsg, ServerMsg, frame};
+use crate::protocol::control::{ClientMsg, ServerMsg, SessionInfo, frame};
 
 /// Start the Unix socket listener. Returns a receiver of newly-connected
 /// clients. The caller (daemon) accepts clients from the channel.
@@ -45,32 +47,33 @@ pub fn start_listener() -> Result<mpsc::UnboundedReceiver<UnixStream>> {
     Ok(rx)
 }
 
-/// Read one framed message from a UnixStream. Returns None on EOF.
-pub async fn read_msg(stream: &mut UnixStream) -> Option<ClientMsg> {
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await.ok()?;
+/// Read a length-prefixed JSON control message whose 4-byte length
+/// prefix begins with `first_byte = 0x00` (already consumed by the
+/// dispatcher).
+pub async fn read_control_msg(stream: &mut UnixStream, first_byte: u8) -> Option<ClientMsg> {
+    let mut rest = [0u8; 3];
+    stream.read_exact(&mut rest).await.ok()?;
+    let len_buf = [first_byte, rest[0], rest[1], rest[2]];
     let len = u32::from_be_bytes(len_buf) as usize;
     if len > 4 * 1024 * 1024 {
         return None;
-    } // 4 MiB sanity guard
+    }
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body).await.ok()?;
     serde_json::from_slice(&body).ok()
 }
 
-/// Write one framed message to a UnixStream.
-pub async fn write_msg(stream: &mut UnixStream, msg: &ServerMsg) -> Result<()> {
-    let framed = frame(msg);
-    stream.write_all(&framed).await?;
-    Ok(())
-}
-
-/// Handle a one-shot status query from a non-attach client (e.g. host CLI).
-/// Sends a `SessionList` response and closes the connection.
-pub async fn handle_status_query(
+/// Handle a one-shot control request and close the connection.
+pub async fn handle_control_request(
     mut stream: UnixStream,
-    sessions: Vec<crate::protocol::SessionInfo>,
+    first_byte: u8,
+    sessions: Vec<SessionInfo>,
 ) {
-    let msg = ServerMsg::SessionList { sessions };
-    let _ = write_msg(&mut stream, &msg).await;
+    let Some(msg) = read_control_msg(&mut stream, first_byte).await else {
+        return;
+    };
+    let reply = match msg {
+        ClientMsg::Status => ServerMsg::SessionList { sessions },
+    };
+    let _ = stream.write_all(&frame(&reply)).await;
 }

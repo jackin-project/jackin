@@ -1,24 +1,30 @@
 /// The multiplexer daemon — runs as PID 1, manages sessions and clients.
 ///
 /// Architecture:
-///   - One active client at a time (the operator's exec'd terminal)
-///   - Client handler task: reads ClientMsg → sends to cmd_tx; writes
-///     outbound bytes from out_rx → socket
-///   - Main loop: selects on PTY events, cmd_rx, and periodic state ticker
+///   - One active attach client at a time. A new `Hello` from a second
+///     client sends `Shutdown` to the old one and takes over.
+///   - Attach traffic uses the binary tag+length protocol in
+///     `protocol::attach`. The hot path forwards raw PTY bytes without
+///     base64 or JSON nesting.
+///   - The control channel still speaks length-prefixed JSON for one-shot
+///     `status` queries from the host CLI. Channel dispatch is by first
+///     byte: `0x00` → control (length prefix), anything else → attach.
+///   - The daemon is persistent: it does not exit when the last session
+///     dies. Only `SIGTERM` triggers shutdown.
 use std::collections::HashMap;
 
 use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
 
 use crate::dialog::{Dialog, DialogAction, PaletteCommand};
 use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, Tab};
-use crate::protocol::{
-    AgentState, ClientMsg, ServerMsg, SessionInfo, b64_decode, b64_encode, frame,
-};
+use crate::protocol::attach::{ClientFrame, ServerFrame, encode_server, read_client_frame};
+use crate::protocol::control::{AgentState, SessionInfo};
 use crate::render::render_pane;
 use crate::session::{
     Session, SessionEvent, available_agents, build_agent_command, build_shell_command,
@@ -42,6 +48,7 @@ pub struct Multiplexer {
     zoomed: Option<u64>,
     input_parser: InputParser,
     detach_requested: bool,
+    attached_out: Option<mpsc::UnboundedSender<Vec<u8>>>,
 }
 
 impl Multiplexer {
@@ -78,7 +85,18 @@ impl Multiplexer {
             zoomed: None,
             input_parser: InputParser::default(),
             detach_requested: false,
+            attached_out: None,
         }
+    }
+
+    fn send_to_client(&self, frame: ServerFrame) {
+        if let Some(tx) = &self.attached_out {
+            let _ = tx.send(encode_server(frame));
+        }
+    }
+
+    fn send_output(&self, bytes: Vec<u8>) {
+        self.send_to_client(ServerFrame::Output(bytes));
     }
 
     fn next_tab(&mut self) {
@@ -567,103 +585,81 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
         .unwrap_or(80u16);
 
     let mut mux = Multiplexer::new(rows, cols);
-    mux.spawn_initial(&initial_agent)?;
+    if !initial_agent.is_empty() {
+        mux.spawn_initial(&initial_agent)?;
+    } else {
+        mux.spawn_session(None)?;
+    }
 
     let mut new_clients = socket::start_listener()?;
     let mut state_ticker = interval(Duration::from_secs(1));
+    let mut sigterm = signal(SignalKind::terminate())?;
+    let mut sigint = signal(SignalKind::interrupt())?;
 
-    // Outbound channel: main loop → connected client stream.
-    let (out_tx, out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-    // Inbound channel: client handler → main loop.
-    let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<ClientMsg>();
-
-    // Shared out_rx wrapped in an Option so we can move it into the client task.
-    let mut out_rx_slot: Option<mpsc::UnboundedReceiver<Vec<u8>>> = Some(out_rx);
+    // Inbound: attach handler tasks → main loop.
+    let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<ClientFrame>();
 
     loop {
         tokio::select! {
-            // New client connected via socket.
-            Some(mut stream) = new_clients.recv() => {
-                let msg = socket::read_msg(&mut stream).await;
-                match msg {
-                    Some(ClientMsg::Hello { rows, cols }) => {
-                        mux.resize(rows, cols);
-                        let welcome = frame(&ServerMsg::Welcome { session_count: mux.sessions.len() });
-                        let _ = out_tx.send(welcome);
-                        // Clear screen then send initial full frame.
-                        let mut frame_data = b"\x1b[2J".to_vec();
-                        frame_data.extend(mux.compose_frame());
-                        let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&frame_data) }));
-                        // Spawn bidirectional client handler.
-                        let rx = out_rx_slot.take().unwrap_or_else(|| {
-                            // Previous client disconnected; create fresh channel pair.
-                            let (_, new_rx) = mpsc::unbounded_channel();
-                            new_rx
-                        });
-                        tokio::spawn(handle_client(stream, rx, cmd_tx.clone()));
-                    }
-                    Some(ClientMsg::Status) => {
-                        socket::handle_status_query(stream, mux.session_infos()).await;
-                    }
-                    _ => {}
+            biased;
+
+            _ = sigterm.recv() => {
+                if let Some(tx) = mux.attached_out.take() {
+                    let _ = tx.send(encode_server(ServerFrame::Shutdown));
                 }
+                return Ok(());
+            }
+            _ = sigint.recv() => {
+                if let Some(tx) = mux.attached_out.take() {
+                    let _ = tx.send(encode_server(ServerFrame::Shutdown));
+                }
+                return Ok(());
             }
 
-            // Inbound command from client handler.
-            Some(msg) = cmd_rx.recv() => {
-                match msg {
-                    ClientMsg::Input { data } => {
-                        let bytes = b64_decode(&data);
-                        let events = mux.input_parser.parse(&bytes);
-                        for event in events {
-                            if let Some(redraw) = mux.handle_input(event) {
-                                let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&redraw) }));
-                            }
-                        }
-                        if mux.detach_requested {
-                            mux.detach_requested = false;
-                            let _ = out_tx.send(frame(&ServerMsg::Shutdown));
-                        }
+            // New socket connection.
+            Some(mut stream) = new_clients.recv() => {
+                let mut first = [0u8; 1];
+                if stream.read_exact(&mut first).await.is_err() {
+                    continue;
+                }
+                if first[0] == 0x00 {
+                    // Control channel — one-shot length-prefixed JSON.
+                    socket::handle_control_request(stream, first[0], mux.session_infos()).await;
+                    continue;
+                }
+                // Attach channel — first byte is the first frame's tag.
+                let Ok(Some(initial_frame)) = read_client_frame(&mut stream, first[0]).await else {
+                    continue;
+                };
+                let ClientFrame::Hello { rows, cols } = initial_frame else {
+                    // Attach clients must say Hello first; drop.
+                    continue;
+                };
+                mux.resize(rows, cols);
+                // Take over from any existing attach client.
+                if let Some(old) = mux.attached_out.take() {
+                    let _ = old.send(encode_server(ServerFrame::Shutdown));
+                }
+                let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+                mux.attached_out = Some(new_out_tx.clone());
+                let welcome = encode_server(ServerFrame::Welcome {
+                    session_count: mux.sessions.len() as u32,
+                });
+                let _ = new_out_tx.send(welcome);
+                let mut initial = b"\x1b[2J".to_vec();
+                initial.extend(mux.compose_frame());
+                let _ = new_out_tx.send(encode_server(ServerFrame::Output(initial)));
+                tokio::spawn(handle_attach_client(stream, new_out_rx, cmd_tx.clone()));
+            }
+
+            // Inbound attach frame from the active client task.
+            Some(frame) = cmd_rx.recv() => {
+                handle_client_frame(&mut mux, frame).await;
+                if mux.detach_requested {
+                    mux.detach_requested = false;
+                    if let Some(tx) = mux.attached_out.take() {
+                        let _ = tx.send(encode_server(ServerFrame::Shutdown));
                     }
-                    ClientMsg::Resize { rows, cols } => {
-                        mux.resize(rows, cols);
-                        let frame_data = mux.compose_frame();
-                        let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&frame_data) }));
-                    }
-                    ClientMsg::NewSession { agent } => {
-                        let _ = mux.spawn_session(agent);
-                        let frame_data = mux.compose_frame();
-                        let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&frame_data) }));
-                    }
-                    ClientMsg::SwitchSession { id } => {
-                        // Find the tab containing this session and switch to it.
-                        for (i, tab) in mux.tabs.iter().enumerate() {
-                            if tab.tree.all_ids().contains(&id) {
-                                mux.active_tab = i;
-                                break;
-                            }
-                        }
-                        let frame_data = mux.compose_frame();
-                        let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&frame_data) }));
-                    }
-                    ClientMsg::KillSession { id } => {
-                        // Find the tab that owns this session, focus it, then close.
-                        for (i, tab) in mux.tabs.iter().enumerate() {
-                            if tab.tree.all_ids().contains(&id) {
-                                mux.active_tab = i;
-                                mux.tabs[i].focused_id = id;
-                                break;
-                            }
-                        }
-                        mux.close_focused_pane();
-                        let frame_data = mux.compose_frame();
-                        let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&frame_data) }));
-                    }
-                    ClientMsg::Status => {
-                        let list = frame(&ServerMsg::SessionList { sessions: mux.session_infos() });
-                        let _ = out_tx.send(list);
-                    }
-                    ClientMsg::Hello { .. } => {} // second hello from re-attach — ignore
                 }
             }
 
@@ -675,7 +671,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                             session.feed_pty(&data);
                             if mux.dialog.is_none() {
                                 let frame_data = mux.compose_frame();
-                                let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&frame_data) }));
+                                mux.send_output(frame_data);
                             }
                         }
                     }
@@ -684,18 +680,18 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                             session.alive = false;
                             session.state = AgentState::Done;
                         }
-                        if mux.sessions.values().all(|s| !s.alive) {
-                            let _ = out_tx.send(frame(&ServerMsg::Shutdown));
-                            tokio::time::sleep(Duration::from_millis(200)).await;
-                            std::process::exit(0);
-                        }
+                        // The daemon does NOT exit when the last session
+                        // dies. The container survives; the operator can
+                        // reattach and respawn with `prefix + c`.
                         let frame_data = mux.compose_frame();
-                        let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&frame_data) }));
+                        mux.send_output(frame_data);
                     }
                 }
             }
 
-            // Periodic state refresh.
+            // Periodic state refresh: re-render the status bar so the tab
+            // strip's state glyph follows the four-state model. The full
+            // pane bodies stay where they are.
             _ = state_ticker.tick() => {
                 for session in mux.sessions.values_mut() {
                     session.refresh_state();
@@ -705,7 +701,50 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                     .map(|(&id, s)| (id, s.state))
                     .collect();
                 mux.status_bar.render(&mut sbuf, mux.term_cols, &mux.tabs, mux.active_tab, &states);
-                let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&sbuf) }));
+                mux.send_output(sbuf);
+            }
+        }
+    }
+}
+
+async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
+    match frame {
+        ClientFrame::Hello { .. } => {
+            // The initial Hello is consumed by the accept handler; any
+            // further Hello on the same connection is ignored.
+        }
+        ClientFrame::Resize { rows, cols } => {
+            mux.resize(rows, cols);
+            let frame_data = mux.compose_frame();
+            mux.send_output(frame_data);
+        }
+        ClientFrame::Input(bytes) => {
+            let events = mux.input_parser.parse(&bytes);
+            for event in events {
+                if let Some(redraw) = mux.handle_input(event) {
+                    mux.send_output(redraw);
+                }
+            }
+        }
+        ClientFrame::Command(_payload) => {
+            // Reserved for future structured commands from the host
+            // CLI. Phase 3 has no senders yet.
+        }
+        ClientFrame::Detach => {
+            mux.detach_requested = true;
+        }
+        ClientFrame::FocusIn => {
+            if let Some(focused) = mux.active_focused_id()
+                && let Some(s) = mux.sessions.get(&focused)
+            {
+                s.send_input(b"\x1b[I");
+            }
+        }
+        ClientFrame::FocusOut => {
+            if let Some(focused) = mux.active_focused_id()
+                && let Some(s) = mux.sessions.get(&focused)
+            {
+                s.send_input(b"\x1b[O");
             }
         }
     }
@@ -713,28 +752,21 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
 
 /// Per-client connection handler: bidirectional bridge between the socket
 /// and the main daemon loop.
-///
-/// Reads `ClientMsg` from the socket → forwards to `cmd_tx`.
-/// Reads outbound bytes from `out_rx` → writes to the socket.
-async fn handle_client(
+async fn handle_attach_client(
     mut stream: UnixStream,
     mut out_rx: mpsc::UnboundedReceiver<Vec<u8>>,
-    cmd_tx: mpsc::UnboundedSender<ClientMsg>,
+    cmd_tx: mpsc::UnboundedSender<ClientFrame>,
 ) {
-    let mut len_buf = [0u8; 4];
+    let mut tag = [0u8; 1];
     loop {
         tokio::select! {
-            // Read inbound framed ClientMsg from client terminal.
-            result = stream.read_exact(&mut len_buf) => {
+            result = stream.read_exact(&mut tag) => {
                 if result.is_err() { break; }
-                let len = u32::from_be_bytes(len_buf) as usize;
-                if len > 4 * 1024 * 1024 { break; }
-                let mut body = vec![0u8; len];
-                if stream.read_exact(&mut body).await.is_err() { break; }
-                let Ok(msg) = serde_json::from_slice::<ClientMsg>(&body) else { continue };
-                if cmd_tx.send(msg).is_err() { break; }
+                let Ok(Some(frame)) = read_client_frame(&mut stream, tag[0]).await else {
+                    break;
+                };
+                if cmd_tx.send(frame).is_err() { break; }
             }
-            // Write outbound bytes to client terminal.
             Some(bytes) = out_rx.recv() => {
                 if stream.write_all(&bytes).await.is_err() { break; }
             }
