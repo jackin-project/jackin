@@ -49,7 +49,13 @@ pub struct Multiplexer {
     input_parser: InputParser,
     detach_requested: bool,
     attached_out: Option<mpsc::UnboundedSender<Vec<u8>>>,
+    /// Records the previous tab-cell click so a second click on the
+    /// same tab within `DOUBLE_CLICK_WINDOW` is treated as a
+    /// double-click (open the rename modal).
+    last_tab_click: Option<(usize, std::time::Instant)>,
 }
+
+const DOUBLE_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
 impl Multiplexer {
     pub fn new(rows: u16, cols: u16) -> Self {
@@ -90,6 +96,7 @@ impl Multiplexer {
             input_parser,
             detach_requested: false,
             attached_out: None,
+            last_tab_click: None,
         }
     }
 
@@ -393,7 +400,14 @@ impl Multiplexer {
     fn refresh_tab_labels(&mut self) {
         let mut new_labels = Vec::with_capacity(self.tabs.len());
         for tab in &self.tabs {
-            new_labels.push(self.tab_display_label(tab));
+            // Operator-set custom labels take priority — the deriver
+            // would otherwise overwrite the name the operator just
+            // typed every time a pane is added or removed.
+            new_labels.push(
+                tab.custom_label
+                    .clone()
+                    .unwrap_or_else(|| self.tab_display_label(tab)),
+            );
         }
         for (tab, label) in self.tabs.iter_mut().zip(new_labels) {
             tab.label = label;
@@ -576,6 +590,17 @@ impl Multiplexer {
                         }
                         Some(self.compose_frame())
                     }
+                    DialogAction::RenameTab { tab_idx, label } => {
+                        self.dialog = None;
+                        if let Some(tab) = self.tabs.get_mut(tab_idx) {
+                            tab.custom_label = if label.is_empty() {
+                                None
+                            } else {
+                                Some(label)
+                            };
+                        }
+                        Some(self.compose_frame())
+                    }
                 }
             }
             InputEvent::MousePress { .. } if self.dialog.is_some() => {
@@ -624,15 +649,36 @@ impl Multiplexer {
                 col,
                 button: 0,
             } => {
-                // 1) Click on a tab cell switches active tab.
+                // 1) Click on a tab cell switches active tab. A
+                //    second click on the same cell within the
+                //    double-click window opens the rename modal.
                 if let Some(idx) = self.status_bar.tab_at_col(col + 1)
                     && idx < self.tabs.len()
-                    && idx != self.active_tab
                 {
-                    let prev = self.active_focused_id();
-                    self.active_tab = idx;
-                    self.synthesise_focus_swap(prev, self.active_focused_id());
-                    return Some(self.compose_frame());
+                    let now = std::time::Instant::now();
+                    let is_double = self
+                        .last_tab_click
+                        .filter(|(prev_idx, prev_t)| {
+                            *prev_idx == idx && now.duration_since(*prev_t) <= DOUBLE_CLICK_WINDOW
+                        })
+                        .is_some();
+                    if is_double {
+                        let initial = self.tabs[idx].custom_label.clone().unwrap_or_default();
+                        self.dialog = Some(Dialog::RenameTab {
+                            tab_idx: idx,
+                            input: initial,
+                        });
+                        self.last_tab_click = None;
+                        return Some(self.compose_frame());
+                    }
+                    self.last_tab_click = Some((idx, now));
+                    if idx != self.active_tab {
+                        let prev = self.active_focused_id();
+                        self.active_tab = idx;
+                        self.synthesise_focus_swap(prev, self.active_focused_id());
+                        return Some(self.compose_frame());
+                    }
+                    return None;
                 }
                 // 2) Click on the right-side hint acts as a
                 //    palette-key gesture — gives the operator a
@@ -701,6 +747,17 @@ impl Multiplexer {
                                 PickerIntent::SplitVertical => {
                                     let _ = self.split_focused_into(false, agent);
                                 }
+                            }
+                            Some(self.compose_frame())
+                        }
+                        DialogAction::RenameTab { tab_idx, label } => {
+                            self.dialog = None;
+                            if let Some(tab) = self.tabs.get_mut(tab_idx) {
+                                tab.custom_label = if label.is_empty() {
+                                    None
+                                } else {
+                                    Some(label)
+                                };
                             }
                             Some(self.compose_frame())
                         }

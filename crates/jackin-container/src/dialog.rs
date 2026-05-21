@@ -44,6 +44,12 @@ pub enum PickerIntent {
     SplitVertical,
 }
 
+/// Cap on operator-typed tab labels. Long names break the tab-strip
+/// layout (each tab cell grows with its label width), so the input
+/// stops accepting characters past this limit. 16 is enough for the
+/// agent names (`OpenCode`) plus a short qualifier the operator picks.
+pub const MAX_CUSTOM_LABEL_LEN: usize = 16;
+
 #[derive(Debug, Clone)]
 pub enum Dialog {
     CommandPalette {
@@ -53,6 +59,14 @@ pub enum Dialog {
         agents: Vec<String>,
         selected: usize,
         intent: PickerIntent,
+    },
+    /// Text-input modal opened when the operator double-clicks a tab.
+    /// `tab_idx` records which tab to rename. `input` is the current
+    /// buffer; Enter commits it, Esc cancels, empty input clears any
+    /// previous custom label so the tab returns to auto-naming.
+    RenameTab {
+        tab_idx: usize,
+        input: String,
     },
 }
 
@@ -65,6 +79,13 @@ pub enum DialogAction {
     SpawnAgent {
         agent: Option<String>,
         intent: PickerIntent,
+    },
+    /// Operator typed a new tab label and pressed Enter. Empty
+    /// `label` clears the existing custom label and re-enables
+    /// auto-naming.
+    RenameTab {
+        tab_idx: usize,
+        label: String,
     },
     /// User dismissed with Escape.
     Dismiss,
@@ -115,6 +136,13 @@ const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
 impl Dialog {
     /// Handle a raw key byte and return the resulting action.
     pub fn handle_key(&mut self, key: &[u8]) -> DialogAction {
+        // Text-input dialog has its own dismissal / editing rules and
+        // must intercept keys before the arrow-key + dismiss-key
+        // shortcuts below would steal them (e.g. `q` is a legal
+        // character inside a custom tab name).
+        if let Self::RenameTab { tab_idx, input } = self {
+            return rename_tab_handle_key(*tab_idx, input, key);
+        }
         if is_dismiss_key(key) {
             return DialogAction::Dismiss;
         }
@@ -131,6 +159,7 @@ impl Dialog {
                     }
                     DialogAction::Redraw
                 }
+                Self::RenameTab { .. } => unreachable!("RenameTab handled at top"),
             };
         }
         if is_arrow_down(key) {
@@ -149,9 +178,11 @@ impl Dialog {
                     }
                     DialogAction::Redraw
                 }
+                Self::RenameTab { .. } => unreachable!("RenameTab handled at top"),
             };
         }
         match self {
+            Self::RenameTab { .. } => unreachable!("RenameTab handled at top"),
             Self::CommandPalette { selected } => match key {
                 b"k" => {
                     if *selected > 0 {
@@ -224,6 +255,12 @@ impl Dialog {
         if !inside_box {
             return DialogAction::Dismiss;
         }
+        // Text-input dialog has no clickable rows — clicks inside the
+        // box are just swallowed so they don't dismiss or reach the
+        // pane underneath.
+        if matches!(self, Self::RenameTab { .. }) {
+            return DialogAction::Consume;
+        }
         // First content row sits two rows down from the top border
         // (top border + blank pad). Rows above and below the item
         // list are decorative.
@@ -233,6 +270,7 @@ impl Dialog {
             // Agent picker rows: agents + separator + Shell. The
             // separator row is non-selectable.
             Self::AgentPicker { agents, .. } => agents.len() as u16 + 2,
+            Self::RenameTab { .. } => unreachable!("RenameTab handled above"),
         };
         if row < first_item_row || row >= first_item_row + item_count {
             return DialogAction::Consume;
@@ -268,6 +306,7 @@ impl Dialog {
                     intent: *intent,
                 }
             }
+            Self::RenameTab { .. } => unreachable!("RenameTab handled above"),
         }
     }
 
@@ -280,6 +319,8 @@ impl Dialog {
         let height = match self {
             Self::CommandPalette { .. } => PALETTE_ITEMS.len() as u16 + 4,
             Self::AgentPicker { agents, .. } => agents.len() as u16 + 2 + 4,
+            // Rename modal: top border + blank pad + input row + blank pad + bottom border.
+            Self::RenameTab { .. } => 5,
         };
         let row = (term_rows.saturating_sub(height)) / 2;
         let col = (term_cols.saturating_sub(width)) / 2;
@@ -300,7 +341,37 @@ impl Dialog {
             } => {
                 render_agent_picker(buf, term_rows, term_cols, agents, *selected, *intent);
             }
+            Self::RenameTab { input, .. } => {
+                render_rename_tab(buf, term_rows, term_cols, input);
+            }
         }
+    }
+}
+
+/// Edit a rename-tab input buffer in response to a raw key chunk.
+/// Enter commits, Esc cancels, Backspace removes the trailing char,
+/// any other printable ASCII char appends until `MAX_CUSTOM_LABEL_LEN`
+/// is reached. Arrow / function / CSI escapes are swallowed so they
+/// don't leak into the buffer.
+fn rename_tab_handle_key(tab_idx: usize, input: &mut String, key: &[u8]) -> DialogAction {
+    match key {
+        b"\x1b" | b"\x03" => DialogAction::Dismiss,
+        b"\r" | b"\n" => DialogAction::RenameTab {
+            tab_idx,
+            label: input.trim().to_string(),
+        },
+        b"\x7f" | b"\x08" => {
+            input.pop();
+            DialogAction::Redraw
+        }
+        bytes if bytes.len() == 1 => {
+            let b = bytes[0];
+            if (0x20..0x7f).contains(&b) && input.chars().count() < MAX_CUSTOM_LABEL_LEN {
+                input.push(b as char);
+            }
+            DialogAction::Redraw
+        }
+        _ => DialogAction::Redraw,
     }
 }
 
@@ -363,6 +434,51 @@ const PICKER_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("Esc"),
     HintSpan::Text("dismiss"),
 ];
+
+const RENAME_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Enter"),
+    HintSpan::Text("save"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("cancel"),
+    HintSpan::GroupSep,
+    HintSpan::Text("empty = auto name"),
+];
+
+/// Render the tab-rename modal. One text-input row showing the current
+/// buffer plus a blinking-style trailing `▌` caret. Width matches the
+/// other dialogs so the operator's eye does not have to re-anchor.
+fn render_rename_tab(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, input: &str) {
+    let width = PALETTE_WIDTH;
+    let height: u16 = 5;
+    let start_row = (term_rows.saturating_sub(height)) / 2;
+    let start_col = (term_cols.saturating_sub(width)) / 2;
+
+    render_box(buf, start_row, start_col, height, width, "Rename tab");
+
+    // Input row at the box interior (row index 2 from top: top border +
+    // blank pad + input). Render: `▸ <text>▌` then pad to interior end.
+    let row = start_row + 2;
+    let col = start_col + 1;
+    move_to(buf, row, col);
+    buf.extend_from_slice(BG_DARK.as_bytes());
+    buf.extend_from_slice(FG_GREEN.as_bytes());
+    let prefix = "  ";
+    buf.extend_from_slice(prefix.as_bytes());
+    buf.extend_from_slice(FG_WHITE.as_bytes());
+    buf.extend_from_slice(input.as_bytes());
+    // Caret marker so the operator can see the text input is live.
+    buf.extend_from_slice(FG_GREEN.as_bytes());
+    buf.extend_from_slice("▌".as_bytes());
+    let used = prefix.chars().count() + input.chars().count() + 1; // +1 for caret
+    let max_interior = (width as usize).saturating_sub(2);
+    for _ in used..max_interior {
+        buf.push(b' ');
+    }
+    buf.extend_from_slice(RESET.as_bytes());
+
+    render_bottom_hint(buf, term_rows, term_cols, RENAME_HINT);
+}
 
 fn render_palette(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, selected: usize) {
     let items = PALETTE_ITEMS;

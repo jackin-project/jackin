@@ -302,9 +302,14 @@ pub enum Direction {
 }
 
 /// A named tab — each tab has a label and its own pane layout.
+/// `custom_label` is set when the operator double-clicks a tab and
+/// types a fixed name; while it is `Some`, `label` mirrors it and the
+/// daemon's auto-deriver leaves the tab alone. Clearing `custom_label`
+/// (rename to empty string) restores automatic naming.
 #[derive(Debug, Clone)]
 pub struct Tab {
     pub label: String,
+    pub custom_label: Option<String>,
     pub tree: PaneTree,
     pub focused_id: u64,
 }
@@ -313,6 +318,7 @@ impl Tab {
     pub fn new_single(label: impl Into<String>, session_id: u64) -> Self {
         Self {
             label: label.into(),
+            custom_label: None,
             tree: PaneTree::Leaf(session_id),
             focused_id: session_id,
         }
