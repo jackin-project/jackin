@@ -80,6 +80,13 @@ impl InputParser {
         }
     }
 
+    /// `true` while the parser is between the prefix byte and its
+    /// next command key. Used by the status bar to swap the right-side
+    /// hint to `prefix…` for the duration of the prefix gesture.
+    pub fn is_awaiting_prefix(&self) -> bool {
+        matches!(self.state, State::PrefixAwait)
+    }
+
     /// Parse a chunk of client bytes into a stream of events.
     pub fn parse(&mut self, bytes: &[u8]) -> Vec<InputEvent> {
         let mut events = Vec::new();

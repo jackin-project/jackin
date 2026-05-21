@@ -7,6 +7,7 @@ use std::io::Write;
 use anyhow::{Context, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
+use tokio::signal::unix::{SignalKind, signal};
 
 use crate::protocol::attach::{ClientFrame, ServerFrame, encode_client, read_server_frame};
 use crate::protocol::control::{ClientMsg, ServerMsg, frame as control_frame};
@@ -36,6 +37,8 @@ pub async fn run_client(_new_session_agent: Option<String>) -> Result<()> {
     let mut stdin_buf = [0u8; 4096];
     let mut tag_buf = [0u8; 1];
     let mut tokio_stdin = tokio::io::stdin();
+    let mut winch =
+        signal(SignalKind::window_change()).context("failed to install SIGWINCH handler")?;
 
     loop {
         tokio::select! {
@@ -68,6 +71,13 @@ pub async fn run_client(_new_session_agent: Option<String>) -> Result<()> {
                     Ok(n) => n,
                 };
                 let msg = encode_client(ClientFrame::Input(stdin_buf[..n].to_vec()));
+                if stream.write_all(&msg).await.is_err() { break; }
+            }
+
+            // Outer terminal resize → propagate.
+            _ = winch.recv() => {
+                let (rows, cols) = terminal_size();
+                let msg = encode_client(ClientFrame::Resize { rows, cols });
                 if stream.write_all(&msg).await.is_err() { break; }
             }
         }
