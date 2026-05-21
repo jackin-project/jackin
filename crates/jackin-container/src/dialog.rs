@@ -1,16 +1,28 @@
 /// Ctrl+J command palette and agent picker modal.
 ///
-/// The dialog is rendered as a centered floating overlay on top of the
-/// current compositor frame. The daemon renders it when
-/// `Multiplexer::dialog` is `Some(Dialog)`.
+/// The dialog renders as a centred floating overlay on top of the
+/// composed frame. Visual contract:
+///
+/// - **Black background** (256-colour `16`) to match the jackin TUI's
+///   modal style.
+/// - **Brand-green border** (256-colour `46`, the same `--jk-brand`
+///   used by the row-0 brand pill) so dialogs are visibly part of
+///   jackin, not the agent.
+/// - **Behind the dialog, the rest of the screen is dimmed** —
+///   render_pane is called with `dim=true` while a dialog is open, so
+///   every cell behind the modal carries the ANSI dim attribute.
+///   That gives operators an obvious "you are now inside a dialog,
+///   the agent below is paused" focus signal without a heavy modal
+///   backdrop.
 const PALETTE_WIDTH: u16 = 40;
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
-const BG_DARK: &str = "\x1b[48;5;235m"; // very dark grey background
-const FG_GREEN: &str = "\x1b[38;5;46m";
+const BG_DARK: &str = "\x1b[48;5;16m"; // near-black
+const FG_GREEN: &str = "\x1b[38;5;46m"; // brand green
 const FG_WHITE: &str = "\x1b[38;5;255m";
-const FG_GREY: &str = "\x1b[38;5;244m";
-const SELECTED_BG: &str = "\x1b[48;5;238m"; // selected row background
+const FG_GREY: &str = "\x1b[38;5;250m";
+const SELECTED_BG: &str = "\x1b[48;5;22m"; // dark-green selection
+const SELECTED_FG: &str = "\x1b[38;5;46m"; // brand-green text on selection
 
 #[derive(Debug, Clone)]
 pub enum Dialog {
@@ -37,7 +49,6 @@ pub enum DialogAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaletteCommand {
-    NewSession,
     NewTab,
     NextTab,
     PrevTab,
@@ -49,8 +60,11 @@ pub enum PaletteCommand {
     Detach,
 }
 
+/// The "New agent session" entry was removed: it was a duplicate of
+/// "New tab" — both opened the agent picker and spawned a new tab
+/// for the chosen agent or Shell. The single `New tab` entry now
+/// owns that path.
 const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
-    (PaletteCommand::NewSession, "New agent session"),
     (PaletteCommand::NewTab, "New tab"),
     (PaletteCommand::NextTab, "Next tab"),
     (PaletteCommand::PrevTab, "Previous tab"),
@@ -138,39 +152,22 @@ impl Dialog {
 
 fn render_palette(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, selected: usize) {
     let items = PALETTE_ITEMS;
-    let height = items.len() as u16 + 4; // title + border + items + padding
+    let height = items.len() as u16 + 4;
     let width = PALETTE_WIDTH;
     let start_row = (term_rows.saturating_sub(height)) / 2;
     let start_col = (term_cols.saturating_sub(width)) / 2;
 
     render_box(buf, start_row, start_col, height, width, "jackin' commands");
-
     for (i, (_, label)) in items.iter().enumerate() {
-        let row = start_row + 2 + i as u16;
-        let col = start_col + 1;
-        move_to(buf, row, col);
-        if i == selected {
-            buf.extend_from_slice(SELECTED_BG.as_bytes());
-            buf.extend_from_slice(FG_GREEN.as_bytes());
-            buf.extend_from_slice(BOLD.as_bytes());
-            buf.push(b'>');
-        } else {
-            buf.extend_from_slice(BG_DARK.as_bytes());
-            buf.extend_from_slice(FG_GREY.as_bytes());
-            buf.push(b' ');
-        }
-        buf.push(b' ');
-        let label_bytes = label.as_bytes();
-        buf.extend_from_slice(&label_bytes[..label_bytes.len().min((width - 4) as usize)]);
-        // Pad to width.
-        let used = label_bytes.len() + 2;
-        let pad = (width as usize).saturating_sub(used + 2);
-        for _ in 0..pad {
-            buf.push(b' ');
-        }
-        buf.extend_from_slice(RESET.as_bytes());
+        render_row(
+            buf,
+            start_row + 2 + i as u16,
+            start_col + 1,
+            width,
+            label,
+            i == selected,
+        );
     }
-
     render_hint(
         buf,
         start_row + height - 1,
@@ -199,26 +196,14 @@ fn render_agent_picker(
     all_items.push("Shell".to_string());
 
     for (i, label) in all_items.iter().enumerate() {
-        let row = start_row + 2 + i as u16;
-        let col = start_col + 1;
-        move_to(buf, row, col);
-        if i == selected {
-            buf.extend_from_slice(SELECTED_BG.as_bytes());
-            buf.extend_from_slice(FG_GREEN.as_bytes());
-            buf.extend_from_slice(BOLD.as_bytes());
-            buf.push(b'>');
-        } else {
-            buf.extend_from_slice(BG_DARK.as_bytes());
-            buf.extend_from_slice(FG_GREY.as_bytes());
-            buf.push(b' ');
-        }
-        buf.push(b' ');
-        buf.extend_from_slice(label.as_bytes());
-        let pad = (width as usize).saturating_sub(label.len() + 4);
-        for _ in 0..pad {
-            buf.push(b' ');
-        }
-        buf.extend_from_slice(RESET.as_bytes());
+        render_row(
+            buf,
+            start_row + 2 + i as u16,
+            start_col + 1,
+            width,
+            label,
+            i == selected,
+        );
     }
 
     render_hint(
@@ -228,6 +213,37 @@ fn render_agent_picker(
         width,
         "↑↓ navigate  Enter launch  Esc dismiss",
     );
+}
+
+/// Render one row of a palette/picker list at `(row, col)` spanning
+/// `width-2` columns. Selected rows get the dark-green selection
+/// background + brand-green text; unselected rows get the standard
+/// near-black + light-grey palette text.
+fn render_row(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, label: &str, selected: bool) {
+    move_to(buf, row, col);
+    if selected {
+        buf.extend_from_slice(SELECTED_BG.as_bytes());
+        buf.extend_from_slice(SELECTED_FG.as_bytes());
+        buf.extend_from_slice(BOLD.as_bytes());
+        buf.push(b'>');
+    } else {
+        buf.extend_from_slice(BG_DARK.as_bytes());
+        buf.extend_from_slice(FG_WHITE.as_bytes());
+        buf.push(b' ');
+    }
+    buf.push(b' ');
+    // Clip the label to the row's drawable width (interior - 2 for
+    // the leading marker and one trailing pad column).
+    let max_label = (width as usize).saturating_sub(4);
+    let bytes = label.as_bytes();
+    let take = bytes.len().min(max_label);
+    buf.extend_from_slice(&bytes[..take]);
+    let used = 2 + take; // `> ` or `  ` + label
+    let pad = (width as usize).saturating_sub(used + 2);
+    for _ in 0..pad {
+        buf.push(b' ');
+    }
+    buf.extend_from_slice(RESET.as_bytes());
 }
 
 fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, title: &str) {

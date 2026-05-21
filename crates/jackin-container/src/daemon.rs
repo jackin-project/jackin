@@ -484,7 +484,7 @@ impl Multiplexer {
             PaletteCommand::SplitVertical => {
                 let _ = self.split_focused(false);
             }
-            PaletteCommand::NewTab | PaletteCommand::NewSession => {
+            PaletteCommand::NewTab => {
                 let agents = self.available_agents.clone();
                 self.dialog = Some(Dialog::AgentPicker {
                     agents,
@@ -521,6 +521,10 @@ impl Multiplexer {
         let focused_id = self.active_focused_id();
         let mut focused_pane_rect: Option<Rect> = None;
 
+        // Dim the panes when a dialog is open so the operator gets an
+        // unmistakable "focus is inside the dialog" cue.
+        let dim_panes = self.dialog.is_some();
+
         if let Some(zoom_id) = self.zoomed {
             if let Some(session) = self.sessions.get(&zoom_id) {
                 let rect = Rect::new(1, 0, self.content_rows, self.term_cols);
@@ -530,6 +534,7 @@ impl Multiplexer {
                     rect.col,
                     rect.rows,
                     rect.cols,
+                    dim_panes,
                     &mut buf,
                 );
                 if Some(zoom_id) == focused_id {
@@ -547,6 +552,7 @@ impl Multiplexer {
                         rect.col,
                         rect.rows,
                         rect.cols,
+                        dim_panes,
                         &mut buf,
                     );
                     if Some(*id) == focused_id {

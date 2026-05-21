@@ -66,7 +66,7 @@ fn render_pane_includes_content_at_offset() {
     let mut p = Parser::new(3, 10, 0);
     p.process(b"hello");
     let mut buf = Vec::new();
-    render_pane(p.screen(), 2, 4, 3, 10, &mut buf);
+    render_pane(p.screen(), 2, 4, 3, 10, false, &mut buf);
     let s = String::from_utf8_lossy(&buf);
     assert!(s.contains("hello"));
     assert!(s.contains("\x1b[3;5H")); // dest_row=2, dest_col=4 → 1-based 3,5

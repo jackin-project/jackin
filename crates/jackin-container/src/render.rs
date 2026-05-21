@@ -37,13 +37,17 @@ impl From<Color> for ColorKey {
 }
 
 /// Render the screen at `(dest_row, dest_col)` into `buf`, clipped to
-/// `(rect_rows, rect_cols)`. Coordinates are 0-based.
+/// `(rect_rows, rect_cols)`. Coordinates are 0-based. When `dim` is
+/// true every emitted SGR carries the ANSI dim (`;2`) attribute, used
+/// as a backdrop for the modal dialog overlay so the operator sees an
+/// obvious "background is paused, focus is on the dialog" cue.
 pub fn render_pane(
     screen: &Screen,
     dest_row: u16,
     dest_col: u16,
     rect_rows: u16,
     rect_cols: u16,
+    dim: bool,
     buf: &mut Vec<u8>,
 ) {
     let (screen_rows, screen_cols) = screen.size();
@@ -60,7 +64,7 @@ pub fn render_pane(
             let cell = screen.cell(r, c);
             let attrs = cell.map(cell_attrs).unwrap_or_default();
             if !last_emitted || attrs != last {
-                emit_sgr(buf, &attrs);
+                emit_sgr(buf, &attrs, dim);
                 last = attrs;
                 last_emitted = true;
             }
@@ -93,8 +97,11 @@ fn write_cursor(buf: &mut Vec<u8>, row: u16, col: u16) {
     let _ = write!(buf, "\x1b[{};{}H", row + 1, col + 1);
 }
 
-fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs) {
+fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dim: bool) {
     buf.extend_from_slice(b"\x1b[0");
+    if dim {
+        buf.extend_from_slice(b";2");
+    }
     if a.bold {
         buf.extend_from_slice(b";1");
     }
@@ -171,7 +178,7 @@ mod tests {
         let mut parser = Parser::new(3, 10, 0);
         parser.process(b"hi");
         let mut buf = Vec::new();
-        render_pane(parser.screen(), 4, 2, 3, 10, &mut buf);
+        render_pane(parser.screen(), 4, 2, 3, 10, false, &mut buf);
         let s = String::from_utf8_lossy(&buf);
         // Render must start by writing to row 5 col 3 (1-based after the
         // dest_row=4, dest_col=2 offset) — not row 1 col 1 which would
