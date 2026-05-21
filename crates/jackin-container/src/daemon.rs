@@ -64,6 +64,11 @@ pub struct Multiplexer {
     /// the mouse. Updated on every motion event; copied to the
     /// outer clipboard via OSC 52 on release.
     selection: Option<SelectionState>,
+    /// Set whenever a state change would require a redraw. The render
+    /// ticker drains this at most once per frame so a chatty PTY does
+    /// not push N full frames per second to the client. Cleared after
+    /// `compose_frame` runs.
+    dirty: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -154,6 +159,7 @@ impl Multiplexer {
             last_tab_click: None,
             drag: None,
             selection: None,
+            dirty: false,
         }
     }
 
@@ -1474,6 +1480,13 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
 
     let mut new_clients = socket::start_listener()?;
     let mut state_ticker = interval(Duration::from_secs(1));
+    // Render ticker: ~30 fps. Coalesces PTY-output bursts into one
+    // frame per tick. With 4+ panes producing output continuously,
+    // composing immediately on every event spent more time emitting
+    // SGR bytes than the client could draw, which read as visible
+    // multiplexer lag. zellij uses the same coalescing pattern.
+    let mut render_ticker = interval(Duration::from_millis(33));
+    render_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut sigterm = signal(SignalKind::terminate())?;
     let mut sigint = signal(SignalKind::interrupt())?;
 
@@ -1630,9 +1643,15 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                                     mux.send_output(bytes);
                                 }
                             }
+                            // Mark dirty; the render ticker coalesces
+                            // bursts of PTY output into one frame per
+                            // tick. Composing immediately on every
+                            // event meant a chatty agent (TUI spinner
+                            // + multi-pane updates) pushed dozens of
+                            // full frames per second to the client and
+                            // visibly slowed the multiplexer.
                             if mux.dialog.is_none() {
-                                let frame_data = mux.compose_frame();
-                                mux.send_output(frame_data);
+                                mux.dirty = true;
                             }
                         }
                     }
@@ -1642,8 +1661,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                         // Matches the operator's mental model: "agent
                         // exited → its tab is gone."
                         mux.remove_exited_session(session_id);
-                        let frame_data = mux.compose_frame();
-                        mux.send_output(frame_data);
+                        mux.dirty = true;
                         // When the last live session exits — whether
                         // the operator typed `/exit` in the agent or
                         // the agent crashed — there is nothing left to
@@ -1673,6 +1691,15 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                         mux.send_output(redraw);
                     }
                 }
+            }
+
+            // Render ticker: drain the dirty flag at ~30 fps. One
+            // frame per tick at most, regardless of how many PTY
+            // events arrived since the last tick.
+            _ = render_ticker.tick(), if mux.dirty && mux.dialog.is_none() => {
+                mux.dirty = false;
+                let frame_data = mux.compose_frame();
+                mux.send_output(frame_data);
             }
 
             // Periodic state refresh: re-render the status bar so the tab
