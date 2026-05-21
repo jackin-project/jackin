@@ -384,6 +384,39 @@ impl Multiplexer {
             dialog.render(&mut buf, self.term_rows, self.term_cols);
         }
 
+        // Position cursor at the focused pane's VT cursor location before
+        // showing it, so it appears at the correct position instead of
+        // wherever the last rendered cell landed.
+        if self.dialog.is_none() {
+            let focused_id = self.active_focused_id();
+            if let Some(fid) = focused_id {
+                let cursor = self.sessions.get(&fid).map(|s| s.vterminal.cursor_pos());
+                if let Some((vt_row, vt_col)) = cursor {
+                    let (dest_row, dest_col) = if let Some(zoom_id) = self.zoomed {
+                        if zoom_id == fid { (1u16, 0u16) } else { (0, 0) }
+                    } else if let Some(tab) = self.tabs.get(self.active_tab) {
+                        let content_rect = Rect::new(1, 0, self.content_rows, self.term_cols);
+                        tab.tree
+                            .leaves(content_rect)
+                            .into_iter()
+                            .find(|(id, _)| *id == fid)
+                            .map(|(_, rect)| (rect.row, rect.col))
+                            .unwrap_or((1, 0))
+                    } else {
+                        (1, 0)
+                    };
+                    // CSI row+1 ; col+1 H (1-indexed ANSI)
+                    use std::io::Write as _;
+                    let _ = write!(
+                        buf,
+                        "\x1b[{};{}H",
+                        dest_row + vt_row + 1,
+                        dest_col + vt_col + 1
+                    );
+                }
+            }
+        }
+
         buf.extend_from_slice(b"\x1b[?25h");
         buf
     }
@@ -440,8 +473,9 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                         mux.resize(rows, cols);
                         let welcome = frame(&ServerMsg::Welcome { session_count: mux.sessions.len() });
                         let _ = out_tx.send(welcome);
-                        // Send initial full frame.
-                        let frame_data = mux.compose_frame();
+                        // Clear screen then send initial full frame.
+                        let mut frame_data = b"\x1b[2J".to_vec();
+                        frame_data.extend(mux.compose_frame());
                         let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&frame_data) }));
                         // Spawn bidirectional client handler.
                         let rx = out_rx_slot.take().unwrap_or_else(|| {
@@ -525,19 +559,8 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                             session.state = AgentState::Working;
 
                             if mux.dialog.is_none() {
-                                let focused = mux.tabs.get(mux.active_tab).map(|t| t.focused_id);
-                                if focused == Some(session_id) {
-                                    // Fast path: stream raw output for the active pane.
-                                    let _ = out_tx.send(frame(&socket::encode_output(&data)));
-                                } else {
-                                    // Non-active pane: only redraw status bar.
-                                    let mut sbuf = Vec::new();
-                                    let states: Vec<(u64, AgentState)> = mux.sessions.iter()
-                                        .map(|(&id, s)| (id, s.state))
-                                        .collect();
-                                    mux.status_bar.render(&mut sbuf, mux.term_cols, &mux.tabs, mux.active_tab, &states);
-                                    let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&sbuf) }));
-                                }
+                                let frame_data = mux.compose_frame();
+                                let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&frame_data) }));
                             }
                         }
                     }
