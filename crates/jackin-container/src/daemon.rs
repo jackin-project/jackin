@@ -826,24 +826,27 @@ impl Multiplexer {
                         self.drag = Some(state);
                         return None;
                     }
+                    // Click on a pane other than the currently-focused
+                    // one switches focus first so the operator never
+                    // has to click twice (once to focus, once to act).
+                    // Selection or PTY-mouse forwarding then runs
+                    // against the freshly-focused pane.
+                    let switched_focus = self.focus_pane_at(row, col);
                     // Press inside a pane whose program never asked
                     // for a mouse protocol starts a text selection.
                     if let Some(state) = self.detect_selection_start(row, col) {
                         self.selection = Some(state);
                         return Some(self.compose_frame());
                     }
+                    self.forward_mouse_to_focused_pane(col, row, button);
+                    return if switched_focus {
+                        Some(self.compose_frame())
+                    } else {
+                        None
+                    };
                 }
-                let switched = if button == 0 {
-                    self.focus_pane_at(row, col)
-                } else {
-                    false
-                };
                 self.forward_mouse_to_focused_pane(col, row, button);
-                if switched {
-                    Some(self.compose_frame())
-                } else {
-                    None
-                }
+                None
             }
             InputEvent::Data(bytes) => {
                 if let Some(ref mut dialog) = self.dialog {
