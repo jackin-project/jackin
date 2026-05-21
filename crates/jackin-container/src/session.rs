@@ -1,9 +1,10 @@
-use std::sync::atomic::{AtomicU64, Ordering};
-/// PTY session management — one session per pane leaf.
+/// PTY session: one PTY + one `vt100::Parser` + state-inference timer.
 ///
-/// Each session owns a PTY pair and a child process (agent or shell).
-/// Output is captured into a VirtualTerminal so we can re-render on
-/// session switch without re-running the process.
+/// Each session owns a PTY pair, a child process (agent or shell), and
+/// the `vt100::Parser` whose `Screen` mirrors the agent's view. The
+/// parser is the source of truth for re-rendering on tab switch, pane
+/// switch, and client reattach.
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
@@ -11,7 +12,6 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tokio::sync::mpsc;
 
 use crate::protocol::AgentState;
-use crate::terminal::VirtualTerminal;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -23,27 +23,19 @@ pub struct Session {
     pub label: String,
     pub agent: Option<String>,
     pub state: AgentState,
-    pub vterminal: VirtualTerminal,
-    /// Writes to this sender go to the PTY master (agent stdin).
+    pub parser: vt100::Parser,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
-    /// PTY master handle — used to resize.
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
-    /// Last observed output timestamp — used for state inference.
     pub last_output_at: std::time::Instant,
-    /// Whether the PTY child is still alive.
     pub alive: bool,
 }
 
-/// Event from a session's PTY output loop back to the multiplexer.
 pub enum SessionEvent {
     Output { session_id: u64, data: Vec<u8> },
     Exited { session_id: u64 },
 }
 
 impl Session {
-    /// Spawn a new session running `cmd` inside the given PTY dimensions.
-    ///
-    /// Returns the session and a receiver for `SessionEvent`s.
     pub fn spawn(
         label: impl Into<String>,
         agent: Option<String>,
@@ -65,7 +57,6 @@ impl Session {
         let master = pair.master;
         let slave = pair.slave;
 
-        // Spawn the child process in the slave side of the PTY.
         let child = slave
             .spawn_command(cmd)
             .context("failed to spawn session process")?;
@@ -75,10 +66,8 @@ impl Session {
         let master_for_read = Arc::clone(&master);
         let master_for_write = Arc::clone(&master);
 
-        // Input channel: multiplexer → PTY master.
         let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
-        // Writer task: forward input_rx → PTY master stdin.
         tokio::task::spawn_blocking(move || {
             let mut writer = master_for_write
                 .lock()
@@ -91,7 +80,6 @@ impl Session {
             }
         });
 
-        // Reader task: PTY master stdout → SessionEvent::Output.
         let event_tx_output = event_tx.clone();
         let sid = next_id();
         tokio::task::spawn_blocking(move || {
@@ -104,9 +92,7 @@ impl Session {
             loop {
                 match std::io::Read::read(&mut reader, &mut buf) {
                     Ok(0) => {
-                        eprintln!(
-                            "[jackin-container] session {sid}: PTY read returned Ok(0) (EOF)"
-                        );
+                        eprintln!("[jackin-container] session {sid}: PTY read EOF");
                         break;
                     }
                     Err(e) => {
@@ -118,16 +104,20 @@ impl Session {
                     }
                     Ok(n) => {
                         let data = buf[..n].to_vec();
-                        let _ = event_tx_output.send(SessionEvent::Output {
-                            session_id: sid,
-                            data,
-                        });
+                        if event_tx_output
+                            .send(SessionEvent::Output {
+                                session_id: sid,
+                                data,
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
                     }
                 }
             }
-            eprintln!("[jackin-container] session {sid}: sending Exited event");
             let _ = event_tx_output.send(SessionEvent::Exited { session_id: sid });
-            drop(child); // ensure child is waited on
+            drop(child);
         });
 
         Ok((
@@ -135,7 +125,7 @@ impl Session {
                 label: label.into(),
                 agent,
                 state: AgentState::Working,
-                vterminal: VirtualTerminal::new(rows, cols),
+                parser: vt100::Parser::new(rows, cols, 0),
                 input_tx,
                 pty_master: master,
                 last_output_at: std::time::Instant::now(),
@@ -149,7 +139,18 @@ impl Session {
         let _ = self.input_tx.send(data.to_vec());
     }
 
-    pub fn resize(&self, rows: u16, cols: u16) {
+    pub fn screen(&self) -> &vt100::Screen {
+        self.parser.screen()
+    }
+
+    /// Feed PTY bytes into the VT parser and update activity timestamps.
+    pub fn feed_pty(&mut self, bytes: &[u8]) {
+        self.parser.process(bytes);
+        self.last_output_at = std::time::Instant::now();
+        self.state = AgentState::Working;
+    }
+
+    pub fn resize(&mut self, rows: u16, cols: u16) {
         if let Ok(master) = self.pty_master.lock() {
             let _ = master.resize(PtySize {
                 rows,
@@ -158,25 +159,9 @@ impl Session {
                 pixel_height: 0,
             });
         }
+        self.parser.screen_mut().set_size(rows, cols);
     }
 
-    /// Send SIGWINCH to force the child to redraw after a switch.
-    pub fn force_redraw(&self) {
-        if let Ok(master) = self.pty_master.lock() {
-            let size = master.get_size().unwrap_or(PtySize {
-                rows: 24,
-                cols: 80,
-                pixel_width: 0,
-                pixel_height: 0,
-            });
-            let _ = master.resize(size);
-        }
-    }
-
-    /// Infer state from output activity.
-    /// - Recent output (< 3 s) → Working
-    /// - No output > 3 s → Blocked
-    /// - State only moves to Done/Idle via explicit operator action.
     pub fn refresh_state(&mut self) {
         if !self.alive {
             if self.state == AgentState::Working || self.state == AgentState::Blocked {
@@ -193,7 +178,7 @@ impl Session {
     }
 }
 
-/// Read the list of available agent slugs from the JACKIN_SUPPORTED_AGENTS
+/// Read the list of available agent slugs from the `JACKIN_SUPPORTED_AGENTS`
 /// environment variable injected by the derived image build.
 pub fn available_agents() -> Vec<String> {
     std::env::var("JACKIN_SUPPORTED_AGENTS")
@@ -205,21 +190,21 @@ pub fn available_agents() -> Vec<String> {
         .collect()
 }
 
-/// Build a CommandBuilder for an agent session or a shell fallback.
-/// The entrypoint is always `/jackin/runtime/entrypoint.sh` with
-/// `JACKIN_AGENT=<slug>` set in the environment.
+/// Build a CommandBuilder for an agent session.
+/// Entrypoint is `/jackin/runtime/entrypoint.sh` with `JACKIN_AGENT=<slug>`.
 pub fn build_agent_command(agent: &str, env_passthrough: &[(String, String)]) -> CommandBuilder {
     let mut cmd = CommandBuilder::new("/jackin/runtime/entrypoint.sh");
     cmd.env("JACKIN_AGENT", agent);
     for (k, v) in env_passthrough {
         cmd.env(k, v);
     }
-    // Prevent nested-multiplexer warnings from agent CLIs that check TERM.
     cmd.env("TERM", "xterm-256color");
     cmd
 }
 
 /// Build a CommandBuilder for an interactive shell session.
 pub fn build_shell_command() -> CommandBuilder {
-    CommandBuilder::new("/bin/zsh")
+    let mut cmd = CommandBuilder::new("/bin/zsh");
+    cmd.env("TERM", "xterm-256color");
+    cmd
 }

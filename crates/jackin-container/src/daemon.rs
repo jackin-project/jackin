@@ -19,6 +19,7 @@ use crate::layout::{Direction, Rect, Tab};
 use crate::protocol::{
     AgentState, ClientMsg, ServerMsg, SessionInfo, b64_decode, b64_encode, frame,
 };
+use crate::render::render_pane;
 use crate::session::{
     Session, SessionEvent, available_agents, build_agent_command, build_shell_command,
 };
@@ -173,7 +174,6 @@ impl Multiplexer {
             let (rows, cols) = (self.content_rows, self.term_cols);
             if let Some(session) = self.sessions.get_mut(&zoom_id) {
                 session.resize(rows, cols);
-                session.vterminal.resize(rows, cols);
             }
             return;
         }
@@ -185,7 +185,6 @@ impl Multiplexer {
         for (id, rect) in leaves {
             if let Some(session) = self.sessions.get_mut(&id) {
                 session.resize(rect.rows, rect.cols);
-                session.vterminal.resize(rect.rows, rect.cols);
             }
         }
     }
@@ -214,9 +213,6 @@ impl Multiplexer {
         };
         if let Some(next_id) = tab.tree.adjacent(content_rect, tab.focused_id, d) {
             self.tabs[self.active_tab].focused_id = next_id;
-            if let Some(session) = self.sessions.get(&next_id) {
-                session.force_redraw();
-            }
         }
     }
 
@@ -248,11 +244,6 @@ impl Multiplexer {
                     && idx < self.tabs.len()
                 {
                     self.active_tab = idx;
-                    if let Some(focused) = self.active_focused_id()
-                        && let Some(s) = self.sessions.get(&focused)
-                    {
-                        s.force_redraw();
-                    }
                     return Some(self.compose_frame());
                 }
                 None
@@ -342,17 +333,39 @@ impl Multiplexer {
 
         let content_rect = Rect::new(1, 0, self.content_rows, self.term_cols);
         let focused_id = self.active_focused_id();
+        let mut focused_pane_rect: Option<Rect> = None;
 
         if let Some(zoom_id) = self.zoomed {
             if let Some(session) = self.sessions.get(&zoom_id) {
-                session.vterminal.render_to(1, 0, &mut buf);
+                let rect = Rect::new(1, 0, self.content_rows, self.term_cols);
+                render_pane(
+                    session.screen(),
+                    rect.row,
+                    rect.col,
+                    rect.rows,
+                    rect.cols,
+                    &mut buf,
+                );
+                if Some(zoom_id) == focused_id {
+                    focused_pane_rect = Some(rect);
+                }
             }
         } else if let Some(tab) = self.tabs.get(self.active_tab) {
             let leaves = tab.tree.leaves(content_rect);
             let needs_borders = leaves.len() > 1;
             for (id, rect) in &leaves {
                 if let Some(session) = self.sessions.get(id) {
-                    session.vterminal.render_to(rect.row, rect.col, &mut buf);
+                    render_pane(
+                        session.screen(),
+                        rect.row,
+                        rect.col,
+                        rect.rows,
+                        rect.cols,
+                        &mut buf,
+                    );
+                    if Some(*id) == focused_id {
+                        focused_pane_rect = Some(*rect);
+                    }
                 }
                 if needs_borders {
                     let is_active = Some(*id) == focused_id;
@@ -384,40 +397,29 @@ impl Multiplexer {
             dialog.render(&mut buf, self.term_rows, self.term_cols);
         }
 
-        // Position cursor at the focused pane's VT cursor location before
-        // showing it, so it appears at the correct position instead of
-        // wherever the last rendered cell landed.
+        // Position cursor at the focused pane's screen cursor; honour
+        // the agent's hide-cursor request when no dialog is open.
         if self.dialog.is_none() {
-            let focused_id = self.active_focused_id();
-            if let Some(fid) = focused_id {
-                let cursor = self.sessions.get(&fid).map(|s| s.vterminal.cursor_pos());
-                if let Some((vt_row, vt_col)) = cursor {
-                    let (dest_row, dest_col) = if let Some(zoom_id) = self.zoomed {
-                        if zoom_id == fid { (1u16, 0u16) } else { (0, 0) }
-                    } else if let Some(tab) = self.tabs.get(self.active_tab) {
-                        let content_rect = Rect::new(1, 0, self.content_rows, self.term_cols);
-                        tab.tree
-                            .leaves(content_rect)
-                            .into_iter()
-                            .find(|(id, _)| *id == fid)
-                            .map(|(_, rect)| (rect.row, rect.col))
-                            .unwrap_or((1, 0))
-                    } else {
-                        (1, 0)
-                    };
-                    // CSI row+1 ; col+1 H (1-indexed ANSI)
-                    use std::io::Write as _;
-                    let _ = write!(
-                        buf,
-                        "\x1b[{};{}H",
-                        dest_row + vt_row + 1,
-                        dest_col + vt_col + 1
-                    );
+            if let (Some(fid), Some(rect)) = (focused_id, focused_pane_rect)
+                && let Some(session) = self.sessions.get(&fid)
+            {
+                let screen = session.screen();
+                let (vt_row, vt_col) = screen.cursor_position();
+                use std::io::Write as _;
+                let _ = write!(
+                    buf,
+                    "\x1b[{};{}H",
+                    rect.row + vt_row + 1,
+                    rect.col + vt_col + 1
+                );
+                if !screen.hide_cursor() {
+                    buf.extend_from_slice(b"\x1b[?25h");
                 }
+            } else {
+                buf.extend_from_slice(b"\x1b[?25h");
             }
         }
 
-        buf.extend_from_slice(b"\x1b[?25h");
         buf
     }
 
@@ -522,9 +524,6 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                                 break;
                             }
                         }
-                        if let Some(session) = mux.sessions.get(&id) {
-                            session.force_redraw();
-                        }
                         let frame_data = mux.compose_frame();
                         let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&frame_data) }));
                     }
@@ -554,10 +553,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 match event {
                     SessionEvent::Output { session_id, data } => {
                         if let Some(session) = mux.sessions.get_mut(&session_id) {
-                            session.vterminal.process(&data);
-                            session.last_output_at = std::time::Instant::now();
-                            session.state = AgentState::Working;
-
+                            session.feed_pty(&data);
                             if mux.dialog.is_none() {
                                 let frame_data = mux.compose_frame();
                                 let _ = out_tx.send(frame(&ServerMsg::Output { data: b64_encode(&frame_data) }));

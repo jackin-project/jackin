@@ -5,10 +5,10 @@ mod input;
 mod layout;
 mod pid1;
 mod protocol;
+mod render;
 mod session;
 mod socket;
 mod statusbar;
-mod terminal;
 
 use anyhow::Result;
 
