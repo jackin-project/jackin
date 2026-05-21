@@ -13,6 +13,7 @@ struct Attrs {
     fg: ColorKey,
     bg: ColorKey,
     bold: bool,
+    dim: bool,
     italic: bool,
     underline: bool,
     inverse: bool,
@@ -139,6 +140,7 @@ fn cell_attrs(cell: &vt100::Cell) -> Attrs {
         fg: ColorKey::from(cell.fgcolor()),
         bg: ColorKey::from(cell.bgcolor()),
         bold: cell.bold(),
+        dim: cell.dim(),
         italic: cell.italic(),
         underline: cell.underline(),
         inverse: cell.inverse(),
@@ -149,9 +151,13 @@ fn write_cursor(buf: &mut Vec<u8>, row: u16, col: u16) {
     let _ = write!(buf, "\x1b[{};{}H", row + 1, col + 1);
 }
 
-fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dim: bool) {
+fn emit_sgr(buf: &mut Vec<u8>, a: &Attrs, dialog_dim: bool) {
     buf.extend_from_slice(b"\x1b[0");
-    if dim {
+    // Cell-level dim (Amp uses this for its animated bottom-bar) and
+    // dialog-backdrop dim (when a modal is open) both produce the
+    // same ANSI `;2` attribute — they OR together so neither shadows
+    // the other.
+    if a.dim || dialog_dim {
         buf.extend_from_slice(b";2");
     }
     if a.bold {
