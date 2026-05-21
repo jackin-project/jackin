@@ -12,8 +12,13 @@ async fn main() -> Result<()> {
     let is_pid1 = std::process::id() == 1;
 
     if is_pid1 {
+        // Match the pre-rewrite default: when `JACKIN_AGENT` is unset
+        // and no positional arg names an agent, fall back to "claude"
+        // so the derived image's entrypoint always has something to
+        // run. The roadmap's "empty initial state + picker hint" path
+        // is gated separately and lands once the picker UI exists.
         let agent = std::env::var("JACKIN_AGENT")
-            .unwrap_or_else(|_| args.get(1).cloned().unwrap_or_default());
+            .unwrap_or_else(|_| args.get(1).cloned().unwrap_or_else(|| "claude".to_string()));
         daemon::run_daemon(agent).await
     } else {
         let subcommand = args.get(1).map(String::as_str);

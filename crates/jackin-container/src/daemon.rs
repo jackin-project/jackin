@@ -615,10 +615,20 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
         .unwrap_or(80u16);
 
     let mut mux = Multiplexer::new(rows, cols);
+    // Spawn the first tab. Treat any spawn error as fatal at boot —
+    // it usually means the entrypoint binary is missing from the
+    // derived image, and silently degrading to an empty multiplexer
+    // would hide the real problem behind a blank screen.
     if !initial_agent.is_empty() {
-        mux.spawn_initial(&initial_agent)?;
-    } else {
-        mux.spawn_session(None)?;
+        if let Err(err) = mux.spawn_initial(&initial_agent) {
+            eprintln!(
+                "[jackin-container] initial agent spawn failed (agent={initial_agent:?}): {err:?}"
+            );
+            return Err(err);
+        }
+    } else if let Err(err) = mux.spawn_session(None) {
+        eprintln!("[jackin-container] initial shell spawn failed: {err:?}");
+        return Err(err);
     }
 
     let mut new_clients = socket::start_listener()?;
