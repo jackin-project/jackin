@@ -697,8 +697,21 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
             Some(event) = mux.event_rx.recv() => {
                 match event {
                     SessionEvent::Output { session_id, data } => {
+                        let focused_id = mux.active_focused_id();
                         if let Some(session) = mux.sessions.get_mut(&session_id) {
                             session.feed_pty(&data);
+                            // Drain OSC and unhandled-CSI sequences and
+                            // forward them to the client only when this
+                            // session is the focused pane in the active
+                            // tab — backgrounded panes' notifications,
+                            // clipboard writes, and titles must not
+                            // reach the operator's outer terminal.
+                            let passthrough = session.drain_passthrough();
+                            if Some(session_id) == focused_id {
+                                for bytes in passthrough {
+                                    mux.send_output(bytes);
+                                }
+                            }
                             if mux.dialog.is_none() {
                                 let frame_data = mux.compose_frame();
                                 mux.send_output(frame_data);
