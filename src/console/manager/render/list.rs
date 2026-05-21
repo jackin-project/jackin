@@ -766,13 +766,18 @@ fn render_current_dir_details_pane(
     }];
     let active_count = workspace_active_count(&state.instances, None, &cwd_str, &cwd_str);
 
-    let mut constraints = vec![
-        Constraint::Length(3),
-        Constraint::Length(mount_block_height(&mounts)),
-    ];
+    // Block order: Running (if any) → General → Mounts → Roles. The
+    // Running badge sits at the top so live state is the first thing
+    // the operator sees when they open the cwd workspace — matches the
+    // saved-workspace pane's "Running block is first" ordering.
+    let mut constraints = Vec::new();
     if active_count > 0 {
         constraints.push(Constraint::Length(COMPACT_INSTANCES_HEIGHT));
     }
+    constraints.extend([
+        Constraint::Length(3),
+        Constraint::Length(mount_block_height(&mounts)),
+    ]);
     constraints.push(Constraint::Length(agents_block_height(
         agents_block_agent_count(None, config),
     )));
@@ -781,6 +786,12 @@ fn render_current_dir_details_pane(
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(area);
+
+    let mut idx = 0;
+    if active_count > 0 {
+        render_compact_instances_summary(frame, rows[idx], active_count, false);
+        idx += 1;
+    }
 
     // General — titled the same as the saved-workspace pane so the
     // sub-panel titles (General / Mounts / Roles) match across both
@@ -808,25 +819,22 @@ fn render_current_dir_details_pane(
         Paragraph::new(general_lines)
             .block(general_block)
             .style(Style::default().fg(PHOSPHOR_GREEN)),
-        rows[0],
+        rows[idx],
     );
+    idx += 1;
 
     let ws_focused = state.list_scroll_focus == Some(MountScrollFocus::Workspace);
     render_mounts_subpanel(
         frame,
-        rows[1],
+        rows[idx],
         &mounts,
         &mut state.list_mounts_scroll_x,
         &mut state.list_mounts_scroll_y,
         ws_focused,
     );
+    idx += 1;
 
-    let agents_row = if active_count == 0 {
-        2
-    } else {
-        render_compact_instances_summary(frame, rows[2], active_count, false);
-        3
-    };
+    let agents_row = idx;
 
     // Roles block — reuse the no-`ws_config` branch of the shared renderer,
     // which lists every globally-configured role (without per-role
