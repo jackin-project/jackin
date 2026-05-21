@@ -22,7 +22,7 @@ use tokio::time::{Duration, interval};
 
 use crate::dialog::{Dialog, DialogAction, PaletteCommand, PickerIntent};
 use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
-use crate::layout::{Direction, Rect, Tab};
+use crate::layout::{Direction, Rect, SplitOrient, Tab};
 use crate::protocol::attach::{ClientFrame, ServerFrame, encode_server, read_client_frame};
 use crate::protocol::control::{AgentState, SessionInfo};
 use crate::render::{draw_scrollbar, render_pane};
@@ -53,6 +53,24 @@ pub struct Multiplexer {
     /// same tab within `DOUBLE_CLICK_WINDOW` is treated as a
     /// double-click (open the rename modal).
     last_tab_click: Option<(usize, std::time::Instant)>,
+    /// Active mouse-drag resize, if any. Populated when the operator
+    /// presses the left button on a shared pane border; updated on
+    /// every motion event; cleared on release.
+    drag: Option<DragState>,
+}
+
+#[derive(Debug, Clone)]
+struct DragState {
+    tab_idx: usize,
+    /// Tree path from the tab's root to the split node being resized
+    /// (`0` = left/top child, `1` = right/bottom). Empty path = root
+    /// split.
+    path: Vec<u8>,
+    orient: SplitOrient,
+    /// Outer rectangle of the split — stable for the duration of the
+    /// drag because spawns / closes block on dialog input and the
+    /// daemon does not reflow during a drag.
+    rect: Rect,
 }
 
 const DOUBLE_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
@@ -97,6 +115,7 @@ impl Multiplexer {
             detach_requested: false,
             attached_out: None,
             last_tab_click: None,
+            drag: None,
         }
     }
 
@@ -618,6 +637,13 @@ impl Multiplexer {
                 None
             }
             InputEvent::MouseRelease { col, row, button } => {
+                // End an in-flight pane resize on left-button release.
+                // Drop the PTY forward so the source agent does not
+                // see a half-paired release in the middle of a drag.
+                if self.drag.is_some() && (button & 0b11) == 0 {
+                    self.drag = None;
+                    return Some(self.compose_frame());
+                }
                 self.forward_mouse_to_focused_pane_with_kind(col, row, button, false);
                 None
             }
@@ -695,22 +721,26 @@ impl Multiplexer {
                 None
             }
             InputEvent::MousePress { col, row, button } => {
-                // Left-click inside a non-focused pane swaps focus to
-                // that pane. Without this, two split panes are stuck
-                // in their initial focus and keyboard input only ever
-                // reaches one of them — the operator has no
-                // keyboard-free way to switch panes.
+                // SGR motion event with the left button still held
+                // (`button == 32`) drives an active resize drag if
+                // one is in flight. Treat it as the drag update
+                // path; do not focus-switch or forward to PTY.
+                if button == 32 && self.drag.is_some() {
+                    return self.drag_motion(row, col);
+                }
+                if button == 0 {
+                    // Press on a shared pane border starts a drag —
+                    // skip focus switch and PTY forward in that case.
+                    if let Some(state) = self.detect_drag_start(row, col) {
+                        self.drag = Some(state);
+                        return None;
+                    }
+                }
                 let switched = if button == 0 {
                     self.focus_pane_at(row, col)
                 } else {
                     false
                 };
-                // Re-encode mouse press relative to the focused pane's
-                // rect origin and forward to its PTY in SGR mouse form
-                // — but only if that pane's program actually opted
-                // into a mouse protocol. Forwarding mouse bytes to a
-                // shell prompt prints `;col;rowM` garbage to the
-                // command line.
                 self.forward_mouse_to_focused_pane(col, row, button);
                 if switched {
                     Some(self.compose_frame())
@@ -887,6 +917,48 @@ impl Multiplexer {
             final_byte
         );
         session.send_input(buf.as_bytes());
+    }
+
+    /// Test whether the click at `(row, col)` lands on a shared pane
+    /// border in the active tab. Returns a populated `DragState` to
+    /// start a mouse-drag resize.
+    fn detect_drag_start(&self, row: u16, col: u16) -> Option<DragState> {
+        if row < STATUS_BAR_ROWS || self.zoomed.is_some() {
+            return None;
+        }
+        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let tab = self.tabs.get(self.active_tab)?;
+        let (path, orient, rect) = tab.tree.border_at(content_rect, row, col)?;
+        Some(DragState {
+            tab_idx: self.active_tab,
+            path,
+            orient,
+            rect,
+        })
+    }
+
+    /// Apply a drag motion at `(row, col)` against the active drag's
+    /// split. Recomputes the ratio from the mouse position relative
+    /// to the saved split rectangle, clamps to `[0.05, 0.95]`, then
+    /// reflows the panes so the agent PTYs resize in step.
+    fn drag_motion(&mut self, row: u16, col: u16) -> Option<Vec<u8>> {
+        let drag = self.drag.clone()?;
+        let new_ratio = match drag.orient {
+            SplitOrient::Horizontal => {
+                let off = col.saturating_sub(drag.rect.col);
+                (off as f32 / drag.rect.cols as f32).clamp(0.05, 0.95)
+            }
+            SplitOrient::Vertical => {
+                let off = row.saturating_sub(drag.rect.row);
+                (off as f32 / drag.rect.rows as f32).clamp(0.05, 0.95)
+            }
+        };
+        let tab = self.tabs.get_mut(drag.tab_idx)?;
+        if !tab.tree.set_ratio_at(&drag.path, new_ratio) {
+            return None;
+        }
+        self.resize_panes();
+        Some(self.compose_frame())
     }
 
     /// Switch focus to the pane the operator clicked on, if it differs
