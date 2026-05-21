@@ -357,9 +357,11 @@ impl Multiplexer {
     /// name; shells-only is `Shell`; two distinct agents is
     /// `Agents`; any agent + any shell is `Mix`.
     fn tab_display_label(&self, tab: &Tab) -> String {
+        let ids = tab.tree.all_ids();
+        let pane_count = ids.len();
         let mut agent_slugs: Vec<String> = Vec::new();
         let mut has_shell = false;
-        for id in tab.tree.all_ids() {
+        for id in ids {
             if let Some(s) = self.sessions.get(&id) {
                 match &s.agent {
                     Some(slug) => {
@@ -371,12 +373,16 @@ impl Multiplexer {
                 }
             }
         }
-        match (agent_slugs.len(), has_shell) {
+        let base = match (agent_slugs.len(), has_shell) {
             (0, _) => "Shell".to_string(),
             (1, false) => capitalize(&agent_slugs[0]),
-            (1, true) => "Mix".to_string(),
             (_, false) => "Agents".to_string(),
             (_, true) => "Mix".to_string(),
+        };
+        if pane_count > 1 {
+            format!("{base} ({pane_count})")
+        } else {
+            base
         }
     }
 
