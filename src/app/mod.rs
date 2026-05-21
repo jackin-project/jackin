@@ -150,7 +150,11 @@ pub async fn run(cli: Cli) -> Result<()> {
         }
         Command::Console(ConsoleArgs {}) => {
             let cwd = std::env::current_dir()?;
-            let Some(outcome) = console::run_console(config, &paths, &cwd)? else {
+            let mut in_place = ConsoleInPlaceHandler {
+                paths: paths.clone(),
+                debug,
+            };
+            let Some(outcome) = console::run_console(config, &paths, &cwd, &mut in_place)? else {
                 return Ok(());
             };
 
@@ -1669,6 +1673,57 @@ fn resolve_new_session_agent(
         || workspace_default_agent.map_or_else(|| manifest.agent(), Ok),
         Ok,
     )
+}
+
+/// Bridge from the sync TUI loop to async docker work for Stop/Purge.
+/// Spawns an OS thread per call and builds a fresh current-thread runtime
+/// there so we don't have to nest tokio runtimes on the TUI thread.
+struct ConsoleInPlaceHandler {
+    paths: JackinPaths,
+    debug: bool,
+}
+
+impl console::InstanceActionHandler for ConsoleInPlaceHandler {
+    fn run_in_place(
+        &mut self,
+        container: &str,
+        action: console::ConsoleInstanceAction,
+    ) -> anyhow::Result<()> {
+        let paths = self.paths.clone();
+        let debug = self.debug;
+        let container = container.to_string();
+        std::thread::scope(|s| {
+            let handle = s.spawn(move || -> anyhow::Result<()> {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .context("building tokio runtime for in-place docker work")?;
+                rt.block_on(async move {
+                    let docker = BollardDockerClient::connect()?;
+                    let mut runner = ShellRunner { debug };
+                    match action {
+                        console::ConsoleInstanceAction::Stop => {
+                            runtime::eject_role(&container, &docker).await
+                        }
+                        console::ConsoleInstanceAction::Purge => {
+                            runtime::eject_role(&container, &docker).await?;
+                            runtime::purge_container_state(
+                                &paths,
+                                &container,
+                                &docker,
+                                &mut runner,
+                            )
+                            .await
+                        }
+                        _ => Ok(()),
+                    }
+                })
+            });
+            handle
+                .join()
+                .map_err(|panic| anyhow::anyhow!("in-place action panicked: {panic:?}"))?
+        })
+    }
 }
 
 async fn handle_console_instance_action(

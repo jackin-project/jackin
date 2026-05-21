@@ -43,6 +43,29 @@ pub enum ConsoleInstanceAction {
     Purge,
 }
 
+impl ConsoleInstanceAction {
+    /// Actions that don't replace the TUI with another foreground process
+    /// (Stop/Purge) run inside the console event loop via
+    /// `InstanceActionHandler`. The rest tear down the TUI so the launched
+    /// container/agent can own the terminal.
+    pub const fn runs_in_place(self) -> bool {
+        matches!(self, Self::Stop | Self::Purge)
+    }
+}
+
+/// Callback invoked for `runs_in_place` actions.
+///
+/// The handler performs the docker work (eject, purge) and is expected to
+/// be blocking from the caller's perspective so the TUI loop can show a
+/// progress modal, run the op, then refresh.
+pub trait InstanceActionHandler {
+    fn run_in_place(
+        &mut self,
+        container: &str,
+        action: ConsoleInstanceAction,
+    ) -> anyhow::Result<()>;
+}
+
 impl ConsoleState {
     /// Open the inline role picker for every eligible role count except zero.
     /// `WorkspaceChoice` is built fresh each call so manager edits take effect
@@ -391,6 +414,7 @@ pub fn run_console(
     mut config: AppConfig,
     paths: &JackinPaths,
     cwd: &std::path::Path,
+    action_handler: &mut dyn InstanceActionHandler,
 ) -> anyhow::Result<Option<ConsoleOutcome>> {
     use std::time::Duration;
 
@@ -607,6 +631,43 @@ pub fn run_console(
                             }
                         }
                         manager::InputOutcome::InstanceAction { container, action } => {
+                            if action.runs_in_place() {
+                                if let ConsoleStage::Manager(ms) = &mut state.stage {
+                                    let busy_title = match action {
+                                        ConsoleInstanceAction::Stop => "Stopping",
+                                        ConsoleInstanceAction::Purge => "Purging",
+                                        _ => "Working",
+                                    };
+                                    let busy_body = format!("{busy_title} {container}…");
+                                    ms.list_modal = Some(manager::state::Modal::ErrorPopup {
+                                        state: widgets::error_popup::ErrorPopupState::new(
+                                            busy_title, busy_body,
+                                        ),
+                                    });
+                                    terminal.draw(|frame| {
+                                        manager::render(frame, ms, &config, cwd);
+                                    })?;
+                                }
+                                let result = action_handler.run_in_place(&container, action);
+                                if let ConsoleStage::Manager(ms) = &mut state.stage {
+                                    ms.list_modal = None;
+                                    if let Err(error) = result {
+                                        let err_title = match action {
+                                            ConsoleInstanceAction::Stop => "Stop failed",
+                                            ConsoleInstanceAction::Purge => "Purge failed",
+                                            _ => "Action failed",
+                                        };
+                                        ms.list_modal = Some(manager::state::Modal::ErrorPopup {
+                                            state: widgets::error_popup::ErrorPopupState::new(
+                                                err_title,
+                                                format!("{error:#}"),
+                                            ),
+                                        });
+                                    }
+                                    ms.force_refresh_instances();
+                                }
+                                continue;
+                            }
                             break 'main Ok(Some(ConsoleOutcome::InstanceAction {
                                 container,
                                 action,

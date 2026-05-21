@@ -1799,6 +1799,14 @@ impl ManagerState<'_> {
         }
     }
 
+    /// Force the next `refresh_instances` call to re-read disk regardless of
+    /// the throttle interval. Use after an action mutates the on-disk
+    /// instance index (Stop/Purge) so the next list draw reflects the new
+    /// state immediately instead of waiting up to `REFRESH_INTERVAL`.
+    pub const fn force_refresh_instances(&mut self) {
+        self.instances_last_refresh = None;
+    }
+
     /// Test helper: force the next `refresh_instances` call to hit disk
     /// regardless of the throttle interval.
     #[cfg(test)]
