@@ -30,6 +30,12 @@ use crate::protocol::AgentState;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
+/// Lines of scrollback every PTY session retains. ~1.5 MB worst-case
+/// per session at 200 cols. Empty cells cost less. Operators need
+/// scrollback to read Codex / Claude responses that exceed one
+/// viewport, so this stays generous.
+pub const SCROLLBACK_LEN: usize = 10_000;
+
 pub fn next_id() -> u64 {
     NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }
@@ -138,6 +144,11 @@ pub struct Session {
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     pub last_output_at: std::time::Instant,
     pub alive: bool,
+    /// Current scrollback view offset in lines from the live tail.
+    /// `0` = following live output; `> 0` = paused, looking back.
+    /// `vt100::Screen::set_scrollback` mirrors this value so
+    /// `screen().cell(r, c)` returns the right slice during render.
+    pub scrollback_offset: usize,
 }
 
 pub enum SessionEvent {
@@ -235,14 +246,43 @@ impl Session {
                 label: label.into(),
                 agent,
                 state: AgentState::Working,
-                parser: vt100::Parser::new_with_callbacks(rows, cols, 0, OscCapture::default()),
+                parser: vt100::Parser::new_with_callbacks(
+                    rows,
+                    cols,
+                    SCROLLBACK_LEN,
+                    OscCapture::default(),
+                ),
                 input_tx,
                 pty_master: master,
                 last_output_at: std::time::Instant::now(),
                 alive: true,
+                scrollback_offset: 0,
             },
             sid,
         ))
+    }
+
+    /// Scroll the view by `delta` lines. Positive = scroll up (into
+    /// history); negative = scroll down (toward live tail).
+    /// Clamped to `[0, SCROLLBACK_LEN]`.
+    pub fn scroll_by(&mut self, delta: i32) {
+        let new = if delta > 0 {
+            self.scrollback_offset
+                .saturating_add(delta as usize)
+                .min(SCROLLBACK_LEN)
+        } else {
+            self.scrollback_offset.saturating_sub((-delta) as usize)
+        };
+        self.scrollback_offset = new;
+        self.parser.screen_mut().set_scrollback(new);
+    }
+
+    /// Drop scrollback view, return to the live tail.
+    pub fn scroll_to_live(&mut self) {
+        if self.scrollback_offset != 0 {
+            self.scrollback_offset = 0;
+            self.parser.screen_mut().set_scrollback(0);
+        }
     }
 
     pub fn send_input(&self, data: &[u8]) {

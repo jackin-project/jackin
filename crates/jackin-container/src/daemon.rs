@@ -25,7 +25,8 @@ use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, Tab};
 use crate::protocol::attach::{ClientFrame, ServerFrame, encode_server, read_client_frame};
 use crate::protocol::control::{AgentState, SessionInfo};
-use crate::render::render_pane;
+use crate::render::{draw_scrollbar, render_pane};
+use crate::session::SCROLLBACK_LEN;
 use crate::session::{
     Session, SessionEvent, available_agents, build_agent_command, build_shell_command,
 };
@@ -349,6 +350,21 @@ impl Multiplexer {
                 }
                 None
             }
+            InputEvent::MousePress { button, .. } if button == 64 || button == 65 => {
+                // SGR mouse wheel: 64 = wheel up, 65 = wheel down.
+                // The multiplexer intercepts the wheel for scrollback
+                // navigation rather than forwarding to the agent —
+                // most agents have no notion of multiplexer-level
+                // history, and scrollback is the operator UX the
+                // wheel naturally maps to.
+                let delta = if button == 64 { 3 } else { -3 };
+                if let Some(focused) = self.active_focused_id()
+                    && let Some(session) = self.sessions.get_mut(&focused)
+                {
+                    session.scroll_by(delta);
+                }
+                Some(self.compose_frame())
+            }
             InputEvent::MousePress {
                 row: 0,
                 col,
@@ -395,12 +411,25 @@ impl Multiplexer {
                         }
                     }
                 } else {
+                    // Any keyboard input from the operator returns the
+                    // focused pane to the live tail. Matches the
+                    // common multiplexer convention that "I'm typing
+                    // again" implies "show me what's happening now."
+                    let mut snapped = false;
                     if let Some(focused) = self.active_focused_id()
-                        && let Some(session) = self.sessions.get(&focused)
+                        && let Some(session) = self.sessions.get_mut(&focused)
                     {
+                        if session.scrollback_offset != 0 {
+                            session.scroll_to_live();
+                            snapped = true;
+                        }
                         session.send_input(&bytes);
                     }
-                    None
+                    if snapped {
+                        Some(self.compose_frame())
+                    } else {
+                        None
+                    }
                 }
             }
         }
@@ -550,6 +579,15 @@ impl Multiplexer {
                     dim_panes,
                     &mut buf,
                 );
+                draw_scrollbar(
+                    &mut buf,
+                    rect.row,
+                    rect.col,
+                    rect.rows,
+                    rect.cols,
+                    session.scrollback_offset,
+                    SCROLLBACK_LEN,
+                );
                 if Some(zoom_id) == focused_id {
                     focused_pane_rect = Some(rect);
                 }
@@ -567,6 +605,15 @@ impl Multiplexer {
                         rect.cols,
                         dim_panes,
                         &mut buf,
+                    );
+                    draw_scrollbar(
+                        &mut buf,
+                        rect.row,
+                        rect.col,
+                        rect.rows,
+                        rect.cols,
+                        session.scrollback_offset,
+                        SCROLLBACK_LEN,
                     );
                     if Some(*id) == focused_id {
                         focused_pane_rect = Some(*rect);
