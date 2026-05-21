@@ -34,6 +34,12 @@ pub struct StatusBar {
     pub prefix_label: String,
 }
 
+impl Default for StatusBar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StatusBar {
     pub fn new() -> Self {
         Self {
