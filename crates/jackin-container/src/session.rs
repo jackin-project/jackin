@@ -149,6 +149,16 @@ pub struct Session {
     /// `vt100::Screen::set_scrollback` mirrors this value so
     /// `screen().cell(r, c)` returns the right slice during render.
     pub scrollback_offset: usize,
+    /// Most recently observed value of `Screen::bracketed_paste()`.
+    /// The daemon compares this to the post-feed state to detect
+    /// transitions, then re-emits the matching `\x1b[?2004h/l`
+    /// sequence to the attached client so the outer terminal wraps
+    /// pastes with `\x1b[200~`/`\x1b[201~` markers. Without this,
+    /// vt100 silently consumes the agent's `?2004h` and outer
+    /// terminals never wrap pastes — multi-line clipboard content
+    /// then arrives one `\n`-terminated chunk at a time, which agents
+    /// treat as multiple separate messages.
+    pub bracketed_paste_active: bool,
 }
 
 pub enum SessionEvent {
@@ -257,6 +267,7 @@ impl Session {
                 last_output_at: std::time::Instant::now(),
                 alive: true,
                 scrollback_offset: 0,
+                bracketed_paste_active: false,
             },
             sid,
         ))
@@ -335,6 +346,39 @@ impl Session {
     /// rationale.
     pub fn drain_passthrough(&mut self) -> Vec<Vec<u8>> {
         self.parser.callbacks_mut().drain()
+    }
+
+    /// Compare current vt100 mode state against the last observed
+    /// snapshot and produce the matching `?<mode>h/l` byte sequences
+    /// for any transitions. Used by the daemon to keep the outer
+    /// terminal's mode state in sync with the focused agent's
+    /// requests — currently bracketed paste, which vt100 absorbs
+    /// silently otherwise and which breaks multi-line paste UX when
+    /// the outer terminal stops wrapping clipboard content.
+    pub fn drain_mode_transitions(&mut self) -> Vec<Vec<u8>> {
+        let mut out = Vec::new();
+        let cur_bracketed = self.parser.screen().bracketed_paste();
+        if cur_bracketed != self.bracketed_paste_active {
+            out.push(if cur_bracketed {
+                b"\x1b[?2004h".to_vec()
+            } else {
+                b"\x1b[?2004l".to_vec()
+            });
+            self.bracketed_paste_active = cur_bracketed;
+        }
+        out
+    }
+
+    /// Snapshot of every mode the daemon should restore on the
+    /// outer terminal when an attach client connects. Mirrors the
+    /// "what does the agent currently want?" set so a reattach
+    /// looks identical to a brand-new attach.
+    pub fn current_mode_state(&self) -> Vec<Vec<u8>> {
+        let mut out = Vec::new();
+        if self.parser.screen().bracketed_paste() {
+            out.push(b"\x1b[?2004h".to_vec());
+        }
+        out
     }
 
     pub fn title(&self) -> Option<&str> {

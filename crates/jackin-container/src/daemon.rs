@@ -332,6 +332,12 @@ impl Multiplexer {
     /// is actually looking at. Agents that watch focus events use them
     /// to pause polling / animations; without synthesis, a backgrounded
     /// pane thinks it is still focused.
+    ///
+    /// Also re-emits the newly focused session's mode state
+    /// (bracketed paste, etc.) so the outer terminal matches what
+    /// the now-visible agent wants. Each agent owns its own mode
+    /// state and switching tabs must not leak the previous agent's
+    /// setup to the new one.
     fn synthesise_focus_swap(&self, old: Option<u64>, new: Option<u64>) {
         if old == new {
             return;
@@ -345,6 +351,13 @@ impl Multiplexer {
             && let Some(s) = self.sessions.get(&n)
         {
             s.send_input(b"\x1b[I");
+            // Re-emit modes the new focused agent has live so the
+            // outer terminal switches in sync with the visible pane.
+            if let Some(tx) = &self.attached_out {
+                for bytes in s.current_mode_state() {
+                    let _ = tx.send(encode_server(ServerFrame::Output(bytes)));
+                }
+            }
         }
     }
 
@@ -809,6 +822,18 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                     session_count: mux.sessions.len() as u32,
                 });
                 let _ = new_out_tx.send(welcome);
+                // Initial mode-state restore: send the focused
+                // session's current modes (bracketed paste, etc.) so
+                // the outer terminal matches what the agent expects.
+                // Without this, a re-attach loses bracketed-paste
+                // and the operator's clipboard arrives unwrapped.
+                if let Some(focused) = mux.active_focused_id()
+                    && let Some(session) = mux.sessions.get(&focused)
+                {
+                    for bytes in session.current_mode_state() {
+                        let _ = new_out_tx.send(encode_server(ServerFrame::Output(bytes)));
+                    }
+                }
                 let mut initial = b"\x1b[2J".to_vec();
                 initial.extend(mux.compose_frame());
                 let _ = new_out_tx.send(encode_server(ServerFrame::Output(initial)));
@@ -844,8 +869,20 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                             // clipboard writes, and titles must not
                             // reach the operator's outer terminal.
                             let passthrough = session.drain_passthrough();
+                            // Forward mode-state transitions (currently
+                            // bracketed paste) so the outer terminal
+                            // keeps in sync with what the focused agent
+                            // wants. vt100 absorbs `?2004h/l` silently;
+                            // without this re-emit, the operator's
+                            // multi-line pastes arrive as separate
+                            // `\n`-terminated chunks and agents treat
+                            // each line as a separate message.
+                            let mode_transitions = session.drain_mode_transitions();
                             if Some(session_id) == focused_id {
                                 for bytes in passthrough {
+                                    mux.send_output(bytes);
+                                }
+                                for bytes in mode_transitions {
                                     mux.send_output(bytes);
                                 }
                             }

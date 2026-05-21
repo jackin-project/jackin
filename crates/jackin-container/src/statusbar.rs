@@ -135,18 +135,48 @@ impl StatusBar {
         let hint_cols = hint.chars().count() as u16;
         let reserve_right: u16 = hint_cols + 2; // 1 col padding + 1 trailing space
 
-        // Build labels (including the reserved glyph slot) and the
-        // per-tab glyph kind, then lay them out for stable width.
-        let labels: Vec<(String, TabGlyph, bool)> = tabs
+        // Resolve names + glyphs first, then size every cell to the
+        // widest name so each tab gets identical interior layout:
+        //   ` <name centered>  <glyph> `
+        // The name is centred within the shared name-area; the glyph
+        // is always pinned to the right column; the left/right pads
+        // are always one column each. Result: tab cells are
+        // rectangular and visually balanced regardless of which
+        // tab the operator focuses or which state glyph it carries.
+        let resolved: Vec<(String, TabGlyph, bool)> = tabs
             .iter()
             .enumerate()
             .map(|(i, tab)| {
-                let (label, glyph) = tab_label(tab, sessions_state);
-                (label, glyph, i == active_tab)
+                let (name, glyph) = tab_label(tab, sessions_state);
+                (name, glyph, i == active_tab)
+            })
+            .collect();
+        let max_name_cols = resolved
+            .iter()
+            .map(|(n, _, _)| n.chars().count())
+            .max()
+            .unwrap_or(0);
+        // Padded labels embed the centred name + sep + glyph slot;
+        // `lay_out_tabs` then wraps each in its own `1+pad+1` shell.
+        let padded: Vec<(String, TabGlyph, bool)> = resolved
+            .into_iter()
+            .map(|(name, glyph, active)| {
+                let name_cols = name.chars().count();
+                let pad_total = max_name_cols - name_cols;
+                let pad_left = pad_total / 2;
+                let pad_right = pad_total - pad_left;
+                let label = format!(
+                    "{}{}{}  X",
+                    " ".repeat(pad_left),
+                    name,
+                    " ".repeat(pad_right),
+                );
+                let _ = label.len(); // pad_left + name + pad_right + "  X"
+                (label, glyph, active)
             })
             .collect();
         let label_refs: Vec<(&str, bool)> =
-            labels.iter().map(|(l, _, a)| (l.as_str(), *a)).collect();
+            padded.iter().map(|(l, _, a)| (l.as_str(), *a)).collect();
 
         // First cell starts after brand pill + pad. Layout uses 0-based
         // columns; statusbar render uses 1-based, so we offset by 1
@@ -156,7 +186,7 @@ impl StatusBar {
         let max_tab_col = cols.saturating_sub(reserve_right);
 
         let mut clipped_at: Option<u16> = None;
-        for (cell, (_, glyph, _)) in cells.iter().zip(labels.iter()) {
+        for (cell, (_, glyph, _)) in cells.iter().zip(padded.iter()) {
             let cell_end_0based = cell.start_col + cell.cell_cols;
             if cell_end_0based > max_tab_col {
                 clipped_at = Some(cell.start_col);
@@ -222,16 +252,27 @@ impl StatusBar {
             buf.extend_from_slice(TAB_BG_INACTIVE.as_bytes());
             buf.extend_from_slice(TAB_FG_INACTIVE.as_bytes());
         }
-        buf.push(b' ');
-        // `cell.label` is `"<name> <glyph>"`. Render the name portion
-        // (everything except the trailing 2 chars) in the tab's
-        // foreground colour; then re-paint the glyph slot with its
-        // own colour for the Blocked variant.
-        let label_cols = cell.label.chars().count();
-        let prefix_cols = label_cols.saturating_sub(2);
-        let prefix: String = cell.label.chars().take(prefix_cols).collect();
-        buf.extend_from_slice(prefix.as_bytes());
-        buf.push(b' ');
+        // Cell layout: ` <centred name>  <glyph> `.
+        //   - 1 col left pad
+        //   - centred name (max_name_cols across the tab strip)
+        //   - 2 col sep
+        //   - 1 col glyph slot (Blocked: bright red ●; Done: ○;
+        //     None: space — slot is always allocated so glyph
+        //     position never shifts left or right between states)
+        //   - 1 col right pad
+        // `cell.label` was built upstream as
+        //   `{centred_name}  X`
+        // where the trailing `  X` reserves the sep + glyph cols. We
+        // strip the placeholder `X` (the last char) and the two
+        // spaces before it, then paint the actual glyph with its
+        // own colour while keeping the slot at the same column.
+        buf.push(b' '); // left pad
+        let total_cols = cell.label.chars().count();
+        let name_cols = total_cols.saturating_sub(3); // 2 sep + 1 placeholder
+        let centred_name: String = cell.label.chars().take(name_cols).collect();
+        buf.extend_from_slice(centred_name.as_bytes());
+        buf.push(b' '); // sep
+        buf.push(b' '); // sep
         match glyph {
             TabGlyph::None => buf.push(b' '),
             TabGlyph::Done => buf.extend_from_slice("○".as_bytes()),
@@ -248,10 +289,10 @@ impl StatusBar {
                 }
             }
         }
-        buf.push(b' ');
+        buf.push(b' '); // right pad — matches the left pad for symmetry
         buf.extend_from_slice(RESET.as_bytes());
-        // TAB_GAP cells between tabs render with no background, so the
-        // separation is naturally visible against the surrounding row.
+        // Inter-tab gap (`TAB_GAP`) renders against the row's
+        // default background, naturally separating adjacent cells.
         for _ in 0..TAB_GAP {
             buf.push(b' ');
         }
@@ -297,20 +338,10 @@ enum TabGlyph {
     Blocked,
 }
 
-impl TabGlyph {
-    fn ch(self) -> char {
-        match self {
-            Self::None => ' ',
-            Self::Done => '○',
-            Self::Blocked => '●',
-        }
-    }
-}
-
-/// Resolve the state glyph for a tab from its sessions' aggregate
-/// state. The display label is always rendered as `"<name> <glyph>"`
-/// (with the slot reserved as a space when no special state holds);
-/// the glyph itself is painted separately so colours can attach.
+/// Resolve the base name + state glyph for a tab. The caller builds
+/// the full display label by centring the name and reserving the
+/// sep + glyph slots; the glyph is painted separately so its colour
+/// can differ from the surrounding tab foreground.
 fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> (String, TabGlyph) {
     let ids = tab.tree.all_ids();
     let has_blocked = ids.iter().any(|id| {
@@ -331,7 +362,7 @@ fn tab_label(tab: &Tab, states: &[(u64, AgentState)]) -> (String, TabGlyph) {
     } else {
         TabGlyph::None
     };
-    (format!("{} {}", tab.label, glyph.ch()), glyph)
+    (tab.label.clone(), glyph)
 }
 
 /// Vertical pane border at column `col` for rows `from_row..=to_row`.
@@ -380,18 +411,25 @@ mod tests {
     use crate::layout::Tab;
 
     #[test]
-    fn tab_click_region_width_includes_state_glyph() {
-        // Regression for the click-region drift bug: tab regions must
-        // account for the trailing `●`/`○` glyph appended to the label.
+    fn tab_click_region_width_matches_layout() {
+        // Tab cell layout: ` <centred-name>  <glyph> ` = 1 pad + name +
+        // 2 sep + 1 glyph + 1 pad = name + 5. With name="Claude" the
+        // cell is 11 cols wide; the region is stable regardless of
+        // the agent state.
         let mut bar = StatusBar::new();
         let tab = Tab::new_single("Claude", 1);
         let tabs = vec![tab];
-        let states = vec![(1u64, AgentState::Blocked)]; // appends " ●"
+        let states = vec![(1u64, AgentState::Blocked)];
         let mut buf = Vec::new();
         bar.render(&mut buf, 80, &tabs, 0, &states);
         let (start, end) = bar.tab_regions[0];
-        // Label is "Claude ●" = 8 chars. Tab cell pads ` Claude ● ` = 10 cols.
-        assert_eq!(end - start, 10);
+        assert_eq!(end - start, 11);
+        // Re-rendering with no state must keep the same width.
+        let mut buf2 = Vec::new();
+        bar.render(&mut buf2, 80, &tabs, 0, &[]);
+        let (s2, e2) = bar.tab_regions[0];
+        assert_eq!(e2 - s2, 11);
+        assert_eq!((s2, e2), (start, end));
     }
 
     #[test]
