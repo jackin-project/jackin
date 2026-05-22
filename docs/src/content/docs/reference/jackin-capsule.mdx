@@ -5,7 +5,7 @@ title: "Jackin Capsule: In-Container Control Plane"
 import RepoFile from '../../../components/RepoFile.astro'
 import { Aside } from '@astrojs/starlight/components'
 
-The **Jackin Capsule** is the in-container runtime control plane for every jackin-managed container. Its executable is `jackin-capsule`, installed at `/usr/local/bin/jackin-capsule` in the derived image and run as PID 1 when the container starts.
+The **Jackin Capsule** is the in-container runtime control plane for every Capsule-managed role container. Its executable is `jackin-capsule`, installed at `/usr/local/bin/jackin-capsule` in the derived image and run as PID 1 when the container starts.
 
 The Capsule is not the Docker container, the role image, or an agent runtime. It is the process inside the container that owns PTYs, supervises child processes, renders the in-container multiplexer, exposes the Unix socket API, and performs deterministic runtime setup before each agent starts. Jackin's host CLI uses that process as the boundary between host orchestration and in-container session state.
 
@@ -94,7 +94,7 @@ Jackin talks to the Capsule through a few deliberately narrow paths:
 | Initial launch | `docker run -d ... <image> <agent>` | Starts `jackin-capsule` as PID 1. The trailing `<agent>` argv selects only the first tab; it is not exported as global container state. |
 | Interactive attach | `docker exec -it <container> /usr/local/bin/jackin-capsule` | Starts a second `jackin-capsule` process in attach client mode. That client connects to the PID 1 daemon over `/run/jackin/jackin.sock` and bridges the operator terminal. |
 | New agent or shell | `docker exec -it <container> /usr/local/bin/jackin-capsule new [agent]` | The attach client sends a `Hello` frame with a spawn request. The daemon creates the new PTY and sets `JACKIN_AGENT` only for agent sessions. |
-| Session inventory | `jackin-capsule status` or direct host `UnixStream` to the mounted socket | Sends a typed control request and receives typed state. The CLI command prints a human-readable line format for older host paths; console snapshot code reads JSON directly. |
+| Session inventory | `jackin-capsule status`, direct host `UnixStream`, or `docker exec ... jackin-capsule snapshot` | Sends a typed control request and receives typed state. The CLI command prints a human-readable line format for older host paths; console snapshot code reads JSON directly, using `docker exec` when the host cannot connect to the bind-mounted Unix socket. |
 | Runtime setup | `/jackin/runtime/entrypoint.sh` calls `jackin-capsule runtime-setup` | Runs container-local setup immediately before the selected agent process is `exec`'d. |
 
 ### Layout model

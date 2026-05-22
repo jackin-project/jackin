@@ -6,7 +6,7 @@ import RepoFile from '../../../components/RepoFile.astro'
 
 ## Overview
 
-Every jackin container runs the Jackin Capsule (`jackin-capsule`) as PID 1. The daemon owns the PTY sessions, renders the in-container multiplexer, serves `/run/jackin/jackin.sock`, and exits when the last live session ends. The host attaches with a separate `docker exec -it <container> /usr/local/bin/jackin-capsule` client. See [Jackin Capsule](/reference/jackin-capsule/) for the control-plane design and wire protocol.
+Every role container runs the Jackin Capsule (`jackin-capsule`) as PID 1. The daemon owns the PTY sessions, renders the in-container multiplexer, serves `/run/jackin/jackin.sock`, and exits when the last live session ends. The host attaches with a separate `docker exec -it <container> /usr/local/bin/jackin-capsule` client. See [Jackin Capsule](/reference/jackin-capsule/) for the control-plane design and wire protocol.
 
 There are two session types:
 
@@ -47,7 +47,7 @@ jackin queries the daemon through its socket by executing:
 /usr/local/bin/jackin-capsule status
 ```
 
-The command opens the Capsule control channel, sends a typed `Status` request, and prints a line-oriented summary that older host paths parse into `AgentSession` records. Host console previews use the same socket with a direct JSON `Snapshot` request. If the container is not running, inventory is reported as `sessions:not_running` without contacting Docker.
+The command opens the Capsule control channel, sends a typed `Status` request, and prints a line-oriented summary that older host paths parse into `AgentSession` records. Host console previews use the same control channel with a JSON `Snapshot` request: same-kernel Docker hosts connect directly to the bind-mounted socket, while Docker Desktop hosts fall back to `docker exec ... /usr/local/bin/jackin-capsule snapshot` because the host cannot connect to a Linux VM Unix socket directly. If the container is not running, inventory is reported as `sessions:not_running` without contacting Docker.
 
 Implementation: <RepoFile path="src/runtime/attach.rs" /> (`inspect_agent_sessions`) and <RepoFile path="crates/jackin-capsule/src/client.rs" /> (`run_status`).
 

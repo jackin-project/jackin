@@ -322,7 +322,7 @@ pub fn prune_jackin_home(paths: &JackinPaths) {
     }
 }
 
-/// Remove jk_* Docker images that have no jackin-managed role containers (running or stopped).
+/// Remove jk_* Docker images that have no managed role containers (running or stopped).
 ///
 /// Per-image `rmi` failures are printed to stderr and counted in the summary but do not
 /// propagate. The initial `docker images` and `docker ps` enumeration calls do propagate.

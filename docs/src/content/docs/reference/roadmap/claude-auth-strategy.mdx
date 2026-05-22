@@ -20,7 +20,7 @@ Today jackin' forwards Claude Code subscription auth by copying OAuth session st
 
 That means every long-lived agent instance can end up with its own private copy of Claude Code auth state.
 
-This is workable for short-lived single-session usage, but it interacts badly with OAuth refresh-token rotation when multiple Claude Code sessions are active across the host and several jackin containers.
+This is workable for short-lived single-session usage, but it interacts badly with OAuth refresh-token rotation when multiple Claude Code sessions are active across the host and several Capsule-managed containers.
 
 The user-visible failure mode is exactly the one operators report:
 

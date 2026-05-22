@@ -27,7 +27,7 @@ The current container supervisor is a bash wait loop (<RepoFile path="docker/run
 
 ## Vision
 
-Each jackin-managed container runs `jackin-capsule` as PID 1. It is the Capsule control plane: it manages PTY sessions directly (replacing tmux), tracks session state, renders the in-container multiplexer, and exposes a Unix socket API that the host CLI, the future jackin daemon, and the Jackin desktop app can drive.
+Each Capsule-managed role container runs `jackin-capsule` as PID 1. It is the Capsule control plane: it manages PTY sessions directly (replacing tmux), tracks session state, renders the in-container multiplexer, and exposes a Unix socket API that the host CLI, the future jackin daemon, and the Jackin desktop app can drive.
 
 The container becomes a self-contained server. The operator's terminal, the console TUI, and the desktop companion all talk to the same control plane:
 
@@ -44,7 +44,7 @@ This makes `jackin-capsule` the data source for all future observability feature
 
 ### Binary name and location
 
-The binary is named `jackin-capsule` and lives at `/usr/local/bin/jackin-capsule` inside every jackin-managed container. It replaces <RepoFile path="docker/runtime/supervisor.sh" /> as PID 1.
+The binary is named `jackin-capsule` and lives at `/usr/local/bin/jackin-capsule` inside every Capsule-managed role container. It replaces <RepoFile path="docker/runtime/supervisor.sh" /> as PID 1.
 
 ### Crate
 

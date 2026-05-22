@@ -2,9 +2,13 @@
 
 This repository uses `main` as its primary branch. This file is the canonical home for rules and restrictions that apply only to AI agents. Rules that apply equally to human contributors and agents live in topic-specific files linked under **Shared conventions** below.
 
+## Brand spelling (agent-only)
+
+In prose, the product and project are always spelled `jackin'`: lowercase with the trailing apostrophe. Do not write `Jackin`, `Jackin'`, or bare `jackin` when referring to the brand, the product, or the project in normal text. Use the no-apostrophe spelling only for literal commands, binaries, crates, packages, environment variables, config keys, file paths, labels, selectors, URLs, and code identifiers, such as `jackin`, `jackin-capsule`, `JACKIN_DEBUG`, `~/.jackin/`, and `jackin.role.toml`. If the apostrophe makes a possessive or sentence awkward, rewrite the sentence instead of dropping it.
+
 ## Project staffing: solo maintainer (agent-only)
 
-Jackin has exactly one human contributor — the operator. There is no second reviewer available, and GitHub does not let a PR author approve their own pull request. This shapes several rules and tooling choices that an agent might otherwise expect to default differently:
+jackin' has exactly one human contributor — the operator. There is no second reviewer available, and GitHub does not let a PR author approve their own pull request. This shapes several rules and tooling choices that an agent might otherwise expect to default differently:
 
 - Branch protection on `main` does **not** require an approving review (`required_approving_review_count = 0` in `jackin-github-terraform`). Do not propose raising it without a concrete plan for how a second human will review every PR.
 - "Get a second pair of eyes" is not an available pre-merge step. Pre-merge confidence comes from CI, the path-aware aggregator status checks, the strict up-to-date branch policy, and the agent following the rules in `PULL_REQUESTS.md` — not from a human reviewer the operator does not have.
@@ -15,7 +19,7 @@ This rule retires when the project gains additional human reviewers.
 
 ## Project status: pre-release (agent-only)
 
-Jackin has no released version — it is a proof-of-concept. **Breaking changes are expected and acceptable.** When schemas change (on-disk state layout, CLI flags, role/agent shapes outside the three versioned files listed below), do not write migration code, compatibility shims, fallback parsers for old field names, "tolerant ignore + warn" handlers, or deprecation warnings. Make the new shape the only shape; let stale data fail with the standard parser error.
+jackin' has no released version — it is a proof-of-concept. **Breaking changes are expected and acceptable.** When schemas change (on-disk state layout, CLI flags, role/agent shapes outside the three versioned files listed below), do not write migration code, compatibility shims, fallback parsers for old field names, "tolerant ignore + warn" handlers, or deprecation warnings. Make the new shape the only shape; let stale data fail with the standard parser error.
 
 `config.toml`, per-workspace files at `~/.config/jackin/workspaces/<name>.toml`, and `jackin.role.toml` are exceptions: all three are versioned schemas (`CURRENT_CONFIG_VERSION`, `CURRENT_WORKSPACE_VERSION`, `CURRENT_MANIFEST_VERSION` in `src/config/migrations.rs` and `src/manifest/migrations.rs`). Any PR that touches `AppConfig`, `WorkspaceConfig`, `RoleManifest`, `HooksConfig`, or any other type whose serde representation lives in one of those three files must ship with five artifacts:
 
@@ -31,25 +35,25 @@ Do not memorialize old shapes in code comments ("formerly named X", "old locatio
 
 **One schema version bump per PR, targeting the next version after `main`.** A PR that touches versioned schemas must introduce exactly one version bump — the version immediately following the current `CURRENT_*_VERSION` on `main` at the time the PR is opened. A single PR may add multiple fields, rename multiple fields, and affect multiple file kinds (config, workspace, manifest), but all of those changes land under that one version bump. Adding a second bump inside the same PR is a sign the changes should be in separate PRs, not stacked versions. If `main` advances while the PR is in flight and claims the PR's target version, the PR must rebase to use the new next version — never introduce a gap or a skip. This rule prevents the pattern where a PR introduces `v1alpha5` (with partial changes) and `v1alpha6` (with the remainder): that forces operators through two sequential migrations for what is logically one PR's worth of work and creates a stale intermediate version that no one ever ships at.
 
-This rule retires when jackin ships its first tagged release.
+This rule retires when jackin' ships its first tagged release.
 
 ## Never mutate the host machine silently (hard rule)
 
-**The operator's host machine is their property. Jackin must never write to host-side state — files, git config, repo `.git/config`, `.git/refs`, `~/.gitconfig`, `~/.config/gh/`, `~/.claude/`, `~/.codex/`, the host's git remotes, or any user repository — without an explicit, opt-in, surfaced-in-the-launch-summary action. All "smoothing" jackin does to make a container work belongs *inside the container*.**
+**The operator's host machine is their property. jackin' must never write to host-side state — files, git config, repo `.git/config`, `.git/refs`, `~/.gitconfig`, `~/.config/gh/`, `~/.claude/`, `~/.codex/`, the host's git remotes, or any user repository — without an explicit, opt-in, surfaced-in-the-launch-summary action. All "smoothing" jackin' does to make a container work belongs *inside the container*.**
 
 This is non-negotiable across schemas, design proposals, roadmap items, runtime behavior, and PR descriptions. Examples of what this rule blocks:
 
 - Rewriting a host repository's `origin` remote from SSH to HTTPS because "the container can't push via SSH." The fix belongs in the container's `--global` git config and credential helper, not the host repo's `.git/config`.
 - Running `gh auth setup-git` on the host as part of a `jackin` command. The container can run it; the host stays untouched.
 - Editing `~/.gitconfig`, `~/.ssh/config`, or any user dotfile during a launch, refresh, or "fix it for me" path. Suggest the change in the launch summary; do not apply it.
-- Force-pushing, fetching, pulling, or pruning on the host's git repo as a side effect of provisioning. The only host-side git commands jackin runs today are the ones the operator explicitly opted into (`git_pull_on_entry`, `worktree add` under `isolation = "worktree"`), and those stay scoped to the workspace's mounted repos.
+- Force-pushing, fetching, pulling, or pruning on the host's git repo as a side effect of provisioning. The only host-side git commands the CLI runs today are the ones the operator explicitly opted into (`git_pull_on_entry`, `worktree add` under `isolation = "worktree"`), and those stay scoped to the workspace's mounted repos.
 - Writing the host's `~/.config/gh/hosts.yml` from the container's in-session `gh auth login`. In-container token rotation must not flow back to the host without an explicit operator-controlled bidirectional-sync opt-in (tracked under the [GitHub CLI auth strategy](docs/src/content/docs/reference/roadmap/github-cli-auth-strategy.mdx) follow-ups).
 
-**Read paths against the host are fine.** `gh auth token --hostname github.com`, parsing `~/.config/gh/hosts.yml`, reading `~/.claude.json`, looking up the host's git user.email — all read-only. The forbidden direction is host-side *writes* triggered by jackin without explicit operator opt-in.
+**Read paths against the host are fine.** `gh auth token --hostname github.com`, parsing `~/.config/gh/hosts.yml`, reading `~/.claude.json`, looking up the host's git user.email — all read-only. The forbidden direction is host-side *writes* triggered by jackin' without explicit operator opt-in.
 
 When a design proposal or roadmap item mentions doing anything to the host, the proposal must call it out under a "Host-side effects" section, the implementing PR must surface the action in the launch summary, and the change must be opt-in (config flag, CLI flag, or operator confirmation prompt). PRs that touch the host silently must be rejected at review.
 
-The reason: the host machine is where the operator works. Surprise mutations break their flow, surface as inexplicable bugs in their non-jackin terminals, and erode trust in the orchestrator. The whole point of jackin is to absorb the messiness inside containers so the host stays clean.
+The reason: the host machine is where the operator works. Surprise mutations break their flow, surface as inexplicable bugs in terminals outside jackin', and erode trust in the orchestrator. The whole point of jackin' is to absorb the messiness inside containers so the host stays clean.
 
 ## Prefer libraries over hand-rolled parsers / serializers / format handlers
 
@@ -143,10 +147,10 @@ Roadmap pages are for planned, researched, designed, deferred, or remaining work
 
 ## Documentation as the source of truth (agent-only)
 
-**The published docs site is the spec.** Every feature jackin ships must be described from two angles, and both must be kept current in the same PR that lands the change:
+**The published docs site is the spec.** Every feature jackin' ships must be described from two angles, and both must be kept current in the same PR that lands the change:
 
-- **User-facing docs** (the *Operator* and *Role Authoring* sidebar groups: `getting-started/`, `guides/`, `commands/`, `developing/`) describe **what jackin does from outside the binary**. They answer "if I run this command or set this config, what will happen?" without naming on-disk paths the operator never edits, internal Rust types, or implementation steps. A reader following only the user-facing docs must be able to use the feature successfully.
-- **Contributor-facing docs** (the *Internals* sidebar group: `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, `reference/claude-token-orchestrator.mdx`, `reference/schema-versions.mdx`, `reference/tui-design-decisions.mdx`, plus active items under `reference/roadmap/`) describe **how jackin is built**. On-disk layout, struct/enum/function names, design decisions, trade-offs, file paths under `src/`, and links into the source tree all live here. This surface is what an agent or contributor reads before changing code, and it is what they update when their change makes the description stale.
+- **User-facing docs** (the *Operator* and *Role Authoring* sidebar groups: `getting-started/`, `guides/`, `commands/`, `developing/`) describe **what jackin' does from outside the binary**. They answer "if I run this command or set this config, what will happen?" without naming on-disk paths the operator never edits, internal Rust types, or implementation steps. A reader following only the user-facing docs must be able to use the feature successfully.
+- **Contributor-facing docs** (the *Internals* sidebar group: `reference/architecture.mdx`, `reference/configuration.mdx`, `reference/codebase-map.mdx`, `reference/claude-token-orchestrator.mdx`, `reference/schema-versions.mdx`, `reference/tui-design-decisions.mdx`, plus active items under `reference/roadmap/`) describe **how jackin' is built**. On-disk layout, struct/enum/function names, design decisions, trade-offs, file paths under `src/`, and links into the source tree all live here. This surface is what an agent or contributor reads before changing code, and it is what they update when their change makes the description stale.
 
 Both surfaces are load-bearing. If an operator-visible behaviour ships without an update to the user-facing docs, the feature is not actually shipped — operators have no way to learn it exists or how to invoke it. If an internal change ships without an update to the contributor-facing docs, the next agent reading the internals page is debugging against a stale spec.
 
@@ -161,7 +165,7 @@ Do not split a feature PR from its docs PR by default. The docs land with the co
 
 **Audience-correct placement is not optional.** When you find yourself wanting to put a TOML schema fragment, on-disk path, or struct name on a user-facing page, the placement is wrong — that detail goes on the matching internals page, and the user-facing page links to it. When you find yourself wanting to write `jackin foo --bar` operator instructions on an internals page, that block belongs in the `commands/` page, and the internals page links out. The split is what lets each audience trust their surface; mixing them weakens both.
 
-This rule does not retire when jackin ships its first release; the audience split is permanent. The roadmap-retirement portion of this rule and the **Roadmap freshness** rule retire only when there are no roadmap items left to maintain.
+This rule does not retire when jackin' ships its first release; the audience split is permanent. The roadmap-retirement portion of this rule and the **Roadmap freshness** rule retire only when there are no roadmap items left to maintain.
 
 ## Push every commit immediately (hard rule)
 
@@ -255,12 +259,12 @@ This rule applies to inline `//` comments, multi-line `/// `/// `//!` doc commen
 
 ## Walking the operator through local validation (agent-only)
 
-When walking the operator through manual validation of a jackin feature (smoke testing a PR, reproducing a bug, executing a PR test plan), every `jackin <subcommand>` invocation in the recipe MUST include `--debug`. That includes `cargo run --bin jackin -- <subcommand> --debug` while iterating from a checkout.
+When walking the operator through manual validation of a jackin' feature (smoke testing a PR, reproducing a bug, executing a PR test plan), every `jackin <subcommand>` invocation in the recipe MUST include `--debug`. That includes `cargo run --bin jackin -- <subcommand> --debug` while iterating from a checkout.
 
-The `--debug` flag prints every external command jackin issues (`docker`, `git`, `id`, etc.) along with their captured output, plus jackin's own `[jackin debug ...]` instrumentation. This makes the operator's terminal output triage-able by the agent: when something doesn't behave as expected, the operator can paste the full debug log and the agent can localize the issue without guessing.
+The `--debug` flag prints every external command the CLI issues (`docker`, `git`, `id`, etc.) along with their captured output, plus the `[jackin debug ...]` instrumentation. This makes the operator's terminal output triage-able by the agent: when something doesn't behave as expected, the operator can paste the full debug log and the agent can localize the issue without guessing.
 
 Do not list `git diff --check` as PR verification. It is not a meaningful
-acceptance check for jackin PRs; prefer targeted commands that exercise the
+acceptance check for jackin' PRs; prefer targeted commands that exercise the
 changed behavior plus CI.
 
 For user smoke tests, suggest `jackin console` first, and prefer the
@@ -285,7 +289,7 @@ If the operator reports unexpected behavior from a clean (non-debug) run, the FI
 
 This does not apply to:
 
-- Inspection commands the operator runs (`pgrep`, `pmset`, `cat`, `ls`) — those aren't jackin invocations.
+- Inspection commands the operator runs (`pgrep`, `pmset`, `cat`, `ls`) — those aren't `jackin` invocations.
 - Production recommendations or scripted automation (debug output is too noisy for those).
 
 ## Testing `jackin-capsule` changes locally (agent-only) — see `.github/AGENTS.md`

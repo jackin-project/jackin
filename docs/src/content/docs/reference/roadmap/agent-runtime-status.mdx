@@ -129,7 +129,7 @@ Stuck events should be rate-limited, include the evidence trail, and surface as 
 
 ### Claude Code
 
-Claude Code hooks expose events including notifications for permission prompts and idle prompts, plus stop/subagent lifecycle hooks. Jackin should install container-local hook scripts or command hooks at launch when the role/runtime allows it. The hook writes semantic reports to the Jackin container socket. Subagent completion must not mark the parent session done early; subagent events should either carry their own source scope or be ignored for parent `idle` transitions unless the parent stop event follows.
+Claude Code hooks expose events including notifications for permission prompts and idle prompts, plus stop/subagent lifecycle hooks. Jackin should install container-local hook scripts or command hooks at launch when the role/runtime allows it. The hook writes semantic reports to the Capsule socket. Subagent completion must not mark the parent session done early; subagent events should either carry their own source scope or be ignored for parent `idle` transitions unless the parent stop event follows.
 
 ### Codex
 

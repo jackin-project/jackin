@@ -141,7 +141,7 @@ pub enum Dialog {
     /// destroying the operator's work.
     CloseTargetPicker { selected: usize, filter: String },
     /// Yes / No confirmation dialog for irreversible actions (close
-    /// pane, close tab, stop & exit). Default selection is `No` so an
+    /// pane, close tab, exit). Default selection is `No` so an
     /// operator who hit the action by reflex returns to the previous
     /// step on Enter instead of executing. `Y` / `y` shortcut always
     /// confirms; `N` / `n` / Esc always cancels.
@@ -155,7 +155,7 @@ pub enum Dialog {
 pub enum ConfirmKind {
     ClosePane,
     CloseTab,
-    Detach,
+    Exit,
 }
 
 impl ConfirmKind {
@@ -163,7 +163,7 @@ impl ConfirmKind {
         match self {
             Self::ClosePane => "Close pane?",
             Self::CloseTab => "Close tab?",
-            Self::Detach => "Stop & exit?",
+            Self::Exit => "Exit?",
         }
     }
 
@@ -173,9 +173,7 @@ impl ConfirmKind {
             Self::CloseTab => {
                 "Reap every pane in this tab. Unsaved state across all panes is lost."
             }
-            Self::Detach => {
-                "Disconnect this client. Agents keep running; reattach with `jackin console`."
-            }
+            Self::Exit => "Stop all agents; jackin' will clean up.",
         }
     }
 }
@@ -212,7 +210,7 @@ pub enum DialogAction {
     PickedCloseTarget(ConfirmKind),
     /// User said "Yes" in a `ConfirmAction` dialog — daemon fires
     /// the matching action (close focused pane, close focused tab,
-    /// set `detach_requested`).
+    /// exit every session).
     ConfirmedAction(ConfirmKind),
     /// User picked an agent slug (or "shell"). `intent` tells the
     /// daemon whether to spawn it as a tab or as a split pane.
@@ -259,7 +257,7 @@ pub enum PaletteCommand {
     /// through `ConfirmAction` before the destructive call fires.
     Close,
     ClearPane,
-    Detach,
+    Exit,
 }
 
 /// Next/Previous tab are not exposed in the palette: the operator
@@ -275,7 +273,7 @@ const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (PaletteCommand::ZoomPane, "Zoom / unzoom pane"),
     (PaletteCommand::ClearPane, "Clear pane"),
     (PaletteCommand::Close, "Close"),
-    (PaletteCommand::Detach, "Stop & exit"),
+    (PaletteCommand::Exit, "Exit"),
 ];
 
 /// Items in the SplitDirectionPicker sub-dialog. Order matches the

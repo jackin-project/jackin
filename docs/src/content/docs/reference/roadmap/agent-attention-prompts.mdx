@@ -12,7 +12,7 @@ The biggest hidden cost of running AI coding agents today is **idle wall-clock**
 
 Every minute the agent waits is a minute of compounding throughput loss across however many agents the operator is running in parallel. The point of jackin' is to make running many agents safe and convenient; "many agents" is only a real win if the operator can stay in flow and only context-switch when an agent actually needs them.
 
-This roadmap item proposes **agent attention prompts**: an opt-in, per-workspace, per-role notification channel that fires a host-side OS notification when an agent inside a jackin' container is waiting on operator input, with optional escalation to sound and a click action that focuses the right terminal tab.
+This roadmap item proposes **agent attention prompts**: an opt-in, per-workspace, per-role notification channel that fires a host-side OS notification when an agent inside a Capsule-managed role container is waiting on operator input, with optional escalation to sound and a click action that focuses the right terminal tab.
 
 ## What the operator gets
 

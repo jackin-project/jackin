@@ -1,4 +1,4 @@
-# Fish shell config for jackin containers.
+# Fish shell config for Capsule-managed containers.
 #
 # zsh remains the default login shell for the `agent` user (set in the
 # construct Dockerfile via `useradd -s /bin/zsh`); fish is available

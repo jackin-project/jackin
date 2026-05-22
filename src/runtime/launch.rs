@@ -2616,7 +2616,7 @@ fn matching_instance_manifests(
     )
 }
 
-fn write_instance_status(
+pub(super) fn write_instance_status(
     paths: &JackinPaths,
     state_dir: &std::path::Path,
     manifest: &mut InstanceManifest,
@@ -2666,7 +2666,9 @@ fn format_attach_outcome(outcome: crate::isolation::finalize::AttachOutcome) -> 
     }
 }
 
-fn preserved_instance_status(state_dir: &std::path::Path) -> anyhow::Result<InstanceStatus> {
+pub(super) fn preserved_instance_status(
+    state_dir: &std::path::Path,
+) -> anyhow::Result<InstanceStatus> {
     use crate::isolation::state::CleanupStatus;
 
     let records = crate::isolation::state::read_records(state_dir)?;

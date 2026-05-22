@@ -176,7 +176,7 @@ This boundary is deliberate. Durable tools belong in the role Dockerfile. Durabl
 
 ## Cleanup And Purge
 
-`eject` stops/removes Docker resources for an instance while preserving local recovery state unless purge is requested. `purge` deletes local recovery state and is guarded when matching Docker resources still exist. `exile` stops all running jackin-managed role containers.
+`eject` stops/removes Docker resources for an instance while preserving local recovery state unless purge is requested. `purge` deletes local recovery state and is guarded when matching Docker resources still exist. `exile` stops all running managed role containers.
 
 Plain purge must refuse while the role container or DinD sidecar still exists, whether running or stopped. This prevents deleting local state that an existing Docker resource may still depend on. `eject --purge` is the combined path when the operator wants Docker resources and local recovery state removed together.
 

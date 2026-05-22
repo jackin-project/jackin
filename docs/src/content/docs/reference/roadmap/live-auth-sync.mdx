@@ -34,7 +34,7 @@ but not three operationally important scenarios:
 
 This roadmap item covers the long-term answer: **a single source of
 truth for each auth axis, kept in sync across the host and every
-running jackin container in real time, by an opt-in jackin daemon.**
+running Capsule-managed role container in real time, by an opt-in jackin daemon.**
 
 The item is deliberately scoped beyond a single auth axis. It must
 cover, with one architecture:
@@ -83,7 +83,7 @@ Per auth axis, when the live mode is active:
 
 1. **Host change → all running containers, near real time.** Within
    a few seconds of a host-side `gh auth login` / `claude /login`
-   / `codex login`, every running jackin container that opted in
+   / `codex login`, every opted-in Capsule-managed role container
    sees the new token. No restart required.
 2. **In-container change → host AND other running containers.**
    When an agent inside a container refreshes the token, that new

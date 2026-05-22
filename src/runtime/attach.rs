@@ -191,7 +191,8 @@ pub async fn spawn_shell_session(
         )
         .await;
     eprintln!();
-    result
+    result?;
+    finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -255,10 +256,7 @@ pub async fn spawn_agent_session(
         .await;
     eprintln!();
     result?;
-
-    let outcome = crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
-    super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
-    Ok(())
+    finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
 }
 
 pub async fn hardline_agent(
@@ -342,14 +340,21 @@ pub async fn hardline_agent_with_focus(
     };
     attach_outcome?;
 
-    // Finalize per-mount isolation worktrees after re-attach. We do not honor
-    // a `ReturnToAgent` decision here — `hardline` is itself a re-attach, and
-    // the operator can simply re-invoke `jackin hardline` to come back.
-    let outcome = crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
+    finalize_reconnected_foreground_session(paths, container_name, docker, runner).await
+}
+
+async fn finalize_reconnected_foreground_session(
+    paths: &JackinPaths,
+    container_name: &str,
+    docker: &impl crate::docker_client::DockerApi,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
+    let mut outcome =
+        crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
     super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
     let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
     let mut prompt = crate::isolation::finalize::StdinPrompt;
-    let _ = crate::isolation::finalize::finalize_foreground_session(
+    let mut decision = crate::isolation::finalize::finalize_foreground_session(
         container_name,
         &paths.data_dir.join(container_name),
         outcome,
@@ -359,7 +364,68 @@ pub async fn hardline_agent_with_focus(
         runner,
     )
     .await?;
-    Ok(())
+
+    if matches!(
+        decision,
+        crate::isolation::finalize::FinalizeDecision::ReturnToAgent
+    ) {
+        super::caffeinate::reconcile(paths, docker, runner).await;
+        runner
+            .run(
+                "docker",
+                &["start", "-ai", container_name],
+                None,
+                &RunOptions::default(),
+            )
+            .await?;
+        outcome = crate::runtime::launch::inspect_attach_outcome(docker, container_name).await?;
+        super::launch::record_instance_attach_outcome(paths, container_name, outcome)?;
+        decision = crate::isolation::finalize::finalize_foreground_session(
+            container_name,
+            &paths.data_dir.join(container_name),
+            outcome,
+            interactive,
+            &mut prompt,
+            docker,
+            runner,
+        )
+        .await?;
+    }
+
+    finalize_reconnected_resources(paths, container_name, outcome, decision, docker).await
+}
+
+async fn finalize_reconnected_resources(
+    paths: &JackinPaths,
+    container_name: &str,
+    outcome: crate::isolation::finalize::AttachOutcome,
+    decision: crate::isolation::finalize::FinalizeDecision,
+    docker: &impl crate::docker_client::DockerApi,
+) -> anyhow::Result<()> {
+    use crate::isolation::finalize::{AttachOutcome, FinalizeDecision};
+
+    let should_teardown = match (outcome, decision) {
+        (_, FinalizeDecision::ReturnToAgent) => false,
+        (AttachOutcome::Stopped(0), _)
+        | (AttachOutcome::StillRunning, FinalizeDecision::Cleaned) => true,
+        _ => false,
+    };
+    if !should_teardown {
+        return Ok(());
+    }
+
+    let state_dir = paths.data_dir.join(container_name);
+    let status = if matches!(decision, FinalizeDecision::Preserved) {
+        super::launch::preserved_instance_status(&state_dir)?
+    } else {
+        crate::instance::InstanceStatus::CleanExited
+    };
+    if let Some(mut manifest) =
+        crate::instance::InstanceManifest::read_or_log(&state_dir, "finalize_reconnected_resources")
+    {
+        super::launch::write_instance_status(paths, &state_dir, &mut manifest, status)?;
+    }
+    super::cleanup::eject_role(container_name, docker).await
 }
 
 pub async fn inspect_hardline_instance(
@@ -612,6 +678,82 @@ mod tests {
             }),
             "expected jackin-capsule exec in recorded commands; got: {:?}",
             runner.recorded
+        );
+    }
+
+    #[tokio::test]
+    async fn hardline_clean_exit_ejects_runtime_resources() {
+        let (_tmp, paths) = test_paths();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Running,
+                ContainerState::Stopped {
+                    exit_code: 0,
+                    oom_killed: false,
+                },
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+
+        hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner)
+            .await
+            .unwrap();
+
+        let recorded = docker.recorded.borrow();
+        assert!(
+            recorded
+                .iter()
+                .any(|op| op == "docker rm -f jk-agent-smith"),
+            "clean exit should remove role container; recorded: {recorded:?}"
+        );
+        assert!(
+            recorded
+                .iter()
+                .any(|op| op == "docker rm -f jk-agent-smith-dind"),
+            "clean exit should remove DinD sidecar; recorded: {recorded:?}"
+        );
+        assert!(
+            recorded
+                .iter()
+                .any(|op| op == "docker volume rm jk-agent-smith-dind-certs"),
+            "clean exit should remove cert volume; recorded: {recorded:?}"
+        );
+        assert!(
+            recorded
+                .iter()
+                .any(|op| op == "docker network rm jk-agent-smith-net"),
+            "clean exit should remove role network; recorded: {recorded:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn hardline_detach_with_live_sessions_preserves_runtime_resources() {
+        let (_tmp, paths) = test_paths();
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Running,
+                ContainerState::Running,
+            ])),
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                "  [1] Claude (claude) state=working active=true".to_string(),
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+
+        hardline_agent(&paths, "jk-agent-smith", &docker, &mut runner)
+            .await
+            .unwrap();
+
+        assert!(
+            !docker
+                .recorded
+                .borrow()
+                .iter()
+                .any(|op| op.starts_with("docker rm -f")),
+            "detach with live sessions must not eject resources; recorded: {:?}",
+            docker.recorded.borrow()
         );
     }
 

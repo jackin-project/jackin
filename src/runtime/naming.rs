@@ -11,7 +11,7 @@ pub(super) const IMAGE_PREFIX: &str = "jk_";
 
 // ── Docker label keys ─────────────────────────────────────────────────────
 //
-// Used to tag and filter jackin-managed containers and networks.
+// Used to tag and filter role containers and networks managed by jackin.
 
 /// Applied to role containers, `DinD` sidecars, and networks.
 pub(super) const LABEL_MANAGED: &str = "jackin.managed=true";

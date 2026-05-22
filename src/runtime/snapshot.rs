@@ -2,9 +2,12 @@
 //! tab/pane snapshot.
 //!
 //! The daemon's socket is bind-mounted from
-//! `paths.jackin_home/sockets/<container_name>/jackin.sock` so the
-//! host can talk to it directly via a `UnixStream` — no `docker
-//! exec`, no second client process.
+//! `paths.jackin_home/sockets/<container_name>/jackin.sock` so same-
+//! kernel Docker hosts can talk to it directly via a `UnixStream`.
+//! Docker Desktop for macOS exposes the socket inode through the bind
+//! mount but cannot bridge the live Unix socket across the Linux VM
+//! boundary, so the host falls back to `docker exec ... snapshot`
+//! when the direct connection is absent or refused.
 //!
 //! Schema sharing: the protocol types live in `jackin_protocol`, a
 //! small shared crate. The host CLI and in-container Capsule both
@@ -14,20 +17,19 @@
 //!
 //! Sync API by design: the only caller today is
 //! `ManagerState::refresh_instances`, which runs inside the host
-//! TUI's render loop. A blocking std `UnixStream` round-trip (a few
-//! bytes each way against an in-process daemon over the host
-//! filesystem) is ~ms; the refresh path is already throttled to
-//! 500 ms and we'd rather pay that few-ms latency than add a tokio
-//! task + channel + lock + ordering guarantees just to keep the call
-//! async.
+//! TUI's render loop. A blocking std `UnixStream` round-trip or
+//! bounded `docker exec` fallback is kept behind the existing 500 ms
+//! refresh throttle.
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use jackin_protocol::control::{ClientMsg, ServerMsg, TabSnapshot, frame as control_frame};
+use serde::Deserialize;
 
 use crate::paths::JackinPaths;
 
@@ -48,6 +50,12 @@ pub struct InstanceSnapshot {
     pub active_tab: u32,
 }
 
+#[derive(Deserialize)]
+struct SnapshotPayload {
+    tabs: Vec<TabSnapshot>,
+    active_tab: u32,
+}
+
 /// Build the host-side path of a container's daemon socket. Matches
 /// the bind-mount source set up in `runtime/launch.rs`.
 pub fn socket_path(paths: &JackinPaths, container_name: &str) -> PathBuf {
@@ -61,19 +69,36 @@ pub fn socket_path(paths: &JackinPaths, container_name: &str) -> PathBuf {
 /// Connect to the container's daemon socket and fetch its tab/pane
 /// snapshot.
 ///
-/// Returns `Ok(None)` when the socket file is absent (the container
-/// is not running yet, was removed, or pre-dates this bind-mount
-/// feature); returns `Err` only for genuine wire-level failures so
-/// callers can log them.
+/// Same-kernel Docker hosts can read the bind-mounted socket directly.
+/// Docker Desktop for macOS cannot; in that case, or when the socket
+/// is absent because the container predates the bind mount, this falls
+/// back to the in-container client via `docker exec`.
 pub fn fetch_snapshot(
     paths: &JackinPaths,
     container_name: &str,
 ) -> Result<Option<InstanceSnapshot>> {
     let path = socket_path(paths, container_name);
-    if !path.exists() {
-        return Ok(None);
+    let mut direct_error = None;
+    if path.exists() {
+        match fetch_snapshot_inner(&path) {
+            Ok(snapshot) => return Ok(Some(snapshot)),
+            Err(error) => direct_error = Some(error),
+        }
     }
-    fetch_snapshot_inner(&path).map(Some)
+
+    match fetch_snapshot_via_docker_exec(container_name) {
+        Ok(snapshot) => Ok(snapshot),
+        Err(exec_error) => {
+            if let Some(error) = direct_error {
+                Err(exec_error.context(format!(
+                    "direct socket snapshot failed for {} ({error:#})",
+                    path.display()
+                )))
+            } else {
+                Ok(None)
+            }
+        }
+    }
 }
 
 fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
@@ -107,5 +132,107 @@ fn fetch_snapshot_inner(path: &Path) -> Result<InstanceSnapshot> {
         ServerMsg::SessionList { .. } => {
             bail!("daemon replied with SessionList; expected Snapshot")
         }
+    }
+}
+
+fn fetch_snapshot_via_docker_exec(container_name: &str) -> Result<Option<InstanceSnapshot>> {
+    let output = run_docker_exec_snapshot(container_name)?;
+    if !output.status.success() {
+        bail!(
+            "docker exec snapshot failed with status {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let stdout = String::from_utf8(output.stdout).context("snapshot stdout is not UTF-8")?;
+    if stdout.trim().is_empty() {
+        return Ok(None);
+    }
+    snapshot_from_cli_stdout(&stdout).map(Some)
+}
+
+fn run_docker_exec_snapshot(container_name: &str) -> Result<std::process::Output> {
+    let script = snapshot_exec_script();
+    let mut child = Command::new("docker")
+        .args(["exec", container_name, "sh", "-lc", script])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("starting docker exec snapshot for {container_name}"))?;
+
+    let deadline = Instant::now() + SOCKET_TIMEOUT;
+    loop {
+        if child
+            .try_wait()
+            .context("polling docker exec snapshot child")?
+            .is_some()
+        {
+            return child
+                .wait_with_output()
+                .context("collecting docker exec snapshot output");
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let output = child.wait_with_output().ok();
+            let stderr = output
+                .as_ref()
+                .map(|out| String::from_utf8_lossy(&out.stderr).trim().to_string())
+                .unwrap_or_default();
+            bail!("docker exec snapshot timed out after {SOCKET_TIMEOUT:?}: {stderr}");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn snapshot_exec_script() -> &'static str {
+    "exec /usr/local/bin/jackin-capsule snapshot"
+}
+
+fn snapshot_from_cli_stdout(stdout: &str) -> Result<InstanceSnapshot> {
+    let payload: SnapshotPayload =
+        serde_json::from_str(stdout).context("parsing jackin-capsule snapshot JSON")?;
+    Ok(InstanceSnapshot {
+        tabs: payload.tabs,
+        active_tab: payload.active_tab,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_snapshot_cli_stdout() {
+        let snapshot = snapshot_from_cli_stdout(
+            r#"{
+              "active_tab": 0,
+              "tabs": [
+                {
+                  "label": "Claude",
+                  "focused_pane": 1,
+                  "panes": [
+                    {
+                      "session_id": 1,
+                      "label": "Claude",
+                      "agent": "claude",
+                      "state": "blocked"
+                    }
+                  ]
+                }
+              ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.active_tab, 0);
+        assert_eq!(snapshot.tabs.len(), 1);
+        assert_eq!(snapshot.tabs[0].panes[0].agent.as_deref(), Some("claude"));
+    }
+
+    #[test]
+    fn snapshot_exec_script_uses_capsule_client() {
+        let script = snapshot_exec_script();
+        assert_eq!(script, "exec /usr/local/bin/jackin-capsule snapshot");
     }
 }

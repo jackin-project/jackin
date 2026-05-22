@@ -647,6 +647,25 @@ impl Multiplexer {
         self.synthesise_focus_swap(prev_focused, self.active_focused_id());
     }
 
+    fn exit_all_sessions(&mut self) {
+        self.cancel_drag();
+        crate::clog!(
+            "action: exit_all_sessions session_count={} tab_count={}",
+            self.sessions.len(),
+            self.tabs.len()
+        );
+        for (_, session) in self.sessions.drain() {
+            session.terminate();
+        }
+        self.tabs.clear();
+        self.active_tab = 0;
+        self.zoomed = None;
+        self.pane_body_caches.clear();
+        self.dirty_panes.clear();
+        self.pending_container_info_lookup = None;
+        self.container_info_copy_deadline = None;
+    }
+
     /// Drop the session whose PTY just exited. Removes the pane from
     /// the owning tab's tree, focuses a sibling if any remain, and
     /// removes the tab itself when its last pane is gone. Same
@@ -822,16 +841,12 @@ impl Multiplexer {
             }
             DialogAction::ConfirmedAction(kind) => {
                 // Terminal action — clear every dialog under us and
-                // fire the matching destructive call. Detach signals
-                // the daemon's main loop via the request flag; the
-                // close paths execute synchronously.
+                // fire the matching destructive call.
                 self.dialog_clear();
                 match kind {
                     ConfirmKind::ClosePane => self.close_focused_pane(),
                     ConfirmKind::CloseTab => self.close_focused_tab(),
-                    ConfirmKind::Detach => {
-                        self.detach_requested = true;
-                    }
+                    ConfirmKind::Exit => self.exit_all_sessions(),
                 }
             }
         }
@@ -1965,12 +1980,12 @@ impl Multiplexer {
                 self.clear_focused_pane();
                 return Some(self.compose_full_frame(FullRedrawReason::PaneClear));
             }
-            PaletteCommand::Detach => {
-                // Push ConfirmAction for Detach — the operator
-                // confirms before the client disconnects. Esc walks
-                // back to Menu.
+            PaletteCommand::Exit => {
+                // Push ConfirmAction for Exit — the operator
+                // confirms before every agent session is stopped. Esc
+                // walks back to Menu.
                 self.dialog_push(Dialog::ConfirmAction {
-                    kind: ConfirmKind::Detach,
+                    kind: ConfirmKind::Exit,
                     selected_yes: false,
                 });
             }
@@ -3445,6 +3460,20 @@ mod tests {
                 selected: 0,
                 filter
             }) if filter.is_empty()
+        ));
+    }
+
+    #[test]
+    fn palette_exit_opens_exit_confirm() {
+        let mut mux = single_pane_tab_mux();
+        mux.handle_palette_command(PaletteCommand::Exit);
+
+        assert!(matches!(
+            mux.dialog_top(),
+            Some(Dialog::ConfirmAction {
+                kind: ConfirmKind::Exit,
+                selected_yes: false
+            })
         ));
     }
 
