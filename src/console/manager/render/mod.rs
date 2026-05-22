@@ -627,6 +627,10 @@ fn clamp_list_scroll_for_area(
         .split(area);
     let viewport = scroll_viewport_width(columns[1]);
 
+    // Workspace mounts clamp — variant-specific because the source rows
+    // differ (synthetic single-mount for CurrentDirectory, persisted
+    // list for SavedWorkspace, no block at all for NewWorkspace /
+    // WorkspaceInstance).
     match state.selected_row() {
         ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
             let cwd = cwd.display().to_string();
@@ -641,8 +645,6 @@ fn clamp_list_scroll_for_area(
                 viewport,
                 &mut state.list_mounts_scroll_x,
             );
-            state.list_global_mounts_scroll_x = 0;
-            state.list_role_global_mounts_scroll_x = 0;
         }
         ManagerListRow::SavedWorkspace(i) => {
             let Some(summary) = state.workspaces.get(i) else {
@@ -656,39 +658,35 @@ fn clamp_list_scroll_for_area(
                 viewport,
                 &mut state.list_mounts_scroll_x,
             );
-            let picker_role = state
-                .inline_role_picker
-                .as_ref()
-                .and_then(|picker| {
-                    picker
-                        .list_state
-                        .selected
-                        .and_then(|idx| picker.filtered.get(idx).cloned())
-                })
-                .or_else(|| {
-                    state
-                        .inline_agent_picker
-                        .as_ref()
-                        .map(|(role, _)| role.clone())
-                });
-            let global_rows = global_rows_for(config, picker_role.as_ref());
-            let (global, scoped) = partition_mounts_by_scope(&global_rows);
-            clamp_scroll_x(
-                list::global_mounts_content_width(&global),
-                viewport,
-                &mut state.list_global_mounts_scroll_x,
-            );
-            clamp_scroll_x(
-                list::global_mounts_content_width(&scoped),
-                viewport,
-                &mut state.list_role_global_mounts_scroll_x,
-            );
         }
         ManagerListRow::NewWorkspace | ManagerListRow::WorkspaceInstance(_, _) => {
             state.list_mounts_scroll_x = 0;
-            state.list_global_mounts_scroll_x = 0;
-            state.list_role_global_mounts_scroll_x = 0;
         }
+    }
+
+    // Global mounts clamp — routed through `global_rows_for_selected_row`
+    // so CurrentDirectory and SavedWorkspace agree on whether the block
+    // is present and what it contains. Previously CurrentDirectory zeroed
+    // the scroll unconditionally, which silently broke horizontal
+    // scrolling in the global-mounts panel whenever the operator was on
+    // that row even though the panel was rendered with content from
+    // `sidebar_inputs_for_current_dir`.
+    let global_rows = global_rows_for_selected_row(state, config);
+    if global_rows.is_empty() {
+        state.list_global_mounts_scroll_x = 0;
+        state.list_role_global_mounts_scroll_x = 0;
+    } else {
+        let (global, scoped) = partition_mounts_by_scope(&global_rows);
+        clamp_scroll_x(
+            list::global_mounts_content_width(&global),
+            viewport,
+            &mut state.list_global_mounts_scroll_x,
+        );
+        clamp_scroll_x(
+            list::global_mounts_content_width(&scoped),
+            viewport,
+            &mut state.list_role_global_mounts_scroll_x,
+        );
     }
 
     // Fix 1: Clear stale scroll focus when the focused block no longer
@@ -774,31 +772,17 @@ fn focused_block_still_scrollable(
             | ManagerListRow::CurrentDirectoryInstance(_) => false,
         },
         MountScrollFocus::Global | MountScrollFocus::RoleGlobal => {
-            let ManagerListRow::SavedWorkspace(i) = state.selected_row() else {
-                return false;
-            };
-            let Some(summary) = state.workspaces.get(i) else {
-                return false;
-            };
-            if !config.workspaces.contains_key(&summary.name) {
+            // Single source of truth shared with `clamp_list_scroll_for_area`
+            // and `sidebar_inputs_for_*`: whatever rows the render path
+            // actually displays for the current selection are the rows
+            // whose scrollability we evaluate here. Previously this arm
+            // gated on `SavedWorkspace` only, so CurrentDirectory rows
+            // (which the render path does populate) silently cleared
+            // `list_scroll_focus` on every resize tick.
+            let global_rows = global_rows_for_selected_row(state, config);
+            if global_rows.is_empty() {
                 return false;
             }
-            let picker_role = state
-                .inline_role_picker
-                .as_ref()
-                .and_then(|picker| {
-                    picker
-                        .list_state
-                        .selected
-                        .and_then(|idx| picker.filtered.get(idx).cloned())
-                })
-                .or_else(|| {
-                    state
-                        .inline_agent_picker
-                        .as_ref()
-                        .map(|(role, _)| role.clone())
-                });
-            let global_rows = global_rows_for(config, picker_role.as_ref());
             let (global, scoped) = partition_mounts_by_scope(&global_rows);
             let mounts = match focus {
                 MountScrollFocus::Global => global,
@@ -842,6 +826,66 @@ fn focused_block_still_scrollable(
             });
             is_scrollable(roles_w, viewport_w) || is_scrollable(roles_h, viewport_h)
         }
+    }
+}
+
+/// Picker-role resolution shared by every render path that builds
+/// global-mount rows. Both the inline role picker (operator currently
+/// scrolling a role list) and the inline agent picker (operator
+/// drilling into a role's agents) advertise a role; either gives the
+/// per-role overlay for the global-mounts block. Returning `None` is
+/// the unscoped baseline — the case both "no picker active" and "current
+/// directory selected (no saved role binding)" reduce to.
+pub(super) fn picker_role_from_state(
+    state: &ManagerState<'_>,
+) -> Option<crate::selector::RoleSelector> {
+    state
+        .inline_role_picker
+        .as_ref()
+        .and_then(|picker| {
+            picker
+                .list_state
+                .selected
+                .and_then(|idx| picker.filtered.get(idx).cloned())
+        })
+        .or_else(|| {
+            state
+                .inline_agent_picker
+                .as_ref()
+                .map(|(role, _)| role.clone())
+        })
+}
+
+/// Global mount rows for whatever row the operator currently has
+/// selected on the workspace list. Single source of truth so the render
+/// side, the scroll-clamp, and the focused-block-scrollable check
+/// always agree on what the rendered block is showing. Returning an
+/// empty `Vec` matches "no global-mount block visible right now."
+///
+/// CurrentDirectory and CurrentDirectoryInstance reduce to the
+/// unscoped baseline because the synthetic current-dir workspace has
+/// no role binding — same rule `sidebar_inputs_for_current_dir`
+/// applies. SavedWorkspace adds the role-scoped overlay when a picker
+/// is active. NewWorkspace and WorkspaceInstance have no global block.
+pub(super) fn global_rows_for_selected_row(
+    state: &ManagerState<'_>,
+    config: &AppConfig,
+) -> Vec<crate::config::GlobalMountRow> {
+    use super::state::ManagerListRow;
+    match state.selected_row() {
+        ManagerListRow::CurrentDirectory | ManagerListRow::CurrentDirectoryInstance(_) => {
+            global_rows_for(config, None)
+        }
+        ManagerListRow::SavedWorkspace(i) => {
+            let Some(summary) = state.workspaces.get(i) else {
+                return Vec::new();
+            };
+            if !config.workspaces.contains_key(&summary.name) {
+                return Vec::new();
+            }
+            global_rows_for(config, picker_role_from_state(state).as_ref())
+        }
+        ManagerListRow::NewWorkspace | ManagerListRow::WorkspaceInstance(_, _) => Vec::new(),
     }
 }
 

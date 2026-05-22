@@ -615,21 +615,12 @@ pub(in crate::console::manager) fn sidebar_inputs_for_workspace<'a>(
 ) -> SidebarInputs<'a> {
     let ws_config = config.workspaces.get(&ws.name);
     let mounts = ws_config.map_or(&[][..], |w| w.mounts.as_slice());
-    let picker_role = state
-        .inline_role_picker
-        .as_ref()
-        .and_then(selected_picker_role)
-        .or_else(|| {
-            state
-                .inline_agent_picker
-                .as_ref()
-                .map(|(role, _)| role.clone())
-        });
-    let global_rows = if ws_config.is_some() {
-        super::global_rows_for(config, picker_role.as_ref())
-    } else {
-        Vec::new()
-    };
+    // Shared with `clamp_list_scroll_for_area` and
+    // `focused_block_still_scrollable` via the `mod.rs` helpers so all
+    // three sites see the same picker role and the same set of global
+    // rows for any given selection state.
+    let picker_role = super::picker_role_from_state(state);
+    let global_rows = super::global_rows_for_selected_row(state, config);
     let inline_picker_active =
         state.inline_role_picker.is_some() || state.inline_agent_picker.is_some();
     let agent_count = if inline_picker_active {
@@ -668,14 +659,16 @@ pub(in crate::console::manager) fn sidebar_inputs_for_current_dir<'a>(
     config: &AppConfig,
     state: &ManagerState<'_>,
 ) -> SidebarInputs<'a> {
-    // The synthetic current-dir workspace has no role binding, so only
-    // unscoped global mounts apply — matches `current_dir_workspace`
-    // behaviour at launch time.
+    // Shared with `clamp_list_scroll_for_area` and
+    // `focused_block_still_scrollable` via the `mod.rs` helpers. The
+    // synthetic current-dir workspace has no role binding, so
+    // `global_rows_for_selected_row` returns the unscoped baseline —
+    // matches `current_dir_workspace` behaviour at launch time.
     SidebarInputs {
         workdir: cwd_str,
         mounts,
         ws_config: None,
-        global_rows: super::global_rows_for(config, None),
+        global_rows: super::global_rows_for_selected_row(state, config),
         picker_role_label: String::new(),
         instance_count: workspace_active_count(&state.instances, None, cwd_str, cwd_str),
         instance_expanded: state.current_dir_expanded,
@@ -765,15 +758,6 @@ fn render_details_pane(
     let inputs = sidebar_inputs_for_workspace(ws, config, state);
     let layout = compute_sidebar_layout(area, &inputs);
     render_sidebar_body(frame, &layout, &inputs, config, state);
-}
-
-fn selected_picker_role(
-    picker: &crate::console::widgets::role_picker::RolePickerState,
-) -> Option<crate::selector::RoleSelector> {
-    picker
-        .list_state
-        .selected
-        .and_then(|idx| picker.filtered.get(idx).cloned())
 }
 
 pub(in crate::console::manager) fn workspace_has_any_env(

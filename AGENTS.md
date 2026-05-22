@@ -80,6 +80,32 @@ Rationale: Rust's ecosystem is one of the project's leverage points. The communi
 
 When you do hand-roll something this rule covers, leave a comment explaining why (crate unavailable, scope tiny, dependency cost specifically rejected) so a later maintainer can replace it without re-debating the decision.
 
+## Reuse before writing — DRY (hard rule)
+
+**Before writing new code, check whether something close enough already exists. If yes, extend, parameterise, or wrap it instead of writing a parallel copy. If no, write the new thing in a shape future callers can reuse.**
+
+This applies to *every* layer of the codebase: render helpers, state-derivation functions, parsing/validation, CLI argument structs, docker mount-list builders, TUI block layout, dialog dispatch, OS abstraction, hook scripts, build scripts. Whenever you are about to write a function whose behaviour is "mostly the same as `<other_function>` but with one branch flipped" — stop, refactor the existing one to accept the difference, and use it.
+
+Concrete checks before adding new code:
+
+1. **`grep` for the verb, the noun, and the surrounding nouns.** "I need to render global mounts" → `rg 'global_mount' src/`. "I need to derive cwd from a manifest" → `rg 'fn .*cwd|manifest.*cwd' src/`. Multi-noun phrases catch helpers named for adjacent concepts. If the search returns one match, read it before writing a new function; if it returns multiple, the duplication this rule prevents has already started — flag it in the PR even if your change is narrow.
+2. **Walk the call sites of the closest match.** If the existing function has two or three callers that pass different arguments, the right move is usually to add a parameter (or a small enum) and route every caller through the same function. If existing call sites would have to grow ugly to share, *say so in a comment* on the new function and keep the duplication explicit so the next reader can decide.
+3. **Look one directory up.** Helpers often live in `<feature>/mod.rs`, `console/manager/render/mod.rs`, `runtime/mod.rs`, `instance/mod.rs`. If `<feature>/sub.rs` is about to grow a private helper that doesn't depend on `sub.rs`-only state, the helper belongs in the parent `mod.rs` (or in a sibling `helpers.rs`) where the next feature in the same family can use it.
+4. **Symmetric variants demand symmetric implementations.** When two functions handle "current dir" vs "saved workspace" — or "agent" vs "shell" — or "Linux" vs "macOS" — the per-variant deltas should be data, not control flow. If both paths run `f()` + `g()` + `h()` but in slightly different order or with one missing call, the missing call is almost always a bug waiting to surface (one of the variants got extended, the other didn't). Pull the shared sequence into a single function and pass the variant-specific bits as arguments.
+5. **Constraints / extension points beat copies.** If a new caller needs *slightly* different behaviour, prefer (in order): (a) a new parameter on the existing function with a sensible default; (b) a small `enum` whose match lives inside the existing function; (c) a trait the existing function takes by reference. Forking the function into `do_foo_for_x` and `do_foo_for_y` is the last resort, and only when the divergence is structural enough that a shared body would be more confusing than two siblings.
+
+Why this rule exists: every parallel implementation is a future bug. When the operator (or an agent) extends one of the two paths and forgets the other, the divergence shows up later as "feature works on workspace screen but not current-directory screen" — exactly the class of bug this project has hit before. The two functions look so close that the missing call site reads as obviously correct in isolation, and only a side-by-side diff or an end-to-end test catches it. Adding a parameter to one function makes both paths advance together; adding a second function makes them drift.
+
+Examples of the kind of pattern this rule blocks (drawn from real findings):
+
+- `sidebar_inputs_for_workspace` and `sidebar_inputs_for_current_dir` build the same `SidebarInputs` struct with overlapping body. Extending one to surface a new field while leaving the other untouched is the bug. The fix is to factor the divergent piece (picker-role resolution, role-binding presence) into helpers both functions call, not to add another sibling function for a third selection kind.
+- `focused_block_still_scrollable` matching only `ManagerListRow::SavedWorkspace` for the global-mounts focus while the corresponding render path also accepts `ManagerListRow::CurrentDirectory`. The render and scrollability checks must read from the same selection-to-rows helper, otherwise the focus calculation lags behind the visible content.
+- Adding a per-agent `LAUNCH=` block to `docker/runtime/entrypoint.sh` when an existing block already handles "agent X with optional credential mount" via a `case`. The new agent should extend the `case`, not duplicate the surrounding `seed_home_dir` / chmod / exec scaffolding.
+
+When you do choose to duplicate (because the deltas are too structural for a shared body, or the shared body would defer the divergent decision to a runtime branch that hurts readability), leave a one-line comment on each copy naming the sibling and the *reason* divergence is preserved. That way the next reader sees the trade-off up front and does not "fix" the duplication by sweeping both copies into a confusing common path.
+
+This rule applies equally to Rust source, Dockerfile snippets in `docker/`, shell scripts under `docker/runtime/`, `.zshrc` / `config.fish` / hook scripts under `docker/construct/`, `justfile` recipes, CI workflow steps under `.github/workflows/`, and TypeScript helpers under `docs/scripts/`. The cost of one good helper is much smaller than the cost of three slightly-different copies and the bugs that follow from extending only one of them.
+
 ## Changelog (agent-only)
 
 **Do not add entries to `CHANGELOG.md` until the first tagged release.**
