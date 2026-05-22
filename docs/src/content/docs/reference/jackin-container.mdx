@@ -129,7 +129,7 @@ The top two rows of the host terminal are owned by `jackin-container` and never 
 
 - **`jackin'` brand pill** — bright-green background, near-black text. Always visible. When an operator shares their screen, others can immediately see the container is running inside jackin.
 - **Session tabs** — one tab per session. Active tab is bold and green. Inactive tabs are grey. Mouse-clickable. Tabs show a state glyph for the session roll-up. The blocked attention glyph is latched: incidental PTY output does not clear it, and explicit operator keyboard input to that pane does.
-- **Identity strip** — container / role details and the clickable container-info entry point. The modal shows the full container ID, role, active pane's agent, current workdir, current git branch when the workdir is a repository, and a best-effort GitHub pull request URL from `gh pr view` when one exists for that branch.
+- **Identity strip** — container / role details and the clickable container-info entry point. The modal opens immediately with loading placeholders for git metadata, then shows the full container ID, role, active pane's agent, current workdir, current git branch when the workdir is a repository, and a best-effort open GitHub pull request URL from `gh pr list --head` when one exists for that branch.
 
 The status bar is drawn after hiding the cursor, and the cursor is restored after the draw. It never causes the pane content to repaint unnecessarily.
 

@@ -112,6 +112,9 @@ pub struct Multiplexer {
     /// Deadline for hiding the transient "Copied!" badge in the
     /// container-info dialog after a jackin-owned OSC 52 copy.
     container_info_copy_deadline: Option<Instant>,
+    /// Monotonic token for the background git / GitHub metadata
+    /// lookup backing the currently-open container-info dialog.
+    container_info_request_id: u64,
     /// Workspace workdir read from `JACKIN_WORKDIR` at daemon startup.
     /// Every spawned PTY (agent or shell) receives this as its `cwd`
     /// so the operator's panes open in the workspace they configured
@@ -306,6 +309,7 @@ impl Multiplexer {
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: pointer_shapes_supported_from_env(),
             container_info_copy_deadline: None,
+            container_info_request_id: 0,
             workdir,
         }
     }
@@ -424,19 +428,57 @@ impl Multiplexer {
             .and_then(|id| self.sessions.get(&id))
             .and_then(|s| s.agent.clone());
         let container_name = self.status_bar.container_name().to_string();
-        // Resolve on every open. The operator may switch branches from
-        // any pane while the container stays alive, so branch / PR
-        // metadata must never be cached on the Multiplexer.
-        let git_context = workdir_git_context(&self.workdir);
+        self.container_info_request_id = self.container_info_request_id.wrapping_add(1);
+        let request_id = self.container_info_request_id;
+        let workdir = self.workdir.clone();
+        let event_tx = self.event_tx.clone();
         self.dialog_push(Dialog::ContainerInfo {
             container_name,
             role: self.status_bar.role().to_string(),
             focused_agent,
             workdir: self.workdir.to_string_lossy().into_owned(),
-            git_branch: git_context.branch,
-            pull_request_url: git_context.pull_request_url,
+            git_loading: true,
+            git_branch: None,
+            pull_request_url: None,
             copied: false,
         });
+        // Resolve on every open. The operator may switch branches from
+        // any pane while the container stays alive, so branch / PR
+        // metadata must never be cached on the Multiplexer. The git
+        // and gh commands can touch disk and network, so they run off
+        // the render path and patch the visible dialog when complete.
+        std::thread::spawn(move || {
+            let git_context = workdir_git_context(&workdir);
+            let _ = event_tx.send(SessionEvent::ContainerInfoLoaded {
+                request_id,
+                branch: git_context.branch,
+                pull_request_url: git_context.pull_request_url,
+            });
+        });
+    }
+
+    fn apply_container_info_loaded(
+        &mut self,
+        request_id: u64,
+        branch: Option<String>,
+        pull_request_url: Option<String>,
+    ) -> bool {
+        if request_id != self.container_info_request_id {
+            return false;
+        }
+        let Some(Dialog::ContainerInfo {
+            git_loading,
+            git_branch,
+            pull_request_url: current_pull_request_url,
+            ..
+        }) = self.dialog_top_mut()
+        else {
+            return false;
+        };
+        *git_loading = false;
+        *git_branch = branch;
+        *current_pull_request_url = pull_request_url;
+        true
     }
 
     /// Pop the top dialog. Returns `Some(prev)` when something was on
@@ -2624,6 +2666,21 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                             return Ok(());
                         }
                     }
+                    SessionEvent::ContainerInfoLoaded {
+                        request_id,
+                        branch,
+                        pull_request_url,
+                    } => {
+                        if mux.apply_container_info_loaded(
+                            request_id,
+                            branch,
+                            pull_request_url,
+                        ) {
+                            let frame =
+                                mux.compose_full_frame(FullRedrawReason::DialogChange);
+                            mux.send_output(frame);
+                        }
+                    }
                 }
             }
 
@@ -3061,6 +3118,9 @@ struct WorkdirGitContext {
     pull_request_url: Option<String>,
 }
 
+const GIT_CONTEXT_COMMAND_TIMEOUT: Duration = Duration::from_millis(1500);
+const GH_PULL_REQUEST_COMMAND_TIMEOUT: Duration = Duration::from_secs(8);
+
 fn workdir_git_context(workdir: &Path) -> WorkdirGitContext {
     let branch = git_current_branch(workdir);
     let pull_request_url = branch
@@ -3073,21 +3133,26 @@ fn workdir_git_context(workdir: &Path) -> WorkdirGitContext {
 }
 
 fn git_current_branch(workdir: &Path) -> Option<String> {
-    command_stdout_trimmed(
+    command_stdout_trimmed_with_timeout(
         Command::new("git")
             .arg("-C")
             .arg(workdir)
             .args(["branch", "--show-current"]),
+        GIT_CONTEXT_COMMAND_TIMEOUT,
     )
 }
 
 fn gh_pull_request_url(workdir: &Path, branch: &str) -> Option<String> {
-    let url = command_stdout_trimmed(
+    let url = command_stdout_trimmed_with_timeout(
         Command::new("gh")
             .current_dir(workdir)
             .env("GH_PROMPT_DISABLED", "1")
             .env("GH_NO_UPDATE_NOTIFIER", "1")
-            .args(["pr", "view", branch, "--json", "url", "--jq", ".url"]),
+            .args([
+                "pr", "list", "--head", branch, "--state", "open", "--limit", "1", "--json", "url",
+                "--jq", ".[0].url",
+            ]),
+        GH_PULL_REQUEST_COMMAND_TIMEOUT,
     )?;
     if url == "null" || !(url.starts_with("https://") || url.starts_with("http://")) {
         None
@@ -3096,7 +3161,12 @@ fn gh_pull_request_url(workdir: &Path, branch: &str) -> Option<String> {
     }
 }
 
+#[cfg(test)]
 fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
+    command_stdout_trimmed_with_timeout(command, GIT_CONTEXT_COMMAND_TIMEOUT)
+}
+
+fn command_stdout_trimmed_with_timeout(command: &mut Command, timeout: Duration) -> Option<String> {
     command.stdout(Stdio::piped()).stderr(Stdio::null());
     let mut child = command.spawn().ok()?;
     let mut stdout = child.stdout.take()?;
@@ -3119,7 +3189,7 @@ fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
             // carries the useful data, so treat ECHILD as "exited".
             Err(_) => break,
         }
-        if started.elapsed() >= Duration::from_millis(1500) {
+        if started.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
             return None;
@@ -3465,12 +3535,14 @@ mod tests {
         let Some(Dialog::ContainerInfo {
             copied: false,
             workdir,
+            git_loading,
             ..
         }) = mux.dialog_top()
         else {
             panic!("identity click should open container info")
         };
         assert_eq!(workdir, "/workspace");
+        assert!(*git_loading);
     }
 
     #[test]
@@ -3481,6 +3553,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace".to_string(),
+            git_loading: false,
             git_branch: Some("main".to_string()),
             pull_request_url: Some("https://github.com/jackin-project/jackin/pull/1".to_string()),
             copied: true,
@@ -3496,6 +3569,79 @@ mod tests {
     }
 
     #[test]
+    fn container_info_loaded_updates_matching_open_dialog() {
+        let mut mux = test_mux(24, 100);
+        mux.container_info_request_id = 7;
+        mux.dialog_push(Dialog::ContainerInfo {
+            container_name: "jk-test-container".to_string(),
+            role: "the-architect".to_string(),
+            focused_agent: Some("claude".to_string()),
+            workdir: "/workspace".to_string(),
+            git_loading: true,
+            git_branch: None,
+            pull_request_url: None,
+            copied: false,
+        });
+
+        assert!(mux.apply_container_info_loaded(
+            7,
+            Some("feature/container-info".to_string()),
+            Some("https://github.com/jackin-project/jackin/pull/414".to_string()),
+        ));
+
+        let Some(Dialog::ContainerInfo {
+            git_loading,
+            git_branch,
+            pull_request_url,
+            ..
+        }) = mux.dialog_top()
+        else {
+            panic!("container info dialog should still be open")
+        };
+        assert!(!*git_loading);
+        assert_eq!(git_branch.as_deref(), Some("feature/container-info"));
+        assert_eq!(
+            pull_request_url.as_deref(),
+            Some("https://github.com/jackin-project/jackin/pull/414")
+        );
+    }
+
+    #[test]
+    fn container_info_loaded_ignores_stale_request() {
+        let mut mux = test_mux(24, 100);
+        mux.container_info_request_id = 7;
+        mux.dialog_push(Dialog::ContainerInfo {
+            container_name: "jk-test-container".to_string(),
+            role: "the-architect".to_string(),
+            focused_agent: Some("claude".to_string()),
+            workdir: "/workspace".to_string(),
+            git_loading: true,
+            git_branch: None,
+            pull_request_url: None,
+            copied: false,
+        });
+
+        assert!(!mux.apply_container_info_loaded(
+            6,
+            Some("stale".to_string()),
+            Some("https://github.com/jackin-project/jackin/pull/1".to_string()),
+        ));
+
+        let Some(Dialog::ContainerInfo {
+            git_loading,
+            git_branch,
+            pull_request_url,
+            ..
+        }) = mux.dialog_top()
+        else {
+            panic!("container info dialog should still be open")
+        };
+        assert!(*git_loading);
+        assert_eq!(git_branch, &None);
+        assert_eq!(pull_request_url, &None);
+    }
+
+    #[test]
     fn container_info_id_click_copies_and_renders_feedback() {
         let mut mux = test_mux(40, 120);
         mux.pointer_shapes_supported = false;
@@ -3504,6 +3650,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace".to_string(),
+            git_loading: false,
             git_branch: Some("main".to_string()),
             pull_request_url: Some("https://github.com/jackin-project/jackin/pull/1".to_string()),
             copied: false,

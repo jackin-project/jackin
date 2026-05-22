@@ -407,8 +407,18 @@ pub struct Session {
 }
 
 pub enum SessionEvent {
-    Output { session_id: u64, data: Vec<u8> },
-    Exited { session_id: u64 },
+    Output {
+        session_id: u64,
+        data: Vec<u8>,
+    },
+    Exited {
+        session_id: u64,
+    },
+    ContainerInfoLoaded {
+        request_id: u64,
+        branch: Option<String>,
+        pull_request_url: Option<String>,
+    },
 }
 
 impl Session {

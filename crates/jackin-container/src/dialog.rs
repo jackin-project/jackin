@@ -121,6 +121,7 @@ pub enum Dialog {
         role: String,
         focused_agent: Option<String>,
         workdir: String,
+        git_loading: bool,
         git_branch: Option<String>,
         pull_request_url: Option<String>,
         copied: bool,
@@ -883,6 +884,7 @@ impl Dialog {
                 role,
                 focused_agent,
                 workdir,
+                git_loading,
                 git_branch,
                 pull_request_url,
                 copied,
@@ -897,6 +899,7 @@ impl Dialog {
                     role,
                     focused_agent.as_deref(),
                     workdir,
+                    *git_loading,
                     git_branch.as_deref(),
                     pull_request_url.as_deref(),
                     *copied,
@@ -1698,6 +1701,7 @@ fn render_container_info(
     role: &str,
     focused_agent: Option<&str>,
     workdir: &str,
+    git_loading: bool,
     git_branch: Option<&str>,
     pull_request_url: Option<&str>,
     copied: bool,
@@ -1720,10 +1724,10 @@ fn render_container_info(
             false,
         ),
         ("Workdir", non_empty_or_dim(workdir), false),
-        ("Branch", non_empty_or_dim(git_branch.unwrap_or("")), false),
+        ("Branch", git_context_value(git_branch, git_loading), false),
         (
             "Pull Request",
-            non_empty_or_dim(pull_request_url.unwrap_or("")),
+            git_context_value(pull_request_url, git_loading),
             false,
         ),
     ];
@@ -1781,6 +1785,14 @@ fn non_empty_or_dim(s: &str) -> String {
         "(none)".to_string()
     } else {
         s.to_string()
+    }
+}
+
+fn git_context_value(value: Option<&str>, loading: bool) -> String {
+    if loading {
+        "loading...".to_string()
+    } else {
+        non_empty_or_dim(value.unwrap_or(""))
     }
 }
 
@@ -2343,6 +2355,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace/jackin".to_string(),
+            git_loading: false,
             git_branch: Some("feature/container-info".to_string()),
             pull_request_url: Some("https://github.com/jackin-project/jackin/pull/123".to_string()),
             copied: false,
@@ -2423,6 +2436,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace/jackin".to_string(),
+            git_loading: false,
             git_branch: Some("feature/container-info".to_string()),
             pull_request_url: Some("https://github.com/jackin-project/jackin/pull/123".to_string()),
             copied: true,
@@ -2441,6 +2455,7 @@ mod tests {
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
             workdir: "/workspace/jackin".to_string(),
+            git_loading: false,
             git_branch: Some("feature/container-info".to_string()),
             pull_request_url: Some("https://github.com/jackin-project/jackin/pull/123".to_string()),
             copied: true,
@@ -2467,6 +2482,27 @@ mod tests {
         assert!(rendered.contains("feature/container-info"));
         assert!(rendered.contains("Pull Request"));
         assert!(rendered.contains("https://github.com/jackin-project/jackin/pull/123"));
+    }
+
+    #[test]
+    fn container_info_renders_git_context_loading_state() {
+        let d = Dialog::ContainerInfo {
+            container_name: "jk-abc123-thearchitect".to_string(),
+            role: "the-architect".to_string(),
+            focused_agent: Some("claude".to_string()),
+            workdir: "/workspace/jackin".to_string(),
+            git_loading: true,
+            git_branch: None,
+            pull_request_url: None,
+            copied: false,
+        };
+        let mut buf = Vec::new();
+        d.render(&mut buf, 40, 120);
+        let rendered = String::from_utf8_lossy(&buf);
+
+        assert!(rendered.contains("Branch"));
+        assert!(rendered.contains("Pull Request"));
+        assert_eq!(rendered.matches("loading...").count(), 2);
     }
 
     #[test]
