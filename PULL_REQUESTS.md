@@ -4,20 +4,14 @@ Canonical guide for how pull requests are created, iterated on, reviewed, and me
 
 Read this file before opening, updating, or merging a pull request.
 
-All pull requests created by agents must target `main` as the base branch unless
-the operator explicitly names a different target branch in the same request.
-Checking out, researching, or stacking on another branch does not imply that the
-opened pull request should target that branch. If a change depends on an
-unmerged branch, open a `main`-targeted PR only after the dependency is merged
-or explicitly ask the operator how they want the dependency represented.
+## Two reading surfaces
 
-PR-body refreshes during iteration are **operator-triggered, not commit-triggered.** Do not rewrite the body after every follow-up commit. The operator may iterate on a PR for many commits before deciding the shape is right; auto-updating the body each time wastes attention and produces churn. Refresh the body only when:
+PR rules are split by audience to avoid duplication:
 
-1. The operator explicitly asks for it ("refresh the PR body", "update the description", "the body is out of date").
-2. The PR is moving to merge-readiness — see "[Verify PR title and description before merging](#verify-pr-title-and-description-before-merging)" for the merge-time reconciliation step.
-3. The current body has become *actively misleading* for a reviewer landing on the PR right now (e.g. the body claims a feature that was descoped, or a test count the runner now contradicts).
+- **This file** is the **shared** PR flow — body-shape spec, Verify-locally template, isolation-env-var decision rule, docs-only PR requirements, review rules, roadmap-retirement procedure. Both humans and agents start here.
+- [`.github/AGENTS.md`](.github/AGENTS.md) is the **agent-only extras** — per-PR merge authorization, base-branch requirement, force-push policy, body-construction shell-quoting rules, iteration-vs-merge-readiness behavior, CI-green-before-merge, title/description reconciliation, squash-merge format, and the `jackin-container` smoke-test mandate. Also covers GitHub Actions workflow authoring (mise-only installs, env scope, publish gating). Agents read this in addition to the shared file; the `.github/CLAUDE.md` include makes Claude Code auto-load it whenever working under `.github/`.
 
-When the operator does ask for a refresh, re-read the full diff (`gh pr diff <PR>` + `git log` on the branch) and rewrite the affected sections so they match what's currently shipped. Surface the changes briefly in your reply.
+When agent-only and shared rules cover the same topic (e.g. "include a Verify-locally section"), the shared rule states the *what* and the agent-only rule states the agent-specific *how/when/who*.
 
 ## Canonical body shape — see `.github/PULL_REQUEST_TEMPLATE.md`
 
@@ -39,21 +33,9 @@ What the template deliberately omits:
 - Links to deployed docs URLs (those break post-merge; see "[Never link deployed docs from the PR body](#pr-body--keep-it-tight-let-github-flow-the-text)").
 - Mechanical CI-shaped checks (sidebar diffs, link audits, file-tree assertions belong in CI, not in the PR body).
 
-## Pull Request Merging (agent-only)
-
-**Agents must never merge a pull request without explicit per-PR confirmation from the human operator.**
-
-- Open the PR, share the URL, and stop. The default response after creating a PR is "PR URL — ready for your review" — not a merge command in the same turn.
-- Prior "just do it" / "don't wait for me" / "proceed autonomously" / "merge silently" authorizations apply only to the specific workstream the operator was discussing when they issued them. They do not carry forward to later PRs in the same session or to new sessions. Treat each PR as a fresh approval gate.
-- `--admin` / branch-protection bypass is a privilege, not a default. Use it only when the operator explicitly authorizes merging *this specific PR*.
-- Phrasing that does NOT authorize merge (ask anyway): "proceed", "don't wait for me", "do everything autonomously", "looks good". Phrasing that does: "merge it", "merge this one", "you can merge now", "ship it" (still prefer to confirm "ship = merge now?" for high-blast-radius PRs).
-- Bounded authorization: if the operator says "merge all the PRs we just discussed" or similar, merge only the named set — not unrelated PRs that exist or that you open later.
-
-If you are uncertain whether authorization applies to the PR in front of you, ask. The cost of pausing is ~30 seconds; the cost of merging something the operator wasn't ready for is much higher.
-
 ## Include local checkout instructions in every PR
 
-Every pull request created by an agent must include a copy-pasteable "Verify locally" section in the PR body, and the agent's final response should repeat the same commands after sharing the PR URL.
+Every pull request must include a copy-pasteable "Verify locally" section in the PR body. Agents creating PRs must also repeat the same commands in their final response after sharing the PR URL (agent-specific rule — see [`.github/AGENTS.md`](.github/AGENTS.md)).
 
 Use the real PR number, repository URL, branch name, and verification commands for the change. Start from a separate test directory so the operator can inspect the PR without disturbing their normal working tree. The clone step must be idempotent: reuse the folder if it already exists, otherwise clone it. Prefer the actual head branch name over GitHub's synthetic `pull/<PR_NUMBER>/head` ref for same-repository PRs; use the synthetic PR ref only when the branch cannot be fetched directly, such as a fork PR without an added fork remote.
 
@@ -61,17 +43,13 @@ Split verification into named blocks only when each block contains meaningful co
 
 ### jackin-container PRs
 
-Any PR that touches `crates/jackin-container/` (the in-container multiplexer binary) requires a `### jackin-container smoke` block in the Verify locally section, in addition to the standard User Smoke block. Unit tests and CI do not cover end-to-end multiplexer behavior; a live `jackin load` that enters the container is the only way to verify the status bar, input routing, pane splits, and session switching work correctly.
-
-The block must lead with the canonical eval one-shot build invocation:
+Any PR touching `crates/jackin-container/` requires a `### jackin-container smoke` block in the Verify-locally section, leading with the canonical eval one-shot:
 
 ```sh
 eval "$(cargo run --bin build-jackin-container -- --export)"
 ```
 
-`build-jackin-container` invokes `cargo zigbuild` (not Docker) to cross-compile the Linux binary, writes the artifact to the host cache, and the `--export` flag prints `export JACKIN_CONTAINER_BIN=<path>` — wrapping in `eval` both builds and points `ensure_available` at the freshly built binary in one step. The eval form is required (not optional) because hand-rolled `target/<triple>/release/jackin-container` exports silently break when the operator switches architectures or moves checkouts. First build takes ~2-3 minutes; subsequent builds are incremental via cargo's cache. Editing any file under `crates/jackin-container/src/` does NOT auto-invalidate the binary on disk — the operator must re-run the eval. To purge the host cache entirely (e.g. switching between published and locally built binaries): `rm -rf ~/.jackin/cache/jackin-container/`.
-
-The launch command that follows must hit the changed surface — usually `cargo run --bin jackin -- load the-architect . --debug` or `cargo run --bin jackin -- console --debug`. The block must also state what the PR changed and what the operator should specifically verify inside the container, beyond the baseline checklist (status bar visible, `Ctrl+\` palette opens, agent TUI renders, keystrokes pass through).
+The full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports are forbidden, the required verify checklist, prefix-surface opt-in — lives in [`.github/AGENTS.md`](.github/AGENTS.md) under `## jackin-container PRs (hard rule)`. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships the block verbatim; copy it rather than rewriting the build invocation.
 
 A `crates/jackin-container/` PR without this block is incomplete. Unit tests passing is necessary but not sufficient.
 
@@ -222,27 +200,6 @@ export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
 
 Do not include `JACKIN_CONSTRUCT_IMAGE` in PRs that do not touch the construct image — the isolation pattern is about scoping test risk, not about exhaustively listing every available env var.
 
-
-## Author the PR body so it renders correctly on GitHub
-
-The PR body is Markdown — what the operator sees on GitHub is what matters. Two recurring failure modes when an agent constructs the body inside a shell command:
-
-1. **Do not escape backticks or `$`.** Triple-backtick fences must be literal `` ``` ``, not `\`\`\``. Variable references inside fenced code blocks (e.g. `$HOME`, `$PR_NUMBER`) must be literal `$`, not `\$`. Escaping them produces visibly broken output like `\`\`\`sh` and `\$HOME` in the rendered PR.
-2. **Use `gh pr create --body-file <file>` (not `--body "..."`)** when the body contains code fences, dollar signs, or anything else that interacts with shell quoting. Write the body to a temp file with a single-quoted `<<'EOF'` heredoc — single quotes already disable shell expansion and command substitution, so no manual escaping is needed inside the heredoc. The pattern is:
-
-   ~~~sh
-   cat > /tmp/pr-body.md <<'EOF'
-   ## Summary
-
-   ```sh
-   echo "$HOME"
-   ```
-   EOF
-   gh pr create --body-file /tmp/pr-body.md ...
-   ~~~
-
-   Then immediately verify the rendered body with `gh pr view <PR> --json body -q .body`. If you see `\`` or `\$` anywhere, the body is broken — fix it with `gh pr edit <PR> --body-file <file>` before moving on.
-
 ## PR body — keep it tight, let GitHub flow the text
 
 The PR body is read in GitHub's renderer, which already wraps long lines at the viewport width. Treat that as the source of truth for line breaks and follow these rules:
@@ -262,6 +219,8 @@ The PR body is read in GitHub's renderer, which already wraps long lines at the 
   ```
 
   Do not use `####` or `###` for the URLs — that creates extra vertical space and pushes the description away from its link. Do not put the URL in plain prose with the description tail-trailing it on the same wrapped line — that hides the link inside a paragraph. The bold-URL + soft-break + description pattern keeps each entry one visual block while still flowing inside GitHub's renderer.
+
+For agent-side body construction (shell quoting, `gh pr create --body-file` vs `--body`, heredoc pattern), see [`.github/AGENTS.md`](.github/AGENTS.md) under `## Author the PR body so it renders correctly on GitHub`.
 
 ## Reviewing a PR
 
@@ -289,60 +248,6 @@ When you flag a possible violation, surface it like this:
 
 The operator's call decides the outcome — the agent's job is to make sure the question is asked, not to silently approve or block. New principles or principle changes happen at design-principles-page level (with a PR), not inside an unrelated feature PR.
 
-## Applying review fixes to an open PR
-
-When the operator asks for code review fixes on a PR that has **not yet been merged**, commit the fixes directly to the PR's existing branch — do not create a new branch or open a new PR unless the operator explicitly requests it.
-
-- Check out the PR branch (`gh pr checkout <PR>` or `git checkout <branch>`) before making changes.
-- Commit fixes to that branch and push; the open PR picks up the new commits automatically.
-- Creating a separate PR on top of an unmerged PR fragments review history and forces an extra merge step — avoid it.
-
-## Iterating on operator feedback for an open PR
-
-When the operator gives design or behavior feedback on an open PR, treat it as an iteration step unless they explicitly say the PR is ready for final verification, merge preparation, or review handoff.
-
-During iteration:
-
-- Make the requested code changes on the PR branch.
-- It is okay to run a narrow, targeted test or command that directly exercises the code just changed, especially when it catches obvious local breakage cheaply.
-- Do **not** run broad/final verification by default during iteration. In particular, do not run `cargo fmt -- --check`, `cargo clippy -- -D warnings`, `cargo nextest run`, or GitHub Actions polling unless the operator explicitly asks for verification/final prep or the PR is moving to merge-readiness.
-- If a small targeted run reveals a formatting or clippy issue, fix the obvious local cause when it is part of the changed code, but do not escalate into the full formatting + clippy + full-suite pipeline unless the operator asks.
-- Do not update the PR body after every iteration unless the operator asks for it or the PR description has become actively misleading for someone reviewing right now.
-- Do not amend, force-push, or wait for GitHub Actions as a reflex after every small feedback pass. Force-pushes require explicit operator approval per [BRANCHING.md](BRANCHING.md). If the branch already has a PR open, a normal follow-up commit is acceptable during review unless the operator asked to keep the PR as one amended commit.
-- Summarize what changed and tell the operator what lightweight local check, if any, was run. Then stop so the operator can validate the UI/behavior.
-
-Move to merge-readiness only when the operator gives a clear signal such as "this is correct", "prepare it", "ready for review", "run the full checks", or "now we can merge". At that point run the full verification suite, reconcile the PR body with the final diff, push/update the branch, and check CI.
-
-Why this rule exists: the operator often needs several UI/behavior iterations before deciding the shape is right. Running formatting, clippy, the full test suite, PR body updates, and CI checks on every intermediate pass wastes time and tokens before the operator has validated the design.
-
-## CI must be green before merging
-
-**Never merge a pull request unless all required CI checks pass.** This is non-negotiable regardless of how the operator phrases the merge request.
-
-Before invoking the merge command:
-
-1. **Check CI status**: run `gh pr checks <PR> --repo <owner/repo>` and confirm every required check shows `pass`. A check in `pending` or `fail` state means do not merge — wait or fix first.
-2. **Do not force-merge to bypass failures**: do not use `--admin` or other bypass flags to override failing checks unless the operator explicitly names the specific failing check and states it is safe to bypass for an articulated reason.
-3. **Always use `gh` (GitHub CLI) for all GitHub interactions**: PR creation, review, status checks, and merging must go through `gh`, not GitHub connectors, raw `git push` to protected branches, or direct API calls. This keeps the audit trail consistent and ensures branch-protection rules are respected.
-
-If CI is red when the operator says "merge it", respond: "CI is failing on `<check name>` — I won't merge until it's green. Fix the failure and then I'll merge." If the operator insists on merging anyway, ask them to explicitly acknowledge the specific failing check.
-
-Why this rule exists: a red main branch blocks the whole team. The cost of one bad merge far exceeds the cost of pausing to fix CI.
-
-## Verify PR title and description before merging
-
-When the operator confirms a PR can be merged, verify the PR's title and description still match the actual code being merged **before invoking the merge**.
-
-- Read the current metadata: `gh pr view <PR>`.
-- Read the actual diff being merged: `gh pr diff <PR>` (and `git log` on the PR branch if the diff is large).
-- Check whether the PR ships, advances, defers, or invalidates any roadmap item under `docs/src/content/docs/reference/roadmap/`. If the roadmap is stale, update the roadmap item and `docs/src/content/docs/reference/roadmap.mdx`, refresh the PR description, push that change, and only then continue toward merge. A merge request is the final freshness gate, even if earlier review missed the roadmap update.
-- Compare. The metadata is stale if any of these are true: commits added scope that the title/body doesn't reflect; a feature was descoped after the PR opened; the test plan is wrong relative to what was actually verified; file paths cited in the body have moved or been renamed; the title still says "design doc only" / "WIP" / etc. while the PR now contains implementation.
-- If stale, update the title and/or body via `gh pr edit <PR>` *before* running the merge. Squash-merge writes the PR title verbatim into the commit message; merging with stale metadata bakes the drift into history permanently.
-
-Don't ask the operator for permission to bring the metadata into agreement with the diff — they've authorized merging the *content*, and reconciling the description is part of finishing the merge cleanly. *Do* surface the discrepancy briefly in your reply ("title was 'docs(specs):' but the PR now ships the feature too — updated to 'feat(cli):' before merging") so the operator can object if your interpretation is wrong. Only pause for confirmation if the metadata rewrite would represent a meaningful change the operator might not have noticed (e.g. the PR has grown from "fix bug" into "rewrite module" — flag it and confirm before both updating and merging).
-
-Why this rule exists: the operator relies on PR titles and bodies as the long-term navigable record of what shipped. Drift between description and diff is the single most common cause of "what does this PR actually do?" archaeology after the fact.
-
 ## Retire fully-resolved roadmap items in the same PR
 
 When a PR ships the last remaining piece of a roadmap item — every feature, sub-phase, and follow-up tracked by the page is now implemented — delete the roadmap `.mdx` file in that same PR rather than leaving it behind as a `Status: Resolved` page. The retirement steps:
@@ -357,7 +262,23 @@ When a PR ships the last remaining piece of a roadmap item — every feature, su
 
 A `Status: Resolved` roadmap page that still sits in the directory is a smell, not a shipping target. The only legitimate reasons to keep one are (a) genuine remaining work tracked on the same page, or (b) load-bearing inbound links from open roadmap items that still treat the page as an internal contract. Anything else gets retired in the PR that ships the last piece — not deferred to a later cleanup PR, because every later contributor reading the resolved page treats it as authoritative until it is gone.
 
-## Workflow / CI changes (agent-only) — see `.github/AGENTS.md`
+## Agent-only rules — see `.github/AGENTS.md`
+
+The following rules apply only to agents and live in [`.github/AGENTS.md`](.github/AGENTS.md). Read that file before opening, iterating on, or merging a PR as an agent:
+
+- **Per-PR merge authorization** — agents never merge without explicit "merge it" confirmation; prior session authorizations don't carry forward.
+- **Base branch** — agent-created PRs target `main` unless the operator explicitly names a different target.
+- **Force-push authorization** — agents never rewrite an existing remote branch without explicit operator approval.
+- **PR-body refresh policy** — refresh on operator request or at merge-readiness, not after every iteration commit.
+- **Body construction** — `gh pr create --body-file` (not `--body "..."`), single-quoted heredoc, no escaped backticks or `$`.
+- **Applying review fixes** — commit to the existing PR branch, not a new one.
+- **Iterating on operator feedback** — narrow targeted checks during iteration; full verification suite only at merge-readiness.
+- **CI must be green before merging** — `gh pr checks` confirmation before every merge; no `--admin` bypass without explicit per-failure authorization.
+- **Verify PR title/description before merging** — reconcile metadata with the diff before invoking `gh pr merge`.
+- **PR squash merge messages** — squash-only, `(#PR_NUMBER)` suffix, `Signed-off-by` + `Co-authored-by` trailers at the end.
+- **`jackin-container` PRs** — the eval one-shot build invocation, the verify checklist, the prefix-surface opt-in.
+
+## Workflow / CI changes — see `.github/AGENTS.md`
 
 All rules for authoring and modifying CI workflow files live in [`.github/AGENTS.md`](.github/AGENTS.md). Read that file before modifying any workflow. It covers:
 
@@ -365,58 +286,3 @@ All rules for authoring and modifying CI workflow files live in [`.github/AGENTS
 - **Env-var scope** — third-party-CLI env vars at job level, never workflow level.
 - **Publishing gates** — registry / release / Homebrew steps must hard-gate on `main`.
 - **Smoke-testing push-only jobs** — `gh workflow run --ref <branch>` before merge for jobs that don't run on `pull_request`.
-
-## PR squash merge messages
-
-When an agent merges a pull request, the resulting squash commit must preserve the GitHub PR reference and enough attribution to make the shipped history auditable.
-
-- Always use squash merge. Agents must not use merge commits or rebase merges for jackin pull requests.
-- Use `gh pr merge <PR> --squash --body-file <file>` for the merge operation; never use a GitHub connector or direct API call to merge.
-- The squash commit title must be the final PR title with the PR number suffix: `type(scope): summary (#PR_NUMBER)`.
-- Prefer GitHub's default squash title when it already matches that format.
-- If overriding the commit title, manually append `(#PR_NUMBER)`.
-- For Codex `gh` merges: do not pass a custom title unless necessary; if one is passed, it must include `(#PR_NUMBER)`.
-- Before merging, explicitly check the exact title that will be written to
-  history. If using GitHub's default, confirm it already includes `(#PR_NUMBER)`.
-  If passing `--subject`, build it from the final PR title plus the PR suffix
-  and read it back before running the merge command.
-- Generate the squash commit body at merge time in a temporary file. Do not pollute the visible PR description with commit-only trailer footers just to influence GitHub's default squash message.
-- The generated squash commit body must summarize what actually shipped in clear prose. Use the PR title/body, diff, and commit messages as source material, but do not paste the full PR body, local verification instructions, checklists, or raw commit list into the final commit.
-- The generated body can be one paragraph for small PRs or a few concise paragraphs for larger PRs. It should be detailed enough to explain the change when reading `git log`, but free of process noise.
-- Extract trailers from the PR commits with `gh pr view <PR> --json commits` and carry them into the generated squash body. Include the operator's `Signed-off-by` trailer when present/required and one `Co-authored-by` trailer for each AI agent that materially contributed to the PR. Include multiple agent trailers when multiple agents contributed.
-- Keep trailers at the very end of the generated squash body so Git parses them as trailers. De-duplicate repeated trailers from multi-commit PRs.
-
-Good squash body:
-
-```text
-Prefer real branch names for same-repo PR verification, omit placeholder verification sections, and require meaningful local jackin --debug smoke commands for CLI/runtime behavior changes.
-
-Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
-Co-authored-by: Codex <codex@openai.com>
-```
-
-Good squash titles:
-
-```text
-docs: include mise trust in PR verification (#232)
-docs: improve landing hero nav and PR guidance (#231)
-chore(deps): update taiki-e/install-action action to v2.77.1 (#222)
-refactor!: relocate host→container handoff under /jackin/, drop ~/.claude bind mount (#229)
-```
-
-Good squash trailers for a Codex-authored PR:
-
-```text
-Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
-Co-authored-by: Codex <codex@openai.com>
-```
-
-Good squash trailers for a PR with multiple AI agents:
-
-```text
-Signed-off-by: Alexey Zhokhov <alexey@zhokhov.com>
-Co-authored-by: Codex <codex@openai.com>
-Co-authored-by: Claude <noreply@anthropic.com>
-```
-
-This keeps commit history, GitHub commit pages, and local `git log --oneline` visibly linked back to the PR.

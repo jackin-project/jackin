@@ -130,20 +130,14 @@ The single exception is a chain of rapid fixup commits made in one turn — push
 
 This rule applies even when the operator did not explicitly ask to push — finishing the work includes making it visible.
 
-## Pull requests (agent-only) — see `PULL_REQUESTS.md`
+## Pull requests — two reading surfaces
 
-All rules for opening, iterating on, refreshing, reviewing, and merging pull requests live in [`PULL_REQUESTS.md`](PULL_REQUESTS.md). **Read that file before opening any PR.** It covers:
+All pull-request rules live in two places, split by audience:
 
-- Per-PR merge authorization (agents never merge without explicit "merge it" confirmation).
-- Required base branch (agent-created PRs target `main` unless the operator explicitly names a different target branch in the same request).
-- Force-push authorization (agents never rewrite an existing remote branch without explicit operator approval).
-- Required PR body shape (Summary / hard-rule callout / What's deferred / Verify locally / Migration notes).
-- "Verify locally" templates, including the `export TIRITH=0` line that lets multi-line pastes survive the `tirith` paste scanner.
-- PR-body authoring rules — no hard-wrap, no verbosity / duplication, no deployed-docs links, no mechanical CI-shaped checks.
-- PR-body refresh policy: refresh **on operator request** or at merge-readiness, not after every iteration commit.
-- Documentation-only PR requirements (run the docs site locally + bold-URL-per-page format).
-- CI-must-be-green-before-merge, title/description reconciliation, squash-merge messages with PR-number + trailers.
-- Workflow / CI changes — third-party-CLI env vars must be scoped to the consuming job (workflow-level `env:` leaks into every job and breaks tools that read those vars as default-selection); changes to push-only / main-only / `workflow_run`-gated jobs must be smoke-tested via `gh workflow run --ref <feature-branch>` before merge because PR-time CI never exercises them; registry / production publish steps must hard-gate on `main` so PRs and feature-branch dispatches verify-build but never publish.
+- [`PULL_REQUESTS.md`](PULL_REQUESTS.md) — shared PR flow, body-shape spec, Verify-locally template, docs-only PR requirements, roadmap-retirement procedure. Both humans and agents read this. Start here.
+- [`.github/AGENTS.md`](.github/AGENTS.md) — agent-only extras: per-PR merge authorization, base-branch requirement, force-push policy, body-construction shell-quoting rules, iteration vs merge-readiness behavior, CI-green-before-merge, title/description reconciliation, squash-merge format with PR-number + trailers, and the `jackin-container` smoke-test mandate. Also covers GitHub Actions workflow authoring (mise-only installs, job-level env scope, publish gating, smoke-testing push-only jobs).
+
+Discovery flow Claude Code uses: `.github/CLAUDE.md` is `@AGENTS.md`, so the file auto-loads whenever the working directory is under `.github/` — including when reading the PR template.
 
 [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) is the canonical body shape with inline guidance. Copy it as the starting point and fill in the placeholders.
 
@@ -253,70 +247,9 @@ This does not apply to:
 - Inspection commands the operator runs (`pgrep`, `pmset`, `cat`, `ls`) — those aren't jackin invocations.
 - Production recommendations or scripted automation (debug output is too noisy for those).
 
-## Testing `jackin-container` changes locally (agent-only)
+## Testing `jackin-container` changes locally (agent-only) — see `.github/AGENTS.md`
 
-`jackin-container` is the in-container multiplexer binary at `crates/jackin-container/`. Whenever a PR touches any file under `crates/jackin-container/`, the test plan **must** include a live `jackin load` smoke test — unit tests and CI alone are not sufficient because the multiplexer only works end-to-end when running as PID 1 inside a container.
-
-### How the local build works
-
-`ensure_available` in `src/container_binary.rs` resolves the binary in this priority order:
-
-1. **`JACKIN_CONTAINER_BIN=/path` env override.** Used directly, no cache, no download. Set this when iterating on `crates/jackin-container/` source — the path should point at a Linux build produced by `cargo run --bin build-jackin-container`.
-2. **Cache hit** at `~/.jackin/cache/jackin-container/<version>/linux-<arch>/jackin-container`. The cache key is `JACKIN_VERSION` (commit SHA suffix included), so any `cargo build` of jackin invalidates it.
-3. **Download** from the `preview` rolling GitHub Release tag (for `-dev` / `-preview.` versions) or the `v<version>` tag (for tagged releases). Cached after first successful download.
-
-The host does **not** auto-rebuild `crates/jackin-container/` on source edits. To pick up local changes, run `cargo run --bin build-jackin-container` (which invokes `cargo zigbuild`) — the build tool writes the artifact to the cache path and supports `--export` to print a `JACKIN_CONTAINER_BIN=<path>` line suitable for `eval`. Wrapping it in `eval "$(...)"` is the canonical one-shot form because it both builds and points `ensure_available` at the freshly built binary in the same step, with no manual path bookkeeping per-arch.
-
-### Standard smoke test for jackin-container PRs
-
-```bash
-# Build the in-container binary AND export JACKIN_CONTAINER_BIN pointing at
-# the cached artifact in one shot. Use this form in every PR verify-locally
-# block — it survives operator arch changes and avoids stale-path bugs from
-# hand-rolled `target/<triple>/release/jackin-container` paths.
-eval "$(cargo run --bin build-jackin-container -- --export)"
-
-# Build the host CLI.
-cargo build --bin jackin
-
-# Launch.
-cargo run --bin jackin -- console --debug
-```
-
-Inside the container the operator should see:
-- Row 0 status bar: `jackin'  [Claude]` (or the configured agent)
-- Agent TUI starts normally (Claude Code, Codex, etc.)
-- `Ctrl+\` opens the command palette (the default direct shortcut; override with `JACKIN_PALETTE_KEY`)
-- `Alt+arrows` moves pane focus after a split
-- Pasting and extended-key sequences reach the agent unmodified
-
-To exercise the tmux-style prefix surface (`Ctrl+B Space` palette, `Ctrl+B c` agent picker, `Ctrl+B d` detach, `Ctrl+B "` / `Ctrl+B %` splits), opt in before launching:
-
-```bash
-export JACKIN_PREFIX=C-b
-```
-
-If the jackin-container build step prints a `cargo zigbuild` error, the operator should paste the full `--debug` output (`cargo-zigbuild` and `zig` must be on `PATH`; install via `mise install zig cargo:cargo-zigbuild`).
-
-### Forcing a re-download or rebuild
-
-`cargo run --bin build-jackin-container -- --export` overwrites the cached binary on every invocation, so rebuilding is just re-running the eval. To purge the cache entirely (e.g. switching between published and locally built binaries, or testing the download path), clear the cache directory:
-
-```bash
-rm -rf ~/.jackin/cache/jackin-container/
-```
-
-or point `JACKIN_CONTAINER_BIN` at a different binary explicitly.
-
-### What to assert in the PR "Verify locally" section
-
-A PR that changes `crates/jackin-container/` must include a "Verify locally" entry that covers:
-- The build step ran (first-time or incremental) without errors. The build invocation must be the eval one-shot `eval "$(cargo run --bin build-jackin-container -- --export)"`, not a hand-rolled `cargo run --bin build-jackin-container` followed by a per-arch `export JACKIN_CONTAINER_BIN=...` block. The latter form regresses to silently pointing at a stale binary when the operator switches architectures or moves checkouts, while the eval form always exports the path the build tool just wrote.
-- The status bar appeared at row 0 after `jackin load`.
-- The specific behavior changed by the PR was observed to work (e.g. "Ctrl+\ opened the command palette", "pane split rendered correctly", "session switch preserved agent output"). PRs touching the prefix-key surface should mention the `JACKIN_PREFIX=C-b` opt-in.
-- Existing agent session behavior was not regressed (agent TUI renders, mouse events reach the agent).
-
-The PR template at `.github/PULL_REQUEST_TEMPLATE.md` already ships this block as `### jackin-container smoke` — copy it verbatim rather than rewriting the build invocation. The template's recommended form (Option A) is the eval one-shot.
+All rules for the `jackin-container` smoke-test mandate — the eval one-shot build invocation, the `ensure_available` resolution order, the required PR Verify-locally block — live in [`.github/AGENTS.md`](.github/AGENTS.md) under the `## jackin-container PRs (hard rule)` section. Read that file before opening or reviewing a PR that touches `crates/jackin-container/`.
 
 ## TUI design decisions (agent-only)
 

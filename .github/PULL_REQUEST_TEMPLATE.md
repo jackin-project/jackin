@@ -1,6 +1,17 @@
 <!--
-PR body template. The shape and rules below are documented in
-PULL_REQUESTS.md at the repo root — read that before authoring.
+PR body template. Two surfaces describe how to use it:
+
+  - PULL_REQUESTS.md at the repo root — shared PR flow + body-shape
+    spec + Verify-locally template + isolation env vars + review and
+    roadmap-retirement rules. Both humans and agents start here.
+  - .github/AGENTS.md (next to this template) — agent-only extras:
+    merge authorization, body-construction shell quoting, force-push
+    policy, jackin-container smoke-test mandate, squash-commit format.
+    Claude Code auto-loads it via .github/CLAUDE.md when working
+    under .github/.
+
+Read both before authoring the body if you are an agent; the shared
+file alone if you are a human contributor.
 
 Rules in one line each:
 - One paragraph per section, no hard-wrap (GitHub flows the text).
