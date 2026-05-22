@@ -12,6 +12,7 @@ pub mod logging;
 pub mod pid1;
 pub mod protocol;
 pub mod render;
+pub mod runtime_setup;
 pub mod session;
 pub mod socket;
 pub mod statusbar;

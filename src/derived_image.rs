@@ -749,7 +749,7 @@ mod tests {
     }
 
     #[test]
-    fn entrypoint_amp_branch_copies_secrets_and_launches_amp() {
+    fn entrypoint_amp_branch_launches_amp() {
         let amp_section = ENTRYPOINT_SH
             .split_once("\n  amp)")
             .unwrap()
@@ -757,26 +757,18 @@ mod tests {
             .split(";;")
             .next()
             .unwrap();
-        assert!(amp_section.contains("/home/agent/.local/share/amp"));
-        assert!(amp_section.contains("/jackin/amp/secrets.json"));
         assert!(amp_section.contains("LAUNCH=(amp --dangerously-allow-all)"));
+        assert!(!amp_section.contains("/jackin/amp/secrets.json"));
     }
 
     #[test]
-    fn entrypoint_seeds_durable_agent_home_from_image_defaults() {
-        assert!(
-            ENTRYPOINT_SH
-                .contains("seed_home_dir /jackin/default-home/.claude /home/agent/.claude")
-        );
-        assert!(
-            ENTRYPOINT_SH.contains("seed_home_dir /jackin/default-home/.codex /home/agent/.codex")
-        );
-        assert!(ENTRYPOINT_SH.contains(
-            "seed_home_dir /jackin/default-home/.local/share/amp /home/agent/.local/share/amp"
-        ));
-        assert!(ENTRYPOINT_SH.contains(
-            "seed_home_dir /jackin/default-home/.local/share/opencode /home/agent/.local/share/opencode"
-        ));
+    fn entrypoint_delegates_agent_home_setup_to_jackin_container() {
+        assert!(ENTRYPOINT_SH.contains("/usr/local/bin/jackin-container runtime-setup"));
+        assert!(!ENTRYPOINT_SH.contains("seed_home_dir"));
+        assert!(!ENTRYPOINT_SH.contains("/jackin/default-home/.claude"));
+        assert!(!ENTRYPOINT_SH.contains("/jackin/default-home/.codex"));
+        assert!(!ENTRYPOINT_SH.contains("/jackin/default-home/.local/share/amp"));
+        assert!(!ENTRYPOINT_SH.contains("/jackin/default-home/.local/share/opencode"));
     }
 
     #[test]
@@ -835,7 +827,7 @@ mod tests {
     }
 
     #[test]
-    fn entrypoint_registers_security_tool_mcp_servers() {
+    fn entrypoint_delegates_security_tool_mcp_registration_to_jackin_container() {
         let claude_section = ENTRYPOINT_SH
             .split("claude)")
             .nth(1)
@@ -844,14 +836,7 @@ mod tests {
             .next()
             .unwrap();
         assert!(claude_section.contains("LAUNCH+=(\"$@\")"));
-        assert!(claude_section.contains("claude mcp add tirith -- tirith mcp-server"));
-        assert!(claude_section.contains("claude mcp add shellfirm -- shellfirm mcp"));
-    }
-
-    #[test]
-    fn entrypoint_mcp_registration_respects_disable_guards() {
-        assert!(ENTRYPOINT_SH.contains("JACKIN_DISABLE_TIRITH"));
-        assert!(ENTRYPOINT_SH.contains("JACKIN_DISABLE_SHELLFIRM"));
+        assert!(!claude_section.contains("claude mcp add"));
     }
 
     #[test]
@@ -870,6 +855,14 @@ mod tests {
     fn entrypoint_runs_setup_once_with_writable_marker() {
         assert!(ENTRYPOINT_SH.contains("/jackin/state/hooks/setup-once.done"));
         assert!(ENTRYPOINT_SH.contains("touch \"$setup_once_marker\""));
+    }
+
+    #[test]
+    fn entrypoint_delegates_deterministic_setup_to_jackin_container() {
+        assert!(ENTRYPOINT_SH.contains("/usr/local/bin/jackin-container runtime-setup"));
+        assert!(!ENTRYPOINT_SH.contains("git config --global user.name"));
+        assert!(!ENTRYPOINT_SH.contains("gh auth setup-git"));
+        assert!(!ENTRYPOINT_SH.contains("prepare-commit-msg.v1.done"));
     }
 
     fn extract_block<'a>(haystack: &'a str, start: &str, end: &str) -> &'a str {
@@ -1190,25 +1183,6 @@ plugins = []
 
         assert!(error.to_string().contains("symlink"));
         assert!(error.to_string().contains("linked.txt"));
-    }
-
-    #[test]
-    fn entrypoint_coauthor_hook_uses_canonical_agent_emails() {
-        // Guards against the shell trailer mapping drifting from AGENTS.md.
-        assert!(ENTRYPOINT_SH.contains("noreply@anthropic.com"));
-        assert!(ENTRYPOINT_SH.contains("codex@openai.com"));
-        assert!(ENTRYPOINT_SH.contains("amp@ampcode.com"));
-        assert!(ENTRYPOINT_SH.contains("opencode-agent[bot]@users.noreply.github.com"));
-    }
-
-    #[test]
-    fn entrypoint_hook_injects_dco_signed_off_by() {
-        // Guards that the DCO path is conditional on JACKIN_GIT_DCO and reads
-        // from git identity.
-        assert!(ENTRYPOINT_SH.contains("JACKIN_GIT_DCO"));
-        assert!(ENTRYPOINT_SH.contains("Signed-off-by:"));
-        assert!(ENTRYPOINT_SH.contains("git config user.name"));
-        assert!(ENTRYPOINT_SH.contains("git config user.email"));
     }
 
     #[test]

@@ -44,6 +44,8 @@ Building it in-house gives jackin a control plane that is:
 
 **Client mode (PID ≠ 1).** When the operator runs `docker exec -it <container> jackin-container`, the binary connects to the daemon socket, bridges the operator's terminal to the active session, and handles multiplexer commands locally before forwarding raw input to the PTY.
 
+**Runtime setup subcommand (PID ≠ 1).** `/jackin/runtime/entrypoint.sh` calls `jackin-container runtime-setup` before each agent exec. The subcommand performs idempotent container setup (git identity, GitHub HTTPS rewrites, and the `gh` credential helper), installs the shared git trailer hook on demand, and refreshes per-agent home/auth handoff state. The container init marker lives under `/tmp/jackin-runtime`, so global git/GitHub setup runs once per running container; per-session auth handoff still refreshes before every agent launch.
+
 ### Socket Interface
 
 The daemon listens at `/run/jackin/jackin.sock` inside the container. On the host, the socket is bind-mounted per-instance:
@@ -237,6 +239,7 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 | <RepoFile path="src/container_binary.rs" /> | Resolves the binary path: `JACKIN_CONTAINER_BIN` override → cache hit → download from GitHub Releases |
 | <RepoFile path="src/bin/build_jackin_container.rs" /> | Developer tool: `cargo run --bin build-jackin-container` — builds via `cargo-zigbuild` and populates the cache |
 | <RepoFile path="src/derived_image.rs" /> | Copies binary into derived image build context |
+| <RepoFile path="crates/jackin-container/src/runtime_setup.rs" /> | Implements `jackin-container runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
 | <RepoFile path="src/runtime/launch.rs" /> | Adds socket mount to `docker run`; connects via `docker exec jackin-container` |
 | <RepoFile path="src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-container new` |
 | <RepoFile path="src/isolation/finalize.rs" /> | Queries socket to detect live sessions before cleanup |

@@ -94,6 +94,9 @@ rule. The `SSH→HTTPS` git rewrite, the `gh` credential helper, and
 forwarded `hosts.yml` all live inside the container or in jackin's
 own state directory — your `~/.gitconfig`, your host repo's
 `.git/config`, and your `~/.config/gh/` are read but never written.
+The container-level git rewrite and credential-helper setup run once
+per running container; new tabs and split panes reuse that prepared
+container state while still receiving their own agent environment.
 
 ## See also
 

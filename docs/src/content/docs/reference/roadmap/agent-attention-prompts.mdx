@@ -29,7 +29,7 @@ The end state, from the operator's seat:
 
 The agent inside the container needs a way to tell jackin' "I'm idle on operator input." Three sources, in priority order:
 
-1. **An MCP server jackin' auto-registers in every agent session.** Each agent runtime jackin' supports (Claude Code, Codex; Amp forthcoming) integrates MCP servers via its own config. jackin' already wires `tirith` and `shellfirm` for the Claude runtime via <RepoFile path="docker/runtime/entrypoint.sh" />; the equivalent registration for Codex / Amp is part of this proposal's scope. The new `jackin-attention` MCP server adds two tools the agent can call:
+1. **An MCP server jackin' auto-registers in every agent session.** Each agent runtime jackin' supports (Claude Code, Codex; Amp forthcoming) integrates MCP servers via its own config. jackin' already wires `tirith` and `shellfirm` for the Claude runtime via <RepoFile path="crates/jackin-container/src/runtime_setup.rs" />; the equivalent registration for Codex / Amp is part of this proposal's scope. The new `jackin-attention` MCP server adds two tools the agent can call:
    - `attention.waiting(reason: string, urgency?: low | normal | high)` — declare the agent is waiting for operator input.
    - `attention.resolved()` — clear the waiting state when the operator responds.
 
@@ -45,7 +45,7 @@ Path 1 is the primary, path 2 the fallback, path 3 a future hook for runtimes th
 
 The pieces:
 
-- **`jackin-attention` MCP server.** Static binary baked into the construct image. Registered automatically in each agent's MCP config at container launch — extending the registration pattern <RepoFile path="docker/runtime/entrypoint.sh" /> uses today for the Claude runtime's `tirith` / `shellfirm` to every supported runtime. When the agent calls `attention.waiting`, the MCP server pushes the event over the existing per-container control channel (the same bind-mount or pipe used for daemon ↔ container coordination — see [jackin daemon](/reference/roadmap/jackin-daemon/) for the channel design).
+- **`jackin-attention` MCP server.** Static binary baked into the construct image. Registered automatically in each agent's MCP config at container launch — extending the registration pattern <RepoFile path="crates/jackin-container/src/runtime_setup.rs" /> uses today for the Claude runtime's `tirith` / `shellfirm` to every supported runtime. When the agent calls `attention.waiting`, the MCP server pushes the event over the existing per-container control channel (the same bind-mount or pipe used for daemon ↔ container coordination — see [jackin daemon](/reference/roadmap/jackin-daemon/) for the channel design).
 - **The jackin daemon dispatches the host-side notification.** Per the [jackin daemon](/reference/roadmap/jackin-daemon/) plug-in surface, this feature is one adapter that listens for attention events from any running container and translates them to OS-native notifications:
   - macOS — `osascript -e 'display notification …'` or the `UserNotifications` framework via a small Swift helper. Sound escalation via `afplay` / `NSSound`.
   - Linux — `notify-send` (libnotify) or the org.freedesktop.Notifications D-Bus API. Sound via `paplay` / `aplay`.
@@ -130,4 +130,4 @@ The bet of jackin' is that running many agents safely and conveniently changes h
 - [Live bidirectional auth sync](/reference/roadmap/live-auth-sync/) — sibling feature plugging into the same daemon; sets the precedent for per-axis adapters.
 - [Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) — native macOS surface that should display attention/ready-for-review state and owns the first Ghostty click-to-focus UX.
 - [Agent Orchestrator Research Program → Live agent observability](/reference/roadmap/agent-orchestrator-research/) — adjacent work on surfacing what the agent is *doing* in real time. Attention prompts close the loop the other direction (when the agent stops doing things and waits).
-- <RepoFile path="docker/runtime/entrypoint.sh" /> — current MCP-registration pattern for `tirith` / `shellfirm`. The `jackin-attention` MCP server registers through the same code path.
+- <RepoFile path="crates/jackin-container/src/runtime_setup.rs" /> — current MCP-registration pattern for `tirith` / `shellfirm`. The `jackin-attention` MCP server registers through the same code path.
