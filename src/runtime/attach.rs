@@ -100,9 +100,10 @@ pub(super) async fn reconnect_or_create_session(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     set_role_terminal_title(paths, container_name);
-    // The daemon bootstraps the initial session on first attach, so we
-    // do not branch on whether sessions already exist — just connect.
-    let _ = inspect_agent_sessions(docker, container_name, &ContainerState::Running).await;
+    // The daemon owns its session inventory and bootstraps the
+    // initial session at boot. There is nothing for the host to
+    // inspect before attach; just connect.
+    let _ = docker;
     runner
         .run(
             "docker",

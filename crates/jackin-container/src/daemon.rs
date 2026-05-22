@@ -1591,7 +1591,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
             }
 
             // New socket connection.
-            Some(mut stream) = new_clients.recv() => {
+            Some((mut stream, client_permit)) = new_clients.recv() => {
                 let mut first = [0u8; 1];
                 if let Err(e) = stream.read_exact(&mut first).await {
                     crate::clog!("attach: handshake read_exact(first byte) failed: {e}");
@@ -1688,11 +1688,15 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 let mut initial = b"\x1b[2J".to_vec();
                 initial.extend(mux.compose_frame());
                 let _ = new_out_tx.send(encode_server(ServerFrame::Output(initial)));
-                mux.attached_task = Some(tokio::spawn(handle_attach_client(
-                    stream,
-                    new_out_rx,
-                    cmd_tx.clone(),
-                )));
+                let cmd_tx_for_task = cmd_tx.clone();
+                mux.attached_task = Some(tokio::spawn(async move {
+                    handle_attach_client(stream, new_out_rx, cmd_tx_for_task).await;
+                    // Hold the concurrency permit alive for the
+                    // lifetime of the attach task. Dropping at the
+                    // end of the spawned future returns a slot to
+                    // the listener's Semaphore.
+                    drop(client_permit);
+                }));
             }
 
             // Inbound attach frame from the active client task.
@@ -1930,14 +1934,34 @@ async fn handle_attach_client(
     loop {
         tokio::select! {
             result = stream.read_exact(&mut tag) => {
-                if result.is_err() { break; }
-                let Ok(Some(frame)) = read_client_frame(&mut stream, tag[0]).await else {
+                if let Err(e) = result {
+                    crate::clog!("attach client: socket read failed: {e}");
                     break;
+                }
+                let frame = match read_client_frame(&mut stream, tag[0]).await {
+                    Ok(Some(frame)) => frame,
+                    Ok(None) => {
+                        crate::clog!("attach client: EOF mid-frame (tag={:#04x})", tag[0]);
+                        break;
+                    }
+                    Err(e) => {
+                        crate::clog!(
+                            "attach client: frame decode failed (tag={:#04x}): {e}",
+                            tag[0]
+                        );
+                        break;
+                    }
                 };
-                if cmd_tx.send(frame).is_err() { break; }
+                if cmd_tx.send(frame).is_err() {
+                    crate::clog!("attach client: cmd_tx closed; daemon shutting down");
+                    break;
+                }
             }
             Some(bytes) = out_rx.recv() => {
-                if stream.write_all(&bytes).await.is_err() { break; }
+                if let Err(e) = stream.write_all(&bytes).await {
+                    crate::clog!("attach client: socket write failed: {e}");
+                    break;
+                }
             }
         }
     }

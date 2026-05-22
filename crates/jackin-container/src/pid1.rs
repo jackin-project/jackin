@@ -12,10 +12,13 @@ use nix::unistd::Pid;
 pub fn install_sigchld_reaper() {
     // Block SIGCHLD in the main thread; the dedicated reaper thread uses
     // sigwait so it wakes only on SIGCHLD without racing with tokio's signal
-    // machinery.
+    // machinery. thread_block failure is a programming error (invalid
+    // sigset) — expect rather than silently drop so the daemon does
+    // not start with a half-installed handler.
     let mut mask = SigSet::empty();
     mask.add(Signal::SIGCHLD);
-    let _ = mask.thread_block();
+    mask.thread_block()
+        .expect("thread_block SIGCHLD on PID 1 main thread");
 
     std::thread::Builder::new()
         .name("zombie-reaper".into())
@@ -23,9 +26,19 @@ pub fn install_sigchld_reaper() {
             let mut sigset = SigSet::empty();
             sigset.add(Signal::SIGCHLD);
             loop {
-                // Block until SIGCHLD arrives.
-                let _ = sigset.wait();
-                reap_zombies();
+                // Block until SIGCHLD arrives. sigwait can return EINTR
+                // on signal-handler interrupt — sleep briefly so a tight
+                // loop does not hammer the kernel queue, then retry. A
+                // non-EINTR error is unexpected (corrupt sigset, ENOSYS
+                // on a stripped kernel) and warrants a log line.
+                match sigset.wait() {
+                    Ok(_) => reap_zombies(),
+                    Err(nix::errno::Errno::EINTR) => {}
+                    Err(e) => {
+                        crate::clog!("zombie-reaper sigwait error: {e}; backing off 100ms");
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+                }
             }
         })
         .expect("failed to spawn zombie-reaper thread");

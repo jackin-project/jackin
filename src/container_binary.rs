@@ -40,6 +40,18 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
             "JACKIN_CONTAINER_BIN override: {}",
             path.display()
         );
+        // Operator-trust note: this override path bypasses the
+        // SHA-256 verification that the cache-miss download path
+        // applies. The operator pointing at a local file is
+        // explicitly opting in (typically a `cargo run --bin
+        // build-jackin-container` artifact, the path that test
+        // suites and dev iteration use). Production hosts that
+        // never set this env var still get the strong checksum
+        // gate from `download_and_cache`.
+        eprintln!(
+            "[jackin] using JACKIN_CONTAINER_BIN override at {} (skipping SHA-256 verification)",
+            path.display()
+        );
         return Ok(path);
     }
 

@@ -10,12 +10,13 @@ pub const SOCKET_PATH: &str = "/run/jackin/jackin.sock";
 
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::mpsc;
+use tokio::sync::{Semaphore, mpsc};
 
 use crate::protocol::control::{ClientMsg, ServerMsg, SessionInfo, frame};
 
@@ -26,9 +27,20 @@ use crate::protocol::control::{ClientMsg, ServerMsg, SessionInfo, frame};
 /// and the container restarts cleanly.
 const ACCEPT_FAILURE_BAIL: u32 = 10;
 
+/// Hard cap on concurrent attach connections. The socket is locked
+/// 0600 so only the agent uid can dial in, but a rogue in-container
+/// process that shares the agent uid can otherwise open thousands
+/// of sockets — each a tokio task + UnixStream fd. Reject excess
+/// connections by closing immediately so the legitimate operator's
+/// attach is never starved.
+const MAX_CONCURRENT_CLIENTS: usize = 16;
+
 /// Start the Unix socket listener. Returns a receiver of newly-connected
-/// clients. The caller (daemon) accepts clients from the channel.
-pub fn start_listener() -> Result<mpsc::UnboundedReceiver<UnixStream>> {
+/// clients paired with the concurrency-cap permit. The caller (daemon)
+/// must hold the permit alive for the lifetime of the spawned attach
+/// task so the per-process cap correctly tracks live connections.
+pub fn start_listener()
+-> Result<mpsc::UnboundedReceiver<(UnixStream, tokio::sync::OwnedSemaphorePermit)>> {
     let path = Path::new(SOCKET_PATH);
     if path.exists() {
         std::fs::remove_file(path)?;
@@ -38,10 +50,13 @@ pub fn start_listener() -> Result<mpsc::UnboundedReceiver<UnixStream>> {
         // Parent dir 0o700 so only the owner can list/connect. The
         // socket file itself gets 0o600 after bind, but on a system
         // where the parent dir is world-x an attacker can still
-        // enumerate the path. Lock both.
-        if let Err(e) = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)) {
-            crate::clog!("socket: failed to chmod parent {}: {e}", parent.display());
-        }
+        // enumerate the path. Lock both. A chmod failure here is a
+        // security regression: refuse to bind rather than continue
+        // with a wider-than-intended attack surface. Operators on
+        // exotic filesystems (NFS without owner perms) get an
+        // actionable error instead of silent downgrade.
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("locking socket parent {} to 0o700", parent.display()))?;
     }
 
     let listener = UnixListener::bind(path)?;
@@ -49,11 +64,12 @@ pub fn start_listener() -> Result<mpsc::UnboundedReceiver<UnixStream>> {
     // process that shares the agent uid (and any process running as a
     // different uid if the umask is generous) can connect and inject
     // `ClientFrame::Input` straight into the focused PTY. The attach
-    // channel has no authentication beyond file-mode.
-    if let Err(e) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)) {
-        crate::clog!("socket: failed to chmod {SOCKET_PATH}: {e}");
-    }
+    // channel has no authentication beyond file-mode. Same hard-error
+    // policy as the parent dir above.
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("locking socket {SOCKET_PATH} to 0o600"))?;
     let (tx, rx) = mpsc::unbounded_channel();
+    let limiter = Arc::new(Semaphore::new(MAX_CONCURRENT_CLIENTS));
 
     tokio::spawn(async move {
         let mut consecutive_failures = 0u32;
@@ -61,7 +77,23 @@ pub fn start_listener() -> Result<mpsc::UnboundedReceiver<UnixStream>> {
             match listener.accept().await {
                 Ok((stream, _)) => {
                     consecutive_failures = 0;
-                    if tx.send(stream).is_err() {
+                    // try_acquire fails when MAX_CONCURRENT_CLIENTS
+                    // tasks are already in flight. Drop the new
+                    // socket without sending so a flood of in-uid
+                    // peers cannot starve the legitimate operator's
+                    // attach. Once a task finishes, its OwnedSemaphorePermit
+                    // drops and a fresh accept proceeds.
+                    let permit = match limiter.clone().try_acquire_owned() {
+                        Ok(p) => p,
+                        Err(_) => {
+                            crate::clog!(
+                                "socket: at concurrent-client cap {MAX_CONCURRENT_CLIENTS}; dropping new connection"
+                            );
+                            drop(stream);
+                            continue;
+                        }
+                    };
+                    if tx.send((stream, permit)).is_err() {
                         // Receiver dropped — daemon is shutting down.
                         // Stop accepting so we don't burn cycles
                         // accepting connections that are immediately
@@ -97,18 +129,29 @@ pub fn start_listener() -> Result<mpsc::UnboundedReceiver<UnixStream>> {
 
 /// Read a length-prefixed JSON control message whose 4-byte length
 /// prefix begins with `first_byte = 0x00` (already consumed by the
-/// dispatcher).
-pub async fn read_control_msg(stream: &mut UnixStream, first_byte: u8) -> Option<ClientMsg> {
+/// dispatcher). Returns `Err` with context on every failure mode so
+/// callers can clog the underlying cause; the previous Option shape
+/// collapsed read / oversize-len / decode errors into a silent None
+/// and the host's `jackin status` then hung on its `read_exact`
+/// waiting for a reply that was never coming.
+pub async fn read_control_msg(stream: &mut UnixStream, first_byte: u8) -> Result<ClientMsg> {
     let mut rest = [0u8; 3];
-    stream.read_exact(&mut rest).await.ok()?;
+    stream
+        .read_exact(&mut rest)
+        .await
+        .context("control msg: reading length suffix")?;
     let len_buf = [first_byte, rest[0], rest[1], rest[2]];
     let len = u32::from_be_bytes(len_buf) as usize;
-    if len > 4 * 1024 * 1024 {
-        return None;
+    const MAX_CONTROL_MSG: usize = 4 * 1024 * 1024;
+    if len > MAX_CONTROL_MSG {
+        anyhow::bail!("control msg length {len} exceeds limit {MAX_CONTROL_MSG}");
     }
     let mut body = vec![0u8; len];
-    stream.read_exact(&mut body).await.ok()?;
-    serde_json::from_slice(&body).ok()
+    stream
+        .read_exact(&mut body)
+        .await
+        .context("control msg: reading body")?;
+    serde_json::from_slice(&body).context("control msg: parsing JSON body")
 }
 
 /// Handle a one-shot control request and close the connection.
@@ -117,8 +160,12 @@ pub async fn handle_control_request(
     first_byte: u8,
     sessions: Vec<SessionInfo>,
 ) {
-    let Some(msg) = read_control_msg(&mut stream, first_byte).await else {
-        return;
+    let msg = match read_control_msg(&mut stream, first_byte).await {
+        Ok(msg) => msg,
+        Err(e) => {
+            crate::clog!("control: rejecting malformed request: {e:#}");
+            return;
+        }
     };
     let reply = match msg {
         ClientMsg::Status => ServerMsg::SessionList { sessions },

@@ -64,14 +64,27 @@ pub async fn run_client(new_session_agent: Option<String>) -> Result<()> {
     let mut winch =
         signal(SignalKind::window_change()).context("failed to install SIGWINCH handler")?;
 
-    loop {
+    // Track why the loop broke. `Some(())` = clean detach (received
+    // Shutdown / clean stdin EOF); `None` initially means "still in
+    // the loop." `Err` paths set a contextual `anyhow::Error` so the
+    // CLI returns non-zero — operator can tell clean detach from a
+    // daemon crash / broken pipe.
+    let exit_result: Result<()> = loop {
         tokio::select! {
             // Read attach frame from daemon → stdout.
             result = stream.read_exact(&mut tag_buf) => {
-                if result.is_err() { break; }
+                if let Err(e) = result {
+                    break Err(anyhow::anyhow!("attach socket closed unexpectedly: {e}"));
+                }
                 let tag = tag_buf[0];
-                let Ok(Some(frame)) = read_server_frame(&mut stream, tag).await else {
-                    break;
+                let frame = match read_server_frame(&mut stream, tag).await {
+                    Ok(Some(frame)) => frame,
+                    Ok(None) => break Err(anyhow::anyhow!(
+                        "attach socket EOF mid-frame (tag={tag:#04x})"
+                    )),
+                    Err(e) => break Err(anyhow::anyhow!(
+                        "decoding server frame (tag={tag:#04x}): {e}"
+                    )),
                 };
                 match frame {
                     ServerFrame::Output(bytes) => {
@@ -79,7 +92,7 @@ pub async fn run_client(new_session_agent: Option<String>) -> Result<()> {
                         let _ = stdout.write_all(&bytes);
                         let _ = stdout.flush();
                     }
-                    ServerFrame::Shutdown => break,
+                    ServerFrame::Shutdown => break Ok(()),
                     ServerFrame::Bell => {
                         let _ = std::io::stdout().write_all(b"\x07");
                         let _ = std::io::stdout().flush();
@@ -91,23 +104,28 @@ pub async fn run_client(new_session_agent: Option<String>) -> Result<()> {
             // Read stdin → daemon as Input frame.
             result = tokio_stdin.read(&mut stdin_buf) => {
                 let n = match result {
-                    Ok(0) | Err(_) => break,
+                    Ok(0) => break Ok(()),
+                    Err(e) => break Err(anyhow::anyhow!("stdin read failed: {e}")),
                     Ok(n) => n,
                 };
                 let msg = encode_client(ClientFrame::Input(stdin_buf[..n].to_vec()));
-                if stream.write_all(&msg).await.is_err() { break; }
+                if let Err(e) = stream.write_all(&msg).await {
+                    break Err(anyhow::anyhow!("attach socket write failed (input): {e}"));
+                }
             }
 
             // Outer terminal resize → propagate.
             _ = winch.recv() => {
                 let (rows, cols) = terminal_size();
                 let msg = encode_client(ClientFrame::Resize { rows, cols });
-                if stream.write_all(&msg).await.is_err() { break; }
+                if let Err(e) = stream.write_all(&msg).await {
+                    break Err(anyhow::anyhow!("attach socket write failed (resize): {e}"));
+                }
             }
         }
-    }
+    };
 
-    Ok(())
+    exit_result
 }
 
 /// Query the daemon for current session list and print it.
