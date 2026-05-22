@@ -94,25 +94,31 @@ fn target_triple(arch: &str) -> &'static str {
 }
 
 fn check_zigbuild_installed() -> Result<()> {
-    // Probe the parent `cargo-zigbuild` binary directly. The `cargo zigbuild`
-    // subcommand strips `--version` / `-V` in 0.22.x (only `-h/--help` plus
-    // build flags survive), so `cargo zigbuild --version` exits non-zero even
-    // when the binary is reachable. Parsing `cargo --list` is brittle because
-    // cargo ≥1.83 formats third-party subcommands with a trailing description.
-    let probe = process::Command::new("cargo-zigbuild")
+    // The `cargo zigbuild` subcommand has dropped `--version` / `-V` in
+    // recent cargo-zigbuild releases (only `-h/--help` and build flags
+    // survive), so probing the subcommand exits non-zero even when the
+    // binary is reachable. Probe the parent `cargo-zigbuild` binary
+    // instead — its `--version` flag is part of the cargo-plugin
+    // contract.
+    const INSTALL_HINT: &str = "Install it with:\n  \
+                                mise install zig cargo:cargo-zigbuild\n\
+                                or, without mise:\n  \
+                                cargo install cargo-zigbuild\n  \
+                                brew install zig  (or equivalent)";
+    match process::Command::new("cargo-zigbuild")
         .arg("--version")
-        .output();
-    if matches!(&probe, Ok(out) if out.status.success()) {
-        return Ok(());
+        .output()
+    {
+        Ok(out) if out.status.success() => Ok(()),
+        Ok(out) => anyhow::bail!(
+            "cargo-zigbuild rejected `--version` (exit {}): {}\n{INSTALL_HINT}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ),
+        Err(e) => {
+            anyhow::bail!("cargo-zigbuild not reachable on PATH: {e}\n{INSTALL_HINT}")
+        }
     }
-    anyhow::bail!(
-        "cargo-zigbuild is not installed.\n\
-         Install it with:\n\
-           mise install zig cargo:cargo-zigbuild\n\
-         or, without mise:\n\
-           cargo install cargo-zigbuild\n\
-           brew install zig  (or equivalent)"
-    );
 }
 
 fn ensure_rustup_target(triple: &str) -> Result<()> {
