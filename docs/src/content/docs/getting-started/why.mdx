@@ -3,7 +3,9 @@ title: "Why jackin'?"
 description: The problem jackin' solves and why it needs to exist
 ---
 import { Aside, Steps } from '@astrojs/starlight/components'
+import EarlyDevelopmentNotice from '../../../components/EarlyDevelopmentNotice.astro'
 
+<EarlyDevelopmentNotice />
 
 ## The problem
 
@@ -170,7 +172,7 @@ jackin' is built in Rust for three reasons:
 ## Current status
 
 <Aside type="note">
-jackin' is currently a proof of concept. `Claude Code`, `Codex`, `Amp`, `Kimi`, and `OpenCode` ship today as built-in agent runtimes; full feature parity across all five is tracked on the [Roadmap](/reference/roadmap/). The isolation model is runtime-agnostic by design — adding a new runtime is a matter of teaching jackin' how to install and start it inside the `construct`, not redesigning the boundary.
+jackin' is currently a proof of concept. `Claude Code`, `Codex`, `Amp`, `Kimi`, and `OpenCode` ship today as built-in agent runtimes; full feature parity across all five is tracked on the [Roadmap](/reference/roadmap/). The isolation model is runtime-agnostic by design, but the implementation contract is still moving quickly while the project is pre-stable.
 </Aside>
 The core isolation model works, workspaces and mounts are configurable, the interactive operator console is functional, and the role system supports namespaced, team-shareable environments. It's licensed under Apache 2.0.
 

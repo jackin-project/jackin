@@ -6,7 +6,10 @@ jackin' is the **ecosystem layer around** AI coding agents — not another agent
 
 Documentation: <https://jackin.tailrocks.com/>
 
-> **Current status:** jackin' is experimental preview software. It has not reached a stable release yet, and breaking changes are expected while the core design and basic functionality settle. The docs track the rolling preview channel, which is the best way to see what the project is today. [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), [Amp](https://ampcode.com), Kimi, and OpenCode ship today as built-in agent runtimes; full feature parity across them is tracked on the [roadmap](https://jackin.tailrocks.com/reference/roadmap/).
+> [!WARNING]
+> 🚧 jackin' is in active early development.
+>
+> jackin' is not production-ready. We are actively refining the core concept, runtime integrations, CLI/TUI workflows, schemas, and documentation, and that will introduce major breaking changes before a stable release. Features may be redesigned, replaced, or removed while we find the shape that makes sense. Early adopters are welcome, but the priority right now is concept quality and fast iteration rather than freezing today's behavior. The docs track the rolling preview channel; open issues and roadmap feedback are welcome, but do not treat the current feature set as a compatibility promise.
 
 ## Install
 

@@ -3,7 +3,9 @@ title: Installation
 description: How to install jackin' on your system
 ---
 import { Aside, TabItem, Tabs } from '@astrojs/starlight/components'
+import EarlyDevelopmentNotice from '../../../components/EarlyDevelopmentNotice.astro'
 
+<EarlyDevelopmentNotice />
 
 ## Prerequisites
 
@@ -20,10 +22,7 @@ The easiest way to install on macOS or Linux is via Homebrew. The Homebrew formu
 ```bash
 brew tap jackin-project/tap
 
-# Stable
-brew install jackin
-
-# Or install the rolling preview channel
+# Active early-development channel
 brew install jackin@preview
 ```
 

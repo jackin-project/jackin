@@ -4,11 +4,13 @@ description: What's done and what's coming next
 ---
 import { Aside } from '@astrojs/starlight/components'
 import RepoFile from '../../../components/RepoFile.astro'
+import EarlyDevelopmentNotice from '../../../components/EarlyDevelopmentNotice.astro'
 
+<EarlyDevelopmentNotice />
 
 ## Current status
 
-jackin' is a functional proof of concept. **`Claude Code`, `Codex`, `Amp`, `Kimi`, and `OpenCode` ship today as built-in agent runtimes**, with namespaced roles, workspace management, per-mount isolation for parallel agents, layered authentication forwarding (including `1Password` references), and an interactive operator console (TUI).
+jackin' is a functional proof of concept, not a stable product line. **`Claude Code`, `Codex`, `Amp`, `Kimi`, and `OpenCode` ship today as built-in agent runtimes**, with namespaced roles, workspace management, per-mount isolation for parallel agents, layered authentication forwarding (including `1Password` references), and an interactive operator console (TUI). The roadmap below is expected to change aggressively as the project learns which concepts deserve to survive.
 
 ## Completed
 

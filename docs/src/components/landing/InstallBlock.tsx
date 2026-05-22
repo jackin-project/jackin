@@ -9,7 +9,7 @@ export function InstallBlock() {
 
         <div className="landing-install">
           <div className="landing-install-line"><span className="k">brew</span> tap jackin-project/tap</div>
-          <div className="landing-install-line"><span className="k">brew</span> install jackin</div>
+          <div className="landing-install-line"><span className="k">brew</span> install jackin@preview</div>
           <div className="landing-install-line"><span className="k">jackin</span> load agent-smith</div>
         </div>
 

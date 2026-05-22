@@ -275,7 +275,7 @@ Why this rule exists: a leading blank pad row pushes the filter one row down and
 
 ### Confirmation dialogs use the canonical Yes/No layout
 
-**Every Yes/No confirmation rendered on any jackin' TUI surface — host console (`src/console/widgets/confirm.rs`) and the in-container multiplexer (`crates/jackin-container/src/dialog.rs`'s `Dialog::ConfirmAction`) — must use the same compact shape so the operator's eye recognises "this is a confirmation" instantly regardless of surface.** Different shapes per surface train the operator to re-read each dialog from scratch and erode the muscle memory for `N` / Esc / Enter.
+**Every Yes/No confirmation rendered on any jackin' TUI surface — host console (<RepoFile path="src/console/widgets/confirm.rs" />) and the in-container multiplexer (<RepoFile path="crates/jackin-container/src/dialog.rs" />'s `Dialog::ConfirmAction`) — must use the same compact shape so the operator's eye recognises "this is a confirmation" instantly regardless of surface.** Different shapes per surface train the operator to re-read each dialog from scratch and erode the muscle memory for `N` / Esc / Enter.
 
 The canonical layout, top to bottom, inside the dialog's interior columns:
 
