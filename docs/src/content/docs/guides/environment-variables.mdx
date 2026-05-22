@@ -87,6 +87,11 @@ A small set of names is owned by the jackin' runtime and cannot be set from any 
 
 Trying to set one of these is rejected before the agent launches.
 
+`JACKIN_AGENT` is scoped to an agent session, not the whole container. jackin'
+passes the initial agent to the PID 1 multiplexer as an argv value, then sets
+`JACKIN_AGENT` only when spawning `/jackin/runtime/entrypoint.sh` for a real
+agent pane. Shell panes do not receive it.
+
 ## 1Password CLI setup
 
 1. Install the [1Password CLI](https://developer.1password.com/docs/cli/get-started/).

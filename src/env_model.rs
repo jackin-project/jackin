@@ -31,8 +31,9 @@ pub const JACKIN_DIND_HOSTNAME_ENV_NAME: &str = "JACKIN_DIND_HOSTNAME";
 pub const TESTCONTAINERS_HOST_OVERRIDE_ENV_NAME: &str = "TESTCONTAINERS_HOST_OVERRIDE";
 
 /// Env var that carries the AI agent slug (`claude` / `codex` / `amp`) into
-/// the role container so the entrypoint and in-container tooling can
-/// dispatch on which agent is running.
+/// each agent session so the entrypoint and in-container tooling can dispatch
+/// on which agent is running. The host launcher does not set this on the
+/// container itself; the initial agent is passed to PID 1 as argv.
 pub const JACKIN_AGENT_ENV_NAME: &str = "JACKIN_AGENT";
 
 /// Env var that carries the role's selector key (e.g. `agent-smith` or
@@ -237,7 +238,7 @@ mod tests {
         for sentinel in &[
             "JACKIN",               // in-container sentinel (was JACKIN)
             "JACKIN_DIND_HOSTNAME", // was manifest JACKIN_DIND_HOSTNAME_ENV_NAME value
-            "JACKIN_AGENT",         // injected by runtime — agent slug (claude/codex/amp)
+            "JACKIN_AGENT",         // injected per agent session — agent slug (claude/codex/amp)
             "JACKIN_ROLE",          // injected by runtime — role selector key
             "JACKIN_GIT_COAUTHOR_TRAILER",
             "JACKIN_GIT_DCO",

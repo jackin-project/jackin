@@ -216,14 +216,8 @@ pub async fn spawn_agent_session(
     let workdir = manifest.map_or("/workspace", |manifest| manifest.workdir.as_str());
 
     // Build extra env vars to forward to the new session via the daemon socket.
-    // jackin-container reads these from the environment when it spawns the
-    // session via the entrypoint. We forward them to the exec environment so
-    // the client can pass them on to the daemon's new-session request.
-    let agent_env = format!(
-        "{}={}",
-        crate::env_model::JACKIN_AGENT_ENV_NAME,
-        agent.slug()
-    );
+    // Agent selection travels as `jackin-container new <agent>` argv; these
+    // env values are session policy toggles consumed by the spawned entrypoint.
     let coauthor_env = git_coauthor_trailer.then(|| {
         format!(
             "{}=1",
@@ -240,8 +234,6 @@ pub async fn spawn_agent_session(
         "exec",
         "--workdir",
         workdir,
-        "-e",
-        &agent_env,
         "-it",
         container_name,
         "/usr/local/bin/jackin-container",
@@ -672,7 +664,7 @@ mod tests {
         assert!(
             runner.recorded.iter().any(|call| {
                 call.contains("docker exec")
-                    && call.contains("JACKIN_AGENT=codex")
+                    && !call.contains("JACKIN_AGENT=")
                     && call.contains("--workdir /workspace/project")
                     && call.contains("jk-k7p9m2xq-workspace-agentsmith")
                     && call.contains("jackin-container")

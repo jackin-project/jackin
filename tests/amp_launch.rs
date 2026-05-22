@@ -95,8 +95,12 @@ agents = ["amp"]
         .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
         .expect("role docker run should run");
     assert!(
-        run_cmd.contains("JACKIN_AGENT=amp"),
-        "JACKIN_AGENT=amp must be in docker run; got: {run_cmd}"
+        !run_cmd.contains("JACKIN_AGENT="),
+        "JACKIN_AGENT must not be a container env var; got: {run_cmd}"
+    );
+    assert!(
+        run_cmd.ends_with(" amp"),
+        "initial agent must be passed as container argv; got: {run_cmd}"
     );
     assert!(
         run_cmd.contains("-e JACKIN_ROLE=the-architect"),

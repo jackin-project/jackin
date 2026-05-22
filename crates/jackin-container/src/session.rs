@@ -30,6 +30,7 @@ use vt100::{Callbacks, Screen};
 use crate::protocol::AgentState;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+const BLOCKED_AFTER: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// Lines of scrollback every PTY session retains. ~1.5 MB worst-case
 /// per session at 200 cols. Empty cells cost less. Operators need
@@ -655,6 +656,15 @@ impl Session {
         }
     }
 
+    /// Mark that the operator sent an explicit keyboard payload to this pane.
+    /// Returns true when this clears a previously latched blocked state.
+    pub fn mark_operator_input(&mut self) -> bool {
+        let was_blocked = self.state == AgentState::Blocked;
+        self.last_output_at = std::time::Instant::now();
+        self.state = AgentState::Working;
+        was_blocked
+    }
+
     /// True when the session's program has enabled any mouse protocol
     /// mode. Used by the daemon to decide whether selection gestures
     /// belong to jackin or to the pane. Actual PTY mouse forwarding
@@ -695,7 +705,7 @@ impl Session {
         self.parser.process(bytes);
         self.scrollback_offset = self.parser.screen().scrollback();
         self.last_output_at = std::time::Instant::now();
-        self.state = AgentState::Working;
+        self.state = state_after_pty_output(self.state);
     }
 
     /// Drain the OSC / unhandled-CSI byte sequences the parser captured
@@ -847,11 +857,22 @@ impl Session {
         // instance to refresh past that point. Operators experience
         // tab removal directly; no transient `○ Done` glyph.
         let elapsed = self.last_output_at.elapsed();
-        self.state = if elapsed < std::time::Duration::from_secs(3) {
-            AgentState::Working
-        } else {
-            AgentState::Blocked
-        };
+        self.state = state_after_refresh(self.state, elapsed);
+    }
+}
+
+fn state_after_pty_output(current: AgentState) -> AgentState {
+    match current {
+        AgentState::Blocked | AgentState::Done => current,
+        AgentState::Working | AgentState::Idle => AgentState::Working,
+    }
+}
+
+fn state_after_refresh(current: AgentState, elapsed: std::time::Duration) -> AgentState {
+    match current {
+        AgentState::Blocked | AgentState::Done => current,
+        AgentState::Working | AgentState::Idle if elapsed < BLOCKED_AFTER => AgentState::Working,
+        AgentState::Working | AgentState::Idle => AgentState::Blocked,
     }
 }
 
@@ -905,10 +926,10 @@ pub fn build_agent_command(
     cwd: &Path,
 ) -> CommandBuilder {
     let mut cmd = CommandBuilder::new("/jackin/runtime/entrypoint.sh");
-    cmd.env("JACKIN_AGENT", agent);
     for (k, v) in env_passthrough {
         cmd.env(k, v);
     }
+    cmd.env("JACKIN_AGENT", agent);
     apply_terminal_env(&mut cmd);
     cmd.cwd(cwd);
     cmd
@@ -922,6 +943,7 @@ pub fn build_shell_command(env_passthrough: &[(String, String)], cwd: &Path) -> 
     for (k, v) in env_passthrough {
         cmd.env(k, v);
     }
+    cmd.env_remove("JACKIN_AGENT");
     apply_terminal_env(&mut cmd);
     cmd.cwd(cwd);
     cmd
@@ -948,6 +970,57 @@ fn apply_terminal_env(cmd: &mut CommandBuilder) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn build_agent_command_overrides_stale_agent_env() {
+        let env = vec![("JACKIN_AGENT".to_string(), "claude".to_string())];
+        let cmd = build_agent_command("codex", &env, Path::new("/workspace"));
+
+        assert_eq!(
+            cmd.get_env("JACKIN_AGENT").and_then(|value| value.to_str()),
+            Some("codex")
+        );
+    }
+
+    #[test]
+    fn build_shell_command_removes_stale_agent_env() {
+        let env = vec![("JACKIN_AGENT".to_string(), "claude".to_string())];
+        let cmd = build_shell_command(&env, Path::new("/workspace"));
+
+        assert!(cmd.get_env("JACKIN_AGENT").is_none());
+    }
+
+    #[test]
+    fn pty_output_does_not_clear_latched_blocked_state() {
+        assert_eq!(
+            state_after_pty_output(AgentState::Blocked),
+            AgentState::Blocked
+        );
+        assert_eq!(
+            state_after_pty_output(AgentState::Working),
+            AgentState::Working
+        );
+        assert_eq!(
+            state_after_pty_output(AgentState::Idle),
+            AgentState::Working
+        );
+    }
+
+    #[test]
+    fn refresh_latches_blocked_until_operator_input() {
+        assert_eq!(
+            state_after_refresh(AgentState::Working, BLOCKED_AFTER),
+            AgentState::Blocked
+        );
+        assert_eq!(
+            state_after_refresh(AgentState::Blocked, std::time::Duration::ZERO),
+            AgentState::Blocked
+        );
+        assert_eq!(
+            state_after_refresh(AgentState::Idle, BLOCKED_AFTER / 2),
+            AgentState::Working
+        );
+    }
 
     #[test]
     fn osc8_uri_empty_is_safe() {

@@ -1504,6 +1504,7 @@ impl Multiplexer {
                     // common multiplexer convention that "I'm typing
                     // again" implies "show me what's happening now."
                     let mut snapped = false;
+                    let mut unblocked = false;
                     if let Some(focused) = self.active_focused_id()
                         && let Some(session) = self.sessions.get_mut(&focused)
                     {
@@ -1511,10 +1512,16 @@ impl Multiplexer {
                             session.scroll_to_live();
                             snapped = true;
                         }
+                        unblocked = session.mark_operator_input();
                         session.send_input(&bytes);
                     }
-                    if snapped {
-                        Some(self.compose_full_frame(FullRedrawReason::ScrollbackMovement))
+                    if snapped || unblocked {
+                        let reason = if snapped {
+                            FullRedrawReason::ScrollbackMovement
+                        } else {
+                            FullRedrawReason::ExplicitRedraw
+                        };
+                        Some(self.compose_full_frame(reason))
                     } else {
                         None
                     }

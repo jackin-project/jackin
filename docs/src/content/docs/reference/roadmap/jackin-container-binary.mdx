@@ -151,8 +151,8 @@ Zellij carries scope jackin explicitly does not need (multi-client collaboration
 The [Herdr](https://github.com/ogulcancelik/herdr) study under "Prior art: Herdr" below lists the conceptual borrows for the agent-state model, status roll-up, notification suppression, sound escalation, blocking `wait` semantics, foreground-process ownership, screen heuristics, and semantic integration reports. The multiplexer rewrite adds three structural borrows on top of those — drawn from Herdr's UI shape, not its code:
 
 - **Top-of-screen chrome.** The top chrome renders ` jackin' ` on the left followed by one tab per active jackin session, plus an identity row for container/role context. Active tab gets the brand-green underline/bold; inactive tabs are dimmed; tab labels include the rolled-up state glyph. Operators sharing a screen recognise the brand pill at a glance.
-- **Empty initial state when no agent is preselected.** When `JACKIN_AGENT` is not set at daemon launch, the multiplexer comes up with the brand header, zero tabs, and a centred hint listing the agents from `JACKIN_SUPPORTED_AGENTS` plus `Shell`. The operator picks one with the prefix key and the first tab spawns into that selection. When `JACKIN_AGENT` is set, the daemon spawns the first tab with that agent automatically — matching the historical tmux `docker exec tmux new -A` behaviour.
-- **Per-tab "most urgent" state roll-up.** A tab containing any `blocked` pane is `blocked`; otherwise any `done` pane makes it `done`; otherwise `working`; otherwise `idle`. Same urgency order herdr uses. This drives the tab-strip glyph and feeds the future `agent-state-changed` event stream.
+- **Empty initial state when no agent is preselected.** When no initial agent argv is provided at daemon launch, the multiplexer can come up with the brand header, zero tabs, and a centred hint listing the agents from `JACKIN_SUPPORTED_AGENTS` plus `Shell`. The operator picks one with the prefix key and the first tab spawns into that selection. When the host passes an initial agent argv, the daemon spawns the first tab with that agent automatically — matching the historical direct-into-agent UX.
+- **Per-tab "most urgent" state roll-up.** A tab containing any `blocked` pane is `blocked`; otherwise any `done` pane makes it `done`; otherwise `working`; otherwise `idle`. Same urgency order herdr uses. This drives the tab-strip glyph and feeds the future `agent-state-changed` event stream. Once a pane reaches `blocked`, the attention glyph stays visible until explicit operator keyboard input reaches that pane; incidental PTY output is not enough to clear it.
 
 These are *interface* borrows. Herdr's internal layout (workspaces, sidebar, pane-focus suppression rules, ghostty embedding, kitty graphics passthrough, plugin hooks) is not part of jackin's scope and is not copied.
 
@@ -267,8 +267,8 @@ When the bar is wider than the host terminal, tabs past the right edge are clipp
 
 When the daemon starts:
 
-1. If `JACKIN_AGENT` is set in the environment (the normal case driven by `jackin load`), the daemon spawns one tab running that agent. This matches today's operator expectation that `jackin load the-architect .` immediately drops them into Claude Code.
-2. If `JACKIN_AGENT` is unset *and* `JACKIN_SUPPORTED_AGENTS` lists at least one agent, the daemon comes up empty — row 0 brand bar, no tabs, no panes — and renders a centred picker hint listing each agent in `JACKIN_SUPPORTED_AGENTS` plus `Shell`. The first prefix-action or click chooses the first tab.
+1. If the host passes an initial agent argv (the normal case driven by `jackin load`), the daemon spawns one tab running that agent. This matches today's operator expectation that `jackin load the-architect .` immediately drops them into Claude Code.
+2. If no initial agent argv is provided *and* `JACKIN_SUPPORTED_AGENTS` lists at least one agent, the daemon can come up empty — row 0 brand bar, no tabs, no panes — and render a centred picker hint listing each agent in `JACKIN_SUPPORTED_AGENTS` plus `Shell`. The first prefix-action or click chooses the first tab.
 3. If `JACKIN_SUPPORTED_AGENTS` is unset or empty, the daemon spawns a single `Shell` tab. This is the safe fallback for derived images that lack any agent CLI.
 
 This pattern lets `jackin load <role> .` keep its existing direct-into-agent UX while leaving room for `jackin console` to launch the multiplexer with no preselected agent.
@@ -408,7 +408,7 @@ A regression test runs an end-to-end smoke against Ghostty's reported features: 
 - The host-side `docker run` mount of `/run/jackin/<instance-id>.sock:/run/jackin/jackin.sock`. The socket location, ownership, and lifetime are unchanged.
 - The derived image build pipeline that downloads or builds `jackin-container` and installs it at `/usr/local/bin/jackin-container`. <RepoFile path="src/bin/build_jackin_container.rs" /> stays as-is.
 - The Phase 2 `status` API on the control channel. Existing host callers do not need to change.
-- The `JACKIN_SUPPORTED_AGENTS` and `JACKIN_AGENT` env-var contract between the derived image and the daemon.
+- The `JACKIN_SUPPORTED_AGENTS` env-var contract between the derived image and the daemon, plus the initial-agent argv contract from the host launcher into PID 1.
 - The PID 1 zombie-reaping logic in <RepoFile path="crates/jackin-container/src/pid1.rs" />.
 - The four-state agent-state model (`working` / `blocked` / `done` / `idle`) and its roll-up rules.
 

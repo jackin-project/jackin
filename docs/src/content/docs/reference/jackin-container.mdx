@@ -42,6 +42,13 @@ Building it in-house gives jackin a control plane that is:
 - Renders the status bar and compositor output
 - Listens on `/run/jackin/jackin.sock` for client connections and host CLI queries
 
+The host launcher passes the initial agent slug as the container command
+argument after the image name, for example `docker run ... jk_the-architect
+codex`. The daemon uses that argv value only to choose the first tab.
+`JACKIN_AGENT` is set later on each agent PTY before
+`/jackin/runtime/entrypoint.sh` runs, so the container's ambient environment
+does not imply that every pane is the same agent.
+
 **Client mode (PID ≠ 1).** When the operator runs `docker exec -it <container> jackin-container`, the binary connects to the daemon socket, bridges the operator's terminal to the active session, and handles multiplexer commands locally before forwarding raw input to the PTY.
 
 **Runtime setup subcommand (PID ≠ 1).** `/jackin/runtime/entrypoint.sh` calls `jackin-container runtime-setup` before each agent exec. The subcommand performs idempotent container setup (git identity, GitHub HTTPS rewrites, and the `gh` credential helper), installs the shared git trailer hook on demand, and refreshes per-agent home/auth handoff state. The container init marker lives under `/tmp/jackin-runtime`, so global git/GitHub setup runs once per running container; per-session auth handoff still refreshes before every agent launch.
@@ -121,7 +128,7 @@ Full-frame redraws are still intentional and named in <RepoFile path="crates/jac
 The top two rows of the host terminal are owned by `jackin-container` and never yielded to agent sessions. They render:
 
 - **`jackin'` brand pill** — bright-green background, near-black text. Always visible. When an operator shares their screen, others can immediately see the container is running inside jackin.
-- **Session tabs** — one tab per session. Active tab is bold and green. Inactive tabs are grey. Mouse-clickable. Tabs show a state glyph for the session roll-up.
+- **Session tabs** — one tab per session. Active tab is bold and green. Inactive tabs are grey. Mouse-clickable. Tabs show a state glyph for the session roll-up. The blocked attention glyph is latched: incidental PTY output does not clear it, and explicit operator keyboard input to that pane does.
 - **Identity strip** — container / role details and the clickable container-info entry point.
 
 The status bar is drawn after hiding the cursor, and the cursor is restored after the draw. It never causes the pane content to repaint unnecessarily.

@@ -103,8 +103,12 @@ model = "gpt-5"
         .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
         .expect("role docker run should run");
     assert!(
-        run_cmd.contains("JACKIN_AGENT=codex"),
-        "JACKIN_AGENT=codex must be in docker run; got: {run_cmd}"
+        !run_cmd.contains("JACKIN_AGENT="),
+        "JACKIN_AGENT must not be a container env var; got: {run_cmd}"
+    );
+    assert!(
+        run_cmd.ends_with(" codex"),
+        "initial agent must be passed as container argv; got: {run_cmd}"
     );
     assert!(run_cmd.contains("-e JACKIN_ROLE=agent-smith"), "{run_cmd}");
     assert!(
@@ -112,10 +116,9 @@ model = "gpt-5"
         "{run_cmd}"
     );
     assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"), "{run_cmd}");
-    // JACKIN_AGENT is forwarded in docker run; model flag goes to exec session.
-    // The exec session (docker exec -it <container> jackin-container) carries the model flag
-    // as an arg to jackin-container when passed through env or future protocol extension.
-    // For now assert the exec command targets jackin-container.
+    // The initial agent is passed as container argv; model flag goes to the
+    // exec session when wired through a future protocol extension. For now
+    // assert the exec command targets jackin-container.
     let session_cmd = runner
         .recorded
         .iter()
@@ -213,7 +216,11 @@ plugins = []
         .find(|call| call.contains("docker run") && call.contains("jackin.kind=role"))
         .expect("role docker run should run");
     assert!(
-        run_cmd.contains("JACKIN_AGENT=codex"),
-        "JACKIN_AGENT=codex must be in docker run; got: {run_cmd}"
+        !run_cmd.contains("JACKIN_AGENT="),
+        "JACKIN_AGENT must not be a container env var; got: {run_cmd}"
+    );
+    assert!(
+        run_cmd.ends_with(" codex"),
+        "initial agent must be passed as container argv; got: {run_cmd}"
     );
 }

@@ -825,11 +825,6 @@ async fn launch_role_runtime(
     let agent_specific_mounts = agent_mounts(state);
     let gh_config_mount = format!("{}:/home/agent/.config/gh", state.gh_config_dir.display());
     let certs_agent_mount = format!("{certs_volume}:/certs/client:ro");
-    let jackin_agent_env = format!(
-        "{}={}",
-        crate::env_model::JACKIN_AGENT_ENV_NAME,
-        agent.slug()
-    );
     let jackin_role_env = format!(
         "{}={}",
         crate::env_model::JACKIN_ROLE_ENV_NAME,
@@ -1082,12 +1077,14 @@ async fn launch_role_runtime(
     }
     let socket_mount = format!("{}:/run/jackin", socket_dir.display());
     run_args.extend_from_slice(&["-v", &socket_mount]);
-    // Forward JACKIN_AGENT so the daemon knows which runtime to launch first.
-    run_args.extend_from_slice(&["-e", &jackin_agent_env]);
     // Forward JACKIN_WORKDIR so the daemon spawns every PTY in the
     // workspace workdir (portable_pty defaults to $HOME otherwise).
     run_args.extend_from_slice(&["-e", &jackin_workdir_env]);
     run_args.push(image);
+    // Pass the initial agent as the container command argument. The
+    // daemon uses it only to choose the first tab; per-session
+    // `JACKIN_AGENT` is set later when spawning an actual agent PTY.
+    run_args.push(agent.slug());
     runner
         .run("docker", &run_args, None, &docker_run_opts)
         .await?;
@@ -5181,15 +5178,19 @@ model = "gpt-5"
             .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .unwrap();
         assert!(
-            run_cmd.contains("JACKIN_AGENT=codex"),
-            "JACKIN_AGENT must be in docker run"
+            !run_cmd.contains("JACKIN_AGENT="),
+            "JACKIN_AGENT must not be a container env var"
+        );
+        assert!(
+            run_cmd.ends_with(" codex"),
+            "initial agent must be passed as container argv"
         );
         assert!(run_cmd.contains("-e OPENAI_API_KEY=test-openai-key"));
         assert!(!run_cmd.contains("/jackin/codex/config.toml"));
         // Multi-agent role `agents = ["claude", "codex"]` provisions
         // every supported agent's home state so `hardline --new --agent
         // claude` can switch agents without re-authentication. The
-        // selected-agent runtime is still Codex (`JACKIN_AGENT=codex`),
+        // selected-agent runtime is still Codex (the docker-run argv ends in `codex`),
         // but Claude's mounts must be present.
         assert!(run_cmd.contains("/home/agent/.claude"));
         assert!(run_cmd.contains("/home/agent/.codex"));
@@ -5261,8 +5262,12 @@ agents = ["codex"]
             .find(|call| call.contains("docker run -d") && call.contains("jackin.kind=role"))
             .expect("role docker run should fire even without OPENAI_API_KEY");
         assert!(
-            run_cmd.contains("JACKIN_AGENT=codex"),
-            "JACKIN_AGENT must be in docker run"
+            !run_cmd.contains("JACKIN_AGENT="),
+            "JACKIN_AGENT must not be a container env var"
+        );
+        assert!(
+            run_cmd.ends_with(" codex"),
+            "initial agent must be passed as container argv"
         );
         assert!(!run_cmd.contains("-e OPENAI_API_KEY="));
     }

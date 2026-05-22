@@ -77,30 +77,15 @@ fn parse_focus_flag(args: &[String]) -> Option<u64> {
     None
 }
 
-/// Resolve the initial agent slug for PID-1 daemon mode. Priority:
-/// `JACKIN_AGENT` env (validated, hard-error on invalid because the
-/// operator set it explicitly and a silent fallback hides the typo)
-/// → positional argv (validated, soft-fall back to `DEFAULT_AGENT`
-/// because argv might be a wrapper-passed flag in a future refactor)
-/// → `DEFAULT_AGENT`. Both ingress points share `validate_agent_slug`
-/// so injection / typo'd flags get the same gate.
+/// Resolve the initial agent slug for PID-1 daemon mode. The host launcher
+/// passes this as the container command argument after the image name so the
+/// container's global environment does not claim one agent for every session.
+/// `JACKIN_AGENT` is reserved for per-agent entrypoint processes.
 fn resolve_initial_agent(args: &[String]) -> Result<String> {
-    if let Ok(env_agent) = std::env::var("JACKIN_AGENT") {
-        let validated = validate_agent_slug(&env_agent)
-            .map_err(|reason| anyhow::anyhow!("JACKIN_AGENT={env_agent:?} rejected: {reason}"))?;
-        return Ok(validated.to_string());
-    }
-    let resolved = args
-        .get(1)
-        .and_then(|raw| match validate_agent_slug(raw) {
-            Ok(s) => Some(s.to_string()),
-            Err(reason) => {
-                eprintln!(
-                    "[jackin-container] ignoring agent argv {raw:?}: {reason}; using default {DEFAULT_AGENT:?}"
-                );
-                None
-            }
-        })
-        .unwrap_or_else(|| DEFAULT_AGENT.to_string());
-    Ok(resolved)
+    let Some(raw) = args.get(1) else {
+        return Ok(DEFAULT_AGENT.to_string());
+    };
+    let validated = validate_agent_slug(raw)
+        .map_err(|reason| anyhow::anyhow!("initial agent argv {raw:?} rejected: {reason}"))?;
+    Ok(validated.to_string())
 }
