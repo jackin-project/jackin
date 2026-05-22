@@ -328,6 +328,39 @@ impl Multiplexer {
         self.spawn_session(Some(agent.to_string()))
     }
 
+    /// Single dispatch point for a `DialogAction`. The mouse-click and
+    /// key-event paths both call `Dialog::handle_*` and need to react
+    /// to whatever the dialog decided — folding the response handling
+    /// into one function keeps the two call sites from drifting
+    /// independently (an earlier version added `Consume` handling to
+    /// the click path but missed the key-event path).
+    fn apply_dialog_action(&mut self, action: DialogAction) -> Vec<u8> {
+        match action {
+            DialogAction::Dismiss => {
+                self.dialog = None;
+            }
+            DialogAction::Redraw | DialogAction::Consume => {}
+            DialogAction::Command(cmd) => {
+                // `handle_palette_command` owns the dialog state — it
+                // closes the dialog by default and overwrites it when
+                // the command opens a sub-dialog (e.g. NewTab → agent
+                // picker).
+                self.handle_palette_command(cmd);
+            }
+            DialogAction::SpawnAgent { agent, intent } => {
+                self.dialog = None;
+                self.dispatch_spawn_intent(agent, intent);
+            }
+            DialogAction::RenameTab { tab_idx, label } => {
+                self.dialog = None;
+                if let Some(tab) = self.tabs.get_mut(tab_idx) {
+                    tab.custom_label = if label.is_empty() { None } else { Some(label) };
+                }
+            }
+        }
+        self.compose_frame()
+    }
+
     /// Single dispatch point for `DialogAction::SpawnAgent`. Centralises
     /// the four `let _ = self.spawn_*` sites and ensures spawn failures
     /// are clog'd with their intent (NewTab / SplitHorizontal /
@@ -721,29 +754,7 @@ impl Multiplexer {
                     .as_mut()
                     .expect("dialog presence checked")
                     .handle_click(row, col, term_rows, term_cols);
-                match action {
-                    DialogAction::Dismiss => {
-                        self.dialog = None;
-                        Some(self.compose_frame())
-                    }
-                    DialogAction::Redraw | DialogAction::Consume => Some(self.compose_frame()),
-                    DialogAction::Command(cmd) => {
-                        self.handle_palette_command(cmd);
-                        Some(self.compose_frame())
-                    }
-                    DialogAction::SpawnAgent { agent, intent } => {
-                        self.dialog = None;
-                        self.dispatch_spawn_intent(agent, intent);
-                        Some(self.compose_frame())
-                    }
-                    DialogAction::RenameTab { tab_idx, label } => {
-                        self.dialog = None;
-                        if let Some(tab) = self.tabs.get_mut(tab_idx) {
-                            tab.custom_label = if label.is_empty() { None } else { Some(label) };
-                        }
-                        Some(self.compose_frame())
-                    }
-                }
+                Some(self.apply_dialog_action(action))
             }
             InputEvent::MousePress { .. } if self.dialog.is_some() => {
                 // Any non-wheel mouse event with the dialog up that
@@ -906,35 +917,7 @@ impl Multiplexer {
             InputEvent::Data(bytes) => {
                 if let Some(ref mut dialog) = self.dialog {
                     let action = dialog.handle_key(&bytes);
-                    match action {
-                        DialogAction::Dismiss => {
-                            self.dialog = None;
-                            Some(self.compose_frame())
-                        }
-                        DialogAction::Redraw => Some(self.compose_frame()),
-                        DialogAction::Command(cmd) => {
-                            // `handle_palette_command` owns the dialog
-                            // state — it closes the dialog by default
-                            // and overwrites it when the command opens
-                            // a sub-dialog (e.g. NewTab → agent picker).
-                            self.handle_palette_command(cmd);
-                            Some(self.compose_frame())
-                        }
-                        DialogAction::SpawnAgent { agent, intent } => {
-                            self.dialog = None;
-                            self.dispatch_spawn_intent(agent, intent);
-                            Some(self.compose_frame())
-                        }
-                        DialogAction::RenameTab { tab_idx, label } => {
-                            self.dialog = None;
-                            if let Some(tab) = self.tabs.get_mut(tab_idx) {
-                                tab.custom_label =
-                                    if label.is_empty() { None } else { Some(label) };
-                            }
-                            Some(self.compose_frame())
-                        }
-                        DialogAction::Consume => Some(self.compose_frame()),
-                    }
+                    Some(self.apply_dialog_action(action))
                 } else {
                     // Any keyboard input from the operator returns the
                     // focused pane to the live tail. Matches the

@@ -121,12 +121,16 @@ pub fn encode_client(frame: ClientFrame) -> Vec<u8> {
     }
 }
 
-/// Read the next client frame from the stream. `first_byte` is the
-/// already-peeked first byte (used by the channel-dispatch layer).
-pub async fn read_client_frame(
+/// Read one length-prefixed payload from `stream` given the already-
+/// peeked first byte (the frame's tag). Returns `Ok(None)` on EOF /
+/// disconnect, `Err` on oversized length. Used by both
+/// `read_client_frame` and `read_server_frame` — keeping the framing
+/// in one place means a future tightening of `MAX_FRAME_PAYLOAD` (or
+/// a switch to streaming) only has to touch this function.
+async fn read_framed_payload(
     stream: &mut UnixStream,
     first_byte: u8,
-) -> Result<Option<ClientFrame>> {
+) -> Result<Option<(u8, Vec<u8>)>> {
     let mut len_buf = [0u8; 4];
     if stream.read_exact(&mut len_buf).await.is_err() {
         return Ok(None);
@@ -139,7 +143,19 @@ pub async fn read_client_frame(
     if !payload.is_empty() && stream.read_exact(&mut payload).await.is_err() {
         return Ok(None);
     }
-    Ok(Some(decode_client(first_byte, payload)?))
+    Ok(Some((first_byte, payload)))
+}
+
+/// Read the next client frame from the stream. `first_byte` is the
+/// already-peeked first byte (used by the channel-dispatch layer).
+pub async fn read_client_frame(
+    stream: &mut UnixStream,
+    first_byte: u8,
+) -> Result<Option<ClientFrame>> {
+    let Some((tag, payload)) = read_framed_payload(stream, first_byte).await? else {
+        return Ok(None);
+    };
+    Ok(Some(decode_client(tag, payload)?))
 }
 
 /// Read the next server frame from the stream. `first_byte` is the
@@ -148,19 +164,10 @@ pub async fn read_server_frame(
     stream: &mut UnixStream,
     first_byte: u8,
 ) -> Result<Option<ServerFrame>> {
-    let mut len_buf = [0u8; 4];
-    if stream.read_exact(&mut len_buf).await.is_err() {
+    let Some((tag, payload)) = read_framed_payload(stream, first_byte).await? else {
         return Ok(None);
-    }
-    let len = u32::from_be_bytes(len_buf) as usize;
-    if len > MAX_FRAME_PAYLOAD {
-        bail!("attach frame payload {len} exceeds limit {MAX_FRAME_PAYLOAD}");
-    }
-    let mut payload = vec![0u8; len];
-    if !payload.is_empty() && stream.read_exact(&mut payload).await.is_err() {
-        return Ok(None);
-    }
-    Ok(Some(decode_server(first_byte, payload)?))
+    };
+    Ok(Some(decode_server(tag, payload)?))
 }
 
 fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
