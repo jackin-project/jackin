@@ -159,7 +159,7 @@ const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (PaletteCommand::ZoomPane, "Zoom / unzoom pane"),
     (PaletteCommand::ClosePane, "Close pane"),
     (PaletteCommand::CloseTab, "Close tab"),
-    (PaletteCommand::Detach, "Detach"),
+    (PaletteCommand::Detach, "Stop & exit"),
 ];
 
 impl Dialog {
