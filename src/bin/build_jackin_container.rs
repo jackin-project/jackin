@@ -94,13 +94,13 @@ fn target_triple(arch: &str) -> &'static str {
 }
 
 fn check_zigbuild_installed() -> Result<()> {
-    // `cargo zigbuild --version` is the most direct probe — succeeds iff the
-    // subcommand binary is reachable on PATH. Parsing `cargo --list` is brittle
-    // because cargo ≥1.83 formats third-party subcommands with a trailing
-    // description (`zigbuild           cargo zigbuild ...`), so a `trim()`
-    // equality check silently returns "not installed" on current toolchains.
-    let probe = process::Command::new("cargo")
-        .args(["zigbuild", "--version"])
+    // Probe the parent `cargo-zigbuild` binary directly. The `cargo zigbuild`
+    // subcommand strips `--version` / `-V` in 0.22.x (only `-h/--help` plus
+    // build flags survive), so `cargo zigbuild --version` exits non-zero even
+    // when the binary is reachable. Parsing `cargo --list` is brittle because
+    // cargo ≥1.83 formats third-party subcommands with a trailing description.
+    let probe = process::Command::new("cargo-zigbuild")
+        .arg("--version")
         .output();
     if matches!(&probe, Ok(out) if out.status.success()) {
         return Ok(());
