@@ -214,10 +214,10 @@ impl InputParser {
                 State::Ss3 => {
                     self.seq.push(b);
                     let seq = std::mem::take(&mut self.seq);
-                    if let Some(ev) = classify_csi(&seq) {
-                        events.push(ev);
-                    } else {
-                        events.push(InputEvent::Data(seq));
+                    match classify_csi(&seq) {
+                        Some(Some(ev)) => events.push(ev),
+                        Some(None) => {}
+                        None => events.push(InputEvent::Data(seq)),
                     }
                     self.state = State::Idle;
                 }
@@ -231,10 +231,17 @@ impl InputParser {
                             // as paste content until PASTE_END arrives.
                             events.push(InputEvent::Data(seq));
                             self.in_paste = true;
-                        } else if let Some(ev) = classify_csi(&seq) {
-                            events.push(ev);
                         } else {
-                            events.push(InputEvent::Data(seq));
+                            // classify_csi returns an explicit "drop this
+                            // sequence" outcome via Some(None) so kitty
+                            // key-release events (and any future
+                            // suppress-class CSI) never reach the agent
+                            // or the dialog as garbage Data bytes.
+                            match classify_csi(&seq) {
+                                Some(Some(ev)) => events.push(ev),
+                                Some(None) => {}
+                                None => events.push(InputEvent::Data(seq)),
+                            }
                         }
                         self.state = State::Idle;
                     }
@@ -407,16 +414,45 @@ fn prefix_binding(b: u8) -> Option<PrefixCommand> {
 
 /// Decode a complete CSI sequence into a higher-level event when we
 /// recognise it. Returns `None` to forward the bytes verbatim.
-fn classify_csi(seq: &[u8]) -> Option<InputEvent> {
+/// Outer return shape:
+///   `None`            → not classified, caller emits the raw `Data`.
+///   `Some(None)`      → classified as "suppress" — emit nothing
+///                       (kitty key-release events are the only producer).
+///   `Some(Some(ev))`  → classified, caller emits `ev`.
+fn classify_csi(seq: &[u8]) -> Option<Option<InputEvent>> {
     // Focus in / out.
     if seq == b"\x1b[I" {
-        return Some(InputEvent::FocusIn);
+        return Some(Some(InputEvent::FocusIn));
     }
     if seq == b"\x1b[O" {
-        return Some(InputEvent::FocusOut);
+        return Some(Some(InputEvent::FocusOut));
     }
-    // Arrow keys: ESC [ A/B/C/D — *not* intercepted; forwarded to PTY.
-    // Arrow with modifier: ESC [ 1 ; <mod> A/B/C/D — Alt+Shift = mod 4.
+    // Arrow keys.
+    //
+    // Three encodings arrive at this parser depending on what the
+    // operator's outer terminal has been told to emit:
+    //   1. Legacy:        ESC [ A/B/C/D
+    //   2. xterm modifier: ESC [ 1 ; <mod> A/B/C/D
+    //   3. Kitty progressive enhancement:
+    //        ESC [ 1 ; <mod> : <event> A/B/C/D
+    //      where event 1 = press, 2 = repeat, 3 = release.
+    //
+    // Encoding (3) lands here whenever a focused agent has pushed the
+    // kitty keyboard protocol (`CSI > 1 u`) via OSC passthrough and
+    // the daemon mirrored it onto the outer terminal — Claude Code
+    // does this — and the operator subsequently presses any arrow.
+    //
+    // The multiplexer's dialog and most agents only understand
+    // encoding (1) for navigation, so this branch normalises the
+    // unmodified-press case down to the legacy form and drops key-
+    // release events outright (the only emitter is kitty mode, and
+    // forwarding them surfaces as visible garbage at agent prompts).
+    // Modified arrows keep the legacy `ESC [ 1 ; <mod> <final>` form
+    // so agents that consume Alt+Arrow / Shift+Arrow / Ctrl+Arrow
+    // still see them; Alt+Shift+Arrow (mod 4) is intercepted as
+    // `ResizePane` regardless of encoding to keep the multiplexer's
+    // tmux-style drag-resize shortcut working.
+    //
     // `Alt+Shift+Arrow` is reserved for multiplexer pane resize so it
     // does not collide with agents that consume `Alt+Arrow` (word
     // navigation) or `Shift+Arrow` (selection extend).
@@ -425,7 +461,31 @@ fn classify_csi(seq: &[u8]) -> Option<InputEvent> {
         && matches!(final_byte, b'A' | b'B' | b'C' | b'D')
     {
         let body = &rest[..rest.len() - 1];
-        if body == b"4" {
+        let (mod_part, event) = match body.iter().position(|&b| b == b':') {
+            Some(i) => {
+                let ev = std::str::from_utf8(&body[i + 1..])
+                    .ok()
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(1);
+                (&body[..i], ev)
+            }
+            None => (body, 1u32),
+        };
+        let modifier: u32 = std::str::from_utf8(mod_part)
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1);
+
+        // Drop kitty key-release entirely. Press (1) and repeat (2)
+        // map to actions; anything else is treated as a press for
+        // safety since older or non-conformant terminals may omit the
+        // event tag.
+        if event == 3 {
+            return Some(None);
+        }
+
+        // Alt+Shift+Arrow → multiplexer pane resize.
+        if modifier == 4 {
             let dir = match final_byte {
                 b'A' => ArrowDir::Up,
                 b'B' => ArrowDir::Down,
@@ -433,7 +493,19 @@ fn classify_csi(seq: &[u8]) -> Option<InputEvent> {
                 b'D' => ArrowDir::Left,
                 _ => unreachable!(),
             };
-            return Some(InputEvent::ResizePane(dir));
+            return Some(Some(InputEvent::ResizePane(dir)));
+        }
+
+        // No modifier and an event tag was present (kitty form) →
+        // strip the kitty wrapper and emit legacy `ESC [ A/B/C/D`
+        // so the dialog navigator and non-kitty agents match. When
+        // the event tag was absent we leave the legacy `ESC [ 1 ; 1
+        // <final>` shape alone — that form already round-trips
+        // through every agent path tested.
+        if modifier == 1 && body.contains(&b':') {
+            let mut plain = b"\x1b[".to_vec();
+            plain.push(final_byte);
+            return Some(Some(InputEvent::Data(plain)));
         }
     }
     // SGR mouse: ESC [ < ... M/m
@@ -453,9 +525,9 @@ fn classify_csi(seq: &[u8]) -> Option<InputEvent> {
             let col = (p[1] as u16).saturating_sub(1);
             let row = (p[2] as u16).saturating_sub(1);
             if *final_byte == b'M' {
-                return Some(InputEvent::MousePress { col, row, button });
+                return Some(Some(InputEvent::MousePress { col, row, button }));
             }
-            return Some(InputEvent::MouseRelease { col, row, button });
+            return Some(Some(InputEvent::MouseRelease { col, row, button }));
         }
     }
     None
@@ -578,6 +650,75 @@ mod tests {
         match &events[..] {
             [InputEvent::Data(b)] => assert_eq!(b, b"\x1b[13;2u"),
             other => panic!("Shift+Enter must round-trip: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn kitty_arrow_press_normalises_to_legacy_form() {
+        // Kitty progressive-enhancement arrow Down press, no modifier:
+        // `\x1b[1;1:1B`. The dialog navigator only recognises the
+        // legacy `\x1b[B`, so the parser must rewrite the kitty form
+        // before the byte sequence reaches Dialog::handle_key — every
+        // other arrow direction follows the same rule.
+        let events = parse_all_default(b"\x1b[1;1:1B");
+        assert_eq!(events, vec![InputEvent::Data(b"\x1b[B".to_vec())]);
+        let events = parse_all_default(b"\x1b[1;1:1A");
+        assert_eq!(events, vec![InputEvent::Data(b"\x1b[A".to_vec())]);
+        let events = parse_all_default(b"\x1b[1;1:1C");
+        assert_eq!(events, vec![InputEvent::Data(b"\x1b[C".to_vec())]);
+        let events = parse_all_default(b"\x1b[1;1:1D");
+        assert_eq!(events, vec![InputEvent::Data(b"\x1b[D".to_vec())]);
+    }
+
+    #[test]
+    fn kitty_arrow_repeat_is_treated_as_press() {
+        // Event tag 2 (repeat) must reach the dialog / agent so a
+        // held-down arrow continues scrolling instead of stalling
+        // after the first emit.
+        let events = parse_all_default(b"\x1b[1;1:2B");
+        assert_eq!(events, vec![InputEvent::Data(b"\x1b[B".to_vec())]);
+    }
+
+    #[test]
+    fn kitty_arrow_release_is_suppressed() {
+        // Event tag 3 (release) must not surface as a Data event.
+        // Forwarding it surfaces as a stray `\x1b[1;1:3B` visible at
+        // the agent's prompt and confuses TUIs that key off press
+        // events. Both the dialog and the agent only ever care about
+        // press / repeat.
+        let events = parse_all_default(b"\x1b[1;1:3B");
+        assert!(
+            events.is_empty(),
+            "kitty arrow release must be dropped, got {events:?}"
+        );
+        let events = parse_all_default(b"\x1b[1;1:3A");
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn kitty_alt_shift_arrow_is_resize_pane() {
+        // Alt+Shift+Arrow stays a multiplexer-level pane-resize gesture
+        // even when the outer terminal is in kitty mode — the event
+        // tag is parsed, the press is acted on, the release is
+        // suppressed (same shape as the no-modifier case above).
+        let events = parse_all_default(b"\x1b[1;4:1B");
+        assert_eq!(events, vec![InputEvent::ResizePane(ArrowDir::Down)]);
+        let events = parse_all_default(b"\x1b[1;4:3B");
+        assert!(
+            events.is_empty(),
+            "kitty alt+shift arrow release must be dropped, got {events:?}"
+        );
+    }
+
+    #[test]
+    fn legacy_xterm_modifier_arrow_still_round_trips() {
+        // Encoding without an event tag stays untouched — agents that
+        // consume the legacy modifier form (Ctrl+Arrow word nav etc.)
+        // continue to receive it byte-for-byte.
+        let events = parse_all_default(b"\x1b[1;5A");
+        match &events[..] {
+            [InputEvent::Data(b)] => assert_eq!(b, b"\x1b[1;5A"),
+            other => panic!("Ctrl+Up must round-trip: {other:?}"),
         }
     }
 
