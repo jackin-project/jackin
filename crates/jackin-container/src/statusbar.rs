@@ -78,15 +78,29 @@ pub struct StatusBar {
     /// as a clickable shortcut for the palette key — useful when the
     /// keyboard shortcut isn't reaching the parser for any reason.
     pub hint_region: Option<(u16, u16)>,
+    /// Click region (1-based, inclusive-exclusive) covering the
+    /// right-side container-name label on row 1. A mouse press inside
+    /// it opens the `ContainerInfo` dialog so the operator can copy
+    /// the full container ID to their clipboard and see the role +
+    /// focused-agent details that used to live in the label itself.
+    pub identity_region: Option<(u16, u16)>,
     pub prefix_mode: PrefixMode,
     pub prefix_label: String,
     pub palette_label: String,
     pub prefix_enabled: bool,
-    /// `role · container-name` displayed on the right side of row 1
-    /// so the operator can always tell which container they are
-    /// attached to and which role it runs. Resolved at startup from
-    /// `JACKIN_ROLE` and the container's `HOSTNAME`.
+    /// Container name (`jk-<short>-<workspace>-<role>`) displayed on
+    /// the right side of row 1. The role used to be prepended here as
+    /// `role · container-name`, but the role is already inferable from
+    /// the suffix of the container name and the modal opened on click
+    /// surfaces it explicitly — duplicating it on the status bar just
+    /// burned columns the tab strip needs. Resolved from `HOSTNAME`.
     pub identity_label: String,
+    /// The role key the host CLI passed in via `JACKIN_ROLE`. Stored
+    /// separately so the `ContainerInfo` modal can name it explicitly
+    /// without re-deriving it from the container-name suffix (which
+    /// is the lossy short form `thearchitect`, not the canonical
+    /// `the-architect` selector the operator typed).
+    pub role: String,
 }
 
 impl Default for StatusBar {
@@ -100,12 +114,36 @@ impl StatusBar {
         Self {
             tab_regions: Vec::new(),
             hint_region: None,
+            identity_region: None,
             prefix_mode: PrefixMode::Idle,
             prefix_label: "Ctrl+B".to_string(),
             palette_label: "Ctrl+\\".to_string(),
             prefix_enabled: false,
-            identity_label: resolve_identity_label(),
+            identity_label: resolve_container_name(),
+            role: resolve_role_key(),
         }
+    }
+
+    /// Return `true` when the (1-based) click at `(row, col)` falls
+    /// inside the identity-label region on row 1. The daemon treats
+    /// that as "open ContainerInfo dialog" so the operator can copy
+    /// the full container ID and see role / focused-agent details.
+    pub fn identity_at(&self, row: u16, col: u16) -> bool {
+        if row != 2 {
+            return false;
+        }
+        match self.identity_region {
+            Some((start, end)) => col >= start && col < end,
+            None => false,
+        }
+    }
+
+    pub fn container_name(&self) -> &str {
+        &self.identity_label
+    }
+
+    pub fn role(&self) -> &str {
+        &self.role
     }
 
     /// Return `true` when the (1-based) click at `(row, col)` falls
@@ -142,6 +180,7 @@ impl StatusBar {
     ) {
         self.tab_regions.clear();
         self.hint_region = None;
+        self.identity_region = None;
 
         // ── Row 0: brand pill + tabs + hint ─────────────────────────
         buf.extend_from_slice(b"\x1b[1;1H\x1b[2K");
@@ -289,6 +328,8 @@ impl StatusBar {
                 buf.extend_from_slice(HINT_FG.as_bytes());
                 buf.extend_from_slice(self.identity_label.as_bytes());
                 buf.extend_from_slice(RESET.as_bytes());
+                // 1-based, inclusive-exclusive click region.
+                self.identity_region = Some((start + 1, start + 1 + label_cols));
             }
         }
     }
@@ -516,22 +557,18 @@ fn move_to(buf: &mut Vec<u8>, row: u16, col: u16) {
     let _ = write!(buf, "\x1b[{};{}H", row, col);
 }
 
-/// Build the row-1 identity label from the container's env.
-/// `JACKIN_ROLE` carries the role key set by the host CLI when it
-/// launched the container; `HOSTNAME` carries the container's
-/// docker-assigned name (`jk-<short>-<workspace>-<role>`). When
-/// either is missing the function falls back to the value that is
-/// present; when both are missing it returns an empty string so the
-/// renderer skips the label entirely.
-fn resolve_identity_label() -> String {
-    let role = std::env::var("JACKIN_ROLE").ok();
-    let host = std::env::var("HOSTNAME").ok();
-    match (role, host) {
-        (Some(r), Some(h)) if !r.is_empty() && !h.is_empty() => format!("{r} · {h}"),
-        (Some(r), _) if !r.is_empty() => r,
-        (_, Some(h)) if !h.is_empty() => h,
-        _ => String::new(),
-    }
+/// Row 1 identity label = container name only (`HOSTNAME`). The role
+/// is shown in the `ContainerInfo` dialog opened by clicking the
+/// label, not on the status bar itself — duplicating it on every
+/// frame burned columns the tab strip needs.
+fn resolve_container_name() -> String {
+    std::env::var("HOSTNAME").unwrap_or_default()
+}
+
+/// Role key the host CLI passed in via `JACKIN_ROLE`. Empty when the
+/// daemon was started outside the normal launch path (e.g. CI tests).
+fn resolve_role_key() -> String {
+    std::env::var("JACKIN_ROLE").unwrap_or_default()
 }
 
 #[cfg(test)]

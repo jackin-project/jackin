@@ -71,6 +71,19 @@ pub enum Dialog {
         tab_idx: usize,
         input: jackin_tui::TextField,
     },
+    /// Read-only modal opened when the operator clicks the status-bar
+    /// container-name label. Surfaces the bits that used to clutter
+    /// the bar (role key, focused-agent runtime) plus the full
+    /// container ID with a one-key "copy to clipboard" shortcut.
+    /// Enter copies the container name via OSC 52, Esc / q dismisses.
+    /// `focused_agent` is the slug of whichever pane is active when
+    /// the modal opens — `Some("claude")`, `Some("kimi")`, … or
+    /// `None` for a plain shell pane.
+    ContainerInfo {
+        container_name: String,
+        role: String,
+        focused_agent: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,6 +100,13 @@ pub enum DialogAction {
     /// `label` clears the existing custom label and re-enables
     /// auto-naming.
     RenameTab { tab_idx: usize, label: String },
+    /// Operator pressed Enter inside the `ContainerInfo` modal —
+    /// copy the carried payload to the operator's clipboard via OSC
+    /// 52, dismiss, and surface a short confirmation. Carrying the
+    /// payload through the action (rather than the daemon re-deriving
+    /// it from the dialog) keeps the dialog the single source of
+    /// truth for what gets copied.
+    CopyToClipboard(String),
     /// User dismissed with Escape.
     Dismiss,
     /// Dialog is still open; redraw.
@@ -139,10 +159,22 @@ impl Dialog {
         if let Self::RenameTab { tab_idx, input } = self {
             return rename_tab_handle_key(*tab_idx, input, key);
         }
+        // ContainerInfo is read-only — Enter copies the container
+        // name to clipboard, every other key (except dismiss handled
+        // below) is a no-op redraw.
+        if let Self::ContainerInfo { container_name, .. } = self {
+            if is_dismiss_key(key) {
+                return DialogAction::Dismiss;
+            }
+            return match key {
+                b"\r" | b"\n" => DialogAction::CopyToClipboard(container_name.clone()),
+                _ => DialogAction::Redraw,
+            };
+        }
         // From here on, only the list-style dialogs reach this code
         // path. The arrow / dismiss / character branches do not need
-        // to enumerate `RenameTab` — the early return above is the
-        // single source of truth for that variant.
+        // to enumerate `RenameTab` or `ContainerInfo` — the early
+        // returns above are the single source of truth for those.
         if is_dismiss_key(key) {
             return DialogAction::Dismiss;
         }
@@ -154,7 +186,7 @@ impl Dialog {
                     }
                     DialogAction::Redraw
                 }
-                Self::RenameTab { .. } => DialogAction::Redraw,
+                Self::RenameTab { .. } | Self::ContainerInfo { .. } => DialogAction::Redraw,
             };
         }
         if is_arrow_down(key) {
@@ -173,11 +205,11 @@ impl Dialog {
                     }
                     DialogAction::Redraw
                 }
-                Self::RenameTab { .. } => DialogAction::Redraw,
+                Self::RenameTab { .. } | Self::ContainerInfo { .. } => DialogAction::Redraw,
             };
         }
         match self {
-            Self::RenameTab { .. } => DialogAction::Redraw,
+            Self::RenameTab { .. } | Self::ContainerInfo { .. } => DialogAction::Redraw,
             Self::CommandPalette { selected } => match key {
                 b"k" => {
                     if *selected > 0 {
@@ -254,6 +286,13 @@ impl Dialog {
         if matches!(self, Self::RenameTab { .. }) {
             return DialogAction::Consume;
         }
+        // ContainerInfo: a click anywhere inside the box copies the
+        // container name to the operator's clipboard, matching the
+        // "click to copy" mental model the menu hint advertises.
+        // Clicks outside the box already dismissed up top.
+        if let Self::ContainerInfo { container_name, .. } = self {
+            return DialogAction::CopyToClipboard(container_name.clone());
+        }
         // First content row sits two rows down from the top border
         // (top border + blank pad). Rows above and below the item
         // list are decorative.
@@ -263,11 +302,10 @@ impl Dialog {
             // Agent picker rows: agents + separator + Shell. The
             // separator row is non-selectable.
             Self::AgentPicker { agents, .. } => agents.len() as u16 + 2,
-            // RenameTab is handled by the early consume-on-click
-            // return above. Treat the post-check as "no rows" so the
-            // outer match still type-checks without a panicky
-            // unreachable!.
-            Self::RenameTab { .. } => 0,
+            // RenameTab + ContainerInfo are handled by the early
+            // returns above. Treat the post-check as "no rows" so the
+            // outer match still type-checks without an unreachable!.
+            Self::RenameTab { .. } | Self::ContainerInfo { .. } => 0,
         };
         if row < first_item_row || row >= first_item_row + item_count {
             return DialogAction::Consume;
@@ -303,12 +341,11 @@ impl Dialog {
                     intent: *intent,
                 }
             }
-            // Same fallthrough as `item_count` above: RenameTab clicks
-            // were already handled by the early Consume return so this
-            // arm cannot fire in practice. Return Consume rather than
-            // panic so a future refactor that drops the early return
-            // degrades cleanly.
-            Self::RenameTab { .. } => DialogAction::Consume,
+            // Same fallthrough as `item_count` above: RenameTab and
+            // ContainerInfo clicks were already handled by the early
+            // returns. Return Consume rather than panic so a future
+            // refactor that drops the early return degrades cleanly.
+            Self::RenameTab { .. } | Self::ContainerInfo { .. } => DialogAction::Consume,
         }
     }
 
@@ -331,6 +368,8 @@ impl Dialog {
             Self::AgentPicker { agents, .. } => agents.len() as u16 + 2 + 4,
             // Rename modal: top border + blank pad + input row + blank pad + bottom border.
             Self::RenameTab { .. } => 5,
+            // ContainerInfo: top + pad + 3 detail rows + pad + bottom.
+            Self::ContainerInfo { .. } => 7,
         };
         let max_height = term_rows
             .saturating_sub(crate::statusbar::STATUS_BAR_ROWS)
@@ -380,6 +419,23 @@ impl Dialog {
             }
             Self::RenameTab { input, .. } => {
                 render_rename_tab(buf, term_rows, term_cols, input.value());
+            }
+            Self::ContainerInfo {
+                container_name,
+                role,
+                focused_agent,
+            } => {
+                render_container_info(
+                    buf,
+                    box_row,
+                    box_col,
+                    height,
+                    width,
+                    container_name,
+                    role,
+                    focused_agent.as_deref(),
+                );
+                render_bottom_hint(buf, term_rows, term_cols, CONTAINER_INFO_HINT);
             }
         }
     }
@@ -497,6 +553,14 @@ const RENAME_HINT: &[HintSpan<'static>] = &[
     HintSpan::Text("cancel"),
     HintSpan::GroupSep,
     HintSpan::Text("empty = auto name"),
+];
+
+const CONTAINER_INFO_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Enter"),
+    HintSpan::Text("copy container ID"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("dismiss"),
 ];
 
 /// Render the tab-rename modal. One text-input row showing the current
@@ -653,6 +717,73 @@ fn render_row(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, label: &str, se
         buf.push(b' ');
     }
     buf.extend_from_slice(RESET.as_bytes());
+}
+
+/// Render the read-only ContainerInfo modal. Three label/value rows
+/// (Container ID, Role, Agent) inside the standard `render_box` chrome.
+/// The container ID is rendered in white-bold to flag it as the copy
+/// target the bottom hint advertises. No selection state — Enter / a
+/// click anywhere inside the box copies the ID via OSC 52; Esc / q
+/// dismisses.
+fn render_container_info(
+    buf: &mut Vec<u8>,
+    box_row: u16,
+    box_col: u16,
+    height: u16,
+    width: u16,
+    container_name: &str,
+    role: &str,
+    focused_agent: Option<&str>,
+) {
+    render_box(buf, box_row, box_col, height, width, "Container info");
+    // Label column width — keep the label/value gutter aligned across
+    // all three rows. "Container ID" is the longest label.
+    let label_col_width = "Container ID".chars().count();
+    let interior_left = box_col + 2;
+    let interior_max_cols = (width as usize).saturating_sub(4);
+    let value_col_offset = label_col_width + 2; // 2 = ": "
+    let value_max_cols = interior_max_cols.saturating_sub(value_col_offset);
+
+    let rows: [(&str, String, bool); 3] = [
+        ("Container ID", container_name.to_string(), true),
+        ("Role", non_empty_or_dim(role), false),
+        (
+            "Agent",
+            non_empty_or_dim(focused_agent.unwrap_or("")),
+            false,
+        ),
+    ];
+    for (i, (label, value, emphasise)) in rows.iter().enumerate() {
+        let r = box_row + 2 + i as u16;
+        move_to(buf, r, interior_left);
+        buf.extend_from_slice(BG_DARK.as_bytes());
+        buf.extend_from_slice(FG_BORDER.as_bytes());
+        buf.extend_from_slice(label.as_bytes());
+        for _ in label.chars().count()..label_col_width {
+            buf.push(b' ');
+        }
+        buf.extend_from_slice(b": ");
+        if *emphasise {
+            buf.extend_from_slice(FG_WHITE.as_bytes());
+            buf.extend_from_slice(BOLD.as_bytes());
+        } else {
+            buf.extend_from_slice(FG_GREEN.as_bytes());
+        }
+        let value_cols = value.chars().count().min(value_max_cols);
+        let value_take: String = value.chars().take(value_cols).collect();
+        buf.extend_from_slice(value_take.as_bytes());
+        buf.extend_from_slice(RESET.as_bytes());
+    }
+}
+
+/// Show `"(none)"` for empty role / agent strings so a missing value
+/// is visibly missing rather than a confusingly empty gutter.
+fn non_empty_or_dim(s: &str) -> String {
+    if s.is_empty() {
+        "(none)".to_string()
+    } else {
+        s.to_string()
+    }
 }
 
 fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, title: &str) {
@@ -923,5 +1054,51 @@ mod tests {
             unreachable!()
         };
         assert_eq!(input.value(), "aq");
+    }
+
+    fn container_info_fixture() -> Dialog {
+        Dialog::ContainerInfo {
+            container_name: "jk-abc123-thearchitect".to_string(),
+            role: "the-architect".to_string(),
+            focused_agent: Some("claude".to_string()),
+        }
+    }
+
+    #[test]
+    fn container_info_enter_copies_container_name() {
+        let mut d = container_info_fixture();
+        match d.handle_key(b"\r") {
+            DialogAction::CopyToClipboard(payload) => {
+                assert_eq!(payload, "jk-abc123-thearchitect");
+            }
+            other => panic!("Enter must request clipboard copy, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn container_info_esc_dismisses() {
+        let mut d = container_info_fixture();
+        assert_eq!(d.handle_key(b"\x1b"), DialogAction::Dismiss);
+    }
+
+    #[test]
+    fn container_info_q_dismisses() {
+        // ContainerInfo has no editable input, so `q` is also a valid
+        // dismiss key (same as the list-style dialogs).
+        let mut d = container_info_fixture();
+        assert_eq!(d.handle_key(b"q"), DialogAction::Dismiss);
+    }
+
+    #[test]
+    fn container_info_arrow_keys_are_redraw_noops() {
+        // Read-only modal, no navigation. Arrow keys must neither
+        // dismiss the dialog nor produce a Command-like action — a
+        // bare Redraw keeps the box on screen and waits for Enter /
+        // Esc.
+        let mut d = container_info_fixture();
+        assert_eq!(d.handle_key(b"\x1b[A"), DialogAction::Redraw);
+        assert_eq!(d.handle_key(b"\x1b[B"), DialogAction::Redraw);
+        assert_eq!(d.handle_key(b"\x1b[C"), DialogAction::Redraw);
+        assert_eq!(d.handle_key(b"\x1b[D"), DialogAction::Redraw);
     }
 }

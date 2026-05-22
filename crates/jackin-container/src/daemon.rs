@@ -371,6 +371,20 @@ impl Multiplexer {
                     tab.custom_label = if label.is_empty() { None } else { Some(label) };
                 }
             }
+            DialogAction::CopyToClipboard(payload) => {
+                // OSC 52 selection write — `\x1b]52;c;<base64>\x07`.
+                // `c` is the system clipboard target; modern terminals
+                // (Ghostty, iTerm2, Kitty, Alacritty, wezterm, recent
+                // gnome-terminal) all honour it. Older / locked-down
+                // terminals silently drop the sequence — the copy
+                // appears to do nothing but no error fires; the
+                // multiplexer can't tell from this side. Emitted to
+                // the client via `send_output`; the alt-screen path
+                // forwards it byte-for-byte to the operator's outer
+                // terminal.
+                self.dialog = None;
+                self.send_output(encode_osc52_clipboard_write(&payload));
+            }
         }
         self.compose_frame()
     }
@@ -910,6 +924,30 @@ impl Multiplexer {
                     } else {
                         Some(Dialog::CommandPalette { selected: 0 })
                     };
+                    return Some(self.compose_frame());
+                }
+                None
+            }
+            InputEvent::MousePress {
+                row: 1,
+                col,
+                button: 0,
+            } => {
+                // Click on the right-side container-name label opens
+                // the read-only `ContainerInfo` modal so the operator
+                // can copy the container ID + see the role / focused
+                // agent. Clicks elsewhere on row 1 (the underline
+                // strip) are no-ops.
+                if self.status_bar.identity_at(2, col + 1) {
+                    let focused_agent = self
+                        .active_focused_id()
+                        .and_then(|id| self.sessions.get(&id))
+                        .and_then(|s| s.agent.clone());
+                    self.dialog = Some(Dialog::ContainerInfo {
+                        container_name: self.status_bar.container_name().to_string(),
+                        role: self.status_bar.role().to_string(),
+                        focused_agent,
+                    });
                     return Some(self.compose_frame());
                 }
                 None
@@ -2214,4 +2252,18 @@ fn capitalize(s: &str) -> String {
 /// wheel for scrollback regardless of modifiers.
 fn is_wheel_button(button: u8) -> bool {
     (64..96).contains(&button)
+}
+
+/// OSC 52 clipboard-write sequence: `\x1b]52;c;<base64>\x07`. Targets
+/// the system clipboard (`c`); the BEL terminator is the form Ghostty,
+/// Kitty, iTerm2, and Alacritty all parse. Forwarded to the operator's
+/// outer terminal via `send_output` from the `CopyToClipboard` dialog
+/// action.
+fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
+    let encoded = BASE64.encode(payload.as_bytes());
+    let mut out = Vec::with_capacity(8 + encoded.len());
+    out.extend_from_slice(b"\x1b]52;c;");
+    out.extend_from_slice(encoded.as_bytes());
+    out.extend_from_slice(b"\x07");
+    out
 }
