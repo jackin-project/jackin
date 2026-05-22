@@ -424,6 +424,9 @@ impl Multiplexer {
             .and_then(|id| self.sessions.get(&id))
             .and_then(|s| s.agent.clone());
         let container_name = self.status_bar.container_name().to_string();
+        // Resolve on every open. The operator may switch branches from
+        // any pane while the container stays alive, so branch / PR
+        // metadata must never be cached on the Multiplexer.
         let git_context = workdir_git_context(&self.workdir);
         self.dialog_push(Dialog::ContainerInfo {
             container_name,
@@ -709,6 +712,7 @@ impl Multiplexer {
                 self.send_output(encode_osc52_clipboard_write(&payload));
                 self.container_info_copy_deadline =
                     Some(Instant::now() + CONTAINER_INFO_COPY_FEEDBACK_DURATION);
+                return self.compose_full_frame(FullRedrawReason::DialogChange);
             }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
@@ -3488,6 +3492,43 @@ mod tests {
         assert!(matches!(
             mux.dialog_top(),
             Some(Dialog::ContainerInfo { copied: false, .. })
+        ));
+    }
+
+    #[test]
+    fn container_info_id_click_copies_and_renders_feedback() {
+        let mut mux = test_mux(40, 120);
+        mux.pointer_shapes_supported = false;
+        mux.dialog_push(Dialog::ContainerInfo {
+            container_name: "jk-test-container".to_string(),
+            role: "the-architect".to_string(),
+            focused_agent: Some("claude".to_string()),
+            workdir: "/workspace".to_string(),
+            git_branch: Some("main".to_string()),
+            pull_request_url: Some("https://github.com/jackin-project/jackin/pull/1".to_string()),
+            copied: false,
+        });
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        mux.attached_out = Some(tx);
+
+        let frame = mux
+            .handle_input(InputEvent::MousePress {
+                row: 17,
+                col: 18,
+                button: 0,
+            })
+            .expect("container id click should redraw copy feedback");
+
+        let osc52 = rx.try_recv().expect("copy should emit OSC 52");
+        assert!(
+            osc52
+                .windows(b"\x1b]52;c;".len())
+                .any(|w| w == b"\x1b]52;c;")
+        );
+        assert!(String::from_utf8_lossy(&frame).contains("Copied!"));
+        assert!(matches!(
+            mux.dialog_top(),
+            Some(Dialog::ContainerInfo { copied: true, .. })
         ));
     }
 
