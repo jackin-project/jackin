@@ -221,6 +221,7 @@ pub struct GlobalMountsState<'a> {
     pub pending: Vec<crate::config::GlobalMountRow>,
     pub original: Vec<crate::config::GlobalMountRow>,
     pub modal: Option<GlobalMountModal<'a>>,
+    pub modal_parents: Vec<GlobalMountModal<'a>>,
     pub add_draft: Option<GlobalMountDraft>,
     pub error: Option<String>,
     pub scroll_x: u16,
@@ -333,6 +334,7 @@ pub struct SettingsEnvState<'a> {
     pub pending: SettingsEnvConfig,
     pub original: SettingsEnvConfig,
     pub modal: Option<SettingsEnvModal<'a>>,
+    pub modal_parents: Vec<SettingsEnvModal<'a>>,
     pub pending_env_key: Option<(SettingsEnvScope, String)>,
     pub pending_picker_target: Option<(SettingsEnvScope, Option<String>)>,
     pub pending_picker_value: Option<crate::operator_env::EnvValue>,
@@ -675,6 +677,7 @@ impl GlobalMountsState<'_> {
             pending: rows.clone(),
             original: rows,
             modal: None,
+            modal_parents: Vec::new(),
             add_draft: None,
             error: None,
             scroll_x: 0,
@@ -693,6 +696,8 @@ impl GlobalMountsState<'_> {
         self.pending = self.original.clone();
         self.selected = self.selected.min(self.pending.len().saturating_sub(1));
         self.add_draft = None;
+        self.modal = None;
+        self.modal_parents.clear();
         self.error = None;
     }
 
@@ -711,6 +716,24 @@ impl GlobalMountsState<'_> {
         let config = editor.save()?;
         self.original = self.pending.clone();
         Ok(config)
+    }
+}
+
+impl<'a> GlobalMountsState<'a> {
+    pub fn open_sub_modal(&mut self, child: GlobalMountModal<'a>) {
+        if let Some(parent) = self.modal.take() {
+            self.modal_parents.push(parent);
+        }
+        self.modal = Some(child);
+    }
+
+    pub fn pop_modal_chain(&mut self) {
+        self.modal = self.modal_parents.pop();
+    }
+
+    pub fn clear_modal_chain(&mut self) {
+        self.modal = None;
+        self.modal_parents.clear();
     }
 }
 
@@ -876,6 +899,7 @@ impl SettingsEnvState<'_> {
             original: pending.clone(),
             pending,
             modal: None,
+            modal_parents: Vec::new(),
             pending_env_key: None,
             pending_picker_target: None,
             pending_picker_value: None,
@@ -898,6 +922,7 @@ impl SettingsEnvState<'_> {
             .selected
             .min(settings_env_flat_row_count(self).saturating_sub(1));
         self.modal = None;
+        self.modal_parents.clear();
         self.pending_env_key = None;
         self.pending_picker_target = None;
         self.pending_picker_value = None;
@@ -923,6 +948,24 @@ impl SettingsEnvState<'_> {
                     env_change_count(original, pending)
                 })
                 .sum::<usize>()
+    }
+}
+
+impl<'a> SettingsEnvState<'a> {
+    pub fn open_sub_modal(&mut self, child: SettingsEnvModal<'a>) {
+        if let Some(parent) = self.modal.take() {
+            self.modal_parents.push(parent);
+        }
+        self.modal = Some(child);
+    }
+
+    pub fn pop_modal_chain(&mut self) {
+        self.modal = self.modal_parents.pop();
+    }
+
+    pub fn clear_modal_chain(&mut self) {
+        self.modal = None;
+        self.modal_parents.clear();
     }
 }
 

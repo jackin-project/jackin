@@ -71,6 +71,8 @@ Inside an attached `jackin-container` session, the command palette includes **Cl
 
 Clear pane drops jackin's saved scrollback for the focused pane and sends the standard form-feed key (`Ctrl+L`) to the pane so shells and TUIs redraw themselves. It does not use a terminal reset sequence, so bracketed paste, mouse mode, alternate screen state, and other pane modes stay intact.
 
+The palette's close action is context-aware. On a one-pane tab it appears as **Close tab** and opens the confirmation directly. On a split tab it appears as **Close**, then asks whether to close the focused pane or the whole tab; **Close pane** is highlighted first.
+
 ## Examples
 
 ```bash

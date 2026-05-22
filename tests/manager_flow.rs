@@ -1155,9 +1155,9 @@ fn source_picker_op_disabled_when_op_missing() -> Result<()> {
     Ok(())
 }
 
-/// `Esc` on the `SourcePicker` closes the modal and clears
-/// `pending_env_key`, `pending_picker_value`. Operator returns to the
-/// Secrets tab with no entry added.
+/// `Esc` on the `SourcePicker` walks back to the key input and clears
+/// source-picker scratch state. Operator can edit the key name without an
+/// env entry being added.
 #[test]
 fn source_picker_esc_clears_pending_state() -> Result<()> {
     let temp = tempdir()?;
@@ -1175,11 +1175,17 @@ fn source_picker_esc_clears_pending_state() -> Result<()> {
         "EnvKey commit must stash (scope, key)"
     );
 
-    // Esc cancels.
+    // Esc walks back one dialog frame.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
     assert!(
-        editor(&state).modal.is_none(),
-        "Esc on SourcePicker must close the modal; got {:?}",
+        matches!(
+            editor(&state).modal,
+            Some(Modal::TextInput {
+                target: TextInputTarget::EnvKey { .. },
+                ..
+            })
+        ),
+        "Esc on SourcePicker must restore EnvKey input; got {:?}",
         editor(&state).modal
     );
     assert!(
@@ -2039,11 +2045,11 @@ fn cancel_from_envkey_after_agent_pick_does_not_create_section() -> Result<()> {
         })
     ));
 
-    // Esc on the EnvKey modal.
+    // Esc on the EnvKey modal returns to the role picker.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
     assert!(
-        editor(&state).modal.is_none(),
-        "Esc must close the EnvKey modal; got {:?}",
+        matches!(editor(&state).modal, Some(Modal::RoleOverridePicker { .. })),
+        "Esc must restore the override picker; got {:?}",
         editor(&state).modal
     );
     assert!(
@@ -2087,11 +2093,17 @@ fn cancel_from_sourcepicker_after_agent_pick_does_not_create_section() -> Result
         editor(&state).modal
     );
 
-    // Esc on the SourcePicker.
+    // Esc on the SourcePicker returns to the key input.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
     assert!(
-        editor(&state).modal.is_none(),
-        "Esc must close the SourcePicker; got {:?}",
+        matches!(
+            editor(&state).modal,
+            Some(Modal::TextInput {
+                target: TextInputTarget::EnvKey { .. },
+                ..
+            })
+        ),
+        "Esc must restore the EnvKey modal; got {:?}",
         editor(&state).modal
     );
     assert!(
@@ -2187,9 +2199,8 @@ fn completing_value_after_agent_pick_creates_section_with_one_var() -> Result<()
 }
 
 /// Esc on the override picker (reachable through the `ScopePicker`'s
-/// `SpecificAgent` path) closes the modal and leaves `pending.roles`
-/// untouched — symmetric with the ScopePicker-cancel test, one step
-/// deeper.
+/// `SpecificAgent` path) returns to `ScopePicker` and leaves
+/// `pending.roles` untouched.
 #[test]
 fn cancel_from_agent_override_picker_after_scope_pick_does_not_create_section() -> Result<()> {
     let temp = tempdir()?;
@@ -2207,11 +2218,11 @@ fn cancel_from_agent_override_picker_after_scope_pick_does_not_create_section() 
         Some(Modal::RoleOverridePicker { .. })
     ));
 
-    // Esc — the modal closes and pending.roles stays empty.
+    // Esc — the parent ScopePicker returns and pending.roles stays empty.
     handle_key(&mut state, &mut config, &paths, cwd, key(KeyCode::Esc))?;
     assert!(
-        editor(&state).modal.is_none(),
-        "Esc must close the override picker; got {:?}",
+        matches!(editor(&state).modal, Some(Modal::ScopePicker { .. })),
+        "Esc must restore the ScopePicker; got {:?}",
         editor(&state).modal
     );
     assert!(

@@ -80,7 +80,11 @@ pub enum Dialog {
     /// always act on what the operator sees. Esc / Ctrl+C dismiss
     /// (the `q` / Backspace dismiss shortcuts that the read-only
     /// dialogs use would conflict with typing into the filter).
-    CommandPalette { selected: usize, filter: String },
+    CommandPalette {
+        selected: usize,
+        filter: String,
+        close_label: PaletteCloseLabel,
+    },
     AgentPicker {
         agents: Vec<String>,
         selected: usize,
@@ -169,6 +173,21 @@ impl ConfirmKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaletteCloseLabel {
+    ChooseTarget,
+    CloseTab,
+}
+
+impl PaletteCloseLabel {
+    fn label(self) -> &'static str {
+        match self {
+            Self::ChooseTarget => "Close",
+            Self::CloseTab => "Close tab",
+        }
+    }
+}
+
 const CLOSE_TARGET_ITEMS: &[(ConfirmKind, &str)] = &[
     (ConfirmKind::ClosePane, "Close pane"),
     (ConfirmKind::CloseTab, "Close tab"),
@@ -228,10 +247,9 @@ pub enum PaletteCommand {
     /// sub-dialog where it does not clutter the top-level list.
     Split,
     ZoomPane,
-    /// Open the CloseTargetPicker. Drill-down replaces the previous
-    /// two-item `ClosePane` + `CloseTab` shape; the chosen target
-    /// then routes through `ConfirmAction` before the destructive
-    /// call fires.
+    /// Close the active tab or open the CloseTargetPicker when the
+    /// active tab has multiple panes. The chosen target then routes
+    /// through `ConfirmAction` before the destructive call fires.
     Close,
     ClearPane,
     Detach,
@@ -266,6 +284,14 @@ const SPLIT_DIRECTION_ITEMS: &[SplitDirection] = &[
 ];
 
 impl Dialog {
+    pub fn new_command_palette(close_label: PaletteCloseLabel) -> Self {
+        Self::CommandPalette {
+            selected: 0,
+            filter: String::new(),
+            close_label,
+        }
+    }
+
     /// Construct an AgentPicker with `selected` pre-initialised to
     /// the first selectable row of the unfiltered layout. Saves every
     /// caller from having to know about the leading "agents" section
@@ -381,8 +407,12 @@ impl Dialog {
         }
         if is_arrow_down(key) {
             return match self {
-                Self::CommandPalette { selected, filter } => {
-                    let visible = palette_filtered_indices(filter);
+                Self::CommandPalette {
+                    selected,
+                    filter,
+                    close_label,
+                } => {
+                    let visible = palette_filtered_indices(filter, *close_label);
                     if *selected + 1 < visible.len() {
                         *selected += 1;
                     }
@@ -419,7 +449,9 @@ impl Dialog {
         }
         if is_backspace(key) {
             match self {
-                Self::CommandPalette { filter, selected }
+                Self::CommandPalette {
+                    filter, selected, ..
+                }
                 | Self::SplitDirectionPicker { filter, selected }
                 | Self::CloseTargetPicker { filter, selected } => {
                     filter.pop();
@@ -441,8 +473,12 @@ impl Dialog {
         }
         if is_enter(key) {
             return match self {
-                Self::CommandPalette { selected, filter } => {
-                    let visible = palette_filtered_indices(filter);
+                Self::CommandPalette {
+                    selected,
+                    filter,
+                    close_label,
+                } => {
+                    let visible = palette_filtered_indices(filter, *close_label);
                     match visible.get(*selected) {
                         Some(idx) => DialogAction::Command(PALETTE_ITEMS[*idx].0.clone()),
                         None => DialogAction::Redraw,
@@ -497,7 +533,9 @@ impl Dialog {
         // typing state.
         if let Some(c) = printable_filter_char(key) {
             match self {
-                Self::CommandPalette { filter, selected }
+                Self::CommandPalette {
+                    filter, selected, ..
+                }
                 | Self::SplitDirectionPicker { filter, selected }
                 | Self::CloseTargetPicker { filter, selected } => {
                     filter.push(c);
@@ -581,7 +619,11 @@ impl Dialog {
         // input still routes the click to the right action.
         let first_item_row = box_row + 3;
         let visible_count: u16 = match self {
-            Self::CommandPalette { filter, .. } => palette_filtered_indices(filter).len() as u16,
+            Self::CommandPalette {
+                filter,
+                close_label,
+                ..
+            } => palette_filtered_indices(filter, *close_label).len() as u16,
             Self::SplitDirectionPicker { filter, .. } => {
                 split_direction_filtered_indices(filter).len() as u16
             }
@@ -598,8 +640,12 @@ impl Dialog {
         }
         let visible_idx = (row - first_item_row) as usize;
         match self {
-            Self::CommandPalette { selected, filter } => {
-                let visible = palette_filtered_indices(filter);
+            Self::CommandPalette {
+                selected,
+                filter,
+                close_label,
+            } => {
+                let visible = palette_filtered_indices(filter, *close_label);
                 let Some(&source_idx) = visible.get(visible_idx) else {
                     return DialogAction::Consume;
                 };
@@ -676,9 +722,15 @@ impl Dialog {
                 container_info_id_row_clickable(row, col, box_row, box_col, width)
             }
             Self::ConfirmAction { .. } => true,
-            Self::CommandPalette { filter, .. } => {
-                dialog_list_row_clickable(row, box_row, palette_filtered_indices(filter).len())
-            }
+            Self::CommandPalette {
+                filter,
+                close_label,
+                ..
+            } => dialog_list_row_clickable(
+                row,
+                box_row,
+                palette_filtered_indices(filter, *close_label).len(),
+            ),
             Self::SplitDirectionPicker { filter, .. } => dialog_list_row_clickable(
                 row,
                 box_row,
@@ -720,8 +772,12 @@ impl Dialog {
         // the items list. Item count tracks the *filtered* set so the
         // box shrinks as the operator narrows the matches.
         let natural_height = match self {
-            Self::CommandPalette { filter, .. } => {
-                let items = palette_filtered_indices(filter).len() as u16;
+            Self::CommandPalette {
+                filter,
+                close_label,
+                ..
+            } => {
+                let items = palette_filtered_indices(filter, *close_label).len() as u16;
                 items + 4 // top + filter + pad + items + bottom
             }
             Self::SplitDirectionPicker { filter, .. } => {
@@ -775,8 +831,21 @@ impl Dialog {
             return;
         }
         match self {
-            Self::CommandPalette { selected, filter } => {
-                render_palette(buf, box_row, box_col, height, width, *selected, filter);
+            Self::CommandPalette {
+                selected,
+                filter,
+                close_label,
+            } => {
+                render_palette(
+                    buf,
+                    box_row,
+                    box_col,
+                    height,
+                    width,
+                    *selected,
+                    filter,
+                    *close_label,
+                );
                 render_bottom_hint(buf, term_rows, term_cols, PALETTE_HINT);
             }
             Self::SplitDirectionPicker { selected, filter } => {
@@ -986,12 +1055,27 @@ fn split_direction_filtered_indices(filter: &str) -> Vec<usize> {
 
 /// Indices into `PALETTE_ITEMS` whose label contains `filter` as a
 /// case-insensitive substring. An empty filter returns every item.
-fn palette_filtered_indices(filter: &str) -> Vec<usize> {
+fn palette_item_label(
+    command: &PaletteCommand,
+    label: &'static str,
+    close_label: PaletteCloseLabel,
+) -> &'static str {
+    if matches!(command, PaletteCommand::Close) {
+        close_label.label()
+    } else {
+        label
+    }
+}
+
+fn palette_filtered_indices(filter: &str, close_label: PaletteCloseLabel) -> Vec<usize> {
     let needle = filter.to_ascii_lowercase();
     PALETTE_ITEMS
         .iter()
         .enumerate()
-        .filter(|(_, (_, label))| needle.is_empty() || label.to_ascii_lowercase().contains(&needle))
+        .filter(|(_, (command, label))| {
+            let label = palette_item_label(command, label, close_label);
+            needle.is_empty() || label.to_ascii_lowercase().contains(&needle)
+        })
         .map(|(idx, _)| idx)
         .collect()
 }
@@ -1202,6 +1286,7 @@ fn render_palette(
     width: u16,
     selected: usize,
     filter: &str,
+    close_label: PaletteCloseLabel,
 ) {
     render_box(buf, start_row, start_col, height, width, "Menu");
     render_filter_input(buf, start_row + 1, start_col + 1, width, filter);
@@ -1209,14 +1294,15 @@ fn render_palette(
     // (`start_row + 3` onward). Clamp by the available interior so
     // a tight-fit terminal never paints past the bottom border.
     let interior_items = height.saturating_sub(4) as usize;
-    let visible = palette_filtered_indices(filter);
+    let visible = palette_filtered_indices(filter, close_label);
     let drawn = visible.len().min(interior_items);
     if drawn == 0 {
         render_no_matches_row(buf, start_row + 3, start_col + 1, width);
         return;
     }
     for (i, &source_idx) in visible.iter().enumerate().take(drawn) {
-        let (_, label) = PALETTE_ITEMS[source_idx];
+        let (command, label) = &PALETTE_ITEMS[source_idx];
+        let label = palette_item_label(command, label, close_label);
         render_row(
             buf,
             start_row + 3 + i as u16,
@@ -1842,30 +1928,33 @@ mod tests {
         )
     }
 
+    fn palette_with(selected: usize, filter: impl Into<String>) -> Dialog {
+        Dialog::CommandPalette {
+            selected,
+            filter: filter.into(),
+            close_label: PaletteCloseLabel::ChooseTarget,
+        }
+    }
+
+    fn palette() -> Dialog {
+        palette_with(0, String::new())
+    }
+
     #[test]
     fn esc_dismisses_palette() {
-        let mut d = Dialog::CommandPalette {
-            selected: 0,
-            filter: String::new(),
-        };
+        let mut d = palette();
         assert_eq!(d.handle_key(b"\x1b"), DialogAction::Dismiss);
     }
 
     #[test]
     fn ctrl_c_dismisses_palette() {
-        let mut d = Dialog::CommandPalette {
-            selected: 0,
-            filter: String::new(),
-        };
+        let mut d = palette();
         assert_eq!(d.handle_key(b"\x03"), DialogAction::Dismiss);
     }
 
     #[test]
     fn arrow_down_advances_palette_selection() {
-        let mut d = Dialog::CommandPalette {
-            selected: 0,
-            filter: String::new(),
-        };
+        let mut d = palette();
         assert_eq!(d.handle_key(b"\x1b[B"), DialogAction::Redraw);
         let Dialog::CommandPalette { selected, .. } = d else {
             unreachable!()
@@ -1875,10 +1964,7 @@ mod tests {
 
     #[test]
     fn arrow_down_clamps_palette_at_last_item() {
-        let mut d = Dialog::CommandPalette {
-            selected: PALETTE_ITEMS.len() - 1,
-            filter: String::new(),
-        };
+        let mut d = palette_with(PALETTE_ITEMS.len() - 1, String::new());
         d.handle_key(b"\x1b[B");
         let Dialog::CommandPalette { selected, .. } = d else {
             unreachable!()
@@ -1888,10 +1974,7 @@ mod tests {
 
     #[test]
     fn enter_on_palette_emits_command() {
-        let mut d = Dialog::CommandPalette {
-            selected: 0,
-            filter: String::new(),
-        };
+        let mut d = palette();
         match d.handle_key(b"\r") {
             DialogAction::Command(cmd) => assert_eq!(cmd, PALETTE_ITEMS[0].0),
             other => panic!("expected Command, got {other:?}"),
@@ -1961,10 +2044,7 @@ mod tests {
 
     #[test]
     fn click_outside_dialog_dismisses() {
-        let mut d = Dialog::CommandPalette {
-            selected: 0,
-            filter: String::new(),
-        };
+        let mut d = palette();
         // Click in the top-left corner is reliably outside the centred
         // box even on tiny terminals.
         assert_eq!(d.handle_click(0, 0, 40, 100), DialogAction::Dismiss);
@@ -1996,10 +2076,7 @@ mod tests {
 
     #[test]
     fn palette_typing_filters_items_and_resets_selection() {
-        let mut d = Dialog::CommandPalette {
-            selected: 3,
-            filter: String::new(),
-        };
+        let mut d = palette_with(3, String::new());
         // Type "split" — narrows to the single "Split pane" item +
         // resets selection to 0. (The legacy `Split pane │ (side by
         // side)` + `Split pane ─ (top / bottom)` pair collapsed into
@@ -2008,13 +2085,16 @@ mod tests {
         for &c in b"split" {
             d.handle_key(&[c]);
         }
-        let Dialog::CommandPalette { selected, filter } = &d else {
+        let Dialog::CommandPalette {
+            selected, filter, ..
+        } = &d
+        else {
             unreachable!()
         };
         assert_eq!(filter, "split");
         assert_eq!(*selected, 0, "filter input must reset selection to 0");
         assert_eq!(
-            palette_filtered_indices(filter).len(),
+            palette_filtered_indices(filter, PaletteCloseLabel::ChooseTarget).len(),
             1,
             "exactly one PALETTE_ITEM matches 'split' after the collapse"
         );
@@ -2027,10 +2107,7 @@ mod tests {
         // turns that into a new SplitDirectionPicker dialog. Lock the
         // action shape so a refactor that flips the chain inadvertently
         // (e.g. directly emitting SplitDirection) gets caught.
-        let mut d = Dialog::CommandPalette {
-            selected: 0,
-            filter: String::new(),
-        };
+        let mut d = palette();
         for &c in b"split" {
             d.handle_key(&[c]);
         }
@@ -2070,16 +2147,13 @@ mod tests {
 
     #[test]
     fn palette_enter_after_filter_emits_matching_command() {
-        let mut d = Dialog::CommandPalette {
-            selected: 0,
-            filter: String::new(),
-        };
+        let mut d = palette();
         for &c in b"close" {
             d.handle_key(&[c]);
         }
-        // "close" matches the top-level Close command, which then
-        // opens the target picker before any destructive action can
-        // run.
+        // "close" matches the top-level Close command; the daemon
+        // decides whether to confirm directly or open the target
+        // picker based on the active tab's pane count.
         match d.handle_key(b"\r") {
             DialogAction::Command(cmd) => assert_eq!(cmd, PaletteCommand::Close),
             other => panic!("expected Close, got {other:?}"),
@@ -2087,11 +2161,22 @@ mod tests {
     }
 
     #[test]
+    fn palette_single_pane_close_label_renders_as_close_tab() {
+        let d = Dialog::new_command_palette(PaletteCloseLabel::CloseTab);
+        let mut buf = Vec::new();
+        d.render(&mut buf, 40, 100);
+        let rendered = String::from_utf8_lossy(&buf);
+
+        assert!(rendered.contains("Close tab"));
+        assert_eq!(
+            palette_filtered_indices("close tab", PaletteCloseLabel::CloseTab).len(),
+            1
+        );
+    }
+
+    #[test]
     fn palette_clear_filter_emits_clear_pane() {
-        let mut d = Dialog::CommandPalette {
-            selected: 0,
-            filter: String::new(),
-        };
+        let mut d = palette();
         for &c in b"clear" {
             d.handle_key(&[c]);
         }
@@ -2103,10 +2188,7 @@ mod tests {
 
     #[test]
     fn palette_backspace_pops_filter_char_and_resets_selection() {
-        let mut d = Dialog::CommandPalette {
-            selected: 0,
-            filter: "split".to_string(),
-        };
+        let mut d = palette_with(0, "split");
         d.handle_key(b"\x7f");
         let Dialog::CommandPalette { filter, .. } = &d else {
             unreachable!()
@@ -2119,10 +2201,7 @@ mod tests {
         // Pre-filter dialogs dismissed on `q`; now `q` is a filter
         // character because the dialog is type-to-filter. Esc remains
         // the dismiss key.
-        let mut d = Dialog::CommandPalette {
-            selected: 0,
-            filter: String::new(),
-        };
+        let mut d = palette();
         assert_eq!(d.handle_key(b"q"), DialogAction::Redraw);
         let Dialog::CommandPalette { filter, .. } = &d else {
             unreachable!()

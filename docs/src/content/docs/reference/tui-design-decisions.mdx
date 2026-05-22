@@ -302,22 +302,15 @@ Concrete obligations:
 - **Commit / terminal action** (agent picked, role selected, destructive action confirmed, copy fired, env key + value both committed): clear the entire chain so the operator lands on the underlying screen in one step. A terminal action means "the chain achieved its goal" — walking back through every intermediate step would be noise.
 - **Sub-dialog titles** read as a step inside the parent's flow — `Split: ← Left` for the agent picker opened from a `SplitDirectionPicker`, not `Agent picker` again. The title is what surfaces the breadcrumb to the operator.
 
-Two implementation shapes carry this contract today:
+Three implementation shapes carry this contract today:
 
 1. **`Vec<Dialog>` stack** (canonical, used by `crates/jackin-container/src/dialog.rs`). `dialog_top()` is "is a dialog open"; entries land via `dialog_push`; back-nav arms call `dialog_pop_one`; terminal-action arms call `dialog_clear`.
-2. **Per-flow return-path stash** (legacy, used by host console for the auth flow — `pending_auth_form_return`, `pending_env_key`, `pending_picker_target`). The parent's state is stashed in an `EditorState` field before the child modal mounts, and the child's cancel arm rebuilds the parent from the stash. Works for shallow chains but does not compose past two levels and is easy to forget when adding a new transition.
+2. **`modal_parents` stacks on host console state** (used by workspace editor modals, settings global-mount modals, and settings environment modals). `open_sub_modal` stashes the visible modal as a parent, `pop_modal_chain` restores it on Esc, and `clear_modal_chain` closes the whole flow after a terminal commit.
+3. **Per-flow return-path stash** (legacy, used by host console for auth form side trips — `pending_auth_form_return`, `pending_env_key`, `pending_picker_target`). The parent's state is stashed in an `EditorState` / settings-auth field before the child modal mounts, and the child's cancel arm rebuilds the parent from the stash. Works for shallow chains but does not compose past two levels and is easy to forget when adding a new transition.
 
-The bare `Option<Modal>` slot in <RepoFile path="src/console/manager/state.rs" /> is *not* a third valid shape — it cannot represent a parent under a child, so any new modal→modal transition added to a code path that still uses `Option<Modal>` regresses this rule by construction. New code MUST use one of the two shapes above; the eventual direction for the host console is to converge on the `Vec<Modal>` stack and retire the stash slots.
+The bare `Option<Modal>` slot in <RepoFile path="src/console/manager/state.rs" /> is *not* a valid shape by itself — it cannot represent a parent under a child, so any new modal→modal transition added to a code path that still uses only `Option<Modal>` regresses this rule by construction. New code MUST use one of the supported shapes above; the eventual direction for the host console is to converge on stack-backed modal state and retire the stash slots.
 
-Known compliance gaps as of writing — see <RepoFile path="src/console/manager/input/editor.rs" /> Modal handlers where `editor.modal = None` is set on `Cancel` while a parent modal exists in the operator's mental chain:
-
-- `Modal::RoleOverridePicker` cancel (line ~1040) — Esc from the role-override picker should restore the parent `ScopePicker` rather than dump to the Secrets tab.
-- `Modal::ScopePicker` → `Modal::TextInput` / `Modal::RoleOverridePicker` (line ~1117) — TextInput / role picker cancel currently sets `modal = None`; should restore the `ScopePicker`.
-- `Modal::AuthRolePicker` cancel (line ~1209) — Esc on the role picker dumps to the Auth tab; should restore whatever opened it (sentinel-add row).
-- `Modal::SourcePicker` cancel (line ~1162) and the `Modal::OpPicker` / nested `Modal::TextInput` paths chained from it should walk back one step rather than clearing both.
-- `FileBrowser → MountDstChoice → TextInput` chain inside the editor mount-add flow (Editor TextInput line ~1695, MountDstChoice line ~1801) — none of the three currently restores its parent.
-
-Treat new Esc-back regressions on any surface as bugs; fix the immediate flow with the appropriate shape (stack push/pop for in-container, stash-and-restore for host editor where the stack refactor has not landed yet).
+Compliance is covered by focused tests for the container palette stack, editor environment-source and mount-destination chains, settings environment chains, and settings global-mount add chains. Treat new Esc-back regressions on any surface as bugs; fix the immediate flow with stack push/pop unless a legacy auth stash already owns the return path.
 
 ---
 

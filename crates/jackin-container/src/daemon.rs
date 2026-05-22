@@ -27,7 +27,8 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
 use crate::dialog::{
-    ConfirmKind, Dialog, DialogAction, PaletteCommand, PickerIntent, SplitDirection,
+    ConfirmKind, Dialog, DialogAction, PaletteCloseLabel, PaletteCommand, PickerIntent,
+    SplitDirection,
 };
 use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
@@ -55,7 +56,7 @@ pub struct Multiplexer {
     /// older dialogs sit underneath waiting for an Esc-pop to surface
     /// them again. Sub-dialogs (Menu → New tab → AgentPicker,
     /// Menu → Split pane → SplitDirectionPicker → AgentPicker,
-    /// Menu → Close → CloseTargetPicker → ConfirmClose, …) push onto
+    /// Menu → Close → CloseTargetPicker / ConfirmClose, …) push onto
     /// this stack so Esc walks the operator back one step at a time
     /// instead of nuking the whole flow. The empty stack means "no
     /// dialog open" — every consumer treats `dialog_top()` as the
@@ -450,6 +451,26 @@ impl Multiplexer {
     fn dialog_replace_top(&mut self, d: Dialog) {
         self.dialog_stack.pop();
         self.dialog_stack.push(d);
+    }
+
+    fn active_tab_pane_count(&self) -> usize {
+        self.tabs
+            .get(self.active_tab)
+            .map(|tab| tab.tree.all_ids().len())
+            .unwrap_or_default()
+    }
+
+    fn palette_close_label(&self) -> PaletteCloseLabel {
+        if self.active_tab_pane_count() == 1 {
+            PaletteCloseLabel::CloseTab
+        } else {
+            PaletteCloseLabel::ChooseTarget
+        }
+    }
+
+    fn open_command_palette(&mut self) {
+        let close_label = self.palette_close_label();
+        self.dialog_push(Dialog::new_command_palette(close_label));
     }
 
     fn next_tab(&mut self) {
@@ -1237,10 +1258,7 @@ impl Multiplexer {
                 if self.dialog_open() {
                     self.dialog_clear();
                 } else {
-                    self.dialog_push(Dialog::CommandPalette {
-                        selected: 0,
-                        filter: String::new(),
-                    });
+                    self.open_command_palette();
                 }
                 Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay))
             }
@@ -1408,10 +1426,7 @@ impl Multiplexer {
                     if self.dialog_open() {
                         self.dialog_clear();
                     } else {
-                        self.dialog_push(Dialog::CommandPalette {
-                            selected: 0,
-                            filter: String::new(),
-                        });
+                        self.open_command_palette();
                     }
                     return Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay));
                 }
@@ -1564,10 +1579,7 @@ impl Multiplexer {
                 self.detach_requested = true;
             }
             PrefixCommand::Palette => {
-                self.dialog_push(Dialog::CommandPalette {
-                    selected: 0,
-                    filter: String::new(),
-                });
+                self.open_command_palette();
             }
             PrefixCommand::Redraw => {}
         }
@@ -1829,13 +1841,21 @@ impl Multiplexer {
                 self.prev_tab();
             }
             PaletteCommand::Close => {
-                // Drill-down: push the CloseTargetPicker on top of
-                // the Menu so the operator picks pane / tab, then
-                // confirms via ConfirmAction. Esc walks back to Menu.
-                self.dialog_push(Dialog::CloseTargetPicker {
-                    selected: 0,
-                    filter: String::new(),
-                });
+                if self.active_tab_pane_count() == 1 {
+                    self.dialog_push(Dialog::ConfirmAction {
+                        kind: ConfirmKind::CloseTab,
+                        selected_yes: false,
+                    });
+                } else {
+                    // Drill-down: push the CloseTargetPicker on top
+                    // of the Menu so split tabs still ask whether
+                    // the operator wants the focused pane or every
+                    // pane in the tab. Esc walks back to Menu.
+                    self.dialog_push(Dialog::CloseTargetPicker {
+                        selected: 0,
+                        filter: String::new(),
+                    });
+                }
             }
             PaletteCommand::ZoomPane => {
                 self.dialog_clear();
@@ -3151,6 +3171,84 @@ mod tests {
 
     fn test_mux(rows: u16, cols: u16) -> Multiplexer {
         Multiplexer::new(rows, cols, PathBuf::from("/workspace"))
+    }
+
+    fn single_pane_tab_mux() -> Multiplexer {
+        let mut mux = test_mux(24, 80);
+        mux.tabs.push(Tab::new_single("Shell", 1));
+        mux
+    }
+
+    fn split_tab_mux() -> Multiplexer {
+        let mut mux = test_mux(24, 80);
+        let mut tab = Tab::new_single("Shell", 1);
+        assert!(tab.tree.split_h(1, 2, SplitPosition::After));
+        mux.tabs.push(tab);
+        mux
+    }
+
+    #[test]
+    fn command_palette_labels_single_pane_close_as_close_tab() {
+        let mut mux = single_pane_tab_mux();
+        mux.open_command_palette();
+
+        assert!(matches!(
+            mux.dialog_top(),
+            Some(Dialog::CommandPalette {
+                close_label: PaletteCloseLabel::CloseTab,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn palette_close_single_pane_opens_confirm_directly() {
+        let mut mux = single_pane_tab_mux();
+        mux.handle_palette_command(PaletteCommand::Close);
+
+        assert!(matches!(
+            mux.dialog_top(),
+            Some(Dialog::ConfirmAction {
+                kind: ConfirmKind::CloseTab,
+                selected_yes: false
+            })
+        ));
+    }
+
+    #[test]
+    fn palette_close_split_tab_opens_target_picker() {
+        let mut mux = split_tab_mux();
+        mux.handle_palette_command(PaletteCommand::Close);
+
+        assert!(matches!(
+            mux.dialog_top(),
+            Some(Dialog::CloseTargetPicker {
+                selected: 0,
+                filter
+            }) if filter.is_empty()
+        ));
+    }
+
+    #[test]
+    fn kitty_escape_in_agent_picker_returns_to_menu() {
+        let mut mux = single_pane_tab_mux();
+        mux.open_command_palette();
+        let frame = mux
+            .handle_input(InputEvent::Data(b"\r".to_vec()))
+            .expect("New tab command should redraw");
+        assert!(String::from_utf8_lossy(&frame).contains("New tab"));
+        assert!(matches!(mux.dialog_top(), Some(Dialog::AgentPicker { .. })));
+
+        let events = mux.input_parser.parse(b"\x1b[27;1u");
+        assert_eq!(events, vec![InputEvent::Data(b"\x1b".to_vec())]);
+        for event in events {
+            mux.handle_input(event);
+        }
+
+        assert!(matches!(
+            mux.dialog_top(),
+            Some(Dialog::CommandPalette { .. })
+        ));
     }
 
     #[test]
