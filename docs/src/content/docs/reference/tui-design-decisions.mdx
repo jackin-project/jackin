@@ -273,6 +273,23 @@ Equivalently: the filter starts at `box_row + 1`, the spacer at `box_row + 2`, a
 
 Why this rule exists: a leading blank pad row pushes the filter one row down and visually disconnects it from the title in the top border. The eye reads it as "the filter is floating in the middle of the dialog," not as "type here to narrow the list" — a small but cumulative perceptual cost across the many dialogs jackin opens during a typical session. Drop the pad; keep the filter glued to the chrome.
 
+### Confirmation dialogs use the canonical Yes/No layout
+
+**Every Yes/No confirmation rendered on any jackin' TUI surface — host console (`src/console/widgets/confirm.rs`) and the in-container multiplexer (`crates/jackin-container/src/dialog.rs`'s `Dialog::ConfirmAction`) — must use the same compact shape so the operator's eye recognises "this is a confirmation" instantly regardless of surface.** Different shapes per surface train the operator to re-read each dialog from scratch and erode the muscle memory for `N` / Esc / Enter.
+
+The canonical layout, top to bottom, inside the dialog's interior columns:
+
+1. **Box title** is the literal string `Confirm` — not the question, not a kind-specific noun. The question itself goes in the body. Operators scanning the screen see `Confirm` and know without reading further what kind of widget this is.
+2. **Question** (e.g. `Close pane?`, `Exit jackin'?`, `Delete "scentbird"?`): one line, centered, white + bold. The question must end with a `?` so the body reads as a prompt, not as a statement.
+3. **Optional explanation** (one line, dim, centered) below the question, when the destructive scope is non-obvious. Wrap explanations longer than one interior-width line into the first line; the second line of context, if any, lives in the docs the action is about, not the confirm.
+4. **Two side-by-side buttons** centred at the bottom: `  Yes  ` and `  No  ` separated by four spaces of gap. The focused button gets a `WHITE` background + `BLACK` foreground + bold; the unfocused button stays `PHOSPHOR_GREEN` + bold over the dialog background.
+5. **Default focus = `No`.** Confirms exist because the action is destructive; Enter on a freshly-opened confirm must never fire the destructive arm. The operator has to deliberately Tab / Right / Y to commit Yes.
+6. **Key bindings (TUI design contract, not surface-specific):** Tab / Right / Left / Shift-Tab cycle focus, `Y` / `y` always commits Yes, `N` / `n` / Esc always cancels, Enter commits whichever button is focused. Mouse click on a button focuses + commits in one step (matches W3C button semantics).
+
+The reusable host widget is `<RepoFile path="src/console/widgets/confirm.rs" />` (`ConfirmState` + `render`). In-container surfaces that cannot link the host crate (different binary, separate process) must mirror the layout in their own renderer — the in-container daemon's `render_confirm_action` in <RepoFile path="crates/jackin-container/src/dialog.rs" /> is the canonical copy and any other in-container confirm must call it (or a sibling helper with the same layout output) rather than rolling a third shape.
+
+Why this rule exists: confirms are the operator's "are you sure?" gate. They appear at the worst moments — about to lose work, about to nuke a workspace, about to ship a destructive change. Surface-specific variants ("Yes, continue" / "No, go back" stacked vertically on one screen; "  Yes  " / "  No  " inline on the next) make the operator's eyes hunt for the right button under stress. The cost of one shared layout is small; the cost of mis-clicking a destructive confirm because the buttons moved is huge.
+
 ### Sub-dialogs push onto a stack — Esc walks back one step
 
 **Applies to every TUI surface jackin renders — host console (`src/console/`) and the in-container multiplexer (`crates/jackin-container/`).** Any modal that opens *another modal* as part of its flow MUST preserve the parent so a `Esc` press returns to it, not to the underlying screen. The operator's mental model is a breadcrumb chain; repeated `Esc` presses walk that chain one step at a time until the operator reaches the original surface (workspace list, secrets tab, focused pane).

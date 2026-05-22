@@ -1260,6 +1260,23 @@ fn render_close_target_picker(
     }
 }
 
+/// Canonical jackin' confirm dialog — must visually match the host
+/// console's `widgets::confirm::render` so the operator sees the
+/// same shape on both surfaces. Layout (per the TUI design rule
+/// "Confirmation dialogs use the canonical Yes/No layout"):
+///   ┌─ Confirm ─────────────┐
+///   │                       │   ← pad
+///   │     <question?>       │   ← question, centered, bold white
+///   │                       │   ← pad
+///   │     <explanation>     │   ← optional, centered, dim
+///   │                       │   ← pad
+///   │      Yes      No      │   ← buttons, centered, focused = WHITE bg
+///   │                       │   ← pad
+///   └───────────────────────┘
+/// Default focus = `No` (safer for destructive arms — Enter on a
+/// freshly-opened confirm won't fire the action). The dispatch in
+/// `apply_dialog_action` reads `selected_yes` so changing the
+/// rendered button labels alone never affects semantics.
 fn render_confirm_action(
     buf: &mut Vec<u8>,
     start_row: u16,
@@ -1269,35 +1286,105 @@ fn render_confirm_action(
     kind: ConfirmKind,
     selected_yes: bool,
 ) {
-    render_box(buf, start_row, start_col, height, width, kind.title());
-    let max_cols = (width as usize).saturating_sub(4);
-    let lines = wrap_two_lines(kind.message(), max_cols);
-    for (i, line) in lines.iter().enumerate() {
-        move_to(buf, start_row + 2 + i as u16, start_col + 2);
+    render_box(buf, start_row, start_col, height, width, "Confirm");
+    let interior_left = start_col + 1;
+    let interior_cols = width.saturating_sub(2) as usize;
+
+    // Question — bold white, centered. Falls back gracefully when
+    // the box is narrower than the question by clipping; the
+    // dialog-rect calculation in `Dialog::natural_height` keeps the
+    // box wide enough for the longest configured `ConfirmKind::title`.
+    render_centered_line(
+        buf,
+        start_row + 2,
+        interior_left,
+        interior_cols,
+        kind.title(),
+        FG_WHITE,
+        true,
+    );
+
+    // Explanation — dim, wrapped to one line so the button row
+    // stays at `height - 2` regardless of message length. Operators
+    // who need the full message in `--debug` get it on stdout via
+    // the dispatch breadcrumbs.
+    let wrapped = wrap_two_lines(kind.message(), interior_cols.saturating_sub(4));
+    if let Some(line) = wrapped.first() {
+        render_centered_line(
+            buf,
+            start_row + 4,
+            interior_left,
+            interior_cols,
+            line,
+            FG_DIM,
+            false,
+        );
+    }
+
+    // Button row: "  Yes      No  " centred. Focused button gets
+    // WHITE bg + BLACK fg + bold; unfocused stays green-on-dark so
+    // only the focus pops. Matches host `widgets::confirm::render`.
+    let yes_label = "  Yes  ";
+    let gap = "    ";
+    let no_label = "  No  ";
+    let buttons_w = yes_label.chars().count() + gap.chars().count() + no_label.chars().count();
+    let button_col = interior_left + (interior_cols.saturating_sub(buttons_w) / 2) as u16;
+    let button_row = start_row + height.saturating_sub(2);
+    move_to(buf, button_row, button_col);
+    write_confirm_button(buf, yes_label, selected_yes);
+    buf.extend_from_slice(BG_DARK.as_bytes());
+    buf.extend_from_slice(FG_GREEN.as_bytes());
+    buf.extend_from_slice(gap.as_bytes());
+    buf.extend_from_slice(RESET.as_bytes());
+    write_confirm_button(buf, no_label, !selected_yes);
+}
+
+/// Centered text on a single dialog interior row. `width` is the
+/// inner column count (between the box borders); the helper pads on
+/// both sides with `BG_DARK` so the row stays uniform background.
+fn render_centered_line(
+    buf: &mut Vec<u8>,
+    row: u16,
+    col: u16,
+    width: usize,
+    text: &str,
+    fg_color: &str,
+    bold: bool,
+) {
+    let len = text.chars().count().min(width);
+    let lpad = width.saturating_sub(len) / 2;
+    let rpad = width.saturating_sub(lpad + len);
+    move_to(buf, row, col);
+    buf.extend_from_slice(BG_DARK.as_bytes());
+    buf.extend_from_slice(fg_color.as_bytes());
+    if bold {
+        buf.extend_from_slice(BOLD.as_bytes());
+    }
+    for _ in 0..lpad {
+        buf.push(b' ');
+    }
+    let truncated: String = text.chars().take(len).collect();
+    buf.extend_from_slice(truncated.as_bytes());
+    for _ in 0..rpad {
+        buf.push(b' ');
+    }
+    buf.extend_from_slice(RESET.as_bytes());
+}
+
+/// Confirm Yes/No button cell. Focused = WHITE bg + BLACK fg +
+/// BOLD; unfocused = green-on-dark + BOLD. Caller positions cursor
+/// with `move_to` before calling.
+fn write_confirm_button(buf: &mut Vec<u8>, label: &str, focused: bool) {
+    if focused {
+        buf.extend_from_slice(b"\x1b[48;2;255;255;255m"); // WHITE bg
+        buf.extend_from_slice(b"\x1b[38;2;0;0;0m"); // BLACK fg
+    } else {
         buf.extend_from_slice(BG_DARK.as_bytes());
         buf.extend_from_slice(FG_GREEN.as_bytes());
-        buf.extend_from_slice(line.as_bytes());
-        for _ in line.chars().count()..max_cols {
-            buf.push(b' ');
-        }
-        buf.extend_from_slice(RESET.as_bytes());
     }
-    render_row(
-        buf,
-        start_row + height.saturating_sub(4),
-        start_col + 1,
-        width,
-        "Yes, continue",
-        selected_yes,
-    );
-    render_row(
-        buf,
-        start_row + height.saturating_sub(3),
-        start_col + 1,
-        width,
-        "No, go back",
-        !selected_yes,
-    );
+    buf.extend_from_slice(BOLD.as_bytes());
+    buf.extend_from_slice(label.as_bytes());
+    buf.extend_from_slice(RESET.as_bytes());
 }
 
 #[allow(clippy::too_many_arguments)]
