@@ -2883,7 +2883,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vt100"
 version = "0.16.2"
-source = "git+https://github.com/donbeave/vt100-rust?rev=5e5543b548da978e5174a05fbfc3617c3b6743fa#5e5543b548da978e5174a05fbfc3617c3b6743fa"
+source = "git+https://github.com/donbeave/vt100-rust?rev=527f0715fad788cbbf9605b8d5923b519755c345#527f0715fad788cbbf9605b8d5923b519755c345"
 dependencies = [
  "itoa",
  "unicode-width",

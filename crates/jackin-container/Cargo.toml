@@ -27,7 +27,7 @@ tokio = { version = "1", features = ["rt", "io-util", "io-std", "sync", "macros"
 crossterm = "0.29"
 portable-pty = "0.9"
 nix = { version = "0.31", features = ["term", "signal", "process"] }
-vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "5e5543b548da978e5174a05fbfc3617c3b6743fa" }
+vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
 url = "2"
 percent-encoding = "2"
 base64 = "0.22"
