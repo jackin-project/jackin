@@ -21,8 +21,19 @@
 use std::io::Write as _;
 
 use jackin_tui::{TAB_GAP, TabCell, lay_out_tabs};
+use unicode_width::UnicodeWidthStr;
 
 use crate::layout::Tab;
+
+/// Column width in terminal cells for a label, measured with
+/// `unicode-width`. Saturates to `u16::MAX` for absurdly wide labels
+/// rather than wrapping. `lay_out_tabs` uses the same crate; routing
+/// every per-label width through this helper keeps the renderer and
+/// the click-region maths from drifting on CJK / emoji / combining
+/// marks.
+fn display_cols(s: &str) -> u16 {
+    u16::try_from(UnicodeWidthStr::width(s)).unwrap_or(u16::MAX)
+}
 use crate::protocol::AgentState;
 
 const BRAND_BG: &str = "\x1b[48;2;0;255;65m"; // PHOSPHOR_GREEN bg
@@ -146,7 +157,7 @@ impl StatusBar {
         }
 
         let hint = self.button_text();
-        let hint_cols = hint.chars().count() as u16;
+        let hint_cols = display_cols(&hint);
         let reserve_right: u16 = hint_cols + 2; // 1 col padding + 1 trailing space
 
         // Resolve names + glyphs first, then size every cell to the
@@ -167,7 +178,7 @@ impl StatusBar {
             .collect();
         let max_name_cols = resolved
             .iter()
-            .map(|(n, _, _)| n.chars().count())
+            .map(|(n, _, _)| UnicodeWidthStr::width(n.as_str()))
             .max()
             .unwrap_or(0);
         // Padded labels embed the centred name + sep + glyph slot;
@@ -175,7 +186,7 @@ impl StatusBar {
         let padded: Vec<(String, TabGlyph, bool)> = resolved
             .into_iter()
             .map(|(name, glyph, active)| {
-                let name_cols = name.chars().count();
+                let name_cols = UnicodeWidthStr::width(name.as_str());
                 let pad_total = max_name_cols - name_cols;
                 let pad_left = pad_total / 2;
                 let pad_right = pad_total - pad_left;
@@ -195,7 +206,7 @@ impl StatusBar {
         // First cell starts after brand pill + pad. Layout uses 0-based
         // columns; statusbar render uses 1-based, so we offset by 1
         // when emitting cursor positions.
-        let start_col_0based = (BRAND_TEXT.chars().count() as u16) + BRAND_PAD_COLS;
+        let start_col_0based = display_cols(BRAND_TEXT) + BRAND_PAD_COLS;
         let cells = lay_out_tabs(&label_refs, start_col_0based);
         let max_tab_col = cols.saturating_sub(reserve_right);
 
@@ -270,7 +281,7 @@ impl StatusBar {
         // collide with the active-tab underline; skip entirely when
         // the terminal is too narrow.
         if !self.identity_label.is_empty() {
-            let label_cols = self.identity_label.chars().count() as u16;
+            let label_cols = display_cols(&self.identity_label);
             let trailing_pad: u16 = 1;
             if cols > label_cols + trailing_pad {
                 let start = cols.saturating_sub(label_cols + trailing_pad);
@@ -310,9 +321,12 @@ impl StatusBar {
         // spaces before it, then paint the actual glyph with its
         // own colour while keeping the slot at the same column.
         buf.push(b' '); // left pad
-        let total_cols = cell.label.chars().count();
-        let name_cols = total_cols.saturating_sub(3); // 2 sep + 1 placeholder
-        let centred_name: String = cell.label.chars().take(name_cols).collect();
+        // The label is built as `pad_left + name + pad_right + "  X"`
+        // (statusbar `render`). The trailing `"  X"` is always 3
+        // ASCII bytes; strip it by byte index, not by `chars().take`,
+        // so CJK / emoji names with display width != codepoint count
+        // don't get their tail consumed by the slice.
+        let centred_name = cell.label.strip_suffix("  X").unwrap_or(cell.label);
         buf.extend_from_slice(centred_name.as_bytes());
         buf.push(b' '); // sep
         buf.push(b' '); // sep
@@ -451,7 +465,7 @@ pub fn draw_pane_box(
     };
     let title_color = if active { TITLE_ACTIVE } else { TITLE_INACTIVE };
     let interior_cols = cols.saturating_sub(2);
-    let title_cols = title.chars().count() as u16;
+    let title_cols = display_cols(title);
     // Top border: `┌─ title ─` then dashes filling to `┐`. Title is
     // omitted entirely when the pane is too narrow to fit the
     // `┌─ X ─┐` minimum (8 cols of chrome).

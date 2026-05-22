@@ -262,15 +262,12 @@ impl Multiplexer {
     fn remove_exited_session(&mut self, session_id: u64) {
         // Any in-flight selection / drag-resize was anchored to a
         // pane that may be about to disappear (or whose siblings
-        // are about to reflow). Drop the gesture so the next motion
-        // event does not paint stale geometry.
-        if self
-            .selection
-            .as_ref()
-            .is_some_and(|s| s.session_id == session_id)
-        {
-            self.selection = None;
-        }
+        // are about to reflow). Drop both gestures so the next motion
+        // event does not paint stale geometry. `cancel_drag` clears
+        // selection + drag together; calling it unconditionally is
+        // cheaper than per-field re-validation and matches the
+        // close_focused_pane / split path that already does the same.
+        self.cancel_drag();
         let owning_tab = self
             .tabs
             .iter()
@@ -389,14 +386,7 @@ impl Multiplexer {
         // sessions the container memory footprint is still well
         // under typical limits, but well past the size any operator
         // can usefully navigate.
-        if self.tabs.len() >= MAX_TABS {
-            anyhow::bail!("tab limit reached ({MAX_TABS}); close one before spawning another");
-        }
-        if self.sessions.len() >= MAX_SESSIONS {
-            anyhow::bail!(
-                "pane limit reached ({MAX_SESSIONS}); close some panes before opening more"
-            );
-        }
+        self.ensure_capacity_for_new_session(true)?;
         let (label, cmd) = match &agent {
             Some(slug) => (
                 capitalize(slug),
@@ -434,7 +424,27 @@ impl Multiplexer {
     /// choice inside it. `agent_slug = None` opens a shell. Used by
     /// the AgentPicker → Split flow so the operator picks the new
     /// pane's identity instead of cloning the source pane's agent.
+    /// Bound the per-container surface for any path that allocates a
+    /// new PTY (top-level spawn, split, etc.). `add_tab=true` enforces
+    /// both `MAX_TABS` and `MAX_SESSIONS`; `add_tab=false` enforces
+    /// only `MAX_SESSIONS` because the caller is reusing an existing
+    /// tab. Split-driven creation was previously bypassing the cap —
+    /// the runaway-mis-click scenario the cap exists to defend
+    /// against.
+    fn ensure_capacity_for_new_session(&self, add_tab: bool) -> Result<()> {
+        if add_tab && self.tabs.len() >= MAX_TABS {
+            anyhow::bail!("tab limit reached ({MAX_TABS}); close one before spawning another");
+        }
+        if self.sessions.len() >= MAX_SESSIONS {
+            anyhow::bail!(
+                "pane limit reached ({MAX_SESSIONS}); close some panes before opening more"
+            );
+        }
+        Ok(())
+    }
+
     fn split_focused_into(&mut self, horizontal: bool, agent_slug: Option<String>) -> Result<()> {
+        self.ensure_capacity_for_new_session(false)?;
         // Any selection / drag-resize is anchored to a specific pane
         // rect that this reflow is about to invalidate.
         self.cancel_drag();
@@ -473,6 +483,7 @@ impl Multiplexer {
     /// the new pane. Kept for the tmux-style `Ctrl+B %` / `Ctrl+B "`
     /// prefix bindings, which spawn-and-go without an agent picker.
     fn split_focused(&mut self, horizontal: bool) -> Result<()> {
+        self.ensure_capacity_for_new_session(false)?;
         let Some(tab) = self.tabs.get(self.active_tab) else {
             return Ok(());
         };
@@ -491,6 +502,12 @@ impl Multiplexer {
         let next_focus = all.iter().find(|&&sid| sid != id).copied();
         tab.tree.remove(id);
         self.sessions.remove(&id);
+        // Mirror remove_exited_session: drop the zoomed reference when
+        // the killed pane was the zoom target. Otherwise the next
+        // compose_frame's `if let Some(zoom_id) = self.zoomed` branch
+        // calls sessions.get_mut(&zoom_id) → None and the operator
+        // sees a blank zoom area until they manually unzoom.
+        self.zoomed = self.zoomed.filter(|&zid| zid != id);
         if let Some(nf) = next_focus {
             tab.focused_id = nf;
         } else {
@@ -1684,23 +1701,31 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                         let mut to_emit: Vec<Vec<u8>> = Vec::new();
                         if let Some(session) = mux.sessions.get_mut(&session_id) {
                             session.feed_pty(&data);
-                            // OSC + unhandled-CSI passthrough: drain
-                            // only when focused. Backgrounded panes'
-                            // notifications, clipboard writes, and
-                            // titles must not reach the operator's
-                            // outer terminal.
+                            // Always drain the OSC + unhandled-CSI
+                            // passthrough buffer so a backgrounded
+                            // agent emitting OSC 7 / OSC 9 / OSC 8 on
+                            // every prompt does not grow `pending`
+                            // unboundedly until it becomes focused.
+                            // Forward the drained bytes ONLY when this
+                            // session is the focused pane —
+                            // backgrounded panes' notifications,
+                            // clipboard writes, and titles must not
+                            // reach the operator's outer terminal.
+                            let drained = session.drain_passthrough();
+                            // Mode-state transitions (bracketed paste,
+                            // etc.) round-trip through the outer
+                            // terminal. Drain regardless of focus for
+                            // the same reason; on focus swap,
+                            // `current_mode_state()` restores the
+                            // destination pane's full mode set in one
+                            // shot, so intermediate transitions of
+                            // backgrounded panes do not need to leak
+                            // out (and would be silently dropped here
+                            // anyway).
+                            let mode_transitions = session.drain_mode_transitions();
                             if is_focused {
-                                to_emit.extend(session.drain_passthrough());
-                                // Mode-state transitions (bracketed
-                                // paste, etc.) round-trip through the
-                                // outer terminal. Only emit while
-                                // focused — on focus swap,
-                                // `current_mode_state()` restores the
-                                // destination pane's full mode set in
-                                // one shot, so intermediate
-                                // transitions of backgrounded panes
-                                // do not need to leak out.
-                                to_emit.extend(session.drain_mode_transitions());
+                                to_emit.extend(drained);
+                                to_emit.extend(mode_transitions);
                             }
                         }
                         for bytes in to_emit {

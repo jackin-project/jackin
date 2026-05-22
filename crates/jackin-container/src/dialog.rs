@@ -383,11 +383,26 @@ fn rename_tab_handle_key(
             input.backspace();
             DialogAction::Redraw
         }
-        bytes if bytes.len() == 1 && (0x20..0x7f).contains(&bytes[0]) => {
-            input.insert_char(bytes[0] as char);
+        _ => {
+            // Accept any valid UTF-8 chunk one char at a time so CJK /
+            // emoji / combining-mark labels reach `TextField`. The
+            // single-byte ASCII-printable form previously here dropped
+            // every non-ASCII keystroke silently, which mismatched the
+            // unicode-width measurement `lay_out_tabs` now uses for
+            // tab-strip rendering. C0 controls (other than the explicit
+            // Esc / Enter / Backspace arms above) and invalid UTF-8
+            // chunks fall through as a Redraw no-op.
+            let Ok(s) = std::str::from_utf8(key) else {
+                return DialogAction::Redraw;
+            };
+            for ch in s.chars() {
+                if (ch.is_control() && ch != '\t') || ch == '\0' {
+                    continue;
+                }
+                input.insert_char(ch);
+            }
             DialogAction::Redraw
         }
-        _ => DialogAction::Redraw,
     }
 }
 

@@ -1337,6 +1337,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "unicode-width",
  "url",
  "vt100",
 ]

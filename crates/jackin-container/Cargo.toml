@@ -30,6 +30,7 @@ vt100 = "0.16"
 url = "2"
 percent-encoding = "2"
 base64 = "0.22"
+unicode-width = "0.2"
 jackin-tui = { path = "../jackin-tui" }
 
 [dev-dependencies]
