@@ -13,7 +13,8 @@
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use anyhow::Result;
@@ -414,6 +415,24 @@ impl Multiplexer {
             self.container_info_copy_deadline = None;
         }
         self.dialog_stack.push(d);
+    }
+
+    fn open_container_info_dialog(&mut self) {
+        let focused_agent = self
+            .active_focused_id()
+            .and_then(|id| self.sessions.get(&id))
+            .and_then(|s| s.agent.clone());
+        let container_name = self.status_bar.container_name().to_string();
+        let git_context = workdir_git_context(&self.workdir);
+        self.dialog_push(Dialog::ContainerInfo {
+            container_name,
+            role: self.status_bar.role().to_string(),
+            focused_agent,
+            workdir: self.workdir.to_string_lossy().into_owned(),
+            git_branch: git_context.branch,
+            pull_request_url: git_context.pull_request_url,
+            copied: false,
+        });
     }
 
     /// Pop the top dialog. Returns `Some(prev)` when something was on
@@ -1443,17 +1462,7 @@ impl Multiplexer {
                 // Clicks elsewhere on row 1 (the underline strip) are
                 // no-ops.
                 if self.status_bar.identity_at(2, col + 1) {
-                    let focused_agent = self
-                        .active_focused_id()
-                        .and_then(|id| self.sessions.get(&id))
-                        .and_then(|s| s.agent.clone());
-                    let container_name = self.status_bar.container_name().to_string();
-                    self.dialog_push(Dialog::ContainerInfo {
-                        container_name,
-                        role: self.status_bar.role().to_string(),
-                        focused_agent,
-                        copied: false,
-                    });
+                    self.open_container_info_dialog();
                     return Some(self.compose_full_frame(FullRedrawReason::DialogChange));
                 }
                 None
@@ -3041,6 +3050,65 @@ fn display_title(session: &Session) -> String {
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct WorkdirGitContext {
+    branch: Option<String>,
+    pull_request_url: Option<String>,
+}
+
+fn workdir_git_context(workdir: &Path) -> WorkdirGitContext {
+    let branch = git_current_branch(workdir);
+    let pull_request_url = branch
+        .as_deref()
+        .and_then(|branch| gh_pull_request_url(workdir, branch));
+    WorkdirGitContext {
+        branch,
+        pull_request_url,
+    }
+}
+
+fn git_current_branch(workdir: &Path) -> Option<String> {
+    command_stdout_trimmed(
+        Command::new("git")
+            .arg("-C")
+            .arg(workdir)
+            .args(["branch", "--show-current"]),
+    )
+}
+
+fn gh_pull_request_url(workdir: &Path, branch: &str) -> Option<String> {
+    let url = command_stdout_trimmed(
+        Command::new("gh")
+            .current_dir(workdir)
+            .env("GH_PROMPT_DISABLED", "1")
+            .env("GH_NO_UPDATE_NOTIFIER", "1")
+            .args(["pr", "view", branch, "--json", "url", "--jq", ".url"]),
+    )?;
+    if url == "null" { None } else { Some(url) }
+}
+
+fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
+    command.stdout(Stdio::piped()).stderr(Stdio::null());
+    let mut child = command.spawn().ok()?;
+    let started = Instant::now();
+    let output = loop {
+        if child.try_wait().ok()?.is_some() {
+            break child.wait_with_output().ok()?;
+        }
+        if started.elapsed() >= Duration::from_millis(1500) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if value.is_empty() { None } else { Some(value) }
+}
+
 fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {
     match cmd {
         PrefixCommand::NewTab | PrefixCommand::Palette => FullRedrawReason::PaletteOverlay,
@@ -3369,10 +3437,15 @@ mod tests {
             "opening container info must not send OSC 52"
         );
         assert!(!String::from_utf8_lossy(&frame).contains("Copied!"));
-        assert!(matches!(
-            mux.dialog_top(),
-            Some(Dialog::ContainerInfo { copied: false, .. })
-        ));
+        let Some(Dialog::ContainerInfo {
+            copied: false,
+            workdir,
+            ..
+        }) = mux.dialog_top()
+        else {
+            panic!("identity click should open container info")
+        };
+        assert_eq!(workdir, "/workspace");
     }
 
     #[test]
@@ -3382,6 +3455,9 @@ mod tests {
             container_name: "jk-test-container".to_string(),
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
+            workdir: "/workspace".to_string(),
+            git_branch: Some("main".to_string()),
+            pull_request_url: Some("https://github.com/jackin-project/jackin/pull/1".to_string()),
             copied: true,
         });
         let now = Instant::now();

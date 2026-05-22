@@ -20,6 +20,7 @@
 /// attribute so the operator sees a clear "focus is inside the
 /// dialog" cue (see `render_pane`'s `dim` parameter).
 const PALETTE_WIDTH: u16 = 50;
+const CONTAINER_INFO_WIDTH: u16 = 86;
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
 const BG_DARK: &str = "\x1b[48;2;0;0;0m"; // pure black
@@ -105,7 +106,8 @@ pub enum Dialog {
     /// Read-only modal opened when the operator clicks the status-bar
     /// container-name label. Surfaces the bits that used to clutter
     /// the bar (role key, focused-agent runtime) plus the full
-    /// container ID with a one-key "copy to clipboard" shortcut.
+    /// container ID, workspace path, and best-effort git context with
+    /// a one-key "copy to clipboard" shortcut.
     /// Enter or a click on the Container ID row emits OSC 52 with
     /// the container name AND keeps the dialog open — `copied` flips
     /// to `true` so the renderer shows a visible "Copied!" indicator
@@ -118,6 +120,9 @@ pub enum Dialog {
         container_name: String,
         role: String,
         focused_agent: Option<String>,
+        workdir: String,
+        git_branch: Option<String>,
+        pull_request_url: Option<String>,
         copied: bool,
     },
     /// Direction sub-dialog opened when the operator picks "Split pane"
@@ -766,7 +771,12 @@ impl Dialog {
     /// pathologically small; the trade-off is that the host terminal
     /// stays in a recoverable state regardless.
     fn box_rect(&self, term_rows: u16, term_cols: u16) -> (u16, u16, u16, u16) {
-        let width = PALETTE_WIDTH;
+        let width = match self {
+            Self::ContainerInfo { .. } => CONTAINER_INFO_WIDTH
+                .min(term_cols.saturating_sub(4))
+                .max(PALETTE_WIDTH),
+            _ => PALETTE_WIDTH,
+        };
         // Filterable dialogs grow by 2 rows over the legacy layout to
         // make room for the filter input + a blank separator above
         // the items list. Item count tracks the *filtered* set so the
@@ -794,8 +804,8 @@ impl Dialog {
             }
             // Rename modal: top border + blank pad + input row + blank pad + bottom border.
             Self::RenameTab { .. } => 5,
-            // ContainerInfo: top + pad + 3 detail rows + pad + bottom.
-            Self::ContainerInfo { .. } => 7,
+            // ContainerInfo: top + pad + 6 detail rows + pad + bottom.
+            Self::ContainerInfo { .. } => 10,
             // ConfirmAction: top + pad + 2 message rows + pad + button + pad + bottom.
             Self::ConfirmAction { .. } => 9,
         };
@@ -872,6 +882,9 @@ impl Dialog {
                 container_name,
                 role,
                 focused_agent,
+                workdir,
+                git_branch,
+                pull_request_url,
                 copied,
             } => {
                 render_container_info(
@@ -883,6 +896,9 @@ impl Dialog {
                     container_name,
                     role,
                     focused_agent.as_deref(),
+                    workdir,
+                    git_branch.as_deref(),
+                    pull_request_url.as_deref(),
                     *copied,
                 );
                 render_bottom_hint(buf, term_rows, term_cols, CONTAINER_INFO_HINT);
@@ -1665,8 +1681,8 @@ fn render_row(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, label: &str, se
     buf.extend_from_slice(RESET.as_bytes());
 }
 
-/// Render the read-only ContainerInfo modal. Three label/value rows
-/// (Container ID, Role, Agent) inside the standard `render_box` chrome.
+/// Render the read-only ContainerInfo modal. Label/value rows live
+/// inside the standard `render_box` chrome.
 /// The container ID is rendered in white-bold to flag it as the copy
 /// target the bottom hint advertises. No selection state — Enter / a
 /// click on the Container ID row copies the ID via OSC 52; Esc / q
@@ -1681,23 +1697,33 @@ fn render_container_info(
     container_name: &str,
     role: &str,
     focused_agent: Option<&str>,
+    workdir: &str,
+    git_branch: Option<&str>,
+    pull_request_url: Option<&str>,
     copied: bool,
 ) {
     render_box(buf, box_row, box_col, height, width, "Container info");
     // Label column width — keep the label/value gutter aligned across
-    // all three rows. "Container ID" is the longest label.
+    // all rows. "Container ID" and "Pull Request" are the longest labels.
     let label_col_width = "Container ID".chars().count();
     let interior_left = box_col + 2;
     let interior_max_cols = (width as usize).saturating_sub(4);
     let value_col_offset = label_col_width + 2; // 2 = ": "
     let value_max_cols = interior_max_cols.saturating_sub(value_col_offset);
 
-    let rows: [(&str, String, bool); 3] = [
+    let rows: [(&str, String, bool); 6] = [
         ("Container ID", container_name.to_string(), true),
         ("Role", non_empty_or_dim(role), false),
         (
             "Agent",
             non_empty_or_dim(focused_agent.unwrap_or("")),
+            false,
+        ),
+        ("Workdir", non_empty_or_dim(workdir), false),
+        ("Branch", non_empty_or_dim(git_branch.unwrap_or("")), false),
+        (
+            "Pull Request",
+            non_empty_or_dim(pull_request_url.unwrap_or("")),
             false,
         ),
     ];
@@ -2316,6 +2342,9 @@ mod tests {
             container_name: "jk-abc123-thearchitect".to_string(),
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
+            workdir: "/workspace/jackin".to_string(),
+            git_branch: Some("feature/container-info".to_string()),
+            pull_request_url: Some("https://github.com/jackin-project/jackin/pull/123".to_string()),
             copied: false,
         }
     }
@@ -2393,6 +2422,9 @@ mod tests {
             container_name: "jk-abc123-thearchitect".to_string(),
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
+            workdir: "/workspace/jackin".to_string(),
+            git_branch: Some("feature/container-info".to_string()),
+            pull_request_url: Some("https://github.com/jackin-project/jackin/pull/123".to_string()),
             copied: true,
         };
         assert!(d.clear_copy_feedback());
@@ -2408,6 +2440,9 @@ mod tests {
             container_name: "jk-c9g7zpkh-jackin-thearchitect-extra-long".to_string(),
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
+            workdir: "/workspace/jackin".to_string(),
+            git_branch: Some("feature/container-info".to_string()),
+            pull_request_url: Some("https://github.com/jackin-project/jackin/pull/123".to_string()),
             copied: true,
         };
         let mut buf = Vec::new();
@@ -2417,6 +2452,21 @@ mod tests {
             rendered.contains("Copied!"),
             "long container IDs must not push copy feedback out of the dialog: {rendered:?}"
         );
+    }
+
+    #[test]
+    fn container_info_renders_workdir_branch_and_pr_url() {
+        let d = container_info_fixture();
+        let mut buf = Vec::new();
+        d.render(&mut buf, 40, 120);
+        let rendered = String::from_utf8_lossy(&buf);
+
+        assert!(rendered.contains("Workdir"));
+        assert!(rendered.contains("/workspace/jackin"));
+        assert!(rendered.contains("Branch"));
+        assert!(rendered.contains("feature/container-info"));
+        assert!(rendered.contains("Pull Request"));
+        assert!(rendered.contains("https://github.com/jackin-project/jackin/pull/123"));
     }
 
     #[test]
