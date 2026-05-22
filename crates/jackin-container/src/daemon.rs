@@ -116,6 +116,16 @@ struct SelectionState {
 
 const DOUBLE_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
 
+/// Hard cap on simultaneous tabs. 32 is well past any operator
+/// workflow but small enough that an accidental loop of new-tab
+/// requests cannot drive the container OOM.
+const MAX_TABS: usize = 32;
+
+/// Hard cap on simultaneous sessions (panes). Splits within tabs
+/// can grow the session count past the tab count; cap separately
+/// for the same memory-bounding reason.
+const MAX_SESSIONS: usize = 64;
+
 /// `JACKIN_ESCAPE_TIME` env var — operator-tunable in milliseconds.
 const ENV_ESCAPE_TIME: &str = "JACKIN_ESCAPE_TIME";
 
@@ -338,6 +348,21 @@ impl Multiplexer {
     }
 
     fn spawn_session(&mut self, agent: Option<String>) -> Result<u64> {
+        // Bound the per-container surface so a runaway client (or an
+        // operator mis-click loop) cannot allocate unbounded PTYs.
+        // Each session retains ~SCROLLBACK_LEN lines of scrollback,
+        // a master+slave PTY pair, and a child process — at MAX_TABS
+        // sessions the container memory footprint is still well
+        // under typical limits, but well past the size any operator
+        // can usefully navigate.
+        if self.tabs.len() >= MAX_TABS {
+            anyhow::bail!("tab limit reached ({MAX_TABS}); close one before spawning another");
+        }
+        if self.sessions.len() >= MAX_SESSIONS {
+            anyhow::bail!(
+                "pane limit reached ({MAX_SESSIONS}); close some panes before opening more"
+            );
+        }
         let (label, cmd) = match &agent {
             Some(slug) => (
                 capitalize(slug),
@@ -1668,43 +1693,43 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 match event {
                     SessionEvent::Output { session_id, data } => {
                         let focused_id = mux.active_focused_id();
+                        let is_focused = Some(session_id) == focused_id;
+                        // Collect any focused-pane output into local
+                        // vecs so the `&mut Session` borrow ends before
+                        // `mux.send_output` (which needs &Multiplexer).
+                        let mut to_emit: Vec<Vec<u8>> = Vec::new();
                         if let Some(session) = mux.sessions.get_mut(&session_id) {
                             session.feed_pty(&data);
-                            // Drain OSC and unhandled-CSI sequences and
-                            // forward them to the client only when this
-                            // session is the focused pane in the active
-                            // tab — backgrounded panes' notifications,
-                            // clipboard writes, and titles must not
-                            // reach the operator's outer terminal.
-                            let passthrough = session.drain_passthrough();
-                            // Forward mode-state transitions (currently
-                            // bracketed paste) so the outer terminal
-                            // keeps in sync with what the focused agent
-                            // wants. vt100 absorbs `?2004h/l` silently;
-                            // without this re-emit, the operator's
-                            // multi-line pastes arrive as separate
-                            // `\n`-terminated chunks and agents treat
-                            // each line as a separate message.
-                            let mode_transitions = session.drain_mode_transitions();
-                            if Some(session_id) == focused_id {
-                                for bytes in passthrough {
-                                    mux.send_output(bytes);
-                                }
-                                for bytes in mode_transitions {
-                                    mux.send_output(bytes);
-                                }
-                            }
-                            // Mark dirty; the render ticker coalesces
-                            // bursts of PTY output into one frame per
-                            // tick. Composing immediately on every
-                            // event meant a chatty agent (TUI spinner
-                            // + multi-pane updates) pushed dozens of
-                            // full frames per second to the client and
-                            // visibly slowed the multiplexer.
-                            if mux.dialog.is_none() {
-                                mux.dirty = true;
+                            // OSC + unhandled-CSI passthrough: drain
+                            // only when focused. Backgrounded panes'
+                            // notifications, clipboard writes, and
+                            // titles must not reach the operator's
+                            // outer terminal.
+                            if is_focused {
+                                to_emit.extend(session.drain_passthrough());
+                                // Mode-state transitions (bracketed
+                                // paste, etc.) round-trip through the
+                                // outer terminal. Only emit while
+                                // focused — on focus swap,
+                                // `current_mode_state()` restores the
+                                // destination pane's full mode set in
+                                // one shot, so intermediate
+                                // transitions of backgrounded panes
+                                // do not need to leak out.
+                                to_emit.extend(session.drain_mode_transitions());
                             }
                         }
+                        for bytes in to_emit {
+                            mux.send_output(bytes);
+                        }
+                        // Mark dirty; the render ticker coalesces
+                        // bursts of PTY output into one frame per
+                        // tick. Dialog-open still marks dirty — the
+                        // render ticker now paints the dialog overlay
+                        // against the latest pane state, so dismiss
+                        // doesn't produce a sudden burst of
+                        // accumulated frames.
+                        mux.dirty = true;
                     }
                     SessionEvent::Exited { session_id } => {
                         // Remove the pane / tab immediately rather than
@@ -1746,8 +1771,15 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
 
             // Render ticker: drain the dirty flag at ~30 fps. One
             // frame per tick at most, regardless of how many PTY
-            // events arrived since the last tick.
-            _ = render_ticker.tick(), if mux.dirty && mux.dialog.is_none() => {
+            // events arrived since the last tick. `compose_frame`
+            // includes the dialog overlay when one is open, so the
+            // open-dialog case still composes (and the operator sees
+            // dialog content over the latest pane state) instead of
+            // accumulating dirty until dismiss — without this the
+            // dismiss frame was a sudden jump of N frames' worth of
+            // accumulated PTY output that the operator had no way to
+            // see coming.
+            _ = render_ticker.tick(), if mux.dirty => {
                 mux.dirty = false;
                 let frame_data = mux.compose_frame();
                 mux.send_output(frame_data);

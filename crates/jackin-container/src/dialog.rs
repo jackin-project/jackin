@@ -320,15 +320,27 @@ impl Dialog {
     /// `term_cols`. Returned as `(row, col, height, width)`. Kept
     /// next to the render functions so any layout change updates
     /// both surfaces at once.
+    ///
+    /// Height clamps to the area below the status bar so a very small
+    /// terminal does not paint past the bottom edge (which would
+    /// scroll the host terminal and destroy the operator's pane
+    /// content) and does not overlap row 0 (the brand pill / tab
+    /// strip). The dialog can render unusable when the terminal is
+    /// pathologically small; the trade-off is that the host terminal
+    /// stays in a recoverable state regardless.
     fn box_rect(&self, term_rows: u16, term_cols: u16) -> (u16, u16, u16, u16) {
         let width = PALETTE_WIDTH;
-        let height = match self {
+        let natural_height = match self {
             Self::CommandPalette { .. } => PALETTE_ITEMS.len() as u16 + 4,
             Self::AgentPicker { agents, .. } => agents.len() as u16 + 2 + 4,
             // Rename modal: top border + blank pad + input row + blank pad + bottom border.
             Self::RenameTab { .. } => 5,
         };
-        let row = (term_rows.saturating_sub(height)) / 2;
+        let max_height = term_rows
+            .saturating_sub(crate::statusbar::STATUS_BAR_ROWS)
+            .max(3);
+        let height = natural_height.min(max_height);
+        let row = crate::statusbar::STATUS_BAR_ROWS + (max_height.saturating_sub(height)) / 2;
         let col = (term_cols.saturating_sub(width)) / 2;
         (row, col, height, width)
     }
@@ -679,10 +691,10 @@ fn hint_span_cols(spans: &[HintSpan<'_>]) -> usize {
 /// global-footer pattern jackin's console TUI uses.
 fn render_bottom_hint(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, spans: &[HintSpan<'_>]) {
     let total = hint_span_cols(spans);
-    if total >= term_cols as usize || term_rows == 0 {
+    if total > term_cols as usize || term_rows == 0 {
         return;
     }
-    let start_col = ((term_cols as usize - total) / 2) as u16;
+    let start_col = ((term_cols as usize).saturating_sub(total) / 2) as u16;
     let row = term_rows - 1;
     move_to(buf, row, start_col);
     buf.extend_from_slice(BG_DARK.as_bytes());
