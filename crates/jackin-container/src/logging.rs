@@ -21,10 +21,21 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{SecondsFormat, Utc};
 
 static LOG_FILE: OnceLock<Mutex<Option<File>>> = OnceLock::new();
+static DEBUG_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// `true` when `JACKIN_DEBUG=1` (or any truthy value) was set in the
+/// container's env. Captured once at `init()` time so per-line emit
+/// paths can branch on it cheaply. Verbose `cdebug!` callers compile
+/// the format args lazily and skip the file write when `false` —
+/// production runs stay quiet, `--debug` runs get the firehose.
+pub fn debug_enabled() -> bool {
+    DEBUG_ENABLED.load(Ordering::Relaxed)
+}
 
 /// Default in-container path. The host's state-dir mount makes this
 /// readable from outside the container.
@@ -42,6 +53,20 @@ fn resolve_log_path() -> PathBuf {
 /// point. Failures (path not writable, dir missing) are swallowed —
 /// the logger keeps emitting to stderr.
 pub fn init() {
+    // Honour the same env var the host CLI sets when the operator
+    // launches with `--debug`. Truthy values: `1`, `true`, `yes`, `on`
+    // (case-insensitive). Anything else (including unset) leaves the
+    // verbose surface off.
+    let debug = std::env::var("JACKIN_DEBUG")
+        .map(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false);
+    DEBUG_ENABLED.store(debug, Ordering::Relaxed);
+
     let path = resolve_log_path();
     let file = OpenOptions::new()
         .create(true)
@@ -59,7 +84,7 @@ pub fn init() {
         let ts = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
         let _ = writeln!(
             f,
-            "{ts} ---- multiplexer start pid={pid} path={} ----",
+            "{ts} ---- multiplexer start pid={pid} debug={debug} path={} ----",
             path.display()
         );
     }
@@ -90,11 +115,29 @@ pub fn write_line(message: &str) {
 }
 
 /// Convenience macro: format + tag + emit. Replaces the existing
-/// `eprintln!("[jackin-container] …")` pattern.
+/// `eprintln!("[jackin-container] …")` pattern. Always emits regardless
+/// of debug mode — reserved for compact production telemetry
+/// (lifecycle events, action breadcrumbs, error paths).
 #[macro_export]
 macro_rules! clog {
     ($($arg:tt)*) => {{
         let line = format!("[jackin-container] {}", format_args!($($arg)*));
         $crate::logging::write_line(&line);
+    }};
+}
+
+/// Debug-only verbose telemetry. Compiles in unconditionally but
+/// skips the format + write entirely when `JACKIN_DEBUG` is unset, so
+/// production runs pay nothing for the per-byte input dumps, per-frame
+/// render notes, and per-event dispatch traces this macro is meant
+/// for. Use for the kind of detail a triage session needs but a quiet
+/// daily-driver log must not carry.
+#[macro_export]
+macro_rules! cdebug {
+    ($($arg:tt)*) => {{
+        if $crate::logging::debug_enabled() {
+            let line = format!("[jackin-container debug] {}", format_args!($($arg)*));
+            $crate::logging::write_line(&line);
+        }
     }};
 }

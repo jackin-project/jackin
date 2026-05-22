@@ -80,6 +80,21 @@ Rationale: Rust's ecosystem is one of the project's leverage points. The communi
 
 When you do hand-roll something this rule covers, leave a comment explaining why (crate unavailable, scope tiny, dependency cost specifically rejected) so a later maintainer can replace it without re-debating the decision.
 
+## Telemetry must be debuggable on demand without becoming noisy by default (hard rule)
+
+**The standard log output (no debug flag) must be compact: lifecycle events, action breadcrumbs, and error paths only. The debug-flag log output must be a firehose detailed enough to reconstruct every operator keystroke, every protocol frame, every dispatch decision, and every render boundary. Both surfaces live in the same code, gated on the same flag — no `// TODO: remove debug logging` smell and no "rebuild with extra logging" round trip when an operator reports an issue.**
+
+The shape is two-tier:
+
+- **`clog!` (compact, always on).** Daemon start, session spawn/exit, child reap, PTY mutex poison, attach handshake outcomes, dialog dispatch arms that act (`Command`, `SpawnAgent`, `RenameTab`, `Dismiss`), pane/tab close, focus swap, error paths with the underlying errno. Quiet enough that a multi-hour session produces a log a human can scroll. Operators pasting these into bug reports get the timeline of *what happened*.
+- **`cdebug!` (verbose, gated on `JACKIN_DEBUG=1`).** Every byte arriving from the client, every parser event with its dispatch state (dialog open / focused pane / prefix awaiting), every PTY write with the bytes and the destination session, every render frame size and reason, every dialog redraw, every per-tick state ticker. The macro skips the format + write entirely when the flag is off, so production runs pay nothing. With the flag on, the trace is detailed enough to localize "key X produced no visible effect" from the log alone — chunk line proves the byte reached the daemon, parser line proves it classified, dispatch line proves the routing decision, PTY-write line proves the byte hit the slave fd.
+
+The flag is the same `JACKIN_DEBUG` the host's `--debug` flag sets — it flows into the container via `env_passthrough` in `daemon.rs` and is captured once at `logging::init()` time. New verbose telemetry sites should branch on `cdebug!`, not `clog!`. New compact telemetry sites should branch on `clog!`. Anything that fires more than ~10 times per minute under normal operation belongs on `cdebug!`.
+
+When you find yourself adding "TEMPORARY logging to triage a regression", stop and convert it to `cdebug!` instead — the next bug report needs the same telemetry, and removing-and-readding-it on every regression cycle is exactly the loop this rule exists to break. The same applies to any other surface that grows a telemetry / tracing layer (the host CLI's `tui::tprintln`, the docs site's render warnings, the `runtime::launch` path): two tiers, debug-gated firehose, default compact.
+
+The reason: operators can rarely reproduce on demand. When they hit something weird, they need to be able to paste a log that already has the answer — without rebuilding, without enabling extra instrumentation we forgot to ship, and without an extra round of "now please run it again with this added line". The host's `--debug` flag is the single switch that turns the firehose on; everything downstream honours it.
+
 ## Reuse before writing — DRY (hard rule)
 
 **Before writing new code, check whether something close enough already exists. If yes, extend, parameterise, or wrap it instead of writing a parallel copy. If no, write the new thing in a shape future callers can reuse.**

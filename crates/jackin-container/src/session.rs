@@ -593,6 +593,16 @@ impl Session {
     }
 
     pub fn send_input(&self, data: &[u8]) {
+        // Debug-only: log every byte chunk forwarded to a PTY. Pairs
+        // with the `rx ClientFrame::Input` line on the receive side so
+        // a `--debug` trace shows the full path from operator keystroke
+        // to slave fd write.
+        crate::cdebug!(
+            "session send_input: agent={:?} label={} bytes={:02x?}",
+            self.agent,
+            self.label,
+            data
+        );
         // SendError fires when the writer task has exited (it owns the
         // receiver). The writer task emits SessionEvent::Exited before
         // dropping, so the daemon will reap this Session on the next

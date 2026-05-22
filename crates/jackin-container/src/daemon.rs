@@ -336,12 +336,18 @@ impl Multiplexer {
     /// and route the result here, so adding a new variant means
     /// updating one match arm instead of two.
     fn apply_dialog_action(&mut self, action: DialogAction) -> Vec<u8> {
-        // Action breadcrumb: every dialog confirm/cancel/redraw flows
-        // through here. Redraw fires on every arrow key inside a
-        // dialog, so it would dominate the log if left in — strip it
-        // before logging to keep the trace useful.
-        if !matches!(action, DialogAction::Redraw) {
-            crate::clog!("action: dialog={action:?}");
+        // Compact breadcrumb (always logged) for the load-bearing
+        // dispatch arms — Dismiss, Command, SpawnAgent, RenameTab. The
+        // Redraw / Consume arms fire on every arrow key inside a dialog
+        // and would swamp the production log; they go through the
+        // debug-only `cdebug!` surface so a `--debug` trace shows
+        // dialog dispatch landing for arrow keys while quiet runs stay
+        // tidy.
+        match &action {
+            DialogAction::Redraw | DialogAction::Consume => {
+                crate::cdebug!("action: dialog={action:?}");
+            }
+            _ => crate::clog!("action: dialog={action:?}"),
         }
         match action {
             DialogAction::Dismiss => {
@@ -1888,8 +1894,25 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             mux.send_output(frame_data);
         }
         ClientFrame::Input(bytes) => {
+            // Debug-only input-path telemetry: every chunk from the
+            // client and every parser event lands in the log when
+            // `JACKIN_DEBUG=1`. Production runs stay quiet — the macro
+            // skips the format + write entirely. The pair is the
+            // canonical trace for "key X did nothing" triage: chunk
+            // line proves the byte reached the daemon, event line
+            // proves the parser classified it.
+            crate::cdebug!(
+                "rx ClientFrame::Input len={} bytes={:02x?}",
+                bytes.len(),
+                bytes
+            );
             let events = mux.input_parser.parse(&bytes);
             for event in events {
+                crate::cdebug!(
+                    "  → InputEvent::{:?} dialog_open={}",
+                    event,
+                    mux.dialog.is_some()
+                );
                 if let Some(redraw) = mux.handle_input(event) {
                     mux.send_output(redraw);
                 }
