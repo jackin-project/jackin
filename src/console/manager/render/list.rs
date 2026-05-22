@@ -57,12 +57,14 @@ pub(super) fn render_list_body(
             if let Some(entry) = instances.get(inst_idx).copied() {
                 let sessions = state.sessions_for_instance(&entry.container_base);
                 let session_load_error = state.has_session_load_error(&entry.container_base);
+                let snapshot = state.snapshot_for_instance(&entry.container_base);
                 render_instance_details_pane(
                     frame,
                     columns[1],
                     entry,
                     sessions,
                     session_load_error,
+                    snapshot,
                 );
             }
         }
@@ -71,12 +73,14 @@ pub(super) fn render_list_body(
             if let Some(entry) = instances.get(inst_idx).copied() {
                 let sessions = state.sessions_for_instance(&entry.container_base);
                 let session_load_error = state.has_session_load_error(&entry.container_base);
+                let snapshot = state.snapshot_for_instance(&entry.container_base);
                 render_instance_details_pane(
                     frame,
                     columns[1],
                     entry,
                     sessions,
                     session_load_error,
+                    snapshot,
                 );
             }
         }
@@ -949,13 +953,20 @@ fn render_compact_instances_summary(frame: &mut Frame, area: Rect, count: usize,
 }
 
 /// Right-panel shown when operator selects an instance row in the tree.
-/// Displays recorded sessions from the manifest in a phosphor-styled block.
+/// When the daemon's bind-mounted socket gives us a live snapshot we
+/// render the tab/pane tree (active tab marked, focused pane marked,
+/// per-pane agent + state); otherwise we fall back to the on-disk
+/// manifest sessions, and finally to a "no sessions recorded" hint
+/// when neither is available.
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
 fn render_instance_details_pane(
     frame: &mut Frame,
     area: Rect,
     entry: &crate::instance::InstanceIndexEntry,
     sessions: &[crate::instance::SessionRecord],
     session_load_error: bool,
+    snapshot: Option<&crate::runtime::snapshot::InstanceSnapshot>,
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
@@ -967,7 +978,66 @@ fn render_instance_details_pane(
 
     let mut lines: Vec<Line<'static>> = Vec::new();
 
-    if sessions.is_empty() {
+    if let Some(snapshot) = snapshot {
+        let active_tab = snapshot.active_tab as usize;
+        if snapshot.tabs.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "  Daemon reports no tabs",
+                Style::default().fg(PHOSPHOR_DIM),
+            )));
+        } else {
+            lines.push(Line::from(Span::styled(
+                "  Live tab/pane tree (from container daemon)",
+                Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
+            )));
+            for (tab_idx, tab) in snapshot.tabs.iter().enumerate() {
+                let active = tab_idx == active_tab;
+                let prefix = if active { "▸" } else { " " };
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("  {prefix} Tab {}:  ", tab_idx + 1),
+                        Style::default().fg(if active { PHOSPHOR_GREEN } else { PHOSPHOR_DIM }),
+                    ),
+                    Span::styled(
+                        tab.label.clone(),
+                        Style::default().fg(WHITE).add_modifier(if active {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        }),
+                    ),
+                ]));
+                for pane in &tab.panes {
+                    let focused = pane.session_id == tab.focused_pane;
+                    let marker = if focused { "●" } else { "○" };
+                    let agent_label = pane.agent.clone().unwrap_or_else(|| "shell".to_string());
+                    let state_label = pane.state.label();
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            format!("      {marker} "),
+                            Style::default().fg(if focused {
+                                PHOSPHOR_GREEN
+                            } else {
+                                PHOSPHOR_DIM
+                            }),
+                        ),
+                        Span::styled(
+                            format!("{:<16}", pane.label),
+                            Style::default().fg(PHOSPHOR_GREEN),
+                        ),
+                        Span::styled(
+                            format!("  ({agent_label}) "),
+                            Style::default().fg(PHOSPHOR_DIM),
+                        ),
+                        Span::styled(
+                            format!("[{state_label}]"),
+                            Style::default().fg(PHOSPHOR_DIM),
+                        ),
+                    ]));
+                }
+            }
+        }
+    } else if sessions.is_empty() {
         let msg = if session_load_error {
             "  Sessions unavailable (manifest read error)"
         } else {

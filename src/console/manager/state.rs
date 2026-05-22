@@ -141,6 +141,13 @@ pub struct ManagerState<'a> {
     /// Containers whose manifests could not be read during the last
     /// `refresh_instances` pass. Cleared on every successful index load.
     instance_session_errors: HashSet<String>,
+    /// Live tab/pane snapshot per running instance keyed by
+    /// `container_base`. Populated each `refresh_instances` tick by
+    /// fetching from the daemon's bind-mounted socket at
+    /// `~/.jackin/sockets/<container>/jackin.sock`. Missing keys mean
+    /// the snapshot is unavailable (container not running, socket
+    /// pre-dates the bind-mount, or the fetch failed).
+    pub instance_snapshots: HashMap<String, crate::runtime::snapshot::InstanceSnapshot>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1465,6 +1472,7 @@ impl ManagerState<'_> {
             current_dir_expanded: false,
             instance_sessions: HashMap::new(),
             instance_session_errors: HashSet::new(),
+            instance_snapshots: HashMap::new(),
         }
     }
 
@@ -1682,6 +1690,18 @@ impl ManagerState<'_> {
         self.instance_session_errors.contains(container_base)
     }
 
+    /// Live tab/pane snapshot the daemon reported in the last
+    /// `refresh_instances` tick, or `None` when the bind-mounted socket
+    /// is absent or the fetch failed. `render_instance_details_pane`
+    /// prefers this over the on-disk manifest sessions when present.
+    #[must_use]
+    pub fn snapshot_for_instance(
+        &self,
+        container_base: &str,
+    ) -> Option<&crate::runtime::snapshot::InstanceSnapshot> {
+        self.instance_snapshots.get(container_base)
+    }
+
     /// The [`WorkspaceSummary`] currently highlighted, or `None` when the
     /// selection is on Current Directory, New Workspace, or a `WorkspaceInstance`.
     #[must_use]
@@ -1777,6 +1797,7 @@ impl ManagerState<'_> {
                 // tmux state, but provide useful context without Docker exec.
                 self.instance_sessions.clear();
                 self.instance_session_errors.clear();
+                self.instance_snapshots.clear();
                 for entry in &self.instances {
                     if matches!(
                         entry.status,
@@ -1798,6 +1819,26 @@ impl ManagerState<'_> {
                                 );
                                 self.instance_session_errors
                                     .insert(entry.container_base.clone());
+                            }
+                        }
+                        // Best-effort live tab/pane snapshot via the
+                        // daemon's bind-mounted socket. Missing socket =
+                        // container hasn't reached the bind-mount era
+                        // yet, or its daemon is wedged — either way the
+                        // render falls back to the manifest sessions.
+                        match crate::runtime::snapshot::fetch_snapshot(paths, &entry.container_base)
+                        {
+                            Ok(Some(snapshot)) => {
+                                self.instance_snapshots
+                                    .insert(entry.container_base.clone(), snapshot);
+                            }
+                            Ok(None) => {}
+                            Err(e) => {
+                                crate::debug_log!(
+                                    "console",
+                                    "snapshot fetch failed for {}: {e:#}",
+                                    entry.container_base
+                                );
                             }
                         }
                     }
