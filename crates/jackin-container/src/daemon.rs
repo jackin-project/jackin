@@ -764,7 +764,7 @@ impl Multiplexer {
                 if self.dialog.is_some() {
                     self.dialog = None;
                 } else {
-                    self.dialog = Some(Dialog::CommandPalette { selected: 0 });
+                    self.dialog = Some(Dialog::CommandPalette { selected: 0, filter: String::new() });
                 }
                 Some(self.compose_frame())
             }
@@ -933,7 +933,7 @@ impl Multiplexer {
                     self.dialog = if self.dialog.is_some() {
                         None
                     } else {
-                        Some(Dialog::CommandPalette { selected: 0 })
+                        Some(Dialog::CommandPalette { selected: 0, filter: String::new() })
                     };
                     return Some(self.compose_frame());
                 }
@@ -1057,6 +1057,7 @@ impl Multiplexer {
                     agents,
                     selected: 0,
                     intent: PickerIntent::NewTab,
+                    filter: String::new(),
                 });
             }
             PrefixCommand::NextTab => self.next_tab(),
@@ -1080,7 +1081,7 @@ impl Multiplexer {
                 self.detach_requested = true;
             }
             PrefixCommand::Palette => {
-                self.dialog = Some(Dialog::CommandPalette { selected: 0 });
+                self.dialog = Some(Dialog::CommandPalette { selected: 0, filter: String::new() });
             }
             PrefixCommand::Redraw => {}
         }
@@ -1315,6 +1316,7 @@ impl Multiplexer {
                     agents,
                     selected: 0,
                     intent: PickerIntent::SplitHorizontal,
+                    filter: String::new(),
                 });
             }
             PaletteCommand::SplitVertical => {
@@ -1323,6 +1325,7 @@ impl Multiplexer {
                     agents,
                     selected: 0,
                     intent: PickerIntent::SplitVertical,
+                    filter: String::new(),
                 });
             }
             PaletteCommand::NewTab => {
@@ -1336,6 +1339,7 @@ impl Multiplexer {
                     agents,
                     selected: 0,
                     intent: PickerIntent::NewTab,
+                    filter: String::new(),
                 });
             }
             PaletteCommand::NextTab => self.next_tab(),

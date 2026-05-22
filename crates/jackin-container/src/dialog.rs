@@ -52,13 +52,21 @@ pub const MAX_CUSTOM_LABEL_LEN: usize = 16;
 
 #[derive(Debug, Clone)]
 pub enum Dialog {
+    /// Type-to-filter list. Typing printable characters narrows the
+    /// visible items by case-insensitive substring match on the label;
+    /// `selected` indexes into the *filtered* list so arrows + Enter
+    /// always act on what the operator sees. Esc / Ctrl+C dismiss
+    /// (the `q` / Backspace dismiss shortcuts that the read-only
+    /// dialogs use would conflict with typing into the filter).
     CommandPalette {
         selected: usize,
+        filter: String,
     },
     AgentPicker {
         agents: Vec<String>,
         selected: usize,
         intent: PickerIntent,
+        filter: String,
     },
     /// Text-input modal opened when the operator double-clicks a tab.
     /// `tab_idx` records which tab to rename. `input` reuses the
@@ -188,16 +196,17 @@ impl Dialog {
                 _ => DialogAction::Redraw,
             };
         }
-        // From here on, only the list-style dialogs reach this code
-        // path. The arrow / dismiss / character branches do not need
-        // to enumerate `RenameTab` or `ContainerInfo` — the early
-        // returns above are the single source of truth for those.
-        if is_dismiss_key(key) {
+        // From here on, only the type-to-filter list dialogs reach
+        // this code path. The dismiss surface is narrower than the
+        // read-only dialogs above (`q` / Backspace / Delete are
+        // typing actions that build the filter, not dismiss keys);
+        // only Esc and Ctrl+C close.
+        if is_filter_dismiss_key(key) {
             return DialogAction::Dismiss;
         }
         if is_arrow_up(key) {
             return match self {
-                Self::CommandPalette { selected } | Self::AgentPicker { selected, .. } => {
+                Self::CommandPalette { selected, .. } | Self::AgentPicker { selected, .. } => {
                     if *selected > 0 {
                         *selected -= 1;
                     }
@@ -208,16 +217,21 @@ impl Dialog {
         }
         if is_arrow_down(key) {
             return match self {
-                Self::CommandPalette { selected } => {
-                    if *selected + 1 < PALETTE_ITEMS.len() {
+                Self::CommandPalette { selected, filter } => {
+                    let visible = palette_filtered_indices(filter);
+                    if *selected + 1 < visible.len() {
                         *selected += 1;
                     }
                     DialogAction::Redraw
                 }
                 Self::AgentPicker {
-                    agents, selected, ..
+                    agents,
+                    selected,
+                    filter,
+                    ..
                 } => {
-                    if *selected + 1 < agents.len() + 1 {
+                    let visible = picker_filtered_rows(agents, filter);
+                    if *selected + 1 < visible.len() {
                         *selected += 1;
                     }
                     DialogAction::Redraw
@@ -225,58 +239,75 @@ impl Dialog {
                 Self::RenameTab { .. } | Self::ContainerInfo { .. } => DialogAction::Redraw,
             };
         }
-        match self {
-            Self::RenameTab { .. } | Self::ContainerInfo { .. } => DialogAction::Redraw,
-            Self::CommandPalette { selected } => match key {
-                b"k" => {
-                    if *selected > 0 {
-                        *selected -= 1;
-                    }
-                    DialogAction::Redraw
+        if is_backspace(key) {
+            match self {
+                Self::CommandPalette { filter, selected } => {
+                    filter.pop();
+                    *selected = 0;
                 }
-                b"j" => {
-                    if *selected + 1 < PALETTE_ITEMS.len() {
-                        *selected += 1;
-                    }
-                    DialogAction::Redraw
+                Self::AgentPicker {
+                    filter, selected, ..
+                } => {
+                    filter.pop();
+                    *selected = 0;
                 }
-                b"\r" | b"\n" => {
-                    let cmd = PALETTE_ITEMS[*selected].0.clone();
-                    DialogAction::Command(cmd)
-                }
-                _ => DialogAction::Redraw,
-            },
-            Self::AgentPicker {
-                agents,
-                selected,
-                intent,
-            } => match key {
-                b"k" => {
-                    if *selected > 0 {
-                        *selected -= 1;
-                    }
-                    DialogAction::Redraw
-                }
-                b"j" => {
-                    if *selected + 1 < agents.len() + 1 {
-                        *selected += 1;
-                    }
-                    DialogAction::Redraw
-                }
-                b"\r" | b"\n" => {
-                    let agent = if *selected < agents.len() {
-                        Some(agents[*selected].clone())
-                    } else {
-                        None // Shell
-                    };
-                    DialogAction::SpawnAgent {
-                        agent,
-                        intent: *intent,
-                    }
-                }
-                _ => DialogAction::Redraw,
-            },
+                _ => {}
+            }
+            return DialogAction::Redraw;
         }
+        if is_enter(key) {
+            return match self {
+                Self::CommandPalette { selected, filter } => {
+                    let visible = palette_filtered_indices(filter);
+                    match visible.get(*selected) {
+                        Some(idx) => DialogAction::Command(PALETTE_ITEMS[*idx].0.clone()),
+                        None => DialogAction::Redraw,
+                    }
+                }
+                Self::AgentPicker {
+                    agents,
+                    selected,
+                    intent,
+                    filter,
+                } => {
+                    let visible = picker_filtered_rows(agents, filter);
+                    match visible.get(*selected) {
+                        Some(PickerRow::Agent(idx)) => DialogAction::SpawnAgent {
+                            agent: Some(agents[*idx].clone()),
+                            intent: *intent,
+                        },
+                        Some(PickerRow::Shell) => DialogAction::SpawnAgent {
+                            agent: None,
+                            intent: *intent,
+                        },
+                        None => DialogAction::Redraw,
+                    }
+                }
+                _ => DialogAction::Redraw,
+            };
+        }
+        // Printable ASCII single-byte chunks become filter input. Multi-
+        // byte sequences (CSI fragments that did not match a known key,
+        // etc.) are no-op redraws — the parser already classified them,
+        // and feeding them into the filter would garble the visible
+        // typing state.
+        if let Some(c) = printable_filter_char(key) {
+            match self {
+                Self::CommandPalette { filter, selected } => {
+                    filter.push(c);
+                    *selected = 0;
+                }
+                Self::AgentPicker {
+                    filter, selected, ..
+                } => {
+                    filter.push(c);
+                    *selected = 0;
+                }
+                _ => {}
+            }
+            return DialogAction::Redraw;
+        }
+        DialogAction::Redraw
     }
 
     /// Dispatch a left-click at `(row, col)` against the dialog's
@@ -321,58 +352,65 @@ impl Dialog {
             *copied = true;
             return DialogAction::CopyToClipboard(payload);
         }
-        // First content row sits two rows down from the top border
-        // (top border + blank pad). Rows above and below the item
-        // list are decorative.
-        let first_item_row = box_row + 2;
-        let item_count = match self {
-            Self::CommandPalette { .. } => PALETTE_ITEMS.len() as u16,
-            // Agent picker rows: agents + separator + Shell. The
-            // separator row is non-selectable.
-            Self::AgentPicker { agents, .. } => agents.len() as u16 + 2,
-            // RenameTab + ContainerInfo are handled by the early
-            // returns above. Treat the post-check as "no rows" so the
-            // outer match still type-checks without an unreachable!.
+        // Row layout inside the box for filterable dialogs:
+        //   box_row + 0:  top border (decorative)
+        //   box_row + 1:  blank pad row
+        //   box_row + 2:  filter input ("/ <text>▏")
+        //   box_row + 3:  blank pad row separating filter from items
+        //   box_row + 4:  first item row
+        //
+        // Clicks on the filter row are no-op consumes (no in-place
+        // edit yet); clicks on item rows select + confirm against
+        // the current filtered list so a future refactor that
+        // shortens / lengthens the visible item count via filter
+        // input still routes the click to the right action.
+        let first_item_row = box_row + 4;
+        let visible_count: u16 = match self {
+            Self::CommandPalette { filter, .. } => palette_filtered_indices(filter).len() as u16,
+            Self::AgentPicker {
+                agents, filter, ..
+            } => picker_filtered_rows(agents, filter).len() as u16,
             Self::RenameTab { .. } | Self::ContainerInfo { .. } => 0,
         };
-        if row < first_item_row || row >= first_item_row + item_count {
+        if row < first_item_row || row >= first_item_row + visible_count {
             return DialogAction::Consume;
         }
-        let row_idx = (row - first_item_row) as usize;
+        let visible_idx = (row - first_item_row) as usize;
         match self {
-            Self::CommandPalette { selected } => {
-                *selected = row_idx;
-                let cmd = PALETTE_ITEMS[row_idx].0.clone();
-                DialogAction::Command(cmd)
+            Self::CommandPalette { selected, filter } => {
+                let visible = palette_filtered_indices(filter);
+                let Some(&source_idx) = visible.get(visible_idx) else {
+                    return DialogAction::Consume;
+                };
+                *selected = visible_idx;
+                DialogAction::Command(PALETTE_ITEMS[source_idx].0.clone())
             }
             Self::AgentPicker {
                 agents,
                 selected,
                 intent,
+                filter,
             } => {
-                // The separator sits immediately after the last
-                // agent; clicking it is a no-op. Shell sits one
-                // row past the separator.
-                if row_idx == agents.len() {
+                let visible = picker_filtered_rows(agents, filter);
+                let Some(&picker_row) = visible.get(visible_idx) else {
                     return DialogAction::Consume;
-                }
-                if row_idx > agents.len() {
-                    *selected = agents.len();
-                    return DialogAction::SpawnAgent {
+                };
+                *selected = visible_idx;
+                match picker_row {
+                    PickerRow::Agent(idx) => DialogAction::SpawnAgent {
+                        agent: Some(agents[idx].clone()),
+                        intent: *intent,
+                    },
+                    PickerRow::Shell => DialogAction::SpawnAgent {
                         agent: None,
                         intent: *intent,
-                    };
-                }
-                *selected = row_idx;
-                DialogAction::SpawnAgent {
-                    agent: Some(agents[row_idx].clone()),
-                    intent: *intent,
+                    },
                 }
             }
-            // Same fallthrough as `item_count` above: RenameTab and
-            // ContainerInfo clicks were already handled by the early
-            // returns. Return Consume rather than panic so a future
-            // refactor that drops the early return degrades cleanly.
+            // RenameTab and ContainerInfo clicks were already handled
+            // by early returns above. Consume rather than panic so a
+            // future refactor that drops the early return degrades
+            // cleanly.
             Self::RenameTab { .. } | Self::ContainerInfo { .. } => DialogAction::Consume,
         }
     }
@@ -391,9 +429,21 @@ impl Dialog {
     /// stays in a recoverable state regardless.
     fn box_rect(&self, term_rows: u16, term_cols: u16) -> (u16, u16, u16, u16) {
         let width = PALETTE_WIDTH;
+        // Filterable dialogs grow by 2 rows over the legacy layout to
+        // make room for the filter input + a blank separator above
+        // the items list. Item count tracks the *filtered* set so the
+        // box shrinks as the operator narrows the matches.
         let natural_height = match self {
-            Self::CommandPalette { .. } => PALETTE_ITEMS.len() as u16 + 4,
-            Self::AgentPicker { agents, .. } => agents.len() as u16 + 2 + 4,
+            Self::CommandPalette { filter, .. } => {
+                let items = palette_filtered_indices(filter).len() as u16;
+                items + 6 // top + pad + filter + pad + items + bottom
+            }
+            Self::AgentPicker {
+                agents, filter, ..
+            } => {
+                let items = picker_filtered_rows(agents, filter).len() as u16;
+                items + 6
+            }
             // Rename modal: top border + blank pad + input row + blank pad + bottom border.
             Self::RenameTab { .. } => 5,
             // ContainerInfo: top + pad + 3 detail rows + pad + bottom.
@@ -431,17 +481,18 @@ impl Dialog {
             return;
         }
         match self {
-            Self::CommandPalette { selected } => {
-                render_palette(buf, box_row, box_col, height, width, *selected);
+            Self::CommandPalette { selected, filter } => {
+                render_palette(buf, box_row, box_col, height, width, *selected, filter);
                 render_bottom_hint(buf, term_rows, term_cols, PALETTE_HINT);
             }
             Self::AgentPicker {
                 agents,
                 selected,
                 intent,
+                filter,
             } => {
                 render_agent_picker(
-                    buf, box_row, box_col, height, width, agents, *selected, *intent,
+                    buf, box_row, box_col, height, width, agents, *selected, *intent, filter,
                 );
                 render_bottom_hint(buf, term_rows, term_cols, PICKER_HINT);
             }
@@ -526,7 +577,11 @@ fn is_arrow_down(key: &[u8]) -> bool {
 /// Universal dialog-dismiss keys. Operators reach for `Esc` and `q`
 /// most often, but Backspace, Delete, and `Ctrl+C` are common
 /// muscle-memory fallbacks. Uppercase `Q` is included so a shift-key
-/// slip doesn't trap the operator inside the dialog.
+/// slip doesn't trap the operator inside the dialog. Read-only
+/// dialogs (`ContainerInfo`) use this set; filterable list dialogs
+/// (`CommandPalette`, `AgentPicker`) use the narrower
+/// `is_filter_dismiss_key` because Backspace builds the filter and
+/// `q` types into it.
 fn is_dismiss_key(key: &[u8]) -> bool {
     matches!(
         key,
@@ -537,6 +592,83 @@ fn is_dismiss_key(key: &[u8]) -> bool {
         | b"\x7f"   // Backspace
         | b"\x08" // Ctrl+H / older Backspace
     )
+}
+
+/// Narrow dismiss set for type-to-filter dialogs. Only Esc and
+/// Ctrl+C close the dialog — every other key either navigates the
+/// filtered list, confirms the selection, or builds the filter.
+fn is_filter_dismiss_key(key: &[u8]) -> bool {
+    matches!(key, b"\x1b" | b"\x03")
+}
+
+fn is_backspace(key: &[u8]) -> bool {
+    matches!(key, b"\x7f" | b"\x08")
+}
+
+fn is_enter(key: &[u8]) -> bool {
+    matches!(key, b"\r" | b"\n")
+}
+
+/// Filterable dialogs accept printable ASCII (0x20..=0x7e) as filter
+/// input. Multi-byte sequences fall through as no-op redraws — they
+/// were already classified by the parser (or arrived unrecognised),
+/// and feeding them into the filter would garble the visible typing
+/// state. Operators who need non-ASCII filtering can fall back to
+/// arrow navigation.
+fn printable_filter_char(key: &[u8]) -> Option<char> {
+    if key.len() != 1 {
+        return None;
+    }
+    let b = key[0];
+    if (0x20..=0x7e).contains(&b) {
+        Some(b as char)
+    } else {
+        None
+    }
+}
+
+/// Indices into `PALETTE_ITEMS` whose label contains `filter` as a
+/// case-insensitive substring. An empty filter returns every item.
+fn palette_filtered_indices(filter: &str) -> Vec<usize> {
+    let needle = filter.to_ascii_lowercase();
+    PALETTE_ITEMS
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, label))| {
+            needle.is_empty() || label.to_ascii_lowercase().contains(&needle)
+        })
+        .map(|(idx, _)| idx)
+        .collect()
+}
+
+/// Rendered rows in an `AgentPicker` after filtering. `Agent(idx)`
+/// indexes into the picker's `agents` Vec; `Shell` is the always-
+/// present last entry whose label is the literal string `"Shell"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PickerRow {
+    Agent(usize),
+    Shell,
+}
+
+/// Filtered list of picker rows for the current input. Empty filter
+/// shows every agent + Shell. Each row passes the filter when its
+/// display label (via `jackin_tui::agent_display_name` for agents,
+/// the literal `"Shell"` for the shell row) contains the filter as a
+/// case-insensitive substring. A shell-only filter like `s` keeps
+/// Shell visible alongside whatever agent labels also match.
+fn picker_filtered_rows(agents: &[String], filter: &str) -> Vec<PickerRow> {
+    let needle = filter.to_ascii_lowercase();
+    let mut out = Vec::with_capacity(agents.len() + 1);
+    for (idx, slug) in agents.iter().enumerate() {
+        let label = jackin_tui::agent_display_name(slug.as_str()).unwrap_or(slug.as_str());
+        if needle.is_empty() || label.to_ascii_lowercase().contains(&needle) {
+            out.push(PickerRow::Agent(idx));
+        }
+    }
+    if needle.is_empty() || "shell".contains(&needle) {
+        out.push(PickerRow::Shell);
+    }
+    out
 }
 
 /// One footer-hint span. Mirrors the console TUI's `FooterItem` model
@@ -619,18 +751,25 @@ fn render_palette(
     height: u16,
     width: u16,
     selected: usize,
+    filter: &str,
 ) {
-    let items = PALETTE_ITEMS;
     render_box(buf, start_row, start_col, height, width, "Menu");
-    // Clamp the item count by the available interior rows so a
-    // tight-fit terminal never paints past the bottom border. The
-    // dialog body has `height - 4` interior rows.
-    let interior = height.saturating_sub(4) as usize;
-    let visible = items.len().min(interior);
-    for (i, (_, label)) in items.iter().enumerate().take(visible) {
+    render_filter_input(buf, start_row + 2, start_col + 1, width, filter);
+    // Items occupy the rows below the filter + separator pad
+    // (`start_row + 4` onward). Clamp by the available interior so
+    // a tight-fit terminal never paints past the bottom border.
+    let interior_items = height.saturating_sub(6) as usize;
+    let visible = palette_filtered_indices(filter);
+    let drawn = visible.len().min(interior_items);
+    if drawn == 0 {
+        render_no_matches_row(buf, start_row + 4, start_col + 1, width);
+        return;
+    }
+    for (i, &source_idx) in visible.iter().enumerate().take(drawn) {
+        let (_, label) = PALETTE_ITEMS[source_idx];
         render_row(
             buf,
-            start_row + 2 + i as u16,
+            start_row + 4 + i as u16,
             start_col + 1,
             width,
             label,
@@ -648,6 +787,7 @@ fn render_agent_picker(
     agents: &[String],
     selected: usize,
     intent: PickerIntent,
+    filter: &str,
 ) {
     let title = match intent {
         PickerIntent::NewTab => "New tab",
@@ -655,63 +795,86 @@ fn render_agent_picker(
         PickerIntent::SplitVertical => "Split pane ─  (top / bottom)",
     };
     render_box(buf, start_row, start_col, height, width, title);
+    render_filter_input(buf, start_row + 2, start_col + 1, width, filter);
 
-    // Agent rows. Each agent slug is mapped through
-    // `jackin_tui::agent_display_name` so labels match the console
-    // TUI's `agent_picker_label` (Title case + `OpenCode` spelling).
-    for (i, slug) in agents.iter().enumerate() {
-        let label = jackin_tui::agent_display_name(slug.as_str()).unwrap_or(slug.as_str());
+    // Items occupy the rows below the filter + separator pad
+    // (`start_row + 4` onward). Each row maps back to PickerRow so
+    // an Agent / Shell distinction stays explicit even after
+    // filtering rearranges the list.
+    let interior_items = height.saturating_sub(6) as usize;
+    let visible = picker_filtered_rows(agents, filter);
+    let drawn = visible.len().min(interior_items);
+    if drawn == 0 {
+        render_no_matches_row(buf, start_row + 4, start_col + 1, width);
+        return;
+    }
+    for (i, row) in visible.iter().enumerate().take(drawn) {
+        let label = match row {
+            PickerRow::Agent(idx) => jackin_tui::agent_display_name(agents[*idx].as_str())
+                .unwrap_or(agents[*idx].as_str()),
+            PickerRow::Shell => "Shell",
+        };
         render_row(
             buf,
-            start_row + 2 + i as u16,
+            start_row + 4 + i as u16,
             start_col + 1,
             width,
             label,
             i == selected,
         );
     }
-    // Separator row between agents and Shell. Non-selectable.
-    render_separator(
-        buf,
-        start_row + 2 + agents.len() as u16,
-        start_col + 1,
-        width,
-        "shell",
-    );
-    // Shell row at the final selection slot.
-    render_row(
-        buf,
-        start_row + 2 + agents.len() as u16 + 1,
-        start_col + 1,
-        width,
-        "Shell",
-        selected == agents.len(),
-    );
 }
 
-/// Non-selectable visual divider inside the agent picker — `── shell ──`
-/// in dim phosphor-green. Sets the operator's expectation that the
-/// row below the divider is a different *kind* of session, not just
-/// another agent.
-fn render_separator(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, label: &str) {
+/// Filter input row: `▸ <filter>▏` style, with the leading `▸`
+/// matching the in-list selection mark so the operator's eye reads
+/// the filter as the "active row" while typing. Empty filter shows
+/// a hint placeholder (`type to filter…`) in dim.
+fn render_filter_input(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, filter: &str) {
     move_to(buf, row, col);
     buf.extend_from_slice(BG_DARK.as_bytes());
-    buf.extend_from_slice(FG_BORDER.as_bytes());
-    // Interior width: `width - 2` cols.
-    let interior = (width as usize).saturating_sub(2);
-    let label_with_pad = format!(" {label} ");
-    let label_cols = label_with_pad.chars().count();
-    let total_dashes = interior.saturating_sub(label_cols);
-    let left_dashes = total_dashes / 2;
-    let right_dashes = total_dashes - left_dashes;
-    for _ in 0..left_dashes {
-        buf.extend_from_slice("─".as_bytes());
+    buf.extend_from_slice(FG_GREEN.as_bytes());
+    buf.extend_from_slice(b"  ");
+    if filter.is_empty() {
+        buf.extend_from_slice(FG_DIM.as_bytes());
+        buf.extend_from_slice("type to filter…".as_bytes());
+    } else {
+        buf.extend_from_slice(FG_WHITE.as_bytes());
+        buf.extend_from_slice(BOLD.as_bytes());
+        buf.extend_from_slice(filter.as_bytes());
+        buf.extend_from_slice(RESET.as_bytes());
+        buf.extend_from_slice(BG_DARK.as_bytes());
+        buf.extend_from_slice(FG_GREEN.as_bytes());
+        buf.extend_from_slice("▏".as_bytes());
     }
+    // Pad to right border so previous chars from a longer filter
+    // round-trip cleanly when the operator hits Backspace.
+    let filled = 2 + if filter.is_empty() {
+        "type to filter…".chars().count()
+    } else {
+        filter.chars().count() + 1 // +1 for the caret glyph
+    };
+    let interior = (width as usize).saturating_sub(2);
+    for _ in filled..interior {
+        buf.push(b' ');
+    }
+    buf.extend_from_slice(RESET.as_bytes());
+}
+
+/// Empty-results message inside a filterable dialog. Keeps the box
+/// height stable (the filter still works even when the current input
+/// matches nothing) and tells the operator what to do next.
+fn render_no_matches_row(buf: &mut Vec<u8>, row: u16, col: u16, width: u16) {
+    move_to(buf, row, col);
+    buf.extend_from_slice(BG_DARK.as_bytes());
     buf.extend_from_slice(FG_DIM.as_bytes());
-    buf.extend_from_slice(label_with_pad.as_bytes());
-    buf.extend_from_slice(FG_BORDER.as_bytes());
-    for _ in 0..right_dashes {
-        buf.extend_from_slice("─".as_bytes());
+    let interior = (width as usize).saturating_sub(2);
+    let label = "  (no matches — Backspace to clear)";
+    let label_cols = label.chars().count();
+    let take = label_cols.min(interior);
+    let label_take: String = label.chars().take(take).collect();
+    buf.extend_from_slice(label_take.as_bytes());
+    for _ in take..interior {
+        buf.push(b' ');
     }
     buf.extend_from_slice(RESET.as_bytes());
 }
@@ -974,26 +1137,27 @@ mod tests {
             agents: agents.into_iter().map(String::from).collect(),
             selected: 0,
             intent: PickerIntent::NewTab,
+            filter: String::new(),
         }
     }
 
     #[test]
     fn esc_dismisses_palette() {
-        let mut d = Dialog::CommandPalette { selected: 0 };
+        let mut d = Dialog::CommandPalette { selected: 0, filter: String::new() };
         assert_eq!(d.handle_key(b"\x1b"), DialogAction::Dismiss);
     }
 
     #[test]
     fn ctrl_c_dismisses_palette() {
-        let mut d = Dialog::CommandPalette { selected: 0 };
+        let mut d = Dialog::CommandPalette { selected: 0, filter: String::new() };
         assert_eq!(d.handle_key(b"\x03"), DialogAction::Dismiss);
     }
 
     #[test]
     fn arrow_down_advances_palette_selection() {
-        let mut d = Dialog::CommandPalette { selected: 0 };
+        let mut d = Dialog::CommandPalette { selected: 0, filter: String::new() };
         assert_eq!(d.handle_key(b"\x1b[B"), DialogAction::Redraw);
-        let Dialog::CommandPalette { selected } = d else {
+        let Dialog::CommandPalette { selected, .. } = d else {
             unreachable!()
         };
         assert_eq!(selected, 1);
@@ -1003,9 +1167,10 @@ mod tests {
     fn arrow_down_clamps_palette_at_last_item() {
         let mut d = Dialog::CommandPalette {
             selected: PALETTE_ITEMS.len() - 1,
+            filter: String::new(),
         };
         d.handle_key(b"\x1b[B");
-        let Dialog::CommandPalette { selected } = d else {
+        let Dialog::CommandPalette { selected, .. } = d else {
             unreachable!()
         };
         assert_eq!(selected, PALETTE_ITEMS.len() - 1);
@@ -1013,7 +1178,7 @@ mod tests {
 
     #[test]
     fn enter_on_palette_emits_command() {
-        let mut d = Dialog::CommandPalette { selected: 0 };
+        let mut d = Dialog::CommandPalette { selected: 0, filter: String::new() };
         match d.handle_key(b"\r") {
             DialogAction::Command(cmd) => assert_eq!(cmd, PALETTE_ITEMS[0].0),
             other => panic!("expected Command, got {other:?}"),
@@ -1048,10 +1213,123 @@ mod tests {
 
     #[test]
     fn click_outside_dialog_dismisses() {
-        let mut d = Dialog::CommandPalette { selected: 0 };
+        let mut d = Dialog::CommandPalette { selected: 0, filter: String::new() };
         // Click in the top-left corner is reliably outside the centred
         // box even on tiny terminals.
         assert_eq!(d.handle_click(0, 0, 40, 100), DialogAction::Dismiss);
+    }
+
+    #[test]
+    fn palette_typing_filters_items_and_resets_selection() {
+        let mut d = Dialog::CommandPalette {
+            selected: 3,
+            filter: String::new(),
+        };
+        // Type "split" — narrows to the two split items + resets
+        // selection to 0.
+        for &c in b"split" {
+            d.handle_key(&[c]);
+        }
+        let Dialog::CommandPalette { selected, filter } = &d else {
+            unreachable!()
+        };
+        assert_eq!(filter, "split");
+        assert_eq!(*selected, 0, "filter input must reset selection to 0");
+        assert_eq!(
+            palette_filtered_indices(filter).len(),
+            2,
+            "exactly two PALETTE_ITEMS match 'split'"
+        );
+    }
+
+    #[test]
+    fn palette_enter_after_filter_emits_matching_command() {
+        let mut d = Dialog::CommandPalette {
+            selected: 0,
+            filter: String::new(),
+        };
+        for &c in b"close" {
+            d.handle_key(&[c]);
+        }
+        // "close" matches "Close pane" + "Close tab"; selected = 0 →
+        // first match → Close pane.
+        match d.handle_key(b"\r") {
+            DialogAction::Command(cmd) => assert_eq!(cmd, PaletteCommand::ClosePane),
+            other => panic!("expected ClosePane, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn palette_backspace_pops_filter_char_and_resets_selection() {
+        let mut d = Dialog::CommandPalette {
+            selected: 0,
+            filter: "split".to_string(),
+        };
+        d.handle_key(b"\x7f");
+        let Dialog::CommandPalette { filter, .. } = &d else {
+            unreachable!()
+        };
+        assert_eq!(filter, "spli");
+    }
+
+    #[test]
+    fn palette_q_types_into_filter_does_not_dismiss() {
+        // Pre-filter dialogs dismissed on `q`; now `q` is a filter
+        // character because the dialog is type-to-filter. Esc remains
+        // the dismiss key.
+        let mut d = Dialog::CommandPalette {
+            selected: 0,
+            filter: String::new(),
+        };
+        assert_eq!(d.handle_key(b"q"), DialogAction::Redraw);
+        let Dialog::CommandPalette { filter, .. } = &d else {
+            unreachable!()
+        };
+        assert_eq!(filter, "q");
+    }
+
+    #[test]
+    fn picker_typing_sh_narrows_to_shell_only() {
+        let mut d = picker(vec!["claude", "codex", "kimi"]);
+        for &c in b"sh" {
+            d.handle_key(&[c]);
+        }
+        let Dialog::AgentPicker {
+            agents, filter, ..
+        } = &d
+        else {
+            unreachable!()
+        };
+        let visible = picker_filtered_rows(agents, filter);
+        assert_eq!(visible, vec![PickerRow::Shell]);
+    }
+
+    #[test]
+    fn picker_typing_cla_filters_to_claude() {
+        let mut d = picker(vec!["claude", "codex", "kimi"]);
+        for &c in b"cla" {
+            d.handle_key(&[c]);
+        }
+        // Enter on filtered list[0] = claude
+        match d.handle_key(b"\r") {
+            DialogAction::SpawnAgent { agent, .. } => {
+                assert_eq!(agent.as_deref(), Some("claude"));
+            }
+            other => panic!("expected SpawnAgent(claude), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn picker_enter_with_empty_filtered_list_is_redraw_noop() {
+        let mut d = picker(vec!["claude", "codex"]);
+        for &c in b"zzz" {
+            d.handle_key(&[c]);
+        }
+        assert_eq!(
+            d.handle_key(b"\r"),
+            DialogAction::Redraw,
+            "Enter with no matches must not synthesise a SpawnAgent"
+        );
     }
 
     #[test]
