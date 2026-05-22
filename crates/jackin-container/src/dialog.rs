@@ -747,3 +747,146 @@ fn write_dec(buf: &mut Vec<u8>, n: u16) {
     }
     buf.extend_from_slice(&tmp[i..]);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn picker(agents: Vec<&str>) -> Dialog {
+        Dialog::AgentPicker {
+            agents: agents.into_iter().map(String::from).collect(),
+            selected: 0,
+            intent: PickerIntent::NewTab,
+        }
+    }
+
+    #[test]
+    fn esc_dismisses_palette() {
+        let mut d = Dialog::CommandPalette { selected: 0 };
+        assert_eq!(d.handle_key(b"\x1b"), DialogAction::Dismiss);
+    }
+
+    #[test]
+    fn ctrl_c_dismisses_palette() {
+        let mut d = Dialog::CommandPalette { selected: 0 };
+        assert_eq!(d.handle_key(b"\x03"), DialogAction::Dismiss);
+    }
+
+    #[test]
+    fn arrow_down_advances_palette_selection() {
+        let mut d = Dialog::CommandPalette { selected: 0 };
+        assert_eq!(d.handle_key(b"\x1b[B"), DialogAction::Redraw);
+        let Dialog::CommandPalette { selected } = d else {
+            unreachable!()
+        };
+        assert_eq!(selected, 1);
+    }
+
+    #[test]
+    fn arrow_down_clamps_palette_at_last_item() {
+        let mut d = Dialog::CommandPalette {
+            selected: PALETTE_ITEMS.len() - 1,
+        };
+        d.handle_key(b"\x1b[B");
+        let Dialog::CommandPalette { selected } = d else {
+            unreachable!()
+        };
+        assert_eq!(selected, PALETTE_ITEMS.len() - 1);
+    }
+
+    #[test]
+    fn enter_on_palette_emits_command() {
+        let mut d = Dialog::CommandPalette { selected: 0 };
+        match d.handle_key(b"\r") {
+            DialogAction::Command(cmd) => assert_eq!(cmd, PALETTE_ITEMS[0].0),
+            other => panic!("expected Command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn enter_on_agent_picker_emits_spawn() {
+        let mut d = picker(vec!["claude", "codex"]);
+        match d.handle_key(b"\r") {
+            DialogAction::SpawnAgent { agent, intent } => {
+                assert_eq!(agent.as_deref(), Some("claude"));
+                assert_eq!(intent, PickerIntent::NewTab);
+            }
+            other => panic!("expected SpawnAgent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn agent_picker_shell_slot_emits_none_agent() {
+        // The Shell entry sits past the last named agent, so navigating
+        // down past `agents.len() - 1` reaches it; Enter emits
+        // `agent = None` which the daemon dispatches as a shell spawn.
+        let mut d = picker(vec!["claude"]);
+        // selected = 0 (claude), advance to 1 (shell row)
+        d.handle_key(b"\x1b[B");
+        match d.handle_key(b"\r") {
+            DialogAction::SpawnAgent { agent, .. } => assert!(agent.is_none()),
+            other => panic!("expected SpawnAgent, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn click_outside_dialog_dismisses() {
+        let mut d = Dialog::CommandPalette { selected: 0 };
+        // Click in the top-left corner is reliably outside the centred
+        // box even on tiny terminals.
+        assert_eq!(d.handle_click(0, 0, 40, 100), DialogAction::Dismiss);
+    }
+
+    #[test]
+    fn rename_tab_empty_input_clears_label() {
+        let mut d = Dialog::RenameTab {
+            tab_idx: 3,
+            input: jackin_tui::TextField::new("").with_allow_empty(true),
+        };
+        match d.handle_key(b"\r") {
+            DialogAction::RenameTab { tab_idx, label } => {
+                assert_eq!(tab_idx, 3);
+                assert_eq!(label, "");
+            }
+            other => panic!("expected RenameTab, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rename_tab_backspace_removes_last_char() {
+        let mut d = Dialog::RenameTab {
+            tab_idx: 0,
+            input: jackin_tui::TextField::new("abc"),
+        };
+        assert_eq!(d.handle_key(b"\x7f"), DialogAction::Redraw);
+        let Dialog::RenameTab { input, .. } = d else {
+            unreachable!()
+        };
+        assert_eq!(input.value(), "ab");
+    }
+
+    #[test]
+    fn rename_tab_esc_dismisses() {
+        let mut d = Dialog::RenameTab {
+            tab_idx: 0,
+            input: jackin_tui::TextField::new("abc"),
+        };
+        assert_eq!(d.handle_key(b"\x1b"), DialogAction::Dismiss);
+    }
+
+    #[test]
+    fn rename_tab_consumes_q_as_input_not_dismiss() {
+        // `q` is a dismiss key for list-style dialogs but must be
+        // accepted as input inside the rename-tab buffer — otherwise
+        // operators can't type the letter into their tab name.
+        let mut d = Dialog::RenameTab {
+            tab_idx: 0,
+            input: jackin_tui::TextField::new("a"),
+        };
+        assert_eq!(d.handle_key(b"q"), DialogAction::Redraw);
+        let Dialog::RenameTab { input, .. } = d else {
+            unreachable!()
+        };
+        assert_eq!(input.value(), "aq");
+    }
+}

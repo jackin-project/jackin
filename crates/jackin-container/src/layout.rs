@@ -143,8 +143,19 @@ impl PaneTree {
     }
 
     /// Remove a leaf and collapse the parent. Returns true if removed.
+    ///
+    /// When the removed leaf is a direct child of the **root** split,
+    /// `remove_inner` returns `Some(sibling)` because there is no
+    /// parent to splice the surviving subtree into. Apply that
+    /// replacement here so the root is replaced with the sibling
+    /// instead of remaining as `Self::Leaf(0)` (the sentinel value
+    /// the inner removal uses for the swapped-out child).
     pub fn remove(&mut self, id: u64) -> bool {
-        self.remove_inner(id).0
+        let (found, replacement) = self.remove_inner(id);
+        if let Some(sibling) = replacement {
+            *self = sibling;
+        }
+        found
     }
 
     fn remove_inner(&mut self, id: u64) -> (bool, Option<PaneTree>) {
@@ -407,6 +418,53 @@ mod border_at_tests {
         } else {
             panic!("expected HSplit");
         }
+    }
+
+    #[test]
+    fn set_ratio_at_rejects_nan() {
+        let mut tree = PaneTree::Leaf(1);
+        tree.split_h(1, 2);
+        assert!(!tree.set_ratio_at(&[], f32::NAN));
+        if let PaneTree::HSplit { ratio, .. } = tree {
+            assert!(ratio.is_finite(), "ratio remained finite after NaN reject");
+        } else {
+            panic!("expected HSplit");
+        }
+    }
+
+    #[test]
+    fn resize_rejects_nan_delta() {
+        let mut tree = PaneTree::Leaf(1);
+        tree.split_h(1, 2);
+        assert!(!tree.resize(1, Direction::Right, f32::NAN));
+        if let PaneTree::HSplit { ratio, .. } = tree {
+            assert!(ratio.is_finite());
+        } else {
+            panic!("expected HSplit");
+        }
+    }
+
+    #[test]
+    fn remove_3_deep_collapses_correctly() {
+        // Build: HSplit{ Leaf(1), VSplit{ HSplit{ Leaf(2), Leaf(3) }, Leaf(4) } }
+        let mut tree = PaneTree::Leaf(1);
+        assert!(tree.split_h(1, 2));
+        assert!(tree.split_v(2, 4));
+        assert!(tree.split_h(2, 3));
+        // Removing leaf 3 should collapse its parent HSplit to Leaf(2).
+        assert!(tree.remove(3));
+        assert!(tree.all_ids().contains(&1));
+        assert!(tree.all_ids().contains(&2));
+        assert!(tree.all_ids().contains(&4));
+        assert!(!tree.all_ids().contains(&3));
+        // Removing leaf 4 collapses VSplit to its remaining child.
+        assert!(tree.remove(4));
+        assert!(tree.all_ids().contains(&1));
+        assert!(tree.all_ids().contains(&2));
+        assert!(!tree.all_ids().contains(&4));
+        // Removing leaf 2 collapses root HSplit to Leaf(1).
+        assert!(tree.remove(2));
+        assert_eq!(tree.all_ids(), vec![1]);
     }
 
     // Direction is only referenced via the test alias to keep this

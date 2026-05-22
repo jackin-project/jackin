@@ -607,7 +607,7 @@ mod tests {
     //! `o`-key resolver to GitHub URLs, and the `GithubPicker` modal.
     use super::super::super::state::{ManagerStage, ManagerState, Modal, MountScrollFocus};
     use super::super::test_support::{key, mount};
-    use super::InputOutcome;
+    use super::{InputOutcome, instance_action_accepts_status};
     use crate::config::AppConfig;
     use crate::console::manager::input::handle_key;
     use crate::instance::{InstanceIndexEntry, InstanceStatus};
@@ -862,6 +862,87 @@ mod tests {
             }
             other => panic!("expected purge instance action after Y; got {other:?}"),
         }
+    }
+
+    #[test]
+    fn t_key_dispatches_stop_for_running_instance() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-stop",
+            InstanceStatus::Running,
+            workdir,
+        )];
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('t')),
+        )
+        .unwrap();
+        match outcome {
+            InputOutcome::InstanceAction { container, action } => {
+                assert_eq!(container, "jackin-demo-architect-stop");
+                assert_eq!(action, crate::console::ConsoleInstanceAction::Stop);
+            }
+            other => panic!("expected stop instance action; got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn t_key_silent_continue_when_no_running_instance() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        // Only a CleanExited entry — Stop must not accept it.
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-stale",
+            InstanceStatus::CleanExited,
+            workdir,
+        )];
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('t')),
+        )
+        .unwrap();
+        assert!(
+            matches!(outcome, InputOutcome::Continue),
+            "T on non-Running must yield Continue (with the no-instance modal); got {outcome:?}"
+        );
+        assert!(
+            matches!(state.list_modal, Some(Modal::ErrorPopup { .. })),
+            "expected ErrorPopup modal explaining no running instance"
+        );
+    }
+
+    #[test]
+    fn instance_action_accepts_status_grid_is_exhaustive() {
+        use crate::console::ConsoleInstanceAction as A;
+        use crate::instance::InstanceStatus as S;
+        // Smoke test the grid: a couple of cells per action so a
+        // future refactor that flips the action × status matrix has to
+        // touch this test.
+        assert!(instance_action_accepts_status(A::Stop, S::Running));
+        assert!(!instance_action_accepts_status(A::Stop, S::CleanExited));
+        assert!(!instance_action_accepts_status(A::Stop, S::Purged));
+        assert!(instance_action_accepts_status(A::Purge, S::Running));
+        assert!(instance_action_accepts_status(A::Purge, S::PreservedDirty));
+        assert!(!instance_action_accepts_status(A::Purge, S::Purged));
+        assert!(instance_action_accepts_status(A::Reconnect, S::Crashed));
+        assert!(!instance_action_accepts_status(A::Reconnect, S::Purged));
     }
 
     #[test]
