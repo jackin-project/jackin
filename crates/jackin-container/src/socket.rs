@@ -8,7 +8,9 @@
 /// (control), anything else is an attach-channel tag.
 pub const SOCKET_PATH: &str = "/run/jackin/jackin.sock";
 
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
+use std::time::Duration;
 
 use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -16,6 +18,13 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 
 use crate::protocol::control::{ClientMsg, ServerMsg, SessionInfo, frame};
+
+/// Bail out of the accept loop after this many consecutive errors. The
+/// dominant cause of repeating `accept` failures is fd exhaustion
+/// (EMFILE) — busy-looping at 100% CPU and flooding the docker-logs
+/// stream is worse than tearing down the listener so PID 1 can exit
+/// and the container restarts cleanly.
+const ACCEPT_FAILURE_BAIL: u32 = 10;
 
 /// Start the Unix socket listener. Returns a receiver of newly-connected
 /// clients. The caller (daemon) accepts clients from the channel.
@@ -26,19 +35,58 @@ pub fn start_listener() -> Result<mpsc::UnboundedReceiver<UnixStream>> {
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
+        // Parent dir 0o700 so only the owner can list/connect. The
+        // socket file itself gets 0o600 after bind, but on a system
+        // where the parent dir is world-x an attacker can still
+        // enumerate the path. Lock both.
+        if let Err(e) = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)) {
+            crate::clog!("socket: failed to chmod parent {}: {e}", parent.display());
+        }
     }
 
     let listener = UnixListener::bind(path)?;
+    // Lock the socket to owner-only. Without this, any in-container
+    // process that shares the agent uid (and any process running as a
+    // different uid if the umask is generous) can connect and inject
+    // `ClientFrame::Input` straight into the focused PTY. The attach
+    // channel has no authentication beyond file-mode.
+    if let Err(e) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)) {
+        crate::clog!("socket: failed to chmod {SOCKET_PATH}: {e}");
+    }
     let (tx, rx) = mpsc::unbounded_channel();
 
     tokio::spawn(async move {
+        let mut consecutive_failures = 0u32;
         loop {
             match listener.accept().await {
                 Ok((stream, _)) => {
-                    let _ = tx.send(stream);
+                    consecutive_failures = 0;
+                    if tx.send(stream).is_err() {
+                        // Receiver dropped — daemon is shutting down.
+                        // Stop accepting so we don't burn cycles
+                        // accepting connections that are immediately
+                        // dropped on the floor.
+                        crate::clog!("socket: client queue closed; listener stopping");
+                        return;
+                    }
                 }
                 Err(e) => {
-                    crate::clog!("socket accept error: {e}");
+                    consecutive_failures = consecutive_failures.saturating_add(1);
+                    crate::clog!(
+                        "socket accept error ({consecutive_failures}/{ACCEPT_FAILURE_BAIL}): {e}"
+                    );
+                    if consecutive_failures >= ACCEPT_FAILURE_BAIL {
+                        crate::clog!(
+                            "socket: giving up after {ACCEPT_FAILURE_BAIL} consecutive accept failures"
+                        );
+                        return;
+                    }
+                    // Exponential backoff capped at 5s so an EMFILE
+                    // storm doesn't spin the runtime.
+                    let backoff_ms = 50u64
+                        .saturating_mul(1u64 << consecutive_failures.min(7))
+                        .min(5_000);
+                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                 }
             }
         }
@@ -75,5 +123,7 @@ pub async fn handle_control_request(
     let reply = match msg {
         ClientMsg::Status => ServerMsg::SessionList { sessions },
     };
-    let _ = stream.write_all(&frame(&reply)).await;
+    if let Err(e) = stream.write_all(&frame(&reply)).await {
+        crate::clog!("control reply write failed (msg={msg:?}): {e}");
+    }
 }

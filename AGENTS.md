@@ -259,49 +259,53 @@ This does not apply to:
 
 ### How the local build works
 
-When jackin is run from a source checkout and the version contains `-dev`, `ensure_available` in `src/container_binary.rs` automatically:
-1. Detects the workspace root by looking for `crates/jackin-container/` above the binary.
-2. Checks whether any source file under `crates/jackin-container/` is newer than the cached binary.
-3. If newer (or no cache): runs `docker run rust:1.95.0 cargo build -p jackin-container` with the workspace mounted read-only. First build ~2–3 min; incremental rebuilds are fast via Docker layer cache.
-4. Caches the result at `~/.jackin/cache/jackin-container/<version>/linux-<arch>/jackin-container`.
+`ensure_available` in `src/container_binary.rs` resolves the binary in this priority order:
 
-No cross-compilation toolchain is required — Docker handles the Linux target.
+1. **`JACKIN_CONTAINER_BIN=/path` env override.** Used directly, no cache, no download. Set this when iterating on `crates/jackin-container/` source — the path should point at a Linux build produced by `cargo run --bin build-jackin-container`.
+2. **Cache hit** at `~/.jackin/cache/jackin-container/<version>/linux-<arch>/jackin-container`. The cache key is `JACKIN_VERSION` (commit SHA suffix included), so any `cargo build` of jackin invalidates it.
+3. **Download** from the `preview` rolling GitHub Release tag (for `-dev` / `-preview.` versions) or the `v<version>` tag (for tagged releases). Cached after first successful download.
+
+The host does **not** auto-rebuild `crates/jackin-container/` on source edits. To pick up local changes, run `cargo run --bin build-jackin-container` (which invokes `cargo zigbuild`) and either set `JACKIN_CONTAINER_BIN` or copy the artifact into the cache.
 
 ### Standard smoke test for jackin-container PRs
 
 ```bash
-# Build jackin from source first
+# Build the in-container binary for both archs (uses cargo zigbuild).
+cargo run --bin build-jackin-container
+
+# Build the host CLI.
 cargo build --bin jackin
 
-# Load a role — this builds jackin-container if needed, then starts the container.
-cargo run --bin jackin -- load the-architect . --debug
+# Point ensure_available at the freshly built binary and launch.
+export JACKIN_CONTAINER_BIN="$PWD/target/aarch64-unknown-linux-gnu/release/jackin-container"  # or x86_64 path
+cargo run --bin jackin -- console --debug
 ```
 
 Inside the container the operator should see:
 - Row 0 status bar: `jackin'  [Claude]` (or the configured agent)
 - Agent TUI starts normally (Claude Code, Codex, etc.)
-- `Ctrl+J` opens the command palette
-- `Alt+arrows` moves pane focus after a split
+- `Ctrl+B Space` opens the command palette (tmux-style prefix; `Ctrl+B` is the default prefix key)
+- `Ctrl+B "` / `Ctrl+B %` splits the focused pane; `Alt+arrows` moves pane focus afterwards
 - Pasting and extended-key sequences reach the agent unmodified
 
-If the jackin-container build step prints a Docker error, the operator should paste the full `--debug` output.
+If the jackin-container build step prints a `cargo zigbuild` error, the operator should paste the full `--debug` output (`cargo-zigbuild` and `zig` must be on `PATH`; install via `mise install zig cargo:cargo-zigbuild`).
 
-### Forcing a rebuild without committing
+### Forcing a re-download or rebuild
 
-Editing a source file under `crates/jackin-container/src/` is enough — `ensure_available` compares file mtimes and rebuilds when any source file is newer than the cached binary. There is no need to `git add` or commit first.
-
-To manually clear the cache and force a full rebuild:
+To re-download from the preview release (or pick up a fresh `cargo run --bin build-jackin-container` artifact), either clear the cache:
 
 ```bash
 rm -rf ~/.jackin/cache/jackin-container/
 ```
+
+or point `JACKIN_CONTAINER_BIN` at the new binary explicitly.
 
 ### What to assert in the PR "Verify locally" section
 
 A PR that changes `crates/jackin-container/` must include a "Verify locally" entry that covers:
 - The build step ran (first-time or incremental) without errors.
 - The status bar appeared at row 0 after `jackin load`.
-- The specific behavior changed by the PR was observed to work (e.g. "Ctrl+J opened the command palette", "pane split rendered correctly", "session switch preserved agent output").
+- The specific behavior changed by the PR was observed to work (e.g. "Ctrl+B Space opened the command palette", "pane split rendered correctly", "session switch preserved agent output").
 - Existing agent session behavior was not regressed (agent TUI renders, mouse events reach the agent).
 
 ## TUI design decisions (agent-only)

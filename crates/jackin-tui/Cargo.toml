@@ -12,6 +12,9 @@ publish = false
 name = "jackin_tui"
 path = "src/lib.rs"
 
+[dependencies]
+unicode-width = "0.2"
+
 [lints.rust]
 unsafe_code = "forbid"
 

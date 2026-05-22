@@ -689,7 +689,12 @@ fn render_sidebar_body(
     state: &mut ManagerState<'_>,
 ) {
     if let Some(area) = layout.instances {
-        render_compact_instances_summary(frame, area, inputs.instance_count, inputs.instance_expanded);
+        render_compact_instances_summary(
+            frame,
+            area,
+            inputs.instance_count,
+            inputs.instance_expanded,
+        );
     }
     render_general_subpanel(frame, layout.general, inputs.workdir);
     let ws_focused = state.list_scroll_focus == Some(MountScrollFocus::Workspace);
@@ -1011,7 +1016,7 @@ fn render_instance_details_pane(
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "  Enter reconnect  ·  N new session  ·  X shell  ·  P purge",
+        "  Enter reconnect  ·  N new session  ·  X shell  ·  T stop  ·  P purge",
         Style::default().fg(PHOSPHOR_DIM),
     )));
 

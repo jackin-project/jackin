@@ -1,4 +1,11 @@
-[target.x86_64-unknown-linux-gnu]
-# mold is 5-10x faster than ld at the link step. Installed via apt in CI;
-# on dev machines: sudo apt-get install mold (Ubuntu 22.04+).
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+# Cargo configuration is intentionally minimal. mold is NOT forced here
+# because the previous unconditional `-C link-arg=-fuse-ld=mold` on the
+# x86_64-unknown-linux-gnu target broke (a) macOS hosts cross-building to
+# Linux via `cargo zigbuild` and (b) any CI job that does not install
+# mold. CI workflows install mold via `rui314/setup-mold` which makes it
+# the system default linker, so no per-target rustflag is needed.
+#
+# Local Linux developers who want the link-step speedup: install mold
+# (`sudo apt-get install mold` on Ubuntu 22.04+) and either set it as the
+# system default or export
+# `RUSTFLAGS="-C link-arg=-fuse-ld=mold"` in your shell.

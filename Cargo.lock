@@ -1344,6 +1344,9 @@ dependencies = [
 [[package]]
 name = "jackin-tui"
 version = "0.6.0-dev"
+dependencies = [
+ "unicode-width",
+]
 
 [[package]]
 name = "js-sys"

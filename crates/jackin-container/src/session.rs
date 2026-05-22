@@ -58,20 +58,57 @@ fn parse_osc7(payload: &str) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-/// `JACKIN_OSC52` env-var name — operator opt-out switch for agent
-/// clipboard writes. Matches tmux's `set-clipboard on|off`.
+/// Per-OSC operator opt-out switches. All default to `allow`; the
+/// values `deny`, `off`, `no` (case-sensitive) turn the matching
+/// passthrough off when the operator runs an untrusted role. tmux
+/// exposes the same family as `set-clipboard on|off` plus
+/// `allow-passthrough` for OSC; jackin keeps the surface per-OSC so
+/// the operator can leave the agent's terminal title alone but block
+/// notification spam, or vice versa.
 const ENV_OSC52: &str = "JACKIN_OSC52";
+const ENV_OSC_TITLE: &str = "JACKIN_OSC_TITLE";
+const ENV_OSC_NOTIFY: &str = "JACKIN_OSC_NOTIFY";
+const ENV_OSC_HYPERLINK: &str = "JACKIN_OSC_HYPERLINK";
 
-/// Whether the daemon honours `OSC 52` clipboard writes from PTYs.
-/// `JACKIN_OSC52=deny` turns it off; anything else (including unset)
-/// leaves the forward behaviour intact.
-fn osc52_allowed() -> bool {
-    !matches!(
-        std::env::var(ENV_OSC52).as_deref(),
+#[derive(Debug, Clone, Copy)]
+pub struct OscPolicy {
+    pub allow_title: bool,
+    pub allow_osc52: bool,
+    pub allow_notify: bool,
+    pub allow_hyperlink: bool,
+}
+
+impl Default for OscPolicy {
+    fn default() -> Self {
+        Self {
+            allow_title: true,
+            allow_osc52: true,
+            allow_notify: true,
+            allow_hyperlink: true,
+        }
+    }
+}
+
+impl OscPolicy {
+    /// Read policy from environment. Cached at `Session::spawn` time so a
+    /// background pane cannot toggle the gate at runtime by `export`ing
+    /// into a focused shell.
+    pub fn from_env() -> Self {
+        Self {
+            allow_title: !is_env_deny(ENV_OSC_TITLE),
+            allow_osc52: !is_env_deny(ENV_OSC52),
+            allow_notify: !is_env_deny(ENV_OSC_NOTIFY),
+            allow_hyperlink: !is_env_deny(ENV_OSC_HYPERLINK),
+        }
+    }
+}
+
+fn is_env_deny(name: &str) -> bool {
+    matches!(
+        std::env::var(name).as_deref(),
         Ok("deny") | Ok("off") | Ok("no")
     )
 }
-
 
 pub fn next_id() -> u64 {
     NEXT_ID.fetch_add(1, Ordering::Relaxed)
@@ -82,6 +119,7 @@ pub fn next_id() -> u64 {
 #[derive(Default)]
 pub struct OscCapture {
     pub pending: Vec<Vec<u8>>,
+    pub policy: OscPolicy,
     pub title: Option<String>,
     pub icon_name: Option<String>,
     /// Kitty keyboard protocol stack pushed by this session. Each
@@ -107,6 +145,13 @@ pub struct OscCapture {
 }
 
 impl OscCapture {
+    pub fn with_policy(policy: OscPolicy) -> Self {
+        Self {
+            policy,
+            ..Self::default()
+        }
+    }
+
     pub fn drain(&mut self) -> Vec<Vec<u8>> {
         std::mem::take(&mut self.pending)
     }
@@ -132,28 +177,28 @@ impl Callbacks for OscCapture {
         if let Ok(s) = std::str::from_utf8(title) {
             self.title = Some(s.to_string());
         }
-        let mut osc = b"\x1b]2;".to_vec();
-        osc.extend_from_slice(title);
-        osc.extend_from_slice(b"\x07");
-        self.pending.push(osc);
+        if self.policy.allow_title {
+            let mut osc = b"\x1b]2;".to_vec();
+            osc.extend_from_slice(title);
+            osc.extend_from_slice(b"\x07");
+            self.pending.push(osc);
+        }
     }
 
     fn set_window_icon_name(&mut self, _: &mut Screen, icon_name: &[u8]) {
         if let Ok(s) = std::str::from_utf8(icon_name) {
             self.icon_name = Some(s.to_string());
         }
-        let mut osc = b"\x1b]1;".to_vec();
-        osc.extend_from_slice(icon_name);
-        osc.extend_from_slice(b"\x07");
-        self.pending.push(osc);
+        if self.policy.allow_title {
+            let mut osc = b"\x1b]1;".to_vec();
+            osc.extend_from_slice(icon_name);
+            osc.extend_from_slice(b"\x07");
+            self.pending.push(osc);
+        }
     }
 
     fn copy_to_clipboard(&mut self, _: &mut Screen, ty: &[u8], data: &[u8]) {
-        // Operator can disable agent-driven clipboard writes when
-        // running an untrusted role: `JACKIN_OSC52=deny`. Default is
-        // `allow` to match the pre-gate behaviour. tmux exposes the
-        // same control as `set-clipboard on|off`.
-        if osc52_allowed() {
+        if self.policy.allow_osc52 {
             let mut osc = b"\x1b]52;".to_vec();
             osc.extend_from_slice(ty);
             osc.push(b';');
@@ -164,19 +209,34 @@ impl Callbacks for OscCapture {
     }
 
     fn unhandled_osc(&mut self, _: &mut Screen, params: &[&[u8]]) {
+        let ps: &[u8] = params.first().copied().unwrap_or(&[]);
         // OSC 7 — current working directory. Shells emit
         // `\x1b]7;file://<host>/<percent-encoded-path>\x07` on
-        // every prompt. Use `url::Url` to handle host stripping +
-        // percent-decoding in one go; reject anything that does
-        // not parse as a `file://` URL so an agent cannot
-        // overwrite the pane title with arbitrary text.
-        if let Some(first) = params.first()
-            && *first == b"7"
-            && let Some(rest) = params.get(1)
-            && let Ok(s) = std::str::from_utf8(rest)
-            && let Some(path) = parse_osc7(s)
-        {
-            self.cwd = Some(path);
+        // every prompt. Capture into `self.cwd` for the pane-title
+        // surface and STOP — never forward OSC 7 to the attached
+        // client. The host terminal would otherwise interpret it as
+        // a cwd hint and remember the container's path, breaking
+        // `Cmd+T new tab` on the host. (Pollutes host state per
+        // CLAUDE.md "Never mutate the host machine silently".)
+        if ps == b"7" {
+            if let Some(rest) = params.get(1)
+                && let Ok(s) = std::str::from_utf8(rest)
+                && let Some(path) = parse_osc7(s)
+            {
+                self.cwd = Some(path);
+            }
+            return;
+        }
+        // Operator-gated OSC families.
+        if ps == b"9" && !self.policy.allow_notify {
+            return;
+        }
+        if ps == b"8" && !self.policy.allow_hyperlink {
+            return;
+        }
+        // OSC 0 sets both title and icon. Route under the title knob.
+        if ps == b"0" && !self.policy.allow_title {
+            return;
         }
         let mut osc = b"\x1b]".to_vec();
         for (i, p) in params.iter().enumerate() {
@@ -206,22 +266,14 @@ impl Callbacks for OscCapture {
         // must NOT leave the outer terminal in that mode the
         // moment focus moves to a shell.
         if c == 'u' && i1 == Some(b'>') {
-            let flags = params
-                .first()
-                .and_then(|p| p.first())
-                .copied()
-                .unwrap_or(1);
+            let flags = params.first().and_then(|p| p.first()).copied().unwrap_or(1);
             if self.kitty_kb_stack.len() < KITTY_KB_STACK_CAP {
                 self.kitty_kb_stack.push(flags);
             }
             return;
         }
         if c == 'u' && i1 == Some(b'<') {
-            let n = params
-                .first()
-                .and_then(|p| p.first())
-                .copied()
-                .unwrap_or(1) as usize;
+            let n = params.first().and_then(|p| p.first()).copied().unwrap_or(1) as usize;
             for _ in 0..n.min(self.kitty_kb_stack.len()) {
                 self.kitty_kb_stack.pop();
             }
@@ -337,27 +389,50 @@ impl Session {
 
         let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
+        let sid = next_id();
+        let event_tx_output = event_tx.clone();
+        let event_tx_exit = event_tx.clone();
+        let event_tx_writer_err = event_tx.clone();
+
+        // PTY writer task. take_writer / lock failures emit Exited so the
+        // daemon reaps the half-initialised session instead of leaving a
+        // tab whose input keystrokes silently vanish. blocking_recv is
+        // used instead of Handle::current().block_on(rx.recv()) because
+        // the latter panics inside spawn_blocking on a current-thread
+        // runtime ("Cannot block the current thread from within a runtime").
         tokio::task::spawn_blocking(move || {
-            let mut writer = master_for_write
+            let writer = master_for_write
                 .lock()
-                .unwrap()
-                .take_writer()
-                .expect("failed to get PTY writer");
-            let rt = tokio::runtime::Handle::current();
-            while let Some(data) = rt.block_on(input_rx.recv()) {
-                let _ = std::io::Write::write_all(&mut writer, &data);
+                .ok()
+                .and_then(|guard| guard.take_writer().ok());
+            let Some(mut writer) = writer else {
+                crate::clog!("session {sid}: failed to take PTY writer; aborting writer task");
+                let _ = event_tx_writer_err.send(SessionEvent::Exited { session_id: sid });
+                return;
+            };
+            while let Some(data) = input_rx.blocking_recv() {
+                if let Err(e) = std::io::Write::write_all(&mut writer, &data) {
+                    crate::clog!(
+                        "session {sid}: PTY write error: {e} (errno={:?}); aborting writer",
+                        e.raw_os_error()
+                    );
+                    let _ = event_tx_writer_err.send(SessionEvent::Exited { session_id: sid });
+                    return;
+                }
             }
         });
 
-        let event_tx_output = event_tx.clone();
-        let event_tx_exit = event_tx.clone();
-        let sid = next_id();
+        let event_tx_reader_err = event_tx.clone();
         tokio::task::spawn_blocking(move || {
-            let mut reader = master_for_read
+            let reader = master_for_read
                 .lock()
-                .unwrap()
-                .try_clone_reader()
-                .expect("failed to clone PTY reader");
+                .ok()
+                .and_then(|guard| guard.try_clone_reader().ok());
+            let Some(mut reader) = reader else {
+                crate::clog!("session {sid}: failed to clone PTY reader; aborting reader task");
+                let _ = event_tx_reader_err.send(SessionEvent::Exited { session_id: sid });
+                return;
+            };
             let mut buf = [0u8; 4096];
             loop {
                 match std::io::Read::read(&mut reader, &mut buf) {
@@ -423,7 +498,7 @@ impl Session {
                     rows,
                     cols,
                     SCROLLBACK_LEN,
-                    OscCapture::default(),
+                    OscCapture::with_policy(OscPolicy::from_env()),
                 ),
                 input_tx,
                 pty_master: master,
@@ -489,7 +564,18 @@ impl Session {
     }
 
     pub fn send_input(&self, data: &[u8]) {
-        let _ = self.input_tx.send(data.to_vec());
+        // SendError fires when the writer task has exited (it owns the
+        // receiver). The writer task emits SessionEvent::Exited before
+        // dropping, so the daemon will reap this Session on the next
+        // event tick — keystrokes accepted between writer death and
+        // reap are lost, but observability remains: clog records both
+        // halves of the failure chain.
+        if let Err(e) = self.input_tx.send(data.to_vec()) {
+            crate::clog!(
+                "session send_input: writer task gone ({} bytes dropped): {e}",
+                data.len()
+            );
+        }
     }
 
     /// True when the session's program has enabled an SGR mouse
@@ -646,13 +732,25 @@ impl Session {
     }
 
     pub fn resize(&mut self, rows: u16, cols: u16) {
-        if let Ok(master) = self.pty_master.lock() {
-            let _ = master.resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            });
+        // TIOCSWINSZ failure leaves the agent drawing at the old size
+        // while the screen renders at the new geometry — the operator
+        // sees mis-wrapped lines with no explanation. Log so --debug
+        // surfaces the divergence. Lock failure is logged too: a
+        // poisoned PTY mutex means an earlier writer/reader task
+        // panicked while holding it, and the session is effectively
+        // dead even if no Exited event has fired yet.
+        match self.pty_master.lock() {
+            Ok(master) => {
+                if let Err(e) = master.resize(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                }) {
+                    crate::clog!("session resize: TIOCSWINSZ failed for {rows}x{cols}: {e}");
+                }
+            }
+            Err(e) => crate::clog!("session resize: PTY mutex poisoned: {e}"),
         }
         self.parser.screen_mut().set_size(rows, cols);
     }

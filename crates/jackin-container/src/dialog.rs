@@ -86,10 +86,7 @@ pub enum DialogAction {
     /// Operator typed a new tab label and pressed Enter. Empty
     /// `label` clears the existing custom label and re-enables
     /// auto-naming.
-    RenameTab {
-        tab_idx: usize,
-        label: String,
-    },
+    RenameTab { tab_idx: usize, label: String },
     /// User dismissed with Escape.
     Dismiss,
     /// Dialog is still open; redraw.
@@ -250,10 +247,8 @@ impl Dialog {
         term_cols: u16,
     ) -> DialogAction {
         let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
-        let inside_box = row >= box_row
-            && row < box_row + height
-            && col >= box_col
-            && col < box_col + width;
+        let inside_box =
+            row >= box_row && row < box_row + height && col >= box_col && col < box_col + width;
         if !inside_box {
             return DialogAction::Dismiss;
         }

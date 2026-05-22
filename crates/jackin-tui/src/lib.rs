@@ -90,20 +90,27 @@ pub fn agent_display_name(slug: &str) -> Option<&'static str> {
 /// starting at `start_col`. Used by both consumers to compute
 /// click-region bounds and to know where to paint the active-tab
 /// underline.
+///
+/// Column width is measured with `unicode-width`. Plain `.chars().count()`
+/// silently counts wide glyphs (CJK, emoji) as 1 column and combining
+/// marks as N columns instead of the 2 / 0 cells they actually occupy
+/// — every downstream click hit-test and underline placement then drifts
+/// by however many wide/combining chars sit before the active tab.
 #[must_use]
 pub fn lay_out_tabs<'a>(labels: &[(&'a str, bool)], start_col: u16) -> Vec<TabCell<'a>> {
+    use unicode_width::UnicodeWidthStr;
     let mut col = start_col;
     let mut out = Vec::with_capacity(labels.len());
     for &(label, active) in labels {
-        let label_cols = label.chars().count() as u16;
-        let cell_cols = label_cols + 2; // " label "
+        let label_cols = u16::try_from(UnicodeWidthStr::width(label)).unwrap_or(u16::MAX);
+        let cell_cols = label_cols.saturating_add(2); // " label "
         out.push(TabCell {
             label,
             active,
             start_col: col,
             cell_cols,
         });
-        col = col + cell_cols + TAB_GAP;
+        col = col.saturating_add(cell_cols).saturating_add(TAB_GAP);
     }
     out
 }
@@ -515,7 +522,11 @@ mod tests {
         // verify reliably without an `unsafe` env-var write (the
         // crate's lints forbid `unsafe`).
         let home = std::env::var("HOME").unwrap_or_default();
-        let alien = if home == "/" { "etc/hosts".to_string() } else { format!("{home}.notmine") };
+        let alien = if home == "/" {
+            "etc/hosts".to_string()
+        } else {
+            format!("{home}.notmine")
+        };
         assert_eq!(shorten_home(&alien), alien);
     }
 

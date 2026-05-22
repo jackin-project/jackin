@@ -148,8 +148,8 @@ impl Drop for RawModeGuard {
         // Disable mouse, focus events, restore cursor, leave the
         // alternate-screen buffer so the operator's host terminal
         // returns to whatever was there before `jackin load`.
-        let _ = std::io::stdout()
-            .write_all(b"\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?25h\x1b[?1049l");
+        let _ =
+            std::io::stdout().write_all(b"\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?25h\x1b[?1049l");
         let _ = std::io::stdout().flush();
     }
 }

@@ -15,9 +15,11 @@
 ///   navigation. Disabled by default.
 ///
 /// Both models can run simultaneously when both env vars are set.
-/// `JACKIN_PALETTE_KEY=none` disables the palette key entirely;
-/// `JACKIN_PALETTE_KEY=C-j` restores the old (broken-on-multi-line)
-/// behaviour for operators who explicitly want it.
+/// `JACKIN_PALETTE_KEY=none` disables the palette key entirely.
+/// `JACKIN_PALETTE_KEY=C-j` binds the palette to `Ctrl+J`, which is
+/// the same byte multi-line agents and shells use as line-continuation
+/// — so the bind collides with editing in those programs; set only
+/// when the trade-off is acceptable.
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputEvent {
@@ -315,18 +317,28 @@ fn default_prefix() -> Option<u8> {
 /// Palette key defaults to `Ctrl+\` (`0x1C`). Picked because raw-mode
 /// terminals never emit it as content (cooked-mode SIGQUIT semantics
 /// don't apply in raw mode), no agent uses it as an editing key, and
-/// it sits one finger from `Enter` on US/UK layouts. The earlier
-/// `Ctrl+J` default collided with the literal LF byte agents and
-/// shells use for multi-line input continuation.
+/// it sits one finger from `Enter` on US/UK layouts. The literal LF
+/// byte (`Ctrl+J`, `0x0A`) is what agents and shells use for
+/// multi-line input continuation, so we avoid it as the default.
 ///
 /// Set `JACKIN_PALETTE_KEY` to override (e.g. `C-]`, `C-g`, `C-j`);
 /// set it to the literal string `none` to disable the direct-palette
-/// shortcut entirely.
+/// shortcut entirely. Parse failures log to stderr (visible under
+/// `jackin load --debug`) so an operator does not silently get the
+/// default after typo'ing the override.
 fn default_palette_key() -> Option<u8> {
     match std::env::var("JACKIN_PALETTE_KEY") {
         Err(_) => Some(0x1C),
         Ok(s) if s.eq_ignore_ascii_case("none") => None,
-        Ok(s) => parse_prefix(&s).or(Some(0x1C)),
+        Ok(s) => match parse_prefix(&s) {
+            Some(byte) => Some(byte),
+            None => {
+                eprintln!(
+                    "[jackin-container] invalid JACKIN_PALETTE_KEY={s:?}; using default Ctrl+\\"
+                );
+                Some(0x1C)
+            }
+        },
     }
 }
 

@@ -442,11 +442,7 @@ pub fn draw_pane_box(
     } else {
         BORDER_INACTIVE
     };
-    let title_color = if active {
-        TITLE_ACTIVE
-    } else {
-        TITLE_INACTIVE
-    };
+    let title_color = if active { TITLE_ACTIVE } else { TITLE_INACTIVE };
     let interior_cols = cols.saturating_sub(2);
     let title_cols = title.chars().count() as u16;
     // Top border: `┌─ title ─` then dashes filling to `┐`. Title is

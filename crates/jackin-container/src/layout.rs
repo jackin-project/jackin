@@ -45,9 +45,22 @@ impl Rect {
         let two_n = n.saturating_mul(2);
         let rows = self.rows.saturating_sub(two_n);
         let cols = self.cols.saturating_sub(two_n);
-        let row = if self.rows >= two_n { self.row + n } else { self.row };
-        let col = if self.cols >= two_n { self.col + n } else { self.col };
-        Self { row, col, rows, cols }
+        let row = if self.rows >= two_n {
+            self.row + n
+        } else {
+            self.row
+        };
+        let col = if self.cols >= two_n {
+            self.col + n
+        } else {
+            self.col
+        };
+        Self {
+            row,
+            col,
+            rows,
+            cols,
+        }
     }
 }
 

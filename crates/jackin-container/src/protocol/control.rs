@@ -50,8 +50,15 @@ impl AgentState {
 }
 
 /// Encode `msg` as a 4-byte big-endian length prefix + UTF-8 JSON body.
+///
+/// `to_vec` cannot actually fail for `ClientMsg` or `ServerMsg` — their
+/// derived `Serialize` impls only emit JSON-representable variants — so
+/// the panic doubles as a contract: any future variant that breaks the
+/// invariant surfaces immediately in tests instead of silently shipping
+/// a 4-byte length=0 frame the peer interprets as an empty payload.
 pub fn frame(msg: &impl Serialize) -> Vec<u8> {
-    let json = serde_json::to_vec(msg).unwrap_or_default();
+    let json =
+        serde_json::to_vec(msg).expect("control-channel message serialization is infallible");
     let len = (json.len() as u32).to_be_bytes();
     let mut out = Vec::with_capacity(4 + json.len());
     out.extend_from_slice(&len);

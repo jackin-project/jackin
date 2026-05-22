@@ -1694,7 +1694,10 @@ impl ManagerState<'_> {
         if !self.current_dir_expanded {
             return;
         }
-        let was_on_child = matches!(self.selected_row(), ManagerListRow::CurrentDirectoryInstance(_));
+        let was_on_child = matches!(
+            self.selected_row(),
+            ManagerListRow::CurrentDirectoryInstance(_)
+        );
         self.current_dir_expanded = false;
         if was_on_child {
             self.selected = 0; // CurrentDirectory is always row 0

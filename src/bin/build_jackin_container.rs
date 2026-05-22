@@ -94,16 +94,18 @@ fn target_triple(arch: &str) -> &'static str {
 }
 
 fn check_zigbuild_installed() -> Result<()> {
-    // `cargo --list` prints one subcommand per line; zigbuild appears as "    zigbuild".
-    let out = process::Command::new("cargo")
-        .arg("--list")
-        .output()
-        .with_context(|| "failed to run `cargo --list`")?;
-    let found = String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .any(|l| l.trim() == "zigbuild");
-    anyhow::ensure!(
-        found,
+    // `cargo zigbuild --version` is the most direct probe — succeeds iff the
+    // subcommand binary is reachable on PATH. Parsing `cargo --list` is brittle
+    // because cargo ≥1.83 formats third-party subcommands with a trailing
+    // description (`zigbuild           cargo zigbuild ...`), so a `trim()`
+    // equality check silently returns "not installed" on current toolchains.
+    let probe = process::Command::new("cargo")
+        .args(["zigbuild", "--version"])
+        .output();
+    if matches!(&probe, Ok(out) if out.status.success()) {
+        return Ok(());
+    }
+    anyhow::bail!(
         "cargo-zigbuild is not installed.\n\
          Install it with:\n\
            mise install zig cargo:cargo-zigbuild\n\
@@ -111,7 +113,6 @@ fn check_zigbuild_installed() -> Result<()> {
            cargo install cargo-zigbuild\n\
            brew install zig  (or equivalent)"
     );
-    Ok(())
 }
 
 fn ensure_rustup_target(triple: &str) -> Result<()> {

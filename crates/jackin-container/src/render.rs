@@ -134,7 +134,12 @@ pub fn draw_scrollbar(
     // border row by adding 1 to `pane_row`.
     let track_start_row = pane_row + 1;
     for r in 0..thumb.thumb_rows {
-        let _ = write!(buf, "\x1b[{};{}H", track_start_row + thumb.thumb_top + r + 1, col + 1);
+        let _ = write!(
+            buf,
+            "\x1b[{};{}H",
+            track_start_row + thumb.thumb_top + r + 1,
+            col + 1
+        );
         buf.extend_from_slice(thumb_color.as_bytes());
         buf.extend_from_slice("█".as_bytes());
     }

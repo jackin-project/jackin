@@ -19,3 +19,7 @@ docs/.lycheecache
 # are intentionally tracked.
 docs/superpowers/plans/
 .claude/worktrees/
+
+# Engineering prompts used while iterating on a rewrite — local-only,
+# same reasoning as docs/superpowers/plans/ above.
+/prompts/

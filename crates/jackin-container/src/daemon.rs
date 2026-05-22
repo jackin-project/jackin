@@ -246,7 +246,11 @@ impl Multiplexer {
         // pane that may be about to disappear (or whose siblings
         // are about to reflow). Drop the gesture so the next motion
         // event does not paint stale geometry.
-        if self.selection.as_ref().is_some_and(|s| s.session_id == session_id) {
+        if self
+            .selection
+            .as_ref()
+            .is_some_and(|s| s.session_id == session_id)
+        {
             self.selection = None;
         }
         let owning_tab = self
@@ -692,11 +696,7 @@ impl Multiplexer {
                     DialogAction::RenameTab { tab_idx, label } => {
                         self.dialog = None;
                         if let Some(tab) = self.tabs.get_mut(tab_idx) {
-                            tab.custom_label = if label.is_empty() {
-                                None
-                            } else {
-                                Some(label)
-                            };
+                            tab.custom_label = if label.is_empty() { None } else { Some(label) };
                         }
                         Some(self.compose_frame())
                     }
@@ -895,11 +895,8 @@ impl Multiplexer {
                         DialogAction::RenameTab { tab_idx, label } => {
                             self.dialog = None;
                             if let Some(tab) = self.tabs.get_mut(tab_idx) {
-                                tab.custom_label = if label.is_empty() {
-                                    None
-                                } else {
-                                    Some(label)
-                                };
+                                tab.custom_label =
+                                    if label.is_empty() { None } else { Some(label) };
                             }
                             Some(self.compose_frame())
                         }
@@ -1062,12 +1059,9 @@ impl Multiplexer {
             (zoom_id, content_rect)
         } else {
             let tab = self.tabs.get(self.active_tab)?;
-            tab.tree
-                .leaves(content_rect)
-                .into_iter()
-                .find(|(_, r)| {
-                    row >= r.row && row < r.row + r.rows && col >= r.col && col < r.col + r.cols
-                })?
+            tab.tree.leaves(content_rect).into_iter().find(|(_, r)| {
+                row >= r.row && row < r.row + r.rows && col >= r.col && col < r.col + r.cols
+            })?
         };
         let inner = outer.shrink(1);
         if row < inner.row
@@ -1471,9 +1465,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
     // diagnostic. Failures fall back to stderr-only, so this is safe
     // to call unconditionally.
     crate::logging::init();
-    crate::clog!(
-        "daemon start: rows={rows} cols={cols} initial_agent={initial_agent:?}"
-    );
+    crate::clog!("daemon start: rows={rows} cols={cols} initial_agent={initial_agent:?}");
 
     let mut mux = Multiplexer::new(rows, cols);
     // Spawn the first tab. Treat any spawn error as fatal at boot —
@@ -1482,9 +1474,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
     // would hide the real problem behind a blank screen.
     if !initial_agent.is_empty() {
         if let Err(err) = mux.spawn_initial(&initial_agent) {
-            crate::clog!(
-                "initial agent spawn failed (agent={initial_agent:?}): {err:?}"
-            );
+            crate::clog!("initial agent spawn failed (agent={initial_agent:?}): {err:?}");
             return Err(err);
         }
     } else if let Err(err) = mux.spawn_session(None) {
@@ -1859,7 +1849,11 @@ fn selection_text(screen: &vt100::Screen, sel: &SelectionState) -> String {
     let mut out = String::new();
     for r in start_row..=max_row {
         let from_col = if r == start_row { start_col } else { 0 };
-        let to_col = if r == end_row { end_col } else { cols_for_full_row };
+        let to_col = if r == end_row {
+            end_col
+        } else {
+            cols_for_full_row
+        };
         let mut row_text = String::new();
         for c in from_col..=to_col {
             if let Some(cell) = screen.cell(r, c)
@@ -1889,8 +1883,6 @@ fn canonical_selection(sel: &SelectionState) -> (u16, u16, u16, u16) {
     }
 }
 
-
-
 /// Paint an inverse-video highlight over every cell inside the
 /// selection rectangle. Emitted after `render_pane` so the agent's
 /// content is preserved underneath — the operator sees the same
@@ -1911,10 +1903,8 @@ fn paint_selection_highlight(buf: &mut Vec<u8>, screen: &vt100::Screen, sel: &Se
         }
         let abs_row = inner.row + r;
         let abs_col = inner.col + from_col;
-        let _ = std::io::Write::write_fmt(
-            buf,
-            format_args!("\x1b[{};{}H", abs_row + 1, abs_col + 1),
-        );
+        let _ =
+            std::io::Write::write_fmt(buf, format_args!("\x1b[{};{}H", abs_row + 1, abs_col + 1));
         // Inverse SGR — preserves whatever fg/bg the underlying cell
         // carried so the operator still reads the selected text.
         buf.extend_from_slice(b"\x1b[7m");
