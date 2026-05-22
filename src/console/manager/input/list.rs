@@ -188,11 +188,7 @@ pub(super) fn handle_list_key(
             ConsoleInstanceAction::Inspect,
             "No instance state for this workspace.",
         )),
-        KeyCode::Char('p' | 'P') => Ok(instance_action_outcome(
-            state,
-            ConsoleInstanceAction::Purge,
-            "No purgeable instance for this workspace.",
-        )),
+        KeyCode::Char('p' | 'P') => Ok(confirm_purge_outcome(state)),
         KeyCode::Char('t' | 'T') => Ok(instance_action_outcome(
             state,
             ConsoleInstanceAction::Stop,
@@ -252,6 +248,39 @@ fn instance_action_outcome(
         return InputOutcome::Continue;
     };
     InputOutcome::InstanceAction { container, action }
+}
+
+/// Resolve the container for Purge, then stage a Y/N confirmation
+/// modal. Purge now also calls `eject_role` before deleting preserved
+/// state (so a mis-keyed `P` on a running instance destroys role +
+/// DinD + volume + network plus on-disk state in one stroke), so the
+/// confirmation step is non-optional. Mirrors the workspace-delete
+/// pattern at `handle_list_key` line 158.
+fn confirm_purge_outcome(state: &mut ManagerState<'_>) -> InputOutcome {
+    let Some(container) = selected_instance_container(state, ConsoleInstanceAction::Purge) else {
+        state.list_modal = Some(Modal::ErrorPopup {
+            state: crate::console::widgets::error_popup::ErrorPopupState::new(
+                "No instance",
+                "No purgeable instance for this workspace.",
+            ),
+        });
+        return InputOutcome::Continue;
+    };
+    let label = state
+        .instances
+        .iter()
+        .find(|entry| entry.container_base == container)
+        .map(|entry| format!("{} ({})", entry.container_base, entry.role_key))
+        .unwrap_or_else(|| container.clone());
+    let prompt = format!(
+        "Purge \"{label}\"?\nThis removes the role container, DinD sidecar, volume, network, AND local recovery state. Cannot be undone."
+    );
+    state.stage = ManagerStage::ConfirmInstancePurge {
+        container,
+        label,
+        state: crate::console::widgets::confirm::ConfirmState::new(prompt),
+    };
+    InputOutcome::Continue
 }
 
 fn selected_instance_container(
@@ -751,6 +780,10 @@ mod tests {
             other => panic!("expected inspect instance action; got {other:?}"),
         }
 
+        // P now stages a confirm modal instead of dispatching Purge
+        // directly — the action destroys role + DinD + volume + network
+        // + local state in one stroke, so an unconditional confirmation
+        // step keeps mis-keyed `P` from destroying running work.
         let outcome = handle_key(
             &mut state,
             &mut config,
@@ -759,12 +792,33 @@ mod tests {
             key(KeyCode::Char('p')),
         )
         .unwrap();
+        assert!(
+            matches!(outcome, InputOutcome::Continue),
+            "P should stage the confirm modal and return Continue; got {outcome:?}"
+        );
+        assert!(
+            matches!(
+                state.stage,
+                crate::console::manager::state::ManagerStage::ConfirmInstancePurge { .. }
+            ),
+            "P should have set ConfirmInstancePurge stage"
+        );
+
+        // Confirm via Y → the staged action fires.
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('y')),
+        )
+        .unwrap();
         match outcome {
             InputOutcome::InstanceAction { container, action } => {
                 assert_eq!(container, "jackin-demo-architect-123456");
                 assert_eq!(action, crate::console::ConsoleInstanceAction::Purge);
             }
-            other => panic!("expected purge instance action; got {other:?}"),
+            other => panic!("expected purge instance action after Y; got {other:?}"),
         }
     }
 

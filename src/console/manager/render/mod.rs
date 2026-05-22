@@ -488,16 +488,18 @@ pub fn render(
                 FooterItem::Key("Esc"),
                 FooterItem::Text("cancel"),
             ],
-            ManagerStage::ConfirmDelete { .. } => vec![
-                FooterItem::Key("Y"),
-                FooterItem::Text("yes"),
-                FooterItem::Sep,
-                FooterItem::Key("N"),
-                FooterItem::Text("no"),
-                FooterItem::GroupSep,
-                FooterItem::Key("Esc"),
-                FooterItem::Text("cancel"),
-            ],
+            ManagerStage::ConfirmDelete { .. } | ManagerStage::ConfirmInstancePurge { .. } => {
+                vec![
+                    FooterItem::Key("Y"),
+                    FooterItem::Text("yes"),
+                    FooterItem::Sep,
+                    FooterItem::Key("N"),
+                    FooterItem::Text("no"),
+                    FooterItem::GroupSep,
+                    FooterItem::Key("Esc"),
+                    FooterItem::Text("cancel"),
+                ]
+            }
             ManagerStage::Editor(_) => unreachable!("Editor has its own render path"),
             ManagerStage::Settings(_) => unreachable!("Settings has its own render path"),
         };
@@ -531,6 +533,15 @@ pub fn render(
                 // ConfirmState is a top-level field on the variant, not wrapped
                 // in Modal::Confirm, so render it directly.
                 let modal_area = centered_rect_fixed(area, 60, 7);
+                super::super::widgets::confirm::render(frame, modal_area, confirm_state);
+            }
+            ManagerStage::ConfirmInstancePurge {
+                state: confirm_state,
+                ..
+            } => {
+                // The two-line prompt is taller than ConfirmDelete's
+                // single line, so allocate more rows for the modal.
+                let modal_area = centered_rect_fixed(area, 70, 9);
                 super::super::widgets::confirm::render(frame, modal_area, confirm_state);
             }
             ManagerStage::List => {

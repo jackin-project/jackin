@@ -250,8 +250,13 @@ impl PaneTree {
     /// contains `leaf_id` on the side we want to grow / shrink, then
     /// adjusts its ratio by `delta` (positive = grow current pane,
     /// negative = shrink). Clamps to `[0.05, 0.95]` so neither child
-    /// can collapse to zero cols / rows.
+    /// can collapse to zero cols / rows. Non-finite `delta` (NaN, ±∞)
+    /// is rejected up front because `f32::clamp` on NaN returns NaN —
+    /// a NaN ratio cast as `u16` collapses one child of the split.
     pub fn resize(&mut self, leaf_id: u64, dir: Direction, delta: f32) -> bool {
+        if !delta.is_finite() {
+            return false;
+        }
         match self {
             Self::Leaf(_) => false,
             Self::HSplit { left, right, ratio } => {
@@ -269,7 +274,7 @@ impl PaneTree {
                     };
                     if crosses_this {
                         let signed = if left_has { delta } else { -delta };
-                        *ratio = (*ratio + signed).clamp(0.05, 0.95);
+                        *ratio = clamp_split_ratio(*ratio + signed);
                         return true;
                     }
                 }
@@ -289,7 +294,7 @@ impl PaneTree {
                     };
                     if crosses_this {
                         let signed = if top_has { delta } else { -delta };
-                        *ratio = (*ratio + signed).clamp(0.05, 0.95);
+                        *ratio = clamp_split_ratio(*ratio + signed);
                         return true;
                     }
                 }
@@ -492,8 +497,14 @@ impl PaneTree {
     /// child, `1` = right/bottom). Returns `true` when the path
     /// resolved to a split. Used by the mouse-drag resize handler
     /// after `border_at` records the path.
+    ///
+    /// Non-finite values are rejected (NaN survives `f32::clamp`; a
+    /// NaN ratio cast to `u16` collapses one child of the split).
     pub fn set_ratio_at(&mut self, path: &[u8], new_ratio: f32) -> bool {
-        let clamped = new_ratio.clamp(0.05, 0.95);
+        if !new_ratio.is_finite() {
+            return false;
+        }
+        let clamped = clamp_split_ratio(new_ratio);
         if path.is_empty() {
             match self {
                 Self::HSplit { ratio, .. } | Self::VSplit { ratio, .. } => {
@@ -522,6 +533,25 @@ impl PaneTree {
             Self::Leaf(_) => false,
         }
     }
+}
+
+/// Lower bound for a split ratio. 0.05 = 5% of the available cells,
+/// the smallest size before vt100 / agent UI starts mis-wrapping.
+pub const SPLIT_RATIO_MIN: f32 = 0.05;
+/// Upper bound — symmetric counterpart of SPLIT_RATIO_MIN.
+pub const SPLIT_RATIO_MAX: f32 = 0.95;
+/// Default ratio used by every `split_h` / `split_v` constructor.
+pub const SPLIT_RATIO_DEFAULT: f32 = 0.5;
+
+/// Clamp a ratio into `[SPLIT_RATIO_MIN, SPLIT_RATIO_MAX]`. NaN must be
+/// rejected before this is called — `f32::clamp` propagates NaN, and
+/// a NaN ratio cast to `u16` later collapses a pane.
+pub fn clamp_split_ratio(r: f32) -> f32 {
+    debug_assert!(
+        r.is_finite(),
+        "clamp_split_ratio called with non-finite {r}"
+    );
+    r.clamp(SPLIT_RATIO_MIN, SPLIT_RATIO_MAX)
 }
 
 /// A named tab — each tab has a label and its own pane layout.

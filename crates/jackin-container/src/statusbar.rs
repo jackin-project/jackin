@@ -212,9 +212,12 @@ impl StatusBar {
             self.tab_regions.push((region_start, region_end));
         }
 
-        // Right-side menu button.
+        // Right-side menu button. Only render when there is room to
+        // the right of the brand pill — otherwise the hint paints on
+        // top of the brand and the operator sees an overlapping mash.
+        let brand_end_1based = start_col_0based.saturating_add(1);
         let hint_start = cols.saturating_sub(hint_cols);
-        if hint_start > 0 {
+        if hint_start > brand_end_1based {
             move_to(buf, 1, hint_start);
             let (bg, fg) = match self.prefix_mode {
                 PrefixMode::Idle => (BUTTON_BG_IDLE, BUTTON_FG_IDLE),
@@ -229,14 +232,18 @@ impl StatusBar {
             self.hint_region = Some((hint_start, hint_start + hint_cols));
         }
 
-        // Overflow indicator before the hint when at least one tab
-        // got clipped past the right edge.
+        // Overflow indicator before the hint when at least one tab got
+        // clipped past the right edge. Same brand-overlap guard as the
+        // hint — a `›` painted on top of " jackin' " is worse than no
+        // overflow signal.
         if clipped_at.is_some() {
             let pos = cols.saturating_sub(reserve_right);
-            move_to(buf, 1, pos);
-            buf.extend_from_slice(HINT_FG.as_bytes());
-            buf.extend_from_slice("›".as_bytes());
-            buf.extend_from_slice(RESET.as_bytes());
+            if pos > brand_end_1based {
+                move_to(buf, 1, pos);
+                buf.extend_from_slice(HINT_FG.as_bytes());
+                buf.extend_from_slice("›".as_bytes());
+                buf.extend_from_slice(RESET.as_bytes());
+            }
         }
 
         // ── Row 1: active-tab underline + identity label ────────────

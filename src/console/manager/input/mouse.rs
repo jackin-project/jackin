@@ -444,7 +444,9 @@ fn try_drag_horizontal_scrollbar(
                 global_mount_rows_content_width(&settings.mounts.pending),
             )
         }
-        ManagerStage::CreatePrelude(_) | ManagerStage::ConfirmDelete { .. } => false,
+        ManagerStage::CreatePrelude(_)
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => false,
     }
 }
 
@@ -525,7 +527,9 @@ fn update_scroll_focus(
             settings.auth.scroll_focused = settings.active_tab == SettingsTab::Auth && in_content;
             settings.trust.scroll_focused = settings.active_tab == SettingsTab::Trust && in_content;
         }
-        ManagerStage::CreatePrelude(_) | ManagerStage::ConfirmDelete { .. } => {}
+        ManagerStage::CreatePrelude(_)
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
 }
 
@@ -665,7 +669,9 @@ fn scroll_active_panel(
                 _ => {}
             }
         }
-        ManagerStage::CreatePrelude(_) | ManagerStage::ConfirmDelete { .. } => {}
+        ManagerStage::CreatePrelude(_)
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
 }
 
@@ -730,7 +736,9 @@ fn scroll_active_panel_vertical(
                 None => {}
             }
         }
-        ManagerStage::CreatePrelude(_) | ManagerStage::ConfirmDelete { .. } => {}
+        ManagerStage::CreatePrelude(_)
+        | ManagerStage::ConfirmDelete { .. }
+        | ManagerStage::ConfirmInstancePurge { .. } => {}
     }
 }
 

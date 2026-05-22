@@ -1701,23 +1701,62 @@ impl console::InstanceActionHandler for ConsoleInPlaceHandler {
                 rt.block_on(async move {
                     let docker = BollardDockerClient::connect()?;
                     let mut runner = ShellRunner { debug };
-                    match action {
-                        console::ConsoleInstanceAction::Stop => {
-                            runtime::eject_role(&container, &docker).await
-                        }
-                        console::ConsoleInstanceAction::Purge => {
-                            runtime::eject_role(&container, &docker).await?;
-                            runtime::purge_container_state(&paths, &container, &docker, &mut runner)
+                    // Wrap the eject + post-condition work in an async
+                    // block so a partial failure still hits the trailing
+                    // reconcile, mirroring the CLI Eject handler at lines
+                    // 319-345. Without this, an eject that errored after
+                    // removing the last keep-awake container would leave
+                    // caffeinate asserted on the host.
+                    let result: anyhow::Result<()> = async {
+                        match action {
+                            console::ConsoleInstanceAction::Stop => {
+                                runtime::eject_role(&container, &docker).await?;
+                                mark_instance_restore_available(&paths, &container);
+                                Ok(())
+                            }
+                            console::ConsoleInstanceAction::Purge => {
+                                runtime::eject_role(&container, &docker).await?;
+                                runtime::purge_container_state(
+                                    &paths,
+                                    &container,
+                                    &docker,
+                                    &mut runner,
+                                )
                                 .await
+                            }
+                            _ => Ok(()),
                         }
-                        _ => Ok(()),
                     }
+                    .await;
+                    runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
+                    result
                 })
             });
             handle
                 .join()
                 .map_err(|panic| anyhow::anyhow!("in-place action panicked: {panic:?}"))?
         })
+    }
+}
+
+/// Promote the manifest for `container` to `RestoreAvailable` so the
+/// console list reflects "stopped, recoverable on demand" instead of the
+/// stale `Active` / `Running` that `eject_role` would otherwise leave
+/// behind (eject removes Docker resources but writes nothing to the
+/// on-disk index). Logs and proceeds on error — the eject itself
+/// succeeded and a stale row is recoverable on next interaction with
+/// the container.
+fn mark_instance_restore_available(paths: &JackinPaths, container: &str) {
+    let state_dir = paths.data_dir.join(container);
+    match instance::InstanceManifest::read(&state_dir) {
+        Ok(mut manifest) => {
+            if let Err(e) = manifest.mark_restore_available(paths) {
+                eprintln!("[jackin] failed to mark instance {container} as RestoreAvailable: {e}");
+            }
+        }
+        Err(e) => {
+            eprintln!("[jackin] cannot update instance manifest for {container} after stop: {e}");
+        }
     }
 }
 
@@ -1783,18 +1822,16 @@ async fn handle_console_instance_action(
             );
             Ok(())
         }
-        console::ConsoleInstanceAction::Stop => {
-            runtime::eject_role(&container, docker).await?;
-            runtime::reconcile_keep_awake(paths, docker, runner).await;
-            println!("Stopped {container}.");
-            Ok(())
-        }
-        console::ConsoleInstanceAction::Purge => {
-            runtime::eject_role(&container, docker).await?;
-            runtime::purge_container_state(paths, &container, docker, runner).await?;
-            runtime::reconcile_keep_awake(paths, docker, runner).await;
-            println!("Ejected and purged {container}.");
-            Ok(())
+        // Stop and Purge are dispatched via `ConsoleInPlaceHandler::run_in_place`
+        // (see `console::ConsoleInstanceAction::runs_in_place`), so the
+        // console event loop never returns `ConsoleOutcome::InstanceAction`
+        // for them. Treat this as unreachable rather than copy-pasting
+        // the in-place handler's body here — keeping two definitions in
+        // sync drifts.
+        console::ConsoleInstanceAction::Stop | console::ConsoleInstanceAction::Purge => {
+            unreachable!(
+                "{action:?} is dispatched in-place by ConsoleInPlaceHandler, not via handle_console_instance_action"
+            )
         }
     }
 }

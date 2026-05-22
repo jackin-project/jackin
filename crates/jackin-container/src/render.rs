@@ -108,6 +108,14 @@ pub fn draw_scrollbar(
     filled: usize,
     focused: bool,
 ) {
+    // Bail on zero-width / zero-height panes before doing any
+    // arithmetic. `pane_col + pane_cols - 1` would underflow u16 when
+    // pane_cols == 0; saturating_add+saturating_sub keep arithmetic
+    // total even for runaway resize ticks where pane geometry briefly
+    // hits zero.
+    if pane_cols == 0 || pane_rows < 2 {
+        return;
+    }
     // Constrain the track to the pane's interior rows so the
     // top-right `┐` and bottom-right `┘` corners stay intact. Without
     // this guard the thumb overwrote one of the corners whenever the
@@ -117,10 +125,7 @@ pub fn draw_scrollbar(
     let Some(thumb) = jackin_tui::vertical_thumb(interior_rows, filled, offset) else {
         return;
     };
-    if pane_cols == 0 {
-        return;
-    }
-    let col = pane_col + pane_cols - 1;
+    let col = pane_col.saturating_add(pane_cols).saturating_sub(1);
 
     // Active pane uses the brand phosphor-green; inactive panes a
     // neutral gray that matches their inactive border colour.

@@ -250,6 +250,9 @@ fn console_location_debug(console_state: &ConsoleState) -> String {
         crate::console::manager::state::ManagerStage::ConfirmDelete { .. } => {
             "confirm-delete".to_string()
         }
+        crate::console::manager::state::ManagerStage::ConfirmInstancePurge { .. } => {
+            "confirm-instance-purge".to_string()
+        }
         crate::console::manager::state::ManagerStage::Settings(settings) => {
             let modal = settings
                 .mounts
