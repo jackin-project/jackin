@@ -1702,17 +1702,17 @@ impl console::InstanceActionHandler for ConsoleInPlaceHandler {
                     let docker = BollardDockerClient::connect()?;
                     let mut runner = ShellRunner { debug };
                     // Wrap the eject + post-condition work in an async
-                    // block so a partial failure still hits the trailing
-                    // reconcile, mirroring the CLI Eject handler at lines
-                    // 319-345. Without this, an eject that errored after
-                    // removing the last keep-awake container would leave
-                    // caffeinate asserted on the host.
+                    // block so a partial failure still hits the
+                    // trailing reconcile + manifest-status update.
+                    // Without this, an eject that errored after
+                    // removing the last keep-awake container would
+                    // leave caffeinate asserted on the host and the
+                    // on-disk manifest stuck at Active/Running while
+                    // the container is half-gone.
                     let result: anyhow::Result<()> = async {
                         match action {
                             console::ConsoleInstanceAction::Stop => {
-                                runtime::eject_role(&container, &docker).await?;
-                                mark_instance_restore_available(&paths, &container);
-                                Ok(())
+                                runtime::eject_role(&container, &docker).await
                             }
                             console::ConsoleInstanceAction::Purge => {
                                 runtime::eject_role(&container, &docker).await?;
@@ -1728,6 +1728,19 @@ impl console::InstanceActionHandler for ConsoleInPlaceHandler {
                         }
                     }
                     .await;
+                    if matches!(action, console::ConsoleInstanceAction::Stop) {
+                        // Promote the manifest to RestoreAvailable
+                        // even when eject failed midway — `eject_role`
+                        // removes resources in order (role container,
+                        // DinD, volume, network), so a partial failure
+                        // still leaves the operator's container in a
+                        // recoverable state and the list-row label
+                        // should reflect that rather than stay at
+                        // `Active`/`Running`. Eject-success caller
+                        // would have written the same status; the
+                        // helper is idempotent.
+                        mark_instance_restore_available(&paths, &container);
+                    }
                     runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
                     result
                 })
@@ -1823,14 +1836,15 @@ async fn handle_console_instance_action(
             Ok(())
         }
         // Stop and Purge are dispatched via `ConsoleInPlaceHandler::run_in_place`
-        // (see `console::ConsoleInstanceAction::runs_in_place`), so the
-        // console event loop never returns `ConsoleOutcome::InstanceAction`
-        // for them. Treat this as unreachable rather than copy-pasting
-        // the in-place handler's body here — keeping two definitions in
-        // sync drifts.
+        // (see `console::ConsoleInstanceAction::runs_in_place`), so
+        // the console event loop never returns
+        // `ConsoleOutcome::InstanceAction` for them. Bail with a
+        // diagnostic — `unreachable!` would panic in a future caller
+        // that bypasses the runs_in_place gate; bail surfaces the
+        // dispatch bug without taking the process down.
         console::ConsoleInstanceAction::Stop | console::ConsoleInstanceAction::Purge => {
-            unreachable!(
-                "{action:?} is dispatched in-place by ConsoleInPlaceHandler, not via handle_console_instance_action"
+            anyhow::bail!(
+                "{action:?} must run via ConsoleInPlaceHandler::run_in_place; reached handle_console_instance_action by mistake"
             )
         }
     }

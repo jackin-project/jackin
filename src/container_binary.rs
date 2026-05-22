@@ -163,16 +163,27 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
             tmp.display()
         )
     })?;
+
+    // Verify BEFORE rename so a verification failure leaves nothing
+    // in the final cache path. Promoting the tmp file to `dest`
+    // first and then bailing on verify failure would leave an
+    // executable-bit-set file at the cache location — the next
+    // `ensure_available` would see `is_valid_cached_binary == true`
+    // and reuse the wrong-version binary forever. Skip the exec
+    // check on non-Linux hosts: the binary is a Linux ELF and cannot
+    // be executed on macOS. The SHA-256 check above already proves
+    // the bytes match the published release, so a version mismatch
+    // at this point would indicate the release ↔ hash mapping
+    // itself drifted.
+    #[cfg(target_os = "linux")]
+    {
+        if let Err(e) = verify_version_exec(&tmp, version) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e);
+        }
+    }
     std::fs::rename(&tmp, dest)
         .with_context(|| format!("failed to move jackin-container to {}", dest.display()))?;
-
-    // Skip exec-based version check on non-Linux hosts: the binary is a
-    // Linux ELF and cannot be executed on macOS. The SHA-256 check
-    // above already proves the bytes match the published release, so a
-    // version mismatch at this point would indicate the release ↔
-    // hash mapping itself drifted.
-    #[cfg(target_os = "linux")]
-    verify_version_exec(dest, version)?;
 
     eprintln!(
         "[jackin] jackin-container {version} cached at {} (sha256 {})",

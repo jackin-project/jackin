@@ -1,5 +1,5 @@
-use anyhow::Result;
-use jackin_container::{client, daemon, session};
+use anyhow::{Result, bail};
+use jackin_container::{client, daemon, session::validate_agent_slug};
 
 const DEFAULT_AGENT: &str = "claude";
 
@@ -14,28 +14,12 @@ async fn main() -> Result<()> {
     let is_pid1 = std::process::id() == 1;
 
     if is_pid1 {
-        // When `JACKIN_AGENT` is unset, take the positional arg as the
-        // agent slug — but validate so `docker exec ... jackin-container
-        // --debug` does not silently set `JACKIN_AGENT=--debug`. Empty
-        // or rejected positional values fall back to the default so the
-        // derived image's entrypoint always has something to run.
-        let agent = std::env::var("JACKIN_AGENT").unwrap_or_else(|_| {
-            args.get(1)
-                .and_then(|raw| match validate_agent_slug(raw) {
-                    Ok(s) => Some(s.to_string()),
-                    Err(reason) => {
-                        eprintln!(
-                            "[jackin-container] ignoring agent argv {raw:?}: {reason}; using default {DEFAULT_AGENT:?}"
-                        );
-                        None
-                    }
-                })
-                .unwrap_or_else(|| DEFAULT_AGENT.to_string())
-        });
+        let agent = resolve_initial_agent(&args)?;
         daemon::run_daemon(agent).await
     } else {
         let subcommand = args.get(1).map(String::as_str);
         match subcommand {
+            None => client::run_client(None).await,
             Some("--version") | Some("-V") => {
                 println!("jackin-container {}", env!("JACKIN_CONTAINER_VERSION"));
                 Ok(())
@@ -53,27 +37,39 @@ async fn main() -> Result<()> {
                 });
                 client::run_client(agent).await
             }
-            _ => client::run_client(None).await,
+            Some(other) => {
+                bail!(
+                    "unknown jackin-container subcommand {other:?} — known: status, new <agent>, --version"
+                )
+            }
         }
     }
 }
 
-/// Reject argv values that are flags (start with `-`), empty, contain
-/// whitespace, or — when the derived image set `JACKIN_SUPPORTED_AGENTS`
-/// — do not appear in that allowlist.
-fn validate_agent_slug(raw: &str) -> Result<&str, &'static str> {
-    if raw.is_empty() {
-        return Err("empty value");
+/// Resolve the initial agent slug for PID-1 daemon mode. Priority:
+/// `JACKIN_AGENT` env (validated, hard-error on invalid because the
+/// operator set it explicitly and a silent fallback hides the typo)
+/// → positional argv (validated, soft-fall back to `DEFAULT_AGENT`
+/// because argv might be a wrapper-passed flag in a future refactor)
+/// → `DEFAULT_AGENT`. Both ingress points share `validate_agent_slug`
+/// so injection / typo'd flags get the same gate.
+fn resolve_initial_agent(args: &[String]) -> Result<String> {
+    if let Ok(env_agent) = std::env::var("JACKIN_AGENT") {
+        let validated = validate_agent_slug(&env_agent)
+            .map_err(|reason| anyhow::anyhow!("JACKIN_AGENT={env_agent:?} rejected: {reason}"))?;
+        return Ok(validated.to_string());
     }
-    if raw.starts_with('-') {
-        return Err("looks like a flag");
-    }
-    if raw.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return Err("contains whitespace or control characters");
-    }
-    let supported = session::available_agents();
-    if !supported.is_empty() && !supported.iter().any(|a| a == raw) {
-        return Err("not in JACKIN_SUPPORTED_AGENTS allowlist");
-    }
-    Ok(raw)
+    let resolved = args
+        .get(1)
+        .and_then(|raw| match validate_agent_slug(raw) {
+            Ok(s) => Some(s.to_string()),
+            Err(reason) => {
+                eprintln!(
+                    "[jackin-container] ignoring agent argv {raw:?}: {reason}; using default {DEFAULT_AGENT:?}"
+                );
+                None
+            }
+        })
+        .unwrap_or_else(|| DEFAULT_AGENT.to_string());
+    Ok(resolved)
 }

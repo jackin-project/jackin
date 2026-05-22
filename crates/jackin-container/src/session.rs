@@ -48,6 +48,24 @@ const KITTY_KB_STACK_CAP: usize = 64;
 /// pass. Returns `None` for any payload that does not parse as a
 /// `file://` URL — silently trusting arbitrary text would let an
 /// agent overwrite the pane title with whatever it pleased.
+/// True when an OSC 8 `URI` payload is safe to forward to the
+/// operator's host terminal. The empty URI is a terminator (closing
+/// a hyperlink range), so it always passes; otherwise the scheme
+/// must be `http`, `https`, or `mailto`. `javascript:`, `data:`,
+/// `file://`, and anything else are dropped — a compromised agent
+/// could otherwise script the operator's terminal emulator or
+/// reference operator-side files on click.
+fn osc8_uri_is_safe(uri: &[u8]) -> bool {
+    if uri.is_empty() {
+        return true;
+    }
+    let Ok(s) = std::str::from_utf8(uri) else {
+        return false;
+    };
+    let lower = s.trim().to_ascii_lowercase();
+    lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
+}
+
 fn parse_osc7(payload: &str) -> Option<String> {
     let url = url::Url::parse(payload).ok()?;
     if url.scheme() != "file" {
@@ -231,8 +249,21 @@ impl Callbacks for OscCapture {
         if ps == b"9" && !self.policy.allow_notify {
             return;
         }
-        if ps == b"8" && !self.policy.allow_hyperlink {
-            return;
+        if ps == b"8" {
+            if !self.policy.allow_hyperlink {
+                return;
+            }
+            // OSC 8 carries `<params>;<URI>` (`params` may be empty
+            // or `id=...`). Reject any URI whose scheme is not in
+            // the safe allowlist — `javascript:` would let a
+            // compromised agent script the operator's host terminal
+            // emulator on click, and `file://` paths can point at
+            // anything the operator can read. Forward the OSC only
+            // when the URI is empty (terminator), http(s), or
+            // mailto.
+            if !osc8_uri_is_safe(params.get(2).copied().unwrap_or(&[])) {
+                return;
+            }
         }
         // OSC 0 sets both title and icon. Route under the title knob.
         if ps == b"0" && !self.policy.allow_title {
@@ -767,6 +798,30 @@ impl Session {
             AgentState::Blocked
         };
     }
+}
+
+/// Reject agent-slug strings that are flags (start with `-`), empty,
+/// contain whitespace / control characters, or — when the derived
+/// image set `JACKIN_SUPPORTED_AGENTS` — do not appear in that
+/// allowlist. Shared by the PID-1 argv path, the
+/// `jackin-container new <agent>` client path, and the daemon's
+/// `Hello.spawn_agent` decode path so all three trust boundaries
+/// apply the same gate.
+pub fn validate_agent_slug(raw: &str) -> Result<&str, &'static str> {
+    if raw.is_empty() {
+        return Err("empty value");
+    }
+    if raw.starts_with('-') {
+        return Err("looks like a flag");
+    }
+    if raw.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err("contains whitespace or control characters");
+    }
+    let supported = available_agents();
+    if !supported.is_empty() && !supported.iter().any(|a| a == raw) {
+        return Err("not in JACKIN_SUPPORTED_AGENTS allowlist");
+    }
+    Ok(raw)
 }
 
 /// Read the list of available agent slugs from the `JACKIN_SUPPORTED_AGENTS`

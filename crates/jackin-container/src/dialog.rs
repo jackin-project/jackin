@@ -343,17 +343,40 @@ impl Dialog {
 
     /// Render the dialog overlay into `buf`.
     /// `term_rows` and `term_cols` are the host terminal dimensions.
+    ///
+    /// `box_rect` is the single source of truth for box geometry —
+    /// both the renderer AND `handle_click` use it, so paint and
+    /// hit-test cannot drift. The free-function `render_*` helpers
+    /// take the `(row, col, height, width)` tuple from `box_rect`
+    /// instead of recomputing the centring; bottom-hint placement is
+    /// still relative to `term_rows` because the hint lives outside
+    /// the box.
     pub fn render(&self, buf: &mut Vec<u8>, term_rows: u16, term_cols: u16) {
+        let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
+        // Skip rendering entirely when the terminal is too small to
+        // hold the box without overlapping the status bar or the
+        // bottom edge. The host terminal would otherwise scroll and
+        // destroy operator pane content.
+        if term_rows < crate::statusbar::STATUS_BAR_ROWS + 3
+            || box_row + height > term_rows
+            || box_col + width > term_cols
+        {
+            return;
+        }
         match self {
             Self::CommandPalette { selected } => {
-                render_palette(buf, term_rows, term_cols, *selected);
+                render_palette(buf, box_row, box_col, height, width, *selected);
+                render_bottom_hint(buf, term_rows, term_cols, PALETTE_HINT);
             }
             Self::AgentPicker {
                 agents,
                 selected,
                 intent,
             } => {
-                render_agent_picker(buf, term_rows, term_cols, agents, *selected, *intent);
+                render_agent_picker(
+                    buf, box_row, box_col, height, width, agents, *selected, *intent,
+                );
+                render_bottom_hint(buf, term_rows, term_cols, PICKER_HINT);
             }
             Self::RenameTab { input, .. } => {
                 render_rename_tab(buf, term_rows, term_cols, input.value());
@@ -495,16 +518,22 @@ fn render_rename_tab(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, input: &
     render_bottom_hint(buf, term_rows, term_cols, RENAME_HINT);
 }
 
-fn render_palette(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, selected: usize) {
+fn render_palette(
+    buf: &mut Vec<u8>,
+    start_row: u16,
+    start_col: u16,
+    height: u16,
+    width: u16,
+    selected: usize,
+) {
     let items = PALETTE_ITEMS;
-    // Box rows: top border + blank pad + items + blank pad + bottom border.
-    let height = items.len() as u16 + 4;
-    let width = PALETTE_WIDTH;
-    let start_row = (term_rows.saturating_sub(height)) / 2;
-    let start_col = (term_cols.saturating_sub(width)) / 2;
-
     render_box(buf, start_row, start_col, height, width, "Menu");
-    for (i, (_, label)) in items.iter().enumerate() {
+    // Clamp the item count by the available interior rows so a
+    // tight-fit terminal never paints past the bottom border. The
+    // dialog body has `height - 4` interior rows.
+    let interior = height.saturating_sub(4) as usize;
+    let visible = items.len().min(interior);
+    for (i, (_, label)) in items.iter().enumerate().take(visible) {
         render_row(
             buf,
             start_row + 2 + i as u16,
@@ -514,25 +543,18 @@ fn render_palette(buf: &mut Vec<u8>, term_rows: u16, term_cols: u16, selected: u
             i == selected,
         );
     }
-    render_bottom_hint(buf, term_rows, term_cols, PALETTE_HINT);
 }
 
 fn render_agent_picker(
     buf: &mut Vec<u8>,
-    term_rows: u16,
-    term_cols: u16,
+    start_row: u16,
+    start_col: u16,
+    height: u16,
+    width: u16,
     agents: &[String],
     selected: usize,
     intent: PickerIntent,
 ) {
-    // Render rows: agents + separator + Shell. Selection space is
-    // `agents.len() + 1` (the separator is not selectable).
-    let render_row_count = agents.len() as u16 + 2; // agents + separator + shell
-    let height = render_row_count + 4;
-    let width = PALETTE_WIDTH;
-    let start_row = (term_rows.saturating_sub(height)) / 2;
-    let start_col = (term_cols.saturating_sub(width)) / 2;
-
     let title = match intent {
         PickerIntent::NewTab => "New tab",
         PickerIntent::SplitHorizontal => "Split pane │  (side by side)",
@@ -571,8 +593,6 @@ fn render_agent_picker(
         "Shell",
         selected == agents.len(),
     );
-
-    render_bottom_hint(buf, term_rows, term_cols, PICKER_HINT);
 }
 
 /// Non-selectable visual divider inside the agent picker — `── shell ──`

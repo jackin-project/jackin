@@ -122,6 +122,14 @@ pub async fn run_status() -> Result<()> {
     let mut len_buf = [0u8; 4];
     stream.read_exact(&mut len_buf).await?;
     let len = u32::from_be_bytes(len_buf) as usize;
+    // Mirror the daemon-side cap in `socket::read_control_msg`. A
+    // buggy or wedged daemon (or a peer that won the socket race
+    // inside the container) could otherwise send `0xFFFFFFFF` and
+    // force a 4 GiB allocation attempt in the client.
+    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
+    if len > MAX_CONTROL_REPLY {
+        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
+    }
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body).await?;
 

@@ -1627,24 +1627,45 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 // cause; the attach completes either way so the
                 // operator can still interact with the existing focused
                 // session and decide whether to retry.
-                if let Some(agent_slug) = spawn_agent
-                    && let Err(err) = mux.spawn_session(Some(agent_slug.clone()))
-                {
-                    crate::clog!(
-                        "attach: spawn_session for {agent_slug:?} failed: {err:?}"
-                    );
+                if let Some(agent_slug) = spawn_agent {
+                    // Re-validate the wire-decoded slug. The CLI argv
+                    // path validates via `validate_agent_slug`, but the
+                    // attach protocol carries a raw String — a peer
+                    // that wins the socket race could otherwise inject
+                    // an unallowlisted agent name (or a control byte)
+                    // straight into `build_agent_command`.
+                    match crate::session::validate_agent_slug(&agent_slug) {
+                        Ok(_) => {
+                            if let Err(err) =
+                                mux.spawn_session(Some(agent_slug.clone()))
+                            {
+                                crate::clog!(
+                                    "attach: spawn_session for {agent_slug:?} failed: {err:?}"
+                                );
+                            }
+                        }
+                        Err(reason) => {
+                            crate::clog!(
+                                "attach: rejected Hello.spawn_agent {agent_slug:?}: {reason}"
+                            );
+                        }
+                    }
                 }
-                // Take over from any existing attach client. The shutdown
-                // signal alone is best-effort because the old socket may
-                // be wedged; cancel the old reader task too so its frames
-                // stop landing in the shared cmd_tx (otherwise the old
-                // client's stale Input / Resize / Detach race the new
-                // attach until its socket finally closes).
-                if let Some(handle) = mux.attached_task.take() {
-                    handle.abort();
-                }
+                // Take over from any existing attach client. Send the
+                // Shutdown frame BEFORE aborting the reader task —
+                // `abort()` drops the task's `out_rx` receiver, which
+                // makes the subsequent `tx.send(Shutdown)` return Err
+                // and the bytes never leave the socket. Yield once
+                // afterwards so the writer side has a chance to drain
+                // before the task is cancelled. Then abort so the old
+                // reader's stale Input / Resize / Detach frames stop
+                // landing in the shared `cmd_tx`.
                 if let Some(tx) = mux.attached_out.take() {
                     let _ = tx.send(encode_server(ServerFrame::Shutdown));
+                }
+                tokio::task::yield_now().await;
+                if let Some(handle) = mux.attached_task.take() {
+                    handle.abort();
                 }
                 let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
                 mux.attached_out = Some(new_out_tx.clone());
