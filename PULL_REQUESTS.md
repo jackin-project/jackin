@@ -43,15 +43,21 @@ Split verification into named blocks only when each block contains meaningful co
 
 ### jackin-container PRs
 
-Any PR touching `crates/jackin-container/` requires a `### jackin-container smoke` block in the Verify-locally section, leading with the canonical eval one-shot:
+Any PR touching `crates/jackin-container/` requires **two** Verify-locally blocks, in this order:
 
-```sh
-eval "$(cargo run --bin build-jackin-container -- --export)"
-```
+1. `### Build jackin-container` — leads with the canonical eval one-shot:
 
-The full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports are forbidden, the required verify checklist, prefix-surface opt-in — lives in [`.github/AGENTS.md`](.github/AGENTS.md) under `## jackin-container PRs (hard rule)`. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships the block verbatim; copy it rather than rewriting the build invocation.
+   ```sh
+   eval "$(cargo run --bin build-jackin-container -- --export)"
+   ```
 
-A `crates/jackin-container/` PR without this block is incomplete. Unit tests passing is necessary but not sufficient.
+   **Must come before `### User smoke` and `### jackin-container smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the eval first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes.
+
+2. `### jackin-container smoke` — runs `cargo run --bin jackin -- load the-architect . --debug` and the in-container verify checklist. Does NOT repeat the eval; the build block above already exported `JACKIN_CONTAINER_BIN`.
+
+The full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports are forbidden, the required verify checklist, prefix-surface opt-in — lives in [`.github/AGENTS.md`](.github/AGENTS.md) under `## jackin-container PRs (hard rule)`. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships both blocks in the correct order; copy them rather than rewriting the build invocation.
+
+A `crates/jackin-container/` PR that puts the launch before the build, or that omits the build block entirely, is incomplete. Unit tests passing is necessary but not sufficient.
 
 ### Documentation-only PRs
 

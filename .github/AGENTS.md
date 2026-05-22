@@ -56,7 +56,10 @@ The canonical body shape, intent-split block list, and isolation-env-var decisio
 
 ## `jackin-container` PRs (hard rule)
 
-`jackin-container` is the in-container multiplexer binary at `crates/jackin-container/`. Any PR that touches any file under `crates/jackin-container/` requires a `### jackin-container smoke` block in the Verify-locally section, in addition to the standard User Smoke block. Unit tests and CI alone are not sufficient — the multiplexer only works end-to-end when running as PID 1 inside a container, and the only way to verify the status bar, input routing, pane splits, and session switching is a live `jackin load`.
+`jackin-container` is the in-container multiplexer binary at `crates/jackin-container/`. Any PR that touches any file under `crates/jackin-container/` requires **two** blocks in the Verify-locally section, in this order:
+
+1. `### Build jackin-container` — runs `eval "$(cargo run --bin build-jackin-container -- --export)"`. **MUST come before `### User smoke` and `### jackin-container smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the eval first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes. Reviewers must reject any `crates/jackin-container/` PR whose Verify-locally puts a `jackin console` / `jackin load` step before the build, regardless of how the body is otherwise structured.
+2. `### jackin-container smoke` — runs `cargo run --bin jackin -- load the-architect . --debug` and the in-container verify checklist. Unit tests and CI alone are not sufficient — the multiplexer only works end-to-end when running as PID 1 inside a container, and the only way to verify the status bar, input routing, pane splits, and session switching is a live `jackin load`. Do not repeat the eval here; it already ran in block 1.
 
 ### How `ensure_available` picks the binary
 
@@ -68,9 +71,9 @@ The canonical body shape, intent-split block list, and isolation-env-var decisio
 
 The host does **not** auto-rebuild `crates/jackin-container/` on source edits. To pick up local changes, the operator must re-run the build command — which is why the eval one-shot below is mandatory.
 
-### Required smoke-block command
+### Required `### Build jackin-container` block
 
-The block must lead with the canonical eval one-shot build invocation:
+Contents (verbatim from the PR template):
 
 ```sh
 eval "$(cargo run --bin build-jackin-container -- --export)"
@@ -80,15 +83,17 @@ eval "$(cargo run --bin build-jackin-container -- --export)"
 
 If the build step prints a `cargo zigbuild` error, the operator should paste the full `--debug` output (`cargo-zigbuild` and `zig` must be on `PATH`; install via `mise install zig cargo:cargo-zigbuild`).
 
-### Required launch command + verify list
+This block is positionally load-bearing: it must come **before** `### User smoke` and `### jackin-container smoke` (and before any other block that runs `jackin console` / `jackin load`). Without the eval first, every subsequent `jackin` invocation resolves the cached or downloaded binary instead of the freshly built one, so the PR's container-side changes are silently absent from every launch in the verify recipe.
 
-The launch command that follows must hit the changed surface — usually:
+### Required `### jackin-container smoke` launch + verify list
+
+The launch command must hit the changed surface — usually:
 
 ```sh
 cargo run --bin jackin -- load the-architect . --debug
 ```
 
-or `cargo run --bin jackin -- console --debug` for console-side changes.
+or `cargo run --bin jackin -- console --debug` for console-side changes. Do not repeat the eval here; the `### Build jackin-container` block above has already exported `JACKIN_CONTAINER_BIN`.
 
 Inside the container, the operator must verify:
 

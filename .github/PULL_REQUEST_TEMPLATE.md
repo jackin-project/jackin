@@ -120,25 +120,17 @@ cargo nextest run --all-features
 paths, etc. Skip this paragraph when the test set is small enough that the
 filter speaks for itself.>
 
-### User smoke
-
-```sh
-cargo run --bin jackin -- console --debug
-```
-
-<List the in-container commands or UI steps the operator should walk, with
-expected output where it disambiguates a pass/fail. Replace this block with the
-narrower path when the PR has one (e.g. `cargo run --bin jackin -- load
-<role> <target> --debug`).>
-
-### jackin-container smoke
+### Build jackin-container
 
 <Drop this whole subsection when the PR does NOT touch `crates/jackin-container/`.
 Include it whenever daemon.rs, client.rs, session.rs, terminal.rs, layout.rs,
 dialog.rs, statusbar.rs, input.rs, pid1.rs, or any other file under
-`crates/jackin-container/src/` is changed.>
-
-Build the binary and point `ensure_available` at it in one shot:
+`crates/jackin-container/src/` is changed. THIS BLOCK MUST COME BEFORE
+`### User smoke` AND `### jackin-container smoke`: every `jackin console` and
+`jackin load` invocation below consumes whichever binary `ensure_available`
+resolves first. Without the eval below, the launches use the cached or
+preview-release binary and silently do not exercise the PR's container-side
+changes.>
 
 ```sh
 eval "$(cargo run --bin build-jackin-container -- --export)"
@@ -152,9 +144,29 @@ exports silently break when the operator switches architectures. First build
 takes ~2-3 min via cargo-zigbuild; subsequent builds are incremental. Editing
 any file under `crates/jackin-container/src/` does NOT auto-invalidate the
 binary on disk — re-run the eval to rebuild. To purge the cache entirely:
-`rm -rf ~/.jackin/cache/jackin-container/`.
+`rm -rf ~/.jackin/cache/jackin-container/`. If the build prints a
+`cargo zigbuild` error, install the toolchain via
+`mise install zig cargo:cargo-zigbuild`.
 
-Then smoke:
+### User smoke
+
+```sh
+cargo run --bin jackin -- console --debug
+```
+
+<List the in-container commands or UI steps the operator should walk, with
+expected output where it disambiguates a pass/fail. Replace this block with the
+narrower path when the PR has one (e.g. `cargo run --bin jackin -- load
+<role> <target> --debug`). For PRs touching `crates/jackin-container/`, the
+`### Build jackin-container` block above MUST run first — otherwise the
+console launches with a stale binary.>
+
+### jackin-container smoke
+
+<Drop this whole subsection when the PR does NOT touch `crates/jackin-container/`.
+Include it whenever any file under `crates/jackin-container/src/` is changed.
+This block assumes the `### Build jackin-container` block above has already
+run — do not repeat the eval here.>
 
 ```sh
 cargo run --bin jackin -- load the-architect . --debug
