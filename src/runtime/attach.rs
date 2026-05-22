@@ -91,21 +91,12 @@ fn set_role_terminal_title(paths: &JackinPaths, container_name: &str) {
     crate::tui::set_terminal_title(&title);
 }
 
-pub(super) async fn reconnect_or_create_session(
-    paths: &JackinPaths,
-    container_name: &str,
-    docker: &impl DockerApi,
-    runner: &mut impl CommandRunner,
-) -> anyhow::Result<()> {
-    reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await
-}
-
-/// Same as `reconnect_or_create_session` but lets the caller direct
-/// the daemon's first-frame focus at a specific pane via the
-/// `--focus <session_id>` flag. The host console threads this through
-/// when the operator picks a pane out of the snapshot preview, so
-/// reattach lands inside the chosen pane instead of whichever leaf the
-/// daemon thinks is focused.
+/// Re-attach the operator's terminal to a running container's
+/// daemon. When `focus_session` is `Some(id)`, the resulting
+/// `docker exec` adds `--focus <id>` so the daemon honors the
+/// host-supplied pane focus on its first Hello frame; `None` falls
+/// through to "attach at whatever the daemon thinks is focused"
+/// (the default reattach contract).
 pub(super) async fn reconnect_or_create_session_with_focus(
     paths: &JackinPaths,
     container_name: &str,
@@ -284,6 +275,20 @@ pub async fn hardline_agent(
     docker: &impl crate::docker_client::DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    hardline_agent_with_focus(paths, container_name, None, docker, runner).await
+}
+
+/// Same as `hardline_agent` but threads a host-supplied pane focus id.
+///
+/// The console preview navigation calls this with the
+/// operator-selected pane so the reconnect lands inside that pane.
+pub async fn hardline_agent_with_focus(
+    paths: &JackinPaths,
+    container_name: &str,
+    focus_session: Option<u64>,
+    docker: &impl crate::docker_client::DockerApi,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
     // Reconcile keep_awake right before each `reconnect_or_create_session` call.
     // `reconnect_or_create_session` blocks on the tmux exec until the session ends,
     // so the post-hardline reconcile in `app::Command::Hardline` would fire
@@ -292,7 +297,14 @@ pub async fn hardline_agent(
     let attach_outcome = match docker.inspect_container_state(container_name).await {
         ContainerState::Running | ContainerState::Paused | ContainerState::Restarting => {
             super::caffeinate::reconcile(paths, docker, runner).await;
-            reconnect_or_create_session(paths, container_name, docker, runner).await
+            reconnect_or_create_session_with_focus(
+                paths,
+                container_name,
+                focus_session,
+                docker,
+                runner,
+            )
+            .await
         }
         ContainerState::NotFound => {
             if let Some(message) = missing_restore_message(paths, container_name)? {

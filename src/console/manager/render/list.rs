@@ -58,6 +58,13 @@ pub(super) fn render_list_body(
                 let sessions = state.sessions_for_instance(&entry.container_base);
                 let session_load_error = state.has_session_load_error(&entry.container_base);
                 let snapshot = state.snapshot_for_instance(&entry.container_base);
+                let selected_pane = if state.preview_focused {
+                    state
+                        .preview_selected_pane(&entry.container_base)
+                        .map(|(_, id)| id)
+                } else {
+                    None
+                };
                 render_instance_details_pane(
                     frame,
                     columns[1],
@@ -65,6 +72,8 @@ pub(super) fn render_list_body(
                     sessions,
                     session_load_error,
                     snapshot,
+                    selected_pane,
+                    state.preview_focused,
                 );
             }
         }
@@ -74,6 +83,13 @@ pub(super) fn render_list_body(
                 let sessions = state.sessions_for_instance(&entry.container_base);
                 let session_load_error = state.has_session_load_error(&entry.container_base);
                 let snapshot = state.snapshot_for_instance(&entry.container_base);
+                let selected_pane = if state.preview_focused {
+                    state
+                        .preview_selected_pane(&entry.container_base)
+                        .map(|(_, id)| id)
+                } else {
+                    None
+                };
                 render_instance_details_pane(
                     frame,
                     columns[1],
@@ -81,6 +97,8 @@ pub(super) fn render_list_body(
                     sessions,
                     session_load_error,
                     snapshot,
+                    selected_pane,
+                    state.preview_focused,
                 );
             }
         }
@@ -967,10 +985,17 @@ fn render_instance_details_pane(
     sessions: &[crate::instance::SessionRecord],
     session_load_error: bool,
     snapshot: Option<&crate::runtime::snapshot::InstanceSnapshot>,
+    selected_pane: Option<u64>,
+    preview_focused: bool,
 ) {
+    let border_color = if preview_focused {
+        PHOSPHOR_GREEN
+    } else {
+        PHOSPHOR_DARK
+    };
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(PHOSPHOR_DARK))
+        .border_style(Style::default().fg(border_color))
         .title(Span::styled(
             format!(" Instance: {} ", entry.instance_id),
             Style::default().fg(WHITE).add_modifier(Modifier::BOLD),
@@ -1009,22 +1034,29 @@ fn render_instance_details_pane(
                 ]));
                 for pane in &tab.panes {
                     let focused = pane.session_id == tab.focused_pane;
+                    let selected = selected_pane == Some(pane.session_id);
                     let marker = if focused { "●" } else { "○" };
+                    let cursor_prefix = if selected { "▶ " } else { "  " };
                     let agent_label = pane.agent.clone().unwrap_or_else(|| "shell".to_string());
                     let state_label = pane.state.label();
+                    let label_style = if selected {
+                        Style::default()
+                            .fg(WHITE)
+                            .bg(PHOSPHOR_DARK)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(PHOSPHOR_GREEN)
+                    };
                     lines.push(Line::from(vec![
                         Span::styled(
-                            format!("      {marker} "),
+                            format!("    {cursor_prefix}{marker} "),
                             Style::default().fg(if focused {
                                 PHOSPHOR_GREEN
                             } else {
                                 PHOSPHOR_DIM
                             }),
                         ),
-                        Span::styled(
-                            format!("{:<16}", pane.label),
-                            Style::default().fg(PHOSPHOR_GREEN),
-                        ),
+                        Span::styled(format!("{:<16}", pane.label), label_style),
                         Span::styled(
                             format!("  ({agent_label}) "),
                             Style::default().fg(PHOSPHOR_DIM),
@@ -1073,8 +1105,15 @@ fn render_instance_details_pane(
     }
 
     lines.push(Line::from(""));
+    let footer = if preview_focused {
+        "  ↑/↓ navigate panes  ·  Enter attach focused pane  ·  Esc back"
+    } else if snapshot.is_some() {
+        "  Tab into preview  ·  Enter reconnect  ·  N new session  ·  X shell  ·  T stop  ·  P purge"
+    } else {
+        "  Enter reconnect  ·  N new session  ·  X shell  ·  T stop  ·  P purge"
+    };
     lines.push(Line::from(Span::styled(
-        "  Enter reconnect  ·  N new session  ·  X shell  ·  T stop  ·  P purge",
+        footer,
         Style::default().fg(PHOSPHOR_DIM),
     )));
 

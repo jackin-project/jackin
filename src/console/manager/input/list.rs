@@ -24,6 +24,25 @@ pub(super) fn handle_list_key(
     _cwd: &std::path::Path,
     key: KeyEvent,
 ) -> anyhow::Result<InputOutcome> {
+    // Preview-pane navigation mode: the operator dropped focus into
+    // the right-hand snapshot tree via Tab / →. Keys are reinterpreted
+    // for preview navigation; nothing falls through to the workspace
+    // tree until they Esc / ← / BackTab out.
+    if state.preview_focused {
+        return Ok(handle_preview_focused_key(state, key));
+    }
+    // Tab / → on a running-instance row drops focus INTO the preview
+    // pane. Tab takes precedence over the existing right-arrow
+    // tree-expand because instance rows have no expand semantics; →
+    // on a non-instance row continues to the existing handler below.
+    if matches!(key.code, KeyCode::Tab | KeyCode::Right)
+        && let Some(container) =
+            selected_instance_container(state, ConsoleInstanceAction::Reconnect)
+        && !state.flattened_preview_panes(&container).is_empty()
+    {
+        state.preview_focused = true;
+        return Ok(InputOutcome::Continue);
+    }
     match key.code {
         KeyCode::Esc | KeyCode::Char('q' | 'Q') => Ok(InputOutcome::ExitJackin),
         // Left/Right arrows: tree expand/collapse.
@@ -285,6 +304,62 @@ fn confirm_purge_outcome(state: &mut ManagerState<'_>) -> InputOutcome {
     InputOutcome::Continue
 }
 
+/// Preview-pane navigation: the operator pressed a key while
+/// `state.preview_focused` is `true`.
+///
+/// ↑/↓ cycles the selected pane inside the snapshot, Esc / ← /
+/// `BackTab` pops focus back to the tree, Enter reattaches with
+/// `--focus <session_id>`. Any other key is a no-op so a stray Tab
+/// or text key cannot dump the operator back to the workspace tree
+/// mid-pick.
+fn handle_preview_focused_key(state: &mut ManagerState<'_>, key: KeyEvent) -> InputOutcome {
+    let Some(container) = selected_instance_container(state, ConsoleInstanceAction::Reconnect)
+    else {
+        // Selection slid off an instance row while preview was open
+        // (refresh purged the entry). Clear focus and let the next
+        // input fall through to the workspace tree.
+        state.preview_focused = false;
+        return InputOutcome::Continue;
+    };
+    let panes = state.flattened_preview_panes(&container);
+    if panes.is_empty() {
+        state.preview_focused = false;
+        return InputOutcome::Continue;
+    }
+    let len = panes.len();
+    let mut cursor = state
+        .preview_pane_cursor
+        .get(&container)
+        .copied()
+        .unwrap_or(0)
+        .min(len - 1);
+    match key.code {
+        KeyCode::Esc | KeyCode::BackTab | KeyCode::Left => {
+            state.preview_focused = false;
+            InputOutcome::Continue
+        }
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            cursor = cursor.saturating_sub(1);
+            state.preview_pane_cursor.insert(container, cursor);
+            InputOutcome::Continue
+        }
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            cursor = (cursor + 1).min(len - 1);
+            state.preview_pane_cursor.insert(container, cursor);
+            InputOutcome::Continue
+        }
+        KeyCode::Enter => {
+            let (_, session_id) = panes[cursor];
+            state.preview_focused = false;
+            InputOutcome::InstanceAction {
+                container,
+                action: ConsoleInstanceAction::ReconnectFocus(session_id),
+            }
+        }
+        _ => InputOutcome::Continue,
+    }
+}
+
 fn selected_instance_container(
     state: &ManagerState<'_>,
     action: ConsoleInstanceAction,
@@ -360,9 +435,13 @@ const fn instance_action_accepts_status(
 ) -> bool {
     use crate::instance::InstanceStatus as S;
     match (action, status) {
-        // Reconnect / Inspect: anything that still has on-disk state to read.
-        (ConsoleInstanceAction::Reconnect | ConsoleInstanceAction::Inspect, status) => match status
-        {
+        // Reconnect / ReconnectFocus / Inspect: anything that still has on-disk state to read.
+        (
+            ConsoleInstanceAction::Reconnect
+            | ConsoleInstanceAction::ReconnectFocus(_)
+            | ConsoleInstanceAction::Inspect,
+            status,
+        ) => match status {
             S::Active
             | S::Running
             | S::CleanExited

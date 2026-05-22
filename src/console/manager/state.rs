@@ -72,6 +72,7 @@ impl ManagerListRow {
 }
 
 #[derive(Debug)]
+#[allow(clippy::struct_excessive_bools)] // independent UI focus flags, not a config-style bag
 pub struct ManagerState<'a> {
     pub stage: ManagerStage<'a>,
     pub workspaces: Vec<WorkspaceSummary>,
@@ -148,6 +149,17 @@ pub struct ManagerState<'a> {
     /// the snapshot is unavailable (container not running, socket
     /// pre-dates the bind-mount, or the fetch failed).
     pub instance_snapshots: HashMap<String, crate::runtime::snapshot::InstanceSnapshot>,
+    /// `true` when the operator has dropped cursor focus into the
+    /// snapshot preview pane via Tab / →. While set, ↑/↓ navigates
+    /// `preview_pane_cursor` through the flattened pane list and
+    /// Enter attaches with the selected pane's focus id. Esc / ← /
+    /// `BackTab` pops focus back to the workspace tree.
+    pub preview_focused: bool,
+    /// Operator-selected pane index within the flattened pane list
+    /// of the focused instance, keyed by `container_base`. Persists
+    /// across re-entries to the preview pane so the operator's last
+    /// selection survives a `Esc → ↑/↓ → Tab` round-trip.
+    pub preview_pane_cursor: HashMap<String, usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1473,6 +1485,8 @@ impl ManagerState<'_> {
             instance_sessions: HashMap::new(),
             instance_session_errors: HashSet::new(),
             instance_snapshots: HashMap::new(),
+            preview_focused: false,
+            preview_pane_cursor: HashMap::new(),
         }
     }
 
@@ -1700,6 +1714,42 @@ impl ManagerState<'_> {
         container_base: &str,
     ) -> Option<&crate::runtime::snapshot::InstanceSnapshot> {
         self.instance_snapshots.get(container_base)
+    }
+
+    /// Flatten the per-instance snapshot's tab/pane tree into a
+    /// linear list the preview's ↑/↓ navigation can index into.
+    /// Each entry is `(tab_idx, session_id)`. Empty when no
+    /// snapshot exists for the container.
+    #[must_use]
+    pub fn flattened_preview_panes(&self, container_base: &str) -> Vec<(usize, u64)> {
+        let Some(snapshot) = self.instance_snapshots.get(container_base) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for (tab_idx, tab) in snapshot.tabs.iter().enumerate() {
+            for pane in &tab.panes {
+                out.push((tab_idx, pane.session_id));
+            }
+        }
+        out
+    }
+
+    /// Currently-selected pane in the preview, clamped against the
+    /// flattened list. Returns `None` when the snapshot is missing
+    /// or the list is empty.
+    #[must_use]
+    pub fn preview_selected_pane(&self, container_base: &str) -> Option<(usize, u64)> {
+        let panes = self.flattened_preview_panes(container_base);
+        if panes.is_empty() {
+            return None;
+        }
+        let cursor = self
+            .preview_pane_cursor
+            .get(container_base)
+            .copied()
+            .unwrap_or(0)
+            .min(panes.len() - 1);
+        panes.get(cursor).copied()
     }
 
     /// The [`WorkspaceSummary`] currently highlighted, or `None` when the

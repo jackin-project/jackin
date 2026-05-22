@@ -35,6 +35,11 @@ pub enum ConsoleOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConsoleInstanceAction {
     Reconnect,
+    /// Reconnect and ask the in-container daemon to focus this
+    /// pane (`session_id`) before forwarding output. Carries through
+    /// to `attach::reconnect_or_create_session_with_focus` which
+    /// appends the `--focus <id>` flag on the `docker exec`.
+    ReconnectFocus(u64),
     NewSession,
     NewSessionWithAgent(crate::agent::Agent),
     Shell,

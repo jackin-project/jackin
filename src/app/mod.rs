@@ -1797,6 +1797,25 @@ async fn handle_console_instance_action(
             runtime::reconcile_keep_awake(paths, docker, runner).await;
             result
         }
+        console::ConsoleInstanceAction::ReconnectFocus(session_id) => {
+            // Same as `Reconnect` but forwards a pane-focus id to the
+            // daemon. Only fires for running instances reachable via
+            // the bind-mounted socket — `restore_hardline_instance`
+            // (cold-restore path) does not surface the snapshot
+            // preview that produces a focus id, so we route directly
+            // through the focused hardline.
+            runtime::reconcile_keep_awake(paths, docker, runner).await;
+            let result = runtime::hardline_agent_with_focus(
+                paths,
+                &container,
+                Some(session_id),
+                docker,
+                runner,
+            )
+            .await;
+            runtime::reconcile_keep_awake(paths, docker, runner).await;
+            result
+        }
         console::ConsoleInstanceAction::NewSession
         | console::ConsoleInstanceAction::NewSessionWithAgent(_) => {
             let manifest = instance::InstanceManifest::read(&paths.data_dir.join(&container))
