@@ -1528,6 +1528,12 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
 
     // Inbound: attach handler tasks → main loop.
     let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<ClientFrame>();
+    // Inbound: spawned handshake tasks → main loop. The spawned task
+    // owns the slow `read_exact` for the first byte + Hello frame so
+    // a silent client cannot stall the main `select!`. Validated
+    // handshakes ride this channel back to the main loop, which then
+    // applies the take-over + spawns the persistent attach task.
+    let (handshake_tx, mut handshake_rx) = mpsc::unbounded_channel::<AttachHandshake>();
 
     // Resolve the operator's escape-time once at startup. Reading
     // the env var inside the event loop was a per-iteration syscall
@@ -1581,36 +1587,27 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 return Ok(());
             }
 
-            // New socket connection.
-            Some((mut stream, client_permit)) = new_clients.recv() => {
-                let mut first = [0u8; 1];
-                if let Err(e) = stream.read_exact(&mut first).await {
-                    crate::clog!("attach: handshake read_exact(first byte) failed: {e}");
-                    continue;
-                }
-                if first[0] == 0x00 {
-                    // Control channel — one-shot length-prefixed JSON.
-                    socket::handle_control_request(stream, first[0], mux.session_infos()).await;
-                    continue;
-                }
-                // Attach channel — first byte is the first frame's tag.
-                let initial_frame = match read_client_frame(&mut stream, first[0]).await {
-                    Ok(Some(frame)) => frame,
-                    Ok(None) => {
-                        crate::clog!("attach: handshake EOF before initial frame");
-                        continue;
-                    }
-                    Err(e) => {
-                        crate::clog!("attach: handshake frame decode failed: {e}");
-                        continue;
-                    }
-                };
-                let ClientFrame::Hello { rows, cols, spawn_agent } = initial_frame else {
-                    crate::clog!(
-                        "attach: rejected client whose first frame was not Hello: {initial_frame:?}"
-                    );
-                    continue;
-                };
+            // New socket connection — spawn the handshake off the
+            // main loop so a client that connects but never sends the
+            // first byte does not stall PTY processing, ticks, or
+            // signal handling. The spawned task either handles the
+            // control channel inline (one-shot reply, closes the
+            // socket) or forwards a validated attach Hello back via
+            // `handshake_tx`.
+            Some((stream, client_permit)) = new_clients.recv() => {
+                let handshake_tx = handshake_tx.clone();
+                let sessions_snapshot = mux.session_infos();
+                tokio::spawn(perform_handshake(
+                    stream,
+                    client_permit,
+                    handshake_tx,
+                    sessions_snapshot,
+                ));
+            }
+
+            // Validated attach handshake from the spawned handshake task.
+            Some(ready) = handshake_rx.recv() => {
+                let AttachHandshake { stream, rows, cols, spawn_agent, client_permit } = ready;
                 mux.resize(rows, cols);
                 // Honor a spawn-agent intent from `jackin-container new
                 // <agent>`. Spawn failures get clog'd at error level so
@@ -1907,6 +1904,78 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
 /// frame actually leaves the socket before PID 1 exits. Called when
 /// the daemon decides to tear the container down (last session died,
 /// last pane killed, or SIGTERM arrived).
+/// A validated attach handshake produced by `perform_handshake`. The
+/// main loop applies these — `client_permit` is kept alive until the
+/// spawned persistent attach task drops it.
+struct AttachHandshake {
+    stream: UnixStream,
+    rows: u16,
+    cols: u16,
+    spawn_agent: Option<String>,
+    client_permit: tokio::sync::OwnedSemaphorePermit,
+}
+
+/// Per-connection handshake task. Reads the first byte, routes
+/// control-channel requests inline (one-shot reply, closes the
+/// socket), and forwards validated attach Hellos back to the main
+/// loop via `handshake_tx`. Owning the slow `read_exact` here keeps a
+/// silent or slow client from stalling the daemon's main `select!`.
+async fn perform_handshake(
+    mut stream: UnixStream,
+    client_permit: tokio::sync::OwnedSemaphorePermit,
+    handshake_tx: mpsc::UnboundedSender<AttachHandshake>,
+    sessions_snapshot: Vec<crate::protocol::control::SessionInfo>,
+) {
+    let mut first = [0u8; 1];
+    if let Err(e) = stream.read_exact(&mut first).await {
+        crate::clog!("attach: handshake read_exact(first byte) failed: {e}");
+        drop(client_permit);
+        return;
+    }
+    if first[0] == 0x00 {
+        // Control channel — one-shot length-prefixed JSON. The
+        // sessions snapshot is captured at accept time in the main
+        // loop; mildly stale (microseconds) for the host CLI's
+        // informational `status` query.
+        socket::handle_control_request(stream, first[0], sessions_snapshot).await;
+        drop(client_permit);
+        return;
+    }
+    let initial_frame = match read_client_frame(&mut stream, first[0]).await {
+        Ok(Some(frame)) => frame,
+        Ok(None) => {
+            crate::clog!("attach: handshake EOF before initial frame");
+            drop(client_permit);
+            return;
+        }
+        Err(e) => {
+            crate::clog!("attach: handshake frame decode failed: {e}");
+            drop(client_permit);
+            return;
+        }
+    };
+    let ClientFrame::Hello {
+        rows,
+        cols,
+        spawn_agent,
+    } = initial_frame
+    else {
+        crate::clog!("attach: rejected client whose first frame was not Hello: {initial_frame:?}");
+        drop(client_permit);
+        return;
+    };
+    let handshake = AttachHandshake {
+        stream,
+        rows,
+        cols,
+        spawn_agent,
+        client_permit,
+    };
+    if handshake_tx.send(handshake).is_err() {
+        crate::clog!("attach: handshake channel closed; daemon shutting down");
+    }
+}
+
 async fn drain_and_exit(mux: &mut Multiplexer) {
     detach_client(mux);
     tokio::time::sleep(Duration::from_millis(200)).await;
