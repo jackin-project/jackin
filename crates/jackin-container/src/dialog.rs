@@ -163,6 +163,24 @@ const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
 ];
 
 impl Dialog {
+    /// Construct an AgentPicker with `selected` pre-initialised to
+    /// the first selectable row of the unfiltered layout. Saves every
+    /// caller from having to know about the leading "agents" section
+    /// row that pushes the first selectable index off zero — and
+    /// keeps the "no agents installed" case working (the layout
+    /// degenerates to `[Section("shells"), Shell]`, first selectable
+    /// is still `1`).
+    pub fn new_agent_picker(agents: Vec<String>, intent: PickerIntent) -> Self {
+        let filter = String::new();
+        let visible = picker_filtered_rows(&agents, &filter);
+        Self::AgentPicker {
+            agents,
+            selected: first_selectable_idx(&visible),
+            intent,
+            filter,
+        }
+    }
+
     /// Handle a raw key byte and return the resulting action.
     pub fn handle_key(&mut self, key: &[u8]) -> DialogAction {
         // Text-input dialog has its own dismissal / editing rules and
@@ -206,10 +224,20 @@ impl Dialog {
         }
         if is_arrow_up(key) {
             return match self {
-                Self::CommandPalette { selected, .. } | Self::AgentPicker { selected, .. } => {
+                Self::CommandPalette { selected, .. } => {
                     if *selected > 0 {
                         *selected -= 1;
                     }
+                    DialogAction::Redraw
+                }
+                Self::AgentPicker {
+                    agents,
+                    selected,
+                    filter,
+                    ..
+                } => {
+                    let visible = picker_filtered_rows(agents, filter);
+                    *selected = step_selectable(&visible, *selected, false);
                     DialogAction::Redraw
                 }
                 Self::RenameTab { .. } | Self::ContainerInfo { .. } => DialogAction::Redraw,
@@ -231,9 +259,7 @@ impl Dialog {
                     ..
                 } => {
                     let visible = picker_filtered_rows(agents, filter);
-                    if *selected + 1 < visible.len() {
-                        *selected += 1;
-                    }
+                    *selected = step_selectable(&visible, *selected, true);
                     DialogAction::Redraw
                 }
                 Self::RenameTab { .. } | Self::ContainerInfo { .. } => DialogAction::Redraw,
@@ -246,10 +272,14 @@ impl Dialog {
                     *selected = 0;
                 }
                 Self::AgentPicker {
-                    filter, selected, ..
+                    agents,
+                    filter,
+                    selected,
+                    ..
                 } => {
                     filter.pop();
-                    *selected = 0;
+                    let visible = picker_filtered_rows(agents, filter);
+                    *selected = first_selectable_idx(&visible);
                 }
                 _ => {}
             }
@@ -280,7 +310,13 @@ impl Dialog {
                             agent: None,
                             intent: *intent,
                         },
-                        None => DialogAction::Redraw,
+                        // Section row or out-of-bounds index — no
+                        // action. The render path keeps `selected`
+                        // on a selectable row, but a stale value
+                        // (e.g. from a filter pass that emptied the
+                        // list) falls through to Redraw rather than
+                        // panic.
+                        Some(PickerRow::Section(_)) | None => DialogAction::Redraw,
                     }
                 }
                 _ => DialogAction::Redraw,
@@ -298,10 +334,14 @@ impl Dialog {
                     *selected = 0;
                 }
                 Self::AgentPicker {
-                    filter, selected, ..
+                    agents,
+                    filter,
+                    selected,
+                    ..
                 } => {
                     filter.push(c);
-                    *selected = 0;
+                    let visible = picker_filtered_rows(agents, filter);
+                    *selected = first_selectable_idx(&visible);
                 }
                 _ => {}
             }
@@ -395,16 +435,22 @@ impl Dialog {
                 let Some(&picker_row) = visible.get(visible_idx) else {
                     return DialogAction::Consume;
                 };
-                *selected = visible_idx;
                 match picker_row {
-                    PickerRow::Agent(idx) => DialogAction::SpawnAgent {
-                        agent: Some(agents[idx].clone()),
-                        intent: *intent,
-                    },
-                    PickerRow::Shell => DialogAction::SpawnAgent {
-                        agent: None,
-                        intent: *intent,
-                    },
+                    PickerRow::Section(_) => DialogAction::Consume,
+                    PickerRow::Agent(idx) => {
+                        *selected = visible_idx;
+                        DialogAction::SpawnAgent {
+                            agent: Some(agents[idx].clone()),
+                            intent: *intent,
+                        }
+                    }
+                    PickerRow::Shell => {
+                        *selected = visible_idx;
+                        DialogAction::SpawnAgent {
+                            agent: None,
+                            intent: *intent,
+                        }
+                    }
                 }
             }
             // RenameTab and ContainerInfo clicks were already handled
@@ -641,34 +687,105 @@ fn palette_filtered_indices(filter: &str) -> Vec<usize> {
         .collect()
 }
 
-/// Rendered rows in an `AgentPicker` after filtering. `Agent(idx)`
-/// indexes into the picker's `agents` Vec; `Shell` is the always-
-/// present last entry whose label is the literal string `"Shell"`.
+/// One renderable row inside an `AgentPicker` after filtering. The
+/// `Section` variant carries a non-selectable label that groups the
+/// selectable rows beneath it ("agents" before agent rows, "shells"
+/// before the shell row) so the operator visually distinguishes the
+/// two kinds of session jackin can spawn. Future shell variants
+/// (zsh, bash, fish) will land under the same "shells" section.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PickerRow {
+    Section(&'static str),
     Agent(usize),
     Shell,
 }
 
-/// Filtered list of picker rows for the current input. Empty filter
-/// shows every agent + Shell. Each row passes the filter when its
+impl PickerRow {
+    fn is_selectable(self) -> bool {
+        !matches!(self, Self::Section(_))
+    }
+}
+
+/// Filtered + grouped row list for the current input. Two groups —
+/// "agents" first, "shells" last — separated by section labels.
+/// A group whose items have all been filtered out is dropped entirely
+/// (label included) so the dialog never paints a "shells" header
+/// with no items underneath it. Each item passes the filter when its
 /// display label (via `jackin_tui::agent_display_name` for agents,
 /// the literal `"Shell"` for the shell row) contains the filter as a
-/// case-insensitive substring. A shell-only filter like `s` keeps
-/// Shell visible alongside whatever agent labels also match.
+/// case-insensitive substring.
 fn picker_filtered_rows(agents: &[String], filter: &str) -> Vec<PickerRow> {
     let needle = filter.to_ascii_lowercase();
-    let mut out = Vec::with_capacity(agents.len() + 1);
-    for (idx, slug) in agents.iter().enumerate() {
-        let label = jackin_tui::agent_display_name(slug.as_str()).unwrap_or(slug.as_str());
-        if needle.is_empty() || label.to_ascii_lowercase().contains(&needle) {
-            out.push(PickerRow::Agent(idx));
-        }
+    let agent_matches: Vec<PickerRow> = agents
+        .iter()
+        .enumerate()
+        .filter(|(_, slug)| {
+            let label = jackin_tui::agent_display_name(slug.as_str()).unwrap_or(slug.as_str());
+            needle.is_empty() || label.to_ascii_lowercase().contains(&needle)
+        })
+        .map(|(idx, _)| PickerRow::Agent(idx))
+        .collect();
+    let shell_match = needle.is_empty() || "shell".contains(&needle);
+
+    let mut out = Vec::with_capacity(agent_matches.len() + 3);
+    if !agent_matches.is_empty() {
+        out.push(PickerRow::Section("agents"));
+        out.extend(agent_matches);
     }
-    if needle.is_empty() || "shell".contains(&needle) {
+    if shell_match {
+        out.push(PickerRow::Section("shells"));
         out.push(PickerRow::Shell);
     }
     out
+}
+
+/// First selectable index in `rows`, or `0` when the list is empty
+/// (the caller never indexes into an empty list because the render
+/// path paints nothing in that state).
+fn first_selectable_idx(rows: &[PickerRow]) -> usize {
+    rows.iter().position(|r| r.is_selectable()).unwrap_or(0)
+}
+
+/// Advance `from` to the next selectable index in `from..rows.len()`
+/// when `forward = true`, or to the previous selectable in `0..from`
+/// when `false`. Clamps at the bounds (no wrap). Section rows are
+/// skipped transparently so an arrow keypress moves from one item
+/// to the next without parking on a label.
+fn step_selectable(rows: &[PickerRow], from: usize, forward: bool) -> usize {
+    if rows.is_empty() {
+        return 0;
+    }
+    let last = rows.len() - 1;
+    let mut idx = from.min(last);
+    loop {
+        let next = if forward {
+            if idx >= last {
+                break;
+            }
+            idx + 1
+        } else if idx == 0 {
+            break;
+        } else {
+            idx - 1
+        };
+        idx = next;
+        if rows[idx].is_selectable() {
+            return idx;
+        }
+    }
+    // Reached an edge while skipping sections. Fall back to whatever
+    // the nearest selectable in the opposite direction is so the
+    // selection never lands on a label.
+    if rows[idx].is_selectable() {
+        idx
+    } else if forward {
+        // Walk back to find a selectable.
+        (0..idx).rev().find(|&i| rows[i].is_selectable()).unwrap_or(idx)
+    } else {
+        (idx + 1..rows.len())
+            .find(|&i| rows[i].is_selectable())
+            .unwrap_or(idx)
+    }
 }
 
 /// One footer-hint span. Mirrors the console TUI's `FooterItem` model
@@ -810,29 +927,58 @@ fn render_agent_picker(
     // Items occupy the rows below the filter + separator pad
     // (`start_row + 4` onward). Each row maps back to PickerRow so
     // an Agent / Shell distinction stays explicit even after
-    // filtering rearranges the list.
+    // filtering rearranges the list. Section rows render as
+    // non-selectable group labels ("── agents ──", "── shells ──").
     let interior_items = height.saturating_sub(6) as usize;
     let visible = picker_filtered_rows(agents, filter);
     let drawn = visible.len().min(interior_items);
     if drawn == 0 {
-        render_no_matches_row(buf, start_row + 4, start_col + 1, width);
         return;
     }
     for (i, row) in visible.iter().enumerate().take(drawn) {
-        let label = match row {
-            PickerRow::Agent(idx) => jackin_tui::agent_display_name(agents[*idx].as_str())
-                .unwrap_or(agents[*idx].as_str()),
-            PickerRow::Shell => "Shell",
-        };
-        render_row(
-            buf,
-            start_row + 4 + i as u16,
-            start_col + 1,
-            width,
-            label,
-            i == selected,
-        );
+        let target_row = start_row + 4 + i as u16;
+        match row {
+            PickerRow::Section(label) => {
+                render_separator(buf, target_row, start_col + 1, width, label);
+            }
+            PickerRow::Agent(idx) => {
+                let label = jackin_tui::agent_display_name(agents[*idx].as_str())
+                    .unwrap_or(agents[*idx].as_str());
+                render_row(buf, target_row, start_col + 1, width, label, i == selected);
+            }
+            PickerRow::Shell => {
+                render_row(buf, target_row, start_col + 1, width, "Shell", i == selected);
+            }
+        }
     }
+}
+
+/// Non-selectable group divider — `── agents ──` / `── shells ──` in
+/// dim phosphor-green with PHOSPHOR_DARK dashes. Sets the operator's
+/// expectation that rows above and below the divider are different
+/// *kinds* of session jackin can spawn, not just neighbouring items
+/// in a flat list. Future shell variants (zsh, bash, fish) will sit
+/// under the "shells" divider without restructuring the renderer.
+fn render_separator(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, label: &str) {
+    move_to(buf, row, col);
+    buf.extend_from_slice(BG_DARK.as_bytes());
+    buf.extend_from_slice(FG_BORDER.as_bytes());
+    let interior = (width as usize).saturating_sub(2);
+    let label_with_pad = format!(" {label} ");
+    let label_cols = label_with_pad.chars().count();
+    let total_dashes = interior.saturating_sub(label_cols);
+    let left_dashes = total_dashes / 2;
+    let right_dashes = total_dashes - left_dashes;
+    for _ in 0..left_dashes {
+        buf.extend_from_slice("─".as_bytes());
+    }
+    buf.extend_from_slice(FG_DIM.as_bytes());
+    buf.extend_from_slice(label_with_pad.as_bytes());
+    buf.extend_from_slice(FG_BORDER.as_bytes());
+    for _ in 0..right_dashes {
+        buf.extend_from_slice("─".as_bytes());
+    }
+    buf.extend_from_slice(RESET.as_bytes());
 }
 
 /// Filter input row. Visual contract mirrors the host console's
@@ -1139,12 +1285,14 @@ mod tests {
     use super::*;
 
     fn picker(agents: Vec<&str>) -> Dialog {
-        Dialog::AgentPicker {
-            agents: agents.into_iter().map(String::from).collect(),
-            selected: 0,
-            intent: PickerIntent::NewTab,
-            filter: String::new(),
-        }
+        // Mirror the daemon's construction site: `Dialog::new_agent_picker`
+        // computes the initial `selected` past the leading `"agents"`
+        // section row. Tests that explicitly want a different starting
+        // selection construct `Dialog::AgentPicker { … }` inline.
+        Dialog::new_agent_picker(
+            agents.into_iter().map(String::from).collect(),
+            PickerIntent::NewTab,
+        )
     }
 
     #[test]
@@ -1205,16 +1353,51 @@ mod tests {
 
     #[test]
     fn agent_picker_shell_slot_emits_none_agent() {
-        // The Shell entry sits past the last named agent, so navigating
-        // down past `agents.len() - 1` reaches it; Enter emits
-        // `agent = None` which the daemon dispatches as a shell spawn.
+        // Layout for `picker(vec!["claude"])` is:
+        //   0: Section("agents")    — non-selectable
+        //   1: Agent(claude)        ← initial selected (skipped past Section)
+        //   2: Section("shells")    — non-selectable
+        //   3: Shell                ← Enter emits agent=None
+        // Arrow Down from index 1 must skip the Section at index 2 and
+        // land directly on the Shell row at index 3.
         let mut d = picker(vec!["claude"]);
-        // selected = 0 (claude), advance to 1 (shell row)
         d.handle_key(b"\x1b[B");
         match d.handle_key(b"\r") {
             DialogAction::SpawnAgent { agent, .. } => assert!(agent.is_none()),
             other => panic!("expected SpawnAgent, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn picker_arrow_down_skips_section_label() {
+        // Direct check: from the last-agent index, Down lands on the
+        // first selectable past the "shells" section header, not on
+        // the header itself.
+        let mut d = picker(vec!["claude", "codex"]);
+        // Walk past both agents (selected 1 → 2 → expected 4 = Shell).
+        d.handle_key(b"\x1b[B"); // 1 → 2
+        d.handle_key(b"\x1b[B"); // 2 → 4 (skips Section at 3)
+        let Dialog::AgentPicker { selected, .. } = &d else {
+            unreachable!()
+        };
+        assert_eq!(*selected, 4, "Down must skip the shells section label");
+    }
+
+    #[test]
+    fn picker_enter_on_section_label_is_noop() {
+        // Defensive: an out-of-band selected value pointing at a
+        // Section row must not synthesise a SpawnAgent. Real flows
+        // can't get there (arrows step past sections, click on a
+        // section returns Consume), but a stale `selected` after a
+        // filter pass that left only sections behind must degrade
+        // to Redraw.
+        let mut d = Dialog::AgentPicker {
+            agents: vec!["claude".to_string()],
+            selected: 0, // points at Section("agents")
+            intent: PickerIntent::NewTab,
+            filter: String::new(),
+        };
+        assert_eq!(d.handle_key(b"\r"), DialogAction::Redraw);
     }
 
     #[test]
@@ -1295,7 +1478,12 @@ mod tests {
     }
 
     #[test]
-    fn picker_typing_sh_narrows_to_shell_only() {
+    fn picker_typing_sh_narrows_to_shells_section_plus_shell_row() {
+        // Filter "sh" excludes every agent label but keeps the literal
+        // "shell" word — so the rendered list collapses to just the
+        // shells section header + the Shell row. The shells header
+        // stays visible so the operator's eye reads "this is a Shell,
+        // not a stray agent."
         let mut d = picker(vec!["claude", "codex", "kimi"]);
         for &c in b"sh" {
             d.handle_key(&[c]);
@@ -1307,7 +1495,7 @@ mod tests {
             unreachable!()
         };
         let visible = picker_filtered_rows(agents, filter);
-        assert_eq!(visible, vec![PickerRow::Shell]);
+        assert_eq!(visible, vec![PickerRow::Section("shells"), PickerRow::Shell]);
     }
 
     #[test]

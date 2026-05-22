@@ -1082,12 +1082,7 @@ impl Multiplexer {
         match cmd {
             PrefixCommand::NewTab => {
                 let agents = self.available_agents.clone();
-                self.dialog = Some(Dialog::AgentPicker {
-                    agents,
-                    selected: 0,
-                    intent: PickerIntent::NewTab,
-                    filter: String::new(),
-                });
+                self.dialog = Some(Dialog::new_agent_picker(agents, PickerIntent::NewTab));
             }
             PrefixCommand::NextTab => self.next_tab(),
             PrefixCommand::PrevTab => self.prev_tab(),
@@ -1341,21 +1336,17 @@ impl Multiplexer {
         match cmd {
             PaletteCommand::SplitHorizontal => {
                 let agents = self.available_agents.clone();
-                self.dialog = Some(Dialog::AgentPicker {
+                self.dialog = Some(Dialog::new_agent_picker(
                     agents,
-                    selected: 0,
-                    intent: PickerIntent::SplitHorizontal,
-                    filter: String::new(),
-                });
+                    PickerIntent::SplitHorizontal,
+                ));
             }
             PaletteCommand::SplitVertical => {
                 let agents = self.available_agents.clone();
-                self.dialog = Some(Dialog::AgentPicker {
+                self.dialog = Some(Dialog::new_agent_picker(
                     agents,
-                    selected: 0,
-                    intent: PickerIntent::SplitVertical,
-                    filter: String::new(),
-                });
+                    PickerIntent::SplitVertical,
+                ));
             }
             PaletteCommand::NewTab => {
                 // Always show the agent picker — even when the role
@@ -1364,12 +1355,7 @@ impl Multiplexer {
                 // jumping straight into the agent would surprise an
                 // operator who picked "New tab" to open a shell.
                 let agents = self.available_agents.clone();
-                self.dialog = Some(Dialog::AgentPicker {
-                    agents,
-                    selected: 0,
-                    intent: PickerIntent::NewTab,
-                    filter: String::new(),
-                });
+                self.dialog = Some(Dialog::new_agent_picker(agents, PickerIntent::NewTab));
             }
             PaletteCommand::NextTab => self.next_tab(),
             PaletteCommand::PrevTab => self.prev_tab(),
