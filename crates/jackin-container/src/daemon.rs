@@ -236,6 +236,11 @@ impl Multiplexer {
             return;
         }
         let tab_ids = self.tabs[self.active_tab].tree.all_ids();
+        crate::clog!(
+            "action: close_focused_tab tab_idx={} pane_count={}",
+            self.active_tab,
+            tab_ids.len()
+        );
         for id in tab_ids {
             self.sessions.remove(&id);
         }
@@ -260,6 +265,7 @@ impl Multiplexer {
     /// before they opened that tab, not to the next-tab-to-the-right
     /// (which feels like a stack push).
     fn remove_exited_session(&mut self, session_id: u64) {
+        crate::clog!("action: remove_exited_session id={session_id}");
         // Any in-flight selection / drag-resize was anchored to a
         // pane that may be about to disappear (or whose siblings
         // are about to reflow). Drop both gestures so the next motion
@@ -330,6 +336,13 @@ impl Multiplexer {
     /// and route the result here, so adding a new variant means
     /// updating one match arm instead of two.
     fn apply_dialog_action(&mut self, action: DialogAction) -> Vec<u8> {
+        // Action breadcrumb: every dialog confirm/cancel/redraw flows
+        // through here. Redraw fires on every arrow key inside a
+        // dialog, so it would dominate the log if left in — strip it
+        // before logging to keep the trace useful.
+        if !matches!(action, DialogAction::Redraw) {
+            crate::clog!("action: dialog={action:?}");
+        }
         match action {
             DialogAction::Dismiss => {
                 self.dialog = None;
@@ -412,6 +425,11 @@ impl Multiplexer {
         // term_cols` guess and the agent draws its bottom rows
         // past the pane's bottom border.
         self.resize_panes();
+        crate::clog!(
+            "action: spawn_session id={id} agent={:?} label={label} tab_idx={}",
+            agent,
+            self.active_tab
+        );
         Ok(id)
     }
 
@@ -454,6 +472,7 @@ impl Multiplexer {
             ),
             None => ("Shell".to_string(), build_shell_command()),
         };
+        let agent_for_log = agent_slug.clone();
         let (session, new_id) = Session::spawn(
             &label,
             agent_slug,
@@ -471,6 +490,10 @@ impl Multiplexer {
         }
         tab.focused_id = new_id;
         self.resize_panes();
+        crate::clog!(
+            "action: split id={new_id} from={from_id} dir={} agent={agent_for_log:?} label={label}",
+            if horizontal { "horizontal" } else { "vertical" },
+        );
         Ok(())
     }
 
@@ -495,6 +518,11 @@ impl Multiplexer {
         let id = tab.focused_id;
         let all = tab.tree.all_ids();
         let next_focus = all.iter().find(|&&sid| sid != id).copied();
+        crate::clog!(
+            "action: close_focused_pane id={id} tab_idx={} siblings_remaining={}",
+            self.active_tab,
+            next_focus.is_some()
+        );
         tab.tree.remove(id);
         self.sessions.remove(&id);
         // Mirror remove_exited_session: drop the zoomed reference when
@@ -516,8 +544,13 @@ impl Multiplexer {
 
     fn toggle_zoom(&mut self) {
         let focused = self.tabs.get(self.active_tab).map(|t| t.focused_id);
-        self.zoomed = if self.zoomed.is_some() { None } else { focused };
+        let was_zoomed = self.zoomed.is_some();
+        self.zoomed = if was_zoomed { None } else { focused };
         self.resize_panes();
+        crate::clog!(
+            "action: toggle_zoom from={was_zoomed} to={} focused={focused:?}",
+            self.zoomed.is_some()
+        );
     }
 
     fn resize_panes(&mut self) {
@@ -956,6 +989,11 @@ impl Multiplexer {
     }
 
     fn handle_prefix_command(&mut self, cmd: PrefixCommand) -> Option<Vec<u8>> {
+        // Action breadcrumb: every prefix-key chord lands here, so one
+        // line per dispatch is enough to reconstruct what the operator
+        // pressed when triaging a bug report. The Debug formatter
+        // includes any payload (`JumpTab(i)`, `MoveFocus(dir)`).
+        crate::clog!("action: prefix={cmd:?}");
         match cmd {
             PrefixCommand::NewTab => {
                 let agents = self.available_agents.clone();

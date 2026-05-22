@@ -364,6 +364,7 @@ pub async fn run(cli: Cli) -> Result<()> {
             runtime::reconcile_keep_awake(&paths, &docker, &mut runner).await;
             result
         }
+        Command::Logs(args) => runtime::logs::run(&paths, args),
         Command::Config(config_cmd) => match config_cmd {
             cli::ConfigCommand::Mount(mount_cmd) => match mount_cmd {
                 cli::MountCommand::Add {

@@ -1,0 +1,264 @@
+//! `jackin logs` implementation.
+//!
+//! Resolves the multiplexer log file for one or every active container,
+//! and either lists them, prints a tail, follows the file, or copies a
+//! tail into a shareable bundle.
+//!
+//! Path layout mirrors the host-side mount declared in
+//! `runtime::launch::agent_mounts`: `<data_dir>/<container_base>/state`
+//! is bind-mounted into the container at `/jackin/state`, and the
+//! multiplexer writes `multiplexer.log` directly into it.
+
+use std::collections::VecDeque;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Seek, SeekFrom, Write as _};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use anyhow::{Context, Result, anyhow, bail};
+
+use crate::cli::LogsArgs;
+use crate::instance::InstanceManifest;
+use crate::paths::JackinPaths;
+
+const LOG_FILE_NAME: &str = "multiplexer.log";
+
+pub fn run(paths: &JackinPaths, args: LogsArgs) -> Result<()> {
+    let LogsArgs {
+        selector,
+        path,
+        tail,
+        follow,
+        bundle,
+    } = args;
+
+    match selector {
+        None => list_all(paths),
+        Some(sel) => {
+            let entry = resolve(paths, &sel)?;
+            if path {
+                println!("{}", entry.log_path.display());
+                Ok(())
+            } else if follow {
+                follow_file(&entry.log_path)
+            } else if let Some(dest) = bundle {
+                write_bundle(&entry, tail, &dest)
+            } else {
+                print_tail(&entry.log_path, tail)
+            }
+        }
+    }
+}
+
+struct LogEntry {
+    container_base: String,
+    role_display_name: String,
+    workspace_label: String,
+    status: String,
+    log_path: PathBuf,
+}
+
+impl LogEntry {
+    fn from_manifest(manifest: InstanceManifest, log_path: PathBuf) -> Self {
+        Self {
+            container_base: manifest.container_base,
+            role_display_name: manifest.role_display_name,
+            workspace_label: manifest.workspace_label,
+            status: format!("{:?}", manifest.status),
+            log_path,
+        }
+    }
+}
+
+fn list_all(paths: &JackinPaths) -> Result<()> {
+    let entries = enumerate(paths)?;
+    if entries.is_empty() {
+        println!("No multiplexer logs found under {}.", paths.data_dir.display());
+        println!("(Logs appear after the first `jackin load` or `jackin console` attach.)");
+        return Ok(());
+    }
+    println!(
+        "{:<40} {:<20} {:<14} PATH",
+        "CONTAINER", "ROLE", "STATUS"
+    );
+    for entry in entries {
+        println!(
+            "{:<40} {:<20} {:<14} {}",
+            truncate(&entry.container_base, 40),
+            truncate(&entry.role_display_name, 20),
+            truncate(&entry.status, 14),
+            entry.log_path.display()
+        );
+    }
+    Ok(())
+}
+
+fn enumerate(paths: &JackinPaths) -> Result<Vec<LogEntry>> {
+    let mut out = Vec::new();
+    if !paths.data_dir.exists() {
+        return Ok(out);
+    }
+    for dir_entry in std::fs::read_dir(&paths.data_dir)
+        .with_context(|| format!("reading {}", paths.data_dir.display()))?
+    {
+        let dir_entry = dir_entry?;
+        if !dir_entry.file_type()?.is_dir() {
+            continue;
+        }
+        let state_dir = dir_entry.path();
+        let log_path = state_dir.join("state").join(LOG_FILE_NAME);
+        if !log_path.exists() {
+            continue;
+        }
+        // `read_optional` returns Err only on parse failure; missing
+        // manifest is None. Skip parse-failed dirs but log them so an
+        // operator with a corrupted manifest sees why a container they
+        // expect is absent from the list.
+        let manifest = match InstanceManifest::read_optional(&state_dir) {
+            Ok(Some(m)) => m,
+            Ok(None) => continue,
+            Err(e) => {
+                eprintln!(
+                    "warning: skipping {} (manifest parse failed: {e:#})",
+                    state_dir.display()
+                );
+                continue;
+            }
+        };
+        out.push(LogEntry::from_manifest(manifest, log_path));
+    }
+    // Most recently updated first — matches the operator's mental model
+    // ("the container I was just in") for both list and selection.
+    out.sort_by(|a, b| b.container_base.cmp(&a.container_base));
+    Ok(out)
+}
+
+fn resolve(paths: &JackinPaths, selector: &str) -> Result<LogEntry> {
+    let entries = enumerate(paths)?;
+    if entries.is_empty() {
+        bail!(
+            "no multiplexer logs found under {}. Launch a container with \
+             `jackin load` or `jackin console` first.",
+            paths.data_dir.display()
+        );
+    }
+    let matches: Vec<LogEntry> = entries
+        .into_iter()
+        .filter(|e| {
+            e.container_base == selector
+                || e.container_base.contains(selector)
+                || e.role_display_name.eq_ignore_ascii_case(selector)
+                || e.workspace_label.eq_ignore_ascii_case(selector)
+        })
+        .collect();
+    match matches.len() {
+        0 => Err(anyhow!(
+            "no container matched {selector:?}. Run `jackin logs` (no args) to list candidates."
+        )),
+        1 => Ok(matches.into_iter().next().expect("len == 1")),
+        n => {
+            let names: Vec<String> = matches.iter().map(|e| e.container_base.clone()).collect();
+            Err(anyhow!(
+                "{n} containers matched {selector:?}: {}. Re-run with a more specific selector \
+                 (full container base name).",
+                names.join(", ")
+            ))
+        }
+    }
+}
+
+fn print_tail(path: &Path, n: usize) -> Result<()> {
+    let lines = read_tail(path, n)?;
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    for line in &lines {
+        out.write_all(line.as_bytes())?;
+        out.write_all(b"\n")?;
+    }
+    Ok(())
+}
+
+/// Read the last `n` lines of a file using a bounded `VecDeque`. The
+/// alternative — `read_to_string` then split — would balloon to file
+/// size in memory for a long-lived log; a `tail`-style ring keeps
+/// memory proportional to `n` regardless of file size.
+fn read_tail(path: &Path, n: usize) -> Result<Vec<String>> {
+    let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    let reader = BufReader::new(file);
+    let mut ring: VecDeque<String> = VecDeque::with_capacity(n.min(8192));
+    for line in reader.lines() {
+        let line = line?;
+        if ring.len() == n {
+            ring.pop_front();
+        }
+        ring.push_back(line);
+    }
+    Ok(ring.into_iter().collect())
+}
+
+fn write_bundle(entry: &LogEntry, n: usize, dest: &Path) -> Result<()> {
+    let lines = read_tail(&entry.log_path, n)?;
+    let mut file = File::create(dest).with_context(|| format!("creating {}", dest.display()))?;
+    writeln!(
+        file,
+        "# jackin multiplexer log bundle\n\
+         # container: {}\n\
+         # role:      {}\n\
+         # workspace: {}\n\
+         # status:    {}\n\
+         # source:    {}\n\
+         # lines:     last {}\n",
+        entry.container_base,
+        entry.role_display_name,
+        entry.workspace_label,
+        entry.status,
+        entry.log_path.display(),
+        lines.len(),
+    )?;
+    for line in &lines {
+        writeln!(file, "{line}")?;
+    }
+    file.flush()?;
+    println!(
+        "Wrote {} lines from {} to {}.",
+        lines.len(),
+        entry.log_path.display(),
+        dest.display()
+    );
+    Ok(())
+}
+
+fn follow_file(path: &Path) -> Result<()> {
+    // Tail-from-end: seek to current EOF, then poll for appended bytes.
+    // Polling beats inotify/kqueue for one cold dependency reason — the
+    // tradeoff is a ~250ms latency between writer flush and operator
+    // visibility, which is below the threshold for "feels live" in a
+    // human-tail use case.
+    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
+    file.seek(SeekFrom::End(0))?;
+    let mut reader = BufReader::new(file);
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    let mut buf = String::new();
+    loop {
+        buf.clear();
+        match reader.read_line(&mut buf) {
+            Ok(0) => std::thread::sleep(Duration::from_millis(250)),
+            Ok(_) => {
+                out.write_all(buf.as_bytes())?;
+                out.flush()?;
+            }
+            Err(e) => bail!("tail read failed: {e}"),
+        }
+    }
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        let mut t = s[..max.saturating_sub(1)].to_string();
+        t.push('…');
+        t
+    }
+}

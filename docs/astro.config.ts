@@ -115,6 +115,7 @@ export default defineConfig({
             { label: 'workspace', slug: 'commands/workspace' },
             { label: 'config', slug: 'commands/config' },
             { label: 'role', slug: 'commands/role' },
+            { label: 'logs', slug: 'commands/logs' },
           ],
         },
         {

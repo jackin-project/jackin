@@ -5,6 +5,7 @@ mod discovery;
 mod identity;
 mod image;
 mod launch;
+pub mod logs;
 mod naming;
 mod repo_cache;
 

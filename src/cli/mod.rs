@@ -33,6 +33,7 @@ pub mod cleanup;
 pub mod config;
 pub mod dispatch;
 pub mod help;
+pub mod logs;
 pub mod prune;
 pub mod role;
 pub mod workspace;
@@ -41,6 +42,7 @@ pub use config::{
     AuthCommand, CoauthorTrailerCommand, ConfigCommand, DcoCommand, EnvCommand, GitCommand,
     MountCommand, TrustCommand,
 };
+pub use logs::LogsArgs;
 pub use prune::PruneCommand;
 pub use workspace::{WorkspaceClaudeTokenCommand, WorkspaceCommand, WorkspaceEnvCommand};
 
@@ -116,6 +118,7 @@ pub enum Command {
     /// View and modify operator configuration
     #[command(subcommand, before_help = BANNER, styles = HELP_STYLES, disable_help_subcommand = true)]
     Config(ConfigCommand),
+    Logs(LogsArgs),
     /// Print help documentation for a jackin command
     ///
     /// With no arguments, displays the jackin manual.
