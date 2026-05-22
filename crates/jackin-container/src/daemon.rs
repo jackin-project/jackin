@@ -2093,6 +2093,47 @@ impl Multiplexer {
             })
             .collect()
     }
+
+    /// Build a tab/pane tree snapshot for the host console's preview
+    /// pane. The leaf order matches `PaneTree::leaves` so the operator
+    /// sees panes in the same left-to-right / top-to-bottom order the
+    /// multiplexer renders. Missing sessions (race against a kill)
+    /// fall back to a placeholder so the snapshot still covers every
+    /// leaf the tree references — the host UI can dim those rows.
+    fn tab_snapshots(&self) -> Vec<crate::protocol::control::TabSnapshot> {
+        use crate::layout::Rect;
+        use crate::protocol::control::{PaneSnapshot, TabSnapshot};
+        let placeholder_rect = Rect::new(0, 0, self.term_rows, self.term_cols);
+        self.tabs
+            .iter()
+            .map(|tab| {
+                let panes = tab
+                    .tree
+                    .leaves(placeholder_rect)
+                    .into_iter()
+                    .map(|(id, _)| match self.sessions.get(&id) {
+                        Some(session) => PaneSnapshot {
+                            session_id: id,
+                            label: session.label.clone(),
+                            agent: session.agent.clone(),
+                            state: session.state,
+                        },
+                        None => PaneSnapshot {
+                            session_id: id,
+                            label: "(missing)".to_string(),
+                            agent: None,
+                            state: crate::protocol::control::AgentState::Idle,
+                        },
+                    })
+                    .collect();
+                TabSnapshot {
+                    label: tab.label.clone(),
+                    focused_pane: tab.focused_id,
+                    panes,
+                }
+            })
+            .collect()
+    }
 }
 
 /// Run the multiplexer daemon. Called from `main` when PID == 1.
@@ -2212,11 +2253,15 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
             Some((stream, client_permit)) = new_clients.recv() => {
                 let handshake_tx = handshake_tx.clone();
                 let sessions_snapshot = mux.session_infos();
+                let tabs_snapshot = mux.tab_snapshots();
+                let active_tab = u32::try_from(mux.active_tab).unwrap_or(0);
                 tokio::spawn(perform_handshake(
                     stream,
                     client_permit,
                     handshake_tx,
                     sessions_snapshot,
+                    tabs_snapshot,
+                    active_tab,
                 ));
             }
 
@@ -2568,6 +2613,8 @@ async fn perform_handshake(
     client_permit: tokio::sync::OwnedSemaphorePermit,
     handshake_tx: mpsc::UnboundedSender<AttachHandshake>,
     sessions_snapshot: Vec<crate::protocol::control::SessionInfo>,
+    tabs_snapshot: Vec<crate::protocol::control::TabSnapshot>,
+    active_tab: u32,
 ) {
     let mut first = [0u8; 1];
     if let Err(e) = stream.read_exact(&mut first).await {
@@ -2580,7 +2627,14 @@ async fn perform_handshake(
         // sessions snapshot is captured at accept time in the main
         // loop; mildly stale (microseconds) for the host CLI's
         // informational `status` query.
-        socket::handle_control_request(stream, first[0], sessions_snapshot).await;
+        socket::handle_control_request(
+            stream,
+            first[0],
+            sessions_snapshot,
+            tabs_snapshot,
+            active_tab,
+        )
+        .await;
         drop(client_permit);
         return;
     }

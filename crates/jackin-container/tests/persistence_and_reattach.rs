@@ -121,7 +121,9 @@ async fn control_channel_status_roundtrip() {
     let mut body = vec![0u8; len];
     client.read_exact(&mut body).await.unwrap();
     let reply: ServerMsg = serde_json::from_slice(&body).unwrap();
-    let ServerMsg::SessionList { sessions } = reply;
+    let ServerMsg::SessionList { sessions } = reply else {
+        panic!("Status reply must be SessionList, got {reply:?}");
+    };
     assert!(sessions.is_empty());
 
     server.await.unwrap();

@@ -159,6 +159,8 @@ pub async fn handle_control_request(
     mut stream: UnixStream,
     first_byte: u8,
     sessions: Vec<SessionInfo>,
+    tabs: Vec<crate::protocol::control::TabSnapshot>,
+    active_tab: u32,
 ) {
     let msg = match read_control_msg(&mut stream, first_byte).await {
         Ok(msg) => msg,
@@ -169,6 +171,7 @@ pub async fn handle_control_request(
     };
     let reply = match msg {
         ClientMsg::Status => ServerMsg::SessionList { sessions },
+        ClientMsg::Snapshot => ServerMsg::Snapshot { tabs, active_tab },
     };
     if let Err(e) = stream.write_all(&frame(&reply)).await {
         crate::clog!("control reply write failed (msg={msg:?}): {e}");

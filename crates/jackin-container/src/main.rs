@@ -27,6 +27,7 @@ async fn main() -> Result<()> {
                 Ok(())
             }
             Some("status") => client::run_status().await,
+            Some("snapshot") => client::run_snapshot().await,
             Some("new") => {
                 let spawn = match args.get(2) {
                     None => Some(SpawnRequest::Shell),
@@ -44,7 +45,7 @@ async fn main() -> Result<()> {
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-container subcommand {other:?} — known: status, new <agent>, --version"
+                    "unknown jackin-container subcommand {other:?} — known: status, snapshot, new <agent>, --version"
                 )
             }
         }

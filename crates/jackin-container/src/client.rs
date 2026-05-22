@@ -153,7 +153,9 @@ pub async fn run_status() -> Result<()> {
     stream.read_exact(&mut body).await?;
 
     let msg: ServerMsg = serde_json::from_slice(&body)?;
-    let ServerMsg::SessionList { sessions } = msg;
+    let ServerMsg::SessionList { sessions } = msg else {
+        anyhow::bail!("daemon replied with unexpected message kind for Status");
+    };
     println!("Sessions: {}", sessions.len());
     for s in &sessions {
         println!(
@@ -166,6 +168,44 @@ pub async fn run_status() -> Result<()> {
         );
     }
 
+    Ok(())
+}
+
+/// Query the daemon for the tab/pane snapshot and print as JSON.
+/// Output shape is `ServerMsg::Snapshot` verbatim so the host
+/// console can deserialize the same struct it shares with the
+/// daemon — no second schema to keep in sync.
+pub async fn run_snapshot() -> Result<()> {
+    let mut stream = UnixStream::connect(SOCKET_PATH)
+        .await
+        .context("cannot connect to jackin-container daemon")?;
+
+    stream
+        .write_all(&control_frame(&ClientMsg::Snapshot))
+        .await?;
+
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).await?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    const MAX_CONTROL_REPLY: usize = 4 * 1024 * 1024;
+    if len > MAX_CONTROL_REPLY {
+        anyhow::bail!("daemon control reply length {len} exceeds limit {MAX_CONTROL_REPLY}");
+    }
+    let mut body = vec![0u8; len];
+    stream.read_exact(&mut body).await?;
+
+    let msg: ServerMsg = serde_json::from_slice(&body)?;
+    let ServerMsg::Snapshot { tabs, active_tab } = msg else {
+        anyhow::bail!("daemon replied with unexpected message kind for Snapshot");
+    };
+    let payload = serde_json::json!({
+        "tabs": tabs,
+        "active_tab": active_tab,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&payload).unwrap_or_else(|_| payload.to_string())
+    );
     Ok(())
 }
 

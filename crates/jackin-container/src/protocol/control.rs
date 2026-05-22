@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 pub enum ClientMsg {
     /// Request the current session inventory.
     Status,
+    /// Request the tab/pane tree snapshot.
+    Snapshot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,6 +20,15 @@ pub enum ClientMsg {
 pub enum ServerMsg {
     /// Current session inventory.
     SessionList { sessions: Vec<SessionInfo> },
+    /// Tab/pane tree snapshot. `tabs` is in render order;
+    /// `active_tab` indexes into it. Each `TabSnapshot::panes` lists
+    /// the pane leaves of that tab in `PaneTree` in-order traversal
+    /// order; `TabSnapshot::focused_pane` carries the session id of
+    /// the focused leaf (matches a `PaneSnapshot::session_id`).
+    Snapshot {
+        tabs: Vec<TabSnapshot>,
+        active_tab: u32,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +38,25 @@ pub struct SessionInfo {
     pub agent: Option<String>,
     pub state: AgentState,
     pub active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TabSnapshot {
+    pub label: String,
+    /// `session_id` of the focused leaf in this tab. Always matches
+    /// one of the `panes[*].session_id` entries.
+    pub focused_pane: u64,
+    pub panes: Vec<PaneSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaneSnapshot {
+    pub session_id: u64,
+    /// Session label (agent slug or "Shell").
+    pub label: String,
+    /// `None` for shell sessions; the agent slug otherwise.
+    pub agent: Option<String>,
+    pub state: AgentState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
