@@ -557,10 +557,15 @@ pub(in crate::console::manager) fn compute_sidebar_layout(
     inputs: &SidebarInputs<'_>,
 ) -> SidebarLayout {
     let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
-    // Renderer convention: when only the global section is present (or both
-    // sections are empty), the "Global mounts" header still renders alone.
-    // When only the role-global section is present, the role header takes
-    // the lone slot. Matches `render_global_mounts_subpanel`.
+    // Slot occupancy:
+    //   - Global header renders only when there are unscoped global
+    //     rows AND (there are unscoped global rows OR the role-global
+    //     section is empty). The double-empty case is filtered out
+    //     earlier by `inputs.global_rows.is_empty()` at the call site,
+    //     so in practice `show_global` is true iff at least one
+    //     unscoped global row exists.
+    //   - Role-global header renders iff any role-scoped global row
+    //     exists.
     let show_global_header = !global_rows.is_empty() || role_global_rows.is_empty();
     let show_global = !inputs.global_rows.is_empty() && show_global_header;
     let show_role_global = !role_global_rows.is_empty();

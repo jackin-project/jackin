@@ -345,25 +345,67 @@ fn selected_instance_scope<'a>(
     }
 }
 
+/// Action × status acceptance grid. Each arm enumerates the exact set
+/// of statuses the action runs against. Negative `!matches!` idioms
+/// were intentionally avoided: a future `InstanceStatus` variant
+/// (e.g. `Stopping`) would silently flip every action that used a
+/// negative match to "accept this new state too", which is almost
+/// never what the operator wants. The positive form forces the
+/// developer adding a variant to consider each action explicitly.
 const fn instance_action_accepts_status(
     action: ConsoleInstanceAction,
     status: crate::instance::InstanceStatus,
 ) -> bool {
-    match action {
-        ConsoleInstanceAction::Reconnect | ConsoleInstanceAction::Inspect => {
-            !matches!(status, crate::instance::InstanceStatus::Purged)
-        }
-        ConsoleInstanceAction::NewSession
-        | ConsoleInstanceAction::NewSessionWithAgent(_)
-        | ConsoleInstanceAction::Shell => matches!(
+    use crate::instance::InstanceStatus as S;
+    match (action, status) {
+        // Reconnect / Inspect: anything that still has on-disk state to read.
+        (ConsoleInstanceAction::Reconnect | ConsoleInstanceAction::Inspect, status) => match status
+        {
+            S::Active
+            | S::Running
+            | S::CleanExited
+            | S::Crashed
+            | S::PreservedDirty
+            | S::PreservedUnpushed
+            | S::RestoreAvailable
+            | S::Superseded
+            | S::FailedSetup => true,
+            S::Purged => false,
+        },
+        // NewSession / Shell / Stop: live container required.
+        (
+            ConsoleInstanceAction::NewSession
+            | ConsoleInstanceAction::NewSessionWithAgent(_)
+            | ConsoleInstanceAction::Shell
+            | ConsoleInstanceAction::Stop,
             status,
-            crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
-        ),
-        ConsoleInstanceAction::Stop => matches!(
-            status,
-            crate::instance::InstanceStatus::Active | crate::instance::InstanceStatus::Running
-        ),
-        ConsoleInstanceAction::Purge => !matches!(status, crate::instance::InstanceStatus::Purged),
+        ) => match status {
+            S::Active | S::Running => true,
+            S::CleanExited
+            | S::Crashed
+            | S::PreservedDirty
+            | S::PreservedUnpushed
+            | S::RestoreAvailable
+            | S::Superseded
+            | S::Purged
+            | S::FailedSetup => false,
+        },
+        // Purge: anything that hasn't already been purged. Crashed /
+        // CleanExited / Preserved* rows have local state worth deleting
+        // even though their containers are gone — Purge cleans both
+        // halves of the leftover.
+        (ConsoleInstanceAction::Purge, status) => match status {
+            S::Active
+            | S::Running
+            | S::CleanExited
+            | S::Crashed
+            | S::PreservedDirty
+            | S::PreservedUnpushed
+            | S::RestoreAvailable
+            | S::Superseded
+            | S::FailedSetup => true,
+            S::Purged => false,
+        },
     }
 }
 

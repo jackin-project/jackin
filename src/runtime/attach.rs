@@ -93,8 +93,6 @@ fn set_role_terminal_title(paths: &JackinPaths, container_name: &str) {
     crate::tui::set_terminal_title(&title);
 }
 
-/// `TMUX=` prevents nested-session warnings when the operator's host terminal
-/// is itself inside tmux.
 pub(super) async fn reconnect_or_create_session(
     paths: &JackinPaths,
     container_name: &str,
@@ -102,13 +100,9 @@ pub(super) async fn reconnect_or_create_session(
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
     set_role_terminal_title(paths, container_name);
-    let sessions = inspect_agent_sessions(docker, container_name, &ContainerState::Running).await;
-    let has_sessions = matches!(&sessions, AgentSessionInventory::Sessions(v) if !v.is_empty());
-
-    // jackin-container client mode: connects to the running multiplexer daemon.
-    // Whether sessions already exist or not, the client attach point is the same —
-    // the daemon creates the initial session on first connect if none exist.
-    let _ = has_sessions; // daemon handles empty-session bootstrap internally
+    // The daemon bootstraps the initial session on first attach, so we
+    // do not branch on whether sessions already exist — just connect.
+    let _ = inspect_agent_sessions(docker, container_name, &ContainerState::Running).await;
     runner
         .run(
             "docker",

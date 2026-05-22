@@ -260,6 +260,7 @@ jobs:
           ARCH: ${{ matrix.arch }}
           TARGET: ${{ matrix.target }}
         run: |
+          set -euo pipefail
           cp "target/${TARGET}/release/jackin-container" "jackin-container-${TARGET}"
           sha256sum "jackin-container-${TARGET}" | awk '{print $1}' > "jackin-container-${TARGET}.sha256"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -352,9 +353,24 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
           SHA: ${{ needs.source-changed.outputs.sha }}
         run: |
-          # Delete existing preview release and its tag so the new release
-          # can claim the `preview` tag at the current SHA.
-          gh release delete preview --yes --cleanup-tag 2>/dev/null || true
+          set -euo pipefail
+          # Delete the existing preview release + tag so the new release
+          # can claim the `preview` tag at the current SHA. Distinguish
+          # "release not found" (legit on a fresh repo) from real
+          # failures (auth, rate-limit) — the previous blanket `|| true`
+          # masked both, and the create step that followed then failed
+          # with a confusing "tag already exists" message.
+          if delete_output=$(gh release delete preview --yes --cleanup-tag 2>&1); then
+            echo "preview release deleted (output: $delete_output)"
+          else
+            status=$?
+            if echo "$delete_output" | grep -qiE 'release not found|not found|release does not exist'; then
+              echo "no existing preview release to delete (status=$status); continuing"
+            else
+              echo "::error::gh release delete failed: $delete_output"
+              exit "$status"
+            fi
+          fi
           gh release create preview \
             --prerelease \
             --target "$SHA" \

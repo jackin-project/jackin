@@ -109,10 +109,6 @@ pub enum PaletteCommand {
     Detach,
 }
 
-/// The "New agent session" entry was removed: it was a duplicate of
-/// "New tab" — both opened the agent picker and spawned a new tab
-/// for the chosen agent or Shell. The single `New tab` entry now
-/// owns that path.
 /// Next/Previous tab are not exposed in the palette: the operator
 /// already clicks tabs directly in the status bar, and the
 /// keyboard-driven shortcut for cycle-tab is the tmux-style prefix

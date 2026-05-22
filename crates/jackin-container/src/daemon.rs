@@ -2,15 +2,16 @@
 ///
 /// Architecture:
 ///   - One active attach client at a time. A new `Hello` from a second
-///     client sends `Shutdown` to the old one and takes over.
+///     client sends `Shutdown` to the old one and aborts the old
+///     client's reader task (see `attached_task`).
 ///   - Attach traffic uses the binary tag+length protocol in
 ///     `protocol::attach`. The hot path forwards raw PTY bytes without
 ///     base64 or JSON nesting.
 ///   - The control channel still speaks length-prefixed JSON for one-shot
 ///     `status` queries from the host CLI. Channel dispatch is by first
 ///     byte: `0x00` → control (length prefix), anything else → attach.
-///   - The daemon is persistent: it does not exit when the last session
-///     dies. Only `SIGTERM` triggers shutdown.
+///   - Lifecycle: the daemon exits when the last session ends so the
+///     container reaps cleanly. SIGTERM also triggers shutdown.
 use std::collections::HashMap;
 
 use anyhow::Result;
@@ -1844,8 +1845,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             }
         }
         ClientFrame::Command(_payload) => {
-            // Reserved for future structured commands from the host
-            // CLI. Phase 3 has no senders yet.
+            // Reserved for future structured commands from the host CLI.
         }
         ClientFrame::Detach => {
             mux.detach_requested = true;
@@ -1875,8 +1875,6 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
     }
 }
 
-/// Per-client connection handler: bidirectional bridge between the socket
-/// and the main daemon loop.
 /// Send `Shutdown` to the attached client and pause briefly so the
 /// frame actually leaves the socket before PID 1 exits. Called when
 /// the daemon decides to tear the container down (last session died,
@@ -1888,6 +1886,12 @@ async fn drain_and_exit(mux: &mut Multiplexer) {
     tokio::time::sleep(Duration::from_millis(200)).await;
 }
 
+/// Per-client connection handler: bidirectional bridge between the
+/// socket and the main daemon loop. Reads `ClientFrame`s off the
+/// socket and pushes them through `cmd_tx`; writes any bytes
+/// received on `out_rx` back to the socket. Exits on any I/O error
+/// or when either channel closes (which happens during takeover —
+/// `attached_task.abort()` ends this task before its socket sees EOF).
 async fn handle_attach_client(
     mut stream: UnixStream,
     mut out_rx: mpsc::UnboundedReceiver<Vec<u8>>,
