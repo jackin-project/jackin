@@ -3,7 +3,7 @@ title: "jackin-container: In-Container Multiplexer Server"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — Phases 1–3 shipped, Phase 4 (host daemon integration and Desktop Agent Hub bridge) remains open. Phase 3 landed an in-container PTY multiplexer built on the `vt100` crate with a Zellij-style dirty-row renderer, a tmux-style prefix-key model (`Ctrl+B` opt-in via `JACKIN_PREFIX`), a persistent server that exits cleanly when the last session ends, binary tag+length attach framing on the hot path, single-client takeover, mode-state restore on focus swap, OSC passthrough (52/9/2/8) gated to the focused pane, and top chrome with a brand pill, tab strip, and identity row.
+**Status**: Partially implemented — Phases 1–3 shipped, Phase 4 (host daemon integration and Desktop Agent Hub bridge) remains open. Phase 3 landed an in-container PTY multiplexer built on the `vt100` crate with a Zellij-style dirty-row renderer, a tmux-style prefix-key model (`Ctrl+B` opt-in via `JACKIN_PREFIX`, including prefix `Ctrl+L` clear-pane), a persistent server that exits cleanly when the last session ends, binary tag+length attach framing on the hot path, single-client takeover, mode-state restore on focus swap, OSC passthrough (52/9/2/8) gated to the focused pane, and top chrome with a brand pill, tab strip, and identity row.
 
 The shipped-Phase-3 design and operator-visible behaviour now live in:
 
@@ -177,6 +177,8 @@ The hand-rolled emulator in `crates/jackin-container/src/terminal.rs` (deleted i
 
 The Apache-2.0 license is compatible with `jackin-container`'s Apache-2.0. The crate is well-maintained, has no transitive dependency surprise, and is the canonical choice in the Rust ecosystem for this job — exactly the pattern `AGENTS.md`'s "Prefer libraries over hand-rolled parsers" rule demands.
 
+Jackin temporarily pins a forked `vt100` commit while upstreaming `Screen::clear_scrollback()` and `CSI 3J` support. That behavior belongs in `vt100` because the crate owns the in-memory grid and scrollback state, exposes `Screen::set_scrollback`, and advertises itself for `screen` / `tmux`-style applications. Jackin should not fake scrollback erasure in the compositor or use RIS (`ESC c`) because both approaches conflate terminal state with pane rendering.
+
 `alacritty_terminal` is a heavier alternative offering scrollback search and selection state. Jackin's first rewrite does not need either; `vt100` is the right scope.
 
 #### Render model: dirty pane bodies and full-frame fallback
@@ -200,7 +202,7 @@ This is the path that runs during active agent output. It is not a byte-copy, bu
 4. Render dialog overlay if one is open.
 5. Position the host terminal cursor at the focused pane's `Screen::cursor_position()` and honour `Screen::hide_cursor()`.
 
-Every full redraw carries a `FullRedrawReason` in <RepoFile path="crates/jackin-container/src/daemon.rs" /> (`first-attach`, `resize`, `tab-switch`, `layout-change`, `split-close`, `zoom-change`, `scrollback-movement`, `dialog-change`, `selection-repaint`, `pane-cache-miss`, `unsafe-partial`, and related chrome/style reasons). With `JACKIN_DEBUG=1`, the renderer logs full vs partial, reason, dirty panes, emitted rows, emitted bytes, and duration in microseconds.
+Every full redraw carries a `FullRedrawReason` in <RepoFile path="crates/jackin-container/src/daemon.rs" /> (`first-attach`, `resize`, `tab-switch`, `layout-change`, `split-close`, `zoom-change`, `scrollback-movement`, `pane-clear`, `dialog-change`, `selection-repaint`, `pane-cache-miss`, `unsafe-partial`, and related chrome/style reasons). With `JACKIN_DEBUG=1`, the renderer logs full vs partial, reason, dirty panes, emitted rows, emitted bytes, and duration in microseconds.
 
 #### Input model: prefix key
 
@@ -226,6 +228,7 @@ Default prefix bindings (subject to refinement during implementation):
 | `&` | Kill focused tab |
 | `d` | Detach client (PTYs keep running) |
 | `Space` or `:` | Open command palette |
+| `Ctrl+L` | Clear focused pane scrollback and send form-feed to request redraw |
 | `r` | Force redraw |
 | Prefix again | Literal prefix byte to PTY |
 
@@ -296,7 +299,7 @@ Files deleted: `terminal.rs` (replaced by `vt100` crate); base64 helpers in `pro
 
 The rewrite lands as one cohesive PR (this one) because the defects are interlocked — fixing one without the others leaves the binary unusable for testing — but the work breaks into reviewable sub-phases. Each sub-phase passes `cargo nextest run` and `cargo clippy --all-targets --all-features -- -D warnings` on its own.
 
-- **Phase 3a — Replace VT.** Drop `crates/jackin-container/src/terminal.rs`. Add `vt100 = "0.16"` to <RepoFile path="crates/jackin-container/Cargo.toml" />. Wire each `Session` to its own `vt100::Parser` + `Screen`. Replace the old per-byte terminal emulator with a compositor-aware row serializer over `vt100` cells. Tab switch and reattach replay from the saved screen instead of `force_redraw`'s PTY-resize hack.
+- **Phase 3a — Replace VT.** Drop `crates/jackin-container/src/terminal.rs`. Add `vt100` to <RepoFile path="crates/jackin-container/Cargo.toml" />. Wire each `Session` to its own `vt100::Parser` + `Screen`. Replace the old per-byte terminal emulator with a compositor-aware row serializer over `vt100` cells. Tab switch and reattach replay from the saved screen instead of `force_redraw`'s PTY-resize hack.
 - **Phase 3b — Prefix-key input.** Replace the `0x0A` palette intercept and the standalone Alt+arrow shortcut with the prefix-key state machine described above. Default prefix `Ctrl+B`. The command palette still exists, opened by `prefix + Space`. Update <RepoFile path="crates/jackin-container/src/input.rs" /> and the dialog dispatch in <RepoFile path="crates/jackin-container/src/daemon.rs" />.
 - **Phase 3c — Persistent server + binary attach channel.** Remove the `process::exit(0)` on all-sessions-dead. On agent exit, mark the tab `exited`, keep the `Screen` for replay, allow `prefix + r` to respawn. Replace the JSON + base64 attach-channel output frames with the tag-plus-length binary frames defined above. Keep the existing control channel for `status`. Remove the hand-rolled base64 helper. Fix the reattach outbound-channel bug.
 - **Phase 3d — Resize, mouse, status bar polish.** Add client-side `SIGWINCH` listener and `resize` frame. Fix the mouse passthrough no-op (re-encode in SGR mouse form and write to the focused PTY). Fix the status bar tab-label width drift. Add the right-side prefix-mode hint.
@@ -306,7 +309,7 @@ Phase 3a is the load-bearing one — it unblocks every TUI agent. Phase 3b remov
 #### Tests required
 
 - **VT contract tests.** Round-trip alt-screen entry and exit through `vt100::Screen` and assert that render replay after `\x1b[?1049h … \x1b[?1049l` reproduces the pre-alt-screen content. Smoke an entire Claude Code-style frame (alt-screen + bracketed paste + application cursor keys) and assert no information loss.
-- **Prefix state machine tests.** Lone prefix byte → consumed, no PTY output. `prefix + prefix` → exactly one prefix byte forwarded. `prefix + c` → `NewSession` command emitted, no bytes forwarded. Plain LF in the input stream → forwarded to PTY (regression guard for the `Ctrl+J = 0x0A` bug).
+- **Prefix state machine tests.** Lone prefix byte → consumed, no PTY output. `prefix + prefix` → exactly one prefix byte forwarded. `prefix + c` → `NewSession` command emitted, no bytes forwarded. Plain LF and plain `Ctrl+L` in the input stream → forwarded to PTY (regression guard for the `Ctrl+J = 0x0A` bug and clear-pane passthrough). `prefix + Ctrl+L` → `ClearPane`.
 - **Persistence tests.** Spawn a session, send it `exit\n`, observe `Exited` event, assert daemon is still running and the tab is marked `exited`. Send `SIGTERM` to the daemon, assert all PTYs are reaped and the daemon exits 0.
 - **Reattach tests.** Connect a client, attach to a session, write some bytes that update the `Screen`, disconnect, reconnect. Assert the new client receives a full replay matching the screen state.
 - **Resize tests.** Send a `resize` frame, assert every PTY is resized via `MasterPty::resize`, every `Screen` via `set_size`, and the active pane is replayed at the new dimensions.

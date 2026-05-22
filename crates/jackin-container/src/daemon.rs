@@ -125,6 +125,7 @@ enum FullRedrawReason {
     PaneChromeChanged,
     ThemeStyleChange,
     SessionExit,
+    PaneClear,
     ExplicitRedraw,
     PaneCacheMiss,
     UnsafePartial,
@@ -148,6 +149,7 @@ impl FullRedrawReason {
             Self::PaneChromeChanged => "pane-chrome-changed",
             Self::ThemeStyleChange => "theme-style-change",
             Self::SessionExit => "session-exit",
+            Self::PaneClear => "pane-clear",
             Self::ExplicitRedraw => "explicit-redraw",
             Self::PaneCacheMiss => "pane-cache-miss",
             Self::UnsafePartial => "unsafe-partial",
@@ -601,7 +603,9 @@ impl Multiplexer {
                 // `handle_palette_command` decides per-arm whether
                 // the command opens a sub-dialog (push) or finishes
                 // the flow (clear stack).
-                self.handle_palette_command(cmd);
+                if let Some(frame) = self.handle_palette_command(cmd) {
+                    return frame;
+                }
             }
             DialogAction::SpawnAgent { agent, intent } => {
                 // Terminal action — agent picked, spawn the session,
@@ -1492,6 +1496,7 @@ impl Multiplexer {
             PrefixCommand::ZoomToggle => self.toggle_zoom(),
             PrefixCommand::KillPane => self.close_focused_pane(),
             PrefixCommand::KillTab => self.close_focused_tab(),
+            PrefixCommand::ClearPane => self.clear_focused_pane(),
             PrefixCommand::Detach => {
                 self.detach_requested = true;
             }
@@ -1771,6 +1776,11 @@ impl Multiplexer {
                 self.dialog_clear();
                 self.toggle_zoom();
             }
+            PaletteCommand::ClearPane => {
+                self.dialog_clear();
+                self.clear_focused_pane();
+                return Some(self.compose_full_frame(FullRedrawReason::PaneClear));
+            }
             PaletteCommand::Detach => {
                 // Push ConfirmAction for Detach — the operator
                 // confirms before the client disconnects. Esc walks
@@ -1782,6 +1792,17 @@ impl Multiplexer {
             }
         }
         None
+    }
+
+    fn clear_focused_pane(&mut self) {
+        self.cancel_drag();
+        if let Some(id) = self.active_focused_id()
+            && let Some(session) = self.sessions.get_mut(&id)
+        {
+            session.clear_scrollback_and_request_screen_clear();
+            self.pane_body_caches.remove(&id);
+            self.dirty_panes.remove(&id);
+        }
     }
 
     fn compose_pending_frame(&mut self) -> Vec<u8> {
@@ -2872,6 +2893,7 @@ fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {
         PrefixCommand::MoveFocus(_) => FullRedrawReason::FocusChange,
         PrefixCommand::ZoomToggle => FullRedrawReason::ZoomChange,
         PrefixCommand::KillPane | PrefixCommand::KillTab => FullRedrawReason::SplitClose,
+        PrefixCommand::ClearPane => FullRedrawReason::PaneClear,
         PrefixCommand::Detach | PrefixCommand::Redraw => FullRedrawReason::ExplicitRedraw,
     }
 }
@@ -3045,5 +3067,13 @@ mod tests {
             mux.dialog_top(),
             Some(Dialog::ContainerInfo { copied: true, .. })
         ));
+    }
+
+    #[test]
+    fn prefix_ctrl_l_has_named_pane_clear_reason() {
+        assert_eq!(
+            prefix_full_redraw_reason(&PrefixCommand::ClearPane),
+            FullRedrawReason::PaneClear
+        );
     }
 }

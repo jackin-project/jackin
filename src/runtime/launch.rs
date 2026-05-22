@@ -1049,12 +1049,30 @@ async fn launch_role_runtime(
     // agent sessions run. The operator connects via `docker exec -it jackin-container`.
     let image_label = format!("jackin.image={image}");
     run_args.extend_from_slice(&["--label", &image_label]);
-    // No host-side socket bind-mount. Docker pre-creates the bind-mount target
-    // directory as root:root 755 when the source path doesn't exist, so the
-    // daemon (running as agent) cannot create files there and start_listener
-    // fails with EACCES. The daemon creates /run/jackin/ itself on the
-    // container's tmpfs — agent-owned, fully writable. Host-side socket access
-    // for a future jackin daemon is tracked under the jackin-container roadmap.
+    // Host-side bind-mount of the daemon's socket directory. Owned by
+    // the host user (whose UID matches the container's `agent` user
+    // post-`usermod` in the derived image), so the daemon can create
+    // and chmod `jackin.sock` inside the mounted dir. Pre-creating the
+    // dir host-side is what unblocks the bind-mount: the EACCES that
+    // the previous comment warned about only happens when Docker has
+    // to materialise the target itself (which it does as root:root
+    // 0755).
+    let socket_dir = paths.jackin_home.join("sockets").join(*container_name);
+    std::fs::create_dir_all(&socket_dir).with_context(|| {
+        format!(
+            "creating host-side socket dir {} for container {container_name}",
+            socket_dir.display(),
+        )
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o700);
+        std::fs::set_permissions(&socket_dir, perms)
+            .with_context(|| format!("locking socket dir {} to 0o700", socket_dir.display()))?;
+    }
+    let socket_mount = format!("{}:/run/jackin", socket_dir.display());
+    run_args.extend_from_slice(&["-v", &socket_mount]);
     // Forward JACKIN_AGENT so the daemon knows which runtime to launch first.
     run_args.extend_from_slice(&["-e", &jackin_agent_env]);
     run_args.push(image);

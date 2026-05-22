@@ -125,6 +125,7 @@ fn prefix_commands_for_default_bindings_when_prefix_enabled() {
         (b"\x02z", ZoomToggle),
         (b"\x02x", KillPane),
         (b"\x02&", KillTab),
+        (b"\x02\x0c", ClearPane),
         (b"\x02d", Detach),
         (b"\x02 ", Palette),
         (b"\x02:", Palette),
@@ -134,6 +135,15 @@ fn prefix_commands_for_default_bindings_when_prefix_enabled() {
         let evs = parse_prefix_only(input);
         assert_eq!(evs, vec![InputEvent::PrefixCommand(expected.clone())]);
     }
+}
+
+#[test]
+fn plain_ctrl_l_reaches_pty_but_prefix_ctrl_l_clears_pane() {
+    assert_eq!(parse_default(b"\x0c"), vec![InputEvent::Data(vec![0x0c])]);
+    assert_eq!(
+        parse_prefix_only(b"\x02\x0c"),
+        vec![InputEvent::PrefixCommand(PrefixCommand::ClearPane)]
+    );
 }
 
 #[test]

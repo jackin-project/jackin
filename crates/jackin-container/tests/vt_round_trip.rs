@@ -108,3 +108,39 @@ fn small_vt_update_emits_partial_pane_body_redraw() {
     assert!(!rendered.contains("\x1b[5;4H")); // pane row 2
     assert!(rendered.contains("ROW-TWO"));
 }
+
+#[test]
+fn vt100_clears_scrollback_without_resetting_modes() {
+    let mut p = Parser::new(2, 8, 10);
+    p.process(b"\x1b[?2004hone\r\ntwo\r\nthree");
+    p.screen_mut().set_scrollback(usize::MAX);
+    assert!(p.screen().scrollback() > 0);
+
+    p.screen_mut().clear_scrollback();
+
+    assert_eq!(p.screen().scrollback(), 0);
+    assert!(p.screen().bracketed_paste());
+}
+
+#[test]
+fn vt100_csi_3j_clears_scrollback() {
+    let mut p = Parser::new(2, 8, 10);
+    p.process(b"one\r\ntwo\r\nthree");
+    p.screen_mut().set_scrollback(usize::MAX);
+    assert!(p.screen().scrollback() > 0);
+
+    p.process(b"\x1b[3J");
+
+    assert_eq!(p.screen().scrollback(), 0);
+}
+
+#[test]
+fn vt100_keeps_scrollback_view_offset_during_output() {
+    let mut p = Parser::new(2, 8, 10);
+    p.process(b"one\r\ntwo\r\nthree");
+    p.screen_mut().set_scrollback(1);
+
+    p.process(b"!");
+
+    assert_eq!(p.screen().scrollback(), 1);
+}

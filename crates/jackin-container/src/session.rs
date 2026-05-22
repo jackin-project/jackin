@@ -297,6 +297,19 @@ impl Callbacks for OscCapture {
         params: &[&[u16]],
         c: char,
     ) {
+        // Xterm window manipulation / report commands (`CSI ... t`)
+        // belong to the pane geometry boundary, not to outer-terminal
+        // passthrough. If a focused TUI's `CSI 18t` reaches Ghostty,
+        // Ghostty replies on the attach client's stdin with
+        // `CSI 8;rows;cols t`; a resize burst can then route those
+        // replies into whichever pane is focused and shells execute
+        // the fragments as commands. Pane dimensions already flow
+        // through PTY resize (`TIOCSWINSZ`) and `Screen::set_size`.
+        // Keep this paired with the input parser's matching drop for
+        // any stale replies already in flight.
+        if c == 't' {
+            return;
+        }
         // Kitty-keyboard push (`\x1b[>{n}u`) and pop (`\x1b[<{n}u`)
         // are tracked per-pane in `OscCapture::kitty_kb_stack` and
         // re-applied to the outer terminal on focus swap by
@@ -584,6 +597,18 @@ impl Session {
         }
     }
 
+    /// Clear this pane's saved scrollback and ask the foreground
+    /// program to redraw its visible screen via the standard form-feed
+    /// key (`Ctrl+L`). The visible grid is left to the PTY program so
+    /// readline/TUI cursor state does not desynchronise from jackin's
+    /// local `vt100` mirror.
+    pub fn clear_scrollback_and_request_screen_clear(&mut self) {
+        self.scroll_to_live();
+        self.parser.screen_mut().clear_scrollback();
+        self.scrollback_offset = 0;
+        self.send_input(b"\x0c");
+    }
+
     /// Number of scrollback lines currently filled in the primary
     /// grid. Probed by setting the scrollback to `usize::MAX` — vt100
     /// clamps it to the actual filled count, which we read back via
@@ -664,6 +689,7 @@ impl Session {
             self.received_output = true;
         }
         self.parser.process(bytes);
+        self.scrollback_offset = self.parser.screen().scrollback();
         self.last_output_at = std::time::Instant::now();
         self.state = AgentState::Working;
     }

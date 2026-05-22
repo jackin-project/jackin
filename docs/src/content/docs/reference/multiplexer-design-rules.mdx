@@ -76,6 +76,7 @@ Every capability the base image supports must reach the agent inside the pane.
 ### Scrollback
 
 - Each pane keeps bounded primary-screen scrollback through `vt100`. Alternate-screen TUIs own their own scrollback and jackin does not synthesize history for them. Mouse wheel on a pane scrolls jackin's primary-screen view unless that pane opted into mouse reporting.
+- Plain `Ctrl+L` is pane input and must pass through unchanged. Jackin-owned clear-screen/clear-scrollback behavior must be a palette or prefix command: clear jackin's `vt100` scrollback state, send form-feed to the pane so the foreground program redraws its own visible grid, and avoid RIS (`ESC c`) or any local visible-grid mutation that would desynchronise the app's cursor model.
 
 ### Dirty output
 
@@ -126,6 +127,7 @@ Input byte arrives from client terminal
   │       ├─ `d` → detach
   │       ├─ `&` → kill tab
   │       ├─ `x` → kill pane
+  │       ├─ `Ctrl+L` → clear focused pane scrollback and request redraw
   │       └─ `z` → zoom toggle
   ├─ Dialog open + any key → dialog key handler
   └─ Everything else → active pane PTY stdin (unmodified)

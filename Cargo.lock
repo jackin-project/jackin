@@ -1299,6 +1299,7 @@ dependencies = [
  "dockerfile-parser-rs",
  "fs2",
  "futures-util",
+ "jackin-protocol",
  "jackin-tui",
  "nix 0.31.3",
  "open",
@@ -1330,6 +1331,7 @@ dependencies = [
  "base64",
  "chrono",
  "crossterm",
+ "jackin-protocol",
  "jackin-tui",
  "nix 0.31.3",
  "percent-encoding",
@@ -1341,6 +1343,14 @@ dependencies = [
  "unicode-width",
  "url",
  "vt100",
+]
+
+[[package]]
+name = "jackin-protocol"
+version = "0.6.0-dev"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2873,8 +2883,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vt100"
 version = "0.16.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "054ff75fb8fa83e609e685106df4faeffdf3a735d3c74ebce97ec557d5d36fd9"
+source = "git+https://github.com/donbeave/vt100-rust?rev=5e5543b548da978e5174a05fbfc3617c3b6743fa#5e5543b548da978e5174a05fbfc3617c3b6743fa"
 dependencies = [
  "itoa",
  "unicode-width",

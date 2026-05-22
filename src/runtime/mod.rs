@@ -8,6 +8,7 @@ mod launch;
 pub mod logs;
 mod naming;
 mod repo_cache;
+pub mod snapshot;
 
 #[cfg(test)]
 pub mod test_support;

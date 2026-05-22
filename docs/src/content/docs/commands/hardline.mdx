@@ -65,6 +65,12 @@ To stop an agent, exit it from inside (e.g., `/exit` in Claude Code). That ends 
 
 `jackin hardline` sets the terminal tab title to the role's display name (e.g. `jackin' · The Architect`) before connecting, matching the behavior of `jackin load`. This applies to all three paths: reconnect, `--new`, and `--shell`.
 
+## Attached multiplexer shortcuts
+
+Inside an attached `jackin-container` session, the command palette includes **Clear pane**. With prefix mode enabled (`JACKIN_PREFIX=C-b`), press `Ctrl+B` then `Ctrl+L` to run the same command. Plain `Ctrl+L` still goes directly to the shell or agent.
+
+Clear pane drops jackin's saved scrollback for the focused pane and sends the standard form-feed key (`Ctrl+L`) to the pane so shells and TUIs redraw themselves. It does not use a terminal reset sequence, so bracketed paste, mouse mode, alternate screen state, and other pane modes stay intact.
+
 ## Examples
 
 ```bash

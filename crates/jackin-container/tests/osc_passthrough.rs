@@ -144,6 +144,19 @@ fn unhandled_csi_kitty_keyboard_pop_is_suppressed() {
 }
 
 #[test]
+fn unhandled_csi_xterm_window_reports_are_suppressed() {
+    // `CSI ... t` is xterm's window manipulation / reporting family.
+    // Forwarding requests like `CSI 18t` to Ghostty makes Ghostty
+    // answer on the client input stream; under resize those replies
+    // can land in a shell pane as visible `8;rows;cols t` garbage.
+    let drained = drained(b"\x1b[18t\x1b[14t\x1b[16t\x1b[8;40;135t");
+    assert!(
+        drained.iter().all(|f| !f.ends_with(b"t")),
+        "xterm window reports must not reach the outer terminal: {drained:?}"
+    );
+}
+
+#[test]
 fn unhandled_csi_modify_other_keys_is_re_emitted() {
     let drained = drained(b"\x1b[>4;2m");
     assert!(

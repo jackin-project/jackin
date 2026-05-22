@@ -59,7 +59,7 @@ The selector is matched against each container's base name (exact or substring),
 
 Each line is timestamped in ISO-8601 UTC and prefixed with `[jackin-container]`. The multiplexer writes:
 
-- **Action breadcrumbs** — every prefix-key chord, dialog action, pane spawn, split, zoom, close, tab close, and exited-session removal. These reconstruct what you pressed in what order.
+- **Action breadcrumbs** — every prefix-key chord, dialog action, pane spawn, split, zoom, clear-pane, close, tab close, and exited-session removal. These reconstruct what you pressed in what order.
 - **Lifecycle events** — child process reap, PTY read EOF, session resize, attach/detach.
 - **Errors** — PTY read/write errors with errno, mutex poison, control-protocol parse failures, queue closures.
 

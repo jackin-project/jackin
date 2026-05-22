@@ -233,6 +233,7 @@ pub enum PaletteCommand {
     /// then routes through `ConfirmAction` before the destructive
     /// call fires.
     Close,
+    ClearPane,
     Detach,
 }
 
@@ -247,6 +248,7 @@ const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (PaletteCommand::NewTab, "New tab"),
     (PaletteCommand::Split, "Split pane"),
     (PaletteCommand::ZoomPane, "Zoom / unzoom pane"),
+    (PaletteCommand::ClearPane, "Clear pane"),
     (PaletteCommand::Close, "Close"),
     (PaletteCommand::Detach, "Stop & exit"),
 ];
@@ -1967,6 +1969,21 @@ mod tests {
         match d.handle_key(b"\r") {
             DialogAction::Command(cmd) => assert_eq!(cmd, PaletteCommand::Close),
             other => panic!("expected Close, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn palette_clear_filter_emits_clear_pane() {
+        let mut d = Dialog::CommandPalette {
+            selected: 0,
+            filter: String::new(),
+        };
+        for &c in b"clear" {
+            d.handle_key(&[c]);
+        }
+        match d.handle_key(b"\r") {
+            DialogAction::Command(cmd) => assert_eq!(cmd, PaletteCommand::ClearPane),
+            other => panic!("expected ClearPane, got {other:?}"),
         }
     }
 

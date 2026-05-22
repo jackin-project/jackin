@@ -1,0 +1,19 @@
+[package]
+name = "jackin-protocol"
+version = "0.6.0-dev"
+edition = "2024"
+rust-version = "1.94"
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Shared wire-format types for jackin's host CLI ↔ in-container multiplexer control channel."
+homepage = "https://jackin.tailrocks.com/"
+repository = "https://github.com/jackin-project/jackin"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "jackin_protocol"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
