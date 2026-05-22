@@ -27,7 +27,7 @@ the same problem:
 - Docker Sandboxes is the strongest commercial benchmark for **microVM
   sandboxing**: per-sandbox VM boundary, private Docker daemon, scoped
   workspace sharing, host-side network policy, and credential proxying.
-- [Herdr](https://github.com/ogulcancelik/herdr) is the strongest reference for **terminal-multiplexer UX for multi-agent workflows**: four-state agent status (Blocked / Working / Done / Idle) detected with zero configuration via PTY heuristics, workspace-level status roll-up, notification suppression when the operator is already looking, sound escalation as opt-in, and blocking `wait` semantics on a Unix socket API. Its architecture (bare host processes, AGPL-3.0) rules out embedding, but its UX decisions directly inform [agent runtime status](/reference/roadmap/agent-runtime-status/), [agent attention prompts](/reference/roadmap/agent-attention-prompts/), and the daemon socket design. See [jackin-container: in-container multiplexer server](/reference/roadmap/jackin-container-binary/) for the full evaluation and the implementation plan that applies these concepts to Jackin's container model.
+- [Herdr](https://github.com/ogulcancelik/herdr) is the strongest reference for **terminal-multiplexer UX for multi-agent workflows**: agent status (Blocked / Working / Done / Idle), foreground-process ownership, screen heuristics, semantic integration reports, workspace-level status roll-up, notification suppression when the operator is already looking, sound escalation as opt-in, and blocking `wait` semantics on a Unix socket API. Its architecture (bare host processes, AGPL-3.0) rules out embedding, but its UX decisions directly inform the [agent runtime status authority](/reference/roadmap/agent-runtime-status/), [agent attention prompts](/reference/roadmap/agent-attention-prompts/), and the daemon socket design. See [jackin-container: in-container multiplexer server](/reference/roadmap/jackin-container-binary/) for the container-multiplexer plan that applies these concepts to Jackin's container model.
 - Conductor, Claude devcontainers, Trail of Bits' devcontainer, and private
   internal tools remain useful comparison points, but they are not the center
   of this program.
@@ -62,7 +62,7 @@ Every borrowed idea has to survive these filters:
 | [`graemerocher/multicode`](https://github.com/graemerocher/multicode) | Parallel workspace table, GitHub status links, `multicode-remote`, skill-driven tags, Codex provider support, editor launcher, autonomous queue config, Apple-container experiments | Linux-first `bwrap`/`systemd-run` core; isolation is convenience, not a strong boundary; some Apple-container workflows still mount the host Docker socket |
 | [`dredozubov/hazmat`](https://github.com/dredozubov/hazmat) | Session contract, tier decision flow, native macOS containment, strict integration rules, rollback/proof discipline | macOS-only; one hardcoded `agent` user; no smooth multi-agent fleet surface |
 | [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/security/) | MicroVM plus private Docker daemon, host-side network proxy, credential injection outside the VM, branch worktrees under `.sbx/` | Product is tied to Docker Desktop; not an extensible jackin role ecosystem; credentials/network proxy are not available primitives in plain Docker |
-| [`ogulcancelik/herdr`](https://github.com/ogulcancelik/herdr) | Two-stage done state (Done vs Idle), workspace-level status roll-up, notification suppression when tab is focused, sound-escalation opt-in, PTY inference heuristic for zero-config status detection, blocking `wait` semantics on the socket API | AGPL-3.0 (embedding conflicts with Jackin's Apache 2.0 license); PTY heuristics degrade when the observed terminal is `docker attach` rather than the agent process; no container isolation, mount model, or auth forwarding | See [Herdr research](/reference/roadmap/herdr-research/) |
+| [`ogulcancelik/herdr`](https://github.com/ogulcancelik/herdr) | Two-stage done state (Done vs Idle), foreground-process ownership, semantic integration reports, visible-screen arbitration, workspace-level status roll-up, notification suppression when tab is focused, sound-escalation opt-in, and blocking `wait` semantics on the socket API | AGPL-3.0 (embedding conflicts with Jackin's Apache 2.0 license); heuristics degrade when the observed terminal is `docker attach` rather than the agent process; no container isolation, mount model, or auth forwarding | See [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) |
 | Claude/devcontainer patterns | Default-deny firewall and reproducible container setup | Devcontainers are workspace setup, not a multi-agent orchestrator or full operator platform |
 | Conductor-style native worktrees | Low-friction host-native worktrees | No meaningful sandbox boundary; useful only as a UX comparison |
 
@@ -81,7 +81,7 @@ just because another tool has it.
 | Open services started by the agent | Docker Sandboxes `sbx ports`; multicode host-localhost notes | Track service exposure as a first-class session-contract section with explicit host-side effects and non-persistent port mappings |
 | Work in parallel without clobbering the main checkout | Docker Sandboxes `--branch`; multicode short-lived workspaces | Jackin already has per-mount worktree/clone isolation; improve the operator surface around branch naming, preserved worktrees, and post-session review |
 | Resume a configured environment without rebuilding everything | Docker Sandboxes named/persistent VMs; multicode workspaces | Preserve jackin's explicit state model, but add disk/resource visibility and cleanup policy so persistence does not become invisible bloat |
-| See which agents are idle, busy, waiting, or expensive | multicode live TUI; Docker Sandboxes dashboard cards | [Agent runtime status](/reference/roadmap/agent-runtime-status/), [console resource panel](/reference/roadmap/console-resource-panel/), and [token telemetry](/reference/roadmap/token-cost-telemetry/) should converge into one operator overview |
+| See which agents are idle, busy, waiting, done, stuck, or expensive | Herdr state roll-ups; CCManager and ccmux live status; Docker Sandboxes dashboard cards | [Agent runtime status authority](/reference/roadmap/agent-runtime-status/), [console resource panel](/reference/roadmap/console-resource-panel/), and [token telemetry](/reference/roadmap/token-cost-telemetry/) should converge into one operator overview |
 | Jump from agent output to issue/PR/repo state | multicode `<multicode:*>` tags | Keep the tag protocol vendor-neutral and optional, then use it to drive GitHub link tracking and custom operator actions |
 | Reuse stack setup safely | Hazmat integrations; Docker Sandboxes kits/templates | Keep roles as the environment unit, but allow non-executable stack hints and future reviewed setup kits where they cannot widen trust |
 | Roll back after a bad unattended run | Hazmat snapshots/restore; Docker Sandboxes disposable VM cleanup | [Session snapshot and rollback](/reference/roadmap/session-snapshot-rollback/) should separate metadata recovery, project snapshots, and sandbox-state deletion |
@@ -470,7 +470,7 @@ This is a guide, not a constraint. The tracks are intentionally separable.
 
 ## Source materials
 
-Research snapshot: May 9, 2026.
+Research snapshots: May 9, 2026; agent-status addendum May 22, 2026.
 
 ### multicode
 
@@ -479,6 +479,11 @@ Research snapshot: May 9, 2026.
   isolation, GitHub tag/status integration, authentication,
   `multicode-remote`, Codex provider support, editor-tool selection,
   autonomous queue / PR actions, and Apple-container experiments.
+
+### Agent status and attention systems
+
+- [Herdr](https://herdr.dev/docs/agents/) — best current public baseline for foreground-process ownership, visible-screen heuristics, integration reports, state roll-ups, `done` until viewed, and socket waits.
+- [Agent Runtime Status Authority](/reference/roadmap/agent-runtime-status/) — Jackin's comparison matrix for Herdr, multicode, CCManager, Agent Session Manager, WezTerm Agent Deck, ccmux, TUICommander, Codemux, tmux-agent-status, agent-deck, claudeye, and Codeman.
 
 ### Hazmat
 

@@ -243,7 +243,7 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 | <RepoFile path="src/runtime/launch.rs" /> | Adds socket mount to `docker run`; connects via `docker exec jackin-container` |
 | <RepoFile path="src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-container new` |
 | <RepoFile path="src/isolation/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
-| [Agent runtime status roadmap item](/reference/roadmap/agent-runtime-status/) | Will consume agent-state events from the socket once the event stream is implemented |
+| [Agent runtime status authority roadmap item](/reference/roadmap/agent-runtime-status/) | Defines the in-container state authority and consumes agent-state events from the socket once the event stream is implemented |
 | [jackin daemon roadmap item](/reference/roadmap/jackin-daemon/) | The daemon will subscribe to each container's socket and maintain a cross-instance session index |
 | [Multiplexer Design Rules](/reference/multiplexer-design-rules/) | Passthrough contract, input routing rules, verification checklist |
 

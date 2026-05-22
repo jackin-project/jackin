@@ -1,5 +1,5 @@
 ---
-title: "Agent Runtime Status (Idle / Busy / Question)"
+title: "Agent Runtime Status Authority"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
@@ -7,177 +7,229 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-jackin's CLI is intentionally opaque to agent runtime: the operator launches
-an agent, the agent prints things, the operator interacts with it. There's no
-*structured* observability — jackin has no way to answer "is this agent
-currently busy, idle, or waiting for input?" That makes every downstream
-observability feature impossible:
+Jackin needs to know what each in-container agent is actually doing: actively working, waiting on the operator, finished but unseen, idle and reviewed, crashed, or suspiciously stuck. The current multiplexer code has the protocol labels but not the authority behind them. In <RepoFile path="crates/jackin-container/src/session.rs" />, `Session::refresh_state` still reduces state to "output in the last few seconds means working; otherwise blocked." That is not good enough for a first-class agent orchestrator. A quiet agent can be thinking, waiting for network, running a long tool, sitting at an input box, or dead. Treating all quiet periods as "blocked" creates false notifications, noisy dashboards, bad queue dispatch, and weak operator trust.
 
-- The operator console can't show a status column.
-- The autonomous queue (Phase 4) can't dispatch a queued task to an idle
-  agent.
-- Idle-runtime cleanup (Phase 4) has no signal to act on.
-- Cost telemetry (Phase 3) can't correlate token bursts with periods of
-  active work.
+The roadmap item is the state authority Jackin needs before agent attention prompts, autonomous task queues, desktop status, or cost/resource correlation can be reliable. It replaces timer-only inference with a layered model that is conservative by default and precise when the runtime exposes semantic events.
 
-Closing this gap is the **load-bearing** Phase 2 item: it's the substrate
-that everything observable depends on.
+## Target
 
-## Why It Matters
+Jackin should become the native, agentic terminal orchestrator: agents remain visible in real PTYs, but Jackin understands enough of their lifecycle to route attention and automation without babysitting. The operator should see one consistent status vocabulary across `jackin console`, `jackin hardline`, the daemon, Desktop Agent Hub, and scripts:
 
-- Without runtime status, the program's autonomous-queue thesis can't work:
-  a queue can't dispatch to a slot if it doesn't know whether the slot is
-  free.
-- The console looks fixed-shape today (one row per workspace + agent
-  picker). multicode's per-row colored status indicator (orange=idle,
-  green=busy, yellow=waiting) is the single biggest UX upgrade their TUI
-  has over jackin's, and it's the same data this gap exposes.
-- Multi-runtime support already needs an adapter seam for runtime-specific
-  behavior (entrypoint, auth, state). Status surfacing is one more
-  responsibility per adapter, which means one more reason to land the
-  adapter abstraction cleanly.
+| Public status | Meaning |
+|---|---|
+| `working` | The agent is actively generating, running tools, processing a task, or otherwise not ready for operator input. |
+| `blocked` | The agent is waiting on an operator decision, approval prompt, question, auth prompt, or other interactive input. |
+| `done` | The agent has returned to idle after work and the operator has not yet reviewed that pane/session. |
+| `idle` | The agent is idle and already seen, or the pane is a shell/no active agent. |
+| `unknown` | Jackin cannot identify a reliable state yet. Unknown is safer than pretending silence means blocked. |
+| `stuck` | Diagnostic overlay for "we expected progress, but no reliable state transition happened before a timeout." This should not replace `blocked`; it is a health signal used for escalation and debugging. |
 
-## Inspiration in multicode
+Internally, the raw runtime detector should track `unknown | working | blocked | idle`, plus per-pane `seen` metadata. `done` is derived from `idle + !seen`, not reported as a raw state. This matches the useful part of Herdr's model and avoids conflating "the process is idle" with "the operator has reviewed the result."
 
-**Sources**:
-- No dedicated README section (implementation-only feature)
-- Source — [`lib/src/services/root_session_service.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/services/root_session_service.rs) (SSE event stream → status state)
-- Source — [`lib/src/services/opencode_client_service.rs`](https://github.com/graemerocher/multicode/blob/main/lib/src/services/opencode_client_service.rs) (the SSE client itself)
+## Prior art
 
-multicode subscribes to the OpenCode SSE event stream and derives a
-three-state enum:
+### Herdr — strongest public reference
 
-- **Idle** — no in-flight tool call, no pending message
-- **Busy** — agent is actively generating or running a tool
-- **Question** — agent is waiting for user input
+[Herdr](https://herdr.dev/) is the best current public reference for this problem. Its docs describe three signal sources: foreground process detection, terminal output heuristics, and integration state reports. Its source confirms that the important behavior is not a single regex or timer; it is the arbitration layer that decides which signal is authoritative when signals disagree.
 
-The state lives on `WorkspaceSnapshot.root_session_status`. The TUI renders
-it as a colored cell next to the workspace name. The transition stream is
-also consumed by the resource-usage poller (so CPU samples are tagged by
-status — not implemented today but visible in their schema).
+Concepts to borrow, not code:
 
-The implementation cost is small: a parser per-provider that reads SSE/
-event-stream output and emits status events. No agent-runtime changes; just
-a sidecar that watches the agent's emitted protocol.
+- **Process ownership first.** Herdr identifies which agent owns a pane by reading the foreground process group, then matching known agent binaries. Jackin can do this more cleanly inside the container because it sees the real agent process instead of a host-side `docker attach` wrapper.
+- **Screen heuristics as fallback.** Herdr scans the live terminal screen for strong UI states: approval prompts, input boxes, and working chrome. These heuristics fill gaps when hooks are unavailable, but only narrow "visible blocker" signals are strong enough to override stale semantic reports.
+- **Semantic integration reports as primary authority.** Herdr integrations report `working`, `blocked`, or `idle` through the socket API with `source`, `agent`, optional `custom_status`, and `seq` fields. Jackin should expose the same concept through its own control protocol, not Herdr's wire format.
+- **Central arbitration.** Herdr does not let every subsystem decide state separately. Hook authority, visible blockers, visible idle, process exit, stale reports, and sequence numbers flow through one state machine.
+- **Done is an acknowledgement overlay.** Herdr maps raw idle + unseen to public `done`; once the pane is viewed, it becomes `idle`.
+- **Attention roll-up prioritizes attention, not activity.** A blocked pane outranks everything; unseen done work should outrank merely working panes because it is ready for the operator now.
 
-## Recommended Shape
+Herdr is AGPL-3.0 and cannot be embedded in Jackin's Apache-2.0 codebase. The implementation must be written from scratch. The value is the product shape and signal hierarchy, not source reuse.
 
-A small **runtime-status adapter** per supported runtime, bolted onto the
-existing multi-runtime adapter seam (the one that owns
-`derived_image.rs` / `entrypoint.sh` / `instance/auth.rs` / etc. per
-runtime). Each adapter emits status events to a single in-process channel;
-consumers (console, queue, cleanup, telemetry) subscribe to the channel.
+### Other agent-session tools
 
-### Status enum
+Visual `busy / waiting / idle` indicators are becoming table stakes for multi-agent CLIs, but the implementations split into several quality tiers. Jackin should use these projects as comparison checks while keeping Herdr's layered authority as the baseline.
 
-```rust
-pub enum AgentStatus {
-    Initializing,
-    Idle,
-    Busy { since: Instant },
-    Question { prompt: Option<String>, since: Instant },
-    Crashed { exit_code: i32 },
-    OomKilled,
-}
-```
+| Tool | State source | Useful idea | Limit for Jackin |
+|---|---|---|---|
+| [multicode](https://github.com/graemerocher/multicode) | OpenCode/Codex app-server status, SSE events, and cooperative task state files. | Prefer structured runtime state when available; map runtime flags like waiting-on-approval to a question/blocked state before touching terminal text. | Runtime-specific and partly cooperative; state files are a heartbeat, not proof that a stuck agent is healthy. |
+| [CCManager](https://github.com/kbwo/ccmanager) | `xterm/headless` visible-screen capture, per-runtime detectors, 100ms polling, idle debounce, and status hooks. | Runtime-specific screen detectors need fixture tests, debounce, and a separate "pending auto approval" state if automation is layered on top. | Host-side app with many text patterns; no central process/hook arbitration comparable to Herdr. |
+| [Agent Session Manager](https://github.com/izll/agent-session-manager) | `tmux capture-pane`, Claude UI frame parsing, spinner detection, and per-window roll-up. | Waiting beats busy, busy beats idle; parse only current/recent UI areas and ignore completed spinner lines. | tmux/scrollback-oriented and regex-heavy; capture-pane failures collapse toward idle. |
+| [WezTerm Agent Deck](https://github.com/Eric162/wezterm-agent-deck) | WezTerm foreground process info, child process fallback, pane title fallback, recent pane text, and rate-limited notifications. | Agent identity detection should combine process, argv, child processes, title, and cache TTLs; notifications must be transition/rate limited. | Terminal-emulator plugin only; screen patterns are still the main state source. |
+| [ccmux](https://ccmux.ai/) | Daemon poll of tmux panes, per-agent classifier, `needs_input` transition bell, prompt counts, and sleep-inhibit lifecycle. | Tie attention state to operational effects such as notification delivery and keep-awake decisions; write e2e tests against real tmux/PTY and fake system inhibitors. | Claude classifier is prompt-frame plus quiet-time; Codex/Antigravity fallback is still quiet-time. |
+| [TUICommander](https://tuicommander.com/docs/user-guide/ai-agents.html) | Foreground-process polling plus status-line/output markers and a terminal activity state machine. | Completion deferral and subtask counters prevent "main pane idle" from hiding active child work. | Marker-driven and app-specific; not enough for runtime-neutral authority. |
+| [Codemux](https://docs.codemux.org/agent-status) and [tmux-agent-status](https://github.com/samleeney/tmux-agent-status) | Claude/Codex hooks, local status files, and status roll-up in tmux/sidebar UI. | Hook events are the right primary signal for runtimes that expose them; "done until viewed" is a proven attention pattern. | Both expect host hook config changes. Jackin must install only container-local hooks by default. |
+| [agent-deck](https://github.com/asheshgoplani/agent-deck), [claudeye](https://docs.rs/crate/claudeye/0.6.0), and [Codeman](https://github.com/Ark0N/Codeman) | tmux status watchers, capture-pane regexes, transition notifiers, and multi-layer idle checks. | Transition notifications, health scores, circuit breakers, and anti-flicker render pipelines are useful adjacent concepts. | They validate demand, but most status inference remains pane-text or timeout driven. |
 
-`Initializing` covers the gap between container start and the first runtime
-event. `Crashed` and `OomKilled` are surfaced from Docker container state,
-not from the runtime adapter — they're handled by the same mechanism so
-consumers see one stream.
+The strongest non-Herdr improvement to borrow is the structured-runtime path: if a runtime exposes a session status API, SSE stream, hook lifecycle, or plugin report, that should outrank visible-screen heuristics. The second strongest improvement is testability: Jackin should have deterministic unit tests for arbitration plus live PTY/e2e tests for poll/classify/notify behavior, including burst transitions and capture failures.
 
-### Per-runtime adapters
+The comparison also shows what to avoid. Regex-only and silence-only detectors drift quickly as agent TUIs change. Cooperative state files are useful as heartbeat/evidence channels, but they cannot prove the agent is not stuck because the agent can forget or fail before updating the file. Host-side hook mutation is common in the ecosystem, but Jackin's default path must stay container-local so the operator's host config is never silently changed.
 
-- **Claude (today)**. Claude Code emits a streaming JSONL transcript when
-  invoked with `--output-format stream-json` (or similar). The adapter
-  attaches to that stream when available; if not (e.g. the operator is
-  using Claude in a regular interactive session), the adapter falls back
-  to a heartbeat-and-stdin-idle heuristic.
-- **Codex** (when [multi-runtime](/reference/roadmap/multi-runtime-support/)
-  ships). Codex's app-server emits structured events; map those.
-- **Amp** (when multi-runtime ships). Amp's thread API has an explicit
-  status field; surface it.
+### Terminal shell integration
 
-The adapter is a *separate process or task*, not part of the runtime's
-own startup. It reads the runtime's structured output from a side channel
-(stream-json file, named pipe, server-sent events) and emits status events
-to jackin's status bus. It's allowed to know runtime specifics; the
-consumers are not.
+Terminal ecosystems already solved a narrower version of this problem for shell commands. VS Code's terminal shell integration uses custom OSC sequences such as prompt start, prompt end, pre-execution, and command-finished markers; it also supports Final Term `OSC 133` prompt markers. Windows Terminal documents the same family of prompt/command markers. These signals are excellent when the foreground program is an ordinary shell, but they do not fully solve embedded agent TUIs that draw their own prompt, approval UI, or full-screen interface.
 
-### Status bus
+Jackin should still listen for shell-integration markers when they pass through the PTY. They are useful for shells, subprocess command boundaries, cwd tracking, and "agent returned to shell" transitions. They are not a substitute for agent runtime hooks or visible-agent detection.
 
-A simple broadcast channel in <RepoFile path="src/runtime/launch.rs" />
-(or a new `src/runtime/status.rs`) that emits
-`(instance_name, status_event)` tuples. Console subscribes for live
-rendering; queue subscribes for dispatch; persistent storage layer
-subscribes to record state transitions.
+### Cursor-position and screen-stability probes
 
-Consumers should be tolerant of dropped events (broadcast channel with
-bounded capacity); status is always re-derivable from the most recent
-event plus container liveness.
+The strongest non-Herdr conceptual work is cursor-position readiness detection: query the PTY cursor position with `CSI 6n`, combine that with a short output-stability window, and infer whether input would land at a prompt. Zylos' research argues this is more robust than prompt regexes because it asks "where will the next character appear?" instead of "does the screen text match this prompt string?"
 
-## Scope (V1)
+This belongs in Jackin as a fallback/probe, not as the primary blocker detector. It is useful for "is this pane input-ready?" and "is a submitted task suspiciously stuck?", but full-screen TUIs, nested multiplexers, and terminals that intercept cursor reports can produce false positives. The state authority should treat cursor probes as one signal with confidence metadata, not as truth.
 
-- `AgentStatus` enum + per-instance status state.
-- One status adapter for Claude — the only runtime today. Adapters for
-  Codex and Amp ship alongside their multi-runtime support.
-- A status bus that consumers subscribe to.
-- A fallback heartbeat-and-idle heuristic for Claude when stream-json
-  isn't available, gated behind a `--observable` flag on `jackin load` so
-  operators opt in.
-- Console subscribes to render a status cell next to each workspace.
-  *(The console rendering integration may slip a release behind the
-  status-bus plumbing.)*
-- No persistence in V1 — status is in-memory only. [Persistent storage
-  layer](/reference/roadmap/persistent-storage-layer/) adds a status_log
-  table later.
+### Native agent-terminal products
 
-## Defer
+Warp's "Full Terminal Use" direction matters because it reinforces the right product boundary: the agent operates in the foreground terminal, handles interactive tools, and the operator can take over. Jackin should stay terminal-first in the same sense, but with stronger containment and a runtime-neutral control plane. The goal is not a hidden background worker; it is an agent-native terminal where status, attention, and automation are first-class.
 
-- Heuristic fallbacks for runtimes without structured output. If a runtime
-  doesn't expose status, jackin' shows `Initializing → Unknown` and the
-  operator gets the existing opaque experience.
-- Per-tool granularity (which tool the agent is running right now). V1 is
-  three-state; finer-grained surfacing is a follow-up.
-- Cross-instance status aggregation (a single "fleet view"). Wait until
-  the queue exists.
+## Jackin design
 
-## Open Questions
+The state authority lives inside `jackin-container` because that is where the real PTY, foreground process, parser screen, and child lifecycle are visible. Host-side code should consume structured state events; it should not scrape terminal output through `docker exec`, `docker attach`, or a rendered preview.
 
-- **`--observable` opt-in default.** Should running Claude with stream-json
-  parsing be the default in jackin' (so status surfaces automatically) or
-  opt-in (so the operator's existing interactive flow is unchanged)?
-  Recommended default: *opt-in for V1*, then revisit after operator
-  feedback. stream-json output may interact with how the operator currently
-  uses Claude's TUI.
-- **Heuristic-only fallback.** Is a "no event for 30s and stdin is idle"
-  signal good enough to call an agent Idle? Recommended: *yes for queue
-  dispatch* (false negatives are safe — the queue just doesn't fill the
-  slot); *no for cost telemetry* (false negatives skew samples).
-- **Adapter ownership.** Is the status adapter part of the multi-runtime
-  adapter trait, or a separate runtime-coupled module? Recommended:
-  *separate module* — runtime adapters own launch, auth, entrypoint;
-  status adapters own observability. Different reviewers, different
-  cadence.
+### Signal sources
 
-## Related Files
+1. **Process ownership.** Track the child PID for each session, read Linux `/proc/<pid>/stat` to get the foreground terminal process group, scan `/proc` for that process group, and identify known agent binaries. Because Jackin runs inside Linux containers, this can be Linux-first and simpler than Herdr's cross-platform path. Process exit should clear hook authority for that agent and transition toward `idle` or `exited`, not leave a stale working/blocking state behind.
+2. **Semantic reports.** Add a control-channel method for trusted in-container runtime integrations to report state: source, agent/runtime, raw state, optional message, optional custom status, sequence number, and timestamp. Reporters include Claude Code hooks, Codex hooks, OpenCode plugins, Amp/Kimi equivalents when available, and Jackin-owned wrapper hooks created inside the container at launch.
+3. **Visible screen detection.** Read the current `vt100::Screen` snapshot for the pane and match only strong, current-screen signals: approval prompts, explicit input-required prompts, visible idle input UI, and visible working chrome. Avoid treating arbitrary scrollback text as authority.
+4. **Shell-integration markers.** Capture `OSC 133`, `OSC 633`, `OSC 7`, and related markers when shells emit them. Use them for shell prompt/execution boundaries and cwd/title enrichment.
+5. **Cursor-position probes.** Optionally probe `CSI 6n`/cursor position through the PTY for readiness/stuck diagnostics, with timeout and fallback. Never block the PTY reader, attach channel, or daemon event loop while waiting for a probe response.
+6. **Output activity.** Keep output timestamps, but demote them to a weak signal: recent output supports `working`; silence alone does not prove `blocked`.
 
-- New module (e.g. `src/runtime/status.rs`) — status bus +
-  adapter trait
-- <RepoFile path="src/runtime/launch.rs" /> — wires the adapter into the
-  launch path
-- <RepoFile path="src/console/manager/state.rs" /> — subscribes for
-  rendering
-- Future per-runtime files (Codex / Amp adapters) — bolt into this seam
+### Arbitration
 
-## See Also
+All signals flow through one state machine. The initial precedence should be:
 
+1. Hook/report says `blocked` for the current detected agent and has a valid sequence.
+2. Strong visible blocker for the current detected agent.
+3. Strong visible working can override stale hook `idle`.
+4. Strong visible idle can stale a hook `working` after a short grace window.
+5. Fresh hook/report state.
+6. Process/screen fallback state.
+7. Unknown.
+
+The state machine must validate sequence numbers per source, reject reports from a source that conflicts with the detected foreground agent, clear stale hook authority on process exit, debounce short-lived transitions, and attach confidence metadata so downstream consumers can decide whether to notify, queue work, or only display a diagnostic.
+
+### Done, seen, and roll-up
+
+`done` is derived outside the raw detector:
+
+- When a pane transitions from `working` or `blocked` to raw `idle` while not focused/visible, mark `seen = false`; public status becomes `done`.
+- When the operator focuses or explicitly acknowledges the pane, mark `seen = true`; public status becomes `idle`.
+- Tab, workspace, and fleet roll-up should use attention priority: `blocked > done > working > idle > unknown`.
+
+This lets the console and Desktop Agent Hub route the operator to the pane that needs action now, not merely the pane doing background work.
+
+### Stuck detection
+
+`stuck` should be a diagnostic overlay driven by expectations, not a normal lifecycle state. Examples:
+
+- A prompt/task was submitted, the foreground agent process is still alive, and no reliable `working`, `blocked`, or `idle` transition arrived within the runtime's timeout.
+- A hook source reports `working` for too long while the visible screen and process state disagree.
+- A process remains foreground but stops responding to cursor/screen probes.
+
+Stuck events should be rate-limited, include the evidence trail, and surface as "inspect this agent" rather than "agent needs approval." This prevents false positives from training operators to ignore attention prompts.
+
+## Runtime integration
+
+### Claude Code
+
+Claude Code hooks expose events including notifications for permission prompts and idle prompts, plus stop/subagent lifecycle hooks. Jackin should install container-local hook scripts or command hooks at launch when the role/runtime allows it. The hook writes semantic reports to the Jackin container socket. Subagent completion must not mark the parent session done early; subagent events should either carry their own source scope or be ignored for parent `idle` transitions unless the parent stop event follows.
+
+### Codex
+
+Codex hooks expose turn-scoped events including `PermissionRequest`, `UserPromptSubmit`, `PostToolUse`, `SubagentStart`, `SubagentStop`, and `Stop`, and its hook configuration requires the runtime's hook feature to be enabled. Jackin should configure this only inside the container-owned Codex home, never by silently editing the host's `CODEX_HOME`. `PermissionRequest` maps to `blocked` only when Codex is actually surfacing approval to the user; pre/post tool hooks mostly support `working` and evidence trails.
+
+### Amp, OpenCode, Kimi, Gemini, and custom agents
+
+Each runtime gets the best available source: plugin APIs where available, hook files where available, then visible screen/process heuristics. Unsupported custom agents remain usable; they just produce `unknown`, weak `working`, or manually reported state until the role author adds an integration.
+
+### Host-side effects rule
+
+This feature must not silently mutate host configuration. Installing Jackin-owned hooks inside the derived image or per-container agent home is allowed. Editing host `~/.claude`, host `~/.codex`, host `~/.config/opencode`, shell rc files, or terminal settings is not allowed unless it is an explicit operator action surfaced in the launch summary. The default implementation path is container-local.
+
+## Control protocol
+
+The control plane should grow from one-shot `status`/`snapshot` toward state events:
+
+| Surface | Purpose |
+|---|---|
+| `session.report_agent` | Runtime hook/plugin reports raw state and optional metadata for one session. |
+| `session.clear_agent_authority` | Runtime hook/plugin releases its authority when it exits or knows it is stale. |
+| `events.subscribe` | Host/daemon/console subscribe to session lifecycle and effective state transitions. |
+| `wait session-status` | CLI scripts block until a session reaches `blocked`, `done`, `idle`, or `exited` without polling. |
+| `session.read` | Debugging path to read visible/recent pane text when state looks wrong. |
+
+The event stream should emit both raw/effective state and evidence metadata: detected agent, source, confidence, visible blocker/idle/working booleans, process-exited flag, and revision. Consumers should subscribe; they should not poll rendered terminal previews.
+
+## Phases
+
+### Phase 0 — Stop lying with silence
+
+Remove or demote the current "silent for N seconds means blocked" behavior. Until the real authority exists, a quiet live session should become `unknown` or weak `working`, not `blocked`. This is a product-quality fix because false blocked indicators are worse than no blocked indicator.
+
+### Phase 1 — State model and event stream
+
+Add the internal raw state, derived public status, `seen` flag, attention-priority roll-up, and `agent-state-changed` event stream to `jackin-container` and `jackin-protocol`. Console and host status calls should read the same effective state.
+
+### Phase 2 — Process and screen detector
+
+Implement foreground process-group detection inside the container and a small set of runtime-specific visible-screen detectors for the built-in runtimes. Start with Claude Code and Codex because their approval/idle surfaces drive the highest operator wait cost. Add tests with fake PTY screens and fake `/proc` fixtures.
+
+### Phase 3 — Semantic runtime reports
+
+Install container-local hook/plugin reporters for Claude Code and Codex, then extend to OpenCode, Amp, Kimi, and Gemini as each runtime's hook/plugin surface allows. Reports use sequence numbers and source IDs, and the state machine arbitrates against process/screen evidence.
+
+### Phase 4 — Stuck/readiness diagnostics
+
+Add cursor-position and shell-integration probes for input readiness and stuck diagnostics. Use hard timeouts and separate tasks so a broken probe cannot block the multiplexer.
+
+### Phase 5 — Host consumers
+
+Update `jackin console`, the daemon, Desktop Agent Hub, attention prompts, autonomous queue, resource panel, and token/cost telemetry to consume the event stream. These consumers should not reimplement state detection.
+
+## Scope
+
+In scope:
+
+- One canonical state authority inside `jackin-container`.
+- Runtime-neutral public status vocabulary.
+- Per-session raw state, public derived status, `seen`, evidence metadata, and revision.
+- Process detection through Linux `/proc`.
+- Screen heuristics for built-in runtimes.
+- Container-local hook/plugin reporters for supported runtimes.
+- Event subscription and wait semantics over the control socket.
+- Tests for arbitration, sequence rejection, stale hook clearing, process exit, `done`/`idle` acknowledgement, roll-up priority, and false-positive suppression.
+
+Out of scope for the first implementation:
+
+- Host-side hook installation without an explicit operator action.
+- API/network interception of LLM provider traffic.
+- Runtime-specific tool-level status for every command/tool.
+- Windows ConPTY support.
+- Autonomous recovery actions after stuck detection. Phase 1 only reports and routes attention.
+
+## Open questions
+
+- **Confidence vocabulary.** Should events expose `authoritative | strong | weak | unknown`, or a richer evidence struct only?
+- **Unknown display.** Should `unknown` appear as its own UI label, or should console hide it unless debug/status details are open?
+- **Stuck timeout.** Should the timeout be runtime-specific, role-specific, or derived from the submitted task class?
+- **Hook installation policy.** For role-authored agent homes, does Jackin own the hook config entirely inside the container, or should role authors opt into a hook slot?
+- **Custom agents.** What is the smallest role-author contract for declaring "this screen string means blocked" without creating regex sprawl?
+
+## Related files
+
+- <RepoFile path="crates/jackin-container/src/session.rs" /> — current weak state timer; future PTY/process/screen signal source.
+- <RepoFile path="crates/jackin-container/src/daemon.rs" /> — event loop and session lifecycle.
+- <RepoFile path="crates/jackin-protocol/src/control.rs" /> — status/event protocol surface.
+- <RepoFile path="crates/jackin-container/src/runtime_setup.rs" /> — runtime-local setup path for container-owned hooks/plugins.
+- <RepoFile path="src/runtime/launch.rs" /> — host launch path that must pass only explicit/container-local state setup.
+
+## See also
+
+- [Herdr](https://herdr.dev/) and [Herdr agents docs](https://herdr.dev/docs/agents/) — strongest public reference for the state model and signal layering.
+- [Herdr socket API](https://herdr.dev/docs/socket-api/) — reference for report/wait/event concepts, not a wire-format dependency.
+- [Claude Code hooks](https://code.claude.com/docs/en/hooks) and [Codex hooks](https://developers.openai.com/codex/hooks) — semantic runtime signal sources.
+- [multicode](https://github.com/graemerocher/multicode), [CCManager](https://github.com/kbwo/ccmanager), [Agent Session Manager](https://github.com/izll/agent-session-manager), [WezTerm Agent Deck](https://github.com/Eric162/wezterm-agent-deck), [ccmux](https://ccmux.ai/), [TUICommander](https://tuicommander.com/docs/user-guide/ai-agents.html), [Codemux agent status](https://docs.codemux.org/agent-status), and [tmux-agent-status](https://github.com/samleeney/tmux-agent-status) — comparison set for hook, screen, process, and notification designs.
+- [VS Code terminal shell integration](https://code.visualstudio.com/docs/terminal/shell-integration) and [Windows Terminal shell integration](https://learn.microsoft.com/en-us/windows/terminal/tutorials/shell-integration) — prompt/command marker precedents.
+- [AI Agent Input-Ready Detection: From Regex Heuristics to Cursor-Position Semantics](https://zylos.ai/research/2026-04-01-ai-agent-input-ready-detection-cursor-vs-regex) — useful cursor-readiness research to validate as a fallback.
 - [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)
-- [Multi-runtime support](/reference/roadmap/multi-runtime-support/) —
-  the runtime adapter abstraction this depends on
-- [Console resource panel](/reference/roadmap/console-resource-panel/) —
-  pairs with status to render the per-workspace observability column
-- [Autonomous task queue](/reference/roadmap/autonomous-task-queue/) — the
-  primary downstream consumer
-- [Token & cost telemetry](/reference/roadmap/token-cost-telemetry/) —
-  another downstream consumer
+- [jackin-container: in-container multiplexer server](/reference/roadmap/jackin-container-binary/)
+- [Agent attention prompts](/reference/roadmap/agent-attention-prompts/)
+- [Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/)
+- [Autonomous task queue](/reference/roadmap/autonomous-task-queue/)

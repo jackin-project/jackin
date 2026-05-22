@@ -190,7 +190,7 @@ export default defineConfig({
                       label: 'Fleet phase 2 — Live operator surface',
                       collapsed: true,
                       items: [
-                        { label: 'Agent runtime status', slug: 'reference/roadmap/agent-runtime-status' },
+                        { label: 'Agent runtime status authority', slug: 'reference/roadmap/agent-runtime-status' },
                         { label: 'Console agent session control', slug: 'reference/roadmap/console-agent-session-control' },
                         { label: 'Console resource panel', slug: 'reference/roadmap/console-resource-panel' },
                         { label: 'Agent tag protocol', slug: 'reference/roadmap/agent-tag-protocol' },
