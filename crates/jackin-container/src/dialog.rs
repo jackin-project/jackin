@@ -685,26 +685,36 @@ enum HintSpan<'a> {
     GroupSep,
 }
 
+// Bottom-hint contract mirrors the host console `Select Role` picker
+// (`↑↓ navigate · type filter · Enter select · Esc cancel`) so the
+// operator's footer reading carries from the host to the in-container
+// dialog without learning a second vocabulary. `type filter` is a
+// textual hint (no key glyph) because the action is "any printable
+// keystroke," not a specific key.
 const PALETTE_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↑↓"),
     HintSpan::Text("navigate"),
     HintSpan::GroupSep,
+    HintSpan::Text("type filter"),
+    HintSpan::GroupSep,
     HintSpan::Key("Enter"),
-    HintSpan::Text("confirm"),
+    HintSpan::Text("select"),
     HintSpan::GroupSep,
     HintSpan::Key("Esc"),
-    HintSpan::Text("dismiss"),
+    HintSpan::Text("cancel"),
 ];
 
 const PICKER_HINT: &[HintSpan<'static>] = &[
     HintSpan::Key("↑↓"),
     HintSpan::Text("navigate"),
     HintSpan::GroupSep,
+    HintSpan::Text("type filter"),
+    HintSpan::GroupSep,
     HintSpan::Key("Enter"),
     HintSpan::Text("launch"),
     HintSpan::GroupSep,
     HintSpan::Key("Esc"),
-    HintSpan::Text("dismiss"),
+    HintSpan::Text("cancel"),
 ];
 
 const RENAME_HINT: &[HintSpan<'static>] = &[
@@ -825,34 +835,40 @@ fn render_agent_picker(
     }
 }
 
-/// Filter input row: `▸ <filter>▏` style, with the leading `▸`
-/// matching the in-list selection mark so the operator's eye reads
-/// the filter as the "active row" while typing. Empty filter shows
-/// a hint placeholder (`type to filter…`) in dim.
+/// Filter input row. Visual contract mirrors the host console's
+/// `Select Role` picker (`src/console/widgets/role_picker.rs::render`)
+/// so the operator sees the same `Filter: …` shape in every dialog
+/// jackin renders. Empty filter shows a 20-character `░` placeholder
+/// (`U+2591 LIGHT SHADE`) in `PHOSPHOR_DARK` — same glyph + colour as
+/// the host picker; populated filter shows the typed text in white
+/// followed by a `█` (`U+2588 FULL BLOCK`) caret. Both halves stay
+/// inside `Filter: ` (label in `PHOSPHOR_DIM`).
 fn render_filter_input(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, filter: &str) {
     move_to(buf, row, col);
     buf.extend_from_slice(BG_DARK.as_bytes());
-    buf.extend_from_slice(FG_GREEN.as_bytes());
-    buf.extend_from_slice(b"  ");
+    buf.extend_from_slice(FG_DIM.as_bytes());
+    let label = "Filter: ";
+    buf.extend_from_slice(label.as_bytes());
+    let label_cols = label.chars().count();
+    let mut filled = label_cols;
     if filter.is_empty() {
-        buf.extend_from_slice(FG_DIM.as_bytes());
-        buf.extend_from_slice("type to filter…".as_bytes());
+        buf.extend_from_slice(FG_BORDER.as_bytes());
+        for _ in 0..20 {
+            buf.extend_from_slice("░".as_bytes());
+        }
+        filled += 20;
     } else {
         buf.extend_from_slice(FG_WHITE.as_bytes());
-        buf.extend_from_slice(BOLD.as_bytes());
         buf.extend_from_slice(filter.as_bytes());
-        buf.extend_from_slice(RESET.as_bytes());
-        buf.extend_from_slice(BG_DARK.as_bytes());
-        buf.extend_from_slice(FG_GREEN.as_bytes());
-        buf.extend_from_slice("▏".as_bytes());
+        buf.extend_from_slice(FG_WHITE.as_bytes());
+        buf.extend_from_slice(BOLD.as_bytes());
+        buf.extend_from_slice("█".as_bytes());
+        filled += filter.chars().count() + 1;
     }
-    // Pad to right border so previous chars from a longer filter
+    // Pad to right border so leftover chars from a longer filter
     // round-trip cleanly when the operator hits Backspace.
-    let filled = 2 + if filter.is_empty() {
-        "type to filter…".chars().count()
-    } else {
-        filter.chars().count() + 1 // +1 for the caret glyph
-    };
+    buf.extend_from_slice(RESET.as_bytes());
+    buf.extend_from_slice(BG_DARK.as_bytes());
     let interior = (width as usize).saturating_sub(2);
     for _ in filled..interior {
         buf.push(b' ');
@@ -860,23 +876,13 @@ fn render_filter_input(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, filter
     buf.extend_from_slice(RESET.as_bytes());
 }
 
-/// Empty-results message inside a filterable dialog. Keeps the box
-/// height stable (the filter still works even when the current input
-/// matches nothing) and tells the operator what to do next.
-fn render_no_matches_row(buf: &mut Vec<u8>, row: u16, col: u16, width: u16) {
-    move_to(buf, row, col);
-    buf.extend_from_slice(BG_DARK.as_bytes());
-    buf.extend_from_slice(FG_DIM.as_bytes());
-    let interior = (width as usize).saturating_sub(2);
-    let label = "  (no matches — Backspace to clear)";
-    let label_cols = label.chars().count();
-    let take = label_cols.min(interior);
-    let label_take: String = label.chars().take(take).collect();
-    buf.extend_from_slice(label_take.as_bytes());
-    for _ in take..interior {
-        buf.push(b' ');
-    }
-    buf.extend_from_slice(RESET.as_bytes());
+/// No-matches state — leave the body blank, same as the host
+/// `Select Role` picker. The empty space below the filter row IS the
+/// empty state; an inline `(no matches)` placeholder breaks that
+/// visual contract. Operator dismisses with Esc or pops filter
+/// characters with Backspace until items reappear.
+fn render_no_matches_row(_buf: &mut Vec<u8>, _row: u16, _col: u16, _width: u16) {
+    // Intentionally blank. See doc-comment.
 }
 
 /// Render one row of a palette/picker list at `(row, col)` spanning
