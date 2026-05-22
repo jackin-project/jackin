@@ -115,10 +115,18 @@ pub struct Multiplexer {
     /// Monotonic token for the background git / GitHub metadata
     /// lookup backing the currently-open container-info dialog.
     container_info_request_id: u64,
+    /// Git / GitHub metadata lookup waiting until after the initial
+    /// container-info frame has been queued to the attach writer.
+    pending_container_info_lookup: Option<ContainerInfoLookupRequest>,
     /// Workspace workdir read from `JACKIN_WORKDIR` at daemon startup.
     /// Every spawned PTY (agent or shell) receives this as its `cwd`
     /// so the operator's panes open in the workspace they configured
     /// instead of `$HOME` (portable_pty's CommandBuilder default).
+    workdir: PathBuf,
+}
+
+struct ContainerInfoLookupRequest {
+    request_id: u64,
     workdir: PathBuf,
 }
 
@@ -310,6 +318,7 @@ impl Multiplexer {
             pointer_shapes_supported: pointer_shapes_supported_from_env(),
             container_info_copy_deadline: None,
             container_info_request_id: 0,
+            pending_container_info_lookup: None,
             workdir,
         }
     }
@@ -430,8 +439,6 @@ impl Multiplexer {
         let container_name = self.status_bar.container_name().to_string();
         self.container_info_request_id = self.container_info_request_id.wrapping_add(1);
         let request_id = self.container_info_request_id;
-        let workdir = self.workdir.clone();
-        let event_tx = self.event_tx.clone();
         self.dialog_push(Dialog::ContainerInfo {
             container_name,
             role: self.status_bar.role().to_string(),
@@ -439,29 +446,46 @@ impl Multiplexer {
             workdir: self.workdir.to_string_lossy().into_owned(),
             git_loading: true,
             git_branch: None,
+            pull_request_loading: true,
             pull_request_url: None,
             copied: false,
         });
+        self.pending_container_info_lookup = Some(ContainerInfoLookupRequest {
+            request_id,
+            workdir: self.workdir.clone(),
+        });
+    }
+
+    fn spawn_pending_container_info_lookup(&mut self) {
+        let Some(request) = self.pending_container_info_lookup.take() else {
+            return;
+        };
+        let event_tx = self.event_tx.clone();
         // Resolve on every open. The operator may switch branches from
         // any pane while the container stays alive, so branch / PR
         // metadata must never be cached on the Multiplexer. The git
-        // and gh commands can touch disk and network, so they run off
-        // the render path and patch the visible dialog when complete.
+        // and gh commands can touch disk and network, so they run only
+        // after the initial dialog frame has been queued to the client.
         std::thread::spawn(move || {
-            let git_context = workdir_git_context(&workdir);
-            let _ = event_tx.send(SessionEvent::ContainerInfoLoaded {
-                request_id,
-                branch: git_context.branch,
-                pull_request_url: git_context.pull_request_url,
+            let branch = git_current_branch(&request.workdir);
+            let _ = event_tx.send(SessionEvent::ContainerInfoBranchLoaded {
+                request_id: request.request_id,
+                branch: branch.clone(),
+            });
+            let pull_request_url = branch
+                .as_deref()
+                .and_then(|branch| gh_pull_request_url(&request.workdir, branch));
+            let _ = event_tx.send(SessionEvent::ContainerInfoPullRequestLoaded {
+                request_id: request.request_id,
+                pull_request_url,
             });
         });
     }
 
-    fn apply_container_info_loaded(
+    fn apply_container_info_branch_loaded(
         &mut self,
         request_id: u64,
         branch: Option<String>,
-        pull_request_url: Option<String>,
     ) -> bool {
         if request_id != self.container_info_request_id {
             return false;
@@ -469,7 +493,6 @@ impl Multiplexer {
         let Some(Dialog::ContainerInfo {
             git_loading,
             git_branch,
-            pull_request_url: current_pull_request_url,
             ..
         }) = self.dialog_top_mut()
         else {
@@ -477,6 +500,26 @@ impl Multiplexer {
         };
         *git_loading = false;
         *git_branch = branch;
+        true
+    }
+
+    fn apply_container_info_pull_request_loaded(
+        &mut self,
+        request_id: u64,
+        pull_request_url: Option<String>,
+    ) -> bool {
+        if request_id != self.container_info_request_id {
+            return false;
+        }
+        let Some(Dialog::ContainerInfo {
+            pull_request_loading,
+            pull_request_url: current_pull_request_url,
+            ..
+        }) = self.dialog_top_mut()
+        else {
+            return false;
+        };
+        *pull_request_loading = false;
         *current_pull_request_url = pull_request_url;
         true
     }
@@ -754,7 +797,7 @@ impl Multiplexer {
                 self.send_output(encode_osc52_clipboard_write(&payload));
                 self.container_info_copy_deadline =
                     Some(Instant::now() + CONTAINER_INFO_COPY_FEEDBACK_DURATION);
-                return self.compose_full_frame(FullRedrawReason::DialogChange);
+                return self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange);
             }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
@@ -1510,7 +1553,7 @@ impl Multiplexer {
                 // no-ops.
                 if self.status_bar.identity_at(2, col + 1) {
                     self.open_container_info_dialog();
-                    return Some(self.compose_full_frame(FullRedrawReason::DialogChange));
+                    return Some(self.compose_dialog_overlay_frame(FullRedrawReason::DialogChange));
                 }
                 None
             }
@@ -2066,6 +2109,25 @@ impl Multiplexer {
             panes.len(),
             pane_rows_emitted,
             pane_body_bytes,
+            buf.len(),
+            started.elapsed().as_micros()
+        );
+
+        buf
+    }
+
+    fn compose_dialog_overlay_frame(&self, reason: FullRedrawReason) -> Vec<u8> {
+        let started = Instant::now();
+        let mut buf = Vec::with_capacity(8192);
+        buf.extend_from_slice(b"\x1b[?25l");
+
+        if let Some(dialog) = self.dialog_top() {
+            dialog.render(&mut buf, self.term_rows, self.term_cols);
+        }
+
+        crate::cdebug!(
+            "render: kind=dialog-overlay reason={} bytes={} duration_us={}",
+            reason.as_str(),
             buf.len(),
             started.elapsed().as_micros()
         );
@@ -2666,18 +2728,26 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                             return Ok(());
                         }
                     }
-                    SessionEvent::ContainerInfoLoaded {
+                    SessionEvent::ContainerInfoBranchLoaded {
                         request_id,
                         branch,
+                    } => {
+                        if mux.apply_container_info_branch_loaded(request_id, branch) {
+                            let frame =
+                                mux.compose_dialog_overlay_frame(FullRedrawReason::DialogChange);
+                            mux.send_output(frame);
+                        }
+                    }
+                    SessionEvent::ContainerInfoPullRequestLoaded {
+                        request_id,
                         pull_request_url,
                     } => {
-                        if mux.apply_container_info_loaded(
+                        if mux.apply_container_info_pull_request_loaded(
                             request_id,
-                            branch,
                             pull_request_url,
                         ) {
                             let frame =
-                                mux.compose_full_frame(FullRedrawReason::DialogChange);
+                                mux.compose_dialog_overlay_frame(FullRedrawReason::DialogChange);
                             mux.send_output(frame);
                         }
                     }
@@ -2698,6 +2768,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 for event in events {
                     if let Some(redraw) = mux.handle_input(event) {
                         mux.send_output(redraw);
+                        mux.spawn_pending_container_info_lookup();
                     }
                 }
             }
@@ -2735,7 +2806,8 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                     session.refresh_state();
                 }
                 if mux.expire_container_info_copy_feedback(Instant::now()) {
-                    let frame_data = mux.compose_full_frame(FullRedrawReason::DialogChange);
+                    let frame_data =
+                        mux.compose_dialog_overlay_frame(FullRedrawReason::DialogChange);
                     mux.send_output(frame_data);
                     continue;
                 }
@@ -2785,6 +2857,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                 );
                 if let Some(redraw) = mux.handle_input(event) {
                     mux.send_output(redraw);
+                    mux.spawn_pending_container_info_lookup();
                 }
             }
             // Reflect prefix-await state in the status bar so the right
@@ -3112,25 +3185,8 @@ fn display_title(session: &Session) -> String {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-struct WorkdirGitContext {
-    branch: Option<String>,
-    pull_request_url: Option<String>,
-}
-
 const GIT_CONTEXT_COMMAND_TIMEOUT: Duration = Duration::from_millis(1500);
 const GH_PULL_REQUEST_COMMAND_TIMEOUT: Duration = Duration::from_secs(8);
-
-fn workdir_git_context(workdir: &Path) -> WorkdirGitContext {
-    let branch = git_current_branch(workdir);
-    let pull_request_url = branch
-        .as_deref()
-        .and_then(|branch| gh_pull_request_url(workdir, branch));
-    WorkdirGitContext {
-        branch,
-        pull_request_url,
-    }
-}
 
 fn git_current_branch(workdir: &Path) -> Option<String> {
     command_stdout_trimmed_with_timeout(
@@ -3531,11 +3587,17 @@ mod tests {
             rx.try_recv().is_err(),
             "opening container info must not send OSC 52"
         );
+        assert!(
+            mux.pending_container_info_lookup.is_some(),
+            "git metadata lookup should wait until after the first dialog frame"
+        );
         assert!(!String::from_utf8_lossy(&frame).contains("Copied!"));
+        assert!(String::from_utf8_lossy(&frame).contains("loading"));
         let Some(Dialog::ContainerInfo {
             copied: false,
             workdir,
             git_loading,
+            pull_request_loading,
             ..
         }) = mux.dialog_top()
         else {
@@ -3543,6 +3605,7 @@ mod tests {
         };
         assert_eq!(workdir, "/workspace");
         assert!(*git_loading);
+        assert!(*pull_request_loading);
     }
 
     #[test]
@@ -3555,6 +3618,7 @@ mod tests {
             workdir: "/workspace".to_string(),
             git_loading: false,
             git_branch: Some("main".to_string()),
+            pull_request_loading: false,
             pull_request_url: Some("https://github.com/jackin-project/jackin/pull/1".to_string()),
             copied: true,
         });
@@ -3579,19 +3643,18 @@ mod tests {
             workdir: "/workspace".to_string(),
             git_loading: true,
             git_branch: None,
+            pull_request_loading: true,
             pull_request_url: None,
             copied: false,
         });
 
-        assert!(mux.apply_container_info_loaded(
-            7,
-            Some("feature/container-info".to_string()),
-            Some("https://github.com/jackin-project/jackin/pull/414".to_string()),
-        ));
-
+        let branch_applied =
+            mux.apply_container_info_branch_loaded(7, Some("feature/container-info".to_string()));
+        assert!(branch_applied);
         let Some(Dialog::ContainerInfo {
             git_loading,
             git_branch,
+            pull_request_loading,
             pull_request_url,
             ..
         }) = mux.dialog_top()
@@ -3599,6 +3662,27 @@ mod tests {
             panic!("container info dialog should still be open")
         };
         assert!(!*git_loading);
+        assert!(*pull_request_loading);
+        assert_eq!(git_branch.as_deref(), Some("feature/container-info"));
+        assert_eq!(pull_request_url, &None);
+
+        assert!(mux.apply_container_info_pull_request_loaded(
+            7,
+            Some("https://github.com/jackin-project/jackin/pull/414".to_string()),
+        ));
+
+        let Some(Dialog::ContainerInfo {
+            git_loading,
+            git_branch,
+            pull_request_loading,
+            pull_request_url,
+            ..
+        }) = mux.dialog_top()
+        else {
+            panic!("container info dialog should still be open")
+        };
+        assert!(!*git_loading);
+        assert!(!*pull_request_loading);
         assert_eq!(git_branch.as_deref(), Some("feature/container-info"));
         assert_eq!(
             pull_request_url.as_deref(),
@@ -3617,19 +3701,23 @@ mod tests {
             workdir: "/workspace".to_string(),
             git_loading: true,
             git_branch: None,
+            pull_request_loading: true,
             pull_request_url: None,
             copied: false,
         });
 
-        assert!(!mux.apply_container_info_loaded(
+        let stale_branch_applied =
+            mux.apply_container_info_branch_loaded(6, Some("stale".to_string()));
+        assert!(!stale_branch_applied);
+        assert!(!mux.apply_container_info_pull_request_loaded(
             6,
-            Some("stale".to_string()),
             Some("https://github.com/jackin-project/jackin/pull/1".to_string()),
         ));
 
         let Some(Dialog::ContainerInfo {
             git_loading,
             git_branch,
+            pull_request_loading,
             pull_request_url,
             ..
         }) = mux.dialog_top()
@@ -3637,6 +3725,7 @@ mod tests {
             panic!("container info dialog should still be open")
         };
         assert!(*git_loading);
+        assert!(*pull_request_loading);
         assert_eq!(git_branch, &None);
         assert_eq!(pull_request_url, &None);
     }
@@ -3652,6 +3741,7 @@ mod tests {
             workdir: "/workspace".to_string(),
             git_loading: false,
             git_branch: Some("main".to_string()),
+            pull_request_loading: false,
             pull_request_url: Some("https://github.com/jackin-project/jackin/pull/1".to_string()),
             copied: false,
         });

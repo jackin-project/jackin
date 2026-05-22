@@ -414,9 +414,12 @@ pub enum SessionEvent {
     Exited {
         session_id: u64,
     },
-    ContainerInfoLoaded {
+    ContainerInfoBranchLoaded {
         request_id: u64,
         branch: Option<String>,
+    },
+    ContainerInfoPullRequestLoaded {
+        request_id: u64,
         pull_request_url: Option<String>,
     },
 }

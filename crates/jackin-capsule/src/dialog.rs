@@ -123,6 +123,7 @@ pub enum Dialog {
         workdir: String,
         git_loading: bool,
         git_branch: Option<String>,
+        pull_request_loading: bool,
         pull_request_url: Option<String>,
         copied: bool,
     },
@@ -886,6 +887,7 @@ impl Dialog {
                 workdir,
                 git_loading,
                 git_branch,
+                pull_request_loading,
                 pull_request_url,
                 copied,
             } => {
@@ -901,6 +903,7 @@ impl Dialog {
                     workdir,
                     *git_loading,
                     git_branch.as_deref(),
+                    *pull_request_loading,
                     pull_request_url.as_deref(),
                     *copied,
                 );
@@ -1703,6 +1706,7 @@ fn render_container_info(
     workdir: &str,
     git_loading: bool,
     git_branch: Option<&str>,
+    pull_request_loading: bool,
     pull_request_url: Option<&str>,
     copied: bool,
 ) {
@@ -1727,7 +1731,7 @@ fn render_container_info(
         ("Branch", git_context_value(git_branch, git_loading), false),
         (
             "Pull Request",
-            git_context_value(pull_request_url, git_loading),
+            git_context_value(pull_request_url, pull_request_loading),
             false,
         ),
     ];
@@ -1790,7 +1794,7 @@ fn non_empty_or_dim(s: &str) -> String {
 
 fn git_context_value(value: Option<&str>, loading: bool) -> String {
     if loading {
-        "loading...".to_string()
+        "⠋ loading".to_string()
     } else {
         non_empty_or_dim(value.unwrap_or(""))
     }
@@ -2357,6 +2361,7 @@ mod tests {
             workdir: "/workspace/jackin".to_string(),
             git_loading: false,
             git_branch: Some("feature/container-info".to_string()),
+            pull_request_loading: false,
             pull_request_url: Some("https://github.com/jackin-project/jackin/pull/123".to_string()),
             copied: false,
         }
@@ -2438,6 +2443,7 @@ mod tests {
             workdir: "/workspace/jackin".to_string(),
             git_loading: false,
             git_branch: Some("feature/container-info".to_string()),
+            pull_request_loading: false,
             pull_request_url: Some("https://github.com/jackin-project/jackin/pull/123".to_string()),
             copied: true,
         };
@@ -2457,6 +2463,7 @@ mod tests {
             workdir: "/workspace/jackin".to_string(),
             git_loading: false,
             git_branch: Some("feature/container-info".to_string()),
+            pull_request_loading: false,
             pull_request_url: Some("https://github.com/jackin-project/jackin/pull/123".to_string()),
             copied: true,
         };
@@ -2493,6 +2500,7 @@ mod tests {
             workdir: "/workspace/jackin".to_string(),
             git_loading: true,
             git_branch: None,
+            pull_request_loading: true,
             pull_request_url: None,
             copied: false,
         };
@@ -2502,7 +2510,7 @@ mod tests {
 
         assert!(rendered.contains("Branch"));
         assert!(rendered.contains("Pull Request"));
-        assert_eq!(rendered.matches("loading...").count(), 2);
+        assert_eq!(rendered.matches("⠋ loading").count(), 2);
     }
 
     #[test]
