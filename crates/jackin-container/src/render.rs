@@ -83,6 +83,7 @@ impl PaneBodyCache {
         self.valid && self.rows == rect_rows && self.cols == rect_cols && self.dim == dim
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render_full(
         &mut self,
         screen: &Screen,
@@ -108,6 +109,7 @@ impl PaneBodyCache {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render_partial(
         &mut self,
         screen: &Screen,

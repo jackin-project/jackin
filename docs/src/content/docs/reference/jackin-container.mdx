@@ -161,6 +161,17 @@ Modern terminals interpret OSC escape sequences agents emit for window titles, c
 
 OSC 7 (current working directory) is never forwarded — it would tell the operator's host terminal to track the *container's* cwd, which has no meaning outside the container; jackin-container captures it locally for the pane title and stops. OSC 8 forwarding additionally rejects any URI whose scheme is not `http`, `https`, or `mailto` (so a compromised agent cannot ship a `javascript:` or `file://` hyperlink that would script the operator's host terminal on click).
 
+### Pointer shape feedback
+
+The attach client enables SGR any-event mouse tracking on the outer terminal. When the daemon sees passive pointer motion and the outer terminal advertises a known OSC 22-capable identity (`xterm-ghostty`, `xterm-kitty`, Foot, or iTerm via `TERM` / `TERM_PROGRAM`), it emits OSC 22 pointer-shape updates:
+
+- `pointer` over clickable jackin chrome such as tabs, the menu button, the container-name copy target, and clickable dialog rows.
+- `text` over pane bodies where jackin's own mouse selection is available because the focused program did not request mouse reporting.
+- `ew-resize` / `ns-resize` over split borders and `grabbing` during an active resize drag.
+- `default` everywhere else, and again during attach cleanup.
+
+Unsupported terminals ignore the feature because jackin does not emit OSC 22 unless the environment matches a known implementation. The visual behavior is therefore an enhancement for Ghostty/Kitty-style terminals, not a dependency for mouse input or copy/select behavior.
+
 The policy is read once per session at spawn time; an agent that exports the env var after start does not flip the gate for that session. Set the values on the host, before `jackin load`, to ensure the derived image carries them through to the multiplexer's environment.
 
 ## Distribution and versioning

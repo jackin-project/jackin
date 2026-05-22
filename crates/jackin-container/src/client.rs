@@ -205,7 +205,7 @@ impl Drop for RawModeGuard {
         // may have enabled before returning the operator to their
         // host terminal.
         let _ = std::io::stdout().write_all(
-            b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[<u\x1b[?25h\x1b[?1049l",
+            b"\x1b]22;default\x1b\\\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[<u\x1b[?25h\x1b[?1049l",
         );
         let _ = std::io::stdout().flush();
     }

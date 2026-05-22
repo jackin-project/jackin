@@ -198,9 +198,10 @@ pub enum DialogAction {
     /// `label` clears the existing custom label and re-enables
     /// auto-naming.
     RenameTab { tab_idx: usize, label: String },
-    /// Operator pressed Enter inside the `ContainerInfo` modal —
-    /// copy the carried payload to the operator's clipboard via OSC
-    /// 52, dismiss, and surface a short confirmation. Carrying the
+    /// Operator clicked or pressed Enter on the `ContainerInfo` copy
+    /// target — copy the carried payload to the operator's clipboard
+    /// via OSC 52 and keep the dialog open for visible feedback.
+    /// Carrying the
     /// payload through the action (rather than the daemon re-deriving
     /// it from the dialog) keeps the dialog the single source of
     /// truth for what gets copied.
@@ -655,6 +656,44 @@ impl Dialog {
             // return below the inside_box check.
             Self::RenameTab { .. } | Self::ContainerInfo { .. } | Self::ConfirmAction { .. } => {
                 DialogAction::Consume
+            }
+        }
+    }
+
+    /// Return true when `(row, col)` is a dialog hit target that will
+    /// perform an action on click. The daemon uses this to drive OSC 22
+    /// pointer-shape feedback without duplicating dialog layout maths.
+    pub fn clickable_at(&self, row: u16, col: u16, term_rows: u16, term_cols: u16) -> bool {
+        let (box_row, box_col, height, width) = self.box_rect(term_rows, term_cols);
+        let inside_box =
+            row >= box_row && row < box_row + height && col >= box_col && col < box_col + width;
+        if !inside_box {
+            return false;
+        }
+        match self {
+            Self::RenameTab { .. } => false,
+            Self::ContainerInfo { .. } | Self::ConfirmAction { .. } => true,
+            Self::CommandPalette { filter, .. } => {
+                dialog_list_row_clickable(row, box_row, palette_filtered_indices(filter).len())
+            }
+            Self::SplitDirectionPicker { filter, .. } => dialog_list_row_clickable(
+                row,
+                box_row,
+                split_direction_filtered_indices(filter).len(),
+            ),
+            Self::CloseTargetPicker { filter, .. } => {
+                dialog_list_row_clickable(row, box_row, close_target_filtered_indices(filter).len())
+            }
+            Self::AgentPicker { agents, filter, .. } => {
+                let first_item_row = box_row + 3;
+                let visible = picker_filtered_rows(agents, filter);
+                if row < first_item_row || row >= first_item_row + visible.len() as u16 {
+                    return false;
+                }
+                matches!(
+                    visible[(row - first_item_row) as usize],
+                    PickerRow::Agent(_) | PickerRow::Shell
+                )
             }
         }
     }
@@ -1477,21 +1516,25 @@ fn render_container_info(
         } else {
             buf.extend_from_slice(FG_GREEN.as_bytes());
         }
-        let value_cols = value.chars().count().min(value_max_cols);
+        let badge = if i == 0 && copied {
+            "  ✓ Copied!"
+        } else {
+            ""
+        };
+        let badge_cols = badge.chars().count();
+        let available_value_cols = if badge.is_empty() {
+            value_max_cols
+        } else {
+            value_max_cols.saturating_sub(badge_cols)
+        };
+        let value_cols = value.chars().count().min(available_value_cols);
         let value_take: String = value.chars().take(value_cols).collect();
         buf.extend_from_slice(value_take.as_bytes());
-        // Trailing "Copied!" badge on the Container ID row (i == 0)
-        // once the operator has triggered a copy. Stays visible until
-        // dismiss so the operator can confirm the OSC 52 actually
-        // flushed — if the outer terminal silently dropped the
-        // sequence (no clipboard support), the badge still appears
-        // here but the clipboard stays empty, which is itself useful
-        // telemetry: the multiplexer's side worked, the terminal's
-        // didn't.
-        if i == 0 && copied {
+        // Trailing "Copied!" badge on the Container ID row reserves
+        // space before truncating the container name so long IDs still
+        // show copy feedback.
+        if !badge.is_empty() {
             let consumed = label_col_width + 2 /* ": " */ + value_cols;
-            let badge = "  ✓ Copied!";
-            let badge_cols = badge.chars().count();
             if consumed + badge_cols <= interior_max_cols {
                 buf.extend_from_slice(RESET.as_bytes());
                 buf.extend_from_slice(BG_DARK.as_bytes());
@@ -1512,6 +1555,11 @@ fn non_empty_or_dim(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+fn dialog_list_row_clickable(row: u16, box_row: u16, visible_count: usize) -> bool {
+    let first_item_row = box_row + 3;
+    row >= first_item_row && row < first_item_row + visible_count as u16
 }
 
 fn wrap_two_lines(text: &str, max_cols: usize) -> [String; 2] {
@@ -1808,6 +1856,29 @@ mod tests {
     }
 
     #[test]
+    fn clickable_at_reports_container_info_copy_target() {
+        let d = container_info_fixture();
+        let (row, col, _, _) = d.box_rect(40, 100);
+        assert!(d.clickable_at(row + 2, col + 2, 40, 100));
+        assert!(!d.clickable_at(0, 0, 40, 100));
+    }
+
+    #[test]
+    fn clickable_at_skips_agent_picker_section_labels() {
+        let d = picker(vec!["claude"]);
+        let (row, col, _, _) = d.box_rect(40, 100);
+        let first_item_row = row + 3;
+        assert!(
+            !d.clickable_at(first_item_row, col + 2, 40, 100),
+            "section label must not advertise as clickable"
+        );
+        assert!(
+            d.clickable_at(first_item_row + 1, col + 2, 40, 100),
+            "agent row should advertise as clickable"
+        );
+    }
+
+    #[test]
     fn palette_typing_filters_items_and_resets_selection() {
         let mut d = Dialog::CommandPalette {
             selected: 3,
@@ -2074,6 +2145,23 @@ mod tests {
             }
             other => panic!("Enter must request clipboard copy, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn container_info_copied_badge_survives_long_container_name() {
+        let d = Dialog::ContainerInfo {
+            container_name: "jk-c9g7zpkh-jackin-thearchitect-extra-long".to_string(),
+            role: "the-architect".to_string(),
+            focused_agent: Some("claude".to_string()),
+            copied: true,
+        };
+        let mut buf = Vec::new();
+        d.render(&mut buf, 40, 100);
+        let rendered = String::from_utf8_lossy(&buf);
+        assert!(
+            rendered.contains("Copied!"),
+            "long container IDs must not push copy feedback out of the dialog: {rendered:?}"
+        );
     }
 
     #[test]

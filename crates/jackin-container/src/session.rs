@@ -881,7 +881,7 @@ pub fn build_agent_command(agent: &str, env_passthrough: &[(String, String)]) ->
     for (k, v) in env_passthrough {
         cmd.env(k, v);
     }
-    cmd.env("TERM", "xterm-256color");
+    apply_terminal_env(&mut cmd);
     cmd
 }
 
@@ -891,8 +891,26 @@ pub fn build_shell_command(env_passthrough: &[(String, String)]) -> CommandBuild
     for (k, v) in env_passthrough {
         cmd.env(k, v);
     }
-    cmd.env("TERM", "xterm-256color");
+    apply_terminal_env(&mut cmd);
     cmd
+}
+
+/// Inherit the daemon's terminal-shape environment (TERM, COLORTERM,
+/// LANG, LC_ALL) into a child PTY. `portable_pty::CommandBuilder` starts
+/// with empty env, so without this the host's host-propagated
+/// `TERM=xterm-ghostty` (or any other exotic terminal jackin imported
+/// via `--mount` of a compiled terminfo entry) is lost the moment the
+/// daemon spawns a session — every child would otherwise see the
+/// hardcoded `xterm-256color`, degrading any TUI that branches on
+/// terminal capability (notably Amp's truecolor logo splash).
+fn apply_terminal_env(cmd: &mut CommandBuilder) {
+    let term = std::env::var("TERM").unwrap_or_else(|_| "xterm-256color".to_string());
+    cmd.env("TERM", term);
+    for key in ["COLORTERM", "LANG", "LC_ALL"] {
+        if let Ok(value) = std::env::var(key) {
+            cmd.env(key, value);
+        }
+    }
 }
 
 #[cfg(test)]

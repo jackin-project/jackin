@@ -98,6 +98,13 @@ pub struct Multiplexer {
     /// repainting would be unsafe or when chrome/status/dialog/layout
     /// changed outside the pane body.
     pending_full_redraw: Option<FullRedrawReason>,
+    /// Last pointer shape emitted through OSC 22. Stored so passive
+    /// mouse motion does not spam the outer terminal with duplicate
+    /// pointer-shape updates.
+    pointer_shape: PointerShape,
+    /// True only for outer terminals known to support OSC 22 with CSS
+    /// pointer names. Unsupported terminals keep normal cursor behavior.
+    pointer_shapes_supported: bool,
 }
 
 #[allow(dead_code)]
@@ -144,6 +151,29 @@ impl FullRedrawReason {
             Self::ExplicitRedraw => "explicit-redraw",
             Self::PaneCacheMiss => "pane-cache-miss",
             Self::UnsafePartial => "unsafe-partial",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PointerShape {
+    Default,
+    Pointer,
+    Text,
+    EwResize,
+    NsResize,
+    Grabbing,
+}
+
+impl PointerShape {
+    fn as_osc22_name(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Pointer => "pointer",
+            Self::Text => "text",
+            Self::EwResize => "ew-resize",
+            Self::NsResize => "ns-resize",
+            Self::Grabbing => "grabbing",
         }
     }
 }
@@ -213,6 +243,10 @@ const ENV_ESCAPE_TIME: &str = "JACKIN_ESCAPE_TIME";
 /// surviving slow ssh / paste chunks.
 const DEFAULT_ESCAPE_TIME: std::time::Duration = std::time::Duration::from_millis(50);
 
+/// XTerm SGR any-event mouse tracking reports passive motion as
+/// button code 35 (`32` motion bit + `3` no-button code).
+const SGR_NO_BUTTON_MOTION: u8 = 35;
+
 impl Multiplexer {
     pub fn new(rows: u16, cols: u16) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
@@ -252,6 +286,8 @@ impl Multiplexer {
             pane_body_caches: HashMap::new(),
             dirty_panes: HashSet::new(),
             pending_full_redraw: None,
+            pointer_shape: PointerShape::Default,
+            pointer_shapes_supported: pointer_shapes_supported_from_env(),
         }
     }
 
@@ -263,6 +299,59 @@ impl Multiplexer {
 
     fn send_output(&self, bytes: Vec<u8>) {
         self.send_to_client(ServerFrame::Output(bytes));
+    }
+
+    fn set_pointer_shape(&mut self, shape: PointerShape) {
+        if !self.pointer_shapes_supported || self.pointer_shape == shape {
+            return;
+        }
+        self.pointer_shape = shape;
+        self.send_output(osc22_pointer_shape(shape));
+    }
+
+    fn update_pointer_shape_for_mouse(&mut self, row: u16, col: u16, button: u8) {
+        if !self.pointer_shapes_supported {
+            return;
+        }
+        let shape = self.pointer_shape_at(row, col, button);
+        self.set_pointer_shape(shape);
+    }
+
+    fn pointer_shape_at(&self, row: u16, col: u16, button: u8) -> PointerShape {
+        if self.drag.is_some() {
+            return PointerShape::Grabbing;
+        }
+        if self.selection.is_some() {
+            return PointerShape::Text;
+        }
+        if let Some(dialog) = self.dialog_top() {
+            return if dialog.clickable_at(row + 1, col + 1, self.term_rows, self.term_cols) {
+                PointerShape::Pointer
+            } else {
+                PointerShape::Default
+            };
+        }
+        let row_1based = row + 1;
+        let col_1based = col + 1;
+        if row_1based == 1
+            && (self.status_bar.tab_at_col(col_1based).is_some()
+                || self.status_bar.hint_at(row_1based, col_1based))
+        {
+            return PointerShape::Pointer;
+        }
+        if row_1based == 2 && self.status_bar.identity_at(row_1based, col_1based) {
+            return PointerShape::Pointer;
+        }
+        if let Some(drag) = self.detect_drag_start(row, col) {
+            return match drag.orient {
+                SplitOrient::Horizontal => PointerShape::EwResize,
+                SplitOrient::Vertical => PointerShape::NsResize,
+            };
+        }
+        if button == SGR_NO_BUTTON_MOTION && self.detect_selection_start(row, col).is_some() {
+            return PointerShape::Text;
+        }
+        PointerShape::Default
     }
 
     fn env_for_spawn(&self, overrides: &[(String, String)]) -> Vec<(String, String)> {
@@ -1072,6 +1161,11 @@ impl Multiplexer {
     /// Handle a parsed input event from the client terminal.
     /// Returns bytes to send to the client (e.g. redraws), if any.
     fn handle_input(&mut self, event: InputEvent) -> Option<Vec<u8>> {
+        if let InputEvent::MousePress { col, row, button }
+        | InputEvent::MouseRelease { col, row, button } = &event
+        {
+            self.update_pointer_shape_for_mouse(*row, *col, *button);
+        }
         match event {
             InputEvent::OpenPalette => {
                 // Toggle: opening the palette key while any dialog is
@@ -1267,21 +1361,23 @@ impl Multiplexer {
                 col,
                 button: 0,
             } => {
-                // Click on the right-side container-name label opens
-                // the read-only `ContainerInfo` modal so the operator
-                // can copy the container ID + see the role / focused
-                // agent. Clicks elsewhere on row 1 (the underline
-                // strip) are no-ops.
+                // Click on the right-side container-name label copies
+                // the full container ID immediately, then opens the
+                // read-only `ContainerInfo` modal with the copied badge
+                // already visible. Clicks elsewhere on row 1 (the
+                // underline strip) are no-ops.
                 if self.status_bar.identity_at(2, col + 1) {
                     let focused_agent = self
                         .active_focused_id()
                         .and_then(|id| self.sessions.get(&id))
                         .and_then(|s| s.agent.clone());
+                    let container_name = self.status_bar.container_name().to_string();
+                    self.send_output(encode_osc52_clipboard_write(&container_name));
                     self.dialog_push(Dialog::ContainerInfo {
-                        container_name: self.status_bar.container_name().to_string(),
+                        container_name,
                         role: self.status_bar.role().to_string(),
                         focused_agent,
-                        copied: false,
+                        copied: true,
                     });
                     return Some(self.compose_full_frame(FullRedrawReason::DialogChange));
                 }
@@ -2793,6 +2889,25 @@ fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
     out
 }
 
+fn osc22_pointer_shape(shape: PointerShape) -> Vec<u8> {
+    format!("\x1b]22;{}\x1b\\", shape.as_osc22_name()).into_bytes()
+}
+
+fn pointer_shapes_supported_from_env() -> bool {
+    let term = std::env::var("TERM")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let term_program = std::env::var("TERM_PROGRAM")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    term.contains("ghostty")
+        || term.contains("kitty")
+        || term.contains("foot")
+        || term_program.contains("ghostty")
+        || term_program.contains("kitty")
+        || term_program.contains("iterm")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2821,5 +2936,60 @@ mod tests {
                 .unwrap(),
             b"\x1b[M#,#"
         );
+    }
+
+    #[test]
+    fn osc22_pointer_shape_uses_css_names() {
+        assert_eq!(
+            osc22_pointer_shape(PointerShape::Pointer),
+            b"\x1b]22;pointer\x1b\\"
+        );
+        assert_eq!(
+            osc22_pointer_shape(PointerShape::EwResize),
+            b"\x1b]22;ew-resize\x1b\\"
+        );
+    }
+
+    #[test]
+    fn pointer_shape_updates_only_when_shape_changes() {
+        let mut mux = Multiplexer::new(24, 80);
+        mux.pointer_shapes_supported = true;
+        mux.status_bar.identity_region = Some((70, 80));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        mux.attached_out = Some(tx);
+
+        mux.update_pointer_shape_for_mouse(1, 69, SGR_NO_BUTTON_MOTION);
+        let first = rx.try_recv().expect("first pointer-shape update");
+        assert!(first.ends_with(b"\x1b]22;pointer\x1b\\"));
+
+        mux.update_pointer_shape_for_mouse(1, 70, SGR_NO_BUTTON_MOTION);
+        assert!(rx.try_recv().is_err(), "unchanged shape should not re-emit");
+    }
+
+    #[test]
+    fn status_identity_click_copies_and_shows_feedback_dialog() {
+        let mut mux = Multiplexer::new(24, 80);
+        mux.pointer_shapes_supported = false;
+        mux.status_bar.identity_label = "jk-test-container".to_string();
+        mux.status_bar.role = "the-architect".to_string();
+        mux.status_bar.identity_region = Some((60, 78));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        mux.attached_out = Some(tx);
+
+        let frame = mux
+            .handle_input(InputEvent::MousePress {
+                row: 1,
+                col: 59,
+                button: 0,
+            })
+            .expect("identity click should redraw");
+
+        let sent = rx.try_recv().expect("identity click should send OSC 52");
+        assert!(sent.windows(7).any(|w| w == b"\x1b]52;c;"));
+        assert!(String::from_utf8_lossy(&frame).contains("Copied!"));
+        assert!(matches!(
+            mux.dialog_top(),
+            Some(Dialog::ContainerInfo { copied: true, .. })
+        ));
     }
 }

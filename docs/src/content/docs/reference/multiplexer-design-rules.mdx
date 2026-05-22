@@ -43,7 +43,14 @@ Every capability the base image supports must reach the agent inside the pane.
 ### Clipboard and OSC 52
 
 - Pass OSC 52 sequences from the focused pane to the host terminal unmodified unless the operator disabled `JACKIN_OSC52`. This enables agent-initiated clipboard writes to reach the operator's clipboard.
+- Jackin-owned copy actions such as container-name copy and mouse-selection copy emit OSC 52 directly from the multiplexer to the attached client. They must render visible feedback because terminals may silently drop clipboard writes when policy blocks them.
 - Never intercept or log clipboard content.
+
+### Pointer shape
+
+- OSC 22 pointer-shape feedback is allowed only for terminals known to support CSS-style pointer names, currently Ghostty, Kitty, Foot, and iTerm-style environments detected from `TERM` / `TERM_PROGRAM`.
+- Clickable jackin chrome should advertise `pointer`; split borders should advertise `ew-resize` or `ns-resize`; selectable pane text should advertise `text`; all other regions should restore `default`.
+- Pointer-shape output is an enhancement. It must not become required for input routing, click behavior, text selection, or clipboard copy.
 
 ### OSC and desktop notifications
 
