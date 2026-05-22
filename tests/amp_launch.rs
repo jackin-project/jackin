@@ -1,6 +1,6 @@
 mod common;
 
-use common::{FakeRunner, NoOpDocker, install_container_binary_stub};
+use common::{FakeRunner, NoOpDocker, install_capsule_binary_stub};
 use jackin::agent::Agent;
 use jackin::config::AppConfig;
 use jackin::isolation::MountIsolation;
@@ -15,7 +15,7 @@ async fn amp_launch_invokes_docker_run_with_amp_agent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
-    install_container_binary_stub(&paths);
+    install_capsule_binary_stub(&paths);
     std::fs::write(
         &paths.config_file,
         r#"[env]
@@ -117,7 +117,7 @@ async fn amp_launch_under_sync_mounts_secrets_json_in_docker_run() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
-    install_container_binary_stub(&paths);
+    install_capsule_binary_stub(&paths);
 
     // Stage host ~/.local/share/amp/secrets.json under the test's fake
     // home (paths.home_dir, which load_role consults for host-side

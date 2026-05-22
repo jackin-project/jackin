@@ -23,5 +23,5 @@ fn main() {
             )
         });
 
-    println!("cargo:rustc-env=JACKIN_CONTAINER_VERSION={version}");
+    println!("cargo:rustc-env=JACKIN_CAPSULE_VERSION={version}");
 }

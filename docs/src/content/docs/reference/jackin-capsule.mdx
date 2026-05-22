@@ -1,11 +1,13 @@
 ---
-title: "jackin-container: In-Container Multiplexer"
+title: "Jackin Capsule: In-Container Control Plane"
 ---
 
 import RepoFile from '../../../components/RepoFile.astro'
 import { Aside } from '@astrojs/starlight/components'
 
-`jackin-container` is the binary that runs as PID 1 inside every jackin-managed container. It is a purpose-built terminal multiplexer for AI agent workflows — not a general-purpose tool, but one shaped specifically around the problems that arise when running multiple autonomous agents in an isolated environment.
+The **Jackin Capsule** is the in-container runtime control plane for every jackin-managed container. Its executable is `jackin-capsule`, installed at `/usr/local/bin/jackin-capsule` in the derived image and run as PID 1 when the container starts.
+
+The Capsule is not the Docker container, the role image, or an agent runtime. It is the process inside the container that owns PTYs, supervises child processes, renders the in-container multiplexer, exposes the Unix socket API, and performs deterministic runtime setup before each agent starts. Jackin's host CLI uses that process as the boundary between host orchestration and in-container session state.
 
 ## The problem it solves
 
@@ -23,18 +25,18 @@ These three gaps are why observability, attention prompts, and future desktop in
 
 The closest public reference is [Herdr](https://github.com/ogulcancelik/herdr) — a Rust multiplexer purpose-built for AI coding agents with four-state status tracking, a Unix socket API, and workspace-level roll-ups. Herdr cannot be embedded in jackin: it is AGPL-3.0, which conflicts with jackin's Apache-2.0 license.
 
-Beyond the license, Herdr wraps **bare host processes**. jackin wraps **Docker containers**. When Herdr sees `docker attach` rather than the agent process, its PTY heuristics degrade — it is watching the wrong process. `jackin-container` runs *inside* the container and reads the agent's PTY output directly, which is exactly where the heuristics need to run.
+Beyond the license, Herdr wraps **bare host processes**. jackin wraps **Docker containers**. When Herdr sees `docker attach` rather than the agent process, its PTY heuristics degrade — it is watching the wrong process. `jackin-capsule` runs *inside* the container and reads the agent's PTY output directly, which is exactly where the heuristics need to run.
 
 Building it in-house gives jackin a control plane that is:
 
 - **Typed and structured.** The socket has a one-shot JSON control channel for inventory queries and a binary attach channel for interactive sessions. The host asks for a session list and gets a typed response, not a string to parse.
 - **Agent-aware.** The multiplexer owns every PTY session from spawn to exit. It sees the output directly and can infer state (working / blocked / done / idle) without guessing.
-- **Event-driven.** When a session ends, the binary sends an event. The host does not poll.
-- **Dependency-free in the image.** tmux is no longer installed in the construct image. The derived image only needs `jackin-container` at `/usr/local/bin/jackin-container`.
+- **Socket-backed.** The daemon is the source of truth for session status and snapshots. The host can query typed state through the control channel today, and the same endpoint is the planned source for host-daemon and desktop event streams.
+- **Dependency-free in the image.** tmux is no longer installed in the construct image. The derived image only needs `jackin-capsule` at `/usr/local/bin/jackin-capsule`.
 
-## Architecture
+## Process model
 
-`jackin-container` operates in two modes, determined at startup by whether `PID == 1`:
+`jackin-capsule` operates in three modes:
 
 **Daemon mode (PID 1).** The binary is the container's init process. It:
 - Reaps zombie children (mandatory for PID 1 — processes re-parented to PID 1 when their parent exits must be waited on or they accumulate as zombies in the process table)
@@ -49,19 +51,19 @@ codex`. The daemon uses that argv value only to choose the first tab.
 `/jackin/runtime/entrypoint.sh` runs, so the container's ambient environment
 does not imply that every pane is the same agent.
 
-**Client mode (PID ≠ 1).** When the operator runs `docker exec -it <container> jackin-container`, the binary connects to the daemon socket, bridges the operator's terminal to the active session, and handles multiplexer commands locally before forwarding raw input to the PTY.
+**Attach client mode (PID ≠ 1).** When the operator runs `docker exec -it <container> jackin-capsule`, the binary connects to the daemon socket, bridges the operator's terminal to the active session, and forwards attach frames between the terminal and daemon.
 
-**Runtime setup subcommand (PID ≠ 1).** `/jackin/runtime/entrypoint.sh` calls `jackin-container runtime-setup` before each agent exec. The subcommand performs idempotent container setup (git identity, GitHub HTTPS rewrites, and the `gh` credential helper), installs the shared git trailer hook on demand, and refreshes per-agent home/auth handoff state. The container init marker lives under `/tmp/jackin-runtime`, so global git/GitHub setup runs once per running container; per-session auth handoff still refreshes before every agent launch.
+**Runtime setup subcommand (PID ≠ 1).** `/jackin/runtime/entrypoint.sh` calls `jackin-capsule runtime-setup` before each agent exec. The subcommand performs idempotent container setup (git identity, GitHub HTTPS rewrites, and the `gh` credential helper), installs the shared git trailer hook on demand, and refreshes per-agent home/auth handoff state. The container init marker lives under `/tmp/jackin-runtime`, so global git/GitHub setup runs once per running container; per-session auth handoff still refreshes before every agent launch.
 
 ### Socket Interface
 
-The daemon listens at `/run/jackin/jackin.sock` inside the container. On the host, the socket is bind-mounted per-instance:
+The daemon listens at `/run/jackin/jackin.sock` inside the container. Jackin bind-mounts a host directory for the instance to `/run/jackin`; the socket file appears inside that directory after the daemon starts:
 
 ```
-docker run ... -v /run/jackin/<instance-id>.sock:/run/jackin/jackin.sock ...
+docker run ... -v ~/.jackin/sockets/<container-name>:/run/jackin ...
 ```
 
-One socket file exists per running instance on the host. The first byte selects the channel:
+That makes the host-side path `~/.jackin/sockets/<container-name>/jackin.sock`. One socket directory exists per running instance. The first byte sent by a client selects the channel:
 
 - `0x00` starts the control channel: a 4-byte big-endian length prefix plus JSON body. This is used for one-shot status queries.
 - Any non-zero attach tag starts the interactive channel: `[tag][4-byte big-endian payload length][payload]`. Raw input and output bytes stay raw on this hot path; they are not JSON-wrapped or base64-encoded.
@@ -81,7 +83,19 @@ Current attach frames:
 | `SessionList` | daemon → client | Typed session inventory |
 | `Shutdown` | daemon → client | All sessions exited; client should exit |
 
-The control channel currently exposes `Status`, which returns a typed `SessionList`.
+The control channel currently exposes `Status`, which returns a typed `SessionList`, and `Snapshot`, which returns the tab/pane layout used by the host console preview.
+
+### Communication paths
+
+Jackin talks to the Capsule through a few deliberately narrow paths:
+
+| Path | Mechanism | Purpose |
+|---|---|---|
+| Initial launch | `docker run -d ... <image> <agent>` | Starts `jackin-capsule` as PID 1. The trailing `<agent>` argv selects only the first tab; it is not exported as global container state. |
+| Interactive attach | `docker exec -it <container> /usr/local/bin/jackin-capsule` | Starts a second `jackin-capsule` process in attach client mode. That client connects to the PID 1 daemon over `/run/jackin/jackin.sock` and bridges the operator terminal. |
+| New agent or shell | `docker exec -it <container> /usr/local/bin/jackin-capsule new [agent]` | The attach client sends a `Hello` frame with a spawn request. The daemon creates the new PTY and sets `JACKIN_AGENT` only for agent sessions. |
+| Session inventory | `jackin-capsule status` or direct host `UnixStream` to the mounted socket | Sends a typed control request and receives typed state. The CLI command prints a human-readable line format for older host paths; console snapshot code reads JSON directly. |
+| Runtime setup | `/jackin/runtime/entrypoint.sh` calls `jackin-capsule runtime-setup` | Runs container-local setup immediately before the selected agent process is `exec`'d. |
 
 ### Layout model
 
@@ -102,7 +116,7 @@ Each pane owns one PTY and one `vt100::Parser<OscCapture>`. The parser maintains
 
 ### Dirty-output renderer
 
-`jackin-container` uses an internal dirty-row layer in <RepoFile path="crates/jackin-container/src/render.rs" /> rather than replacing `vt100` with a larger terminal engine. The decision follows the Zellij model: keep per-pane terminal state, track changed visible lines, and serialize only the changed pane body rows when the rest of the frame is still valid. Zellij's `OutputBuffer` / `changed_lines` design was the primary reference; tmux's grid/screen/redraw split was the baseline for separating pane content from status bar and pane chrome.
+`jackin-capsule` uses an internal dirty-row layer in <RepoFile path="crates/jackin-capsule/src/render.rs" /> rather than replacing `vt100` with a larger terminal engine. The decision follows the Zellij model: keep per-pane terminal state, track changed visible lines, and serialize only the changed pane body rows when the rest of the frame is still valid. Zellij's `OutputBuffer` / `changed_lines` design was the primary reference; tmux's grid/screen/redraw split was the baseline for separating pane content from status bar and pane chrome.
 
 The crate options were evaluated as follows:
 
@@ -113,7 +127,7 @@ The crate options were evaluated as follows:
 
 | Approach | Performance model | Correctness risk | Integration / maintenance | License / reuse |
 |---|---|---|---|---|
-| Internal Zellij-style row cache over `vt100` | Scan visible rows for dirty panes; emit only changed rows plus that pane's chrome | Low: keeps the existing parser and compositor coordinate rules | Small local API; coupled to jackin pane geometry by design | Apache-compatible dependencies; reusable inside `jackin-container`, not a separate crate boundary |
+| Internal Zellij-style row cache over `vt100` | Scan visible rows for dirty panes; emit only changed rows plus that pane's chrome | Low: keeps the existing parser and compositor coordinate rules | Small local API; coupled to jackin pane geometry by design | Apache-compatible dependencies; reusable inside `jackin-capsule`, not a separate crate boundary |
 | `vt100::Screen::contents_diff` | Emits a diff between two whole-screen origins | Medium: pane offsets, dimming, borders, overlays, and selection would need wrapping around every byte stream | Low dependency cost but awkward at jackin call sites | Apache-compatible; reusable only for full-origin surfaces |
 | `vt100-ctt` fork | Same basic screen/diff model as `vt100` | Low technically, higher supply-chain risk from lower adoption | Low code churn but unnecessary dependency churn | MIT-compatible; rejected until a fork-only fix is needed |
 | `termwiz::Surface` | Mature sequence-numbered surface diff and compositing | Low at the surface layer, higher while translating from `vt100` | High: duplicate/replace the current screen model | MIT-compatible; reusable but too broad for this PR |
@@ -121,11 +135,11 @@ The crate options were evaluated as follows:
 
 The shipped layer is `PaneBodyCache`: each visible pane body keeps a snapshot of rendered cells (contents, style, width). PTY output marks only that pane dirty. The render ticker coalesces bursts at roughly 30 fps, compares the current visible rows against the cached rows, emits cursor moves plus ANSI for changed rows only, then repaints that pane's border and scrollbar. The status bar, dialogs, selection overlay, layout, and full-frame lifecycle stay separate.
 
-Full-frame redraws are still intentional and named in <RepoFile path="crates/jackin-container/src/daemon.rs" />: first attach, resize, tab switch, layout change, split/close, zoom/unzoom, scrollback browsing, pane clear, dialog/palette/confirm overlays, selection repaint, focus/style changes, session exit, cache miss, and unsafe partial cases all take the full path. With `JACKIN_DEBUG=1`, each render logs its kind (`full` or `partial`), reason, dirty pane count, rows emitted, bytes emitted, and duration in microseconds so regressions can be compared against the old full-pane path from logs.
+Full-frame redraws are still intentional and named in <RepoFile path="crates/jackin-capsule/src/daemon.rs" />: first attach, resize, tab switch, layout change, split/close, zoom/unzoom, scrollback browsing, pane clear, dialog/palette/confirm overlays, selection repaint, focus/style changes, session exit, cache miss, and unsafe partial cases all take the full path. With `JACKIN_DEBUG=1`, each render logs its kind (`full` or `partial`), reason, dirty pane count, rows emitted, bytes emitted, and duration in microseconds so regressions can be compared against the old full-pane path from logs.
 
 ### Status bar
 
-The top two rows of the host terminal are owned by `jackin-container` and never yielded to agent sessions. They render:
+The top two rows of the host terminal are owned by `jackin-capsule` and never yielded to agent sessions. They render:
 
 - **`jackin'` brand pill** — bright-green background, near-black text. Always visible. When an operator shares their screen, others can immediately see the container is running inside jackin.
 - **Session tabs** — one tab per session. Active tab is bold and green. Inactive tabs are grey. Mouse-clickable. Tabs show a state glyph for the session roll-up. The blocked attention glyph is latched: incidental PTY output does not clear it, and explicit operator keyboard input to that pane does.
@@ -161,7 +175,7 @@ Available runtimes are declared via the `JACKIN_SUPPORTED_AGENTS` environment va
 
 ### OSC passthrough opt-outs
 
-Modern terminals interpret OSC escape sequences agents emit for window titles, clipboard writes, desktop notifications, and hyperlinks. By default jackin-container forwards each family from the focused pane to the operator's outer terminal so the agent's UI works the same as it would running directly on the host. Operators running an untrusted role can disable any family per-container with these environment variables (set on the host before `jackin load` so they reach the derived image's runtime):
+Modern terminals interpret OSC escape sequences agents emit for window titles, clipboard writes, desktop notifications, and hyperlinks. By default jackin-capsule forwards each family from the focused pane to the operator's outer terminal so the agent's UI works the same as it would running directly on the host. Operators running an untrusted role can disable any family per-container with these environment variables (set on the host before `jackin load` so they reach the derived image's runtime):
 
 | Env var | Disables when set to `deny` / `off` / `no` |
 |---|---|
@@ -170,7 +184,7 @@ Modern terminals interpret OSC escape sequences agents emit for window titles, c
 | `JACKIN_OSC_NOTIFY` | OSC 9 desktop notifications |
 | `JACKIN_OSC_HYPERLINK` | OSC 8 clickable hyperlinks |
 
-OSC 7 (current working directory) is never forwarded — it would tell the operator's host terminal to track the *container's* cwd, which has no meaning outside the container; jackin-container captures it locally for the pane title and stops. OSC 8 forwarding additionally rejects any URI whose scheme is not `http`, `https`, or `mailto` (so a compromised agent cannot ship a `javascript:` or `file://` hyperlink that would script the operator's host terminal on click).
+OSC 7 (current working directory) is never forwarded — it would tell the operator's host terminal to track the *container's* cwd, which has no meaning outside the container; jackin-capsule captures it locally for the pane title and stops. OSC 8 forwarding additionally rejects any URI whose scheme is not `http`, `https`, or `mailto` (so a compromised agent cannot ship a `javascript:` or `file://` hyperlink that would script the operator's host terminal on click).
 
 ### Pointer shape feedback
 
@@ -187,23 +201,23 @@ The policy is read once per session at spawn time; an agent that exports the env
 
 ## Distribution and versioning
 
-`jackin-container` is versioned identically to the jackin CLI — both use the same <RepoFile path="build.rs" /> logic that produces `{cargo_pkg_version}+{7-char-git-sha}`. The host CLI's version string and the binary's `--version` output always match.
+`jackin-capsule` is versioned identically to the jackin CLI — both use the same <RepoFile path="build.rs" /> logic that produces `{cargo_pkg_version}+{7-char-git-sha}`. The host CLI's version string and the binary's `--version` output always match.
 
 ### How jackin acquires the binary
 
-`ensure_available` in <RepoFile path="src/container_binary.rs" /> resolves the binary in priority order:
+`ensure_available` in <RepoFile path="src/capsule_binary.rs" /> resolves the binary in priority order:
 
-1. **`JACKIN_CONTAINER_BIN=/path/to/binary` (env var set)** — jackin uses that path directly. No cache lookup, no download. The binary can come from anywhere: a local build, a CI artifact, a closed-source build. jackin validates only that the file exists and is executable.
+1. **`JACKIN_CAPSULE_BIN=/path/to/binary` (env var set)** — jackin uses that path directly. No cache lookup, no download. The binary can come from anywhere: a local build, a CI artifact, a closed-source build. jackin validates only that the file exists and is executable.
 
-2. **Cache hit** — if `~/.jackin/cache/jackin-container/<version>/linux-<arch>/jackin-container` exists and is executable, it is used immediately.
+2. **Cache hit** — if `~/.jackin/cache/jackin-capsule/<version>/linux-<arch>/jackin-capsule` exists and is executable, it is used immediately.
 
-3. **Download** — on a cache miss, the binary and its `.sha256` companion are downloaded from GitHub Releases: the rolling `preview` tag for `-dev` and `-preview.*` versions, or the versioned `v<version>` tag for stable releases. The hash must match before the file is promoted into the cache. On Linux the downloaded binary is also verified by executing `jackin-container --version` and asserting the output matches the expected version string.
+3. **Download** — on a cache miss, the binary and its `.sha256` companion are downloaded from GitHub Releases: the rolling `preview` tag for `-dev` and `-preview.*` versions, or the versioned `v<version>` tag for stable releases. The hash must match before the file is promoted into the cache. On Linux the downloaded binary is also verified by executing `jackin-capsule --version` and asserting the output matches the expected version string.
 
-jackin itself has no knowledge of how to build `jackin-container` from source. Build logic lives exclusively in the developer tool described below.
+jackin itself has no knowledge of how to build `jackin-capsule` from source. Build logic lives exclusively in the developer tool described below.
 
 ### Building for local development
 
-Use the `build-jackin-container` binary (defined in <RepoFile path="src/bin/build_jackin_container.rs" />) to compile `jackin-container` for Linux and populate the cache. It uses `cargo-zigbuild` with Zig as the linker — no Docker required — and targets a glibc 2.17 floor to match CI:
+Use the `build-jackin-capsule` binary (defined in <RepoFile path="src/bin/build_jackin_capsule.rs" />) to compile `jackin-capsule` for Linux and populate the cache. It uses `cargo-zigbuild` with Zig as the linker — no Docker required — and targets a glibc 2.17 floor to match CI:
 
 - `arm64` → `aarch64-unknown-linux-gnu.2.17`
 - `amd64` → `x86_64-unknown-linux-gnu.2.17`
@@ -211,17 +225,17 @@ Use the `build-jackin-container` binary (defined in <RepoFile path="src/bin/buil
 **Option A — one shot (recommended for PR verification):**
 
 ```sh
-eval "$(cargo run --bin build-jackin-container -- --export)"
+eval "$(cargo run --bin build-jackin-capsule -- --export)"
 ```
 
-This builds the binary, caches it under `~/.jackin/cache/jackin-container/`, and sets `JACKIN_CONTAINER_BIN` in the current shell so `jackin load` uses it directly — bypassing the cache lookup entirely.
+This builds the binary, caches it under `~/.jackin/cache/jackin-capsule/`, and sets `JACKIN_CAPSULE_BIN` in the current shell so `jackin load` uses it directly — bypassing the cache lookup entirely.
 
 **Option B — two steps (useful when running multiple `jackin load` invocations):**
 
 ```sh
-cargo run --bin build-jackin-container
-# prints: [build] to use: export JACKIN_CONTAINER_BIN=/path/to/cached/binary
-export JACKIN_CONTAINER_BIN=/path/to/cached/binary
+cargo run --bin build-jackin-capsule
+# prints: [build] to use: export JACKIN_CAPSULE_BIN=/path/to/cached/binary
+export JACKIN_CAPSULE_BIN=/path/to/cached/binary
 ```
 
 The binary is written to the standard cache path and subsequent `jackin load` invocations in the same shell reuse it without rebuilding.
@@ -231,7 +245,7 @@ The binary is written to the standard cache path and subsequent `jackin load` in
 | Flag | Description |
 |---|---|
 | `--arch arm64\|amd64` | Target architecture (default: current host's container arch) |
-| `--export` | Print only `export JACKIN_CONTAINER_BIN=<path>` for `eval` |
+| `--export` | Print only `export JACKIN_CAPSULE_BIN=<path>` for `eval` |
 
 Prerequisites: `zig` and `cargo-zigbuild` must be installed. Both are declared in <RepoFile path="mise.toml" />; run `mise install zig cargo:cargo-zigbuild` if missing.
 
@@ -239,18 +253,18 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 
 ### Derived image build
 
-<RepoFile path="src/derived_image.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-container /usr/local/bin/jackin-container` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/usr/local/bin/jackin-container` the base image provides.
+<RepoFile path="src/derived_image.rs" /> copies the resolved binary into the Docker build context so `docker build` does not need network access at image-build time. The `COPY .jackin-runtime/jackin-capsule /usr/local/bin/jackin-capsule` instruction is emitted only when the binary path is available; when it is not (e.g. in unit tests), the instruction is omitted and the image falls back to whatever `/usr/local/bin/jackin-capsule` the base image provides.
 
 ## Relationship to the rest of jackin
 
 | Component | Relationship |
 |---|---|
-| <RepoFile path="src/container_binary.rs" /> | Resolves the binary path: `JACKIN_CONTAINER_BIN` override → cache hit → download from GitHub Releases |
-| <RepoFile path="src/bin/build_jackin_container.rs" /> | Developer tool: `cargo run --bin build-jackin-container` — builds via `cargo-zigbuild` and populates the cache |
+| <RepoFile path="src/capsule_binary.rs" /> | Resolves the binary path: `JACKIN_CAPSULE_BIN` override → cache hit → download from GitHub Releases |
+| <RepoFile path="src/bin/build_jackin_capsule.rs" /> | Developer tool: `cargo run --bin build-jackin-capsule` — builds via `cargo-zigbuild` and populates the cache |
 | <RepoFile path="src/derived_image.rs" /> | Copies binary into derived image build context |
-| <RepoFile path="crates/jackin-container/src/runtime_setup.rs" /> | Implements `jackin-container runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
-| <RepoFile path="src/runtime/launch.rs" /> | Adds socket mount to `docker run`; connects via `docker exec jackin-container` |
-| <RepoFile path="src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-container new` |
+| <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> | Implements `jackin-capsule runtime-setup`, the Rust replacement for deterministic entrypoint shell setup |
+| <RepoFile path="src/runtime/launch.rs" /> | Adds the per-instance socket directory mount to `docker run`; connects via `docker exec jackin-capsule` |
+| <RepoFile path="src/runtime/attach.rs" /> | Queries socket for session list; spawns new sessions via `jackin-capsule new` |
 | <RepoFile path="src/isolation/finalize.rs" /> | Queries socket to detect live sessions before cleanup |
 | [Agent runtime status authority roadmap item](/reference/roadmap/agent-runtime-status/) | Defines the in-container state authority and consumes agent-state events from the socket once the event stream is implemented |
 | [jackin daemon roadmap item](/reference/roadmap/jackin-daemon/) | The daemon will subscribe to each container's socket and maintain a cross-instance session index |
@@ -259,5 +273,5 @@ First build takes 2–3 minutes; subsequent builds are incremental via cargo's d
 ## See also
 
 - [Multiplexer Design Rules](/reference/multiplexer-design-rules/) — the non-negotiable passthrough contract and per-feature verification checklist
-- [jackin-container roadmap item](/reference/roadmap/jackin-container-binary/) — original problem statement, Herdr evaluation, phased implementation plan
+- [jackin-capsule roadmap item](/reference/roadmap/jackin-capsule/) — original problem statement, Herdr evaluation, phased implementation plan
 - [Agent Orchestrator Research](/reference/roadmap/agent-orchestrator-research/) — comparative analysis of Herdr and other tools that informed the design

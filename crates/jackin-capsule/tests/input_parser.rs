@@ -2,7 +2,7 @@
 ///
 /// Two parallel models: default `Ctrl+\` palette key; opt-in Ctrl+B
 /// prefix mode. Tests exercise both.
-use jackin_container::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
+use jackin_capsule::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 
 fn parse_default(bytes: &[u8]) -> Vec<InputEvent> {
     InputParser::default().parse(bytes)

@@ -7,10 +7,10 @@
 /// behaviour) but cover the parts that the rewrite touches: control vs
 /// attach dispatch by first byte, control-channel JSON shape, and
 /// attach-channel binary roundtrip.
-use jackin_container::protocol::attach::{
+use jackin_capsule::protocol::attach::{
     ClientFrame, ServerFrame, encode_client, encode_server, read_client_frame, read_server_frame,
 };
-use jackin_container::protocol::control::{ClientMsg, ServerMsg, frame};
+use jackin_capsule::protocol::control::{ClientMsg, ServerMsg, frame};
 use std::path::PathBuf;
 use tempfile::tempdir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

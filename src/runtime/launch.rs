@@ -1048,9 +1048,9 @@ async fn launch_role_runtime(
         run_args.push("-v");
         run_args.push(ms);
     }
-    // jackin-container runs as PID 1 (daemon mode). It starts the multiplexer
+    // jackin-capsule runs as PID 1 (daemon mode). It starts the multiplexer
     // server, listens on the Unix socket, and keeps the container alive while
-    // agent sessions run. The operator connects via `docker exec -it jackin-container`.
+    // agent sessions run. The operator connects via `docker exec -it jackin-capsule`.
     let image_label = format!("jackin.image={image}");
     run_args.extend_from_slice(&["--label", &image_label]);
     // Host-side bind-mount of the daemon's socket directory. Owned by
@@ -1094,7 +1094,7 @@ async fn launch_role_runtime(
     // which an interactive `jackin load` can spawn caffeinate.
     super::caffeinate::reconcile(paths, docker, runner).await;
 
-    // Pre-session safety check: if jackin-container exited immediately
+    // Pre-session safety check: if jackin-capsule exited immediately
     // (missing binary, bad image), surface the container logs rather than
     // failing with a cryptic docker exec error.
     if let Some(err) =
@@ -1103,8 +1103,8 @@ async fn launch_role_runtime(
         return Err(err);
     }
 
-    // Connect the operator's terminal to the running jackin-container multiplexer.
-    // jackin-container detects PID != 1 and runs in client mode, connecting to
+    // Connect the operator's terminal to the running jackin-capsule multiplexer.
+    // jackin-capsule detects PID != 1 and runs in client mode, connecting to
     // the daemon via /run/jackin/jackin.sock inside the container.
     let session_result = runner
         .run(
@@ -1113,7 +1113,7 @@ async fn launch_role_runtime(
                 "exec",
                 "-it",
                 container_name,
-                "/usr/local/bin/jackin-container",
+                "/usr/local/bin/jackin-capsule",
             ],
             None,
             &RunOptions::default(),
@@ -1152,8 +1152,8 @@ async fn launch_role_runtime(
 
 /// Whether `diagnose_premature_exit` is firing before the operator's
 /// terminal was attached or after. The treatment of `exit 0` differs
-/// between the two: pre-attach it's a supervisor that died without
-/// doing anything (still worth surfacing — most likely a bad image or
+/// between the two: pre-attach it's PID 1 exiting before the client
+/// attaches (still worth surfacing — most likely a bad image or
 /// missing binary), post-attach it's the multiplexer shutting the
 /// container down because no live sessions remain (the
 /// container-lifecycle-policy happy path — swallow it).
@@ -1167,7 +1167,7 @@ enum ExitPhase {
 /// and return an actionable error including the captured `docker logs`.
 ///
 /// `docker exec` against a stopped container returns "container is not
-/// running" with no hint at the underlying supervisor failure (bad
+/// running" with no hint at the underlying PID 1 failure (bad
 /// entrypoint script, auth crash, missing mount, …). This wraps the
 /// inspect + log fetch so the surfaced error names the exit code, OOM
 /// flag, and the last lines of the container's combined stdout/stderr.
@@ -1205,7 +1205,7 @@ async fn diagnose_premature_exit(
             // policy treats this as the happy path — return None so
             // the caller does not synthesize a misleading "exited
             // before attach" error. Pre-attach exit 0 is still
-            // surfaced because a supervisor that died before the
+            // surfaced because PID 1 died before the
             // client connected indicates a bad image / missing binary
             // even when the exit code looks clean.
             if phase == ExitPhase::PostAttach && exit_code == 0 && !oom_killed {
@@ -2082,7 +2082,7 @@ async fn load_role_with(
         // unless the container is still running with active sessions (detach):
         //  - Running + active sessions → user detached (Ctrl-B D). Keep DinD so
         //                               `jackin hardline` can reconnect.
-        //  - Running + no sessions → agent exited; supervisor lag or stale socket.
+        //  - Running + no sessions → agent exited; Capsule cleanup lag or stale socket.
         //                            Tear down same as Stopped/0 regardless of
         //                            preserved isolation state — worktrees live on
         //                            the host and are accessible without DinD.
@@ -2126,7 +2126,7 @@ async fn load_role_with(
                         cleanup.disarm();
                     }
                 } else {
-                    // Finalize already confirmed no sessions (supervisor lag after
+                    // Finalize already confirmed no sessions (Capsule still running after
                     // clean exit). Skip the redundant re-query and tear down.
                     write_instance_status(
                         paths,
@@ -3825,7 +3825,7 @@ mod tests {
 
     #[tokio::test]
     async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
-        // Pre-attach exit 0 is still suspicious — supervisor exited
+        // Pre-attach exit 0 is still suspicious — PID 1 exited
         // without doing anything, most likely a bad image or missing
         // entrypoint. Operator wants the heads-up even though the
         // exit code looks clean.
@@ -3847,7 +3847,7 @@ mod tests {
             super::ExitPhase::PreAttach,
         )
         .await
-        .expect("pre-attach exit 0 must still flag a missing supervisor");
+        .expect("pre-attach exit 0 must still flag a missing Capsule");
         let msg = err.to_string();
         assert!(
             msg.contains("exited before attach"),

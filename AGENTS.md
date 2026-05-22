@@ -176,7 +176,7 @@ This rule applies even when the operator did not explicitly ask to push — fini
 All pull-request rules live in two places, split by audience:
 
 - [`PULL_REQUESTS.md`](PULL_REQUESTS.md) — shared PR flow, body-shape spec, Verify-locally template, docs-only PR requirements, roadmap-retirement procedure. Both humans and agents read this. Start here.
-- [`.github/AGENTS.md`](.github/AGENTS.md) — agent-only extras: per-PR merge authorization, base-branch requirement, force-push policy, body-construction shell-quoting rules, iteration vs merge-readiness behavior, CI-green-before-merge, title/description reconciliation, squash-merge format with PR-number + trailers, and the `jackin-container` smoke-test mandate. Also covers GitHub Actions workflow authoring (mise-only installs, job-level env scope, publish gating, smoke-testing push-only jobs).
+- [`.github/AGENTS.md`](.github/AGENTS.md) — agent-only extras: per-PR merge authorization, base-branch requirement, force-push policy, body-construction shell-quoting rules, iteration vs merge-readiness behavior, CI-green-before-merge, title/description reconciliation, squash-merge format with PR-number + trailers, and the `jackin-capsule` smoke-test mandate. Also covers GitHub Actions workflow authoring (mise-only installs, job-level env scope, publish gating, smoke-testing push-only jobs).
 
 Discovery flow Claude Code uses: `.github/CLAUDE.md` is `@AGENTS.md`, so the file auto-loads whenever the working directory is under `.github/` — including when reading the PR template.
 
@@ -288,9 +288,9 @@ This does not apply to:
 - Inspection commands the operator runs (`pgrep`, `pmset`, `cat`, `ls`) — those aren't jackin invocations.
 - Production recommendations or scripted automation (debug output is too noisy for those).
 
-## Testing `jackin-container` changes locally (agent-only) — see `.github/AGENTS.md`
+## Testing `jackin-capsule` changes locally (agent-only) — see `.github/AGENTS.md`
 
-All rules for the `jackin-container` smoke-test mandate — the eval one-shot build invocation, the `ensure_available` resolution order, the required PR Verify-locally block — live in [`.github/AGENTS.md`](.github/AGENTS.md) under the `## jackin-container PRs (hard rule)` section. Read that file before opening or reviewing a PR that touches `crates/jackin-container/`.
+All rules for the `jackin-capsule` smoke-test mandate — the eval one-shot build invocation, the `ensure_available` resolution order, the required PR Verify-locally block — live in [`.github/AGENTS.md`](.github/AGENTS.md) under the `## jackin-capsule PRs (hard rule)` section. Read that file before opening or reviewing a PR that touches `crates/jackin-capsule/`.
 
 ## TUI design decisions (agent-only)
 

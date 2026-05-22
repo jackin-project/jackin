@@ -1,4 +1,4 @@
-use crate::container_binary;
+use crate::capsule_binary;
 use crate::derived_image::create_derived_build_context;
 use crate::docker::{CommandRunner, RunOptions};
 use crate::docker_client::DockerApi;
@@ -120,20 +120,20 @@ pub(super) async fn build_agent_image(
         rebuild
     };
 
-    // Ensure the jackin-container binary is available in the local cache.
+    // Ensure the jackin-capsule binary is available in the local cache.
     // Downloads from the GitHub preview release if not cached for this
     // version. Propagate the error: the derived image's ENTRYPOINT is
-    // `/usr/local/bin/jackin-container`, so a Dockerfile built without
+    // `/usr/local/bin/jackin-capsule`, so a Dockerfile built without
     // the binary would build successfully then fail at `docker run`
     // with the opaque "exec: file not found." Failing fast here with
-    // the actionable message from `container_binary` is much better.
-    let jackin_container_binary = container_binary::ensure_available(paths)
+    // the actionable message from `capsule_binary` is much better.
+    let jackin_capsule_binary = capsule_binary::ensure_available(paths)
         .await
-        .context("preparing jackin-container binary for derived image build")?;
-    let jackin_container_src = jackin_container_binary.to_str().ok_or_else(|| {
+        .context("preparing jackin-capsule binary for derived image build")?;
+    let jackin_capsule_src = jackin_capsule_binary.to_str().ok_or_else(|| {
         anyhow::anyhow!(
-            "cached jackin-container path {} contains non-UTF-8 bytes; cannot reference it from Dockerfile",
-            jackin_container_binary.display()
+            "cached jackin-capsule path {} contains non-UTF-8 bytes; cannot reference it from Dockerfile",
+            jackin_capsule_binary.display()
         )
     })?;
 
@@ -144,7 +144,7 @@ pub(super) async fn build_agent_image(
         &cached_repo.repo_dir,
         validated_repo,
         base_image_override,
-        Some(jackin_container_src),
+        Some(jackin_capsule_src),
     )?;
     drop(repo_lock);
 

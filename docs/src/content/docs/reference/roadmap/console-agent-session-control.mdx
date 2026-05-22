@@ -37,4 +37,4 @@ The session substrate and CLI escape hatches are documented in [Container Superv
 
 - Per-session idle/busy indicator in the console Instances panel (requires integration with the [Agent Runtime Status](/reference/roadmap/agent-runtime-status/) roadmap item).
 - Per-instance CPU/RAM usage in the console resource panel (requires integration with the [Console Resource Panel](/reference/roadmap/console-resource-panel/) roadmap item).
-- Session reconciliation: query `tmux list-sessions` on console refresh and update the `sessions` field in the instance manifest so the Instances panel reflects live session state.
+- Session reconciliation: query the Capsule daemon on console refresh and update the `sessions` field in the instance manifest so the Instances panel reflects live session state.

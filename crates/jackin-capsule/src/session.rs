@@ -890,7 +890,7 @@ fn state_after_refresh(current: AgentState, elapsed: std::time::Duration) -> Age
 /// contain whitespace / control characters, or — when the derived
 /// image set `JACKIN_SUPPORTED_AGENTS` — do not appear in that
 /// allowlist. Shared by the PID-1 argv path, the
-/// `jackin-container new <agent>` client path, and the daemon's
+/// `jackin-capsule new <agent>` client path, and the daemon's
 /// `Hello.spawn` decode path so all three trust boundaries
 /// apply the same gate.
 pub fn validate_agent_slug(raw: &str) -> Result<&str, &'static str> {

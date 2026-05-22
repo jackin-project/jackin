@@ -1,4 +1,4 @@
-//! Host-side fetch of the in-container `jackin-container` daemon's
+//! Host-side fetch of the in-container `jackin-capsule` daemon's
 //! tab/pane snapshot.
 //!
 //! The daemon's socket is bind-mounted from
@@ -6,11 +6,11 @@
 //! host can talk to it directly via a `UnixStream` — no `docker
 //! exec`, no second client process.
 //!
-//! Schema sharing: the protocol types live in `jackin_container`,
-//! the in-container crate. The host depends on it (the crate is a
-//! workspace member), so request and reply structs are imported
-//! verbatim. Drift between the two surfaces is a compile error, not
-//! a wire-format bug.
+//! Schema sharing: the protocol types live in `jackin_protocol`, a
+//! small shared crate. The host CLI and in-container Capsule both
+//! depend on it, so request and reply structs are imported verbatim.
+//! Drift between the two surfaces is a compile error, not a
+//! wire-format bug.
 //!
 //! Sync API by design: the only caller today is
 //! `ManagerState::refresh_instances`, which runs inside the host

@@ -27,7 +27,7 @@ sends readers here for the actual module-level detail.
 | `src/` | Rust CLI binary — every command jackin' implements |
 | `docker/construct/` | Source for the shared base Docker image (`projectjackin/construct:trixie`) |
 | <RepoFile path="docker/runtime/entrypoint.sh" /> | Lightweight shell bridge injected into every derived image at `/jackin/runtime/entrypoint.sh`; it calls Rust runtime setup, sources role hooks, and execs the selected agent |
-| <RepoFile path="crates/jackin-container/src/runtime_setup.rs" /> | In-container Rust setup for git/GitHub initialization, trailer hook installation, agent home seeding, auth handoff copies, and Claude MCP registration |
+| <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> | In-container Rust setup for git/GitHub initialization, trailer hook installation, agent home seeding, auth handoff copies, and Claude MCP registration |
 | `docs/` | This documentation site (Astro + Starlight) |
 | `.github/workflows/` | CI for jackin', the construct image, and the docs site |
 | `tests/` | End-to-end and integration tests |

@@ -360,7 +360,7 @@ fn default_palette_key() -> Option<u8> {
             Some(byte) => Some(byte),
             None => {
                 eprintln!(
-                    "[jackin-container] invalid JACKIN_PALETTE_KEY={s:?}; using default Ctrl+\\"
+                    "[jackin-capsule] invalid JACKIN_PALETTE_KEY={s:?}; using default Ctrl+\\"
                 );
                 Some(0x1C)
             }

@@ -1,4 +1,4 @@
-/// Attach client — runs inside the container when `jackin-container` is
+/// Attach client — runs inside the container when `jackin-capsule` is
 /// invoked with PID != 1. Sets the host terminal into raw mode, opens
 /// the Unix socket, negotiates the binary attach channel, and shuttles
 /// bytes between the operator's terminal and the multiplexer daemon.
@@ -18,7 +18,7 @@ use crate::socket::SOCKET_PATH;
 
 /// Connect to the running daemon and run the interactive attach client.
 ///
-/// `spawn_request` is set by `docker exec ... jackin-container new`;
+/// `spawn_request` is set by `docker exec ... jackin-capsule new`;
 /// the first Hello frame asks the daemon to create that session before
 /// completing attach. Plain attach (operator-initiated reattach)
 /// passes `None`.
@@ -52,7 +52,7 @@ pub async fn run_client(
 
     let mut stream = UnixStream::connect(SOCKET_PATH)
         .await
-        .context("cannot connect to jackin-container daemon — is it running?")?;
+        .context("cannot connect to jackin-capsule daemon — is it running?")?;
 
     stream
         .write_all(&encode_client(ClientFrame::Hello {
@@ -138,7 +138,7 @@ pub async fn run_client(
 pub async fn run_status() -> Result<()> {
     let mut stream = UnixStream::connect(SOCKET_PATH)
         .await
-        .context("cannot connect to jackin-container daemon")?;
+        .context("cannot connect to jackin-capsule daemon")?;
 
     let msg = control_frame(&ClientMsg::Status);
     stream.write_all(&msg).await?;
@@ -183,7 +183,7 @@ pub async fn run_status() -> Result<()> {
 pub async fn run_snapshot() -> Result<()> {
     let mut stream = UnixStream::connect(SOCKET_PATH)
         .await
-        .context("cannot connect to jackin-container daemon")?;
+        .context("cannot connect to jackin-capsule daemon")?;
 
     stream
         .write_all(&control_frame(&ClientMsg::Snapshot))

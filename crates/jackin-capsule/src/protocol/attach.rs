@@ -43,7 +43,7 @@ pub enum SpawnRequest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientFrame {
     /// First frame from a newly-connected client. Plain attach sets
-    /// `spawn` to None; `jackin-container new` uses `Shell` or
+    /// `spawn` to None; `jackin-capsule new` uses `Shell` or
     /// `Agent(slug)` so the daemon can create the requested session
     /// before attach completes. `env` carries per-session overrides
     /// that the short-lived `docker exec` client must forward to the

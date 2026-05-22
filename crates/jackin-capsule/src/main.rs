@@ -1,14 +1,14 @@
 use anyhow::{Result, bail};
-use jackin_container::{
+use jackin_capsule::{
     client, daemon, protocol::attach::SpawnRequest, runtime_setup, session::validate_agent_slug,
 };
 
 const DEFAULT_AGENT: &str = "claude";
 
-/// CLI for `jackin-container`.
+/// CLI for `jackin-capsule`.
 ///
 /// Mode is determined by:
-/// - PID == 1 → daemon mode (supervisor + multiplexer server)
+/// - PID == 1 → daemon mode (supervisor + multiplexer + socket control plane)
 /// - PID != 1 → client mode (connect to daemon, run interactive UI)
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
         match subcommand {
             None => client::run_client(None, focus_session).await,
             Some("--version") | Some("-V") => {
-                println!("jackin-container {}", env!("JACKIN_CONTAINER_VERSION"));
+                println!("jackin-capsule {}", env!("JACKIN_CAPSULE_VERSION"));
                 Ok(())
             }
             Some("status") => client::run_status().await,
@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
                         Ok(s) => Some(SpawnRequest::Agent(s.to_string())),
                         Err(reason) => {
                             eprintln!(
-                                "[jackin-container] ignoring agent argv {raw:?}: {reason}; no new session will be spawned"
+                                "[jackin-capsule] ignoring agent argv {raw:?}: {reason}; no new session will be spawned"
                             );
                             None
                         }
@@ -46,13 +46,13 @@ async fn main() -> Result<()> {
                 client::run_client(spawn, focus_session).await
             }
             Some(other) if other.starts_with("--focus") => {
-                // Bare `jackin-container --focus <id>` → plain attach
+                // Bare `jackin-capsule --focus <id>` → plain attach
                 // with focus.
                 client::run_client(None, focus_session).await
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-container subcommand {other:?} — known: status, snapshot, runtime-setup, new <agent>, --focus <session_id>, --version"
+                    "unknown jackin-capsule subcommand {other:?} — known: status, snapshot, runtime-setup, new <agent>, --focus <session_id>, --version"
                 )
             }
         }

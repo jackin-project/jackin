@@ -18,7 +18,7 @@ use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttachOutcome {
-    /// Container is still running — exec returned but supervisor poll may lag.
+    /// Container is still running after the foreground attach returned.
     StillRunning,
     /// Container exited with the given code.
     Stopped(i32),
@@ -119,16 +119,16 @@ pub async fn finalize_foreground_session(
     if !matches!(outcome, AttachOutcome::Stopped(0)) {
         // Non-zero exit, OOM-kill, or still-running → preserve by default.
         // Exception: StillRunning with no active jackin sessions means the
-        // supervisor lag case — the docker exec returned while the container is
-        // still up but the agent already exited cleanly. Fall through to
-        // finalize_clean_exit so isolation worktrees are swept normally.
+        // Capsule has not exited yet after the foreground client returned.
+        // Fall through to finalize_clean_exit so isolation worktrees are
+        // swept normally.
         if matches!(outcome, AttachOutcome::StillRunning)
             && !has_jackin_sessions(docker, container_name).await
         {
             debug_log!(
                 "isolation",
                 "finalize: container={c} still running but no jackin sessions; \
-                 supervisor lag after clean exit — proceeding to isolation cleanup",
+                 capsule still running after clean exit — proceeding to isolation cleanup",
                 c = container_name,
             );
             return finalize_clean_exit(
@@ -161,7 +161,7 @@ async fn has_jackin_sessions(
     docker: &impl crate::docker_client::DockerApi,
     container_name: &str,
 ) -> bool {
-    // Run via sh — jackin-container exits non-zero if no daemon is running;
+    // Run via sh — jackin-capsule exits non-zero if no daemon is running;
     // socket is stale. Both "no server" and "no sessions" collapse to exit 0 with
     // empty stdout so the caller only sees a non-empty result when sessions exist.
     match docker

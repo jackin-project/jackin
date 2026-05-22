@@ -6,7 +6,7 @@
 /// the `OscCapture` callback layer is what re-emits them. These tests
 /// pin the contract by feeding raw OSC byte sequences into the parser
 /// and asserting that `drain_passthrough` yields the same bytes back.
-use jackin_container::session::OscCapture;
+use jackin_capsule::session::OscCapture;
 use vt100::Parser;
 
 fn drained(bytes: &[u8]) -> Vec<Vec<u8>> {

@@ -7,7 +7,7 @@ import RepoFile from '../../../../components/RepoFile.astro'
 
 ## Problem
 
-Jackin needs to know what each in-container agent is actually doing: actively working, waiting on the operator, finished but unseen, idle and reviewed, crashed, or suspiciously stuck. The current multiplexer code has the protocol labels but not the authority behind them. In <RepoFile path="crates/jackin-container/src/session.rs" />, `Session::refresh_state` still reduces state to "output in the last few seconds means working; otherwise blocked." That is not good enough for a first-class agent orchestrator. A quiet agent can be thinking, waiting for network, running a long tool, sitting at an input box, or dead. Treating all quiet periods as "blocked" creates false notifications, noisy dashboards, bad queue dispatch, and weak operator trust.
+Jackin needs to know what each in-container agent is actually doing: actively working, waiting on the operator, finished but unseen, idle and reviewed, crashed, or suspiciously stuck. The current multiplexer code has the protocol labels but not the authority behind them. In <RepoFile path="crates/jackin-capsule/src/session.rs" />, `Session::refresh_state` still reduces state to "output in the last few seconds means working; otherwise blocked." That is not good enough for a first-class agent orchestrator. A quiet agent can be thinking, waiting for network, running a long tool, sitting at an input box, or dead. Treating all quiet periods as "blocked" creates false notifications, noisy dashboards, bad queue dispatch, and weak operator trust.
 
 The roadmap item is the state authority Jackin needs before agent attention prompts, autonomous task queues, desktop status, or cost/resource correlation can be reliable. It replaces timer-only inference with a layered model that is conservative by default and precise when the runtime exposes semantic events.
 
@@ -80,7 +80,7 @@ Warp's "Full Terminal Use" direction matters because it reinforces the right pro
 
 ## Jackin design
 
-The state authority lives inside `jackin-container` because that is where the real PTY, foreground process, parser screen, and child lifecycle are visible. Host-side code should consume structured state events; it should not scrape terminal output through `docker exec`, `docker attach`, or a rendered preview.
+The state authority lives inside `jackin-capsule` because that is where the real PTY, foreground process, parser screen, and child lifecycle are visible. Host-side code should consume structured state events; it should not scrape terminal output through `docker exec`, `docker attach`, or a rendered preview.
 
 ### Signal sources
 
@@ -165,7 +165,7 @@ Remove or demote the current "silent for N seconds means blocked" behavior. Unti
 
 ### Phase 1 — State model and event stream
 
-Add the internal raw state, derived public status, `seen` flag, attention-priority roll-up, and `agent-state-changed` event stream to `jackin-container` and `jackin-protocol`. Console and host status calls should read the same effective state.
+Add the internal raw state, derived public status, `seen` flag, attention-priority roll-up, and `agent-state-changed` event stream to `jackin-capsule` and `jackin-protocol`. Console and host status calls should read the same effective state.
 
 ### Phase 2 — Process and screen detector
 
@@ -187,7 +187,7 @@ Update `jackin console`, the daemon, Desktop Agent Hub, attention prompts, auton
 
 In scope:
 
-- One canonical state authority inside `jackin-container`.
+- One canonical state authority inside `jackin-capsule`.
 - Runtime-neutral public status vocabulary.
 - Per-session raw state, public derived status, `seen`, evidence metadata, and revision.
 - Process detection through Linux `/proc`.
@@ -214,10 +214,10 @@ Out of scope for the first implementation:
 
 ## Related files
 
-- <RepoFile path="crates/jackin-container/src/session.rs" /> — current weak state timer; future PTY/process/screen signal source.
-- <RepoFile path="crates/jackin-container/src/daemon.rs" /> — event loop and session lifecycle.
+- <RepoFile path="crates/jackin-capsule/src/session.rs" /> — current weak state timer; future PTY/process/screen signal source.
+- <RepoFile path="crates/jackin-capsule/src/daemon.rs" /> — event loop and session lifecycle.
 - <RepoFile path="crates/jackin-protocol/src/control.rs" /> — status/event protocol surface.
-- <RepoFile path="crates/jackin-container/src/runtime_setup.rs" /> — runtime-local setup path for container-owned hooks/plugins.
+- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — runtime-local setup path for container-owned hooks/plugins.
 - <RepoFile path="src/runtime/launch.rs" /> — host launch path that must pass only explicit/container-local state setup.
 
 ## See also
@@ -229,7 +229,7 @@ Out of scope for the first implementation:
 - [VS Code terminal shell integration](https://code.visualstudio.com/docs/terminal/shell-integration) and [Windows Terminal shell integration](https://learn.microsoft.com/en-us/windows/terminal/tutorials/shell-integration) — prompt/command marker precedents.
 - [AI Agent Input-Ready Detection: From Regex Heuristics to Cursor-Position Semantics](https://zylos.ai/research/2026-04-01-ai-agent-input-ready-detection-cursor-vs-regex) — useful cursor-readiness research to validate as a fallback.
 - [Agent Orchestrator Research Program](/reference/roadmap/agent-orchestrator-research/)
-- [jackin-container: in-container multiplexer server](/reference/roadmap/jackin-container-binary/)
+- [Jackin Capsule control plane](/reference/roadmap/jackin-capsule/)
 - [Agent attention prompts](/reference/roadmap/agent-attention-prompts/)
 - [Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/)
 - [Autonomous task queue](/reference/roadmap/autonomous-task-queue/)

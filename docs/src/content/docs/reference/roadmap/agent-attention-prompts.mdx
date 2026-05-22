@@ -26,7 +26,7 @@ The end state, from the operator's seat:
 
 ## How jackin knows "I'm waiting"
 
-Attention prompts do not own state detection. They consume the [agent runtime status authority](/reference/roadmap/agent-runtime-status/), which runs inside `jackin-container` and arbitrates semantic runtime reports, foreground-process ownership, visible-screen signals, shell markers, cursor/readiness probes, and weak output activity. A notification fires only after that authority produces an effective `blocked` or derived `done` transition.
+Attention prompts do not own state detection. They consume the [agent runtime status authority](/reference/roadmap/agent-runtime-status/), which runs inside `jackin-capsule` and arbitrates semantic runtime reports, foreground-process ownership, visible-screen signals, shell markers, cursor/readiness probes, and weak output activity. A notification fires only after that authority produces an effective `blocked` or derived `done` transition.
 
 This avoids the failure mode where a notification feature invents its own "no output for N seconds means waiting" heuristic. Silence is evidence, not truth. The state authority is the single place that decides whether a quiet agent is blocked, still working, idle, done, unknown, or stuck.
 
@@ -41,8 +41,8 @@ If a runtime cannot report semantic state through hooks/plugins and cannot use t
 
 The pieces:
 
-- **Agent-state event stream.** `jackin-container` emits effective state transitions over the per-container control channel. The daemon subscribes to `blocked`, `done`, `idle`, `working`, and stuck-diagnostic events instead of scraping PTY output from the host.
-- **Optional `jackin-attention` MCP server.** Static binary baked into the construct image. Registered automatically in each agent's MCP config at container launch — extending the registration pattern <RepoFile path="crates/jackin-container/src/runtime_setup.rs" /> uses today for the Claude runtime's `tirith` / `shellfirm` to every supported runtime. When the agent adds attention context, the MCP server pushes metadata over the same per-container control channel. It does not replace the state authority.
+- **Agent-state event stream.** `jackin-capsule` emits effective state transitions over the per-container control channel. The daemon subscribes to `blocked`, `done`, `idle`, `working`, and stuck-diagnostic events instead of scraping PTY output from the host.
+- **Optional `jackin-attention` MCP server.** Static binary baked into the construct image. Registered automatically in each agent's MCP config at container launch — extending the registration pattern <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> uses today for the Claude runtime's `tirith` / `shellfirm` to every supported runtime. When the agent adds attention context, the MCP server pushes metadata over the same per-container control channel. It does not replace the state authority.
 - **The jackin daemon dispatches the host-side notification.** Per the [jackin daemon](/reference/roadmap/jackin-daemon/) plug-in surface, this feature is one adapter that listens for state/attention events from any running container and translates them to OS-native notifications:
   - macOS — `osascript -e 'display notification …'` or the `UserNotifications` framework via a small Swift helper. Sound escalation via `afplay` / `NSSound`.
   - Linux — `notify-send` (libnotify) or the org.freedesktop.Notifications D-Bus API. Sound via `paplay` / `aplay`.
@@ -128,4 +128,4 @@ The bet of jackin' is that running many agents safely and conveniently changes h
 - [Jackin Desktop Agent Hub](/reference/roadmap/jackin-desktop-agent-hub/) — native macOS surface that should display attention/ready-for-review state and owns the first Ghostty click-to-focus UX.
 - [Agent runtime status authority](/reference/roadmap/agent-runtime-status/) — canonical source for `blocked`, derived `done`, `idle`, `working`, `unknown`, and stuck diagnostics. Attention prompts consume this stream; they do not infer state independently.
 - [Agent Orchestrator Research Program → Live agent observability](/reference/roadmap/agent-orchestrator-research/) — adjacent work on surfacing what the agent is *doing* in real time. Attention prompts close the loop the other direction (when the agent stops doing things and waits).
-- <RepoFile path="crates/jackin-container/src/runtime_setup.rs" /> — current MCP-registration pattern for `tirith` / `shellfirm`. The `jackin-attention` MCP server registers through the same code path.
+- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — current MCP-registration pattern for `tirith` / `shellfirm`. The `jackin-attention` MCP server registers through the same code path.

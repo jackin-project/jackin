@@ -1,6 +1,6 @@
 //! Shared TUI palette and tab-strip pattern used by both jackin's
 //! ratatui-based console (`src/console/`) and the in-container
-//! multiplexer (`crates/jackin-container/`). The two consumers
+//! multiplexer (`crates/jackin-capsule/`). The two consumers
 //! produce different output formats — ratatui `Color` widgets vs
 //! raw ANSI bytes — so this crate keeps the cross-cutting bits at
 //! the lowest common denominator: plain RGB triples for colours and
@@ -49,7 +49,7 @@ pub const WHITE: Rgb = Rgb::new(255, 255, 255);
 /// text-input dialog. Picked so the input region is visible even when
 /// empty without competing with the dialog's PHOSPHOR_DARK border.
 /// Used by the host TUI's `text_input` widget and the
-/// `jackin-container` rename dialog so both surfaces share the same
+/// `jackin-capsule` rename dialog so both surfaces share the same
 /// "this is where you type" cue.
 pub const INPUT_BG_DIM: Rgb = Rgb::new(20, 24, 22);
 
@@ -67,7 +67,7 @@ pub struct TabCell<'a> {
 }
 
 /// Single space between adjacent tab cells. Console TUI and
-/// jackin-container both follow this spacing.
+/// jackin-capsule both follow this spacing.
 pub const TAB_GAP: u16 = 1;
 
 /// Title-case display name for an agent slug. Mirrors the console
@@ -120,7 +120,7 @@ pub fn lay_out_tabs<'a>(labels: &[(&'a str, bool)], start_col: u16) -> Vec<TabCe
 /// optional forbidden set used for duplicate detection. Pure data +
 /// pure-Rust methods — no ratatui, no crossterm — so the same struct
 /// can drive ratatui-rendered modals in the console TUI and ANSI
-/// modals in jackin-container.
+/// modals in jackin-capsule.
 ///
 /// Cursor is a byte offset to keep `insert_char` cheap; the public
 /// edit operations advance/retreat by one char each so multi-byte

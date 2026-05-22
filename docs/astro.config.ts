@@ -148,7 +148,7 @@ export default defineConfig({
             { label: 'Schema Versions', slug: 'reference/schema-versions' },
             { label: 'Codebase Map', slug: 'reference/codebase-map' },
             { label: 'Claude Token Orchestrator', slug: 'reference/claude-token-orchestrator' },
-            { label: 'jackin-container Multiplexer', slug: 'reference/jackin-container' },
+            { label: 'Jackin Capsule', slug: 'reference/jackin-capsule' },
             { label: 'Multiplexer Design Rules', slug: 'reference/multiplexer-design-rules' },
             {
               label: 'Goal prompts',
@@ -289,7 +289,7 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Overview', slug: 'reference/roadmap/jackin-daemon' },
-                    { label: 'jackin-container: in-container multiplexer server', slug: 'reference/roadmap/jackin-container-binary' },
+                    { label: 'Jackin Capsule control plane', slug: 'reference/roadmap/jackin-capsule' },
                     { label: 'Jackin Desktop Agent Hub', slug: 'reference/roadmap/jackin-desktop-agent-hub' },
                     {
                       label: 'Phase 2 — First reactive adapters',

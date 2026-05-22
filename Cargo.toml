@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/jackin-container", "crates/jackin-protocol", "crates/jackin-tui"]
+members = ["crates/jackin-capsule", "crates/jackin-protocol", "crates/jackin-tui"]
 resolver = "2"
 
 [package]
@@ -24,8 +24,8 @@ name = "jackin-role"
 path = "src/bin/role.rs"
 
 [[bin]]
-name = "build-jackin-container"
-path = "src/bin/build_jackin_container.rs"
+name = "build-jackin-capsule"
+path = "src/bin/build_jackin_capsule.rs"
 
 [dependencies]
 anyhow = "1.0"

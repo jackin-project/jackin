@@ -29,11 +29,11 @@ run_hook() {
 # trailer hook, plus per-agent home/auth preparation. This keeps
 # repeated pane starts quiet and avoids shell xtrace leaking token
 # values.
-/usr/local/bin/jackin-container runtime-setup
+/usr/local/bin/jackin-capsule runtime-setup
 
 # ── agent-specific setup ───────────────────────────────────────────
 #
-# Per-session file setup already ran in `jackin-container runtime-setup`.
+# Per-session file setup already ran in `jackin-capsule runtime-setup`.
 # The remaining shell branch only builds the final argv because role
 # `source.sh` can mutate this shell's environment before `exec`.
 case "${JACKIN_AGENT:?JACKIN_AGENT must be set}" in

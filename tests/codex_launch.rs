@@ -1,6 +1,6 @@
 mod common;
 
-use common::{FakeRunner, NoOpDocker, install_container_binary_stub};
+use common::{FakeRunner, NoOpDocker, install_capsule_binary_stub};
 use jackin::agent::Agent;
 use jackin::config::AppConfig;
 use jackin::isolation::MountIsolation;
@@ -15,7 +15,7 @@ async fn codex_launch_invokes_docker_run_with_codex_agent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
-    install_container_binary_stub(&paths);
+    install_capsule_binary_stub(&paths);
     std::fs::write(
         &paths.config_file,
         r#"[env]
@@ -118,13 +118,13 @@ model = "gpt-5"
     assert!(!run_cmd.contains("JACKIN_CODEX_MODEL"), "{run_cmd}");
     // The initial agent is passed as container argv; model flag goes to the
     // exec session when wired through a future protocol extension. For now
-    // assert the exec command targets jackin-container.
+    // assert the exec command targets jackin-capsule.
     let session_cmd = runner
         .recorded
         .iter()
-        .find(|call| call.contains("docker exec") && call.contains("jackin-container"))
-        .expect("jackin-container exec session should start");
-    assert!(session_cmd.contains("jackin-container"), "{session_cmd}");
+        .find(|call| call.contains("docker exec") && call.contains("jackin-capsule"))
+        .expect("jackin-capsule exec session should start");
+    assert!(session_cmd.contains("jackin-capsule"), "{session_cmd}");
     assert!(!run_cmd.contains("/jackin/codex/config.toml"), "{run_cmd}");
     // Multi-agent role (`agents = ["claude", "codex"]`) provisions
     // every supported agent's home state so `hardline --new --agent
@@ -140,7 +140,7 @@ async fn codex_launch_cli_agent_override_wins_over_workspace() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
-    install_container_binary_stub(&paths);
+    install_capsule_binary_stub(&paths);
     std::fs::write(
         &paths.config_file,
         r#"[env]

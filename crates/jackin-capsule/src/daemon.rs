@@ -2490,8 +2490,8 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                         "attach: ignoring unknown focus_session={target} (no matching pane)"
                     );
                 }
-                // Honor a spawn intent from `jackin-container new
-                // <agent>` / `jackin-container new` (shell). Spawn
+                // Honor a spawn intent from `jackin-capsule new
+                // <agent>` / `jackin-capsule new` (shell). Spawn
                 // failures get clog'd at error level so a
                 // `jackin load --debug` run shows the underlying cause;
                 // the attach completes either way so the operator can

@@ -1,10 +1,10 @@
 ---
-title: "jackin-container: Multiplexer Design Rules"
+title: "Jackin Capsule: Multiplexer Design Rules"
 ---
 
 **Rule zero: the agent's experience is inviolable.**
 
-The operator chose their agent (Claude Code, Codex, Amp, etc.) for its UX. `jackin-container` is a thin layer of glass in front of that UX — transparent in every direction, with zero opinions about what happens inside.
+The operator chose their agent (Claude Code, Codex, Amp, etc.) for its UX. The Jackin Capsule multiplexer is a thin layer of glass in front of that UX — transparent in every direction, with zero opinions about what happens inside.
 
 Every feature, bug fix, and refactor must pass this test before it ships: **does the agent work exactly as it would in a bare terminal?** If the answer is anything other than an unqualified yes, the feature is incomplete.
 
@@ -155,9 +155,9 @@ These behaviors must work end-to-end in a real container after every change:
 
 ## Reference: tmux options we replicate
 
-The following tmux options were set in the old `entrypoint.sh` because they were necessary for agent fidelity. `jackin-container` must provide equivalent behavior at the PTY level:
+The following tmux options were set in the old `entrypoint.sh` because they were necessary for agent fidelity. `jackin-capsule` must provide equivalent behavior at the PTY level:
 
-| tmux option | jackin-container equivalent |
+| tmux option | jackin-capsule equivalent |
 |---|---|
 | `extended-keys always` | PTY spawned with `TERM=xterm-256color`; client terminal has extended keys enabled |
 | `terminal-features 'xterm*:extkeys'` | Advertised via TERMINFO / TERM env inside pane |

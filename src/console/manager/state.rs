@@ -2017,7 +2017,7 @@ impl<'a> EditorState<'a> {
     /// Pop one frame from the modal chain. If `modal_parents` is
     /// non-empty the previous parent becomes visible; otherwise the
     /// chain finishes and `modal` is cleared. Mirrors
-    /// `crates/jackin-container/src/dialog.rs::dialog_pop_one` and is
+    /// `crates/jackin-capsule/src/dialog.rs::dialog_pop_one` and is
     /// the canonical "Esc went back" arm for child modals.
     pub fn pop_modal_chain(&mut self) {
         self.modal = self.modal_parents.pop();

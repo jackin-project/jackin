@@ -10,7 +10,7 @@
 //!      when reporting bugs.
 //!
 //! Path resolution:
-//!   - `JACKIN_CONTAINER_LOG_PATH` env var (when set) overrides the
+//!   - `JACKIN_CAPSULE_LOG_PATH` env var (when set) overrides the
 //!     default. Useful for tests and for operators that want the log
 //!     somewhere other than the state dir.
 //!   - Default: `/jackin/state/multiplexer.log`.
@@ -41,10 +41,10 @@ pub fn debug_enabled() -> bool {
 /// readable from outside the container.
 const DEFAULT_LOG_PATH: &str = "/jackin/state/multiplexer.log";
 
-/// Resolve the log path. Honours `JACKIN_CONTAINER_LOG_PATH` first,
+/// Resolve the log path. Honours `JACKIN_CAPSULE_LOG_PATH` first,
 /// falls back to the default.
 fn resolve_log_path() -> PathBuf {
-    std::env::var_os("JACKIN_CONTAINER_LOG_PATH")
+    std::env::var_os("JACKIN_CAPSULE_LOG_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(DEFAULT_LOG_PATH))
 }
@@ -93,7 +93,7 @@ pub fn init() {
 
 /// Emit one line to both stderr and the log file (if open). Lines
 /// are timestamped (ISO-8601 UTC, millisecond precision) and prefixed
-/// with the `[jackin-container]` tag, so log readers see a uniform
+/// with the `[jackin-capsule]` tag, so log readers see a uniform
 /// format regardless of which sink they consult. The timestamp is
 /// load-bearing for bug reports: operators paste a tail and the
 /// sequence of events has to be reconstructable from the file alone.
@@ -115,13 +115,13 @@ pub fn write_line(message: &str) {
 }
 
 /// Convenience macro: format + tag + emit. Replaces the existing
-/// `eprintln!("[jackin-container] …")` pattern. Always emits regardless
+/// `eprintln!("[jackin-capsule] …")` pattern. Always emits regardless
 /// of debug mode — reserved for compact production telemetry
 /// (lifecycle events, action breadcrumbs, error paths).
 #[macro_export]
 macro_rules! clog {
     ($($arg:tt)*) => {{
-        let line = format!("[jackin-container] {}", format_args!($($arg)*));
+        let line = format!("[jackin-capsule] {}", format_args!($($arg)*));
         $crate::logging::write_line(&line);
     }};
 }
@@ -136,7 +136,7 @@ macro_rules! clog {
 macro_rules! cdebug {
     ($($arg:tt)*) => {{
         if $crate::logging::debug_enabled() {
-            let line = format!("[jackin-container debug] {}", format_args!($($arg)*));
+            let line = format!("[jackin-capsule debug] {}", format_args!($($arg)*));
             $crate::logging::write_line(&line);
         }
     }};

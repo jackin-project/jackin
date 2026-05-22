@@ -4,7 +4,7 @@
 /// overhead (1-byte tag + 4-byte BE length). These tests pin that
 /// shape so a future refactor can't sneak base64 or JSON back into
 /// the hot path.
-use jackin_container::protocol::attach::{
+use jackin_capsule::protocol::attach::{
     ClientFrame, ServerFrame, TAG_HELLO, TAG_OUTPUT, TAG_SHUTDOWN, encode_client, encode_server,
 };
 

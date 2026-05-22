@@ -1,8 +1,8 @@
 /// Status bar layout regressions: brand pill, tab click regions,
 /// prefix-mode hint, overflow indicator.
-use jackin_container::layout::Tab;
-use jackin_container::protocol::AgentState;
-use jackin_container::statusbar::{PrefixMode, StatusBar};
+use jackin_capsule::layout::Tab;
+use jackin_capsule::protocol::AgentState;
+use jackin_capsule::statusbar::{PrefixMode, StatusBar};
 
 fn render(
     bar: &mut StatusBar,

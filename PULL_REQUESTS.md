@@ -9,7 +9,7 @@ Read this file before opening, updating, or merging a pull request.
 PR rules are split by audience to avoid duplication:
 
 - **This file** is the **shared** PR flow — body-shape spec, Verify-locally template, isolation-env-var decision rule, docs-only PR requirements, review rules, roadmap-retirement procedure. Both humans and agents start here.
-- [`.github/AGENTS.md`](.github/AGENTS.md) is the **agent-only extras** — per-PR merge authorization, base-branch requirement, force-push policy, body-construction shell-quoting rules, iteration-vs-merge-readiness behavior, CI-green-before-merge, title/description reconciliation, squash-merge format, and the `jackin-container` smoke-test mandate. Also covers GitHub Actions workflow authoring (mise-only installs, env scope, publish gating). Agents read this in addition to the shared file; the `.github/CLAUDE.md` include makes Claude Code auto-load it whenever working under `.github/`.
+- [`.github/AGENTS.md`](.github/AGENTS.md) is the **agent-only extras** — per-PR merge authorization, base-branch requirement, force-push policy, body-construction shell-quoting rules, iteration-vs-merge-readiness behavior, CI-green-before-merge, title/description reconciliation, squash-merge format, and the `jackin-capsule` smoke-test mandate. Also covers GitHub Actions workflow authoring (mise-only installs, env scope, publish gating). Agents read this in addition to the shared file; the `.github/CLAUDE.md` include makes Claude Code auto-load it whenever working under `.github/`.
 
 When agent-only and shared rules cover the same topic (e.g. "include a Verify-locally section"), the shared rule states the *what* and the agent-only rule states the agent-specific *how/when/who*.
 
@@ -41,23 +41,23 @@ Use the real PR number, repository URL, branch name, and verification commands f
 
 Split verification into named blocks only when each block contains meaningful commands. Always include checkout instructions. Add Static Checks only when there is a local check worth running beyond CI and GitHub's diff UI. Add Tests only when there is a relevant automated test command. Add User Smoke only when the operator can exercise changed behavior locally, such as CLI, runtime, workspace, Docker, TUI, or operator-flow changes. Do not add placeholder sections that say no test applies, and do not add commands that only print files for review. For CLI/runtime smoke, run the local checkout's `jackin` binary and exercise the behavior touched by the PR. If the PR changes a CLI command or TUI surface, the User Smoke block must include the exact command that opens that changed surface from the checkout, plus any setup commands needed to make the changed rows/options visible. Prose like "open the console and verify the tab" is incomplete unless it is preceded by the command the operator should paste and the state-seeding commands needed for the UI to show the changed behavior. If the PR has no narrower manual path, use the console as the baseline smoke command: `cargo run --bin jackin -- console --debug`. For launch/runtime flows, prefer a command that hits the changed path, such as `cargo run --bin jackin -- load <role> <target> --debug`. For subcommands that do not support `--debug`, include the closest supported `jackin --debug` command in the same smoke block and explain the gap in one sentence.
 
-### jackin-container PRs
+### jackin-capsule PRs
 
-Any PR touching `crates/jackin-container/` requires **two** Verify-locally blocks, in this order:
+Any PR touching `crates/jackin-capsule/` requires **two** Verify-locally blocks, in this order:
 
-1. `### Build jackin-container` — leads with the canonical eval one-shot:
+1. `### Build jackin-capsule` — leads with the canonical eval one-shot:
 
    ```sh
-   eval "$(cargo run --bin build-jackin-container -- --export)"
+   eval "$(cargo run --bin build-jackin-capsule -- --export)"
    ```
 
-   **Must come before `### User smoke` and `### jackin-container smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the eval first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes.
+   **Must come before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the eval first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes.
 
-2. `### jackin-container smoke` — runs `cargo run --bin jackin -- load the-architect . --debug` and the in-container verify checklist. Does NOT repeat the eval; the build block above already exported `JACKIN_CONTAINER_BIN`.
+2. `### jackin-capsule smoke` — runs `cargo run --bin jackin -- load the-architect . --debug` and the in-container verify checklist. Does NOT repeat the eval; the build block above already exported `JACKIN_CAPSULE_BIN`.
 
-The full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports are forbidden, the required verify checklist, prefix-surface opt-in — lives in [`.github/AGENTS.md`](.github/AGENTS.md) under `## jackin-container PRs (hard rule)`. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships both blocks in the correct order; copy them rather than rewriting the build invocation.
+The full rule — `ensure_available` resolution order, why hand-rolled `target/<triple>/release/...` exports are forbidden, the required verify checklist, prefix-surface opt-in — lives in [`.github/AGENTS.md`](.github/AGENTS.md) under `## jackin-capsule PRs (hard rule)`. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) ships both blocks in the correct order; copy them rather than rewriting the build invocation.
 
-A `crates/jackin-container/` PR that puts the launch before the build, or that omits the build block entirely, is incomplete. Unit tests passing is necessary but not sufficient.
+A `crates/jackin-capsule/` PR that puts the launch before the build, or that omits the build block entirely, is incomplete. Unit tests passing is necessary but not sufficient.
 
 ### Documentation-only PRs
 
@@ -282,7 +282,7 @@ The following rules apply only to agents and live in [`.github/AGENTS.md`](.gith
 - **CI must be green before merging** — `gh pr checks` confirmation before every merge; no `--admin` bypass without explicit per-failure authorization.
 - **Verify PR title/description before merging** — reconcile metadata with the diff before invoking `gh pr merge`.
 - **PR squash merge messages** — squash-only, `(#PR_NUMBER)` suffix, `Signed-off-by` + `Co-authored-by` trailers at the end.
-- **`jackin-container` PRs** — the eval one-shot build invocation, the verify checklist, the prefix-surface opt-in.
+- **`jackin-capsule` PRs** — the eval one-shot build invocation, the verify checklist, the prefix-surface opt-in.
 
 ## Workflow / CI changes — see `.github/AGENTS.md`
 

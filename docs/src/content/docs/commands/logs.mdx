@@ -1,6 +1,6 @@
 ---
 title: jackin logs
-description: "Show or follow the in-container multiplexer log"
+description: "Show or follow the Jackin Capsule log"
 ---
 
 ## Synopsis
@@ -9,7 +9,7 @@ description: "Show or follow the in-container multiplexer log"
 jackin logs [SELECTOR] [OPTIONS]
 ```
 
-Show, follow, or bundle the in-container multiplexer log for a running or recently-run container. The multiplexer writes one timestamped line per operator action (prefix key, pane split, tab close, agent spawn), PTY event (read EOF, child reaped), and PID-1 reap to a host-readable file under each container's state directory. The log is the primary input for bug reports about pane lifecycle, focus, or input routing.
+Show, follow, or bundle the Jackin Capsule log for a running or recently-run container. The Capsule writes one timestamped line per operator action (prefix key, pane split, tab close, agent spawn), PTY event (read EOF, child reaped), and PID-1 reap to a host-readable file under each container's state directory. The log is the primary input for bug reports about pane lifecycle, focus, or input routing.
 
 ## Arguments
 
@@ -57,13 +57,13 @@ The selector is matched against each container's base name (exact or substring),
 
 ## What's in the log
 
-Each line is timestamped in ISO-8601 UTC and prefixed with `[jackin-container]`. The multiplexer writes:
+Each line is timestamped in ISO-8601 UTC and prefixed with `[jackin-capsule]`. The Capsule writes:
 
 - **Action breadcrumbs** — every prefix-key chord, dialog action, pane spawn, split, zoom, clear-pane, close, tab close, and exited-session removal. These reconstruct what you pressed in what order.
 - **Lifecycle events** — child process reap, PTY read EOF, session resize, attach/detach.
 - **Errors** — PTY read/write errors with errno, mutex poison, control-protocol parse failures, queue closures.
 
-Reader-task EOF and child-reaper events are both logged; the difference between them is load-bearing when triaging "agent exited but pane stayed open" reports — see [`reference/jackin-container`](/reference/jackin-container/) for the lifecycle model.
+Reader-task EOF and child-reaper events are both logged; the difference between them is load-bearing when triaging "agent exited but pane stayed open" reports — see [`reference/jackin-capsule`](/reference/jackin-capsule/) for the lifecycle model.
 
 ## Bundling for bug reports
 

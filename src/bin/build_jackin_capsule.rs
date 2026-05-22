@@ -1,25 +1,25 @@
-//! Builds `jackin-container` for Linux via cargo-zigbuild and caches the result.
+//! Builds `jackin-capsule` for Linux via cargo-zigbuild and caches the result.
 //!
 //! Usage:
-//!   cargo run --bin build-jackin-container [-- [--arch arm64|amd64] [--export]]
+//!   cargo run --bin build-jackin-capsule [-- [--arch arm64|amd64] [--export]]
 //!
 //! Flags:
 //!   --arch arm64|amd64   Target architecture (default: matches current host container arch)
-//!   --export             Print `export JACKIN_CONTAINER_BIN=<path>` suitable for eval
+//!   --export             Print `export JACKIN_CAPSULE_BIN=<path>` suitable for eval
 //!
 //! Requires: zig and cargo-zigbuild installed (`mise install zig cargo:cargo-zigbuild`)
 //!
 //! After running, `jackin load` will find the binary in the standard cache path
-//! automatically. Or use --export to set `JACKIN_CONTAINER_BIN` explicitly:
+//! automatically. Or use --export to set `JACKIN_CAPSULE_BIN` explicitly:
 //!
-//!   eval "$(cargo run --bin build-jackin-container -- --export)"
+//!   eval "$(cargo run --bin build-jackin-capsule -- --export)"
 //!   cargo run --bin jackin -- load the-architect . --debug
 
 use std::path::{Path, PathBuf};
 use std::process;
 
 use anyhow::{Context, Result};
-use jackin::container_binary::{
+use jackin::capsule_binary::{
     REQUIRED_VERSION, cached_binary_path, chmod_executable, container_arch,
 };
 use jackin::paths::JackinPaths;
@@ -44,11 +44,11 @@ fn main() -> Result<()> {
 
     if export {
         // Print only the export line — intended for `eval "$(...)"`
-        println!("export JACKIN_CONTAINER_BIN={}", cached.display());
+        println!("export JACKIN_CAPSULE_BIN={}", cached.display());
     } else {
         eprintln!(
             "[build] cached at: {}\n\
-             [build] to use:    export JACKIN_CONTAINER_BIN={}",
+             [build] to use:    export JACKIN_CAPSULE_BIN={}",
             cached.display(),
             cached.display()
         );
@@ -145,7 +145,7 @@ fn build_via_zigbuild(workspace: &Path, arch: &str, dest: &Path) -> Result<()> {
 
     let target = zigbuild_target(arch);
     eprintln!(
-        "[build] cargo zigbuild -p jackin-container --target {target} ({REQUIRED_VERSION})\n\
+        "[build] cargo zigbuild -p jackin-capsule --target {target} ({REQUIRED_VERSION})\n\
          [build] first build ~2-3 min; subsequent builds incremental via cargo cache"
     );
 
@@ -154,7 +154,7 @@ fn build_via_zigbuild(workspace: &Path, arch: &str, dest: &Path) -> Result<()> {
             "zigbuild",
             "--release",
             "-p",
-            "jackin-container",
+            "jackin-capsule",
             "--target",
             target,
         ])
@@ -171,7 +171,7 @@ fn build_via_zigbuild(workspace: &Path, arch: &str, dest: &Path) -> Result<()> {
         .join("target")
         .join(target_triple(arch))
         .join("release")
-        .join("jackin-container");
+        .join("jackin-capsule");
 
     anyhow::ensure!(
         built.exists(),

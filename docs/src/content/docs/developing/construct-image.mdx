@@ -69,7 +69,7 @@ The construct creates an `agent` user with:
 - Passwordless sudo access
 - Oh My Zsh sourced with `ZSH_THEME=""` so the git plugin, autosuggestions plugin, and OSC 0/2 + OSC 7 title hooks are active without competing with Starship for the prompt
 - Starship prompt configured for both zsh and fish so the prompt surface stays the same when switching shells
-- Pane border title (`user@host:cwd`) emitted via OSC 0/2 on every prompt — the jackin-container multiplexer reads it and renders it as the pane title (the same mechanism zellij uses)
+- Pane border title (`user@host:cwd`) emitted via OSC 0/2 on every prompt — the jackin-capsule multiplexer reads it and renders it as the pane title (the same mechanism zellij uses)
 - mise shims in `$PATH` for both shells
 
 ## How it's built
@@ -152,7 +152,7 @@ When you load an agent, jackin' doesn't use the construct directly. It generates
 1. **User remapping** — adjusts the `agent` user's UID/GID to match your host user
 2. **Agent installation** — installs every agent declared in the role manifest
 3. **Plugin installation** — any Claude plugins declared in the role manifest
-4. **Runtime entrypoint + setup bridge** — the script delegates deterministic setup to `jackin-container runtime-setup`, then keeps the shell-native work: sourcing role hooks and `exec`-ing the selected agent. The Rust setup path handles one-time container git/GitHub initialization, the shared git trailer hook, durable agent-home seeding, auth handoff refreshes, and Claude MCP registration. It wires up GitHub if `gh` is already authenticated; it does not perform `gh auth login`, so an unauthenticated `gh` is left alone with a notice.
+4. **Runtime entrypoint + setup bridge** — the script delegates deterministic setup to `jackin-capsule runtime-setup`, then keeps the shell-native work: sourcing role hooks and `exec`-ing the selected agent. The Rust setup path handles one-time container git/GitHub initialization, the shared git trailer hook, durable agent-home seeding, auth handoff refreshes, and Claude MCP registration. It wires up GitHub if `gh` is already authenticated; it does not perform `gh auth login`, so an unauthenticated `gh` is left alone with a notice.
 
 <Aside type="note">
 Every load re-runs `docker build` on the derived Dockerfile. Docker's layer cache makes most subsequent loads fast, but there is no separate "skip build if image exists" shortcut. Passing `--rebuild` additionally invalidates agent installation layers so the build picks up newer agent CLI downloads.

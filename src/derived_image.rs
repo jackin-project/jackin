@@ -101,7 +101,7 @@ pub fn render_derived_dockerfile(
     hooks: Option<&HooksConfig>,
     supported: &[crate::agent::Agent],
     claude_config: Option<&crate::manifest::ClaudeConfig>,
-    jackin_container_bin: Option<&str>,
+    jackin_capsule_bin: Option<&str>,
 ) -> String {
     let hook_section = render_hook_section(hooks);
 
@@ -127,7 +127,7 @@ pub fn render_derived_dockerfile(
         }
     }
 
-    // JACKIN_SUPPORTED_AGENTS is read by jackin-container at startup to populate
+    // JACKIN_SUPPORTED_AGENTS is read by jackin-capsule at startup to populate
     // the agent picker. It lists only the agents installed in this derived image.
     let agents_csv: String = supported
         .iter()
@@ -135,12 +135,12 @@ pub fn render_derived_dockerfile(
         .collect::<Vec<_>>()
         .join(",");
 
-    // jackin-container binary (pre-downloaded by host, placed in .jackin-runtime/).
-    let jackin_container_section = jackin_container_bin.map_or_else(String::new, |src| {
+    // jackin-capsule binary (pre-downloaded by host, placed in .jackin-runtime/).
+    let jackin_capsule_section = jackin_capsule_bin.map_or_else(String::new, |src| {
         format!(
             "\
-COPY {src} /usr/local/bin/jackin-container
-RUN chmod +x /usr/local/bin/jackin-container
+COPY {src} /usr/local/bin/jackin-capsule
+RUN chmod +x /usr/local/bin/jackin-capsule
 "
         )
     });
@@ -148,7 +148,7 @@ RUN chmod +x /usr/local/bin/jackin-container
     // Append an oh-my-zsh title-hook source to /home/agent/.zshrc when
     // the construct image's zshrc did not already do so. The hook emits
     // OSC 0/2 (`user@host:cwd`) and OSC 7 on every prompt — the
-    // jackin-container multiplexer reads both and renders the pane
+    // jackin-capsule multiplexer reads both and renders the pane
     // border title from them (matches zellij convention).
     //
     // Idempotent via the `__JACKIN_AUTO_TITLE_LOADED` marker: new
@@ -200,10 +200,10 @@ RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/de
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 RUN chmod +x /jackin/runtime/entrypoint.sh
-{shell_title_hook_section}{jackin_container_section}RUN mkdir -p /run/jackin && chown agent:agent /run/jackin
+{shell_title_hook_section}{jackin_capsule_section}RUN mkdir -p /run/jackin && chown agent:agent /run/jackin
 ENV JACKIN_SUPPORTED_AGENTS={agents_csv}
 USER agent
-ENTRYPOINT [\"/usr/local/bin/jackin-container\"]
+ENTRYPOINT [\"/usr/local/bin/jackin-capsule\"]
 "
     )
 }
@@ -320,10 +320,10 @@ pub fn create_derived_build_context(
     // When Some, the DerivedDockerfile starts with `FROM <image>` rather than
     // the workspace Dockerfile contents (pre-built image fast path).
     base_image_override: Option<&str>,
-    // Path to the pre-downloaded jackin-container binary on the host.
+    // Path to the pre-downloaded jackin-capsule binary on the host.
     // When Some, the binary is copied into the build context and baked into
-    // the derived image at /usr/local/bin/jackin-container.
-    jackin_container_host_path: Option<&str>,
+    // the derived image at /usr/local/bin/jackin-capsule.
+    jackin_capsule_host_path: Option<&str>,
 ) -> anyhow::Result<DerivedBuildContext> {
     let temp_dir = tempfile::tempdir()?;
     let context_dir = temp_dir.path().join("context");
@@ -333,14 +333,14 @@ pub fn create_derived_build_context(
     std::fs::create_dir_all(&runtime_dir)?;
     std::fs::write(runtime_dir.join("entrypoint.sh"), ENTRYPOINT_SH)?;
 
-    // Copy jackin-container binary into the build context so the Dockerfile
+    // Copy jackin-capsule binary into the build context so the Dockerfile
     // can COPY it into the image without a network fetch at build time.
-    let jackin_container_ctx_path = if let Some(host_path) = jackin_container_host_path {
-        let dst = runtime_dir.join("jackin-container");
+    let jackin_capsule_ctx_path = if let Some(host_path) = jackin_capsule_host_path {
+        let dst = runtime_dir.join("jackin-capsule");
         std::fs::copy(host_path, &dst).map_err(|e| {
-            anyhow::anyhow!("failed to copy jackin-container binary into build context: {e}")
+            anyhow::anyhow!("failed to copy jackin-capsule binary into build context: {e}")
         })?;
-        Some(".jackin-runtime/jackin-container".to_string())
+        Some(".jackin-runtime/jackin-capsule".to_string())
     } else {
         None
     };
@@ -394,7 +394,7 @@ pub fn create_derived_build_context(
             hooks,
             &supported,
             validated.manifest.claude.as_ref(),
-            jackin_container_ctx_path.as_deref(),
+            jackin_capsule_ctx_path.as_deref(),
         ),
     )?;
     ensure_runtime_assets_are_included(&context_dir, hooks)?;
@@ -420,7 +420,7 @@ fn ensure_runtime_assets_are_included(
     let mut rules = vec![
         "!.jackin-runtime/".to_string(),
         "!.jackin-runtime/entrypoint.sh".to_string(),
-        "!.jackin-runtime/jackin-container".to_string(),
+        "!.jackin-runtime/jackin-capsule".to_string(),
         "!.jackin-runtime/DerivedDockerfile".to_string(),
     ];
     for entry in hooks.into_iter().flat_map(HooksConfig::entries) {
@@ -487,7 +487,7 @@ mod tests {
             dockerfile.contains("COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh")
         );
         assert!(dockerfile.contains("ENV JACKIN_SUPPORTED_AGENTS="));
-        assert!(dockerfile.contains("ENTRYPOINT [\"/usr/local/bin/jackin-container\"]"));
+        assert!(dockerfile.contains("ENTRYPOINT [\"/usr/local/bin/jackin-capsule\"]"));
     }
 
     #[test]
@@ -707,7 +707,7 @@ mod tests {
 
         assert!(dockerfile.contains("/home/agent"));
         assert!(dockerfile.contains("groupmod -o -g \"$JACKIN_HOST_GID\" agent"));
-        assert!(dockerfile.contains("ENTRYPOINT [\"/usr/local/bin/jackin-container\"]"));
+        assert!(dockerfile.contains("ENTRYPOINT [\"/usr/local/bin/jackin-capsule\"]"));
     }
 
     #[test]
@@ -785,8 +785,8 @@ mod tests {
     }
 
     #[test]
-    fn entrypoint_delegates_agent_home_setup_to_jackin_container() {
-        assert!(ENTRYPOINT_SH.contains("/usr/local/bin/jackin-container runtime-setup"));
+    fn entrypoint_delegates_agent_home_setup_to_jackin_capsule() {
+        assert!(ENTRYPOINT_SH.contains("/usr/local/bin/jackin-capsule runtime-setup"));
         assert!(!ENTRYPOINT_SH.contains("seed_home_dir"));
         assert!(!ENTRYPOINT_SH.contains("/jackin/default-home/.claude"));
         assert!(!ENTRYPOINT_SH.contains("/jackin/default-home/.codex"));
@@ -850,7 +850,7 @@ mod tests {
     }
 
     #[test]
-    fn entrypoint_delegates_security_tool_mcp_registration_to_jackin_container() {
+    fn entrypoint_delegates_security_tool_mcp_registration_to_jackin_capsule() {
         let claude_section = ENTRYPOINT_SH
             .split("claude)")
             .nth(1)
@@ -881,8 +881,8 @@ mod tests {
     }
 
     #[test]
-    fn entrypoint_delegates_deterministic_setup_to_jackin_container() {
-        assert!(ENTRYPOINT_SH.contains("/usr/local/bin/jackin-container runtime-setup"));
+    fn entrypoint_delegates_deterministic_setup_to_jackin_capsule() {
+        assert!(ENTRYPOINT_SH.contains("/usr/local/bin/jackin-capsule runtime-setup"));
         assert!(!ENTRYPOINT_SH.contains("git config --global user.name"));
         assert!(!ENTRYPOINT_SH.contains("gh auth setup-git"));
         assert!(!ENTRYPOINT_SH.contains("prepare-commit-msg.v1.done"));

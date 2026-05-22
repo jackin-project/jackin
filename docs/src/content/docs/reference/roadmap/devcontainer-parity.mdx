@@ -70,9 +70,9 @@ Source: <RepoFile path="docker/construct/Dockerfile" />
 
 ### jackin runtime
 
-Source: <RepoFile path="crates/jackin-container/src/runtime_setup.rs" /> and <RepoFile path="docker/runtime/entrypoint.sh" />
+Source: <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> and <RepoFile path="docker/runtime/entrypoint.sh" />
 
-- `jackin-container runtime-setup` performs git identity / GitHub setup, per-agent durable-home seeding, auth handoff refreshes, and Claude `tirith` / `shellfirm` MCP registration.
+- `jackin-capsule runtime-setup` performs git identity / GitHub setup, per-agent durable-home seeding, auth handoff refreshes, and Claude `tirith` / `shellfirm` MCP registration.
 - The shell entrypoint dispatches on `JACKIN_AGENT`, runs optional runtime hooks under `/jackin/runtime/hooks/` (`setup-once.sh`, `source.sh`, `preflight.sh`), and then `exec`s the selected agent.
 
 ### jackin agent layer (e.g. `jackin-agent-smith`, `jackin-the-architect`)
@@ -283,7 +283,7 @@ extensions list becomes an obvious payload for it.
 
 - <RepoFile path="docker/construct/Dockerfile" /> — base image, user creation, shell setup
 - <RepoFile path="docker/construct/zshrc" /> — shell hooks (touched by Finding 4)
-- <RepoFile path="crates/jackin-container/src/runtime_setup.rs" /> — in-container Rust runtime setup (touched by Finding 1)
+- <RepoFile path="crates/jackin-capsule/src/runtime_setup.rs" /> — in-container Rust runtime setup (touched by Finding 1)
 - <RepoFile path="docker/runtime/entrypoint.sh" /> — shell-native runtime hook sourcing and final agent exec (touched by Finding 1)
 - <RepoFile path="src/derived_image.rs" /> — derived image generation and Claude plugin install commands
 - <RepoFile path="src/runtime/launch.rs" /> — mount and capability wiring (touched by Findings 1 and 4)

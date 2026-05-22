@@ -2,7 +2,7 @@ export PATH="$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
 
 # oh-my-zsh framework. Brings:
 #   - auto-title (OSC 0/2 `user@host:cwd` + OSC 7 cwd hint) via
-#     `lib/termsupport.zsh`; the jackin-container multiplexer reads
+#     `lib/termsupport.zsh`; the jackin-capsule multiplexer reads
 #     these and renders them as the pane border title.
 #   - `git` plugin (aliases + branch info for whatever prompt is active).
 #   - `zsh-autosuggestions` plugin (cloned into the oh-my-zsh custom

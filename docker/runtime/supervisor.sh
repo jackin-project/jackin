@@ -12,9 +12,9 @@
 # plain file-existence check so a stale socket (tmux crashed without
 # cleanup) doesn't keep the supervisor alive indefinitely.
 #
-# Will be removed in Phase 2 when the `jackin-container` Rust binary takes
-# over as PID 1 with inotify-based socket watching.
-# See reference/roadmap/jackin-container-binary for the full plan.
+# Legacy tmux supervisor kept for the Phase 1 design-history record.
+# Current derived images use `jackin-capsule` as PID 1; see
+# reference/jackin-capsule for the current runtime model.
 #
 # No `set -e`: signal-killed `wait` exits non-zero; `set -e` would misread
 # that as a supervisor failure on every clean `docker stop`.

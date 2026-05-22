@@ -54,38 +54,38 @@ Use the real PR number, repository URL, branch name, and verification commands f
 
 The canonical body shape, intent-split block list, and isolation-env-var decision rule live in [`PULL_REQUESTS.md`](../PULL_REQUESTS.md) — read them first. The agent-specific extras below override or extend that shared content.
 
-## `jackin-container` PRs (hard rule)
+## `jackin-capsule` PRs (hard rule)
 
-`jackin-container` is the in-container multiplexer binary at `crates/jackin-container/`. Any PR that touches any file under `crates/jackin-container/` requires **two** blocks in the Verify-locally section, in this order:
+`jackin-capsule` is the in-container Capsule control-plane binary at `crates/jackin-capsule/`. Any PR that touches any file under `crates/jackin-capsule/` requires **two** blocks in the Verify-locally section, in this order:
 
-1. `### Build jackin-container` — runs `eval "$(cargo run --bin build-jackin-container -- --export)"`. **MUST come before `### User smoke` and `### jackin-container smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the eval first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes. Reviewers must reject any `crates/jackin-container/` PR whose Verify-locally puts a `jackin console` / `jackin load` step before the build, regardless of how the body is otherwise structured.
-2. `### jackin-container smoke` — runs `cargo run --bin jackin -- load the-architect . --debug` and the in-container verify checklist. Unit tests and CI alone are not sufficient — the multiplexer only works end-to-end when running as PID 1 inside a container, and the only way to verify the status bar, input routing, pane splits, and session switching is a live `jackin load`. Do not repeat the eval here; it already ran in block 1.
+1. `### Build jackin-capsule` — runs `eval "$(cargo run --bin build-jackin-capsule -- --export)"`. **MUST come before `### User smoke` and `### jackin-capsule smoke`.** Every `jackin console` / `jackin load` invocation after it consumes whichever binary `ensure_available` resolves first — so without the eval first, the launches use the cached or preview-release binary and silently do not exercise the PR's container-side changes. Reviewers must reject any `crates/jackin-capsule/` PR whose Verify-locally puts a `jackin console` / `jackin load` step before the build, regardless of how the body is otherwise structured.
+2. `### jackin-capsule smoke` — runs `cargo run --bin jackin -- load the-architect . --debug` and the in-container verify checklist. Unit tests and CI alone are not sufficient — the multiplexer only works end-to-end when running as PID 1 inside a container, and the only way to verify the status bar, input routing, pane splits, and session switching is a live `jackin load`. Do not repeat the eval here; it already ran in block 1.
 
 ### How `ensure_available` picks the binary
 
-`ensure_available` in `src/container_binary.rs` resolves the binary in this priority order:
+`ensure_available` in `src/capsule_binary.rs` resolves the binary in this priority order:
 
-1. **`JACKIN_CONTAINER_BIN=/path` env override.** Used directly, no cache, no download. Set this when iterating on `crates/jackin-container/` source — the path should point at a Linux build produced by `cargo run --bin build-jackin-container`.
-2. **Cache hit** at `~/.jackin/cache/jackin-container/<version>/linux-<arch>/jackin-container`. The cache key is `JACKIN_VERSION` (commit SHA suffix included), so any `cargo build` of jackin invalidates it.
+1. **`JACKIN_CAPSULE_BIN=/path` env override.** Used directly, no cache, no download. Set this when iterating on `crates/jackin-capsule/` source — the path should point at a Linux build produced by `cargo run --bin build-jackin-capsule`.
+2. **Cache hit** at `~/.jackin/cache/jackin-capsule/<version>/linux-<arch>/jackin-capsule`. The cache key is `JACKIN_VERSION` (commit SHA suffix included), so any `cargo build` of jackin invalidates it.
 3. **Download** from the `preview` rolling GitHub Release tag (for `-dev` / `-preview.` versions) or the `v<version>` tag (for tagged releases). Cached after first successful download.
 
-The host does **not** auto-rebuild `crates/jackin-container/` on source edits. To pick up local changes, the operator must re-run the build command — which is why the eval one-shot below is mandatory.
+The host does **not** auto-rebuild `crates/jackin-capsule/` on source edits. To pick up local changes, the operator must re-run the build command — which is why the eval one-shot below is mandatory.
 
-### Required `### Build jackin-container` block
+### Required `### Build jackin-capsule` block
 
 Contents (verbatim from the PR template):
 
 ```sh
-eval "$(cargo run --bin build-jackin-container -- --export)"
+eval "$(cargo run --bin build-jackin-capsule -- --export)"
 ```
 
-`build-jackin-container` invokes `cargo zigbuild` (not Docker) to cross-compile the Linux binary, writes the artifact to the host cache, and the `--export` flag prints `export JACKIN_CONTAINER_BIN=<path>` — wrapping in `eval` both builds and points `ensure_available` at the freshly built binary in one step. The eval form is required (not optional) because hand-rolled `target/<triple>/release/jackin-container` exports silently break when the operator switches architectures or moves checkouts. First build takes ~2-3 minutes via cargo-zigbuild; subsequent builds are incremental. Editing any file under `crates/jackin-container/src/` does NOT auto-invalidate the binary on disk — re-run the eval to rebuild. To purge the cache entirely (e.g. switching between published and locally built binaries): `rm -rf ~/.jackin/cache/jackin-container/`.
+`build-jackin-capsule` invokes `cargo zigbuild` (not Docker) to cross-compile the Linux binary, writes the artifact to the host cache, and the `--export` flag prints `export JACKIN_CAPSULE_BIN=<path>` — wrapping in `eval` both builds and points `ensure_available` at the freshly built binary in one step. The eval form is required (not optional) because hand-rolled `target/<triple>/release/jackin-capsule` exports silently break when the operator switches architectures or moves checkouts. First build takes ~2-3 minutes via cargo-zigbuild; subsequent builds are incremental. Editing any file under `crates/jackin-capsule/src/` does NOT auto-invalidate the binary on disk — re-run the eval to rebuild. To purge the cache entirely (e.g. switching between published and locally built binaries): `rm -rf ~/.jackin/cache/jackin-capsule/`.
 
 If the build step prints a `cargo zigbuild` error, the operator should paste the full `--debug` output (`cargo-zigbuild` and `zig` must be on `PATH`; install via `mise install zig cargo:cargo-zigbuild`).
 
-This block is positionally load-bearing: it must come **before** `### User smoke` and `### jackin-container smoke` (and before any other block that runs `jackin console` / `jackin load`). Without the eval first, every subsequent `jackin` invocation resolves the cached or downloaded binary instead of the freshly built one, so the PR's container-side changes are silently absent from every launch in the verify recipe.
+This block is positionally load-bearing: it must come **before** `### User smoke` and `### jackin-capsule smoke` (and before any other block that runs `jackin console` / `jackin load`). Without the eval first, every subsequent `jackin` invocation resolves the cached or downloaded binary instead of the freshly built one, so the PR's container-side changes are silently absent from every launch in the verify recipe.
 
-### Required `### jackin-container smoke` launch + verify list
+### Required `### jackin-capsule smoke` launch + verify list
 
 The launch command must hit the changed surface — usually:
 
@@ -93,7 +93,7 @@ The launch command must hit the changed surface — usually:
 cargo run --bin jackin -- load the-architect . --debug
 ```
 
-or `cargo run --bin jackin -- console --debug` for console-side changes. Do not repeat the eval here; the `### Build jackin-container` block above has already exported `JACKIN_CONTAINER_BIN`.
+or `cargo run --bin jackin -- console --debug` for console-side changes. Do not repeat the eval here; the `### Build jackin-capsule` block above has already exported `JACKIN_CAPSULE_BIN`.
 
 Inside the container, the operator must verify:
 
@@ -109,7 +109,7 @@ PRs touching the tmux-style prefix surface (`Ctrl+B Space` palette, `Ctrl+B "` /
 export JACKIN_PREFIX=C-b
 ```
 
-A `crates/jackin-container/` PR without this block is incomplete. Unit tests passing is necessary but not sufficient. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](PULL_REQUEST_TEMPLATE.md) ships this block under `### jackin-container smoke` — copy it verbatim rather than rewriting the build invocation.
+A `crates/jackin-capsule/` PR without this block is incomplete. Unit tests passing is necessary but not sufficient. The PR template at [`.github/PULL_REQUEST_TEMPLATE.md`](PULL_REQUEST_TEMPLATE.md) ships this block under `### jackin-capsule smoke` — copy it verbatim rather than rewriting the build invocation.
 
 ## Author the PR body so it renders correctly on GitHub
 

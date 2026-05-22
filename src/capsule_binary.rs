@@ -1,13 +1,13 @@
-/// Download, cache, and verify the `jackin-container` binary.
+/// Download, cache, and verify the `jackin-capsule` binary.
 ///
 /// Acquisition strategy — in priority order:
 ///
-/// **`JACKIN_CONTAINER_BIN=/path`** (env var set):
+/// **`JACKIN_CAPSULE_BIN=/path`** (env var set):
 ///   Use that binary directly. No cache, no download. Intended for local
 ///   development and PR verification when the binary was built with
-///   `cargo run --bin build-jackin-container`.
+///   `cargo run --bin build-jackin-capsule`.
 ///
-/// **Cache hit** (`~/.jackin/cache/jackin-container/<version>/linux-<arch>/`):
+/// **Cache hit** (`~/.jackin/cache/jackin-capsule/<version>/linux-<arch>/`):
 ///   Use the already-cached binary.
 ///
 /// **Dev or preview version** (`-dev` or `-preview.` suffix, cache miss):
@@ -23,33 +23,33 @@ use crate::paths::JackinPaths;
 
 pub const REQUIRED_VERSION: &str = env!("JACKIN_VERSION");
 
-const ASSET_PREFIX: &str = "jackin-container";
+const ASSET_PREFIX: &str = "jackin-capsule";
 
-/// Ensure the `jackin-container` binary is available and return its path.
+/// Ensure the `jackin-capsule` binary is available and return its path.
 pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
     // Explicit override: operator built the binary themselves and told us where it is.
-    if let Some(bin_os) = std::env::var_os("JACKIN_CONTAINER_BIN") {
+    if let Some(bin_os) = std::env::var_os("JACKIN_CAPSULE_BIN") {
         let path = PathBuf::from(bin_os);
         anyhow::ensure!(
             is_valid_cached_binary(&path),
-            "JACKIN_CONTAINER_BIN={} does not exist or is not executable",
+            "JACKIN_CAPSULE_BIN={} does not exist or is not executable",
             path.display()
         );
         crate::debug_log!(
-            "container_binary",
-            "JACKIN_CONTAINER_BIN override: {}",
+            "capsule_binary",
+            "JACKIN_CAPSULE_BIN override: {}",
             path.display()
         );
         // Operator-trust note: this override path bypasses the
         // SHA-256 verification that the cache-miss download path
         // applies. The operator pointing at a local file is
         // explicitly opting in (typically a `cargo run --bin
-        // build-jackin-container` artifact, the path that test
+        // build-jackin-capsule` artifact, the path that test
         // suites and dev iteration use). Production hosts that
         // never set this env var still get the strong checksum
         // gate from `download_and_cache`.
         eprintln!(
-            "[jackin] using JACKIN_CONTAINER_BIN override at {} (skipping SHA-256 verification)",
+            "[jackin] using JACKIN_CAPSULE_BIN override at {} (skipping SHA-256 verification)",
             path.display()
         );
         return Ok(path);
@@ -62,7 +62,7 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
     // dir lives under `~/.jackin/cache/` and gets the real binary on
     // first run. `cfg!(test)` short-circuits the stub write for lib
     // tests so they don't need any per-test setup.
-    let stub_path = paths.cache_dir.join("jackin-container-test-stub");
+    let stub_path = paths.cache_dir.join("jackin-capsule-test-stub");
     if cfg!(test) {
         install_test_stub(paths).context("installing in-process test stub")?;
         return Ok(stub_path);
@@ -76,8 +76,8 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
 
     if is_valid_cached_binary(&cached) {
         crate::debug_log!(
-            "container_binary",
-            "cache hit for jackin-container {REQUIRED_VERSION} linux/{arch}"
+            "capsule_binary",
+            "cache hit for jackin-capsule {REQUIRED_VERSION} linux/{arch}"
         );
         return Ok(cached);
     }
@@ -95,10 +95,10 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
 pub fn cached_binary_path(cache_dir: &Path, version: &str, arch: &str) -> PathBuf {
     let safe_version = version.replace('+', "_");
     cache_dir
-        .join("jackin-container")
+        .join("jackin-capsule")
         .join(safe_version)
         .join(format!("linux-{arch}"))
-        .join("jackin-container")
+        .join("jackin-capsule")
 }
 
 /// Linux arch for the container target, derived from the host machine arch.
@@ -113,7 +113,7 @@ pub const fn container_arch() -> &'static str {
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
     let url = download_url(version, arch);
     let sha_url = format!("{url}.sha256");
-    eprintln!("[jackin] downloading jackin-container {version} for linux/{arch}...");
+    eprintln!("[jackin] downloading jackin-capsule {version} for linux/{arch}...");
 
     let tmp = dest.with_extension("tmp");
     let tmp_path_str = tmp.to_str().ok_or_else(|| {
@@ -134,15 +134,15 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         ])
         .status()
         .await
-        .context("failed to run curl to download jackin-container")?;
+        .context("failed to run curl to download jackin-capsule")?;
 
     if !status.success() {
         let _ = std::fs::remove_file(&tmp);
         anyhow::bail!(
-            "jackin-container {version} not found in GitHub Releases.\n\
+            "jackin-capsule {version} not found in GitHub Releases.\n\
              \n\
              Developing locally? Build and cache it first:\n\
-               cargo run --bin build-jackin-container\n\
+               cargo run --bin build-jackin-capsule\n\
              Then retry `jackin load`.\n\
              \n\
              Using an installed (Homebrew) jackin? The CI preview build may not\n\
@@ -158,20 +158,20 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     // release and we must refuse to cache it.
     let expected_sha = fetch_remote_sha256(&sha_url)
         .await
-        .with_context(|| format!("fetching jackin-container SHA-256 manifest at {sha_url}"))?;
+        .with_context(|| format!("fetching jackin-capsule SHA-256 manifest at {sha_url}"))?;
     let actual_sha = hash_file_sha256(&tmp)
-        .with_context(|| format!("hashing downloaded jackin-container at {}", tmp.display()))?;
+        .with_context(|| format!("hashing downloaded jackin-capsule at {}", tmp.display()))?;
     if !actual_sha.eq_ignore_ascii_case(&expected_sha) {
         let _ = std::fs::remove_file(&tmp);
         anyhow::bail!(
-            "jackin-container SHA-256 mismatch for {url}\n  expected {expected_sha}\n  actual   {actual_sha}\n\
+            "jackin-capsule SHA-256 mismatch for {url}\n  expected {expected_sha}\n  actual   {actual_sha}\n\
              refusing to cache the binary; investigate network tampering and retry."
         );
     }
 
     chmod_executable(&tmp).with_context(|| {
         format!(
-            "setting executable bit on cached jackin-container at {}",
+            "setting executable bit on cached jackin-capsule at {}",
             tmp.display()
         )
     })?;
@@ -195,10 +195,10 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         }
     }
     std::fs::rename(&tmp, dest)
-        .with_context(|| format!("failed to move jackin-container to {}", dest.display()))?;
+        .with_context(|| format!("failed to move jackin-capsule to {}", dest.display()))?;
 
     eprintln!(
-        "[jackin] jackin-container {version} cached at {} (sha256 {})",
+        "[jackin] jackin-capsule {version} cached at {} (sha256 {})",
         dest.display(),
         &actual_sha[..16.min(actual_sha.len())]
     );
@@ -291,7 +291,7 @@ pub fn is_valid_cached_binary(path: &Path) -> bool {
             .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
 }
 
-/// Write a placeholder file at `<cache_dir>/jackin-container-test-stub`
+/// Write a placeholder file at `<cache_dir>/jackin-capsule-test-stub`
 /// with the executable bit set.
 ///
 /// The `ensure_available` lookup honours this path when present,
@@ -299,15 +299,15 @@ pub fn is_valid_cached_binary(path: &Path) -> bool {
 /// use `FakeDockerClient` and never actually `docker run` the produced
 /// image. Lib-tests (`cfg!(test)`) call this implicitly; integration
 /// tests in `tests/` opt in via
-/// `tests/common::install_container_binary_stub`.
+/// `tests/common::install_capsule_binary_stub`.
 pub fn install_test_stub(paths: &JackinPaths) -> Result<()> {
-    let stub = paths.cache_dir.join("jackin-container-test-stub");
+    let stub = paths.cache_dir.join("jackin-capsule-test-stub");
     if let Some(parent) = stub.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("failed to create cache dir {}", parent.display()))?;
     }
     if !stub.exists() {
-        std::fs::write(&stub, b"#!/bin/sh\necho jackin-container test stub\n")
+        std::fs::write(&stub, b"#!/bin/sh\necho jackin-capsule test stub\n")
             .with_context(|| format!("writing test stub at {}", stub.display()))?;
     }
     chmod_executable(&stub)
@@ -331,12 +331,12 @@ fn verify_version_exec(binary: &Path, expected: &str) -> Result<()> {
     let output = std::process::Command::new(binary)
         .arg("--version")
         .output()
-        .context("failed to run jackin-container --version")?;
+        .context("failed to run jackin-capsule --version")?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !stdout.contains(expected) {
         anyhow::bail!(
-            "downloaded jackin-container reports {:?} but expected {expected}.\n\
+            "downloaded jackin-capsule reports {:?} but expected {expected}.\n\
              Preview release binary may not match this commit yet.\n\
              Delete and retry: rm -f {}",
             stdout.trim(),

@@ -17,7 +17,7 @@ if type -q starship
 end
 
 # OSC 0/2 window title (`user@host:cwd`) on every prompt. The
-# jackin-container multiplexer reads OSC 0/2 and renders the pane
+# jackin-capsule multiplexer reads OSC 0/2 and renders the pane
 # border title from it (matches zellij convention). fish ships a
 # `fish_title` hook that fires automatically each prompt; the body
 # returns the title text and fish wraps it in the correct escape

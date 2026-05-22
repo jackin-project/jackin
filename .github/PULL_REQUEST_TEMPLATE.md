@@ -6,7 +6,7 @@ PR body template. Two surfaces describe how to use it:
     roadmap-retirement rules. Both humans and agents start here.
   - .github/AGENTS.md (next to this template) — agent-only extras:
     merge authorization, body-construction shell quoting, force-push
-    policy, jackin-container smoke-test mandate, squash-commit format.
+    policy, jackin-capsule smoke-test mandate, squash-commit format.
     Claude Code auto-loads it via .github/CLAUDE.md when working
     under .github/.
 
@@ -120,31 +120,31 @@ cargo nextest run --all-features
 paths, etc. Skip this paragraph when the test set is small enough that the
 filter speaks for itself.>
 
-### Build jackin-container
+### Build jackin-capsule
 
-<Drop this whole subsection when the PR does NOT touch `crates/jackin-container/`.
-Include it whenever daemon.rs, client.rs, session.rs, terminal.rs, layout.rs,
+<Drop this whole subsection when the PR does NOT touch `crates/jackin-capsule/`.
+Include it whenever daemon.rs, client.rs, session.rs, layout.rs,
 dialog.rs, statusbar.rs, input.rs, pid1.rs, or any other file under
-`crates/jackin-container/src/` is changed. THIS BLOCK MUST COME BEFORE
-`### User smoke` AND `### jackin-container smoke`: every `jackin console` and
+`crates/jackin-capsule/src/` is changed. THIS BLOCK MUST COME BEFORE
+`### User smoke` AND `### jackin-capsule smoke`: every `jackin console` and
 `jackin load` invocation below consumes whichever binary `ensure_available`
 resolves first. Without the eval below, the launches use the cached or
 preview-release binary and silently do not exercise the PR's container-side
 changes.>
 
 ```sh
-eval "$(cargo run --bin build-jackin-container -- --export)"
+eval "$(cargo run --bin build-jackin-capsule -- --export)"
 ```
 
-`build-jackin-container` invokes `cargo zigbuild`, writes the cross-compiled
+`build-jackin-capsule` invokes `cargo zigbuild`, writes the cross-compiled
 Linux artifact to the host cache, and `--export` prints
-`export JACKIN_CONTAINER_BIN=<path>` for `eval` to consume. The eval form is
-required (not optional): hand-rolled `target/<triple>/release/jackin-container`
+`export JACKIN_CAPSULE_BIN=<path>` for `eval` to consume. The eval form is
+required (not optional): hand-rolled `target/<triple>/release/jackin-capsule`
 exports silently break when the operator switches architectures. First build
 takes ~2-3 min via cargo-zigbuild; subsequent builds are incremental. Editing
-any file under `crates/jackin-container/src/` does NOT auto-invalidate the
+any file under `crates/jackin-capsule/src/` does NOT auto-invalidate the
 binary on disk — re-run the eval to rebuild. To purge the cache entirely:
-`rm -rf ~/.jackin/cache/jackin-container/`. If the build prints a
+`rm -rf ~/.jackin/cache/jackin-capsule/`. If the build prints a
 `cargo zigbuild` error, install the toolchain via
 `mise install zig cargo:cargo-zigbuild`.
 
@@ -157,15 +157,15 @@ cargo run --bin jackin -- console --debug
 <List the in-container commands or UI steps the operator should walk, with
 expected output where it disambiguates a pass/fail. Replace this block with the
 narrower path when the PR has one (e.g. `cargo run --bin jackin -- load
-<role> <target> --debug`). For PRs touching `crates/jackin-container/`, the
-`### Build jackin-container` block above MUST run first — otherwise the
+<role> <target> --debug`). For PRs touching `crates/jackin-capsule/`, the
+`### Build jackin-capsule` block above MUST run first — otherwise the
 console launches with a stale binary.>
 
-### jackin-container smoke
+### jackin-capsule smoke
 
-<Drop this whole subsection when the PR does NOT touch `crates/jackin-container/`.
-Include it whenever any file under `crates/jackin-container/src/` is changed.
-This block assumes the `### Build jackin-container` block above has already
+<Drop this whole subsection when the PR does NOT touch `crates/jackin-capsule/`.
+Include it whenever any file under `crates/jackin-capsule/src/` is changed.
+This block assumes the `### Build jackin-capsule` block above has already
 run — do not repeat the eval here.>
 
 ```sh

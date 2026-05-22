@@ -1,21 +1,21 @@
 [package]
-name = "jackin-container"
+name = "jackin-capsule"
 version = "0.6.0-dev"
 edition = "2024"
 rust-version = "1.94"
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
-description = "In-container PID 1 multiplexer server for jackin-managed containers."
+description = "In-container PID 1 control plane for jackin-managed containers."
 homepage = "https://jackin.tailrocks.com/"
 repository = "https://github.com/jackin-project/jackin"
 license = "Apache-2.0"
 publish = false
 
 [lib]
-name = "jackin_container"
+name = "jackin_capsule"
 path = "src/lib.rs"
 
 [[bin]]
-name = "jackin-container"
+name = "jackin-capsule"
 path = "src/main.rs"
 
 [dependencies]
