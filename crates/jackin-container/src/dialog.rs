@@ -75,14 +75,19 @@ pub enum Dialog {
     /// container-name label. Surfaces the bits that used to clutter
     /// the bar (role key, focused-agent runtime) plus the full
     /// container ID with a one-key "copy to clipboard" shortcut.
-    /// Enter copies the container name via OSC 52, Esc / q dismisses.
-    /// `focused_agent` is the slug of whichever pane is active when
-    /// the modal opens — `Some("claude")`, `Some("kimi")`, … or
-    /// `None` for a plain shell pane.
+    /// Enter or a click inside the box emits OSC 52 with the
+    /// container name AND keeps the dialog open — `copied` flips to
+    /// `true` so the renderer shows a visible "Copied!" indicator
+    /// next to the container ID, confirming the OSC 52 actually
+    /// flushed to the outer terminal. Esc / q / a click outside the
+    /// box dismisses. `focused_agent` is the slug of whichever pane
+    /// is active when the modal opens — `Some("claude")`,
+    /// `Some("kimi")`, … or `None` for a plain shell pane.
     ContainerInfo {
         container_name: String,
         role: String,
         focused_agent: Option<String>,
+        copied: bool,
     },
 }
 
@@ -161,13 +166,25 @@ impl Dialog {
         }
         // ContainerInfo is read-only — Enter copies the container
         // name to clipboard, every other key (except dismiss handled
-        // below) is a no-op redraw.
-        if let Self::ContainerInfo { container_name, .. } = self {
+        // below) is a no-op redraw. `copied` flips to `true` inline
+        // so the next render's "Copied!" indicator confirms the OSC
+        // 52 fired; the dialog stays open until the operator
+        // dismisses so the feedback is actually visible.
+        if let Self::ContainerInfo {
+            container_name,
+            copied,
+            ..
+        } = self
+        {
             if is_dismiss_key(key) {
                 return DialogAction::Dismiss;
             }
             return match key {
-                b"\r" | b"\n" => DialogAction::CopyToClipboard(container_name.clone()),
+                b"\r" | b"\n" => {
+                    let payload = container_name.clone();
+                    *copied = true;
+                    DialogAction::CopyToClipboard(payload)
+                }
                 _ => DialogAction::Redraw,
             };
         }
@@ -289,9 +306,20 @@ impl Dialog {
         // ContainerInfo: a click anywhere inside the box copies the
         // container name to the operator's clipboard, matching the
         // "click to copy" mental model the menu hint advertises.
-        // Clicks outside the box already dismissed up top.
-        if let Self::ContainerInfo { container_name, .. } = self {
-            return DialogAction::CopyToClipboard(container_name.clone());
+        // The dialog stays open after the copy so the next render
+        // can show the "Copied!" indicator — operator dismisses
+        // explicitly with Esc / q / a click outside the box (the
+        // outside-click case is already handled by the early
+        // dismiss return above).
+        if let Self::ContainerInfo {
+            container_name,
+            copied,
+            ..
+        } = self
+        {
+            let payload = container_name.clone();
+            *copied = true;
+            return DialogAction::CopyToClipboard(payload);
         }
         // First content row sits two rows down from the top border
         // (top border + blank pad). Rows above and below the item
@@ -424,6 +452,7 @@ impl Dialog {
                 container_name,
                 role,
                 focused_agent,
+                copied,
             } => {
                 render_container_info(
                     buf,
@@ -434,6 +463,7 @@ impl Dialog {
                     container_name,
                     role,
                     focused_agent.as_deref(),
+                    *copied,
                 );
                 render_bottom_hint(buf, term_rows, term_cols, CONTAINER_INFO_HINT);
             }
@@ -734,6 +764,7 @@ fn render_container_info(
     container_name: &str,
     role: &str,
     focused_agent: Option<&str>,
+    copied: bool,
 ) {
     render_box(buf, box_row, box_col, height, width, "Container info");
     // Label column width — keep the label/value gutter aligned across
@@ -772,6 +803,26 @@ fn render_container_info(
         let value_cols = value.chars().count().min(value_max_cols);
         let value_take: String = value.chars().take(value_cols).collect();
         buf.extend_from_slice(value_take.as_bytes());
+        // Trailing "Copied!" badge on the Container ID row (i == 0)
+        // once the operator has triggered a copy. Stays visible until
+        // dismiss so the operator can confirm the OSC 52 actually
+        // flushed — if the outer terminal silently dropped the
+        // sequence (no clipboard support), the badge still appears
+        // here but the clipboard stays empty, which is itself useful
+        // telemetry: the multiplexer's side worked, the terminal's
+        // didn't.
+        if i == 0 && copied {
+            let consumed = label_col_width + 2 /* ": " */ + value_cols;
+            let badge = "  ✓ Copied!";
+            let badge_cols = badge.chars().count();
+            if consumed + badge_cols <= interior_max_cols {
+                buf.extend_from_slice(RESET.as_bytes());
+                buf.extend_from_slice(BG_DARK.as_bytes());
+                buf.extend_from_slice(FG_GREEN.as_bytes());
+                buf.extend_from_slice(BOLD.as_bytes());
+                buf.extend_from_slice(badge.as_bytes());
+            }
+        }
         buf.extend_from_slice(RESET.as_bytes());
     }
 }
@@ -1061,7 +1112,34 @@ mod tests {
             container_name: "jk-abc123-thearchitect".to_string(),
             role: "the-architect".to_string(),
             focused_agent: Some("claude".to_string()),
+            copied: false,
         }
+    }
+
+    #[test]
+    fn container_info_enter_flips_copied_flag_for_render_feedback() {
+        let mut d = container_info_fixture();
+        let _ = d.handle_key(b"\r");
+        let Dialog::ContainerInfo { copied, .. } = d else {
+            unreachable!()
+        };
+        assert!(
+            copied,
+            "Enter must flip `copied` so the next render shows the Copied! indicator"
+        );
+    }
+
+    #[test]
+    fn container_info_enter_does_not_dismiss_dialog() {
+        // Operator copies once and expects to read the badge before
+        // dismissing themselves — handle_key must NOT return Dismiss
+        // for Enter.
+        let mut d = container_info_fixture();
+        let action = d.handle_key(b"\r");
+        assert!(
+            matches!(action, DialogAction::CopyToClipboard(_)),
+            "Enter must request a copy, not dismiss; got {action:?}"
+        );
     }
 
     #[test]

@@ -812,13 +812,24 @@ impl Multiplexer {
                 //   click on a row  → select + confirm
                 //   click on border / padding → swallowed
                 //   click anywhere outside the box → dismiss
+                //
+                // SGR mouse coords are 0-based; `box_rect` returns
+                // render-side coords that are 1-based (the values
+                // passed to `move_to`, which emits `\x1b[r;cH`).
+                // Pass row+1 / col+1 here so `handle_click` compares
+                // apples to apples — otherwise a click on the
+                // dialog's top border or leftmost column reads as
+                // outside-the-box and immediately dismisses the
+                // dialog, which is exactly the regression operators
+                // reported as "the dialog disappears when I click on
+                // it."
                 let term_rows = self.term_rows;
                 let term_cols = self.term_cols;
                 let action = self
                     .dialog
                     .as_mut()
                     .expect("dialog presence checked")
-                    .handle_click(row, col, term_rows, term_cols);
+                    .handle_click(row + 1, col + 1, term_rows, term_cols);
                 Some(self.apply_dialog_action(action))
             }
             InputEvent::MousePress { .. } if self.dialog.is_some() => {
@@ -947,6 +958,7 @@ impl Multiplexer {
                         container_name: self.status_bar.container_name().to_string(),
                         role: self.status_bar.role().to_string(),
                         focused_agent,
+                        copied: false,
                     });
                     return Some(self.compose_frame());
                 }
