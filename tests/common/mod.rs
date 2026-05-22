@@ -13,6 +13,7 @@ use std::path::Path;
 /// `cargo test` of the lib uses `cfg!(test)` for the same purpose;
 /// integration tests need to call this explicitly because cfg(test)
 /// only affects the lib when compiled for the lib's own test target.
+#[allow(dead_code)]
 pub fn install_container_binary_stub(paths: &JackinPaths) {
     jackin::container_binary::install_test_stub(paths).expect("install jackin-container test stub");
 }

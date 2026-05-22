@@ -142,6 +142,7 @@ RUN chmod +x /usr/local/bin/jackin-container
     // also skip the second append because the first build added the
     // marker line to /home/agent/.zshrc.
     #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
+    #[allow(clippy::items_after_statements)]
     const SHELL_TITLE_HOOK_SECTION: &str = "\
 RUN grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
     || printf '%s\\n' \\
@@ -344,30 +345,27 @@ pub fn create_derived_build_context(
     //   `looks_like_valid_image_ref` allowlist so the bytes that
     //   reach the Dockerfile FROM line are character-set-bounded
     //   regardless of ingress.
-    let base_dockerfile = match base_image_override {
-        Some(image) => {
-            anyhow::ensure!(
-                looks_like_valid_image_ref(image),
-                "base_image_override {image:?} is not a valid Docker image reference; refusing to interpolate into Dockerfile FROM line",
+    let base_dockerfile = if let Some(image) = base_image_override {
+        anyhow::ensure!(
+            looks_like_valid_image_ref(image),
+            "base_image_override {image:?} is not a valid Docker image reference; refusing to interpolate into Dockerfile FROM line",
+        );
+        format!("FROM {image}\n")
+    } else {
+        let override_image = std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_default();
+        let override_trimmed = override_image.trim();
+        if override_trimmed.is_empty() {
+            validated.dockerfile.dockerfile_contents.clone()
+        } else if looks_like_valid_image_ref(override_trimmed) {
+            apply_construct_image_override(
+                &validated.dockerfile.dockerfile_contents,
+                override_trimmed,
+            )
+        } else {
+            eprintln!(
+                "[jackin] ignoring invalid JACKIN_CONSTRUCT_IMAGE={override_image:?}; using role's pinned base image"
             );
-            format!("FROM {image}\n")
-        }
-        None => {
-            let override_image = std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_default();
-            let override_trimmed = override_image.trim();
-            if override_trimmed.is_empty() {
-                validated.dockerfile.dockerfile_contents.clone()
-            } else if looks_like_valid_image_ref(override_trimmed) {
-                apply_construct_image_override(
-                    &validated.dockerfile.dockerfile_contents,
-                    override_trimmed,
-                )
-            } else {
-                eprintln!(
-                    "[jackin] ignoring invalid JACKIN_CONSTRUCT_IMAGE={override_image:?}; using role's pinned base image"
-                );
-                validated.dockerfile.dockerfile_contents.clone()
-            }
+            validated.dockerfile.dockerfile_contents.clone()
         }
     };
 

@@ -253,7 +253,7 @@ fn instance_action_outcome(
 /// Resolve the container for Purge, then stage a Y/N confirmation
 /// modal. Purge now also calls `eject_role` before deleting preserved
 /// state (so a mis-keyed `P` on a running instance destroys role +
-/// DinD + volume + network plus on-disk state in one stroke), so the
+/// `DinD` + volume + network plus on-disk state in one stroke), so the
 /// confirmation step is non-optional. Mirrors the workspace-delete
 /// pattern at `handle_list_key` line 158.
 fn confirm_purge_outcome(state: &mut ManagerState<'_>) -> InputOutcome {
@@ -270,8 +270,10 @@ fn confirm_purge_outcome(state: &mut ManagerState<'_>) -> InputOutcome {
         .instances
         .iter()
         .find(|entry| entry.container_base == container)
-        .map(|entry| format!("{} ({})", entry.container_base, entry.role_key))
-        .unwrap_or_else(|| container.clone());
+        .map_or_else(
+            || container.clone(),
+            |entry| format!("{} ({})", entry.container_base, entry.role_key),
+        );
     let prompt = format!(
         "Purge \"{label}\"?\nThis removes the role container, DinD sidecar, volume, network, AND local recovery state. Cannot be undone."
     );

@@ -260,7 +260,7 @@ fn hash_file_sha256(path: &Path) -> Result<String> {
     }
     let digest = hasher.finalize();
     let mut hex = String::with_capacity(64);
-    for byte in digest.iter() {
+    for byte in &digest {
         let _ = write!(hex, "{byte:02x}");
     }
     Ok(hex)
@@ -292,11 +292,13 @@ pub fn is_valid_cached_binary(path: &Path) -> bool {
 }
 
 /// Write a placeholder file at `<cache_dir>/jackin-container-test-stub`
-/// with the executable bit set. The `ensure_available` lookup honours
-/// this path when present, short-circuiting the network download for
-/// integration tests that use `FakeDockerClient` and never actually
-/// `docker run` the produced image. Lib-tests (`cfg!(test)`) call this
-/// implicitly; integration tests in `tests/` opt in via
+/// with the executable bit set.
+///
+/// The `ensure_available` lookup honours this path when present,
+/// short-circuiting the network download for integration tests that
+/// use `FakeDockerClient` and never actually `docker run` the produced
+/// image. Lib-tests (`cfg!(test)`) call this implicitly; integration
+/// tests in `tests/` opt in via
 /// `tests/common::install_container_binary_stub`.
 pub fn install_test_stub(paths: &JackinPaths) -> Result<()> {
     let stub = paths.cache_dir.join("jackin-container-test-stub");

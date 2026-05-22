@@ -9,18 +9,20 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::signal::unix::{SignalKind, signal};
 
-use crate::protocol::attach::{ClientFrame, ServerFrame, encode_client, read_server_frame};
+use crate::protocol::attach::{
+    ClientFrame, ServerFrame, SpawnRequest, encode_client, read_server_frame,
+};
 use crate::protocol::control::{ClientMsg, ServerMsg, frame as control_frame};
+use crate::session::SESSION_ENV_PASSTHROUGH;
 use crate::socket::SOCKET_PATH;
 
 /// Connect to the running daemon and run the interactive attach client.
 ///
-/// `new_session_agent` is the agent slug requested by the host CLI via
-/// `docker exec ... jackin-container new <agent>`. When `Some`, the
-/// first Hello frame includes the slug and the daemon spawns a fresh
-/// session for that agent before completing attach. Plain attach
-/// (operator-initiated reattach) passes `None`.
-pub async fn run_client(new_session_agent: Option<String>) -> Result<()> {
+/// `spawn_request` is set by `docker exec ... jackin-container new`;
+/// the first Hello frame asks the daemon to create that session before
+/// completing attach. Plain attach (operator-initiated reattach)
+/// passes `None`.
+pub async fn run_client(spawn_request: Option<SpawnRequest>) -> Result<()> {
     let (rows, cols) = terminal_size();
 
     crossterm::terminal::enable_raw_mode().context("failed to enable raw mode")?;
@@ -52,7 +54,8 @@ pub async fn run_client(new_session_agent: Option<String>) -> Result<()> {
         .write_all(&encode_client(ClientFrame::Hello {
             rows,
             cols,
-            spawn_agent: new_session_agent,
+            env: collect_session_env(spawn_request.is_some()),
+            spawn: spawn_request,
         }))
         .await?;
 
@@ -179,16 +182,31 @@ fn terminal_size() -> (u16, u16) {
     (rows, cols)
 }
 
+fn collect_session_env(include: bool) -> Vec<(String, String)> {
+    if !include {
+        return Vec::new();
+    }
+    SESSION_ENV_PASSTHROUGH
+        .iter()
+        .filter_map(|&key| {
+            std::env::var(key)
+                .ok()
+                .map(|value| (key.to_string(), value))
+        })
+        .collect()
+}
+
 struct RawModeGuard;
 
 impl Drop for RawModeGuard {
     fn drop(&mut self) {
         let _ = crossterm::terminal::disable_raw_mode();
-        // Disable mouse, focus events, restore cursor, leave the
-        // alternate-screen buffer so the operator's host terminal
-        // returns to whatever was there before `jackin load`.
-        let _ =
-            std::io::stdout().write_all(b"\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?25h\x1b[?1049l");
+        // Reset every outer-terminal mode the client or focused pane
+        // may have enabled before returning the operator to their
+        // host terminal.
+        let _ = std::io::stdout().write_all(
+            b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[<u\x1b[?25h\x1b[?1049l",
+        );
         let _ = std::io::stdout().flush();
     }
 }

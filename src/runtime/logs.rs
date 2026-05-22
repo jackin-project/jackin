@@ -73,14 +73,14 @@ impl LogEntry {
 fn list_all(paths: &JackinPaths) -> Result<()> {
     let entries = enumerate(paths)?;
     if entries.is_empty() {
-        println!("No multiplexer logs found under {}.", paths.data_dir.display());
+        println!(
+            "No multiplexer logs found under {}.",
+            paths.data_dir.display()
+        );
         println!("(Logs appear after the first `jackin load` or `jackin console` attach.)");
         return Ok(());
     }
-    println!(
-        "{:<40} {:<20} {:<14} PATH",
-        "CONTAINER", "ROLE", "STATUS"
-    );
+    println!("{:<40} {:<20} {:<14} PATH", "CONTAINER", "ROLE", "STATUS");
     for entry in entries {
         println!(
             "{:<40} {:<20} {:<14} {}",

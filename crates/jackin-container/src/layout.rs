@@ -119,12 +119,10 @@ impl PaneTree {
                 true
             }
             Self::HSplit { left, right, .. } => {
-                left.split_h(old_id, new_id, position)
-                    || right.split_h(old_id, new_id, position)
+                left.split_h(old_id, new_id, position) || right.split_h(old_id, new_id, position)
             }
             Self::VSplit { top, bottom, .. } => {
-                top.split_h(old_id, new_id, position)
-                    || bottom.split_h(old_id, new_id, position)
+                top.split_h(old_id, new_id, position) || bottom.split_h(old_id, new_id, position)
             }
             Self::Leaf(_) => false,
         }
@@ -147,12 +145,10 @@ impl PaneTree {
                 true
             }
             Self::HSplit { left, right, .. } => {
-                left.split_v(old_id, new_id, position)
-                    || right.split_v(old_id, new_id, position)
+                left.split_v(old_id, new_id, position) || right.split_v(old_id, new_id, position)
             }
             Self::VSplit { top, bottom, .. } => {
-                top.split_v(old_id, new_id, position)
-                    || bottom.split_v(old_id, new_id, position)
+                top.split_v(old_id, new_id, position) || bottom.split_v(old_id, new_id, position)
             }
             Self::Leaf(_) => false,
         }

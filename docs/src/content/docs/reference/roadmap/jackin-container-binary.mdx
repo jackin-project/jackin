@@ -3,7 +3,7 @@ title: "jackin-container: In-Container Multiplexer Server"
 ---
 import RepoFile from '../../../../components/RepoFile.astro'
 
-**Status**: Partially implemented — Phases 1–3 shipped, Phase 4 (host daemon integration and Desktop Agent Hub bridge) remains open. Phase 3 landed an in-container PTY multiplexer built on the `vt100` crate with a tmux-style prefix-key model (`Ctrl+B` opt-in via `JACKIN_PREFIX`), a persistent server that exits cleanly when the last session ends, binary tag+length attach framing on the hot path, single-client takeover, mode-state restore on focus swap, OSC passthrough (52/9/2/8) gated to the focused pane, and a row-0 brand-pill + tab strip status bar.
+**Status**: Partially implemented — Phases 1–3 shipped, Phase 4 (host daemon integration and Desktop Agent Hub bridge) remains open. Phase 3 landed an in-container PTY multiplexer built on the `vt100` crate with a Zellij-style dirty-row renderer, a tmux-style prefix-key model (`Ctrl+B` opt-in via `JACKIN_PREFIX`), a persistent server that exits cleanly when the last session ends, binary tag+length attach framing on the hot path, single-client takeover, mode-state restore on focus swap, OSC passthrough (52/9/2/8) gated to the focused pane, and top chrome with a brand pill, tab strip, and identity row.
 
 The shipped-Phase-3 design and operator-visible behaviour now live in:
 
@@ -141,7 +141,7 @@ The same module also leaks several smaller defects — single-tab borders are al
 
 - **Client-server split over a Unix domain socket.** The server owns all PTYs, all VT state, all tabs/panes; the client owns user input and rendering. Multiple clients can attach to one server. Detach and reattach leave PTYs running.
 - **Typed instruction bus.** Inside the server, dedicated threads (PTY I/O, screen state, plugins) talk over MPSC channels carrying typed enums (`PtyInstruction`, `ScreenInstruction`). Jackin's server is single-threaded enough that the bus is overkill, but the *typed-enum-over-channel* shape is exactly what the existing tokio `select!` loop in <RepoFile path="crates/jackin-container/src/daemon.rs" /> should converge on.
-- **Per-pane VT state, replayed on switch.** The server keeps a `vt100::Screen` for every pane, including non-visible ones. PTY output is fed to the screen regardless of focus; switching tabs replays the target pane via `Screen::contents_formatted()` rather than asking the application to redraw.
+- **Per-pane VT state, replayed on switch.** The server keeps a `vt100::Screen` for every pane, including non-visible ones. PTY output is fed to the screen regardless of focus; switching tabs replays the target pane from the saved screen rather than asking the application to redraw.
 - **Binary protocol on the hot path.** Zellij uses protobuf; jackin uses simpler tag-plus-length-prefix binary framing. The point is not protobuf — it is "don't put base64-inside-JSON on the hot path."
 
 Zellij carries scope jackin explicitly does not need (multi-client collaboration, plugins via WASM, scrollback search, copy-mode regex, etc.). The rewrite cherry-picks the structural pieces and leaves the rest.
@@ -150,7 +150,7 @@ Zellij carries scope jackin explicitly does not need (multi-client collaboration
 
 The [Herdr](https://github.com/ogulcancelik/herdr) study under "Prior art: Herdr" below already lists the conceptual borrows for the agent-state model, status roll-up, notification suppression, sound escalation, blocking `wait` semantics, and PTY heuristics. The multiplexer rewrite adds three structural borrows on top of those — drawn from herdr's UI shape, not its code:
 
-- **Top-of-screen brand header + tab strip.** Row 0 of the host terminal renders ` jackin' ` on the left followed by one tab per active jackin session. Active tab gets the brand-green underline/bold; inactive tabs are dimmed; tab labels include the rolled-up state glyph. Operators sharing a screen recognise the brand pill at a glance.
+- **Top-of-screen chrome.** The top chrome renders ` jackin' ` on the left followed by one tab per active jackin session, plus an identity row for container/role context. Active tab gets the brand-green underline/bold; inactive tabs are dimmed; tab labels include the rolled-up state glyph. Operators sharing a screen recognise the brand pill at a glance.
 - **Empty initial state when no agent is preselected.** When `JACKIN_AGENT` is not set at daemon launch, the multiplexer comes up with the brand header, zero tabs, and a centred hint listing the agents from `JACKIN_SUPPORTED_AGENTS` plus `Shell`. The operator picks one with the prefix key and the first tab spawns into that selection. When `JACKIN_AGENT` is set, the daemon spawns the first tab with that agent automatically — matching the historical tmux `docker exec tmux new -A` behaviour.
 - **Per-tab "most urgent" state roll-up.** A tab containing any `blocked` pane is `blocked`; otherwise any `done` pane makes it `done`; otherwise `working`; otherwise `idle`. Same urgency order herdr uses. This drives the tab-strip glyph and feeds the future `agent-state-changed` event stream.
 
@@ -172,34 +172,35 @@ The hand-rolled emulator in `crates/jackin-container/src/terminal.rs` (deleted i
 
 - Full DEC private mode handling — alt-screen, cursor visibility, application cursor keys, bracketed paste, mouse modes.
 - A `Screen` type with scrollback, attributes (fg, bg, bold, italic, underline, reverse, blink, strike, dim), and cursor state.
-- `Screen::contents_formatted()` and `Screen::contents_diff()` — emit the minimal ANSI byte sequence to bring a target terminal to the screen's current state, or to diff between two states. This is the primitive jackin's tab-switch and reattach paths use.
+- `Screen::contents_formatted()` and `Screen::contents_diff()` — emit ANSI for whole-screen origins. Jackin studied them, but pane offsets, borders, dimming, selection, and overlays require a compositor-aware row serializer in <RepoFile path="crates/jackin-container/src/render.rs" />.
 - `Screen::set_size(rows, cols)` — correct resize semantics including alt-screen and reflow handling.
 
 The Apache-2.0 license is compatible with `jackin-container`'s Apache-2.0. The crate is well-maintained, has no transitive dependency surprise, and is the canonical choice in the Rust ecosystem for this job — exactly the pattern `AGENTS.md`'s "Prefer libraries over hand-rolled parsers" rule demands.
 
 `alacritty_terminal` is a heavier alternative offering scrollback search and selection state. Jackin's first rewrite does not need either; `vt100` is the right scope.
 
-#### Render model: hot path and cold path
+#### Render model: dirty pane bodies and full-frame fallback
 
-The render path is split in two:
+The shipped renderer is a Zellij-style dirty-output layer on top of `vt100`, not a raw PTY-byte passthrough. Directly forwarding active-pane bytes was rejected because pane content must be offset into an inner rectangle, clipped against borders, dimmed under dialogs, and kept consistent with scrollback and selection state. `vt100::Screen::contents_diff` was also rejected for the hot path because it assumes a whole-screen origin and cannot express jackin's pane chrome rules without wrapping every operation.
 
-**Hot path — active pane bytes**. When the PTY for the currently focused pane in the currently active tab emits bytes, the server:
+**Hot path — dirty pane body**. When any pane PTY emits bytes, the server:
 
 1. Feeds the bytes into the pane's `vt100::Parser` so the `Screen` stays current. This is cheap and unavoidable; it is what makes tab switches work later.
-2. Writes the bytes to the attached client almost verbatim, prefixed only by a cursor-position move (`\x1b[<r>;<c>H`) that translates the pane's `(0, 0)` to the pane rect's origin in the host terminal.
-3. Skips compose-frame entirely. No JSON, no base64, no full-screen redraw.
+2. Marks that pane's body dirty and lets the render ticker coalesce bursts at roughly 30 fps.
+3. Compares the current visible rows to `PaneBodyCache`'s last snapshot and emits only changed rows, each with an explicit cursor move and style reset.
+4. Repaints that pane's border and scrollbar so scrollback count, title, and focus color stay synchronized without repainting unrelated pane bodies.
 
-This is the path that runs 60 Hz inside an active Claude Code TUI. It must be effectively a byte-copy.
+This is the path that runs during active agent output. It is not a byte-copy, but it avoids the old broad-pane/full-frame redraw and keeps the output surface bounded by rows that actually changed.
 
-**Cold path — UI changes**. When the operator switches tabs, switches panes, toggles zoom, opens the palette, splits a pane, or attaches a fresh client, the server runs the full compose path:
+**Cold path — named full-frame redraw**. When the operator switches tabs, switches panes, toggles zoom, opens the palette, splits a pane, attaches a fresh client, browses scrollback, paints selection, or hits a cache/overlay/style case where partial repaint is unsafe, the server runs the full compose path:
 
-1. Render row 0 status bar.
-2. For each visible pane in the active tab, call `vt100::Screen::contents_formatted()` and emit the result at the pane's rect origin.
-3. Render any pane borders (only when the tab has more than one leaf).
+1. Render the top chrome.
+2. For each visible pane in the active tab, serialize every visible row through `PaneBodyCache::render_full`.
+3. Render pane borders and scrollbars.
 4. Render dialog overlay if one is open.
 5. Position the host terminal cursor at the focused pane's `Screen::cursor_position()` and honour `Screen::hide_cursor()`.
 
-The status bar additionally redraws on a slow timer (1 Hz is more than enough) and on the agent-state transition events, never on every PTY byte. The first attempt redrew the entire bar on every tick, which is what produced the visible jitter.
+Every full redraw carries a `FullRedrawReason` in <RepoFile path="crates/jackin-container/src/daemon.rs" /> (`first-attach`, `resize`, `tab-switch`, `layout-change`, `split-close`, `zoom-change`, `scrollback-movement`, `dialog-change`, `selection-repaint`, `pane-cache-miss`, `unsafe-partial`, and related chrome/style reasons). With `JACKIN_DEBUG=1`, the renderer logs full vs partial, reason, dirty panes, emitted rows, emitted bytes, and duration in microseconds.
 
 #### Input model: prefix key
 
@@ -235,19 +236,19 @@ Default prefix bindings (subject to refinement during implementation):
 The protocol is split by purpose:
 
 - **Control channel** — connection-per-request, newline-delimited JSON, for `status`, `session.create`, `session.kill`, `session.title`, `events`. This is what the host CLI and the future daemon use. Existing Phase 2 callers keep working.
-- **Attach channel** — persistent connection per attached client, framed binary. Each frame is `[1-byte tag][4-byte big-endian length][payload]`. Tags cover `hello { rows, cols }`, `resize { rows, cols }`, `input_bytes`, `output_bytes`, `command { json }`, `welcome { session_count }`, `session_list { json }`, `shutdown`. Payload of `input_bytes` and `output_bytes` is raw PTY bytes — no base64, no JSON nesting on the hot path. Payload of `command` is JSON only because the command vocabulary is open-ended; it is used at human keystroke rate, not 60 Hz.
+- **Attach channel** — persistent connection per attached client, framed binary. Each frame is `[1-byte tag][4-byte big-endian length][payload]`. Tags cover `hello { rows, cols, spawn, env }`, `resize { rows, cols }`, `input_bytes`, `output_bytes`, `command { json }`, `welcome { session_count }`, `session_list { json }`, and `shutdown`. Payload of `input_bytes` and `output_bytes` is raw PTY bytes — no base64, no JSON nesting on the hot path. Payload of `command` is JSON only because the command vocabulary is open-ended; it is used at human keystroke rate, not 60 Hz.
 
 The hand-rolled base64 in `crates/jackin-container/src/protocol.rs` (split during the Phase 3 rewrite into `protocol/attach.rs` and `protocol/control.rs`) is removed. If any future feature ever needs base64 (e.g. embedding a binary blob inside a JSON event), the `base64` crate is added — but no current code path needs it.
 
 #### Resize, detach, reattach
 
-- **Resize.** The client listens for `SIGWINCH` (via `tokio::signal::unix` or `signal-hook-tokio`), reads the new size with `crossterm::terminal::size`, and sends a `resize` frame. The server resizes every PTY in the affected layout via `MasterPty::resize`, calls `Screen::set_size` on each, and replays the active pane via `Screen::contents_formatted`. The first attempt's `Hello { rows, cols }` is preserved as the initial handshake; the missing piece is the runtime propagation.
+- **Resize.** The client listens for `SIGWINCH` (via `tokio::signal::unix` or `signal-hook-tokio`), reads the new size with `crossterm::terminal::size`, and sends a `resize` frame. The server resizes every PTY in the affected layout via `MasterPty::resize`, calls `Screen::set_size` on each, and performs a named full-frame replay. The first attempt's `Hello { rows, cols }` is preserved as the initial handshake; the missing piece is the runtime propagation.
 - **Detach.** `prefix + d` makes the client send a `detach` frame and exit cleanly, restoring its own terminal. The server drops the client slot but keeps every PTY running. The host can `docker exec jackin-container` to spawn a fresh client which reattaches over the same socket.
-- **Reattach.** A new client sending `hello` while one is already attached takes over; the server sends a `shutdown` frame to the old client (which restores its terminal and exits), then sends a full `contents_formatted` replay of the active pane to the new client. Concurrent attach (multiple clients viewing the same session) is **out of scope** for the first rewrite; the takeover model is sufficient for jackin's single-operator use case and avoids the multi-client cursor-and-input arbitration zellij has to solve.
+- **Reattach.** A new client sending `hello` while one is already attached takes over; the server sends a `shutdown` frame to the old client (which restores its terminal and exits), then sends a named full replay of the active frame to the new client. Concurrent attach (multiple clients viewing the same session) is **out of scope** for the first rewrite; the takeover model is sufficient for jackin's single-operator use case and avoids the multi-client cursor-and-input arbitration zellij has to solve.
 
 #### Status bar
 
-Row 0 of the host terminal is owned by the multiplexer. Layout left to right:
+The top rows of the host terminal are owned by the multiplexer. Layout left to right:
 
 ```
  jackin'   [Claude ●]  [Codex]  [Shell]                                 detach: Ctrl+B d
@@ -282,10 +283,10 @@ The rewrite produces this layout under `crates/jackin-container/src/`:
 | `socket.rs` | Unix socket bind, control-channel accept, attach-channel accept |
 | `protocol/control.rs` | Newline-delimited JSON request/response types for `status`, `session.create`, etc. |
 | `protocol/attach.rs` | Tag-plus-length binary framing for the attach channel |
-| `session.rs` | One PTY + one `vt100::Screen` + state-inference timer; `Session::spawn`, `Session::feed_pty`, `Session::render_replay` |
+| `session.rs` | One PTY + one `vt100::Screen` + state-inference timer; `Session::spawn`, `Session::feed_pty`, mode/OSC passthrough state |
 | `layout.rs` | Pane tree (kept, border math fixed) |
 | `tab.rs` | Tab struct + tab strip ordering |
-| `statusbar.rs` | Row 0 renderer (rewritten to fix label width drift and add prefix-mode hint) |
+| `statusbar.rs` | Top-chrome renderer (brand pill, tabs, identity row, prefix-mode hint) |
 | `input.rs` | Prefix-key state machine + mouse SGR re-encoder |
 | `dialog.rs` | Command palette + agent picker (kept; revisit ergonomics in Phase 3b) |
 
@@ -295,7 +296,7 @@ Files deleted: `terminal.rs` (replaced by `vt100` crate); base64 helpers in `pro
 
 The rewrite lands as one cohesive PR (this one) because the defects are interlocked — fixing one without the others leaves the binary unusable for testing — but the work breaks into reviewable sub-phases. Each sub-phase passes `cargo nextest run` and `cargo clippy --all-targets --all-features -- -D warnings` on its own.
 
-- **Phase 3a — Replace VT.** Drop `crates/jackin-container/src/terminal.rs`. Add `vt100 = "0.16"` to <RepoFile path="crates/jackin-container/Cargo.toml" />. Wire each `Session` to its own `vt100::Parser` + `Screen`. Replace `compose_frame`'s per-pane cell-loop with `Screen::contents_formatted` calls. Tab switch and reattach now emit `Screen::contents_formatted` instead of `force_redraw`'s PTY-resize hack.
+- **Phase 3a — Replace VT.** Drop `crates/jackin-container/src/terminal.rs`. Add `vt100 = "0.16"` to <RepoFile path="crates/jackin-container/Cargo.toml" />. Wire each `Session` to its own `vt100::Parser` + `Screen`. Replace the old per-byte terminal emulator with a compositor-aware row serializer over `vt100` cells. Tab switch and reattach replay from the saved screen instead of `force_redraw`'s PTY-resize hack.
 - **Phase 3b — Prefix-key input.** Replace the `0x0A` palette intercept and the standalone Alt+arrow shortcut with the prefix-key state machine described above. Default prefix `Ctrl+B`. The command palette still exists, opened by `prefix + Space`. Update <RepoFile path="crates/jackin-container/src/input.rs" /> and the dialog dispatch in <RepoFile path="crates/jackin-container/src/daemon.rs" />.
 - **Phase 3c — Persistent server + binary attach channel.** Remove the `process::exit(0)` on all-sessions-dead. On agent exit, mark the tab `exited`, keep the `Screen` for replay, allow `prefix + r` to respawn. Replace the JSON + base64 attach-channel output frames with the tag-plus-length binary frames defined above. Keep the existing control channel for `status`. Remove the hand-rolled base64 helper. Fix the reattach outbound-channel bug.
 - **Phase 3d — Resize, mouse, status bar polish.** Add client-side `SIGWINCH` listener and `resize` frame. Fix the mouse passthrough no-op (re-encode in SGR mouse form and write to the focused PTY). Fix the status bar tab-label width drift. Add the right-side prefix-mode hint.
@@ -304,10 +305,10 @@ Phase 3a is the load-bearing one — it unblocks every TUI agent. Phase 3b remov
 
 #### Tests required
 
-- **VT contract tests.** Round-trip alt-screen entry and exit through `vt100::Screen` and assert that `contents_formatted` after `\x1b[?1049h … \x1b[?1049l` reproduces the pre-alt-screen content. Smoke an entire Claude Code-style frame (alt-screen + bracketed paste + application cursor keys) and assert no information loss.
+- **VT contract tests.** Round-trip alt-screen entry and exit through `vt100::Screen` and assert that render replay after `\x1b[?1049h … \x1b[?1049l` reproduces the pre-alt-screen content. Smoke an entire Claude Code-style frame (alt-screen + bracketed paste + application cursor keys) and assert no information loss.
 - **Prefix state machine tests.** Lone prefix byte → consumed, no PTY output. `prefix + prefix` → exactly one prefix byte forwarded. `prefix + c` → `NewSession` command emitted, no bytes forwarded. Plain LF in the input stream → forwarded to PTY (regression guard for the `Ctrl+J = 0x0A` bug).
 - **Persistence tests.** Spawn a session, send it `exit\n`, observe `Exited` event, assert daemon is still running and the tab is marked `exited`. Send `SIGTERM` to the daemon, assert all PTYs are reaped and the daemon exits 0.
-- **Reattach tests.** Connect a client, attach to a session, write some bytes that update the `Screen`, disconnect, reconnect. Assert the new client receives a `contents_formatted` replay matching the screen state.
+- **Reattach tests.** Connect a client, attach to a session, write some bytes that update the `Screen`, disconnect, reconnect. Assert the new client receives a full replay matching the screen state.
 - **Resize tests.** Send a `resize` frame, assert every PTY is resized via `MasterPty::resize`, every `Screen` via `set_size`, and the active pane is replayed at the new dimensions.
 - **Mouse passthrough tests.** Send an SGR mouse press in row 5 — assert it is re-encoded relative to the focused pane's origin and arrives at the pane's PTY. Send a press in row 0 — assert it is consumed by the tab-strip hit-test.
 - **Control-channel regression tests.** The existing `status` command in <RepoFile path="crates/jackin-container/src/client.rs" /> keeps working unchanged. The host-side smoke tests for the launch path continue to pass without modification.
@@ -355,7 +356,7 @@ tmux set-option -sg escape-time 0
 
 The default delay tmux waits after `ESC` to disambiguate `ESC` from the start of an escape sequence causes misfires in vi-mode navigation inside agent TUIs (especially in the agent's command palette).
 
-**Jackin equivalent.** The client forwards `ESC` immediately as part of whatever larger sequence (or lone `ESC`) it sits in — the multiplexer does not buffer for disambiguation. Sequence boundaries are determined by the `vte` state machine inside `vt100`, which already handles `ESC` semantics correctly. There is no jackin equivalent of `escape-time` because the architecture removes the need for it.
+**Jackin equivalent.** The input parser keeps a short, configurable `JACKIN_ESCAPE_TIME` deadline for a bare `ESC` while preserving complete escape sequences across chunk boundaries. This matches tmux's disambiguation model while avoiding the original failure mode where `ESC [` split across socket reads became a literal `Esc` plus stray text.
 
 **Mouse support, including motion**.
 
@@ -365,7 +366,7 @@ tmux set-option -g mouse on
 
 Mouse clicks, drags, and scroll events must reach agent TUIs that opt into mouse reporting via `\x1b[?1000h` through `\x1b[?1006h`.
 
-**Jackin equivalent.** The client sets the outer terminal to "any-event tracking + SGR mouse" (`\x1b[?1003h\x1b[?1006h`) on attach. The multiplexer parses each mouse event: row 0 events hit-test against the tab-strip click regions; events below row 0 are re-encoded in SGR form with the row adjusted relative to the focused pane's rect origin and written to that pane's PTY. The buggy `let _ = session;` no-op from the first attempt is fixed by this re-encode path. Mouse modes the agent enables via DEC private mode are tracked in `vt100::Screen::mouse_protocol_mode`; the multiplexer forwards events the agent has actually asked for.
+**Jackin equivalent.** The client sets the outer terminal to "any-event tracking + SGR mouse" (`\x1b[?1003h\x1b[?1006h`) on attach. The multiplexer parses each mouse event: top-chrome events hit-test against the tab strip / identity row, pane-border events drive resize, and pane-content events are re-encoded relative to the focused pane's rect origin and written to that pane's PTY only when the pane opted into mouse reporting. Mouse mode and encoding are tracked with `vt100::Screen::mouse_protocol_mode()` and `mouse_protocol_encoding()`, so SGR, default xterm/X10, and UTF-8 mouse modes are distinct on the PTY side.
 
 The setting parity above is a regression contract: each tmux behaviour the operator pinned has a matching jackin-container behaviour. The tests under "Tests required" assert each contract separately so future refactors cannot drop one silently.
 
@@ -395,7 +396,7 @@ The operator runs jackin inside [Ghostty](https://ghostty.org/), the outer termi
 
 **Sixel graphics**. Not currently used by the in-scope agent TUIs but Ghostty supports it. Treated identically to kitty graphics: forwarded for the focused pane, ignored for backgrounded panes, not replayed on switch.
 
-The unifying rule across every Ghostty feature is: **the multiplexer's job is to be a transparent pipe for whatever escape sequences the agent and the outer terminal negotiate, while owning row 0 and the prefix-key boundary**. Anything else it tries to interpret will eventually break a feature Ghostty supports that jackin does not yet know about. The `vt100` crate's job is to keep enough state to replay panes on switch and detect activity for the agent-state heuristic — it is not an oracle for what to pass through, and the multiplexer should not gate features on `vt100` understanding them.
+The unifying rule across every Ghostty feature is: **the multiplexer's job is to be a transparent pipe for whatever escape sequences the agent and the outer terminal negotiate, while owning the top chrome and the prefix-key boundary**. Anything else it tries to interpret will eventually break a feature Ghostty supports that jackin does not yet know about. The `vt100` crate's job is to keep enough state to replay panes on switch and detect activity for the agent-state heuristic — it is not an oracle for what to pass through, and the multiplexer should not gate features on `vt100` understanding them.
 
 A regression test runs an end-to-end smoke against Ghostty's reported features: emit `\x1b[?u` (kitty keyboard query) from a synthetic PTY, capture the client output, assert the byte sequence reaches the outer-terminal-facing stream unchanged. Repeat for OSC 52, OSC 9, OSC 8, BSU/ESU, and the kitty graphics protocol header. The test does not require an actual Ghostty instance — it only asserts the bytes survive the multiplexer round-trip.
 
@@ -471,7 +472,7 @@ Two companion fixes in the host-side Rust code were required to make the cleanup
 
 The first Phase 3 attempt landed PID 1 ownership, the PTY layer, a binary pane tree, a status bar, a Unix socket attach channel, and the dockerfile changes that drop tmux from the derived image. That work is preserved where it is sound (the layout tree, the `SIGCHLD` reaper, the host-side mount changes, the build pipeline). The pieces that are unusable for modern TUI agents — the hand-rolled VT, the `0x0A` palette shortcut, the daemon's exit-on-last-session, the mouse no-op, the JSON-plus-base64 hot path — are rewritten against the architecture defined in "Multiplexer architecture (Phase 3)" above. The rewrite lands as one cohesive change in the active Phase 3 pull request, broken into four reviewable sub-phases:
 
-- **Phase 3a — Replace the VT.** Delete `crates/jackin-container/src/terminal.rs` (deleted in the Phase 3 rewrite — replaced by `session.rs`). Add `vt100` to <RepoFile path="crates/jackin-container/Cargo.toml" />. Hold one `vt100::Parser` plus `vt100::Screen` per `Session`. Switch the tab/pane switch and reattach paths to `Screen::contents_formatted`. Honour `Screen::hide_cursor` and `Screen::cursor_position` when positioning the host cursor.
+- **Phase 3a — Replace the VT.** Delete `crates/jackin-container/src/terminal.rs` (deleted in the Phase 3 rewrite — replaced by `session.rs`). Add `vt100` to <RepoFile path="crates/jackin-container/Cargo.toml" />. Hold one `vt100::Parser` plus `vt100::Screen` per `Session`. Switch the tab/pane switch and reattach paths to full replay from the saved screen. Honour `Screen::hide_cursor` and `Screen::cursor_position` when positioning the host cursor.
 - **Phase 3b — Prefix-key input.** Replace the `0x0A` palette intercept with the prefix-key state machine. Default prefix `Ctrl+B`. Default bindings as listed in "Input model: prefix key" above. Add the "Escape forwards immediately" rule (zero-delay disambiguation).
 - **Phase 3c — Persistent server + binary attach channel.** Remove the `std::process::exit(0)` on all-sessions-dead. On agent exit, mark the tab `exited`, keep the screen for replay, allow respawn via prefix bindings. Replace the JSON-plus-base64 attach-channel output with the tag-plus-length binary format defined in "Wire protocol". Drop the hand-rolled base64 from `crates/jackin-container/src/protocol.rs` (split during the Phase 3 rewrite into `protocol/attach.rs` and `protocol/control.rs`). Fix the reattach outbound-channel drop.
 - **Phase 3d — Resize, mouse, terminal compatibility, status bar polish.** Add the client-side `SIGWINCH` listener and `resize` frames. Fix the mouse passthrough no-op. Wire focus events, OSC/APC passthrough rules, BSU/ESU, kitty-keyboard pass-through, and OSC 52 routing per "Terminal compatibility: tmux setting parity" and "Ghostty compatibility" above. Fix the status bar tab-label width drift. Add the right-side prefix-mode hint.

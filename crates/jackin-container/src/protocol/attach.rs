@@ -32,19 +32,27 @@ pub const TAG_SHUTDOWN: u8 = 0x84;
 pub const TAG_BELL: u8 = 0x85;
 
 const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
+const MAX_HELLO_ENV: usize = 64;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpawnRequest {
+    Shell,
+    Agent(String),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientFrame {
-    /// First frame from a newly-connected client. `spawn_agent` carries
-    /// the agent slug the host CLI requested via
-    /// `docker exec ... jackin-container new <agent>` — the daemon
-    /// spawns a fresh session for that agent before attach completes.
-    /// Plain attach (operator-initiated reattach) sets `spawn_agent`
-    /// to None.
+    /// First frame from a newly-connected client. Plain attach sets
+    /// `spawn` to None; `jackin-container new` uses `Shell` or
+    /// `Agent(slug)` so the daemon can create the requested session
+    /// before attach completes. `env` carries per-session overrides
+    /// that the short-lived `docker exec` client must forward to the
+    /// long-lived daemon.
     Hello {
         rows: u16,
         cols: u16,
-        spawn_agent: Option<String>,
+        spawn: Option<SpawnRequest>,
+        env: Vec<(String, String)>,
     },
     Resize {
         rows: u16,
@@ -92,21 +100,38 @@ pub fn encode_client(frame: ClientFrame) -> Vec<u8> {
         ClientFrame::Hello {
             rows,
             cols,
-            spawn_agent,
+            spawn,
+            env,
         } => {
-            // Layout: rows(2) cols(2) agent_len(2) agent_bytes(N).
-            // agent_len == 0 means "no spawn intent" (plain attach).
-            // Slugs are bounded by `validate_agent_slug` on the
-            // ingress side, so `u16::try_from` cannot realistically
-            // fail; `unwrap_or(0)` is a defence-in-depth no-spawn
-            // sentinel rather than a load-bearing path.
-            let agent_bytes = spawn_agent.as_deref().unwrap_or("").as_bytes();
-            let agent_len = u16::try_from(agent_bytes.len()).unwrap_or(0);
-            let mut payload = Vec::with_capacity(6 + agent_bytes.len());
+            // Layout:
+            //   rows(2) cols(2) spawn_kind(1)
+            //   agent_len(2) agent_bytes(N)
+            //   env_count(2)
+            //   repeated key_len(2) value_len(4) key_bytes value_bytes
+            let (spawn_kind, agent_bytes) = match spawn.as_ref() {
+                None => (0u8, b"".as_slice()),
+                Some(SpawnRequest::Shell) => (1u8, b"".as_slice()),
+                Some(SpawnRequest::Agent(agent)) => (2u8, agent.as_bytes()),
+            };
+            let agent_len = u16::try_from(agent_bytes.len()).unwrap_or(u16::MAX);
+            let env_count = u16::try_from(env.len()).unwrap_or(u16::MAX);
+            let mut payload = Vec::with_capacity(9 + agent_bytes.len());
             payload.extend_from_slice(&rows.to_be_bytes());
             payload.extend_from_slice(&cols.to_be_bytes());
+            payload.push(spawn_kind);
             payload.extend_from_slice(&agent_len.to_be_bytes());
             payload.extend_from_slice(&agent_bytes[..agent_len as usize]);
+            payload.extend_from_slice(&env_count.to_be_bytes());
+            for (key, value) in env.into_iter().take(env_count as usize) {
+                let key_bytes = key.as_bytes();
+                let value_bytes = value.as_bytes();
+                let key_len = u16::try_from(key_bytes.len()).unwrap_or(u16::MAX);
+                let value_len = u32::try_from(value_bytes.len()).unwrap_or(u32::MAX);
+                payload.extend_from_slice(&key_len.to_be_bytes());
+                payload.extend_from_slice(&value_len.to_be_bytes());
+                payload.extend_from_slice(&key_bytes[..key_len as usize]);
+                payload.extend_from_slice(&value_bytes[..value_len as usize]);
+            }
             encode(TAG_HELLO, &payload)
         }
         ClientFrame::Resize { rows, cols } => {
@@ -178,30 +203,56 @@ fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
             if payload.len() < 4 {
                 bail!("hello payload too short");
             }
-            let rows = u16::from_be_bytes([payload[0], payload[1]]);
-            let cols = u16::from_be_bytes([payload[2], payload[3]]);
-            let spawn_agent = if payload.len() >= 6 {
-                let agent_len = u16::from_be_bytes([payload[4], payload[5]]) as usize;
-                if payload.len() < 6 + agent_len {
-                    bail!(
-                        "hello agent_len {agent_len} exceeds payload size {}",
-                        payload.len()
-                    );
+            let mut cursor = PayloadCursor::new(&payload);
+            let rows = cursor.read_u16("rows")?;
+            let cols = cursor.read_u16("cols")?;
+            if cursor.finished() {
+                return Ok(ClientFrame::Hello {
+                    rows,
+                    cols,
+                    spawn: None,
+                    env: Vec::new(),
+                });
+            }
+            let spawn_kind = cursor.read_u8("spawn kind")?;
+            let agent_len = cursor.read_u16("agent length")? as usize;
+            let agent = cursor.read_string(agent_len, "agent slug")?;
+            let spawn = match spawn_kind {
+                0 => None,
+                1 => {
+                    if !agent.is_empty() {
+                        bail!("hello shell spawn must not carry an agent slug");
+                    }
+                    Some(SpawnRequest::Shell)
                 }
-                if agent_len == 0 {
-                    None
-                } else {
-                    let slug = std::str::from_utf8(&payload[6..6 + agent_len])
-                        .map_err(|_| anyhow::anyhow!("hello agent slug is not valid UTF-8"))?;
-                    Some(slug.to_string())
+                2 => {
+                    if agent.is_empty() {
+                        bail!("hello agent spawn missing slug");
+                    }
+                    Some(SpawnRequest::Agent(agent))
                 }
-            } else {
-                None
+                other => bail!("unknown hello spawn kind {other}"),
             };
+            let env_count = cursor.read_u16("env count")? as usize;
+            if env_count > MAX_HELLO_ENV {
+                bail!("hello env_count {env_count} exceeds limit {MAX_HELLO_ENV}");
+            }
+            let mut env = Vec::with_capacity(env_count);
+            for _ in 0..env_count {
+                let key_len = cursor.read_u16("env key length")? as usize;
+                let value_len = cursor.read_u32("env value length")? as usize;
+                let key = cursor.read_string(key_len, "env key")?;
+                let value = cursor.read_string(value_len, "env value")?;
+                env.push((key, value));
+            }
+            if !cursor.finished() {
+                bail!("hello payload has trailing bytes");
+            }
             ClientFrame::Hello {
                 rows,
                 cols,
-                spawn_agent,
+                spawn,
+                env,
             }
         }
         TAG_RESIZE => {
@@ -240,6 +291,63 @@ fn decode_server(tag: u8, payload: Vec<u8>) -> Result<ServerFrame> {
     })
 }
 
+struct PayloadCursor<'a> {
+    payload: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> PayloadCursor<'a> {
+    fn new(payload: &'a [u8]) -> Self {
+        Self { payload, pos: 0 }
+    }
+
+    fn finished(&self) -> bool {
+        self.pos == self.payload.len()
+    }
+
+    fn read_u8(&mut self, field: &str) -> Result<u8> {
+        if self.pos >= self.payload.len() {
+            bail!("hello payload ended before {field}");
+        }
+        let value = self.payload[self.pos];
+        self.pos += 1;
+        Ok(value)
+    }
+
+    fn read_u16(&mut self, field: &str) -> Result<u16> {
+        let bytes = self.read_bytes(2, field)?;
+        Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
+    }
+
+    fn read_u32(&mut self, field: &str) -> Result<u32> {
+        let bytes = self.read_bytes(4, field)?;
+        Ok(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
+    fn read_string(&mut self, len: usize, field: &str) -> Result<String> {
+        let bytes = self.read_bytes(len, field)?;
+        let s = std::str::from_utf8(bytes)
+            .map_err(|_| anyhow::anyhow!("hello {field} is not valid UTF-8"))?;
+        Ok(s.to_string())
+    }
+
+    fn read_bytes(&mut self, len: usize, field: &str) -> Result<&'a [u8]> {
+        let end = self
+            .pos
+            .checked_add(len)
+            .ok_or_else(|| anyhow::anyhow!("hello {field} length overflow"))?;
+        if end > self.payload.len() {
+            bail!(
+                "hello {field} length {len} exceeds remaining payload {}",
+                self.payload.len().saturating_sub(self.pos)
+            );
+        }
+        let bytes = &self.payload[self.pos..end];
+        self.pos = end;
+        Ok(bytes)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,7 +370,8 @@ mod tests {
         let bytes = encode_client(ClientFrame::Hello {
             rows: 42,
             cols: 100,
-            spawn_agent: None,
+            spawn: None,
+            env: Vec::new(),
         });
         // First byte is tag, never `0x00` (which is reserved for the
         // control-channel JSON length high byte).
@@ -271,11 +380,36 @@ mod tests {
     }
 
     #[test]
-    fn hello_with_spawn_agent_roundtrips() {
+    fn hello_with_spawn_shell_roundtrips() {
         let bytes = encode_client(ClientFrame::Hello {
             rows: 50,
             cols: 200,
-            spawn_agent: Some("codex".to_string()),
+            spawn: Some(SpawnRequest::Shell),
+            env: Vec::new(),
+        });
+        let payload = bytes[5..].to_vec();
+        let frame = decode_client(TAG_HELLO, payload).unwrap();
+        assert_eq!(
+            frame,
+            ClientFrame::Hello {
+                rows: 50,
+                cols: 200,
+                spawn: Some(SpawnRequest::Shell),
+                env: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn hello_with_spawn_agent_and_env_roundtrips() {
+        let bytes = encode_client(ClientFrame::Hello {
+            rows: 50,
+            cols: 200,
+            spawn: Some(SpawnRequest::Agent("codex".to_string())),
+            env: vec![
+                ("JACKIN_GIT_COAUTHOR_TRAILER".to_string(), "1".to_string()),
+                ("JACKIN_GIT_DCO".to_string(), "1".to_string()),
+            ],
         });
         // Decode skips the 4-byte length prefix that `encode_client` writes
         // after the tag; reconstruct the payload to feed `decode_client`.
@@ -286,31 +420,44 @@ mod tests {
             ClientFrame::Hello {
                 rows: 50,
                 cols: 200,
-                spawn_agent: Some("codex".to_string()),
+                spawn: Some(SpawnRequest::Agent("codex".to_string())),
+                env: vec![
+                    ("JACKIN_GIT_COAUTHOR_TRAILER".to_string(), "1".to_string()),
+                    ("JACKIN_GIT_DCO".to_string(), "1".to_string()),
+                ],
             }
         );
     }
 
     #[test]
     fn hello_rejects_oversized_agent_len() {
-        // agent_len=99 but payload only carries 12 bytes of "only-7-bytes".
+        // spawn_kind=agent, agent_len=99 but payload only carries
+        // 12 bytes of "only-7-bytes".
         // decode must bail rather than slice past the buffer.
-        let mut payload = vec![0, 42, 0, 100, 0, 99];
+        let mut payload = vec![0, 42, 0, 100, 2, 0, 99];
         payload.extend(b"only-7-bytes");
         assert!(decode_client(TAG_HELLO, payload).is_err());
     }
 
     #[test]
     fn hello_rejects_non_utf8_agent_bytes() {
-        let mut payload = vec![0, 42, 0, 100, 0, 3];
+        let mut payload = vec![0, 42, 0, 100, 2, 0, 3];
         payload.extend(&[0xFF, 0xFE, 0xFD]);
+        assert!(decode_client(TAG_HELLO, payload).is_err());
+    }
+
+    #[test]
+    fn hello_rejects_truncated_env_value() {
+        let mut payload = vec![0, 42, 0, 100, 0, 0, 0, 0, 1, 0, 3, 0, 0, 0, 99];
+        payload.extend(b"KEY");
+        payload.extend(b"short");
         assert!(decode_client(TAG_HELLO, payload).is_err());
     }
 
     #[test]
     fn hello_legacy_4_byte_decodes_with_none_spawn() {
         // A short (rows+cols only) Hello matches `payload.len() >= 6`
-        // being false → spawn_agent = None.
+        // being false → spawn = None.
         let payload = vec![0, 24, 0, 80];
         let frame = decode_client(TAG_HELLO, payload).unwrap();
         assert_eq!(
@@ -318,7 +465,8 @@ mod tests {
             ClientFrame::Hello {
                 rows: 24,
                 cols: 80,
-                spawn_agent: None,
+                spawn: None,
+                env: Vec::new(),
             }
         );
     }

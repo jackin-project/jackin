@@ -35,7 +35,8 @@ fn hello_first_byte_never_collides_with_control_channel() {
     let bytes = encode_client(ClientFrame::Hello {
         rows: 24,
         cols: 80,
-        spawn_agent: None,
+        spawn: None,
+        env: Vec::new(),
     });
     assert_ne!(bytes[0], 0x00);
     assert_eq!(bytes[0], TAG_HELLO);

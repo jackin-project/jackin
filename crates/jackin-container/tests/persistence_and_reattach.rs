@@ -41,7 +41,8 @@ async fn attach_hello_roundtrips_over_socket() {
             ClientFrame::Hello {
                 rows: 24,
                 cols: 80,
-                spawn_agent: None
+                spawn: None,
+                env: Vec::new(),
             }
         );
         // Server replies with Welcome + a fake Output payload.
@@ -60,7 +61,8 @@ async fn attach_hello_roundtrips_over_socket() {
         .write_all(&encode_client(ClientFrame::Hello {
             rows: 24,
             cols: 80,
-            spawn_agent: None,
+            spawn: None,
+            env: Vec::new(),
         }))
         .await
         .unwrap();
@@ -158,7 +160,8 @@ async fn second_attach_takes_over_first() {
         .write_all(&encode_client(ClientFrame::Hello {
             rows: 24,
             cols: 80,
-            spawn_agent: None,
+            spawn: None,
+            env: Vec::new(),
         }))
         .await
         .unwrap();
@@ -168,7 +171,8 @@ async fn second_attach_takes_over_first() {
         .write_all(&encode_client(ClientFrame::Hello {
             rows: 24,
             cols: 80,
-            spawn_agent: None,
+            spawn: None,
+            env: Vec::new(),
         }))
         .await
         .unwrap();

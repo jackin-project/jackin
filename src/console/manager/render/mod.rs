@@ -862,11 +862,11 @@ pub(super) fn picker_role_from_state(
 /// always agree on what the rendered block is showing. Returning an
 /// empty `Vec` matches "no global-mount block visible right now."
 ///
-/// CurrentDirectory and CurrentDirectoryInstance reduce to the
+/// `CurrentDirectory` and `CurrentDirectoryInstance` reduce to the
 /// unscoped baseline because the synthetic current-dir workspace has
 /// no role binding — same rule `sidebar_inputs_for_current_dir`
-/// applies. SavedWorkspace adds the role-scoped overlay when a picker
-/// is active. NewWorkspace and WorkspaceInstance have no global block.
+/// applies. `SavedWorkspace` adds the role-scoped overlay when a picker
+/// is active. `NewWorkspace` and `WorkspaceInstance` have no global block.
 pub(super) fn global_rows_for_selected_row(
     state: &ManagerState<'_>,
     config: &AppConfig,

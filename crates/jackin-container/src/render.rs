@@ -8,7 +8,7 @@ use std::io::Write;
 
 use vt100::{Color, Screen};
 
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 struct Attrs {
     fg: ColorKey,
     bg: ColorKey,
@@ -19,7 +19,7 @@ struct Attrs {
     inverse: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 enum ColorKey {
     #[default]
     Default,
@@ -33,6 +33,113 @@ impl From<Color> for ColorKey {
             Color::Default => Self::Default,
             Color::Idx(n) => Self::Idx(n),
             Color::Rgb(r, g, b) => Self::Rgb(r, g, b),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CellSnapshot {
+    contents: String,
+    attrs: Attrs,
+    width: u16,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct RowSnapshot {
+    cells: Vec<CellSnapshot>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PaneBodyRenderMode {
+    Full,
+    Partial,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PaneBodyRenderStats {
+    pub mode: PaneBodyRenderMode,
+    pub rows_emitted: usize,
+    pub changed_rows: Vec<u16>,
+}
+
+/// Cached visible pane body used to emit Zellij-style changed rows
+/// instead of repainting every pane body on every PTY burst.
+#[derive(Debug, Default)]
+pub struct PaneBodyCache {
+    rows: u16,
+    cols: u16,
+    dim: bool,
+    valid: bool,
+    snapshot: Vec<RowSnapshot>,
+}
+
+impl PaneBodyCache {
+    pub fn invalidate(&mut self) {
+        self.valid = false;
+        self.snapshot.clear();
+    }
+
+    pub fn is_valid_for(&self, rect_rows: u16, rect_cols: u16, dim: bool) -> bool {
+        self.valid && self.rows == rect_rows && self.cols == rect_cols && self.dim == dim
+    }
+
+    pub fn render_full(
+        &mut self,
+        screen: &Screen,
+        dest_row: u16,
+        dest_col: u16,
+        rect_rows: u16,
+        rect_cols: u16,
+        dim: bool,
+        buf: &mut Vec<u8>,
+    ) -> PaneBodyRenderStats {
+        let snapshot = pane_snapshot(screen, rect_rows, rect_cols);
+        let changed_rows: Vec<u16> = (0..snapshot.len() as u16).collect();
+        render_snapshot_rows(&snapshot, &changed_rows, dest_row, dest_col, dim, buf);
+        self.rows = rect_rows;
+        self.cols = rect_cols;
+        self.dim = dim;
+        self.valid = true;
+        self.snapshot = snapshot;
+        PaneBodyRenderStats {
+            mode: PaneBodyRenderMode::Full,
+            rows_emitted: changed_rows.len(),
+            changed_rows,
+        }
+    }
+
+    pub fn render_partial(
+        &mut self,
+        screen: &Screen,
+        dest_row: u16,
+        dest_col: u16,
+        rect_rows: u16,
+        rect_cols: u16,
+        dim: bool,
+        buf: &mut Vec<u8>,
+    ) -> PaneBodyRenderStats {
+        if !self.valid || self.rows != rect_rows || self.cols != rect_cols || self.dim != dim {
+            return self.render_full(screen, dest_row, dest_col, rect_rows, rect_cols, dim, buf);
+        }
+
+        let next = pane_snapshot(screen, rect_rows, rect_cols);
+        if next.len() != self.snapshot.len() {
+            return self.render_full(screen, dest_row, dest_col, rect_rows, rect_cols, dim, buf);
+        }
+
+        let changed_rows: Vec<u16> = next
+            .iter()
+            .zip(&self.snapshot)
+            .enumerate()
+            .filter_map(|(idx, (new_row, old_row))| (new_row != old_row).then_some(idx as u16))
+            .collect();
+        render_snapshot_rows(&next, &changed_rows, dest_row, dest_col, dim, buf);
+        self.snapshot = next;
+
+        PaneBodyRenderStats {
+            mode: PaneBodyRenderMode::Partial,
+            rows_emitted: changed_rows.len(),
+            changed_rows,
         }
     }
 }
@@ -51,36 +158,9 @@ pub fn render_pane(
     dim: bool,
     buf: &mut Vec<u8>,
 ) {
-    let (screen_rows, screen_cols) = screen.size();
-    let rows_to_draw = rect_rows.min(screen_rows);
-    let cols_to_draw = rect_cols.min(screen_cols);
-
-    buf.extend_from_slice(b"\x1b[0m");
-    let mut last = Attrs::default();
-    let mut last_emitted = false;
-
-    for r in 0..rows_to_draw {
-        write_cursor(buf, dest_row + r, dest_col);
-        for c in 0..cols_to_draw {
-            let cell = screen.cell(r, c);
-            let attrs = cell.map(cell_attrs).unwrap_or_default();
-            if !last_emitted || attrs != last {
-                emit_sgr(buf, &attrs, dim);
-                last = attrs;
-                last_emitted = true;
-            }
-            match cell {
-                Some(cell) if cell.has_contents() => {
-                    let contents = cell.contents();
-                    buf.extend_from_slice(contents.as_bytes());
-                }
-                _ => {
-                    buf.push(b' ');
-                }
-            }
-        }
-    }
-    buf.extend_from_slice(b"\x1b[0m");
+    let snapshot = pane_snapshot(screen, rect_rows, rect_cols);
+    let rows: Vec<u16> = (0..snapshot.len() as u16).collect();
+    render_snapshot_rows(&snapshot, &rows, dest_row, dest_col, dim, buf);
 }
 
 /// Paint the scrollbar thumb onto the pane's right border column
@@ -161,6 +241,75 @@ fn cell_attrs(cell: &vt100::Cell) -> Attrs {
         underline: cell.underline(),
         inverse: cell.inverse(),
     }
+}
+
+fn pane_snapshot(screen: &Screen, rect_rows: u16, rect_cols: u16) -> Vec<RowSnapshot> {
+    let (screen_rows, screen_cols) = screen.size();
+    let rows_to_draw = rect_rows.min(screen_rows);
+    let cols_to_draw = rect_cols.min(screen_cols);
+    (0..rows_to_draw)
+        .map(|row| snapshot_row(screen, row, cols_to_draw))
+        .collect()
+}
+
+fn snapshot_row(screen: &Screen, row: u16, cols_to_draw: u16) -> RowSnapshot {
+    let mut cells = Vec::with_capacity(cols_to_draw as usize);
+    let mut col = 0;
+    while col < cols_to_draw {
+        let cell = screen.cell(row, col);
+        if cell.is_some_and(|cell| cell.is_wide_continuation()) {
+            col += 1;
+            continue;
+        }
+
+        let width = cell
+            .filter(|cell| cell.is_wide())
+            .map_or(1, |_| 2)
+            .min(cols_to_draw - col);
+        let attrs = cell.map(cell_attrs).unwrap_or_default();
+        let contents = match cell {
+            Some(cell) if cell.has_contents() => cell.contents().to_string(),
+            _ => " ".repeat(width as usize),
+        };
+        cells.push(CellSnapshot {
+            contents,
+            attrs,
+            width,
+        });
+        col += width;
+    }
+    RowSnapshot { cells }
+}
+
+fn render_snapshot_rows(
+    snapshot: &[RowSnapshot],
+    rows: &[u16],
+    dest_row: u16,
+    dest_col: u16,
+    dim: bool,
+    buf: &mut Vec<u8>,
+) {
+    if rows.is_empty() {
+        return;
+    }
+    for &row_idx in rows {
+        let Some(row) = snapshot.get(row_idx as usize) else {
+            continue;
+        };
+        write_cursor(buf, dest_row + row_idx, dest_col);
+        buf.extend_from_slice(b"\x1b[0m");
+        let mut last = Attrs::default();
+        let mut last_emitted = false;
+        for cell in &row.cells {
+            if !last_emitted || cell.attrs != last {
+                emit_sgr(buf, &cell.attrs, dim);
+                last = cell.attrs;
+                last_emitted = true;
+            }
+            buf.extend_from_slice(cell.contents.as_bytes());
+        }
+    }
+    buf.extend_from_slice(b"\x1b[0m");
 }
 
 fn write_cursor(buf: &mut Vec<u8>, row: u16, col: u16) {
@@ -261,5 +410,97 @@ mod tests {
             s.contains("\x1b[5;3H"),
             "missing pane-origin cursor move: {s:?}"
         );
+    }
+
+    #[test]
+    fn pane_cache_first_render_is_full_and_tracks_every_visible_row() {
+        let mut parser = Parser::new(3, 8, 0);
+        parser.process(b"one\r\ntwo");
+        let mut cache = PaneBodyCache::default();
+        let mut buf = Vec::new();
+
+        let stats = cache.render_partial(parser.screen(), 10, 20, 3, 8, false, &mut buf);
+
+        assert_eq!(stats.mode, PaneBodyRenderMode::Full);
+        assert_eq!(stats.changed_rows, vec![0, 1, 2]);
+        let s = String::from_utf8_lossy(&buf);
+        assert!(s.contains("\x1b[11;21H"));
+        assert!(s.contains("\x1b[12;21H"));
+        assert!(s.contains("\x1b[13;21H"));
+    }
+
+    #[test]
+    fn pane_cache_emits_only_changed_rows_after_warmup() {
+        let mut parser = Parser::new(3, 12, 0);
+        parser.process(b"alpha\r\nbeta\r\ngamma");
+        let mut cache = PaneBodyCache::default();
+        let mut buf = Vec::new();
+        cache.render_full(parser.screen(), 0, 0, 3, 12, false, &mut buf);
+        buf.clear();
+
+        parser.process(b"\x1b[2;1Hbravo");
+        let stats = cache.render_partial(parser.screen(), 0, 0, 3, 12, false, &mut buf);
+
+        assert_eq!(stats.mode, PaneBodyRenderMode::Partial);
+        assert_eq!(stats.changed_rows, vec![1]);
+        let s = String::from_utf8_lossy(&buf);
+        assert!(!s.contains("\x1b[1;1H"));
+        assert!(s.contains("\x1b[2;1H"));
+        assert!(!s.contains("\x1b[3;1H"));
+        assert!(s.contains("bravo"));
+    }
+
+    #[test]
+    fn pane_cache_partial_rows_reset_styles_independently() {
+        let mut parser = Parser::new(2, 16, 0);
+        parser.process(b"\x1b[31mred\x1b[0m\r\nplain");
+        let mut cache = PaneBodyCache::default();
+        let mut buf = Vec::new();
+        cache.render_full(parser.screen(), 0, 0, 2, 16, false, &mut buf);
+        buf.clear();
+
+        parser.process(b"\x1b[1;1H\x1b[32mgreen\x1b[0m");
+        let stats = cache.render_partial(parser.screen(), 0, 0, 2, 16, false, &mut buf);
+
+        assert_eq!(stats.changed_rows, vec![0]);
+        let s = String::from_utf8_lossy(&buf);
+        assert!(s.contains("\x1b[1;1H\x1b[0m"));
+        assert!(s.contains("\x1b[0;32mgreen"));
+        assert!(s.ends_with("\x1b[0m"));
+    }
+
+    #[test]
+    fn pane_cache_handles_wide_characters_without_dirtying_continuations() {
+        let mut parser = Parser::new(2, 10, 0);
+        parser.process("表x\r\nsame".as_bytes());
+        let mut cache = PaneBodyCache::default();
+        let mut buf = Vec::new();
+        cache.render_full(parser.screen(), 0, 0, 2, 10, false, &mut buf);
+        buf.clear();
+
+        parser.process("\x1b[1;3Hy".as_bytes());
+        let stats = cache.render_partial(parser.screen(), 0, 0, 2, 10, false, &mut buf);
+
+        assert_eq!(stats.changed_rows, vec![0]);
+        let s = String::from_utf8_lossy(&buf);
+        assert!(s.contains("表y"));
+        assert!(!s.contains("表 y"));
+    }
+
+    #[test]
+    fn pane_cache_partial_ansi_serialization_covers_rgb_and_background() {
+        let mut parser = Parser::new(1, 8, 0);
+        parser.process(b"plain");
+        let mut cache = PaneBodyCache::default();
+        let mut buf = Vec::new();
+        cache.render_full(parser.screen(), 0, 0, 1, 8, false, &mut buf);
+        buf.clear();
+
+        parser.process(b"\x1b[1;1H\x1b[38;2;1;2;3;48;5;4;1mX");
+        let stats = cache.render_partial(parser.screen(), 0, 0, 1, 8, false, &mut buf);
+
+        assert_eq!(stats.changed_rows, vec![0]);
+        let s = String::from_utf8_lossy(&buf);
+        assert!(s.contains("\x1b[0;1;38;2;1;2;3;44mX"));
     }
 }

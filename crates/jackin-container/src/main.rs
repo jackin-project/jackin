@@ -1,5 +1,7 @@
 use anyhow::{Result, bail};
-use jackin_container::{client, daemon, session::validate_agent_slug};
+use jackin_container::{
+    client, daemon, protocol::attach::SpawnRequest, session::validate_agent_slug,
+};
 
 const DEFAULT_AGENT: &str = "claude";
 
@@ -26,16 +28,19 @@ async fn main() -> Result<()> {
             }
             Some("status") => client::run_status().await,
             Some("new") => {
-                let agent = args.get(2).and_then(|raw| match validate_agent_slug(raw) {
-                    Ok(s) => Some(s.to_string()),
-                    Err(reason) => {
-                        eprintln!(
-                            "[jackin-container] ignoring agent argv {raw:?}: {reason}; daemon will pick the default"
-                        );
-                        None
-                    }
-                });
-                client::run_client(agent).await
+                let spawn = match args.get(2) {
+                    None => Some(SpawnRequest::Shell),
+                    Some(raw) => match validate_agent_slug(raw) {
+                        Ok(s) => Some(SpawnRequest::Agent(s.to_string())),
+                        Err(reason) => {
+                            eprintln!(
+                                "[jackin-container] ignoring agent argv {raw:?}: {reason}; no new session will be spawned"
+                            );
+                            None
+                        }
+                    },
+                };
+                client::run_client(spawn).await
             }
             Some(other) => {
                 bail!(

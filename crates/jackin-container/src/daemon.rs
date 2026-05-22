@@ -12,7 +12,8 @@
 ///     byte: `0x00` → control (length prefix), anything else → attach.
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -33,7 +34,7 @@ use crate::protocol::attach::{
     ClientFrame, ServerFrame, SpawnRequest, encode_server, read_client_frame,
 };
 use crate::protocol::control::{AgentState, SessionInfo};
-use crate::render::{draw_scrollbar, render_pane};
+use crate::render::{PaneBodyCache, PaneBodyRenderMode, draw_scrollbar};
 use crate::session::{
     SESSION_ENV_PASSTHROUGH, Session, SessionEvent, available_agents, build_agent_command,
     build_shell_command,
@@ -86,11 +87,74 @@ pub struct Multiplexer {
     /// the mouse. Updated on every motion event; copied to the
     /// outer clipboard via OSC 52 on release.
     selection: Option<SelectionState>,
-    /// Set whenever a state change would require a redraw. The render
-    /// ticker drains this at most once per frame so a chatty PTY does
-    /// not push N full frames per second to the client. Cleared after
-    /// `compose_frame` runs.
-    dirty: bool,
+    /// Last visible pane-body snapshot per session. PTY output can
+    /// then repaint only rows whose vt100 cells changed.
+    pane_body_caches: HashMap<u64, PaneBodyCache>,
+    /// Pane bodies dirtied by PTY output. The render ticker drains
+    /// this at most once per frame, preserving the existing coalescing
+    /// behavior while avoiding broad body redraws.
+    dirty_panes: HashSet<u64>,
+    /// Named full-frame invalidation, used whenever partial pane-body
+    /// repainting would be unsafe or when chrome/status/dialog/layout
+    /// changed outside the pane body.
+    pending_full_redraw: Option<FullRedrawReason>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FullRedrawReason {
+    FirstAttach,
+    Resize,
+    TabSwitch,
+    LayoutChange,
+    SplitClose,
+    ZoomChange,
+    ScrollbackMovement,
+    DialogChange,
+    SelectionRepaint,
+    PaletteOverlay,
+    ConfirmOverlay,
+    FocusChange,
+    PaneChromeChanged,
+    ThemeStyleChange,
+    SessionExit,
+    ExplicitRedraw,
+    PaneCacheMiss,
+    UnsafePartial,
+}
+
+impl FullRedrawReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::FirstAttach => "first-attach",
+            Self::Resize => "resize",
+            Self::TabSwitch => "tab-switch",
+            Self::LayoutChange => "layout-change",
+            Self::SplitClose => "split-close",
+            Self::ZoomChange => "zoom-change",
+            Self::ScrollbackMovement => "scrollback-movement",
+            Self::DialogChange => "dialog-change",
+            Self::SelectionRepaint => "selection-repaint",
+            Self::PaletteOverlay => "palette-overlay",
+            Self::ConfirmOverlay => "confirm-overlay",
+            Self::FocusChange => "focus-change",
+            Self::PaneChromeChanged => "pane-chrome-changed",
+            Self::ThemeStyleChange => "theme-style-change",
+            Self::SessionExit => "session-exit",
+            Self::ExplicitRedraw => "explicit-redraw",
+            Self::PaneCacheMiss => "pane-cache-miss",
+            Self::UnsafePartial => "unsafe-partial",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct VisiblePane {
+    id: u64,
+    outer: Rect,
+    inner: Rect,
+    focused: bool,
+    dim: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -185,7 +249,9 @@ impl Multiplexer {
             last_tab_click: None,
             drag: None,
             selection: None,
-            dirty: false,
+            pane_body_caches: HashMap::new(),
+            dirty_panes: HashSet::new(),
+            pending_full_redraw: None,
         }
     }
 
@@ -324,6 +390,7 @@ impl Multiplexer {
             if let Some(session) = self.sessions.remove(&id) {
                 session.terminate();
             }
+            self.pane_body_caches.remove(&id);
         }
         self.tabs.remove(self.active_tab);
         if self.active_tab >= self.tabs.len() {
@@ -404,6 +471,7 @@ impl Multiplexer {
             }
         }
         self.sessions.remove(&session_id);
+        self.pane_body_caches.remove(&session_id);
         self.zoomed = self.zoomed.filter(|&id| id != session_id);
         self.resize_panes();
     }
@@ -515,7 +583,7 @@ impl Multiplexer {
                 }
             }
         }
-        self.compose_frame()
+        self.compose_full_frame(FullRedrawReason::DialogChange)
     }
 
     /// Single dispatch point for `DialogAction::SpawnAgent`. Spawn
@@ -712,6 +780,7 @@ impl Multiplexer {
         if let Some(session) = self.sessions.remove(&id) {
             session.terminate();
         }
+        self.pane_body_caches.remove(&id);
         // Mirror remove_exited_session: drop the zoomed reference when
         // the killed pane was the zoom target. Otherwise the next
         // compose_frame's `if let Some(zoom_id) = self.zoomed` branch
@@ -868,6 +937,55 @@ impl Multiplexer {
         self.sessions.is_empty()
     }
 
+    fn request_pane_body_redraw(&mut self, session_id: u64) {
+        if self.pending_full_redraw.is_none() {
+            self.dirty_panes.insert(session_id);
+        }
+    }
+
+    fn request_full_redraw(&mut self, reason: FullRedrawReason) {
+        self.pending_full_redraw = Some(reason);
+        self.dirty_panes.clear();
+    }
+
+    fn has_pending_render(&self) -> bool {
+        self.pending_full_redraw.is_some() || !self.dirty_panes.is_empty()
+    }
+
+    fn visible_panes(&self) -> Vec<VisiblePane> {
+        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let focused_id = self.active_focused_id();
+        let dim_panes = self.dialog_open();
+        if let Some(zoom_id) = self.active_zoomed_id() {
+            let outer = content_rect;
+            return vec![VisiblePane {
+                id: zoom_id,
+                outer,
+                inner: outer.shrink(1),
+                focused: Some(zoom_id) == focused_id,
+                dim: dim_panes,
+            }];
+        }
+        let Some(tab) = self.tabs.get(self.active_tab) else {
+            return Vec::new();
+        };
+        let leaves = tab.tree.leaves(content_rect);
+        let multi_pane = leaves.len() > 1;
+        leaves
+            .into_iter()
+            .map(|(id, outer)| {
+                let focused = Some(id) == focused_id;
+                VisiblePane {
+                    id,
+                    outer,
+                    inner: outer.shrink(1),
+                    focused,
+                    dim: dim_panes || (multi_pane && !focused),
+                }
+            })
+            .collect()
+    }
+
     /// Adjust the split that contains the focused pane along `dir` by
     /// 5% of the parent rectangle. Triggered by `Alt+Shift+Arrow`.
     fn resize_focused(&mut self, dir: ArrowDir) {
@@ -969,7 +1087,7 @@ impl Multiplexer {
                         filter: String::new(),
                     });
                 }
-                Some(self.compose_frame())
+                Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay))
             }
             InputEvent::PrefixCommand(cmd) => {
                 // While a dialog is open the prefix gesture's payload
@@ -985,7 +1103,7 @@ impl Multiplexer {
                     return None;
                 }
                 self.resize_focused(dir);
-                Some(self.compose_frame())
+                Some(self.compose_full_frame(FullRedrawReason::LayoutChange))
             }
             InputEvent::FocusIn | InputEvent::FocusOut => {
                 // Forward only when the focused agent actually
@@ -1054,7 +1172,7 @@ impl Multiplexer {
                 // see a half-paired release in the middle of a drag.
                 if self.drag.is_some() && (button & 0b11) == 0 {
                     self.drag = None;
-                    return Some(self.compose_frame());
+                    return Some(self.compose_full_frame(FullRedrawReason::LayoutChange));
                 }
                 // Commit any active text selection: copy to clipboard
                 // and clear the highlight.
@@ -1085,7 +1203,7 @@ impl Multiplexer {
                 {
                     session.scroll_by(delta);
                 }
-                Some(self.compose_frame())
+                Some(self.compose_full_frame(FullRedrawReason::ScrollbackMovement))
             }
             InputEvent::MousePress {
                 row: 0,
@@ -1115,7 +1233,7 @@ impl Multiplexer {
                             input,
                         });
                         self.last_tab_click = None;
-                        return Some(self.compose_frame());
+                        return Some(self.compose_full_frame(FullRedrawReason::DialogChange));
                     }
                     self.last_tab_click = Some((idx, now));
                     if idx != self.active_tab {
@@ -1123,7 +1241,7 @@ impl Multiplexer {
                         let prev = self.active_focused_id();
                         self.active_tab = idx;
                         self.synthesise_focus_swap(prev, self.active_focused_id());
-                        return Some(self.compose_frame());
+                        return Some(self.compose_full_frame(FullRedrawReason::TabSwitch));
                     }
                     return None;
                 }
@@ -1140,7 +1258,7 @@ impl Multiplexer {
                             filter: String::new(),
                         });
                     }
-                    return Some(self.compose_frame());
+                    return Some(self.compose_full_frame(FullRedrawReason::PaletteOverlay));
                 }
                 None
             }
@@ -1165,7 +1283,7 @@ impl Multiplexer {
                         focused_agent,
                         copied: false,
                     });
-                    return Some(self.compose_frame());
+                    return Some(self.compose_full_frame(FullRedrawReason::DialogChange));
                 }
                 None
             }
@@ -1208,11 +1326,11 @@ impl Multiplexer {
                     // for a mouse protocol starts a text selection.
                     if let Some(state) = self.detect_selection_start(row, col) {
                         self.selection = Some(state);
-                        return Some(self.compose_frame());
+                        return Some(self.compose_full_frame(FullRedrawReason::SelectionRepaint));
                     }
                     self.forward_mouse_to_focused_pane(col, row, button);
                     return if switched_focus {
-                        Some(self.compose_frame())
+                        Some(self.compose_full_frame(FullRedrawReason::FocusChange))
                     } else {
                         None
                     };
@@ -1240,7 +1358,7 @@ impl Multiplexer {
                         session.send_input(&bytes);
                     }
                     if snapped {
-                        Some(self.compose_frame())
+                        Some(self.compose_full_frame(FullRedrawReason::ScrollbackMovement))
                     } else {
                         None
                     }
@@ -1255,6 +1373,7 @@ impl Multiplexer {
         // pressed when triaging a bug report. The Debug formatter
         // includes any payload (`JumpTab(i)`, `MoveFocus(dir)`).
         crate::clog!("action: prefix={cmd:?}");
+        let full_redraw_reason = prefix_full_redraw_reason(&cmd);
         match cmd {
             PrefixCommand::NewTab => {
                 let agents = self.available_agents.clone();
@@ -1288,7 +1407,7 @@ impl Multiplexer {
             }
             PrefixCommand::Redraw => {}
         }
-        Some(self.compose_frame())
+        Some(self.compose_full_frame(full_redraw_reason))
     }
 
     fn forward_mouse_to_focused_pane(&mut self, col: u16, row: u16, button: u8) {
@@ -1429,7 +1548,7 @@ impl Multiplexer {
         let clamped_col = col.clamp(inner.col, inner.col + inner.cols.saturating_sub(1));
         sel.end_row = clamped_row - inner.row;
         sel.end_col = clamped_col - inner.col;
-        Some(self.compose_frame())
+        Some(self.compose_full_frame(FullRedrawReason::SelectionRepaint))
     }
 
     /// Commit the active selection: extract the selected text from
@@ -1452,7 +1571,7 @@ impl Multiplexer {
                 let _ = tx.send(encode_server(ServerFrame::Output(bytes)));
             }
         }
-        Some(self.compose_frame())
+        Some(self.compose_full_frame(FullRedrawReason::SelectionRepaint))
     }
 
     /// Apply a drag motion at `(row, col)` against the active drag's
@@ -1476,7 +1595,7 @@ impl Multiplexer {
             return None;
         }
         self.resize_panes();
-        Some(self.compose_frame())
+        Some(self.compose_full_frame(FullRedrawReason::LayoutChange))
     }
 
     /// Switch focus to the pane the operator clicked on, if it differs
@@ -1569,7 +1688,17 @@ impl Multiplexer {
         None
     }
 
-    fn compose_frame(&mut self) -> Vec<u8> {
+    fn compose_pending_frame(&mut self) -> Vec<u8> {
+        if let Some(reason) = self.pending_full_redraw.take() {
+            self.dirty_panes.clear();
+            return self.compose_full_frame(reason);
+        }
+        let dirty_panes = std::mem::take(&mut self.dirty_panes);
+        self.compose_partial_frame(dirty_panes)
+    }
+
+    fn compose_full_frame(&mut self, reason: FullRedrawReason) -> Vec<u8> {
+        let started = Instant::now();
         let mut buf = Vec::with_capacity(65536);
         buf.extend_from_slice(b"\x1b[?25l");
 
@@ -1587,139 +1716,75 @@ impl Multiplexer {
             &states,
         );
 
-        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         let focused_id = self.active_focused_id();
         let mut focused_pane_rect: Option<Rect> = None;
+        let panes = self.visible_panes();
+        let multi_pane = panes.len() > 1;
+        let zoomed = self.active_zoomed_id().is_some();
+        let mut pane_rows_emitted = 0usize;
+        let mut pane_body_bytes = 0usize;
 
-        // Dim the panes when a dialog is open so the operator gets an
-        // unmistakable "focus is inside the dialog" cue.
-        let dim_panes = self.dialog_open();
-
-        if let Some(zoom_id) = self.active_zoomed_id() {
-            let outer = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
-            let inner = outer.shrink(1);
+        for pane in &panes {
             let mut filled_for_scrollbar = 0usize;
             let mut offset_for_scrollbar = 0usize;
-            if let Some(session) = self.sessions.get_mut(&zoom_id) {
-                let offset = session.scrollback_offset;
-                let filled = session.scrollback_filled();
-                filled_for_scrollbar = filled;
-                offset_for_scrollbar = offset;
-                render_pane(
-                    session.screen(),
-                    inner.row,
-                    inner.col,
-                    inner.rows,
-                    inner.cols,
-                    dim_panes,
-                    &mut buf,
-                );
-                if Some(zoom_id) == focused_id {
-                    focused_pane_rect = Some(inner);
+            let mut title = None;
+            if let Some(session) = self.sessions.get_mut(&pane.id) {
+                offset_for_scrollbar = session.scrollback_offset;
+                filled_for_scrollbar = session.scrollback_filled();
+                title = Some(display_title(session));
+                let before = buf.len();
+                let stats = self
+                    .pane_body_caches
+                    .entry(pane.id)
+                    .or_default()
+                    .render_full(
+                        session.screen(),
+                        pane.inner.row,
+                        pane.inner.col,
+                        pane.inner.rows,
+                        pane.inner.cols,
+                        pane.dim,
+                        &mut buf,
+                    );
+                pane_rows_emitted += stats.rows_emitted;
+                pane_body_bytes += buf.len() - before;
+                if pane.focused {
+                    focused_pane_rect = Some(pane.inner);
                 }
             }
-            if let Some(session) = self.sessions.get(&zoom_id) {
-                let title = session.title().unwrap_or(session.label.as_str());
-                // Zoom mode shows exactly one pane — same single-pane
-                // gray treatment as the unzoomed single-pane case
-                // unless the pane has scrollback to advertise.
-                let highlight_focus = filled_for_scrollbar > 0;
-                draw_pane_box(
-                    &mut buf,
-                    outer.row,
-                    outer.col,
-                    outer.rows,
-                    outer.cols,
-                    title,
-                    Some(zoom_id) == focused_id && highlight_focus,
-                );
-                draw_scrollbar(
-                    &mut buf,
-                    outer.row,
-                    outer.col,
-                    outer.rows,
-                    outer.cols,
-                    offset_for_scrollbar,
-                    filled_for_scrollbar,
-                    Some(zoom_id) == focused_id && highlight_focus,
-                );
-            }
-        } else if let Some(tab) = self.tabs.get(self.active_tab) {
-            let leaves = tab.tree.leaves(content_rect);
-            let multi_pane = leaves.len() > 1;
-            for (id, rect) in &leaves {
-                let pane_focused = Some(*id) == focused_id;
+            if let Some(title) = title {
                 // Always draw a pane box, even for the single-pane
                 // case — matches zellij's "every pane is framed"
                 // convention and gives the operator a reliable place
                 // to read the live `OSC 2` title.
-                let inner = rect.shrink(1);
-                let mut filled_for_scrollbar = 0usize;
-                let mut offset_for_scrollbar = 0usize;
-                if let Some(session) = self.sessions.get_mut(id) {
-                    let offset = session.scrollback_offset;
-                    let filled = session.scrollback_filled();
-                    filled_for_scrollbar = filled;
-                    offset_for_scrollbar = offset;
-                    let dim_this_pane = dim_panes || (multi_pane && !pane_focused);
-                    render_pane(
-                        session.screen(),
-                        inner.row,
-                        inner.col,
-                        inner.rows,
-                        inner.cols,
-                        dim_this_pane,
-                        &mut buf,
-                    );
-                    if pane_focused {
-                        focused_pane_rect = Some(inner);
-                    }
-                }
-                if let Some(session) = self.sessions.get(id) {
-                    // Title precedence: agent's OSC 2 window title →
-                    // shell's OSC 7 cwd → static `Session::label`.
-                    let title_owned: String;
-                    let title: &str = if let Some(t) = session.title() {
-                        t
-                    } else if let Some(cwd) = session.cwd() {
-                        title_owned = jackin_tui::shorten_home(cwd);
-                        &title_owned
-                    } else {
-                        session.label.as_str()
-                    };
-                    // The phosphor-green focus highlight is reserved
-                    // for chrome the operator can actually *do*
-                    // something with — multiple panes (focus
-                    // matters) or a pane with scrollback (the wheel
-                    // matters). A lone, non-scrollable pane stays
-                    // gray so the brand colour does not compete with
-                    // the agent's own content for attention.
-                    let highlight_focus = multi_pane || filled_for_scrollbar > 0;
-                    draw_pane_box(
-                        &mut buf,
-                        rect.row,
-                        rect.col,
-                        rect.rows,
-                        rect.cols,
-                        title,
-                        pane_focused && highlight_focus,
-                    );
-                    // Scrollbar overlays the right border column, so
-                    // it has to be drawn AFTER the pane box paints
-                    // the border. Non-thumb rows leave the border
-                    // intact; thumb rows replace `│` with `█`.
-                    draw_scrollbar(
-                        &mut buf,
-                        rect.row,
-                        rect.col,
-                        rect.rows,
-                        rect.cols,
-                        offset_for_scrollbar,
-                        filled_for_scrollbar,
-                        pane_focused && highlight_focus,
-                    );
-                }
+                let highlight_focus = if zoomed {
+                    filled_for_scrollbar > 0
+                } else {
+                    multi_pane || filled_for_scrollbar > 0
+                };
+                draw_pane_box(
+                    &mut buf,
+                    pane.outer.row,
+                    pane.outer.col,
+                    pane.outer.rows,
+                    pane.outer.cols,
+                    &title,
+                    pane.focused && highlight_focus,
+                );
+                draw_scrollbar(
+                    &mut buf,
+                    pane.outer.row,
+                    pane.outer.col,
+                    pane.outer.rows,
+                    pane.outer.cols,
+                    offset_for_scrollbar,
+                    filled_for_scrollbar,
+                    pane.focused && highlight_focus,
+                );
             }
+        }
+
+        if !zoomed {
             // Paint the selection highlight on top of pane content
             // (but underneath the pane box so the inverse stops at
             // the inner edge). The selection lives on a specific
@@ -1735,6 +1800,149 @@ impl Multiplexer {
             dialog.render(&mut buf, self.term_rows, self.term_cols);
         }
 
+        self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
+
+        crate::cdebug!(
+            "render: kind=full reason={} panes={} rows={} pane_bytes={} bytes={} duration_us={}",
+            reason.as_str(),
+            panes.len(),
+            pane_rows_emitted,
+            pane_body_bytes,
+            buf.len(),
+            started.elapsed().as_micros()
+        );
+
+        buf
+    }
+
+    fn compose_partial_frame(&mut self, dirty_panes: HashSet<u64>) -> Vec<u8> {
+        if dirty_panes.is_empty() {
+            return Vec::new();
+        }
+        if self.dialog_open() || self.selection.is_some() {
+            return self.compose_full_frame(FullRedrawReason::UnsafePartial);
+        }
+
+        let started = Instant::now();
+        let panes = self.visible_panes();
+        let focused_id = self.active_focused_id();
+        let focused_pane_rect = panes
+            .iter()
+            .find(|pane| pane.focused)
+            .map(|pane| pane.inner);
+
+        if !panes.iter().any(|pane| dirty_panes.contains(&pane.id)) {
+            crate::cdebug!(
+                "render: kind=partial reason=pty-output dirty_panes={} panes=0 rows=0 pane_bytes=0 bytes=0 duration_us={}",
+                dirty_panes.len(),
+                started.elapsed().as_micros()
+            );
+            return Vec::new();
+        }
+
+        for pane in panes.iter().filter(|pane| dirty_panes.contains(&pane.id)) {
+            let Some(session) = self.sessions.get(&pane.id) else {
+                continue;
+            };
+            if session.scrollback_offset != 0 {
+                return self.compose_full_frame(FullRedrawReason::ScrollbackMovement);
+            }
+            if !self
+                .pane_body_caches
+                .get(&pane.id)
+                .is_some_and(|cache| cache.is_valid_for(pane.inner.rows, pane.inner.cols, pane.dim))
+            {
+                return self.compose_full_frame(FullRedrawReason::PaneCacheMiss);
+            }
+        }
+
+        let mut buf = Vec::with_capacity(16384);
+        buf.extend_from_slice(b"\x1b[?25l");
+        let mut rows_emitted = 0usize;
+        let mut panes_rendered = 0usize;
+        let mut pane_body_bytes = 0usize;
+        let multi_pane = panes.len() > 1;
+        let zoomed = self.active_zoomed_id().is_some();
+        for pane in panes.iter().filter(|pane| dirty_panes.contains(&pane.id)) {
+            let mut filled_for_scrollbar = 0usize;
+            let mut offset_for_scrollbar = 0usize;
+            let mut title = None;
+            if let Some(session) = self.sessions.get_mut(&pane.id) {
+                offset_for_scrollbar = session.scrollback_offset;
+                filled_for_scrollbar = session.scrollback_filled();
+                title = Some(display_title(session));
+                let before = buf.len();
+                let stats = self
+                    .pane_body_caches
+                    .entry(pane.id)
+                    .or_default()
+                    .render_partial(
+                        session.screen(),
+                        pane.inner.row,
+                        pane.inner.col,
+                        pane.inner.rows,
+                        pane.inner.cols,
+                        pane.dim,
+                        &mut buf,
+                    );
+                if stats.mode == PaneBodyRenderMode::Full {
+                    return self.compose_full_frame(FullRedrawReason::PaneCacheMiss);
+                }
+                if stats.rows_emitted > 0 {
+                    panes_rendered += 1;
+                }
+                rows_emitted += stats.rows_emitted;
+                pane_body_bytes += buf.len() - before;
+            }
+            if let Some(title) = title {
+                let highlight_focus = if zoomed {
+                    filled_for_scrollbar > 0
+                } else {
+                    multi_pane || filled_for_scrollbar > 0
+                };
+                draw_pane_box(
+                    &mut buf,
+                    pane.outer.row,
+                    pane.outer.col,
+                    pane.outer.rows,
+                    pane.outer.cols,
+                    &title,
+                    pane.focused && highlight_focus,
+                );
+                draw_scrollbar(
+                    &mut buf,
+                    pane.outer.row,
+                    pane.outer.col,
+                    pane.outer.rows,
+                    pane.outer.cols,
+                    offset_for_scrollbar,
+                    filled_for_scrollbar,
+                    pane.focused && highlight_focus,
+                );
+            }
+        }
+
+        self.append_cursor_state(&mut buf, focused_id, focused_pane_rect);
+
+        crate::cdebug!(
+            "render: kind=partial reason=pty-output dirty_panes={} panes={} rows={} pane_bytes={} bytes={} duration_us={}",
+            dirty_panes.len(),
+            panes_rendered,
+            rows_emitted,
+            pane_body_bytes,
+            buf.len(),
+            started.elapsed().as_micros()
+        );
+
+        buf
+    }
+
+    fn append_cursor_state(
+        &self,
+        buf: &mut Vec<u8>,
+        focused_id: Option<u64>,
+        focused_pane_rect: Option<Rect>,
+    ) {
         // Position cursor at the focused pane's screen cursor only when
         // the pane has something the operator can actually type into.
         // Show conditions, all must hold:
@@ -1774,8 +1982,6 @@ impl Multiplexer {
                 buf.extend_from_slice(b"\x1b[?25l");
             }
         }
-
-        buf
     }
 
     fn session_infos(&self) -> Vec<SessionInfo> {
@@ -2001,7 +2207,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                     }
                 }
                 let mut initial = b"\x1b[2J".to_vec();
-                initial.extend(mux.compose_frame());
+                initial.extend(mux.compose_full_frame(FullRedrawReason::FirstAttach));
                 let _ = new_out_tx.send(encode_server(ServerFrame::Output(initial)));
                 let cmd_tx_for_task = cmd_tx.clone();
                 mux.attached_task = Some(tokio::spawn(async move {
@@ -2069,14 +2275,14 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                         for bytes in to_emit {
                             mux.send_output(bytes);
                         }
-                        // Mark dirty; the render ticker coalesces
+                        // Mark the pane body dirty; the render ticker coalesces
                         // bursts of PTY output into one frame per
-                        // tick. Dialog-open still marks dirty — the
+                        // tick. Dialog-open still invalidates — the
                         // render ticker now paints the dialog overlay
                         // against the latest pane state, so dismiss
                         // doesn't produce a sudden burst of
                         // accumulated frames.
-                        mux.dirty = true;
+                        mux.request_pane_body_redraw(session_id);
                     }
                     SessionEvent::Exited { session_id } => {
                         // Remove the pane / tab immediately rather than
@@ -2084,7 +2290,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                         // Matches the operator's mental model: "agent
                         // exited → its tab is gone."
                         mux.remove_exited_session(session_id);
-                        mux.dirty = true;
+                        mux.request_full_redraw(FullRedrawReason::SessionExit);
                         // When the last live session exits — whether
                         // the operator typed `/exit` in the agent or
                         // the agent crashed — there is nothing left to
@@ -2116,9 +2322,10 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 }
             }
 
-            // Render ticker: drain the dirty flag at ~30 fps. One
+            // Render ticker: drain dirty pane bodies or a named full-frame
+            // invalidation at ~30 fps. One
             // frame per tick at most, regardless of how many PTY
-            // events arrived since the last tick. `compose_frame`
+            // events arrived since the last tick. Full-frame fallback
             // includes the dialog overlay when one is open, so the
             // open-dialog case still composes (and the operator sees
             // dialog content over the latest pane state) instead of
@@ -2126,10 +2333,11 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
             // dismiss frame was a sudden jump of N frames' worth of
             // accumulated PTY output that the operator had no way to
             // see coming.
-            _ = render_ticker.tick(), if mux.dirty => {
-                mux.dirty = false;
-                let frame_data = mux.compose_frame();
-                mux.send_output(frame_data);
+            _ = render_ticker.tick(), if mux.has_pending_render() => {
+                let frame_data = mux.compose_pending_frame();
+                if !frame_data.is_empty() {
+                    mux.send_output(frame_data);
+                }
             }
 
             // Periodic state refresh: re-render the status bar so the tab
@@ -2167,7 +2375,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
         }
         ClientFrame::Resize { rows, cols } => {
             mux.resize(rows, cols);
-            let frame_data = mux.compose_frame();
+            let frame_data = mux.compose_full_frame(FullRedrawReason::Resize);
             mux.send_output(frame_data);
         }
         ClientFrame::Input(bytes) => {
@@ -2203,7 +2411,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             };
             if mux.status_bar.prefix_mode != mode {
                 mux.status_bar.set_prefix_mode(mode);
-                let frame_data = mux.compose_frame();
+                let frame_data = mux.compose_full_frame(FullRedrawReason::ExplicitRedraw);
                 mux.send_output(frame_data);
             }
         }
@@ -2444,8 +2652,8 @@ fn canonical_selection(sel: &SelectionState) -> (u16, u16, u16, u16) {
 }
 
 /// Paint an inverse-video highlight over every cell inside the
-/// selection rectangle. Emitted after `render_pane` so the agent's
-/// content is preserved underneath — the operator sees the same
+/// selection rectangle. Emitted after pane-body rendering so the
+/// agent's content is preserved underneath — the operator sees the same
 /// glyphs but on a reversed colour pair, which is the universal
 /// "this is selected" cue.
 fn paint_selection_highlight(buf: &mut Vec<u8>, screen: &vt100::Screen, sel: &SelectionState) {
@@ -2489,6 +2697,32 @@ fn capitalize(s: &str) -> String {
     match c.next() {
         None => String::new(),
         Some(f) => f.to_uppercase().to_string() + c.as_str(),
+    }
+}
+
+fn display_title(session: &Session) -> String {
+    if let Some(title) = session.title() {
+        title.to_string()
+    } else if let Some(cwd) = session.cwd() {
+        jackin_tui::shorten_home(cwd)
+    } else {
+        session.label.clone()
+    }
+}
+
+fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {
+    match cmd {
+        PrefixCommand::NewTab | PrefixCommand::Palette => FullRedrawReason::PaletteOverlay,
+        PrefixCommand::NextTab | PrefixCommand::PrevTab | PrefixCommand::JumpTab(_) => {
+            FullRedrawReason::TabSwitch
+        }
+        PrefixCommand::SplitTopBottom | PrefixCommand::SplitSideBySide => {
+            FullRedrawReason::LayoutChange
+        }
+        PrefixCommand::MoveFocus(_) => FullRedrawReason::FocusChange,
+        PrefixCommand::ZoomToggle => FullRedrawReason::ZoomChange,
+        PrefixCommand::KillPane | PrefixCommand::KillTab => FullRedrawReason::SplitClose,
+        PrefixCommand::Detach | PrefixCommand::Redraw => FullRedrawReason::ExplicitRedraw,
     }
 }
 

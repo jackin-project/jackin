@@ -3790,7 +3790,10 @@ mod tests {
             "phase label missing in: {msg}"
         );
         assert!(msg.contains("exit 137"), "exit code missing in: {msg}");
-        assert!(msg.contains("panic: VT screen overflow"), "logs missing in: {msg}");
+        assert!(
+            msg.contains("panic: VT screen overflow"),
+            "logs missing in: {msg}"
+        );
     }
 
     #[tokio::test]

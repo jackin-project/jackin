@@ -1259,6 +1259,7 @@ fn render_confirm_action(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_agent_picker(
     buf: &mut Vec<u8>,
     start_row: u16,
@@ -1430,6 +1431,7 @@ fn render_row(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, label: &str, se
 /// target the bottom hint advertises. No selection state — Enter / a
 /// click anywhere inside the box copies the ID via OSC 52; Esc / q
 /// dismisses.
+#[allow(clippy::too_many_arguments)]
 fn render_container_info(
     buf: &mut Vec<u8>,
     box_row: u16,

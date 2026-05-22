@@ -15,7 +15,7 @@ async fn main() {
                 console_args: ConsoleArgs::default(),
                 debug,
             };
-            if let Err(error) = jackin::run(cli).await {
+            if let Err(error) = Box::pin(jackin::run(cli)).await {
                 jackin::tui::fatal(&format!("{error:#}"));
                 std::process::exit(1);
             }
@@ -26,7 +26,7 @@ async fn main() {
                 console_args: ConsoleArgs::default(),
                 debug,
             };
-            if let Err(error) = jackin::run(cli).await {
+            if let Err(error) = Box::pin(jackin::run(cli)).await {
                 jackin::tui::fatal(&format!("{error:#}"));
                 std::process::exit(1);
             }

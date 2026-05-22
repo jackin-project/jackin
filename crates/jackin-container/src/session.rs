@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
-use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
+use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tokio::sync::mpsc;
 use vt100::{Callbacks, Screen};
 
@@ -35,6 +35,15 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 /// scrollback to read Codex / Claude responses that exceed one
 /// viewport, so this stays generous.
 pub const SCROLLBACK_LEN: usize = 10_000;
+
+pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
+    "GIT_AUTHOR_NAME",
+    "GIT_AUTHOR_EMAIL",
+    "GH_TOKEN",
+    "JACKIN_DEBUG",
+    "JACKIN_GIT_COAUTHOR_TRAILER",
+    "JACKIN_GIT_DCO",
+];
 
 /// Per-pane cap on the kitty-keyboard push depth. A buggy or hostile
 /// agent that loops `\x1b[>1u` would otherwise grow `kitty_kb_stack`
@@ -355,6 +364,7 @@ pub struct Session {
     pub parser: vt100::Parser<OscCapture>,
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
+    child_killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
     pub last_output_at: std::time::Instant,
     /// Current scrollback view offset in lines from the live tail.
     /// `0` = following live output; `> 0` = paused, looking back.
@@ -411,6 +421,7 @@ impl Session {
         let mut child = slave
             .spawn_command(cmd)
             .context("failed to spawn session process")?;
+        let child_killer = Arc::new(Mutex::new(child.clone_killer()));
         drop(slave);
 
         let master: Arc<Mutex<Box<dyn MasterPty + Send>>> = Arc::new(Mutex::new(master));
@@ -532,6 +543,7 @@ impl Session {
                 ),
                 input_tx,
                 pty_master: master,
+                child_killer,
                 last_output_at: std::time::Instant::now(),
                 scrollback_offset: 0,
                 bracketed_paste_active: false,
@@ -630,6 +642,10 @@ impl Session {
         )
     }
 
+    pub fn mouse_protocol_encoding(&self) -> vt100::MouseProtocolEncoding {
+        self.parser.screen().mouse_protocol_encoding()
+    }
+
     /// True when the session enabled DEC private mode `?1004` (focus
     /// event reporting). Daemon-facing accessor so the multiplexer
     /// does not have to reach through `parser.callbacks()` at every
@@ -704,10 +720,10 @@ impl Session {
             out.push(b"\x1b[?1h".to_vec());
         }
         // Mouse protocol — enable the specific mode the agent asked
-        // for plus SGR encoding so our `\x1b[<...M/m` reports decode
-        // on the agent's side. Without the encoding line, agents
-        // that only handle SGR (claude code, lazygit) would receive
-        // the wrong bytes.
+        // for plus SGR encoding. The client parser itself expects
+        // SGR mouse from the outer terminal; the daemon re-encodes
+        // each event into the focused pane's selected protocol before
+        // writing it to the PTY.
         use vt100::MouseProtocolMode;
         match screen.mouse_protocol_mode() {
             MouseProtocolMode::None => {}
@@ -759,6 +775,17 @@ impl Session {
         // unconditionally re-asserts `?25h` or `?25l` next, so a
         // reset toggle would only flash the cursor.
         b"\x1b[<u\x1b[?2004l\x1b[?1l"
+    }
+
+    pub fn terminate(&self) {
+        match self.child_killer.lock() {
+            Ok(mut killer) => {
+                if let Err(e) = killer.kill() {
+                    crate::clog!("session terminate: child kill failed: {e}");
+                }
+            }
+            Err(e) => crate::clog!("session terminate: child killer mutex poisoned: {e}"),
+        }
     }
 
     pub fn title(&self) -> Option<&str> {
@@ -815,7 +842,7 @@ impl Session {
 /// image set `JACKIN_SUPPORTED_AGENTS` — do not appear in that
 /// allowlist. Shared by the PID-1 argv path, the
 /// `jackin-container new <agent>` client path, and the daemon's
-/// `Hello.spawn_agent` decode path so all three trust boundaries
+/// `Hello.spawn` decode path so all three trust boundaries
 /// apply the same gate.
 pub fn validate_agent_slug(raw: &str) -> Result<&str, &'static str> {
     if raw.is_empty() {
@@ -859,8 +886,11 @@ pub fn build_agent_command(agent: &str, env_passthrough: &[(String, String)]) ->
 }
 
 /// Build a CommandBuilder for an interactive shell session.
-pub fn build_shell_command() -> CommandBuilder {
+pub fn build_shell_command(env_passthrough: &[(String, String)]) -> CommandBuilder {
     let mut cmd = CommandBuilder::new("/bin/zsh");
+    for (k, v) in env_passthrough {
+        cmd.env(k, v);
+    }
     cmd.env("TERM", "xterm-256color");
     cmd
 }

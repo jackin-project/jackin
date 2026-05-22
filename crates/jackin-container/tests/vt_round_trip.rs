@@ -5,8 +5,8 @@
 /// mode, bracketed paste, alt-screen) or that the rendered output
 /// reproduces it. These are the regressions the hand-rolled `vte`
 /// emulator could not satisfy.
-use jackin_container::render::render_pane;
-use vt100::{MouseProtocolMode, Parser};
+use jackin_container::render::{PaneBodyCache, PaneBodyRenderMode, render_pane};
+use vt100::{MouseProtocolEncoding, MouseProtocolMode, Parser};
 
 #[test]
 fn alt_screen_round_trip_preserves_primary_content() {
@@ -41,6 +41,11 @@ fn mouse_modes_tracked_by_screen() {
         p.screen().mouse_protocol_mode(),
         MouseProtocolMode::ButtonMotion | MouseProtocolMode::AnyMotion
     ));
+    p.process(b"\x1b[?1006h");
+    assert!(matches!(
+        p.screen().mouse_protocol_encoding(),
+        MouseProtocolEncoding::Sgr
+    ));
 }
 
 #[test]
@@ -70,4 +75,36 @@ fn render_pane_includes_content_at_offset() {
     let s = String::from_utf8_lossy(&buf);
     assert!(s.contains("hello"));
     assert!(s.contains("\x1b[3;5H")); // dest_row=2, dest_col=4 → 1-based 3,5
+}
+
+#[test]
+fn render_pane_skips_wide_continuation_cells() {
+    let mut p = Parser::new(2, 10, 0);
+    p.process("表x".as_bytes());
+    let mut buf = Vec::new();
+    render_pane(p.screen(), 0, 0, 2, 10, false, &mut buf);
+    let s = String::from_utf8_lossy(&buf);
+    assert!(s.contains("表x"));
+    assert!(!s.contains("表 x"));
+}
+
+#[test]
+fn small_vt_update_emits_partial_pane_body_redraw() {
+    let mut p = Parser::new(4, 16, 0);
+    p.process(b"row-one\r\nrow-two\r\nrow-three");
+    let mut cache = PaneBodyCache::default();
+    let mut buf = Vec::new();
+    cache.render_full(p.screen(), 2, 3, 4, 16, false, &mut buf);
+    buf.clear();
+
+    p.process(b"\x1b[2;1HROW-TWO");
+    let stats = cache.render_partial(p.screen(), 2, 3, 4, 16, false, &mut buf);
+
+    assert_eq!(stats.mode, PaneBodyRenderMode::Partial);
+    assert_eq!(stats.changed_rows, vec![1]);
+    let rendered = String::from_utf8_lossy(&buf);
+    assert!(!rendered.contains("\x1b[3;4H")); // pane row 0
+    assert!(rendered.contains("\x1b[4;4H")); // pane row 1
+    assert!(!rendered.contains("\x1b[5;4H")); // pane row 2
+    assert!(rendered.contains("ROW-TWO"));
 }
