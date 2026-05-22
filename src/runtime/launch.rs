@@ -1070,7 +1070,9 @@ async fn launch_role_runtime(
     // Pre-session safety check: if jackin-container exited immediately
     // (missing binary, bad image), surface the container logs rather than
     // failing with a cryptic docker exec error.
-    if let Some(err) = diagnose_premature_exit(docker, runner, container_name).await {
+    if let Some(err) =
+        diagnose_premature_exit(docker, runner, container_name, ExitPhase::PreAttach).await
+    {
         return Err(err);
     }
 
@@ -1093,13 +1095,45 @@ async fn launch_role_runtime(
     // Ensure cleanup debug logs start on a fresh line after the interactive session
     eprintln!();
     if session_result.is_err()
-        && let Some(err) = diagnose_premature_exit(docker, runner, container_name).await
+        && let Some(err) =
+            diagnose_premature_exit(docker, runner, container_name, ExitPhase::PostAttach).await
     {
         return Err(err);
     }
-    session_result?;
+    // Post-attach `docker exec` failures with no diagnostic surface
+    // (e.g. operator typed `/exit` in the agent → multiplexer shut the
+    // container down → `docker exec` lost its target). The container-
+    // lifecycle policy treats this as the happy path, so swallow the
+    // `docker exec` Err in that case rather than propagate "command
+    // failed: docker exec -it …" up to the operator.
+    if let Err(err) = session_result {
+        let inspect = docker.inspect_container_state(container_name).await;
+        if matches!(
+            inspect,
+            ContainerState::Stopped {
+                exit_code: 0,
+                oom_killed: false,
+            } | ContainerState::NotFound
+        ) {
+            return Ok(());
+        }
+        return Err(err);
+    }
 
     Ok(())
+}
+
+/// Whether `diagnose_premature_exit` is firing before the operator's
+/// terminal was attached or after. The treatment of `exit 0` differs
+/// between the two: pre-attach it's a supervisor that died without
+/// doing anything (still worth surfacing — most likely a bad image or
+/// missing binary), post-attach it's the multiplexer shutting the
+/// container down because no live sessions remain (the
+/// container-lifecycle-policy happy path — swallow it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExitPhase {
+    PreAttach,
+    PostAttach,
 }
 
 /// Detect a container that exited before (or during) the foreground session
@@ -1117,6 +1151,7 @@ async fn diagnose_premature_exit(
     docker: &impl DockerApi,
     runner: &mut impl crate::docker::CommandRunner,
     container_name: &str,
+    phase: ExitPhase,
 ) -> Option<anyhow::Error> {
     match docker.inspect_container_state(container_name).await {
         // Default to letting the `docker exec` attempt proceed when state is
@@ -1136,6 +1171,19 @@ async fn diagnose_premature_exit(
             exit_code,
             oom_killed,
         } => {
+            // Post-attach clean exit (exit 0, no OOM) is the normal
+            // shutdown path: the operator typed `/exit` in the agent,
+            // the multiplexer drained the last live session, and the
+            // container shut itself down. The container-lifecycle
+            // policy treats this as the happy path — return None so
+            // the caller does not synthesize a misleading "exited
+            // before attach" error. Pre-attach exit 0 is still
+            // surfaced because a supervisor that died before the
+            // client connected indicates a bad image / missing binary
+            // even when the exit code looks clean.
+            if phase == ExitPhase::PostAttach && exit_code == 0 && !oom_killed {
+                return None;
+            }
             let logs = runner
                 .capture("docker", &["logs", "--tail", "40", container_name], None)
                 .await
@@ -1147,15 +1195,19 @@ async fn diagnose_premature_exit(
             } else {
                 format!("exit {exit_code}")
             };
+            let phase_label = match phase {
+                ExitPhase::PreAttach => "exited before attach",
+                ExitPhase::PostAttach => "exited during session",
+            };
             let body = logs.map_or_else(
                 || {
                     format!(
-                        "container {container_name} exited before attach ({reason}) and produced no log output"
+                        "container {container_name} {phase_label} ({reason}) and produced no log output"
                     )
                 },
                 |text| {
                     format!(
-                        "container {container_name} exited before attach ({reason}); last 40 log lines:\n{text}"
+                        "container {container_name} {phase_label} ({reason}); last 40 log lines:\n{text}"
                     )
                 },
             );
@@ -3571,7 +3623,13 @@ mod tests {
             ..Default::default()
         };
         let mut runner = FakeRunner::default();
-        let result = super::diagnose_premature_exit(&docker, &mut runner, "jk-the-architect").await;
+        let result = super::diagnose_premature_exit(
+            &docker,
+            &mut runner,
+            "jk-the-architect",
+            super::ExitPhase::PreAttach,
+        )
+        .await;
         assert!(
             result.is_none(),
             "running container must not be diagnosed as a failure"
@@ -3594,9 +3652,14 @@ mod tests {
         let mut runner = FakeRunner::with_capture_queue([
             "/jackin/runtime/entrypoint.sh: line 85: exec: codex: not found".to_string(),
         ]);
-        let err = super::diagnose_premature_exit(&docker, &mut runner, "jk-the-architect")
-            .await
-            .expect("stopped container must produce a diagnostic error");
+        let err = super::diagnose_premature_exit(
+            &docker,
+            &mut runner,
+            "jk-the-architect",
+            super::ExitPhase::PreAttach,
+        )
+        .await
+        .expect("stopped container must produce a diagnostic error");
         let msg = err.to_string();
         assert!(
             msg.contains("exit 127"),
@@ -3629,9 +3692,14 @@ mod tests {
             ..Default::default()
         };
         let mut runner = FakeRunner::with_capture_queue([String::new()]);
-        let err = super::diagnose_premature_exit(&docker, &mut runner, "jackin-x")
-            .await
-            .expect("OOM-killed container is a premature exit");
+        let err = super::diagnose_premature_exit(
+            &docker,
+            &mut runner,
+            "jackin-x",
+            super::ExitPhase::PreAttach,
+        )
+        .await
+        .expect("OOM-killed container is a premature exit");
         let msg = err.to_string();
         assert!(msg.contains("OOM killed"), "expected OOM marker in: {msg}");
         assert!(
@@ -3646,11 +3714,116 @@ mod tests {
         let docker = FakeDockerClient::default(); // empty queue → NotFound
         let mut runner = FakeRunner::default();
         assert!(
-            super::diagnose_premature_exit(&docker, &mut runner, "jackin-x")
-                .await
-                .is_none(),
+            super::diagnose_premature_exit(
+                &docker,
+                &mut runner,
+                "jackin-x",
+                super::ExitPhase::PreAttach,
+            )
+            .await
+            .is_none(),
             "NotFound must not abort launch before exec attempt"
         );
+    }
+
+    #[tokio::test]
+    async fn diagnose_premature_exit_swallows_post_attach_clean_exit() {
+        // Operator typed `/exit` in the agent → multiplexer drained
+        // the last live session → container shut itself down with
+        // exit 0. The container-lifecycle policy treats this as the
+        // happy path; the host CLI must not surface it as an error.
+        use crate::docker_client::{ContainerState, FakeDockerClient};
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped {
+                    exit_code: 0,
+                    oom_killed: false,
+                },
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::default();
+        let result = super::diagnose_premature_exit(
+            &docker,
+            &mut runner,
+            "jk-the-architect",
+            super::ExitPhase::PostAttach,
+        )
+        .await;
+        assert!(
+            result.is_none(),
+            "post-attach exit 0 is the lifecycle-policy clean-shutdown path, not an error"
+        );
+        assert!(
+            runner.recorded.is_empty(),
+            "no `docker logs` fetch when the post-attach exit is clean"
+        );
+    }
+
+    #[tokio::test]
+    async fn diagnose_premature_exit_surfaces_post_attach_nonzero_exit() {
+        // Post-attach exit with a non-zero code still indicates a
+        // problem inside the multiplexer / agent — operator wants the
+        // logs surfaced even though the container is gone now.
+        use crate::docker_client::{ContainerState, FakeDockerClient};
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped {
+                    exit_code: 137,
+                    oom_killed: false,
+                },
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::with_capture_queue(["panic: VT screen overflow".to_string()]);
+        let err = super::diagnose_premature_exit(
+            &docker,
+            &mut runner,
+            "jk-the-architect",
+            super::ExitPhase::PostAttach,
+        )
+        .await
+        .expect("post-attach non-zero exit must produce a diagnostic error");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("exited during session"),
+            "phase label missing in: {msg}"
+        );
+        assert!(msg.contains("exit 137"), "exit code missing in: {msg}");
+        assert!(msg.contains("panic: VT screen overflow"), "logs missing in: {msg}");
+    }
+
+    #[tokio::test]
+    async fn diagnose_premature_exit_surfaces_pre_attach_exit_zero() {
+        // Pre-attach exit 0 is still suspicious — supervisor exited
+        // without doing anything, most likely a bad image or missing
+        // entrypoint. Operator wants the heads-up even though the
+        // exit code looks clean.
+        use crate::docker_client::{ContainerState, FakeDockerClient};
+        let docker = FakeDockerClient {
+            inspect_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                ContainerState::Stopped {
+                    exit_code: 0,
+                    oom_killed: false,
+                },
+            ])),
+            ..Default::default()
+        };
+        let mut runner = FakeRunner::with_capture_queue([String::new()]);
+        let err = super::diagnose_premature_exit(
+            &docker,
+            &mut runner,
+            "jk-the-architect",
+            super::ExitPhase::PreAttach,
+        )
+        .await
+        .expect("pre-attach exit 0 must still flag a missing supervisor");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("exited before attach"),
+            "phase label missing in: {msg}"
+        );
+        assert!(msg.contains("exit 0"), "exit code missing in: {msg}");
     }
 
     #[tokio::test]
