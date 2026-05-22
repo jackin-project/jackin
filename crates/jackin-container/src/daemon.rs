@@ -24,14 +24,19 @@ use tokio::time::{Duration, interval};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
-use crate::dialog::{Dialog, DialogAction, PaletteCommand, PickerIntent, SplitDirection};
+use crate::dialog::{
+    ConfirmKind, Dialog, DialogAction, PaletteCommand, PickerIntent, SplitDirection,
+};
 use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
 use crate::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
-use crate::protocol::attach::{ClientFrame, ServerFrame, encode_server, read_client_frame};
+use crate::protocol::attach::{
+    ClientFrame, ServerFrame, SpawnRequest, encode_server, read_client_frame,
+};
 use crate::protocol::control::{AgentState, SessionInfo};
 use crate::render::{draw_scrollbar, render_pane};
 use crate::session::{
-    Session, SessionEvent, available_agents, build_agent_command, build_shell_command,
+    SESSION_ENV_PASSTHROUGH, Session, SessionEvent, available_agents, build_agent_command,
+    build_shell_command,
 };
 use crate::socket;
 use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_pane_box};
@@ -150,17 +155,10 @@ impl Multiplexer {
         let content_rows = rows.saturating_sub(STATUS_BAR_ROWS);
         let agents = available_agents();
 
-        let env_passthrough: Vec<(String, String)> = [
-            "GIT_AUTHOR_NAME",
-            "GIT_AUTHOR_EMAIL",
-            "GH_TOKEN",
-            "JACKIN_DEBUG",
-            "JACKIN_GIT_COAUTHOR_TRAILER",
-            "JACKIN_GIT_DCO",
-        ]
-        .iter()
-        .filter_map(|&k| std::env::var(k).ok().map(|v| (k.to_string(), v)))
-        .collect();
+        let env_passthrough: Vec<(String, String)> = SESSION_ENV_PASSTHROUGH
+            .iter()
+            .filter_map(|&k| std::env::var(k).ok().map(|v| (k.to_string(), v)))
+            .collect();
 
         let input_parser = InputParser::default();
         let mut status_bar = StatusBar::new();
@@ -199,6 +197,24 @@ impl Multiplexer {
 
     fn send_output(&self, bytes: Vec<u8>) {
         self.send_to_client(ServerFrame::Output(bytes));
+    }
+
+    fn env_for_spawn(&self, overrides: &[(String, String)]) -> Vec<(String, String)> {
+        let mut env = self.env_passthrough.clone();
+        for (key, value) in overrides {
+            if !SESSION_ENV_PASSTHROUGH.iter().any(|allowed| allowed == key) {
+                crate::clog!("spawn env: rejected non-allowlisted key {key:?}");
+                continue;
+            }
+            if let Some((_, existing)) =
+                env.iter_mut().find(|(existing_key, _)| existing_key == key)
+            {
+                *existing = value.clone();
+            } else {
+                env.push((key.clone(), value.clone()));
+            }
+        }
+        env
     }
 
     /// Top of the dialog stack — `Some` when a dialog is visible.
@@ -305,7 +321,9 @@ impl Multiplexer {
             tab_ids.len()
         );
         for id in tab_ids {
-            self.sessions.remove(&id);
+            if let Some(session) = self.sessions.remove(&id) {
+                session.terminate();
+            }
         }
         self.tabs.remove(self.active_tab);
         if self.active_tab >= self.tabs.len() {
@@ -391,7 +409,7 @@ impl Multiplexer {
     }
 
     pub fn spawn_initial(&mut self, agent: &str) -> Result<u64> {
-        self.spawn_session(Some(agent.to_string()))
+        self.spawn_session(Some(agent.to_string()), &[])
     }
 
     /// Single dispatch point for a `DialogAction`. Both the
@@ -472,6 +490,30 @@ impl Multiplexer {
                     PickerIntent::Split(direction),
                 ));
             }
+            DialogAction::PickedCloseTarget(kind) => {
+                // Push the ConfirmAction dialog on top of the
+                // CloseTargetPicker. Esc walks back to the picker,
+                // then back to the Menu — operator can change their
+                // mind without destroying anything.
+                self.dialog_push(Dialog::ConfirmAction {
+                    kind,
+                    selected_yes: false,
+                });
+            }
+            DialogAction::ConfirmedAction(kind) => {
+                // Terminal action — clear every dialog under us and
+                // fire the matching destructive call. Detach signals
+                // the daemon's main loop via the request flag; the
+                // close paths execute synchronously.
+                self.dialog_clear();
+                match kind {
+                    ConfirmKind::ClosePane => self.close_focused_pane(),
+                    ConfirmKind::CloseTab => self.close_focused_tab(),
+                    ConfirmKind::Detach => {
+                        self.detach_requested = true;
+                    }
+                }
+            }
         }
         self.compose_frame()
     }
@@ -484,15 +526,19 @@ impl Multiplexer {
     fn dispatch_spawn_intent(&mut self, agent: Option<String>, intent: PickerIntent) {
         let agent_label = agent.as_deref().unwrap_or("shell").to_string();
         let result: anyhow::Result<()> = match intent {
-            PickerIntent::NewTab => self.spawn_session(agent).map(|_| ()),
-            PickerIntent::Split(direction) => self.split_focused_into(direction, agent),
+            PickerIntent::NewTab => self.spawn_session(agent, &[]).map(|_| ()),
+            PickerIntent::Split(direction) => self.split_focused_into(direction, agent, &[]),
         };
         if let Err(err) = result {
             crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
         }
     }
 
-    fn spawn_session(&mut self, agent: Option<String>) -> Result<u64> {
+    fn spawn_session(
+        &mut self,
+        agent: Option<String>,
+        env_overrides: &[(String, String)],
+    ) -> Result<u64> {
         // Bound the per-container surface so a runaway client (or an
         // operator mis-click loop) cannot allocate unbounded PTYs.
         // Each session retains ~SCROLLBACK_LEN lines of scrollback,
@@ -501,12 +547,13 @@ impl Multiplexer {
         // under typical limits, but well past the size any operator
         // can usefully navigate.
         self.ensure_capacity_for_new_session(true)?;
+        let env_passthrough = self.env_for_spawn(env_overrides);
         let (label, cmd) = match &agent {
             Some(slug) => (
                 capitalize(slug),
-                build_agent_command(slug, &self.env_passthrough),
+                build_agent_command(slug, &env_passthrough),
             ),
-            None => ("Shell".to_string(), build_shell_command()),
+            None => ("Shell".to_string(), build_shell_command(&env_passthrough)),
         };
         let (session, id) = Session::spawn(
             &label,
@@ -566,6 +613,7 @@ impl Multiplexer {
         &mut self,
         direction: SplitDirection,
         agent_slug: Option<String>,
+        env_overrides: &[(String, String)],
     ) -> Result<()> {
         self.ensure_capacity_for_new_session(false)?;
         // Any selection / drag-resize is anchored to a specific pane
@@ -593,12 +641,13 @@ impl Multiplexer {
                 from_rect.cols.saturating_sub(2),
             ),
         };
+        let env_passthrough = self.env_for_spawn(env_overrides);
         let (label, cmd) = match &agent_slug {
             Some(slug) => (
                 capitalize(slug),
-                build_agent_command(slug, &self.env_passthrough),
+                build_agent_command(slug, &env_passthrough),
             ),
-            None => ("Shell".to_string(), build_shell_command()),
+            None => ("Shell".to_string(), build_shell_command(&env_passthrough)),
         };
         let agent_for_log = agent_slug.clone();
         let (session, new_id) = Session::spawn(
@@ -643,7 +692,7 @@ impl Multiplexer {
         };
         let from_id = tab.focused_id;
         let agent_slug = self.sessions.get(&from_id).and_then(|s| s.agent.clone());
-        self.split_focused_into(direction, agent_slug)
+        self.split_focused_into(direction, agent_slug, &[])
     }
 
     fn close_focused_pane(&mut self) {
@@ -660,7 +709,9 @@ impl Multiplexer {
             next_focus.is_some()
         );
         tab.tree.remove(id);
-        self.sessions.remove(&id);
+        if let Some(session) = self.sessions.remove(&id) {
+            session.terminate();
+        }
         // Mirror remove_exited_session: drop the zoomed reference when
         // the killed pane was the zoom target. Otherwise the next
         // compose_frame's `if let Some(zoom_id) = self.zoomed` branch
@@ -1296,15 +1347,16 @@ impl Multiplexer {
         }
         let local_row = row - inner.row;
         let local_col = col - inner.col;
-        let final_byte = if press { 'M' } else { 'm' };
-        let buf = format!(
-            "\x1b[<{};{};{}{}",
+        let Some(buf) = encode_mouse_for_protocol(
             button,
             local_col + 1,
             local_row + 1,
-            final_byte
-        );
-        session.send_input(buf.as_bytes());
+            press,
+            session.mouse_protocol_encoding(),
+        ) else {
+            return;
+        };
+        session.send_input(&buf);
     }
 
     /// Test whether the click at `(row, col)` lands on a shared pane
@@ -1491,21 +1543,27 @@ impl Multiplexer {
                 self.dialog_clear();
                 self.prev_tab();
             }
-            PaletteCommand::ClosePane => {
-                self.dialog_clear();
-                self.close_focused_pane();
-            }
-            PaletteCommand::CloseTab => {
-                self.dialog_clear();
-                self.close_focused_tab();
+            PaletteCommand::Close => {
+                // Drill-down: push the CloseTargetPicker on top of
+                // the Menu so the operator picks pane / tab, then
+                // confirms via ConfirmAction. Esc walks back to Menu.
+                self.dialog_push(Dialog::CloseTargetPicker {
+                    selected: 0,
+                    filter: String::new(),
+                });
             }
             PaletteCommand::ZoomPane => {
                 self.dialog_clear();
                 self.toggle_zoom();
             }
             PaletteCommand::Detach => {
-                self.dialog_clear();
-                self.detach_requested = true;
+                // Push ConfirmAction for Detach — the operator
+                // confirms before the client disconnects. Esc walks
+                // back to Menu.
+                self.dialog_push(Dialog::ConfirmAction {
+                    kind: ConfirmKind::Detach,
+                    selected_yes: false,
+                });
             }
         }
         None
@@ -1764,7 +1822,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
             crate::clog!("initial agent spawn failed (agent={initial_agent:?}): {err:?}");
             return Err(err);
         }
-    } else if let Err(err) = mux.spawn_session(None) {
+    } else if let Err(err) = mux.spawn_session(None, &[]) {
         crate::clog!("initial shell spawn failed: {err:?}");
         return Err(err);
     }
@@ -1862,37 +1920,45 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
 
             // Validated attach handshake from the spawned handshake task.
             Some(ready) = handshake_rx.recv() => {
-                let AttachHandshake { stream, rows, cols, spawn_agent, client_permit } = ready;
+                let AttachHandshake { stream, rows, cols, spawn, env, client_permit } = ready;
                 mux.resize(rows, cols);
-                // Honor a spawn-agent intent from `jackin-container new
-                // <agent>`. Spawn failures get clog'd at error level so
-                // a `jackin load --debug` run shows the underlying
-                // cause; the attach completes either way so the
-                // operator can still interact with the existing focused
-                // session and decide whether to retry.
-                if let Some(agent_slug) = spawn_agent {
-                    // Re-validate the wire-decoded slug. The CLI argv
-                    // path validates via `validate_agent_slug`, but the
-                    // attach protocol carries a raw String — a peer
-                    // that wins the socket race could otherwise inject
-                    // an unallowlisted agent name (or a control byte)
-                    // straight into `build_agent_command`.
-                    match crate::session::validate_agent_slug(&agent_slug) {
-                        Ok(_) => {
-                            if let Err(err) =
-                                mux.spawn_session(Some(agent_slug.clone()))
-                            {
+                // Honor a spawn intent from `jackin-container new
+                // <agent>` / `jackin-container new` (shell). Spawn
+                // failures get clog'd at error level so a
+                // `jackin load --debug` run shows the underlying cause;
+                // the attach completes either way so the operator can
+                // still interact with the existing focused session.
+                match spawn {
+                    Some(SpawnRequest::Agent(agent_slug)) => {
+                        // Re-validate the wire-decoded slug. The CLI argv
+                        // path validates via `validate_agent_slug`, but the
+                        // attach protocol carries a raw String — a peer
+                        // that wins the socket race could otherwise inject
+                        // an unallowlisted agent name (or a control byte)
+                        // straight into `build_agent_command`.
+                        match crate::session::validate_agent_slug(&agent_slug) {
+                            Ok(_) => {
+                                if let Err(err) =
+                                    mux.spawn_session(Some(agent_slug.clone()), &env)
+                                {
+                                    crate::clog!(
+                                        "attach: spawn_session for {agent_slug:?} failed: {err:?}"
+                                    );
+                                }
+                            }
+                            Err(reason) => {
                                 crate::clog!(
-                                    "attach: spawn_session for {agent_slug:?} failed: {err:?}"
+                                    "attach: rejected Hello.spawn.Agent {agent_slug:?}: {reason}"
                                 );
                             }
                         }
-                        Err(reason) => {
-                            crate::clog!(
-                                "attach: rejected Hello.spawn_agent {agent_slug:?}: {reason}"
-                            );
+                    }
+                    Some(SpawnRequest::Shell) => {
+                        if let Err(err) = mux.spawn_session(None, &env) {
+                            crate::clog!("attach: spawn_session (shell) failed: {err:?}");
                         }
                     }
+                    None => {}
                 }
                 // Take over from any existing attach client. Send the
                 // Shutdown frame BEFORE aborting the reader task —
@@ -2183,7 +2249,8 @@ struct AttachHandshake {
     stream: UnixStream,
     rows: u16,
     cols: u16,
-    spawn_agent: Option<String>,
+    spawn: Option<SpawnRequest>,
+    env: Vec<(String, String)>,
     client_permit: tokio::sync::OwnedSemaphorePermit,
 }
 
@@ -2229,7 +2296,8 @@ async fn perform_handshake(
     let ClientFrame::Hello {
         rows,
         cols,
-        spawn_agent,
+        spawn,
+        env,
     } = initial_frame
     else {
         crate::clog!("attach: rejected client whose first frame was not Hello: {initial_frame:?}");
@@ -2240,7 +2308,8 @@ async fn perform_handshake(
         stream,
         rows,
         cols,
-        spawn_agent,
+        spawn,
+        env,
         client_permit,
     };
     if handshake_tx.send(handshake).is_err() {
@@ -2343,13 +2412,16 @@ fn selection_text(screen: &vt100::Screen, sel: &SelectionState) -> String {
             cols_for_full_row
         };
         let mut row_text = String::new();
-        for c in from_col..=to_col {
+        let mut c = from_col;
+        while c <= to_col {
             if let Some(cell) = screen.cell(r, c)
                 && cell.has_contents()
             {
                 row_text.push_str(cell.contents());
+                c += if cell.is_wide() { 2 } else { 1 };
             } else {
                 row_text.push(' ');
+                c += 1;
             }
         }
         out.push_str(row_text.trim_end());
@@ -2396,13 +2468,16 @@ fn paint_selection_highlight(buf: &mut Vec<u8>, screen: &vt100::Screen, sel: &Se
         // Inverse SGR — preserves whatever fg/bg the underlying cell
         // carried so the operator still reads the selected text.
         buf.extend_from_slice(b"\x1b[7m");
-        for c in from_col..=to_col {
+        let mut c = from_col;
+        while c <= to_col {
             if let Some(cell) = screen.cell(r, c)
                 && cell.has_contents()
             {
                 buf.extend_from_slice(cell.contents().as_bytes());
+                c += if cell.is_wide() { 2 } else { 1 };
             } else {
                 buf.push(b' ');
+                c += 1;
             }
         }
         buf.extend_from_slice(b"\x1b[0m");
@@ -2427,6 +2502,49 @@ fn is_wheel_button(button: u8) -> bool {
     (64..96).contains(&button)
 }
 
+fn encode_mouse_for_protocol(
+    button: u8,
+    col: u16,
+    row: u16,
+    press: bool,
+    encoding: vt100::MouseProtocolEncoding,
+) -> Option<Vec<u8>> {
+    match encoding {
+        vt100::MouseProtocolEncoding::Sgr => {
+            let final_byte = if press { 'M' } else { 'm' };
+            Some(format!("\x1b[<{button};{col};{row}{final_byte}").into_bytes())
+        }
+        vt100::MouseProtocolEncoding::Default | vt100::MouseProtocolEncoding::Utf8 => {
+            let release_button = (button & !0b11) | 3;
+            let button_code = if press { button } else { release_button };
+            let mut out = b"\x1b[M".to_vec();
+            push_xterm_mouse_number(&mut out, u32::from(button_code) + 32, encoding)?;
+            push_xterm_mouse_number(&mut out, u32::from(col) + 32, encoding)?;
+            push_xterm_mouse_number(&mut out, u32::from(row) + 32, encoding)?;
+            Some(out)
+        }
+    }
+}
+
+fn push_xterm_mouse_number(
+    out: &mut Vec<u8>,
+    value: u32,
+    encoding: vt100::MouseProtocolEncoding,
+) -> Option<()> {
+    match encoding {
+        vt100::MouseProtocolEncoding::Default => {
+            out.push(u8::try_from(value).ok()?);
+        }
+        vt100::MouseProtocolEncoding::Utf8 => {
+            let ch = char::from_u32(value)?;
+            let mut buf = [0u8; 4];
+            out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+        }
+        vt100::MouseProtocolEncoding::Sgr => unreachable!("SGR does not use xterm fields"),
+    }
+    Some(())
+}
+
 /// OSC 52 clipboard-write sequence: `\x1b]52;c;<base64>\x07`. Targets
 /// the system clipboard (`c`); the BEL terminator is the form Ghostty,
 /// Kitty, iTerm2, and Alacritty all parse. Forwarded to the operator's
@@ -2439,4 +2557,35 @@ fn encode_osc52_clipboard_write(payload: &str) -> Vec<u8> {
     out.extend_from_slice(encoded.as_bytes());
     out.extend_from_slice(b"\x07");
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mouse_sgr_encoding_preserves_press_and_release() {
+        assert_eq!(
+            encode_mouse_for_protocol(0, 12, 3, true, vt100::MouseProtocolEncoding::Sgr).unwrap(),
+            b"\x1b[<0;12;3M"
+        );
+        assert_eq!(
+            encode_mouse_for_protocol(0, 12, 3, false, vt100::MouseProtocolEncoding::Sgr).unwrap(),
+            b"\x1b[<0;12;3m"
+        );
+    }
+
+    #[test]
+    fn mouse_default_encoding_uses_xterm_fields() {
+        assert_eq!(
+            encode_mouse_for_protocol(0, 12, 3, true, vt100::MouseProtocolEncoding::Default)
+                .unwrap(),
+            b"\x1b[M ,#"
+        );
+        assert_eq!(
+            encode_mouse_for_protocol(0, 12, 3, false, vt100::MouseProtocolEncoding::Default)
+                .unwrap(),
+            b"\x1b[M#,#"
+        );
+    }
 }

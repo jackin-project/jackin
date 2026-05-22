@@ -80,10 +80,7 @@ pub enum Dialog {
     /// always act on what the operator sees. Esc / Ctrl+C dismiss
     /// (the `q` / Backspace dismiss shortcuts that the read-only
     /// dialogs use would conflict with typing into the filter).
-    CommandPalette {
-        selected: usize,
-        filter: String,
-    },
+    CommandPalette { selected: usize, filter: String },
     AgentPicker {
         agents: Vec<String>,
         selected: usize,
@@ -125,11 +122,57 @@ pub enum Dialog {
     /// `PickerIntent::Split(<direction>)` so the standard agent-pick
     /// flow finishes the spawn. Filterable just like the other list
     /// dialogs (`selected` indexes into the filtered visible list).
-    SplitDirectionPicker {
-        selected: usize,
-        filter: String,
+    SplitDirectionPicker { selected: usize, filter: String },
+    /// Sub-dialog opened from `PaletteCommand::Close`. Operator picks
+    /// whether they want to close the focused pane or the entire tab;
+    /// each confirm path then opens a `ConfirmAction` dialog so a
+    /// stray click on "Close" can be walked back via Esc instead of
+    /// destroying the operator's work.
+    CloseTargetPicker { selected: usize, filter: String },
+    /// Yes / No confirmation dialog for irreversible actions (close
+    /// pane, close tab, stop & exit). Default selection is `No` so an
+    /// operator who hit the action by reflex returns to the previous
+    /// step on Enter instead of executing. `Y` / `y` shortcut always
+    /// confirms; `N` / `n` / Esc always cancels.
+    ConfirmAction {
+        kind: ConfirmKind,
+        selected_yes: bool,
     },
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmKind {
+    ClosePane,
+    CloseTab,
+    Detach,
+}
+
+impl ConfirmKind {
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::ClosePane => "Close pane?",
+            Self::CloseTab => "Close tab?",
+            Self::Detach => "Stop & exit?",
+        }
+    }
+
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::ClosePane => "Reap the focused pane's agent. Unsaved state in that pane is lost.",
+            Self::CloseTab => {
+                "Reap every pane in this tab. Unsaved state across all panes is lost."
+            }
+            Self::Detach => {
+                "Disconnect this client. Agents keep running; reattach with `jackin console`."
+            }
+        }
+    }
+}
+
+const CLOSE_TARGET_ITEMS: &[(ConfirmKind, &str)] = &[
+    (ConfirmKind::ClosePane, "Close pane"),
+    (ConfirmKind::CloseTab, "Close tab"),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DialogAction {
@@ -138,6 +181,13 @@ pub enum DialogAction {
     /// User picked a split direction in the SplitDirectionPicker —
     /// daemon opens an AgentPicker with `PickerIntent::Split(direction)`.
     SplitDirection(SplitDirection),
+    /// User picked a close target in the CloseTargetPicker — daemon
+    /// opens a `ConfirmAction` dialog for the chosen `kind`.
+    PickedCloseTarget(ConfirmKind),
+    /// User said "Yes" in a `ConfirmAction` dialog — daemon fires
+    /// the matching action (close focused pane, close focused tab,
+    /// set `detach_requested`).
+    ConfirmedAction(ConfirmKind),
     /// User picked an agent slug (or "shell"). `intent` tells the
     /// daemon whether to spawn it as a tab or as a split pane.
     SpawnAgent {
@@ -177,8 +227,11 @@ pub enum PaletteCommand {
     /// sub-dialog where it does not clutter the top-level list.
     Split,
     ZoomPane,
-    ClosePane,
-    CloseTab,
+    /// Open the CloseTargetPicker. Drill-down replaces the previous
+    /// two-item `ClosePane` + `CloseTab` shape; the chosen target
+    /// then routes through `ConfirmAction` before the destructive
+    /// call fires.
+    Close,
     Detach,
 }
 
@@ -193,8 +246,7 @@ const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (PaletteCommand::NewTab, "New tab"),
     (PaletteCommand::Split, "Split pane"),
     (PaletteCommand::ZoomPane, "Zoom / unzoom pane"),
-    (PaletteCommand::ClosePane, "Close pane"),
-    (PaletteCommand::CloseTab, "Close tab"),
+    (PaletteCommand::Close, "Close"),
     (PaletteCommand::Detach, "Stop & exit"),
 ];
 
@@ -262,6 +314,35 @@ impl Dialog {
                 _ => DialogAction::Redraw,
             };
         }
+        // ConfirmAction has its own dispatch — Y/N shortcuts toggle
+        // the selection or confirm directly, Enter acts on the
+        // current selection, Esc cancels. Routed before the type-to-
+        // filter branch so `y` and `n` keys do not flow into a
+        // filter buffer.
+        if let Self::ConfirmAction { kind, selected_yes } = self {
+            if key == b"\x1b" || key == b"\x03" || key == b"n" || key == b"N" {
+                return DialogAction::Dismiss;
+            }
+            if key == b"y" || key == b"Y" {
+                return DialogAction::ConfirmedAction(*kind);
+            }
+            if is_arrow_up(key)
+                || is_arrow_down(key)
+                || key == b"\x1b[C"
+                || key == b"\x1b[D"
+                || key == b"\t"
+            {
+                *selected_yes = !*selected_yes;
+                return DialogAction::Redraw;
+            }
+            if is_enter(key) {
+                if *selected_yes {
+                    return DialogAction::ConfirmedAction(*kind);
+                }
+                return DialogAction::Dismiss;
+            }
+            return DialogAction::Redraw;
+        }
         // From here on, only the type-to-filter list dialogs reach
         // this code path. The dismiss surface is narrower than the
         // read-only dialogs above (`q` / Backspace / Delete are
@@ -273,7 +354,8 @@ impl Dialog {
         if is_arrow_up(key) {
             return match self {
                 Self::CommandPalette { selected, .. }
-                | Self::SplitDirectionPicker { selected, .. } => {
+                | Self::SplitDirectionPicker { selected, .. }
+                | Self::CloseTargetPicker { selected, .. } => {
                     if *selected > 0 {
                         *selected -= 1;
                     }
@@ -289,7 +371,9 @@ impl Dialog {
                     *selected = step_selectable(&visible, *selected, false);
                     DialogAction::Redraw
                 }
-                Self::RenameTab { .. } | Self::ContainerInfo { .. } => DialogAction::Redraw,
+                Self::RenameTab { .. }
+                | Self::ContainerInfo { .. }
+                | Self::ConfirmAction { .. } => DialogAction::Redraw,
             };
         }
         if is_arrow_down(key) {
@@ -308,6 +392,13 @@ impl Dialog {
                     }
                     DialogAction::Redraw
                 }
+                Self::CloseTargetPicker { selected, filter } => {
+                    let visible = close_target_filtered_indices(filter);
+                    if *selected + 1 < visible.len() {
+                        *selected += 1;
+                    }
+                    DialogAction::Redraw
+                }
                 Self::AgentPicker {
                     agents,
                     selected,
@@ -318,13 +409,16 @@ impl Dialog {
                     *selected = step_selectable(&visible, *selected, true);
                     DialogAction::Redraw
                 }
-                Self::RenameTab { .. } | Self::ContainerInfo { .. } => DialogAction::Redraw,
+                Self::RenameTab { .. }
+                | Self::ContainerInfo { .. }
+                | Self::ConfirmAction { .. } => DialogAction::Redraw,
             };
         }
         if is_backspace(key) {
             match self {
                 Self::CommandPalette { filter, selected }
-                | Self::SplitDirectionPicker { filter, selected } => {
+                | Self::SplitDirectionPicker { filter, selected }
+                | Self::CloseTargetPicker { filter, selected } => {
                     filter.pop();
                     *selected = 0;
                 }
@@ -355,6 +449,13 @@ impl Dialog {
                     let visible = split_direction_filtered_indices(filter);
                     match visible.get(*selected) {
                         Some(idx) => DialogAction::SplitDirection(SPLIT_DIRECTION_ITEMS[*idx]),
+                        None => DialogAction::Redraw,
+                    }
+                }
+                Self::CloseTargetPicker { selected, filter } => {
+                    let visible = close_target_filtered_indices(filter);
+                    match visible.get(*selected) {
+                        Some(idx) => DialogAction::PickedCloseTarget(CLOSE_TARGET_ITEMS[*idx].0),
                         None => DialogAction::Redraw,
                     }
                 }
@@ -394,7 +495,8 @@ impl Dialog {
         if let Some(c) = printable_filter_char(key) {
             match self {
                 Self::CommandPalette { filter, selected }
-                | Self::SplitDirectionPicker { filter, selected } => {
+                | Self::SplitDirectionPicker { filter, selected }
+                | Self::CloseTargetPicker { filter, selected } => {
                     filter.push(c);
                     *selected = 0;
                 }
@@ -457,6 +559,13 @@ impl Dialog {
             *copied = true;
             return DialogAction::CopyToClipboard(payload);
         }
+        // ConfirmAction: inside-box click is treated as Yes (operator's
+        // click landed inside the destructive-action confirmation box,
+        // they're acting). Outside-click already dismissed via the
+        // early return above.
+        if let Self::ConfirmAction { kind, .. } = self {
+            return DialogAction::ConfirmedAction(*kind);
+        }
         // Row layout inside the box for filterable dialogs:
         //   box_row + 0:  top border (decorative)
         //   box_row + 1:  blank pad row
@@ -475,10 +584,13 @@ impl Dialog {
             Self::SplitDirectionPicker { filter, .. } => {
                 split_direction_filtered_indices(filter).len() as u16
             }
-            Self::AgentPicker {
-                agents, filter, ..
-            } => picker_filtered_rows(agents, filter).len() as u16,
-            Self::RenameTab { .. } | Self::ContainerInfo { .. } => 0,
+            Self::CloseTargetPicker { filter, .. } => {
+                close_target_filtered_indices(filter).len() as u16
+            }
+            Self::AgentPicker { agents, filter, .. } => {
+                picker_filtered_rows(agents, filter).len() as u16
+            }
+            Self::RenameTab { .. } | Self::ContainerInfo { .. } | Self::ConfirmAction { .. } => 0,
         };
         if row < first_item_row || row >= first_item_row + visible_count {
             return DialogAction::Consume;
@@ -500,6 +612,14 @@ impl Dialog {
                 };
                 *selected = visible_idx;
                 DialogAction::SplitDirection(SPLIT_DIRECTION_ITEMS[source_idx])
+            }
+            Self::CloseTargetPicker { selected, filter } => {
+                let visible = close_target_filtered_indices(filter);
+                let Some(&source_idx) = visible.get(visible_idx) else {
+                    return DialogAction::Consume;
+                };
+                *selected = visible_idx;
+                DialogAction::PickedCloseTarget(CLOSE_TARGET_ITEMS[source_idx].0)
             }
             Self::AgentPicker {
                 agents,
@@ -530,10 +650,12 @@ impl Dialog {
                 }
             }
             // RenameTab and ContainerInfo clicks were already handled
-            // by early returns above. Consume rather than panic so a
-            // future refactor that drops the early return degrades
-            // cleanly.
-            Self::RenameTab { .. } | Self::ContainerInfo { .. } => DialogAction::Consume,
+            // by early returns above. ConfirmAction has no row list —
+            // every inside-box click is dispatched by the early
+            // return below the inside_box check.
+            Self::RenameTab { .. } | Self::ContainerInfo { .. } | Self::ConfirmAction { .. } => {
+                DialogAction::Consume
+            }
         }
     }
 
@@ -564,9 +686,11 @@ impl Dialog {
                 let items = split_direction_filtered_indices(filter).len() as u16;
                 items + 4
             }
-            Self::AgentPicker {
-                agents, filter, ..
-            } => {
+            Self::CloseTargetPicker { filter, .. } => {
+                let items = close_target_filtered_indices(filter).len() as u16;
+                items + 4
+            }
+            Self::AgentPicker { agents, filter, .. } => {
                 let items = picker_filtered_rows(agents, filter).len() as u16;
                 items + 4
             }
@@ -574,6 +698,8 @@ impl Dialog {
             Self::RenameTab { .. } => 5,
             // ContainerInfo: top + pad + 3 detail rows + pad + bottom.
             Self::ContainerInfo { .. } => 7,
+            // ConfirmAction: top + pad + 2 message rows + pad + button + pad + bottom.
+            Self::ConfirmAction { .. } => 9,
         };
         let max_height = term_rows
             .saturating_sub(crate::statusbar::STATUS_BAR_ROWS)
@@ -649,6 +775,14 @@ impl Dialog {
                     *copied,
                 );
                 render_bottom_hint(buf, term_rows, term_cols, CONTAINER_INFO_HINT);
+            }
+            Self::CloseTargetPicker { selected, filter } => {
+                render_close_target_picker(buf, box_row, box_col, height, width, *selected, filter);
+                render_bottom_hint(buf, term_rows, term_cols, PICKER_HINT);
+            }
+            Self::ConfirmAction { kind, selected_yes } => {
+                render_confirm_action(buf, box_row, box_col, height, width, *kind, *selected_yes);
+                render_bottom_hint(buf, term_rows, term_cols, CONFIRM_HINT);
             }
         }
     }
@@ -759,6 +893,18 @@ fn printable_filter_char(key: &[u8]) -> Option<char> {
     }
 }
 
+/// Indices into `CLOSE_TARGET_ITEMS` whose label contains `filter`
+/// as a case-insensitive substring. Empty filter returns every item.
+fn close_target_filtered_indices(filter: &str) -> Vec<usize> {
+    let needle = filter.to_ascii_lowercase();
+    CLOSE_TARGET_ITEMS
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, label))| needle.is_empty() || label.to_ascii_lowercase().contains(&needle))
+        .map(|(idx, _)| idx)
+        .collect()
+}
+
 /// Indices into `SPLIT_DIRECTION_ITEMS` whose label contains `filter`
 /// as a case-insensitive substring. Empty filter returns every item.
 fn split_direction_filtered_indices(filter: &str) -> Vec<usize> {
@@ -766,9 +912,7 @@ fn split_direction_filtered_indices(filter: &str) -> Vec<usize> {
     SPLIT_DIRECTION_ITEMS
         .iter()
         .enumerate()
-        .filter(|(_, dir)| {
-            needle.is_empty() || dir.label().to_ascii_lowercase().contains(&needle)
-        })
+        .filter(|(_, dir)| needle.is_empty() || dir.label().to_ascii_lowercase().contains(&needle))
         .map(|(idx, _)| idx)
         .collect()
 }
@@ -780,9 +924,7 @@ fn palette_filtered_indices(filter: &str) -> Vec<usize> {
     PALETTE_ITEMS
         .iter()
         .enumerate()
-        .filter(|(_, (_, label))| {
-            needle.is_empty() || label.to_ascii_lowercase().contains(&needle)
-        })
+        .filter(|(_, (_, label))| needle.is_empty() || label.to_ascii_lowercase().contains(&needle))
         .map(|(idx, _)| idx)
         .collect()
 }
@@ -880,7 +1022,10 @@ fn step_selectable(rows: &[PickerRow], from: usize, forward: bool) -> usize {
         idx
     } else if forward {
         // Walk back to find a selectable.
-        (0..idx).rev().find(|&i| rows[i].is_selectable()).unwrap_or(idx)
+        (0..idx)
+            .rev()
+            .find(|&i| rows[i].is_selectable())
+            .unwrap_or(idx)
     } else {
         (idx + 1..rows.len())
             .find(|&i| rows[i].is_selectable())
@@ -950,6 +1095,17 @@ const CONTAINER_INFO_HINT: &[HintSpan<'static>] = &[
     HintSpan::GroupSep,
     HintSpan::Key("Esc"),
     HintSpan::Text("dismiss"),
+];
+
+const CONFIRM_HINT: &[HintSpan<'static>] = &[
+    HintSpan::Key("Y"),
+    HintSpan::Text("confirm"),
+    HintSpan::GroupSep,
+    HintSpan::Key("N"),
+    HintSpan::Text("cancel"),
+    HintSpan::GroupSep,
+    HintSpan::Key("Esc"),
+    HintSpan::Text("back"),
 ];
 
 /// Render the tab-rename modal. One text-input row showing the current
@@ -1032,6 +1188,77 @@ fn render_split_direction_picker(
     }
 }
 
+fn render_close_target_picker(
+    buf: &mut Vec<u8>,
+    start_row: u16,
+    start_col: u16,
+    height: u16,
+    width: u16,
+    selected: usize,
+    filter: &str,
+) {
+    render_box(buf, start_row, start_col, height, width, "Close");
+    render_filter_input(buf, start_row + 1, start_col + 1, width, filter);
+    let interior_items = height.saturating_sub(4) as usize;
+    let visible = close_target_filtered_indices(filter);
+    let drawn = visible.len().min(interior_items);
+    if drawn == 0 {
+        render_no_matches_row(buf, start_row + 3, start_col + 1, width);
+        return;
+    }
+    for (i, &source_idx) in visible.iter().enumerate().take(drawn) {
+        let (_, label) = CLOSE_TARGET_ITEMS[source_idx];
+        render_row(
+            buf,
+            start_row + 3 + i as u16,
+            start_col + 1,
+            width,
+            label,
+            i == selected,
+        );
+    }
+}
+
+fn render_confirm_action(
+    buf: &mut Vec<u8>,
+    start_row: u16,
+    start_col: u16,
+    height: u16,
+    width: u16,
+    kind: ConfirmKind,
+    selected_yes: bool,
+) {
+    render_box(buf, start_row, start_col, height, width, kind.title());
+    let max_cols = (width as usize).saturating_sub(4);
+    let lines = wrap_two_lines(kind.message(), max_cols);
+    for (i, line) in lines.iter().enumerate() {
+        move_to(buf, start_row + 2 + i as u16, start_col + 2);
+        buf.extend_from_slice(BG_DARK.as_bytes());
+        buf.extend_from_slice(FG_GREEN.as_bytes());
+        buf.extend_from_slice(line.as_bytes());
+        for _ in line.chars().count()..max_cols {
+            buf.push(b' ');
+        }
+        buf.extend_from_slice(RESET.as_bytes());
+    }
+    render_row(
+        buf,
+        start_row + height.saturating_sub(4),
+        start_col + 1,
+        width,
+        "Yes, continue",
+        selected_yes,
+    );
+    render_row(
+        buf,
+        start_row + height.saturating_sub(3),
+        start_col + 1,
+        width,
+        "No, go back",
+        !selected_yes,
+    );
+}
+
 fn render_agent_picker(
     buf: &mut Vec<u8>,
     start_row: u16,
@@ -1073,7 +1300,14 @@ fn render_agent_picker(
                 render_row(buf, target_row, start_col + 1, width, label, i == selected);
             }
             PickerRow::Shell => {
-                render_row(buf, target_row, start_col + 1, width, "Shell", i == selected);
+                render_row(
+                    buf,
+                    target_row,
+                    start_col + 1,
+                    width,
+                    "Shell",
+                    i == selected,
+                );
             }
         }
     }
@@ -1278,6 +1512,28 @@ fn non_empty_or_dim(s: &str) -> String {
     }
 }
 
+fn wrap_two_lines(text: &str, max_cols: usize) -> [String; 2] {
+    if max_cols == 0 {
+        return [String::new(), String::new()];
+    }
+    let mut lines = [String::new(), String::new()];
+    let mut line_idx = 0usize;
+    for word in text.split_whitespace() {
+        let word_cols = word.chars().count();
+        let line_cols = lines[line_idx].chars().count();
+        let sep_cols = usize::from(line_cols > 0);
+        if line_cols + sep_cols + word_cols > max_cols && line_idx == 0 {
+            line_idx = 1;
+        }
+        if !lines[line_idx].is_empty() {
+            lines[line_idx].push(' ');
+        }
+        let remaining = max_cols.saturating_sub(lines[line_idx].chars().count());
+        lines[line_idx].extend(word.chars().take(remaining));
+    }
+    lines
+}
+
 fn render_box(buf: &mut Vec<u8>, row: u16, col: u16, height: u16, width: u16, title: &str) {
     // Top border with white-bold title.
     move_to(buf, row, col);
@@ -1423,19 +1679,28 @@ mod tests {
 
     #[test]
     fn esc_dismisses_palette() {
-        let mut d = Dialog::CommandPalette { selected: 0, filter: String::new() };
+        let mut d = Dialog::CommandPalette {
+            selected: 0,
+            filter: String::new(),
+        };
         assert_eq!(d.handle_key(b"\x1b"), DialogAction::Dismiss);
     }
 
     #[test]
     fn ctrl_c_dismisses_palette() {
-        let mut d = Dialog::CommandPalette { selected: 0, filter: String::new() };
+        let mut d = Dialog::CommandPalette {
+            selected: 0,
+            filter: String::new(),
+        };
         assert_eq!(d.handle_key(b"\x03"), DialogAction::Dismiss);
     }
 
     #[test]
     fn arrow_down_advances_palette_selection() {
-        let mut d = Dialog::CommandPalette { selected: 0, filter: String::new() };
+        let mut d = Dialog::CommandPalette {
+            selected: 0,
+            filter: String::new(),
+        };
         assert_eq!(d.handle_key(b"\x1b[B"), DialogAction::Redraw);
         let Dialog::CommandPalette { selected, .. } = d else {
             unreachable!()
@@ -1458,7 +1723,10 @@ mod tests {
 
     #[test]
     fn enter_on_palette_emits_command() {
-        let mut d = Dialog::CommandPalette { selected: 0, filter: String::new() };
+        let mut d = Dialog::CommandPalette {
+            selected: 0,
+            filter: String::new(),
+        };
         match d.handle_key(b"\r") {
             DialogAction::Command(cmd) => assert_eq!(cmd, PALETTE_ITEMS[0].0),
             other => panic!("expected Command, got {other:?}"),
@@ -1528,7 +1796,10 @@ mod tests {
 
     #[test]
     fn click_outside_dialog_dismisses() {
-        let mut d = Dialog::CommandPalette { selected: 0, filter: String::new() };
+        let mut d = Dialog::CommandPalette {
+            selected: 0,
+            filter: String::new(),
+        };
         // Click in the top-left corner is reliably outside the centred
         // box even on tiny terminals.
         assert_eq!(d.handle_click(0, 0, 40, 100), DialogAction::Dismiss);
@@ -1617,11 +1888,12 @@ mod tests {
         for &c in b"close" {
             d.handle_key(&[c]);
         }
-        // "close" matches "Close pane" + "Close tab"; selected = 0 →
-        // first match → Close pane.
+        // "close" matches the top-level Close command, which then
+        // opens the target picker before any destructive action can
+        // run.
         match d.handle_key(b"\r") {
-            DialogAction::Command(cmd) => assert_eq!(cmd, PaletteCommand::ClosePane),
-            other => panic!("expected ClosePane, got {other:?}"),
+            DialogAction::Command(cmd) => assert_eq!(cmd, PaletteCommand::Close),
+            other => panic!("expected Close, got {other:?}"),
         }
     }
 
@@ -1665,14 +1937,14 @@ mod tests {
         for &c in b"sh" {
             d.handle_key(&[c]);
         }
-        let Dialog::AgentPicker {
-            agents, filter, ..
-        } = &d
-        else {
+        let Dialog::AgentPicker { agents, filter, .. } = &d else {
             unreachable!()
         };
         let visible = picker_filtered_rows(agents, filter);
-        assert_eq!(visible, vec![PickerRow::Section("shells"), PickerRow::Shell]);
+        assert_eq!(
+            visible,
+            vec![PickerRow::Section("shells"), PickerRow::Shell]
+        );
     }
 
     #[test]
