@@ -101,14 +101,22 @@ When a pane outputs cursor-positioning sequences (CSI H, CSI A/B/C/D, etc.), tho
 Input byte arrives from client terminal
   │
   ├─ Row 0 mouse click → status bar handler (tab switch or palette toggle)
-  ├─ Ctrl+J → open command palette (if no dialog open)
-  │           close command palette (if dialog open, send key to dialog)
+  ├─ Direct palette key (default `Ctrl+\`; override via JACKIN_PALETTE_KEY; `none` disables) → open / close command palette
+  ├─ Prefix key (Ctrl+B by default when JACKIN_PREFIX is set) → tmux-style prefix-command state machine
+  │       ├─ Space / `:` → palette
+  │       ├─ `c` → new tab (agent picker)
+  │       ├─ `"` / `%` → split focused pane
+  │       ├─ `n` / `p` → cycle tab
+  │       ├─ `d` → detach
+  │       ├─ `&` → kill tab
+  │       ├─ `x` → kill pane
+  │       └─ `z` → zoom toggle
   ├─ Alt+Arrow → move pane focus
   ├─ Dialog open + any key → dialog key handler
   └─ Everything else → active pane PTY stdin (unmodified)
 ```
 
-Ctrl+J is the **only** key the multiplexer intercepts from the pane input stream. Alt+Arrow keys are intercepted only when the current pane is not consuming them (detected by whether the pane has set application cursor key mode `\e[?1h`). When a pane enables application cursor mode, Alt+Arrow passthrough takes priority and the focus-move is deactivated until the pane disables application cursor mode.
+The direct palette key and the prefix-key state machine are the only keystrokes the multiplexer intercepts from the pane input stream. The default `Ctrl+\` (`0x1C`) is picked because raw-mode terminals never emit it as content and no agent uses it as an editing key. The earlier `Ctrl+J` default collided with the literal LF byte that multi-line editors use as a line continuation, so `Ctrl+J` is now opt-in via `JACKIN_PALETTE_KEY=C-j` with the trade-off documented at the bind site. Alt+Arrow keys are intercepted only when the current pane is not consuming them (detected by whether the pane has set application cursor key mode `\e[?1h`). When a pane enables application cursor mode, Alt+Arrow passthrough takes priority and the focus-move is deactivated until the pane disables application cursor mode.
 
 ---
 

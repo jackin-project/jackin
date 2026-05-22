@@ -26,9 +26,9 @@ When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspa
 | Option | Description |
 |---|---|
 | `--inspect` | Resolve the same target but print the instance manifest, live agent-session inventory, role/DinD Docker state, Docker network state, cert volume name, and mount-state summary without attaching or restarting anything. |
-| `--new` | Start a named secondary tmux session inside the selected running instance instead of attaching to the primary session. On roles that support multiple agents, omitting `--agent` triggers an interactive prompt so you can choose the runtime; the workspace `default_agent` is used when set and skips the prompt. |
+| `--new` | Start a fresh agent session as a new tab inside the selected running instance instead of attaching to the existing tab strip. On roles that support multiple agents, omitting `--agent` triggers an interactive prompt so you can choose the runtime; the workspace `default_agent` is used when set and skips the prompt. |
 | `--agent <agent>` | Agent runtime for `--new` (`claude`, `codex`, `amp`, `kimi`, or `opencode`). When omitted on a multi-agent role with no `default_agent` set on the workspace, an interactive prompt asks. |
-| `--shell` | Open a one-shot interactive zsh shell in the selected running instance without a named tmux session. Mutually exclusive with `--inspect` and `--new`. |
+| `--shell` | Open a one-shot interactive zsh shell in the selected running instance without a named agent session. Mutually exclusive with `--inspect` and `--new`. |
 | `--debug` | Print every external command jackin issues (`docker`, `git`, etc.) and their captured output. Also enabled by `JACKIN_DEBUG=1`. |
 
 ## Behavior
@@ -37,7 +37,7 @@ When `SELECTOR` is omitted, `jackin hardline` resolves the current saved workspa
 
 | Container state | Action |
 |---|---|
-| Running | Attach to the most recently used tmux session, or create a new `jackin-<agent>-<id>` session when none are running. `--new` creates a new named tmux session inside the container. `--shell` opens an ephemeral zsh session without a tmux session. |
+| Running | Attach to the running in-container multiplexer; the existing focused tab continues. `--new` spawns a fresh agent tab; `--shell` opens an ephemeral zsh session. |
 | Stopped, exit code `0` (clean `/exit`) | Error. The previous session ended normally — use `jackin load` to start a new one. |
 | Stopped, non-zero exit or OOM-killed | Error. Use `jackin load` to start a new session or recover saved state. |
 | Not found with indexed state | Rebuild the jackin-managed runtime for that instance when the saved workspace, original ad-hoc directory, or a confirmed moved ad-hoc directory can be resolved. |
@@ -49,17 +49,17 @@ If the role container itself was deleted, jackin can rebuild the runtime around 
 
 For ad-hoc instances, `jackin hardline <instance-id>` normally expects the original project directory. If that directory moved, run the exact hardline command in an interactive terminal; jackin lets you mount the current directory, browse for the moved project directory, or enter another path manually at the original in-container workdir before rebuilding the missing runtime.
 
-`--inspect` is read-only. It works from the current workspace or ad-hoc directory, or with an explicit selector/instance ID/container name, and reports local manifest details even when Docker is unavailable. When the role container is running, it also reports live tmux session inventory from the running container.
+`--inspect` is read-only. It works from the current workspace or ad-hoc directory, or with an explicit selector/instance ID/container name, and reports local manifest details even when Docker is unavailable. When the role container is running, it also reports live in-container session inventory.
 
-`--new` requires a running indexed instance. It starts a named secondary tmux session (`jackin-<agent>-<id>`) inside the running container with the same mounts, Docker-in-Docker sidecar, working directory, and in-container state. The session is independently reconnectable — a second `jackin hardline --new` from the same instance reattaches to any live session or creates a fresh one. If the selected container is stopped or missing, run plain `jackin hardline` first so jackin can restart or rebuild it.
+`--new` requires a running indexed instance. It asks the in-container multiplexer to spawn a fresh agent tab in the running container with the same mounts, Docker-in-Docker sidecar, working directory, and in-container state. The tab is independently reconnectable — a second `jackin hardline --new` from the same instance attaches alongside the existing tabs and creates another one. If the selected container is stopped or missing, run plain `jackin hardline` first so jackin can restart or rebuild it.
 
 When `jackin hardline` resolves an instance from the current directory without an explicit selector or option, the same actions are available through an interactive picker. Candidate labels include the detected live agent-session count when Docker can inspect a running role container. Exact selectors also show the action picker when multiple running agent processes are detected. Non-interactive runs default to reconnect/recover.
 
 ## Terminal close vs. exit
 
-Closing your terminal tab **does not** shut the container down. The foreground session connects via `docker exec`, so closing the terminal detaches from the tmux session while the container (and the tmux server inside it) keeps running. `jackin hardline` reconnects to the most recently used session.
+Closing your terminal tab **does not** shut the container down. The foreground session connects via `docker exec`, so closing the terminal detaches from the in-container multiplexer while the container (and the multiplexer daemon inside it) keeps running. `jackin hardline` reconnects to the running daemon.
 
-To stop an agent, exit it from inside (e.g., `/exit` in Claude Code). That ends the tmux session cleanly. The container keeps running until the foreground session exits cleanly and jackin's post-session teardown runs.
+To stop an agent, exit it from inside (e.g., `/exit` in Claude Code). That ends the agent's tab cleanly. When the last tab ends, the multiplexer exits and the container shuts down cleanly.
 
 ## Terminal tab title
 

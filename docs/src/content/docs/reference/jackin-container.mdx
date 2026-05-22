@@ -102,13 +102,14 @@ The status bar is drawn after hiding the cursor, and the cursor is restored afte
 Key press arrives
   │
   ├─ Row 0 mouse click → tab switch
-  ├─ Ctrl+J → command palette (open or close)
+  ├─ Direct palette key (default `Ctrl+\`, override via JACKIN_PALETTE_KEY) → command palette
+  ├─ Prefix key (Ctrl+B by default when JACKIN_PREFIX is set) → tmux-style prefix-command dispatcher (Space/`:` palette, `c` new tab, `d` detach, `"` / `%` splits, `n` / `p` tabs, etc.)
   ├─ Alt+Arrow → move pane focus
   ├─ Command palette open → palette key handler
   └─ Everything else → active pane PTY stdin
 ```
 
-`Ctrl+J` is the only key intercepted from the input stream in normal mode. Everything else — including all agent-specific shortcuts, bracketed paste, mouse events, and extended key sequences — is forwarded unmodified to the active PTY.
+The palette key (and, when enabled, the prefix-key state machine) are the only keystrokes the multiplexer intercepts from the input stream in normal mode. The default `Ctrl+\` (`0x1C`) is picked because raw-mode terminals never emit it as content and no agent uses it as an editing key; the earlier `Ctrl+J` default collided with the literal LF byte that multi-line editors use as a line continuation, so `Ctrl+J` is only available as an opt-in via `JACKIN_PALETTE_KEY=C-j`. Everything else — including all agent-specific shortcuts, bracketed paste, mouse events, and extended key sequences — is forwarded unmodified to the active PTY.
 
 <Aside type="caution">
 The agent's terminal experience is the highest-priority constraint. No multiplexer feature may intercept, transform, or drop input that the agent should receive. See the [Multiplexer Design Rules](/reference/multiplexer-design-rules/) for the full passthrough contract.
