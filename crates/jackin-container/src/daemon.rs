@@ -563,8 +563,16 @@ impl Multiplexer {
     }
 
     fn toggle_zoom(&mut self) {
+        // Zoom is a single global field but scoped per-tab via
+        // `active_zoomed_id`. Toggling has to consult the *active*
+        // tab's zoom state — checking the raw `self.zoomed.is_some()`
+        // would let a toggle on Tab B unzoom whatever Tab A had
+        // pinned, surprising the operator on their next switch back
+        // to Tab A. Use `active_zoomed_id` so unzoom only fires when
+        // the active tab actually owns the zoom; otherwise zoom the
+        // active tab's focused pane.
         let focused = self.tabs.get(self.active_tab).map(|t| t.focused_id);
-        let was_zoomed = self.zoomed.is_some();
+        let was_zoomed = self.active_zoomed_id().is_some();
         self.zoomed = if was_zoomed { None } else { focused };
         self.resize_panes();
         crate::clog!(
@@ -575,7 +583,7 @@ impl Multiplexer {
 
     fn resize_panes(&mut self) {
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
-        if let Some(zoom_id) = self.zoomed {
+        if let Some(zoom_id) = self.active_zoomed_id() {
             let inner = content_rect.shrink(1);
             if let Some(session) = self.sessions.get_mut(&zoom_id) {
                 session.resize(inner.rows, inner.cols);
@@ -604,6 +612,27 @@ impl Multiplexer {
 
     fn active_focused_id(&self) -> Option<u64> {
         self.tabs.get(self.active_tab).map(|t| t.focused_id)
+    }
+
+    /// `self.zoomed` narrowed to "only when the zoomed session belongs
+    /// to the active tab." The zoom field is global (one value across
+    /// all tabs), but render / input / scroll / mouse paths must
+    /// behave as if zoom is per-tab — switching tabs has to surface
+    /// the new tab's panes normally even when a different tab still
+    /// has a zoomed session pinned, or the operator opens a new tab
+    /// and only sees the previously-zoomed pane painted full-screen
+    /// (the regression operators reported as "I selected Shell but I
+    /// still see Claude"). Returning `None` from the active-tab check
+    /// routes every consumer of zoom state through the normal
+    /// multi-pane path for tabs that don't hold the zoom.
+    fn active_zoomed_id(&self) -> Option<u64> {
+        let zoom_id = self.zoomed?;
+        let tab = self.tabs.get(self.active_tab)?;
+        if tab.tree.all_ids().contains(&zoom_id) {
+            Some(zoom_id)
+        } else {
+            None
+        }
     }
 
     /// Derive the label that should appear in the tab strip for `tab`
@@ -1115,7 +1144,7 @@ impl Multiplexer {
             return;
         }
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
-        let outer = if let Some(zoom_id) = self.zoomed {
+        let outer = if let Some(zoom_id) = self.active_zoomed_id() {
             if zoom_id == focused {
                 Some(content_rect)
             } else {
@@ -1159,7 +1188,7 @@ impl Multiplexer {
     /// border in the active tab. Returns a populated `DragState` to
     /// start a mouse-drag resize.
     fn detect_drag_start(&self, row: u16, col: u16) -> Option<DragState> {
-        if row < STATUS_BAR_ROWS || self.zoomed.is_some() {
+        if row < STATUS_BAR_ROWS || self.active_zoomed_id().is_some() {
             return None;
         }
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
@@ -1182,7 +1211,7 @@ impl Multiplexer {
             return None;
         }
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
-        let (id, outer) = if let Some(zoom_id) = self.zoomed {
+        let (id, outer) = if let Some(zoom_id) = self.active_zoomed_id() {
             (zoom_id, content_rect)
         } else {
             let tab = self.tabs.get(self.active_tab)?;
@@ -1380,7 +1409,7 @@ impl Multiplexer {
         // unmistakable "focus is inside the dialog" cue.
         let dim_panes = self.dialog.is_some();
 
-        if let Some(zoom_id) = self.zoomed {
+        if let Some(zoom_id) = self.active_zoomed_id() {
             let outer = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
             let inner = outer.shrink(1);
             let mut filled_for_scrollbar = 0usize;
