@@ -63,9 +63,15 @@ Split verification into named blocks only when each block contains meaningful co
 
 Any PR that touches `crates/jackin-container/` (the in-container multiplexer binary) requires a `### jackin-container smoke` block in the Verify locally section, in addition to the standard User Smoke block. Unit tests and CI do not cover end-to-end multiplexer behavior; a live `jackin load` that enters the container is the only way to verify the status bar, input routing, pane splits, and session switching work correctly.
 
-The smoke block must include `cargo run --bin jackin -- load the-architect . --debug`. The first run builds `jackin-container` from source via Docker (~2–3 min); subsequent runs after source edits are incremental. Editing any file under `crates/jackin-container/src/` invalidates the cache automatically by mtime — no commit required. To force a full rebuild: `rm -rf ~/.jackin/cache/jackin-container/`.
+The block must lead with the canonical eval one-shot build invocation:
 
-The block must also state what the PR changed and what the operator should specifically verify inside the container, beyond the baseline checklist (status bar visible, `Ctrl+J` palette opens, agent TUI renders, keystrokes pass through).
+```sh
+eval "$(cargo run --bin build-jackin-container -- --export)"
+```
+
+`build-jackin-container` invokes `cargo zigbuild` (not Docker) to cross-compile the Linux binary, writes the artifact to the host cache, and the `--export` flag prints `export JACKIN_CONTAINER_BIN=<path>` — wrapping in `eval` both builds and points `ensure_available` at the freshly built binary in one step. The eval form is required (not optional) because hand-rolled `target/<triple>/release/jackin-container` exports silently break when the operator switches architectures or moves checkouts. First build takes ~2-3 minutes; subsequent builds are incremental via cargo's cache. Editing any file under `crates/jackin-container/src/` does NOT auto-invalidate the binary on disk — the operator must re-run the eval. To purge the host cache entirely (e.g. switching between published and locally built binaries): `rm -rf ~/.jackin/cache/jackin-container/`.
+
+The launch command that follows must hit the changed surface — usually `cargo run --bin jackin -- load the-architect . --debug` or `cargo run --bin jackin -- console --debug`. The block must also state what the PR changed and what the operator should specifically verify inside the container, beyond the baseline checklist (status bar visible, `Ctrl+\` palette opens, agent TUI renders, keystrokes pass through).
 
 A `crates/jackin-container/` PR without this block is incomplete. Unit tests passing is necessary but not sufficient.
 

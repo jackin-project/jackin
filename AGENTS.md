@@ -265,19 +265,21 @@ This does not apply to:
 2. **Cache hit** at `~/.jackin/cache/jackin-container/<version>/linux-<arch>/jackin-container`. The cache key is `JACKIN_VERSION` (commit SHA suffix included), so any `cargo build` of jackin invalidates it.
 3. **Download** from the `preview` rolling GitHub Release tag (for `-dev` / `-preview.` versions) or the `v<version>` tag (for tagged releases). Cached after first successful download.
 
-The host does **not** auto-rebuild `crates/jackin-container/` on source edits. To pick up local changes, run `cargo run --bin build-jackin-container` (which invokes `cargo zigbuild`) and either set `JACKIN_CONTAINER_BIN` or copy the artifact into the cache.
+The host does **not** auto-rebuild `crates/jackin-container/` on source edits. To pick up local changes, run `cargo run --bin build-jackin-container` (which invokes `cargo zigbuild`) — the build tool writes the artifact to the cache path and supports `--export` to print a `JACKIN_CONTAINER_BIN=<path>` line suitable for `eval`. Wrapping it in `eval "$(...)"` is the canonical one-shot form because it both builds and points `ensure_available` at the freshly built binary in the same step, with no manual path bookkeeping per-arch.
 
 ### Standard smoke test for jackin-container PRs
 
 ```bash
-# Build the in-container binary for both archs (uses cargo zigbuild).
-cargo run --bin build-jackin-container
+# Build the in-container binary AND export JACKIN_CONTAINER_BIN pointing at
+# the cached artifact in one shot. Use this form in every PR verify-locally
+# block — it survives operator arch changes and avoids stale-path bugs from
+# hand-rolled `target/<triple>/release/jackin-container` paths.
+eval "$(cargo run --bin build-jackin-container -- --export)"
 
 # Build the host CLI.
 cargo build --bin jackin
 
-# Point ensure_available at the freshly built binary and launch.
-export JACKIN_CONTAINER_BIN="$PWD/target/aarch64-unknown-linux-gnu/release/jackin-container"  # or x86_64 path
+# Launch.
 cargo run --bin jackin -- console --debug
 ```
 
@@ -298,21 +300,23 @@ If the jackin-container build step prints a `cargo zigbuild` error, the operator
 
 ### Forcing a re-download or rebuild
 
-To re-download from the preview release (or pick up a fresh `cargo run --bin build-jackin-container` artifact), either clear the cache:
+`cargo run --bin build-jackin-container -- --export` overwrites the cached binary on every invocation, so rebuilding is just re-running the eval. To purge the cache entirely (e.g. switching between published and locally built binaries, or testing the download path), clear the cache directory:
 
 ```bash
 rm -rf ~/.jackin/cache/jackin-container/
 ```
 
-or point `JACKIN_CONTAINER_BIN` at the new binary explicitly.
+or point `JACKIN_CONTAINER_BIN` at a different binary explicitly.
 
 ### What to assert in the PR "Verify locally" section
 
 A PR that changes `crates/jackin-container/` must include a "Verify locally" entry that covers:
-- The build step ran (first-time or incremental) without errors.
+- The build step ran (first-time or incremental) without errors. The build invocation must be the eval one-shot `eval "$(cargo run --bin build-jackin-container -- --export)"`, not a hand-rolled `cargo run --bin build-jackin-container` followed by a per-arch `export JACKIN_CONTAINER_BIN=...` block. The latter form regresses to silently pointing at a stale binary when the operator switches architectures or moves checkouts, while the eval form always exports the path the build tool just wrote.
 - The status bar appeared at row 0 after `jackin load`.
 - The specific behavior changed by the PR was observed to work (e.g. "Ctrl+\ opened the command palette", "pane split rendered correctly", "session switch preserved agent output"). PRs touching the prefix-key surface should mention the `JACKIN_PREFIX=C-b` opt-in.
 - Existing agent session behavior was not regressed (agent TUI renders, mouse events reach the agent).
+
+The PR template at `.github/PULL_REQUEST_TEMPLATE.md` already ships this block as `### jackin-container smoke` — copy it verbatim rather than rewriting the build invocation. The template's recommended form (Option A) is the eval one-shot.
 
 ## TUI design decisions (agent-only)
 

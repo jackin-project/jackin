@@ -127,26 +127,23 @@ Include it whenever daemon.rs, client.rs, session.rs, terminal.rs, layout.rs,
 dialog.rs, statusbar.rs, input.rs, pid1.rs, or any other file under
 `crates/jackin-container/src/` is changed.>
 
-Build the binary and wire it up before running `jackin load`. Two options:
-
-**Option A — one shot (recommended):**
+Build the binary and point `ensure_available` at it in one shot:
 
 ```sh
 eval "$(cargo run --bin build-jackin-container -- --export)"
 ```
 
-Builds via `cargo-zigbuild`, caches the result, and sets `JACKIN_CONTAINER_BIN`
-in the current shell so `jackin` uses it directly.
+`build-jackin-container` invokes `cargo zigbuild`, writes the cross-compiled
+Linux artifact to the host cache, and `--export` prints
+`export JACKIN_CONTAINER_BIN=<path>` for `eval` to consume. The eval form is
+required (not optional): hand-rolled `target/<triple>/release/jackin-container`
+exports silently break when the operator switches architectures. First build
+takes ~2-3 min via cargo-zigbuild; subsequent builds are incremental. Editing
+any file under `crates/jackin-container/src/` does NOT auto-invalidate the
+binary on disk — re-run the eval to rebuild. To purge the cache entirely:
+`rm -rf ~/.jackin/cache/jackin-container/`.
 
-**Option B — two steps:**
-
-```sh
-cargo run --bin build-jackin-container
-# prints: [build] to use: export JACKIN_CONTAINER_BIN=/path/to/binary
-export JACKIN_CONTAINER_BIN=<path printed above>
-```
-
-First build takes ~2-3 min; subsequent builds are incremental. Then smoke:
+Then smoke:
 
 ```sh
 cargo run --bin jackin -- load the-architect . --debug
@@ -156,15 +153,17 @@ Inside the container, verify:
 
 - Row 0 status bar is visible: `jackin'  [<agent-name>]`
 - Agent TUI starts and renders correctly below the status bar
-- `Ctrl+J` opens the command palette
+- `Ctrl+\` opens the command palette (override with `JACKIN_PALETTE_KEY`)
 - Mouse clicks, arrow keys, and paste reach the agent unmodified
 - <One sentence specific to what this PR changed — e.g. "Split pane rendered
-  after `Ctrl+J → Split pane │`" or "Session switch preserved agent output">
+  after `Ctrl+\ → Split pane │`" or "Session switch preserved agent output">
 
-To force a clean rebuild:
+<For PRs touching the tmux-style prefix surface (`Ctrl+B Space` palette,
+`Ctrl+B "` / `Ctrl+B %` splits, `Ctrl+B d` detach), opt in before launching
+and call it out in the verify list:>
 
 ```sh
-eval "$(cargo run --bin build-jackin-container -- --export)"
+export JACKIN_PREFIX=C-b
 ```
 
 ### Documentation
