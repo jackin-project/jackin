@@ -43,7 +43,17 @@ pub struct Multiplexer {
     term_rows: u16,
     term_cols: u16,
     status_bar: StatusBar,
-    dialog: Option<Dialog>,
+    /// LIFO stack of open dialogs. The top of stack is the live one
+    /// the renderer paints and the input dispatcher routes keys to;
+    /// older dialogs sit underneath waiting for an Esc-pop to surface
+    /// them again. Sub-dialogs (Menu → New tab → AgentPicker,
+    /// Menu → Split pane → SplitDirectionPicker → AgentPicker,
+    /// Menu → Close → CloseTargetPicker → ConfirmClose, …) push onto
+    /// this stack so Esc walks the operator back one step at a time
+    /// instead of nuking the whole flow. The empty stack means "no
+    /// dialog open" — every consumer treats `dialog_top()` as the
+    /// canonical "is a dialog visible" check.
+    dialog_stack: Vec<Dialog>,
     content_rows: u16,
     available_agents: Vec<String>,
     env_passthrough: Vec<(String, String)>,
@@ -163,7 +173,7 @@ impl Multiplexer {
             term_rows: rows,
             term_cols: cols,
             status_bar,
-            dialog: None,
+            dialog_stack: Vec::new(),
             content_rows,
             available_agents: agents,
             env_passthrough,
@@ -189,6 +199,59 @@ impl Multiplexer {
 
     fn send_output(&self, bytes: Vec<u8>) {
         self.send_to_client(ServerFrame::Output(bytes));
+    }
+
+    /// Top of the dialog stack — `Some` when a dialog is visible.
+    /// Use this instead of inspecting `dialog_stack` directly so the
+    /// "is a dialog open" check stays in one place.
+    fn dialog_top(&self) -> Option<&Dialog> {
+        self.dialog_stack.last()
+    }
+
+    fn dialog_top_mut(&mut self) -> Option<&mut Dialog> {
+        self.dialog_stack.last_mut()
+    }
+
+    /// `true` when at least one dialog is on the stack.
+    fn dialog_open(&self) -> bool {
+        !self.dialog_stack.is_empty()
+    }
+
+    /// Push a new dialog on top of the current one. The previous
+    /// dialog stays underneath waiting for an Esc-pop to surface it
+    /// again — the standard sub-dialog opening path (Menu → New tab
+    /// pushes AgentPicker on top of Menu, not a replacement).
+    fn dialog_push(&mut self, d: Dialog) {
+        self.dialog_stack.push(d);
+    }
+
+    /// Pop the top dialog. Returns `Some(prev)` when something was on
+    /// the stack. The Esc handler uses this for back-navigation:
+    /// popping a sub-dialog exposes its parent again rather than
+    /// dismissing the whole flow.
+    fn dialog_pop_one(&mut self) -> Option<Dialog> {
+        self.dialog_stack.pop()
+    }
+
+    /// Clear every dialog on the stack — used by action paths that
+    /// finish the flow (`SpawnAgent` after picking an agent,
+    /// `CopyToClipboard` after the OSC 52 fires, etc.) so the
+    /// operator returns straight to the focused pane.
+    fn dialog_clear(&mut self) {
+        self.dialog_stack.clear();
+    }
+
+    /// Replace the current top of stack with `d`. Used by transitions
+    /// that swap one dialog for a sibling at the same depth
+    /// (e.g. NewTab inside the palette opens AgentPicker as a peer,
+    /// not as a nested child) — but for the standard back-navigation
+    /// flow `dialog_push` is the right call. Currently no consumers;
+    /// kept as the named operation so future refactors don't have to
+    /// invent a vocabulary.
+    #[allow(dead_code)]
+    fn dialog_replace_top(&mut self, d: Dialog) {
+        self.dialog_stack.pop();
+        self.dialog_stack.push(d);
     }
 
     fn next_tab(&mut self) {
@@ -351,22 +414,29 @@ impl Multiplexer {
         }
         match action {
             DialogAction::Dismiss => {
-                self.dialog = None;
+                // Back-navigation: pop one dialog so a sub-dialog
+                // reveals its parent rather than closing the whole
+                // flow. Operator at the top of stack (Menu) pops to
+                // an empty stack — same effective "close" the
+                // pre-stack code achieved with `self.dialog = None`.
+                self.dialog_pop_one();
             }
             DialogAction::Redraw | DialogAction::Consume => {}
             DialogAction::Command(cmd) => {
-                // `handle_palette_command` owns the dialog state — it
-                // closes the dialog by default and overwrites it when
-                // the command opens a sub-dialog (e.g. NewTab → agent
-                // picker).
+                // `handle_palette_command` decides per-arm whether
+                // the command opens a sub-dialog (push) or finishes
+                // the flow (clear stack).
                 self.handle_palette_command(cmd);
             }
             DialogAction::SpawnAgent { agent, intent } => {
-                self.dialog = None;
+                // Terminal action — agent picked, spawn the session,
+                // close every dialog underneath (Menu / Split picker /
+                // …) so the operator drops straight onto the new pane.
+                self.dialog_clear();
                 self.dispatch_spawn_intent(agent, intent);
             }
             DialogAction::RenameTab { tab_idx, label } => {
-                self.dialog = None;
+                self.dialog_clear();
                 if let Some(tab) = self.tabs.get_mut(tab_idx) {
                     tab.custom_label = if label.is_empty() { None } else { Some(label) };
                 }
@@ -382,16 +452,22 @@ impl Multiplexer {
                 // the client via `send_output`; the alt-screen path
                 // forwards it byte-for-byte to the operator's outer
                 // terminal.
-                self.dialog = None;
+                //
+                // The ContainerInfo dialog stays on the stack — the
+                // operator's "did it actually copy?" question is
+                // answered by the green "✓ Copied!" badge the
+                // renderer paints on the Container ID row now that
+                // `copied = true` (flipped by the dialog's handle_key
+                // before this action returned). Esc dismisses.
                 self.send_output(encode_osc52_clipboard_write(&payload));
             }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
-                // the standard agent-pick flow finishes the spawn via
-                // `PickerIntent::Split(direction)` in
-                // `dispatch_spawn_intent`.
+                // push it on top of the SplitDirectionPicker so Esc
+                // walks the operator one step back instead of
+                // closing the whole flow.
                 let agents = self.available_agents.clone();
-                self.dialog = Some(Dialog::new_agent_picker(
+                self.dialog_push(Dialog::new_agent_picker(
                     agents,
                     PickerIntent::Split(direction),
                 ));
@@ -811,11 +887,18 @@ impl Multiplexer {
     fn handle_input(&mut self, event: InputEvent) -> Option<Vec<u8>> {
         match event {
             InputEvent::OpenPalette => {
+                // Toggle: opening the palette key while any dialog is
+                // already on the stack closes the whole flow (faster
+                // than walking back with Esc). Operator opens fresh
+                // when the stack was empty.
                 self.cancel_drag();
-                if self.dialog.is_some() {
-                    self.dialog = None;
+                if self.dialog_open() {
+                    self.dialog_clear();
                 } else {
-                    self.dialog = Some(Dialog::CommandPalette { selected: 0, filter: String::new() });
+                    self.dialog_push(Dialog::CommandPalette {
+                        selected: 0,
+                        filter: String::new(),
+                    });
                 }
                 Some(self.compose_frame())
             }
@@ -823,13 +906,13 @@ impl Multiplexer {
                 // While a dialog is open the prefix gesture's payload
                 // must not reach the focused pane — operator's intent
                 // is to act on the dialog, not the agent underneath.
-                if self.dialog.is_some() {
+                if self.dialog_open() {
                     return None;
                 }
                 self.handle_prefix_command(cmd)
             }
             InputEvent::ResizePane(dir) => {
-                if self.dialog.is_some() {
+                if self.dialog_open() {
                     return None;
                 }
                 self.resize_focused(dir);
@@ -840,7 +923,7 @@ impl Multiplexer {
                 // requested focus events (`?1004h`) — shells and
                 // pre-mount agents leave the mode off and would
                 // surface `[I` / `[O` as literal text at the prompt.
-                if self.dialog.is_some() {
+                if self.dialog_open() {
                     return None;
                 }
                 let bytes = if matches!(event, InputEvent::FocusIn) {
@@ -857,7 +940,7 @@ impl Multiplexer {
                 None
             }
             InputEvent::MousePress { col, row, button }
-                if self.dialog.is_some() && button == 0 && !is_wheel_button(button) =>
+                if self.dialog_open() && button == 0 && !is_wheel_button(button) =>
             {
                 // Mouse handling while a dialog overlay is up:
                 //   click on a row  → select + confirm
@@ -877,19 +960,18 @@ impl Multiplexer {
                 let term_rows = self.term_rows;
                 let term_cols = self.term_cols;
                 let action = self
-                    .dialog
-                    .as_mut()
+                    .dialog_top_mut()
                     .expect("dialog presence checked")
                     .handle_click(row + 1, col + 1, term_rows, term_cols);
                 Some(self.apply_dialog_action(action))
             }
-            InputEvent::MousePress { .. } if self.dialog.is_some() => {
+            InputEvent::MousePress { .. } if self.dialog_open() => {
                 // Any non-wheel mouse event with the dialog up that
                 // did not land on a row is swallowed so it never
                 // reaches the agent underneath.
                 None
             }
-            InputEvent::MouseRelease { .. } if self.dialog.is_some() => {
+            InputEvent::MouseRelease { .. } if self.dialog_open() => {
                 // Drop the release that pairs with a press the dialog
                 // already absorbed. Letting it through would surface
                 // the raw `\x1b[<...m` bytes at the focused pane's
@@ -925,7 +1007,7 @@ impl Multiplexer {
                 // the wheel too so background pane scrollback does
                 // not move while the operator is interacting with
                 // the modal.
-                if self.dialog.is_some() {
+                if self.dialog_open() {
                     return None;
                 }
                 let delta = if (button & 1) == 0 { 3 } else { -3 };
@@ -959,7 +1041,7 @@ impl Multiplexer {
                         let initial = self.tabs[idx].custom_label.clone().unwrap_or_default();
                         let input = jackin_tui::TextField::new(initial)
                             .with_max_chars(crate::dialog::MAX_CUSTOM_LABEL_LEN);
-                        self.dialog = Some(Dialog::RenameTab {
+                        self.dialog_push(Dialog::RenameTab {
                             tab_idx: idx,
                             input,
                         });
@@ -981,11 +1063,14 @@ impl Multiplexer {
                 //    mouse fallback when the keyboard shortcut
                 //    isn't reaching the parser.
                 if self.status_bar.hint_at(1, col + 1) {
-                    self.dialog = if self.dialog.is_some() {
-                        None
+                    if self.dialog_open() {
+                        self.dialog_clear();
                     } else {
-                        Some(Dialog::CommandPalette { selected: 0, filter: String::new() })
-                    };
+                        self.dialog_push(Dialog::CommandPalette {
+                            selected: 0,
+                            filter: String::new(),
+                        });
+                    }
                     return Some(self.compose_frame());
                 }
                 None
@@ -1005,7 +1090,7 @@ impl Multiplexer {
                         .active_focused_id()
                         .and_then(|id| self.sessions.get(&id))
                         .and_then(|s| s.agent.clone());
-                    self.dialog = Some(Dialog::ContainerInfo {
+                    self.dialog_push(Dialog::ContainerInfo {
                         container_name: self.status_bar.container_name().to_string(),
                         role: self.status_bar.role().to_string(),
                         focused_agent,
@@ -1067,7 +1152,7 @@ impl Multiplexer {
                 None
             }
             InputEvent::Data(bytes) => {
-                if let Some(ref mut dialog) = self.dialog {
+                if let Some(dialog) = self.dialog_top_mut() {
                     let action = dialog.handle_key(&bytes);
                     Some(self.apply_dialog_action(action))
                 } else {
@@ -1104,7 +1189,7 @@ impl Multiplexer {
         match cmd {
             PrefixCommand::NewTab => {
                 let agents = self.available_agents.clone();
-                self.dialog = Some(Dialog::new_agent_picker(agents, PickerIntent::NewTab));
+                self.dialog_push(Dialog::new_agent_picker(agents, PickerIntent::NewTab));
             }
             PrefixCommand::NextTab => self.next_tab(),
             PrefixCommand::PrevTab => self.prev_tab(),
@@ -1127,7 +1212,10 @@ impl Multiplexer {
                 self.detach_requested = true;
             }
             PrefixCommand::Palette => {
-                self.dialog = Some(Dialog::CommandPalette { selected: 0, filter: String::new() });
+                self.dialog_push(Dialog::CommandPalette {
+                    selected: 0,
+                    filter: String::new(),
+                });
             }
             PrefixCommand::Redraw => {}
         }
@@ -1350,11 +1438,11 @@ impl Multiplexer {
     }
 
     fn handle_palette_command(&mut self, cmd: PaletteCommand) -> Option<Vec<u8>> {
-        // Default: close the dialog after the command runs. Commands
-        // that need a follow-up choice (e.g. NewTab → "which agent?")
-        // overwrite `self.dialog` themselves AFTER this reset, so the
-        // sub-dialog survives this handler.
-        self.dialog = None;
+        // Per-arm decision: sub-dialog openings push onto the dialog
+        // stack (Menu stays underneath for Esc → back); terminal
+        // actions clear the stack and run the action. No blanket
+        // clear at the top because that would prevent the sub-dialog
+        // back-navigation chain from working.
         match cmd {
             PaletteCommand::Split => {
                 // Open the SplitDirectionPicker sub-dialog. The
@@ -1363,7 +1451,7 @@ impl Multiplexer {
                 // `apply_dialog_action` chains into an `AgentPicker`
                 // carrying `PickerIntent::Split(direction)`. Final
                 // confirm spawns the new pane.
-                self.dialog = Some(Dialog::SplitDirectionPicker {
+                self.dialog_push(Dialog::SplitDirectionPicker {
                     selected: 0,
                     filter: String::new(),
                 });
@@ -1375,14 +1463,30 @@ impl Multiplexer {
                 // jumping straight into the agent would surprise an
                 // operator who picked "New tab" to open a shell.
                 let agents = self.available_agents.clone();
-                self.dialog = Some(Dialog::new_agent_picker(agents, PickerIntent::NewTab));
+                self.dialog_push(Dialog::new_agent_picker(agents, PickerIntent::NewTab));
             }
-            PaletteCommand::NextTab => self.next_tab(),
-            PaletteCommand::PrevTab => self.prev_tab(),
-            PaletteCommand::ClosePane => self.close_focused_pane(),
-            PaletteCommand::CloseTab => self.close_focused_tab(),
-            PaletteCommand::ZoomPane => self.toggle_zoom(),
+            PaletteCommand::NextTab => {
+                self.dialog_clear();
+                self.next_tab();
+            }
+            PaletteCommand::PrevTab => {
+                self.dialog_clear();
+                self.prev_tab();
+            }
+            PaletteCommand::ClosePane => {
+                self.dialog_clear();
+                self.close_focused_pane();
+            }
+            PaletteCommand::CloseTab => {
+                self.dialog_clear();
+                self.close_focused_tab();
+            }
+            PaletteCommand::ZoomPane => {
+                self.dialog_clear();
+                self.toggle_zoom();
+            }
             PaletteCommand::Detach => {
+                self.dialog_clear();
                 self.detach_requested = true;
             }
         }
@@ -1413,7 +1517,7 @@ impl Multiplexer {
 
         // Dim the panes when a dialog is open so the operator gets an
         // unmistakable "focus is inside the dialog" cue.
-        let dim_panes = self.dialog.is_some();
+        let dim_panes = self.dialog_open();
 
         if let Some(zoom_id) = self.active_zoomed_id() {
             let outer = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
@@ -1551,7 +1655,7 @@ impl Multiplexer {
             }
         }
 
-        if let Some(dialog) = &self.dialog {
+        if let Some(dialog) = self.dialog_top() {
             dialog.render(&mut buf, self.term_rows, self.term_cols);
         }
 
@@ -1568,7 +1672,7 @@ impl Multiplexer {
         //      cursor position is meaningless against history rows.
         // When any rule fails we emit `\x1b[?25l` so no second cursor
         // remains visible anywhere else in the multiplexer chrome.
-        if self.dialog.is_none() {
+        if !self.dialog_open() {
             let mut showed = false;
             if let (Some(fid), Some(rect)) = (focused_id, focused_pane_rect)
                 && let Some(session) = self.sessions.get(&fid)
@@ -2000,7 +2104,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
                 crate::cdebug!(
                     "  → InputEvent::{:?} dialog_open={}",
                     event,
-                    mux.dialog.is_some()
+                    mux.dialog_open()
                 );
                 if let Some(redraw) = mux.handle_input(event) {
                     mux.send_output(redraw);
@@ -2030,7 +2134,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             // the focused session actually asked for focus reports
             // (`?1004h`). Without the gate, primary-screen shells
             // surface `[I` as literal text at the prompt.
-            if mux.dialog.is_none()
+            if !mux.dialog_open()
                 && let Some(focused) = mux.active_focused_id()
                 && let Some(s) = mux.sessions.get(&focused)
                 && s.focus_events_enabled()
@@ -2039,7 +2143,7 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
             }
         }
         ClientFrame::FocusOut => {
-            if mux.dialog.is_none()
+            if !mux.dialog_open()
                 && let Some(focused) = mux.active_focused_id()
                 && let Some(s) = mux.sessions.get(&focused)
                 && s.focus_events_enabled()

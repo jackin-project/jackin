@@ -259,6 +259,29 @@ Modals use `centered_rect_fixed(outer, pct_w, rows)`. `rows` is the **total oute
 
 Never add excess padding rows to modals. The outer rect must be exactly tight enough to render the widget's layout constraints without blank overflow rows.
 
+### Filter rows sit directly under the top border
+
+For every modal that has a `Filter:` input (the host role picker, the host op picker, the in-multiplexer Menu / SplitDirectionPicker / AgentPicker), the filter input row must render **immediately below the top border** — no leading blank pad row between the border and the filter. The interior layout, top-to-bottom, is:
+
+| Row | Contents |
+|---|---|
+| 0 (interior row 0) | `Filter: <input>` |
+| 1 (interior row 1) | blank spacer |
+| 2+ | list rows |
+
+Equivalently: the filter starts at `box_row + 1`, the spacer at `box_row + 2`, and the first list row at `box_row + 3`. The natural box height is `items + 4` (top border + filter + spacer + items + bottom border). Both the host pickers (<RepoFile path="src/console/widgets/role_picker.rs" /> and <RepoFile path="src/console/widgets/op_picker/render.rs" />) and the in-multiplexer pickers (<RepoFile path="crates/jackin-container/src/dialog.rs" />) honour this layout — an operator's eye must read identically across surfaces.
+
+Why this rule exists: a leading blank pad row pushes the filter one row down and visually disconnects it from the title in the top border. The eye reads it as "the filter is floating in the middle of the dialog," not as "type here to narrow the list" — a small but cumulative perceptual cost across the many dialogs jackin opens during a typical session. Drop the pad; keep the filter glued to the chrome.
+
+### Sub-dialogs push onto a stack — Esc walks back one step
+
+Modal dialogs that open from a parent modal (`Menu → New tab` → AgentPicker; `Menu → Split pane` → SplitDirectionPicker → AgentPicker; `Menu → Close` → CloseTargetPicker → ConfirmClose) MUST push onto a dialog stack rather than replace the parent. Esc pops one frame so the operator returns to the previous dialog instead of being dumped back to the pane. Terminal actions (an agent picked, a destructive action confirmed, a copy-to-clipboard fired) clear the whole stack so the operator drops onto the focused pane in one step. Mouse-click outside the box pops one frame, matching Esc.
+
+Two pieces follow from the rule:
+
+- The dialog state lives on a `Vec<Dialog>` (top of stack = visible). `dialog_top()` is the canonical "is a dialog open" check; new entries land via `dialog_push`; the back-nav arm calls `dialog_pop_one`; terminal-action arms call `dialog_clear`. The bare `Option<Dialog>` shape pre-dates this rule and is no longer correct for any surface that supports sub-dialogs.
+- A sub-dialog's "title" string must read as a step inside its parent's flow — `Split: ← Left` for the agent picker opened from the SplitDirectionPicker, not `Agent picker` again. The operator's mental model is the breadcrumb chain; the title is the part that surfaces it.
+
 ---
 
 ## Hints / Footer Bar

@@ -462,14 +462,14 @@ impl Dialog {
         //   box_row + 1:  blank pad row
         //   box_row + 2:  filter input ("/ <text>▏")
         //   box_row + 3:  blank pad row separating filter from items
-        //   box_row + 4:  first item row
+        //   box_row + 3:  first item row
         //
         // Clicks on the filter row are no-op consumes (no in-place
         // edit yet); clicks on item rows select + confirm against
         // the current filtered list so a future refactor that
         // shortens / lengthens the visible item count via filter
         // input still routes the click to the right action.
-        let first_item_row = box_row + 4;
+        let first_item_row = box_row + 3;
         let visible_count: u16 = match self {
             Self::CommandPalette { filter, .. } => palette_filtered_indices(filter).len() as u16,
             Self::SplitDirectionPicker { filter, .. } => {
@@ -558,17 +558,17 @@ impl Dialog {
         let natural_height = match self {
             Self::CommandPalette { filter, .. } => {
                 let items = palette_filtered_indices(filter).len() as u16;
-                items + 6 // top + pad + filter + pad + items + bottom
+                items + 4 // top + filter + pad + items + bottom
             }
             Self::SplitDirectionPicker { filter, .. } => {
                 let items = split_direction_filtered_indices(filter).len() as u16;
-                items + 6
+                items + 4
             }
             Self::AgentPicker {
                 agents, filter, ..
             } => {
                 let items = picker_filtered_rows(agents, filter).len() as u16;
-                items + 6
+                items + 4
             }
             // Rename modal: top border + blank pad + input row + blank pad + bottom border.
             Self::RenameTab { .. } => 5,
@@ -981,22 +981,22 @@ fn render_palette(
     filter: &str,
 ) {
     render_box(buf, start_row, start_col, height, width, "Menu");
-    render_filter_input(buf, start_row + 2, start_col + 1, width, filter);
+    render_filter_input(buf, start_row + 1, start_col + 1, width, filter);
     // Items occupy the rows below the filter + separator pad
-    // (`start_row + 4` onward). Clamp by the available interior so
+    // (`start_row + 3` onward). Clamp by the available interior so
     // a tight-fit terminal never paints past the bottom border.
-    let interior_items = height.saturating_sub(6) as usize;
+    let interior_items = height.saturating_sub(4) as usize;
     let visible = palette_filtered_indices(filter);
     let drawn = visible.len().min(interior_items);
     if drawn == 0 {
-        render_no_matches_row(buf, start_row + 4, start_col + 1, width);
+        render_no_matches_row(buf, start_row + 3, start_col + 1, width);
         return;
     }
     for (i, &source_idx) in visible.iter().enumerate().take(drawn) {
         let (_, label) = PALETTE_ITEMS[source_idx];
         render_row(
             buf,
-            start_row + 4 + i as u16,
+            start_row + 3 + i as u16,
             start_col + 1,
             width,
             label,
@@ -1015,15 +1015,15 @@ fn render_split_direction_picker(
     filter: &str,
 ) {
     render_box(buf, start_row, start_col, height, width, "Split pane");
-    render_filter_input(buf, start_row + 2, start_col + 1, width, filter);
-    let interior_items = height.saturating_sub(6) as usize;
+    render_filter_input(buf, start_row + 1, start_col + 1, width, filter);
+    let interior_items = height.saturating_sub(4) as usize;
     let visible = split_direction_filtered_indices(filter);
     let drawn = visible.len().min(interior_items);
     for (i, &source_idx) in visible.iter().enumerate().take(drawn) {
         let label = SPLIT_DIRECTION_ITEMS[source_idx].label();
         render_row(
             buf,
-            start_row + 4 + i as u16,
+            start_row + 3 + i as u16,
             start_col + 1,
             width,
             label,
@@ -1048,21 +1048,21 @@ fn render_agent_picker(
         PickerIntent::Split(direction) => format!("Split: {}", direction.label()),
     };
     render_box(buf, start_row, start_col, height, width, &title);
-    render_filter_input(buf, start_row + 2, start_col + 1, width, filter);
+    render_filter_input(buf, start_row + 1, start_col + 1, width, filter);
 
     // Items occupy the rows below the filter + separator pad
-    // (`start_row + 4` onward). Each row maps back to PickerRow so
+    // (`start_row + 3` onward). Each row maps back to PickerRow so
     // an Agent / Shell distinction stays explicit even after
     // filtering rearranges the list. Section rows render as
     // non-selectable group labels ("── agents ──", "── shells ──").
-    let interior_items = height.saturating_sub(6) as usize;
+    let interior_items = height.saturating_sub(4) as usize;
     let visible = picker_filtered_rows(agents, filter);
     let drawn = visible.len().min(interior_items);
     if drawn == 0 {
         return;
     }
     for (i, row) in visible.iter().enumerate().take(drawn) {
-        let target_row = start_row + 4 + i as u16;
+        let target_row = start_row + 3 + i as u16;
         match row {
             PickerRow::Section(label) => {
                 render_separator(buf, target_row, start_col + 1, width, label);
