@@ -512,8 +512,8 @@ impl Multiplexer {
             &label,
             agent.clone(),
             cmd,
-            self.content_rows,
-            self.term_cols,
+            self.content_rows.saturating_sub(2),
+            self.term_cols.saturating_sub(2),
             self.event_tx.clone(),
         )?;
         let tab_label = label.clone();
@@ -575,6 +575,24 @@ impl Multiplexer {
             return Ok(());
         };
         let from_id = tab.focused_id;
+        let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
+        let from_rect = tab
+            .tree
+            .leaves(content_rect)
+            .into_iter()
+            .find(|(id, _)| *id == from_id)
+            .map(|(_, r)| r)
+            .unwrap_or(content_rect);
+        let (spawn_rows, spawn_cols) = match direction {
+            SplitDirection::Left | SplitDirection::Right => (
+                from_rect.rows.saturating_sub(2),
+                (from_rect.cols / 2).saturating_sub(2),
+            ),
+            SplitDirection::Above | SplitDirection::Below => (
+                (from_rect.rows / 2).saturating_sub(2),
+                from_rect.cols.saturating_sub(2),
+            ),
+        };
         let (label, cmd) = match &agent_slug {
             Some(slug) => (
                 capitalize(slug),
@@ -587,8 +605,8 @@ impl Multiplexer {
             &label,
             agent_slug,
             cmd,
-            self.content_rows / 2,
-            self.term_cols,
+            spawn_rows,
+            spawn_cols,
             self.event_tx.clone(),
         )?;
         self.sessions.insert(new_id, session);
