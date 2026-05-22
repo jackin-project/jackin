@@ -14,10 +14,23 @@ use crate::protocol::control::{ClientMsg, ServerMsg, frame as control_frame};
 use crate::socket::SOCKET_PATH;
 
 /// Connect to the running daemon and run the interactive attach client.
-pub async fn run_client(_new_session_agent: Option<String>) -> Result<()> {
+///
+/// `new_session_agent` is the agent slug requested by the host CLI via
+/// `docker exec ... jackin-container new <agent>`. When `Some`, the
+/// first Hello frame includes the slug and the daemon spawns a fresh
+/// session for that agent before completing attach. Plain attach
+/// (operator-initiated reattach) passes `None`.
+pub async fn run_client(new_session_agent: Option<String>) -> Result<()> {
     let (rows, cols) = terminal_size();
 
     crossterm::terminal::enable_raw_mode().context("failed to enable raw mode")?;
+    // Install the cleanup guard BEFORE the alt-screen write — if the
+    // write returns Err, the guard's Drop still resets raw mode and
+    // exits the alt-screen buffer, restoring the operator's host
+    // terminal. The earlier ordering left raw mode on whenever the
+    // write failed (broken pipe, EAGAIN race), and the operator had
+    // to `reset` to recover.
+    let _cleanup = RawModeGuard;
     let mut stdout = std::io::stdout();
     // Enter the alternate-screen buffer so the multiplexer's draw
     // calls do not append to the outer terminal's scrollback. Without
@@ -33,14 +46,16 @@ pub async fn run_client(_new_session_agent: Option<String>) -> Result<()> {
     stdout.write_all(b"\x1b[?1049h\x1b[2J\x1b[H\x1b[?1003h\x1b[?1006h\x1b[?1004h")?;
     stdout.flush()?;
 
-    let _cleanup = RawModeGuard;
-
     let mut stream = UnixStream::connect(SOCKET_PATH)
         .await
         .context("cannot connect to jackin-container daemon — is it running?")?;
 
     stream
-        .write_all(&encode_client(ClientFrame::Hello { rows, cols }))
+        .write_all(&encode_client(ClientFrame::Hello {
+            rows,
+            cols,
+            spawn_agent: new_session_agent,
+        }))
         .await?;
 
     let mut stdin_buf = [0u8; 4096];

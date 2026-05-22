@@ -52,6 +52,12 @@ pub struct Multiplexer {
     input_parser: InputParser,
     detach_requested: bool,
     attached_out: Option<mpsc::UnboundedSender<Vec<u8>>>,
+    /// JoinHandle of the spawned `handle_attach_client` task for the
+    /// currently-attached client. Tracked so a takeover (second `Hello`)
+    /// can abort the old task's reader loop — without the abort, the
+    /// old client's stale Input / Resize / Detach frames keep flowing
+    /// into the shared `cmd_tx` until its socket finally closes.
+    attached_task: Option<tokio::task::JoinHandle<()>>,
     /// Records the previous tab-cell click so a second click on the
     /// same tab within `DOUBLE_CLICK_WINDOW` is treated as a
     /// double-click (open the rename modal).
@@ -156,6 +162,7 @@ impl Multiplexer {
             input_parser,
             detach_requested: false,
             attached_out: None,
+            attached_task: None,
             last_tab_click: None,
             drag: None,
             selection: None,
@@ -308,6 +315,26 @@ impl Multiplexer {
 
     pub fn spawn_initial(&mut self, agent: &str) -> Result<u64> {
         self.spawn_session(Some(agent.to_string()))
+    }
+
+    /// Single dispatch point for `DialogAction::SpawnAgent`. Centralises
+    /// the four `let _ = self.spawn_*` sites and ensures spawn failures
+    /// are clog'd with their intent (NewTab / SplitHorizontal /
+    /// SplitVertical) instead of being silently dropped — operator
+    /// clicks "New tab", PTY allocation fails (file descriptor
+    /// exhaustion, missing binary), the dialog dismisses, the screen
+    /// looks unchanged, and without this log the operator has no
+    /// signal that the action was attempted at all.
+    fn dispatch_spawn_intent(&mut self, agent: Option<String>, intent: PickerIntent) {
+        let agent_label = agent.as_deref().unwrap_or("shell").to_string();
+        let result: anyhow::Result<()> = match intent {
+            PickerIntent::NewTab => self.spawn_session(agent).map(|_| ()),
+            PickerIntent::SplitHorizontal => self.split_focused_into(true, agent),
+            PickerIntent::SplitVertical => self.split_focused_into(false, agent),
+        };
+        if let Err(err) = result {
+            crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
+        }
     }
 
     fn spawn_session(&mut self, agent: Option<String>) -> Result<u64> {
@@ -513,12 +540,12 @@ impl Multiplexer {
         }
     }
 
-    /// True when nothing the operator could attach to is still alive.
+    /// True when there are no sessions left.
     /// `sessions.is_empty()` covers the operator-explicitly-killed-all
     /// case; `all !alive` covers the natural-exit case (every agent /
     /// shell process closed its PTY).
     fn no_live_sessions(&self) -> bool {
-        self.sessions.is_empty() || self.sessions.values().all(|s| !s.alive)
+        self.sessions.is_empty()
     }
 
     /// Adjust the split that contains the focused pane along `dir` by
@@ -680,17 +707,7 @@ impl Multiplexer {
                     }
                     DialogAction::SpawnAgent { agent, intent } => {
                         self.dialog = None;
-                        match intent {
-                            PickerIntent::NewTab => {
-                                let _ = self.spawn_session(agent);
-                            }
-                            PickerIntent::SplitHorizontal => {
-                                let _ = self.split_focused_into(true, agent);
-                            }
-                            PickerIntent::SplitVertical => {
-                                let _ = self.split_focused_into(false, agent);
-                            }
-                        }
+                        self.dispatch_spawn_intent(agent, intent);
                         Some(self.compose_frame())
                     }
                     DialogAction::RenameTab { tab_idx, label } => {
@@ -879,17 +896,7 @@ impl Multiplexer {
                         }
                         DialogAction::SpawnAgent { agent, intent } => {
                             self.dialog = None;
-                            match intent {
-                                PickerIntent::NewTab => {
-                                    let _ = self.spawn_session(agent);
-                                }
-                                PickerIntent::SplitHorizontal => {
-                                    let _ = self.split_focused_into(true, agent);
-                                }
-                                PickerIntent::SplitVertical => {
-                                    let _ = self.split_focused_into(false, agent);
-                                }
-                            }
+                            self.dispatch_spawn_intent(agent, intent);
                             Some(self.compose_frame())
                         }
                         DialogAction::RenameTab { tab_idx, label } => {
@@ -941,10 +948,14 @@ impl Multiplexer {
             PrefixCommand::PrevTab => self.prev_tab(),
             PrefixCommand::JumpTab(i) => self.jump_tab(i),
             PrefixCommand::SplitTopBottom => {
-                let _ = self.split_focused(false);
+                if let Err(err) = self.split_focused(false) {
+                    crate::clog!("split (top/bottom) failed: {err:?}");
+                }
             }
             PrefixCommand::SplitSideBySide => {
-                let _ = self.split_focused(true);
+                if let Err(err) = self.split_focused(true) {
+                    crate::clog!("split (side by side) failed: {err:?}");
+                }
             }
             PrefixCommand::MoveFocus(dir) => self.move_focus(dir),
             PrefixCommand::ZoomToggle => self.toggle_zoom(),
@@ -1556,7 +1567,8 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
             // New socket connection.
             Some(mut stream) = new_clients.recv() => {
                 let mut first = [0u8; 1];
-                if stream.read_exact(&mut first).await.is_err() {
+                if let Err(e) = stream.read_exact(&mut first).await {
+                    crate::clog!("attach: handshake read_exact(first byte) failed: {e}");
                     continue;
                 }
                 if first[0] == 0x00 {
@@ -1565,17 +1577,48 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                     continue;
                 }
                 // Attach channel — first byte is the first frame's tag.
-                let Ok(Some(initial_frame)) = read_client_frame(&mut stream, first[0]).await else {
-                    continue;
+                let initial_frame = match read_client_frame(&mut stream, first[0]).await {
+                    Ok(Some(frame)) => frame,
+                    Ok(None) => {
+                        crate::clog!("attach: handshake EOF before initial frame");
+                        continue;
+                    }
+                    Err(e) => {
+                        crate::clog!("attach: handshake frame decode failed: {e}");
+                        continue;
+                    }
                 };
-                let ClientFrame::Hello { rows, cols } = initial_frame else {
-                    // Attach clients must say Hello first; drop.
+                let ClientFrame::Hello { rows, cols, spawn_agent } = initial_frame else {
+                    crate::clog!(
+                        "attach: rejected client whose first frame was not Hello: {initial_frame:?}"
+                    );
                     continue;
                 };
                 mux.resize(rows, cols);
-                // Take over from any existing attach client.
-                if let Some(old) = mux.attached_out.take() {
-                    let _ = old.send(encode_server(ServerFrame::Shutdown));
+                // Honor a spawn-agent intent from `jackin-container new
+                // <agent>`. Spawn failures get clog'd at error level so
+                // a `jackin load --debug` run shows the underlying
+                // cause; the attach completes either way so the
+                // operator can still interact with the existing focused
+                // session and decide whether to retry.
+                if let Some(agent_slug) = spawn_agent
+                    && let Err(err) = mux.spawn_session(Some(agent_slug.clone()))
+                {
+                    crate::clog!(
+                        "attach: spawn_session for {agent_slug:?} failed: {err:?}"
+                    );
+                }
+                // Take over from any existing attach client. The shutdown
+                // signal alone is best-effort because the old socket may
+                // be wedged; cancel the old reader task too so its frames
+                // stop landing in the shared cmd_tx (otherwise the old
+                // client's stale Input / Resize / Detach race the new
+                // attach until its socket finally closes).
+                if let Some(handle) = mux.attached_task.take() {
+                    handle.abort();
+                }
+                if let Some(tx) = mux.attached_out.take() {
+                    let _ = tx.send(encode_server(ServerFrame::Shutdown));
                 }
                 let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
                 mux.attached_out = Some(new_out_tx.clone());
@@ -1598,7 +1641,11 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 let mut initial = b"\x1b[2J".to_vec();
                 initial.extend(mux.compose_frame());
                 let _ = new_out_tx.send(encode_server(ServerFrame::Output(initial)));
-                tokio::spawn(handle_attach_client(stream, new_out_rx, cmd_tx.clone()));
+                mux.attached_task = Some(tokio::spawn(handle_attach_client(
+                    stream,
+                    new_out_rx,
+                    cmd_tx.clone(),
+                )));
             }
 
             // Inbound attach frame from the active client task.

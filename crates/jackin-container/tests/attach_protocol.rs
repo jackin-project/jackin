@@ -32,7 +32,11 @@ fn hello_first_byte_never_collides_with_control_channel() {
     // Control channel writes a 4-byte BE length prefix where the high
     // byte is `0x00` for the message sizes the host CLI sends. Attach
     // tags must avoid `0x00` so the daemon can dispatch by first byte.
-    let bytes = encode_client(ClientFrame::Hello { rows: 24, cols: 80 });
+    let bytes = encode_client(ClientFrame::Hello {
+        rows: 24,
+        cols: 80,
+        spawn_agent: None,
+    });
     assert_ne!(bytes[0], 0x00);
     assert_eq!(bytes[0], TAG_HELLO);
 }

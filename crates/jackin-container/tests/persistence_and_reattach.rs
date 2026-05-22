@@ -36,7 +36,14 @@ async fn attach_hello_roundtrips_over_socket() {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(frame, ClientFrame::Hello { rows: 24, cols: 80 });
+        assert_eq!(
+            frame,
+            ClientFrame::Hello {
+                rows: 24,
+                cols: 80,
+                spawn_agent: None
+            }
+        );
         // Server replies with Welcome + a fake Output payload.
         stream
             .write_all(&encode_server(ServerFrame::Welcome { session_count: 1 }))
@@ -50,7 +57,11 @@ async fn attach_hello_roundtrips_over_socket() {
 
     let mut client = UnixStream::connect(&sock).await.unwrap();
     client
-        .write_all(&encode_client(ClientFrame::Hello { rows: 24, cols: 80 }))
+        .write_all(&encode_client(ClientFrame::Hello {
+            rows: 24,
+            cols: 80,
+            spawn_agent: None,
+        }))
         .await
         .unwrap();
 
@@ -144,13 +155,21 @@ async fn second_attach_takes_over_first() {
 
     let mut client_a = UnixStream::connect(&sock).await.unwrap();
     client_a
-        .write_all(&encode_client(ClientFrame::Hello { rows: 24, cols: 80 }))
+        .write_all(&encode_client(ClientFrame::Hello {
+            rows: 24,
+            cols: 80,
+            spawn_agent: None,
+        }))
         .await
         .unwrap();
 
     let mut client_b = UnixStream::connect(&sock).await.unwrap();
     client_b
-        .write_all(&encode_client(ClientFrame::Hello { rows: 24, cols: 80 }))
+        .write_all(&encode_client(ClientFrame::Hello {
+            rows: 24,
+            cols: 80,
+            spawn_agent: None,
+        }))
         .await
         .unwrap();
 

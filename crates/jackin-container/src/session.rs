@@ -325,7 +325,6 @@ pub struct Session {
     pub input_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub pty_master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     pub last_output_at: std::time::Instant,
-    pub alive: bool,
     /// Current scrollback view offset in lines from the live tail.
     /// `0` = following live output; `> 0` = paused, looking back.
     /// `vt100::Screen::set_scrollback` mirrors this value so
@@ -503,7 +502,6 @@ impl Session {
                 input_tx,
                 pty_master: master,
                 last_output_at: std::time::Instant::now(),
-                alive: true,
                 scrollback_offset: 0,
                 bracketed_paste_active: false,
                 received_output: false,
@@ -756,12 +754,12 @@ impl Session {
     }
 
     pub fn refresh_state(&mut self) {
-        if !self.alive {
-            if self.state == AgentState::Working || self.state == AgentState::Blocked {
-                self.state = AgentState::Done;
-            }
-            return;
-        }
+        // `AgentState::Done` is part of the protocol surface but never
+        // produced: `remove_exited_session` removes the Session entry
+        // the moment the PTY's child reaper fires (see daemon.rs
+        // SessionEvent::Exited handler), so there is no live `Session`
+        // instance to refresh past that point. Operators experience
+        // tab removal directly; no transient `○ Done` glyph.
         let elapsed = self.last_output_at.elapsed();
         self.state = if elapsed < std::time::Duration::from_secs(3) {
             AgentState::Working

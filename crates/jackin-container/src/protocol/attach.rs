@@ -35,8 +35,21 @@ const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClientFrame {
-    Hello { rows: u16, cols: u16 },
-    Resize { rows: u16, cols: u16 },
+    /// First frame from a newly-connected client. `spawn_agent` carries
+    /// the agent slug the host CLI requested via
+    /// `docker exec ... jackin-container new <agent>` — the daemon
+    /// spawns a fresh session for that agent before attach completes.
+    /// Plain attach (operator-initiated reattach) sets `spawn_agent`
+    /// to None.
+    Hello {
+        rows: u16,
+        cols: u16,
+        spawn_agent: Option<String>,
+    },
+    Resize {
+        rows: u16,
+        cols: u16,
+    },
     Input(Vec<u8>),
     Command(Vec<u8>),
     Detach,
@@ -76,11 +89,23 @@ pub fn encode_server(frame: ServerFrame) -> Vec<u8> {
 /// Encode a client frame.
 pub fn encode_client(frame: ClientFrame) -> Vec<u8> {
     match frame {
-        ClientFrame::Hello { rows, cols } => {
-            let mut p = [0u8; 4];
-            p[..2].copy_from_slice(&rows.to_be_bytes());
-            p[2..].copy_from_slice(&cols.to_be_bytes());
-            encode(TAG_HELLO, &p)
+        ClientFrame::Hello {
+            rows,
+            cols,
+            spawn_agent,
+        } => {
+            // Layout: rows(2) cols(2) agent_len(2) agent_bytes(N).
+            // agent_len == 0 means "no spawn intent" so an older
+            // 4-byte Hello stays parseable as a 6-byte Hello with
+            // zero-length agent (forward-compatible).
+            let agent_bytes = spawn_agent.as_deref().unwrap_or("").as_bytes();
+            let agent_len = u16::try_from(agent_bytes.len()).unwrap_or(0);
+            let mut payload = Vec::with_capacity(6 + agent_bytes.len());
+            payload.extend_from_slice(&rows.to_be_bytes());
+            payload.extend_from_slice(&cols.to_be_bytes());
+            payload.extend_from_slice(&agent_len.to_be_bytes());
+            payload.extend_from_slice(&agent_bytes[..agent_len as usize]);
+            encode(TAG_HELLO, &payload)
         }
         ClientFrame::Resize { rows, cols } => {
             let mut p = [0u8; 4];
@@ -144,9 +169,30 @@ fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
             if payload.len() < 4 {
                 bail!("hello payload too short");
             }
+            let rows = u16::from_be_bytes([payload[0], payload[1]]);
+            let cols = u16::from_be_bytes([payload[2], payload[3]]);
+            let spawn_agent = if payload.len() >= 6 {
+                let agent_len = u16::from_be_bytes([payload[4], payload[5]]) as usize;
+                if payload.len() < 6 + agent_len {
+                    bail!(
+                        "hello agent_len {agent_len} exceeds payload size {}",
+                        payload.len()
+                    );
+                }
+                if agent_len == 0 {
+                    None
+                } else {
+                    let slug = std::str::from_utf8(&payload[6..6 + agent_len])
+                        .map_err(|_| anyhow::anyhow!("hello agent slug is not valid UTF-8"))?;
+                    Some(slug.to_string())
+                }
+            } else {
+                None
+            };
             ClientFrame::Hello {
-                rows: u16::from_be_bytes([payload[0], payload[1]]),
-                cols: u16::from_be_bytes([payload[2], payload[3]]),
+                rows,
+                cols,
+                spawn_agent,
             }
         }
         TAG_RESIZE => {
@@ -207,10 +253,32 @@ mod tests {
         let bytes = encode_client(ClientFrame::Hello {
             rows: 42,
             cols: 100,
+            spawn_agent: None,
         });
         // First byte is tag, never `0x00` (which is reserved for the
         // control-channel JSON length high byte).
         assert_eq!(bytes[0], TAG_HELLO);
         assert_ne!(bytes[0], 0x00);
+    }
+
+    #[test]
+    fn hello_with_spawn_agent_roundtrips() {
+        let bytes = encode_client(ClientFrame::Hello {
+            rows: 50,
+            cols: 200,
+            spawn_agent: Some("codex".to_string()),
+        });
+        // Decode skips the 4-byte length prefix that `encode_client` writes
+        // after the tag; reconstruct the payload to feed `decode_client`.
+        let payload = bytes[5..].to_vec();
+        let frame = decode_client(TAG_HELLO, payload).unwrap();
+        assert_eq!(
+            frame,
+            ClientFrame::Hello {
+                rows: 50,
+                cols: 200,
+                spawn_agent: Some("codex".to_string()),
+            }
+        );
     }
 }
