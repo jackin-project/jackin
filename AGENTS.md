@@ -284,9 +284,15 @@ cargo run --bin jackin -- console --debug
 Inside the container the operator should see:
 - Row 0 status bar: `jackin'  [Claude]` (or the configured agent)
 - Agent TUI starts normally (Claude Code, Codex, etc.)
-- `Ctrl+B Space` opens the command palette (tmux-style prefix; `Ctrl+B` is the default prefix key)
-- `Ctrl+B "` / `Ctrl+B %` splits the focused pane; `Alt+arrows` moves pane focus afterwards
+- `Ctrl+\` opens the command palette (the default direct shortcut; override with `JACKIN_PALETTE_KEY`)
+- `Alt+arrows` moves pane focus after a split
 - Pasting and extended-key sequences reach the agent unmodified
+
+To exercise the tmux-style prefix surface (`Ctrl+B Space` palette, `Ctrl+B c` agent picker, `Ctrl+B d` detach, `Ctrl+B "` / `Ctrl+B %` splits), opt in before launching:
+
+```bash
+export JACKIN_PREFIX=C-b
+```
 
 If the jackin-container build step prints a `cargo zigbuild` error, the operator should paste the full `--debug` output (`cargo-zigbuild` and `zig` must be on `PATH`; install via `mise install zig cargo:cargo-zigbuild`).
 
@@ -305,7 +311,7 @@ or point `JACKIN_CONTAINER_BIN` at the new binary explicitly.
 A PR that changes `crates/jackin-container/` must include a "Verify locally" entry that covers:
 - The build step ran (first-time or incremental) without errors.
 - The status bar appeared at row 0 after `jackin load`.
-- The specific behavior changed by the PR was observed to work (e.g. "Ctrl+B Space opened the command palette", "pane split rendered correctly", "session switch preserved agent output").
+- The specific behavior changed by the PR was observed to work (e.g. "Ctrl+\ opened the command palette", "pane split rendered correctly", "session switch preserved agent output"). PRs touching the prefix-key surface should mention the `JACKIN_PREFIX=C-b` opt-in.
 - Existing agent session behavior was not regressed (agent TUI renders, mouse events reach the agent).
 
 ## TUI design decisions (agent-only)

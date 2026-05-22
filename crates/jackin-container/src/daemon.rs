@@ -325,12 +325,10 @@ impl Multiplexer {
         self.spawn_session(Some(agent.to_string()))
     }
 
-    /// Single dispatch point for a `DialogAction`. The mouse-click and
-    /// key-event paths both call `Dialog::handle_*` and need to react
-    /// to whatever the dialog decided — folding the response handling
-    /// into one function keeps the two call sites from drifting
-    /// independently (an earlier version added `Consume` handling to
-    /// the click path but missed the key-event path).
+    /// Single dispatch point for a `DialogAction`. Both the
+    /// mouse-click and key-event paths call `Dialog::handle_*`
+    /// and route the result here, so adding a new variant means
+    /// updating one match arm instead of two.
     fn apply_dialog_action(&mut self, action: DialogAction) -> Vec<u8> {
         match action {
             DialogAction::Dismiss => {
@@ -358,14 +356,11 @@ impl Multiplexer {
         self.compose_frame()
     }
 
-    /// Single dispatch point for `DialogAction::SpawnAgent`. Centralises
-    /// the four `let _ = self.spawn_*` sites and ensures spawn failures
-    /// are clog'd with their intent (NewTab / SplitHorizontal /
-    /// SplitVertical) instead of being silently dropped — operator
-    /// clicks "New tab", PTY allocation fails (file descriptor
-    /// exhaustion, missing binary), the dialog dismisses, the screen
-    /// looks unchanged, and without this log the operator has no
-    /// signal that the action was attempted at all.
+    /// Single dispatch point for `DialogAction::SpawnAgent`. Spawn
+    /// failures (PTY allocation, missing agent binary, cap hit) are
+    /// clog'd with their intent and agent label so a `jackin load
+    /// --debug` shows the cause; the dialog dismisses regardless so
+    /// the operator can retry.
     fn dispatch_spawn_intent(&mut self, agent: Option<String>, intent: PickerIntent) {
         let agent_label = agent.as_deref().unwrap_or("shell").to_string();
         let result: anyhow::Result<()> = match intent {
@@ -1578,15 +1573,11 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
             biased;
 
             _ = sigterm.recv() => {
-                if let Some(tx) = mux.attached_out.take() {
-                    let _ = tx.send(encode_server(ServerFrame::Shutdown));
-                }
+                detach_client(&mut mux);
                 return Ok(());
             }
             _ = sigint.recv() => {
-                if let Some(tx) = mux.attached_out.take() {
-                    let _ = tx.send(encode_server(ServerFrame::Shutdown));
-                }
+                detach_client(&mut mux);
                 return Ok(());
             }
 
@@ -1657,9 +1648,8 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 // makes the subsequent `tx.send(Shutdown)` return Err
                 // and the bytes never leave the socket. Yield once
                 // afterwards so the writer side has a chance to drain
-                // before the task is cancelled. Then abort so the old
-                // reader's stale Input / Resize / Detach frames stop
-                // landing in the shared `cmd_tx`.
+                // before the task is cancelled. Then `detach_client`
+                // takes care of the abort + per-field bookkeeping.
                 if let Some(tx) = mux.attached_out.take() {
                     let _ = tx.send(encode_server(ServerFrame::Shutdown));
                 }
@@ -1667,6 +1657,13 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 if let Some(handle) = mux.attached_task.take() {
                     handle.abort();
                 }
+                // Drain any stale frames the old client task pushed
+                // into cmd_tx before its abort actually took effect —
+                // without this drain, the next `cmd_rx.recv()` after
+                // the new attach is wired processes Input / Resize /
+                // Detach against the NEW mux state. Inline drain via
+                // try_recv keeps the takeover path single-threaded.
+                while cmd_rx.try_recv().is_ok() {}
                 let (new_out_tx, new_out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
                 mux.attached_out = Some(new_out_tx.clone());
                 let welcome = encode_server(ServerFrame::Welcome {
@@ -1704,9 +1701,7 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 handle_client_frame(&mut mux, frame).await;
                 if mux.detach_requested {
                     mux.detach_requested = false;
-                    if let Some(tx) = mux.attached_out.take() {
-                        let _ = tx.send(encode_server(ServerFrame::Shutdown));
-                    }
+                    detach_client(&mut mux);
                 }
                 if mux.no_live_sessions() {
                     drain_and_exit(&mut mux).await;
@@ -1913,10 +1908,26 @@ async fn handle_client_frame(mux: &mut Multiplexer, frame: ClientFrame) {
 /// the daemon decides to tear the container down (last session died,
 /// last pane killed, or SIGTERM arrived).
 async fn drain_and_exit(mux: &mut Multiplexer) {
+    detach_client(mux);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+}
+
+/// Centralised detach for the currently-attached client. Mirrors the
+/// pairing the takeover path uses: take the out-channel sender (so
+/// the next frame queue allocation does not race with the old
+/// receiver), send Shutdown best-effort, yield once so any buffered
+/// writer cycle drains, then abort the attach task so its reader
+/// stops pushing into the shared `cmd_tx`. Used by SIGTERM / SIGINT
+/// shutdown, explicit detach, and `drain_and_exit` so the
+/// `attached_task` field cannot drift Some(handle) without a
+/// corresponding live attach.
+fn detach_client(mux: &mut Multiplexer) {
     if let Some(tx) = mux.attached_out.take() {
         let _ = tx.send(encode_server(ServerFrame::Shutdown));
     }
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    if let Some(handle) = mux.attached_task.take() {
+        handle.abort();
+    }
 }
 
 /// Per-client connection handler: bidirectional bridge between the

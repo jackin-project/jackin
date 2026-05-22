@@ -302,6 +302,20 @@ pub fn create_derived_build_context(
 
     let hooks = validated.manifest.hooks.as_ref();
 
+    // Validation policy by ingress channel — intentionally asymmetric:
+    //
+    // - `base_image_override` argument: hard error on invalid input.
+    //   The caller is jackin's own runtime code (or a future CLI flag
+    //   the operator typed explicitly). A typo / programmer bug is
+    //   worth failing the build loudly.
+    //
+    // - `JACKIN_CONSTRUCT_IMAGE` env var: warn to stderr and fall
+    //   back to the role's pinned image. The env var is operator-side
+    //   UX (often set in a shell rc / direnv); failing the build for
+    //   a stale value would surprise. Both paths share the same
+    //   `looks_like_valid_image_ref` allowlist so the bytes that
+    //   reach the Dockerfile FROM line are character-set-bounded
+    //   regardless of ingress.
     let base_dockerfile = match base_image_override {
         Some(image) => {
             anyhow::ensure!(
@@ -311,12 +325,6 @@ pub fn create_derived_build_context(
             format!("FROM {image}\n")
         }
         None => {
-            // When JACKIN_CONSTRUCT_IMAGE is unset / empty, leave the
-            // Dockerfile untouched so Docker uses whatever versioned
-            // tag the role pins. Validate any non-empty override
-            // against `looks_like_valid_image_ref` so a newline /
-            // shell-metachar in the env var cannot inject extra
-            // Dockerfile instructions executed at build time.
             let override_image = std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_default();
             let override_trimmed = override_image.trim();
             if override_trimmed.is_empty() {
@@ -1175,5 +1183,30 @@ plugins = []
         assert!(ENTRYPOINT_SH.contains("Signed-off-by:"));
         assert!(ENTRYPOINT_SH.contains("git config user.name"));
         assert!(ENTRYPOINT_SH.contains("git config user.email"));
+    }
+
+    #[test]
+    fn image_ref_validator_accepts_canonical_forms() {
+        assert!(looks_like_valid_image_ref("ubuntu"));
+        assert!(looks_like_valid_image_ref("ubuntu:24.04"));
+        assert!(looks_like_valid_image_ref("ghcr.io/owner/img:1.2.3"));
+        assert!(looks_like_valid_image_ref(
+            "ghcr.io/owner/img:tag@sha256:abc123"
+        ));
+        assert!(looks_like_valid_image_ref("localhost:5000/foo/bar"));
+    }
+
+    #[test]
+    fn image_ref_validator_rejects_injection_vectors() {
+        // The threats the allowlist guards against — a poisoned env
+        // var must not inject extra Dockerfile instructions.
+        assert!(!looks_like_valid_image_ref(""));
+        assert!(!looks_like_valid_image_ref("foo bar"));
+        assert!(!looks_like_valid_image_ref("foo\nFROM evil"));
+        assert!(!looks_like_valid_image_ref("foo;rm -rf /"));
+        assert!(!looks_like_valid_image_ref("foo$(whoami)"));
+        assert!(!looks_like_valid_image_ref("foo`id`"));
+        assert!(!looks_like_valid_image_ref("foo|sh"));
+        assert!(!looks_like_valid_image_ref(&"x".repeat(257)));
     }
 }

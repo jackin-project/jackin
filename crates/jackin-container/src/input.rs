@@ -304,8 +304,10 @@ fn flush(data: &mut Vec<u8>, events: &mut Vec<InputEvent>) {
 }
 
 /// Prefix mode is **opt-in**: returns `Some(byte)` when `JACKIN_PREFIX`
-/// is set to a parseable key, `None` otherwise. The default
-/// `Ctrl+J` palette key is the primary UX.
+/// is set to a parseable key, `None` otherwise. The direct palette
+/// key (see `default_palette_key`, default `Ctrl+\`) is the primary
+/// UX; the prefix-key state machine layered on top is for operators
+/// who want tmux-style multi-keystroke commands.
 fn default_prefix() -> Option<u8> {
     let s = std::env::var("JACKIN_PREFIX").ok()?;
     if s.eq_ignore_ascii_case("none") {

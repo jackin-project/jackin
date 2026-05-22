@@ -865,6 +865,90 @@ mod tests {
     }
 
     #[test]
+    fn confirm_instance_purge_n_dismisses_without_dispatch() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-cancel",
+            InstanceStatus::Running,
+            workdir,
+        )];
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('p')),
+        )
+        .unwrap();
+        assert!(matches!(
+            state.stage,
+            crate::console::manager::state::ManagerStage::ConfirmInstancePurge { .. }
+        ));
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('n')),
+        )
+        .unwrap();
+        assert!(
+            matches!(outcome, InputOutcome::Continue),
+            "N must return Continue (no dispatch); got {outcome:?}"
+        );
+        assert!(
+            matches!(
+                state.stage,
+                crate::console::manager::state::ManagerStage::List
+            ),
+            "N must reset stage to List"
+        );
+    }
+
+    #[test]
+    fn confirm_instance_purge_esc_dismisses_without_dispatch() {
+        let workdir = "/workspace/demo";
+        let ws = WorkspaceConfig {
+            workdir: workdir.into(),
+            mounts: vec![],
+            ..Default::default()
+        };
+        let (mut state, mut config, paths, tmp) = list_state_selecting_ws(ws);
+        state.instances = vec![instance_entry(
+            "jackin-demo-architect-esc",
+            InstanceStatus::Running,
+            workdir,
+        )];
+        handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Char('p')),
+        )
+        .unwrap();
+        let outcome = handle_key(
+            &mut state,
+            &mut config,
+            &paths,
+            tmp.path(),
+            key(KeyCode::Esc),
+        )
+        .unwrap();
+        assert!(matches!(outcome, InputOutcome::Continue));
+        assert!(matches!(
+            state.stage,
+            crate::console::manager::state::ManagerStage::List
+        ));
+    }
+
+    #[test]
     fn t_key_dispatches_stop_for_running_instance() {
         let workdir = "/workspace/demo";
         let ws = WorkspaceConfig {
@@ -896,7 +980,7 @@ mod tests {
     }
 
     #[test]
-    fn t_key_silent_continue_when_no_running_instance() {
+    fn t_key_shows_no_instance_popup_when_no_running_instance() {
         let workdir = "/workspace/demo";
         let ws = WorkspaceConfig {
             workdir: workdir.into(),
@@ -929,7 +1013,7 @@ mod tests {
     }
 
     #[test]
-    fn instance_action_accepts_status_grid_is_exhaustive() {
+    fn instance_action_accepts_status_grid_smoke() {
         use crate::console::ConsoleInstanceAction as A;
         use crate::instance::InstanceStatus as S;
         // Smoke test the grid: a couple of cells per action so a

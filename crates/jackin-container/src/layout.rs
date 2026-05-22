@@ -421,26 +421,33 @@ mod border_at_tests {
     }
 
     #[test]
-    fn set_ratio_at_rejects_nan() {
+    fn set_ratio_at_rejects_nan_and_infinity() {
         let mut tree = PaneTree::Leaf(1);
         tree.split_h(1, 2);
-        assert!(!tree.set_ratio_at(&[], f32::NAN));
-        if let PaneTree::HSplit { ratio, .. } = tree {
-            assert!(ratio.is_finite(), "ratio remained finite after NaN reject");
-        } else {
-            panic!("expected HSplit");
+        // `is_finite()` covers NaN AND ±∞ — both would survive
+        // `f32::clamp` (NaN: stays NaN; ±∞: clamps to a bound but
+        // would already have polluted intermediate arithmetic).
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert!(!tree.set_ratio_at(&[], bad), "{bad} must be rejected");
+            if let PaneTree::HSplit { ratio, .. } = tree {
+                assert!(ratio.is_finite());
+            } else {
+                panic!("expected HSplit");
+            }
         }
     }
 
     #[test]
-    fn resize_rejects_nan_delta() {
+    fn resize_rejects_non_finite_delta() {
         let mut tree = PaneTree::Leaf(1);
         tree.split_h(1, 2);
-        assert!(!tree.resize(1, Direction::Right, f32::NAN));
-        if let PaneTree::HSplit { ratio, .. } = tree {
-            assert!(ratio.is_finite());
-        } else {
-            panic!("expected HSplit");
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert!(!tree.resize(1, Direction::Right, bad));
+            if let PaneTree::HSplit { ratio, .. } = tree {
+                assert!(ratio.is_finite());
+            } else {
+                panic!("expected HSplit");
+            }
         }
     }
 

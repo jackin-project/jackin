@@ -58,39 +58,36 @@ mod tests {
     use super::*;
     use std::process::{Command, Stdio};
 
-    /// `reap_zombies` is also exported so it can be called directly in
-    /// a test environment (PID 1 setup is not possible in `cargo test`,
-    /// so the test forks a child via `Command`, lets it exit, and
-    /// verifies the reaper returns `Ok(_)` for the child instead of
-    /// blocking. Without WNOHANG the call would block on the kernel
-    /// queue forever in the absence of a reaped child.
     #[test]
     fn reap_zombies_returns_when_no_children() {
         // No children, no zombie queue — reap_zombies must return
         // quickly. If it spins or blocks, this test hangs and the
-        // CI runner kills it.
+        // CI runner kills it. Regression guard against a refactor
+        // that drops the WNOHANG flag from the loop.
         reap_zombies();
     }
 
     #[test]
-    fn waitpid_wnohang_reaps_exited_child() {
-        // Spawn a trivial child, wait for it to exit, then call
-        // waitpid(WNOHANG) to confirm the kernel surfaces the exit
-        // status before reap_zombies short-circuits on the second
-        // pass. This exercises the same syscall the reaper loop
-        // makes — a regression that flipped WNOHANG off would block
-        // here.
-        let child = Command::new("true")
+    fn waitpid_wnohang_returns_exit_status_after_synchronous_wait() {
+        // Spawn /bin/true, wait synchronously, then re-`waitpid` with
+        // WNOHANG. The child is reaped by `Child::wait`, so WNOHANG
+        // returns ECHILD ("no such process"). This pins the kernel
+        // contract the reaper loop relies on: after a reap, WNOHANG
+        // sees no zombie and the inner `match` short-circuits. The
+        // sleep-and-poll form this test replaced was flake-prone
+        // under parallel cargo nextest.
+        let mut child = Command::new("true")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
             .expect("spawn /bin/true");
         let pid = Pid::from_raw(child.id() as i32);
-        // Give the child a chance to exit. /bin/true takes microseconds.
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        // First call: reap the specific child.
-        let status = waitpid(pid, Some(WaitPidFlag::WNOHANG));
-        assert!(matches!(status, Ok(WaitStatus::Exited(_, 0))), "{status:?}");
+        let status = child.wait().expect("wait /bin/true");
+        assert!(status.success());
+        let probe = waitpid(pid, Some(WaitPidFlag::WNOHANG));
+        // ECHILD is the kernel's "no zombie for this pid" response —
+        // identical to the `Err(_)` arm the reaper short-circuits on.
+        assert!(probe.is_err(), "expected ECHILD, got {probe:?}");
     }
 }

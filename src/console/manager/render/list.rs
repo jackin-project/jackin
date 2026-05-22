@@ -557,15 +557,14 @@ pub(in crate::console::manager) fn compute_sidebar_layout(
     inputs: &SidebarInputs<'_>,
 ) -> SidebarLayout {
     let (global_rows, role_global_rows) = split_global_mount_rows(&inputs.global_rows);
-    // Slot occupancy:
-    //   - Global header renders only when there are unscoped global
-    //     rows AND (there are unscoped global rows OR the role-global
-    //     section is empty). The double-empty case is filtered out
-    //     earlier by `inputs.global_rows.is_empty()` at the call site,
-    //     so in practice `show_global` is true iff at least one
-    //     unscoped global row exists.
-    //   - Role-global header renders iff any role-scoped global row
-    //     exists.
+    // Slot occupancy: show the unscoped-global header iff there is any
+    // global mount row AND (some are unscoped OR no role-scoped ones
+    // exist). The role-global header renders iff at least one
+    // role-scoped global row exists. `inputs.global_rows` is the
+    // combined input; `global_rows` is the unscoped subset from
+    // `split_global_mount_rows`. Empty-input case (no globals at all)
+    // makes show_global false because `inputs.global_rows.is_empty()`
+    // short-circuits, and show_role_global false too.
     let show_global_header = !global_rows.is_empty() || role_global_rows.is_empty();
     let show_global = !inputs.global_rows.is_empty() && show_global_header;
     let show_role_global = !role_global_rows.is_empty();

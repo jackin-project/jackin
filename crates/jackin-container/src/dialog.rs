@@ -429,10 +429,6 @@ fn rename_tab_handle_key(
     }
 }
 
-/// Universal dialog-dismiss keys. Operators reach for `Esc` and `q`
-/// most often, but Backspace, Delete, and `Ctrl+C` are common
-/// muscle-memory fallbacks. Uppercase `Q` is included so a shift-key
-/// slip doesn't trap the operator inside the dialog.
 fn is_arrow_up(key: &[u8]) -> bool {
     matches!(key, b"\x1b[A" | b"\x1bOA")
 }
@@ -441,6 +437,10 @@ fn is_arrow_down(key: &[u8]) -> bool {
     matches!(key, b"\x1b[B" | b"\x1bOB")
 }
 
+/// Universal dialog-dismiss keys. Operators reach for `Esc` and `q`
+/// most often, but Backspace, Delete, and `Ctrl+C` are common
+/// muscle-memory fallbacks. Uppercase `Q` is included so a shift-key
+/// slip doesn't trap the operator inside the dialog.
 fn is_dismiss_key(key: &[u8]) -> bool {
     matches!(
         key,

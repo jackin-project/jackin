@@ -7,8 +7,6 @@ use crate::instance::InstanceManifest;
 // Query session list from the jackin-container daemon via its socket.
 pub const JACKIN_STATUS_CMD: &str = "/usr/local/bin/jackin-container status 2>/dev/null || true";
 
-// Re-exported so callers that already imported from `attach` keep working
-// after ContainerState moved to `docker_client`.
 pub use crate::docker_client::ContainerState;
 #[cfg(test)]
 use crate::instance::{InstanceIndex, InstanceStatus};

@@ -24,12 +24,10 @@ pub async fn run_client(new_session_agent: Option<String>) -> Result<()> {
     let (rows, cols) = terminal_size();
 
     crossterm::terminal::enable_raw_mode().context("failed to enable raw mode")?;
-    // Install the cleanup guard BEFORE the alt-screen write — if the
-    // write returns Err, the guard's Drop still resets raw mode and
-    // exits the alt-screen buffer, restoring the operator's host
-    // terminal. The earlier ordering left raw mode on whenever the
-    // write failed (broken pipe, EAGAIN race), and the operator had
-    // to `reset` to recover.
+    // Install the cleanup guard BEFORE writing the alt-screen ENTER
+    // sequence: if the write returns Err, Drop on the guard still
+    // exits raw mode + the alt-screen buffer so the operator's host
+    // terminal stays usable.
     let _cleanup = RawModeGuard;
     let mut stdout = std::io::stdout();
     // Enter the alternate-screen buffer so the multiplexer's draw

@@ -95,9 +95,11 @@ pub fn encode_client(frame: ClientFrame) -> Vec<u8> {
             spawn_agent,
         } => {
             // Layout: rows(2) cols(2) agent_len(2) agent_bytes(N).
-            // agent_len == 0 means "no spawn intent" so an older
-            // 4-byte Hello stays parseable as a 6-byte Hello with
-            // zero-length agent (forward-compatible).
+            // agent_len == 0 means "no spawn intent" (plain attach).
+            // Slugs are bounded by `validate_agent_slug` on the
+            // ingress side, so `u16::try_from` cannot realistically
+            // fail; `unwrap_or(0)` is a defence-in-depth no-spawn
+            // sentinel rather than a load-bearing path.
             let agent_bytes = spawn_agent.as_deref().unwrap_or("").as_bytes();
             let agent_len = u16::try_from(agent_bytes.len()).unwrap_or(0);
             let mut payload = Vec::with_capacity(6 + agent_bytes.len());
@@ -285,6 +287,38 @@ mod tests {
                 rows: 50,
                 cols: 200,
                 spawn_agent: Some("codex".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn hello_rejects_oversized_agent_len() {
+        // agent_len=99 but payload only carries 12 bytes of "only-7-bytes".
+        // decode must bail rather than slice past the buffer.
+        let mut payload = vec![0, 42, 0, 100, 0, 99];
+        payload.extend(b"only-7-bytes");
+        assert!(decode_client(TAG_HELLO, payload).is_err());
+    }
+
+    #[test]
+    fn hello_rejects_non_utf8_agent_bytes() {
+        let mut payload = vec![0, 42, 0, 100, 0, 3];
+        payload.extend(&[0xFF, 0xFE, 0xFD]);
+        assert!(decode_client(TAG_HELLO, payload).is_err());
+    }
+
+    #[test]
+    fn hello_legacy_4_byte_decodes_with_none_spawn() {
+        // A short (rows+cols only) Hello matches `payload.len() >= 6`
+        // being false → spawn_agent = None.
+        let payload = vec![0, 24, 0, 80];
+        let frame = decode_client(TAG_HELLO, payload).unwrap();
+        assert_eq!(
+            frame,
+            ClientFrame::Hello {
+                rows: 24,
+                cols: 80,
+                spawn_agent: None,
             }
         );
     }
