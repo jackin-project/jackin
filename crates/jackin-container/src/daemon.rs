@@ -13,6 +13,7 @@
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
 use std::collections::{HashMap, HashSet};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
@@ -3084,16 +3085,35 @@ fn gh_pull_request_url(workdir: &Path, branch: &str) -> Option<String> {
             .env("GH_NO_UPDATE_NOTIFIER", "1")
             .args(["pr", "view", branch, "--json", "url", "--jq", ".url"]),
     )?;
-    if url == "null" { None } else { Some(url) }
+    if url == "null" || !(url.starts_with("https://") || url.starts_with("http://")) {
+        None
+    } else {
+        Some(url)
+    }
 }
 
 fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
     command.stdout(Stdio::piped()).stderr(Stdio::null());
     let mut child = command.spawn().ok()?;
+    let mut stdout = child.stdout.take()?;
+    let stdout_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout.read_to_end(&mut bytes).ok()?;
+        Some(bytes)
+    });
     let started = Instant::now();
-    let output = loop {
-        if child.try_wait().ok()?.is_some() {
-            break child.wait_with_output().ok()?;
+    let mut status_success = None;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                status_success = Some(status.success());
+                break;
+            }
+            Ok(None) => {}
+            // PID 1's zombie reaper can win the wait race for very
+            // short-lived git/gh children. The stdout pipe still
+            // carries the useful data, so treat ECHILD as "exited".
+            Err(_) => break,
         }
         if started.elapsed() >= Duration::from_millis(1500) {
             let _ = child.kill();
@@ -3101,11 +3121,12 @@ fn command_stdout_trimmed(command: &mut Command) -> Option<String> {
             return None;
         }
         std::thread::sleep(Duration::from_millis(25));
-    };
-    if !output.status.success() {
+    }
+    if status_success == Some(false) {
         return None;
     }
-    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stdout = stdout_reader.join().ok()??;
+    let value = String::from_utf8_lossy(&stdout).trim().to_string();
     if value.is_empty() { None } else { Some(value) }
 }
 
@@ -3476,5 +3497,24 @@ mod tests {
             prefix_full_redraw_reason(&PrefixCommand::ClearPane),
             FullRedrawReason::PaneClear
         );
+    }
+
+    #[test]
+    fn command_stdout_trimmed_returns_trimmed_stdout() {
+        let mut command = Command::new("printf");
+        command.arg("  branch-name\n");
+
+        assert_eq!(
+            command_stdout_trimmed(&mut command),
+            Some("branch-name".to_string())
+        );
+    }
+
+    #[test]
+    fn command_stdout_trimmed_rejects_known_failure_status() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "printf branch-name; exit 1"]);
+
+        assert_eq!(command_stdout_trimmed(&mut command), None);
     }
 }
