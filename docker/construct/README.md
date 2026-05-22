@@ -10,8 +10,9 @@ For full details — including what's installed, how it is built, the image laye
 
 | File | Purpose |
 |---|---|
-| `Dockerfile` | Builds the construct image on Debian Trixie with core tools (git, Docker CLI, mise, ripgrep, fd, fzf, GitHub CLI, zsh, starship) and security tools (tirith, shellfirm) |
-| `zshrc` | Shell configuration — sets up mise shims, starship prompt, and security tool shell hooks |
+| `Dockerfile` | Builds the construct image on Debian Trixie with core tools (git, Docker CLI, mise, ripgrep, fd, fzf, GitHub CLI, zsh, fish, starship) and security tools (tirith, shellfirm) |
+| `zshrc` | zsh configuration — sources oh-my-zsh (with `ZSH_THEME=""` so Starship owns the prompt), enables auto-title, sets up mise shims and security tool hooks. Default shell for the `agent` user. |
+| `fish-config.fish` | fish configuration — opt-in alternative shell. Initialises Starship and replicates zsh's OSC 0/2 + OSC 7 title hooks so pane border titles work identically. |
 | `versions.env` | Pinned versions for security tools (tirith, shellfirm) used as Docker build-args |
 
 The runtime entrypoint source that launches the selected agent is at [`docker/runtime/entrypoint.sh`](../runtime/entrypoint.sh). jackin copies it into derived images at `/jackin/runtime/entrypoint.sh`, where it configures git identity, authenticates with GitHub, runs agent-specific setup, and starts Claude or Codex.
