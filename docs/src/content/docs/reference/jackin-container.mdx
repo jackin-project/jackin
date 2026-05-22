@@ -167,7 +167,7 @@ OSC 7 (current working directory) is never forwarded — it would tell the opera
 
 The attach client enables SGR any-event mouse tracking on the outer terminal. When the daemon sees passive pointer motion and the outer terminal advertises a known OSC 22-capable identity (`xterm-ghostty`, `xterm-kitty`, Foot, or iTerm via `TERM` / `TERM_PROGRAM`), it emits OSC 22 pointer-shape updates:
 
-- `pointer` over clickable jackin chrome such as tabs, the menu button, the container-name copy target, and clickable dialog rows.
+- `pointer` over clickable jackin chrome such as tabs, the menu button, the container-info entry point, and clickable dialog rows such as the Container ID copy target.
 - `text` over pane bodies where jackin's own mouse selection is available because the focused program did not request mouse reporting.
 - `ew-resize` / `ns-resize` over split borders and `grabbing` during an active resize drag.
 - `default` everywhere else, and again during attach cleanup.

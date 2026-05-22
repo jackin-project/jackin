@@ -18,6 +18,7 @@
 /// every other terminal extension the operator's outer terminal
 /// understands would vanish at the multiplexer boundary.
 use std::io::Write as _;
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -654,12 +655,11 @@ impl Session {
         }
     }
 
-    /// True when the session's program has enabled an SGR mouse
-    /// protocol (any variant past `None`). Used by the daemon to decide
-    /// whether to forward a mouse press to the PTY: forwarding to a
-    /// program that did not opt in (a shell prompt, an agent before its
-    /// TUI mounts) leaks the raw SGR bytes as visible text — the
-    /// operator sees `;col;rowM` garbage at the prompt.
+    /// True when the session's program has enabled any mouse protocol
+    /// mode. Used by the daemon to decide whether selection gestures
+    /// belong to jackin or to the pane. Actual PTY mouse forwarding
+    /// also consults `mouse_protocol_mode()` so press-only programs
+    /// do not receive motion events.
     pub fn mouse_enabled(&self) -> bool {
         !matches!(
             self.parser.screen().mouse_protocol_mode(),
@@ -669,6 +669,10 @@ impl Session {
 
     pub fn mouse_protocol_encoding(&self) -> vt100::MouseProtocolEncoding {
         self.parser.screen().mouse_protocol_encoding()
+    }
+
+    pub fn mouse_protocol_mode(&self) -> vt100::MouseProtocolMode {
+        self.parser.screen().mouse_protocol_mode()
     }
 
     /// True when the session enabled DEC private mode `?1004` (focus
@@ -724,47 +728,27 @@ impl Session {
         out
     }
 
-    /// Snapshot of every mode the daemon should restore on the outer
-    /// terminal when this pane becomes focused or an attach client
-    /// connects. Covers bracketed paste (`?2004`), focus events
-    /// (`?1004`), the active mouse protocol (`?1000`/`?1002`/`?1003`)
-    /// with SGR encoding (`?1006`), application cursor keys (`?1`),
-    /// DECTCEM cursor visibility (`?25`), and the top of the kitty
-    /// keyboard stack (`\x1b[>{flags}u`). The daemon emits this
-    /// after the focus-swap reset so the outer terminal mirrors the
-    /// new pane's expectations without leaking the previous pane's.
+    /// Snapshot of every pane-owned mode the daemon should restore
+    /// on the outer terminal when this pane becomes focused or an
+    /// attach client connects. Covers bracketed paste (`?2004`),
+    /// application cursor keys (`?1`), DECTCEM cursor visibility
+    /// (`?25`), and the top of the kitty keyboard stack
+    /// (`\x1b[>{flags}u`).
+    ///
+    /// Mouse and focus reporting are intentionally absent: the
+    /// attach client owns those modes so the multiplexer can always
+    /// receive tab clicks, pane drags, selection gestures, and
+    /// terminal FocusIn/FocusOut events. The daemon gates and
+    /// re-encodes mouse/focus events before forwarding them to the
+    /// focused pane.
     pub fn current_mode_state(&self) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
         let screen = self.parser.screen();
         if screen.bracketed_paste() {
             out.push(b"\x1b[?2004h".to_vec());
         }
-        if self.parser.callbacks().focus_events() {
-            out.push(b"\x1b[?1004h".to_vec());
-        }
         if screen.application_cursor() {
             out.push(b"\x1b[?1h".to_vec());
-        }
-        // Mouse protocol — enable the specific mode the agent asked
-        // for plus SGR encoding. The client parser itself expects
-        // SGR mouse from the outer terminal; the daemon re-encodes
-        // each event into the focused pane's selected protocol before
-        // writing it to the PTY.
-        use vt100::MouseProtocolMode;
-        match screen.mouse_protocol_mode() {
-            MouseProtocolMode::None => {}
-            MouseProtocolMode::Press => {
-                out.push(b"\x1b[?9h".to_vec());
-            }
-            MouseProtocolMode::PressRelease => {
-                out.push(b"\x1b[?1000h\x1b[?1006h".to_vec());
-            }
-            MouseProtocolMode::ButtonMotion => {
-                out.push(b"\x1b[?1002h\x1b[?1006h".to_vec());
-            }
-            MouseProtocolMode::AnyMotion => {
-                out.push(b"\x1b[?1003h\x1b[?1006h".to_vec());
-            }
         }
         // Kitty keyboard — restore the most recently pushed level
         // for this pane. Empty stack = "no kitty kb on outer terminal".
@@ -783,6 +767,14 @@ impl Session {
             b"\x1b[?25h".to_vec()
         });
         out
+    }
+
+    /// Outer-terminal modes owned by the attach client, not by the
+    /// focused pane. Reassert after attach and focus swaps so a pane
+    /// that requested legacy X10 or press-only mouse tracking cannot
+    /// downgrade the multiplexer's own input channel.
+    pub fn client_owned_mode_state() -> &'static [u8] {
+        b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1005l\x1b[?1015l\x1b[?1003h\x1b[?1006h\x1b[?1004h"
     }
 
     /// Outer-terminal reset sequence applied just before a focus
@@ -900,24 +892,38 @@ pub fn available_agents() -> Vec<String> {
 }
 
 /// Build a CommandBuilder for an agent session.
+///
 /// Entrypoint is `/jackin/runtime/entrypoint.sh` with `JACKIN_AGENT=<slug>`.
-pub fn build_agent_command(agent: &str, env_passthrough: &[(String, String)]) -> CommandBuilder {
+/// `cwd` is the workspace workdir (read from `JACKIN_WORKDIR` at daemon
+/// startup). It must be passed explicitly: portable_pty's `CommandBuilder`
+/// defaults the child's cwd to `$HOME` when none is set — it does not
+/// inherit the daemon's cwd — so omitting this would land every agent in
+/// `/home/agent` regardless of the workspace.
+pub fn build_agent_command(
+    agent: &str,
+    env_passthrough: &[(String, String)],
+    cwd: &Path,
+) -> CommandBuilder {
     let mut cmd = CommandBuilder::new("/jackin/runtime/entrypoint.sh");
     cmd.env("JACKIN_AGENT", agent);
     for (k, v) in env_passthrough {
         cmd.env(k, v);
     }
     apply_terminal_env(&mut cmd);
+    cmd.cwd(cwd);
     cmd
 }
 
 /// Build a CommandBuilder for an interactive shell session.
-pub fn build_shell_command(env_passthrough: &[(String, String)]) -> CommandBuilder {
+///
+/// See `build_agent_command` for the `cwd` rationale.
+pub fn build_shell_command(env_passthrough: &[(String, String)], cwd: &Path) -> CommandBuilder {
     let mut cmd = CommandBuilder::new("/bin/zsh");
     for (k, v) in env_passthrough {
         cmd.env(k, v);
     }
     apply_terminal_env(&mut cmd);
+    cmd.cwd(cwd);
     cmd
 }
 

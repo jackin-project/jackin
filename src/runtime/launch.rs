@@ -835,6 +835,15 @@ async fn launch_role_runtime(
         crate::env_model::JACKIN_ROLE_ENV_NAME,
         selector.key()
     );
+    // Explicit contract: the multiplexer daemon reads this env var and
+    // uses it as the `cwd` for every spawned PTY. Mirrors the value
+    // passed to `--workdir` below so the daemon does not have to
+    // re-derive it from PID 1's cwd.
+    let jackin_workdir_env = format!(
+        "{}={}",
+        crate::env_model::JACKIN_WORKDIR_ENV_NAME,
+        workspace.workdir
+    );
 
     // Forward the host TERM so the container's terminal type matches what the
     // terminal emulator actually supports.  Docker defaults to TERM=xterm which
@@ -1075,6 +1084,9 @@ async fn launch_role_runtime(
     run_args.extend_from_slice(&["-v", &socket_mount]);
     // Forward JACKIN_AGENT so the daemon knows which runtime to launch first.
     run_args.extend_from_slice(&["-e", &jackin_agent_env]);
+    // Forward JACKIN_WORKDIR so the daemon spawns every PTY in the
+    // workspace workdir (portable_pty defaults to $HOME otherwise).
+    run_args.extend_from_slice(&["-e", &jackin_workdir_env]);
     run_args.push(image);
     runner
         .run("docker", &run_args, None, &docker_run_opts)

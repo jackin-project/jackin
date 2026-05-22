@@ -102,9 +102,9 @@ pub enum Dialog {
     /// container-name label. Surfaces the bits that used to clutter
     /// the bar (role key, focused-agent runtime) plus the full
     /// container ID with a one-key "copy to clipboard" shortcut.
-    /// Enter or a click inside the box emits OSC 52 with the
-    /// container name AND keeps the dialog open — `copied` flips to
-    /// `true` so the renderer shows a visible "Copied!" indicator
+    /// Enter or a click on the Container ID row emits OSC 52 with
+    /// the container name AND keeps the dialog open — `copied` flips
+    /// to `true` so the renderer shows a visible "Copied!" indicator
     /// next to the container ID, confirming the OSC 52 actually
     /// flushed to the outer terminal. Esc / q / a click outside the
     /// box dismisses. `focused_agent` is the slug of whichever pane
@@ -544,20 +544,18 @@ impl Dialog {
         if matches!(self, Self::RenameTab { .. }) {
             return DialogAction::Consume;
         }
-        // ContainerInfo: a click anywhere inside the box copies the
-        // container name to the operator's clipboard, matching the
-        // "click to copy" mental model the menu hint advertises.
-        // The dialog stays open after the copy so the next render
-        // can show the "Copied!" indicator — operator dismisses
-        // explicitly with Esc / q / a click outside the box (the
-        // outside-click case is already handled by the early
-        // dismiss return above).
+        // ContainerInfo: only the Container ID row is the copy
+        // target. Other inside-box clicks are informational and must
+        // not mutate the operator's clipboard.
         if let Self::ContainerInfo {
             container_name,
             copied,
             ..
         } = self
         {
+            if !container_info_id_row_clickable(row, col, box_row, box_col, width) {
+                return DialogAction::Consume;
+            }
             let payload = container_name.clone();
             *copied = true;
             return DialogAction::CopyToClipboard(payload);
@@ -674,7 +672,10 @@ impl Dialog {
         }
         match self {
             Self::RenameTab { .. } => false,
-            Self::ContainerInfo { .. } | Self::ConfirmAction { .. } => true,
+            Self::ContainerInfo { .. } => {
+                container_info_id_row_clickable(row, col, box_row, box_col, width)
+            }
+            Self::ConfirmAction { .. } => true,
             Self::CommandPalette { filter, .. } => {
                 dialog_list_row_clickable(row, box_row, palette_filtered_indices(filter).len())
             }
@@ -827,6 +828,31 @@ impl Dialog {
             }
         }
     }
+
+    /// Clear transient copy feedback after the daemon-side timer
+    /// expires. Returns true only when the visible dialog changed.
+    pub fn clear_copy_feedback(&mut self) -> bool {
+        let Self::ContainerInfo { copied, .. } = self else {
+            return false;
+        };
+        if !*copied {
+            return false;
+        }
+        *copied = false;
+        true
+    }
+}
+
+fn container_info_id_row_clickable(
+    row: u16,
+    col: u16,
+    box_row: u16,
+    box_col: u16,
+    width: u16,
+) -> bool {
+    let start = box_col.saturating_add(2);
+    let end = box_col.saturating_add(width.saturating_sub(2));
+    row == box_row + 2 && col >= start && col < end
 }
 
 /// Edit a rename-tab input buffer in response to a raw key chunk.
@@ -1557,7 +1583,7 @@ fn render_row(buf: &mut Vec<u8>, row: u16, col: u16, width: u16, label: &str, se
 /// (Container ID, Role, Agent) inside the standard `render_box` chrome.
 /// The container ID is rendered in white-bold to flag it as the copy
 /// target the bottom hint advertises. No selection state — Enter / a
-/// click anywhere inside the box copies the ID via OSC 52; Esc / q
+/// click on the Container ID row copies the ID via OSC 52; Esc / q
 /// dismisses.
 #[allow(clippy::too_many_arguments)]
 fn render_container_info(
@@ -1949,6 +1975,7 @@ mod tests {
         let d = container_info_fixture();
         let (row, col, _, _) = d.box_rect(40, 100);
         assert!(d.clickable_at(row + 2, col + 2, 40, 100));
+        assert!(!d.clickable_at(row + 3, col + 2, 40, 100));
         assert!(!d.clickable_at(0, 0, 40, 100));
     }
 
@@ -2249,6 +2276,51 @@ mod tests {
             }
             other => panic!("Enter must request clipboard copy, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn container_info_click_on_id_row_copies_container_name() {
+        let mut d = container_info_fixture();
+        let (row, col, _, _) = d.box_rect(40, 100);
+        match d.handle_click(row + 2, col + 2, 40, 100) {
+            DialogAction::CopyToClipboard(payload) => {
+                assert_eq!(payload, "jk-abc123-thearchitect");
+            }
+            other => panic!("Container ID row click must request clipboard copy, got {other:?}"),
+        }
+        let Dialog::ContainerInfo { copied, .. } = d else {
+            unreachable!()
+        };
+        assert!(copied, "ID row click must show copy feedback");
+    }
+
+    #[test]
+    fn container_info_click_on_other_rows_does_not_copy() {
+        let mut d = container_info_fixture();
+        let (row, col, _, _) = d.box_rect(40, 100);
+        assert_eq!(
+            d.handle_click(row + 3, col + 2, 40, 100),
+            DialogAction::Consume
+        );
+        let Dialog::ContainerInfo { copied, .. } = d else {
+            unreachable!()
+        };
+        assert!(!copied, "non-ID rows must not show copy feedback");
+    }
+
+    #[test]
+    fn container_info_clear_copy_feedback_hides_badge() {
+        let mut d = Dialog::ContainerInfo {
+            container_name: "jk-abc123-thearchitect".to_string(),
+            role: "the-architect".to_string(),
+            focused_agent: Some("claude".to_string()),
+            copied: true,
+        };
+        assert!(d.clear_copy_feedback());
+        let Dialog::ContainerInfo { copied, .. } = d else {
+            unreachable!()
+        };
+        assert!(!copied);
     }
 
     #[test]

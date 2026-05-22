@@ -13,7 +13,7 @@ use crate::protocol::attach::{
     ClientFrame, ServerFrame, SpawnRequest, encode_client, read_server_frame,
 };
 use crate::protocol::control::{ClientMsg, ServerMsg, frame as control_frame};
-use crate::session::SESSION_ENV_PASSTHROUGH;
+use crate::session::{SESSION_ENV_PASSTHROUGH, Session};
 use crate::socket::SOCKET_PATH;
 
 /// Connect to the running daemon and run the interactive attach client.
@@ -46,7 +46,8 @@ pub async fn run_client(
     //  - resize re-draws stack on top of old ones because the host
     //    keeps the old content above the cursor.
     // Mouse: any-event tracking + SGR encoding. Focus events on.
-    stdout.write_all(b"\x1b[?1049h\x1b[2J\x1b[H\x1b[?1003h\x1b[?1006h\x1b[?1004h")?;
+    stdout.write_all(b"\x1b[?1049h\x1b[2J\x1b[H")?;
+    stdout.write_all(Session::client_owned_mode_state())?;
     stdout.flush()?;
 
     let mut stream = UnixStream::connect(SOCKET_PATH)

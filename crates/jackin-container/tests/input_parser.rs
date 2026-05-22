@@ -76,6 +76,56 @@ fn sgr_mouse_press_emits_mouse_event() {
 }
 
 #[test]
+fn x10_mouse_press_emits_mouse_event() {
+    assert_eq!(
+        parse_default(b"\x1b[M *%"),
+        vec![InputEvent::MousePress {
+            col: 9,
+            row: 4,
+            button: 0
+        }]
+    );
+}
+
+#[test]
+fn x10_mouse_release_emits_mouse_event() {
+    assert_eq!(
+        parse_default(b"\x1b[M#*%"),
+        vec![InputEvent::MouseRelease {
+            col: 9,
+            row: 4,
+            button: 0
+        }]
+    );
+}
+
+#[test]
+fn x10_mouse_sequence_survives_chunk_boundary() {
+    let mut parser = InputParser::default();
+    assert!(parser.parse(b"\x1b[M").is_empty());
+    assert_eq!(
+        parser.parse(b" *%"),
+        vec![InputEvent::MousePress {
+            col: 9,
+            row: 4,
+            button: 0
+        }]
+    );
+}
+
+#[test]
+fn x10_no_button_motion_from_live_log_is_not_split_into_data() {
+    assert_eq!(
+        parse_default(b"\x1b[MC~9"),
+        vec![InputEvent::MousePress {
+            col: 93,
+            row: 24,
+            button: 35
+        }]
+    );
+}
+
+#[test]
 fn bracketed_paste_protects_palette_byte() {
     // Pasted text containing the palette byte must NOT open the palette.
     let mut parser = InputParser::default();

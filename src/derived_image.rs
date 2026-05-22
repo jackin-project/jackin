@@ -59,13 +59,29 @@ RUN chmod +x /jackin/runtime/hooks/{dst}
         // docker/runtime/entrypoint.sh:172-181). The outer
         // `grep -q ... ||` keeps the file single-shimmed across
         // derived-from-derived builds via `base_image_override`.
+        //
+        // The `source` runs inside an anonymous zsh function with
+        // `setopt local_options local_traps`: role hooks routinely
+        // ship `set -euo pipefail` (POSIX-sh idiom), which in zsh maps
+        // to `nounset`/`errexit`/`pipefail`. Without the local scope
+        // those flags leak into the same zsh that then loads
+        // `.zshrc` — `oh-my-zsh/lib/termsupport.zsh` and tirith's
+        // `zsh-hook.zsh` both read variables without `:-` defaults and
+        // error out under `nounset`, breaking every interactive Shell
+        // pane. The anonymous fn keeps option/trap changes scoped to
+        // the source call while still letting `export VAR=...` inside
+        // `source.sh` leak into the caller's env (which is the whole
+        // point of the shim).
         #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
         const ZSHENV_SOURCE_SHIM: &str = "\
 RUN grep -q '__JACKIN_ZSHENV_SOURCE_LOADED' /home/agent/.zshenv 2>/dev/null \\
     || printf '%s\\n' \\
     'if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\" ] && [ -f /jackin/runtime/hooks/source.sh ]; then' \\
     '  __jackin_rc=0' \\
-    '  source /jackin/runtime/hooks/source.sh || __jackin_rc=$?' \\
+    '  () {' \\
+    '    setopt local_options local_traps' \\
+    '    source /jackin/runtime/hooks/source.sh' \\
+    '  } || __jackin_rc=$?' \\
     '  trap - ERR' \\
     '  if [ \"$__jackin_rc\" -ne 0 ]; then' \\
     '    print -u2 \"[zshenv] jackin source hook returned non-zero (exit $__jackin_rc); environment may be incomplete\"' \\
@@ -548,17 +564,24 @@ mod tests {
             .find("if [ -z \"${__JACKIN_ZSHENV_SOURCE_LOADED:-}\"")
             .unwrap();
         let source_pos = dockerfile
-            .find("source /jackin/runtime/hooks/source.sh || __jackin_rc=$?")
+            .find("source /jackin/runtime/hooks/source.sh")
             .unwrap();
+        let close_fn_pos = dockerfile.find("} || __jackin_rc=$?").unwrap();
         let export_pos = dockerfile
             .find("export __JACKIN_ZSHENV_SOURCE_LOADED=1")
             .unwrap();
         let append_pos = dockerfile.find(">> /home/agent/.zshenv").unwrap();
         assert!(copy_pos < guard_pos);
         assert!(guard_pos < source_pos);
-        assert!(source_pos < export_pos);
+        assert!(source_pos < close_fn_pos);
+        assert!(close_fn_pos < export_pos);
         assert!(export_pos < append_pos);
         assert!(dockerfile.contains("trap - ERR"));
+        // Role hooks that `set -euo pipefail` must not leak nounset /
+        // errexit / pipefail into the zsh that loads `.zshrc` next —
+        // the source call runs in an anonymous fn with localized
+        // options + traps.
+        assert!(dockerfile.contains("setopt local_options local_traps"));
         // Single emission — derived-from-derived rebuilds must not stack
         // duplicate shim blocks in /home/agent/.zshenv.
         assert_eq!(dockerfile.matches(">> /home/agent/.zshenv").count(), 1);

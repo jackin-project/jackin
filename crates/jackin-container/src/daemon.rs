@@ -13,6 +13,7 @@
 ///   - Lifecycle: the daemon exits when the last session ends so the
 ///     container reaps cleanly. SIGTERM also triggers shutdown.
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::Result;
@@ -105,6 +106,14 @@ pub struct Multiplexer {
     /// True only for outer terminals known to support OSC 22 with CSS
     /// pointer names. Unsupported terminals keep normal cursor behavior.
     pointer_shapes_supported: bool,
+    /// Deadline for hiding the transient "Copied!" badge in the
+    /// container-info dialog after a jackin-owned OSC 52 copy.
+    container_info_copy_deadline: Option<Instant>,
+    /// Workspace workdir read from `JACKIN_WORKDIR` at daemon startup.
+    /// Every spawned PTY (agent or shell) receives this as its `cwd`
+    /// so the operator's panes open in the workspace they configured
+    /// instead of `$HOME` (portable_pty's CommandBuilder default).
+    workdir: PathBuf,
 }
 
 #[allow(dead_code)]
@@ -249,8 +258,11 @@ const DEFAULT_ESCAPE_TIME: std::time::Duration = std::time::Duration::from_milli
 /// button code 35 (`32` motion bit + `3` no-button code).
 const SGR_NO_BUTTON_MOTION: u8 = 35;
 
+const CONTAINER_INFO_COPY_FEEDBACK_DURATION: std::time::Duration =
+    std::time::Duration::from_secs(2);
+
 impl Multiplexer {
-    pub fn new(rows: u16, cols: u16) -> Self {
+    pub fn new(rows: u16, cols: u16, workdir: PathBuf) -> Self {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let content_rows = rows.saturating_sub(STATUS_BAR_ROWS);
         let agents = available_agents();
@@ -290,6 +302,8 @@ impl Multiplexer {
             pending_full_redraw: None,
             pointer_shape: PointerShape::Default,
             pointer_shapes_supported: pointer_shapes_supported_from_env(),
+            container_info_copy_deadline: None,
+            workdir,
         }
     }
 
@@ -395,6 +409,9 @@ impl Multiplexer {
     /// again — the standard sub-dialog opening path (Menu → New tab
     /// pushes AgentPicker on top of Menu, not a replacement).
     fn dialog_push(&mut self, d: Dialog) {
+        if matches!(d, Dialog::ContainerInfo { .. }) {
+            self.container_info_copy_deadline = None;
+        }
         self.dialog_stack.push(d);
     }
 
@@ -403,15 +420,23 @@ impl Multiplexer {
     /// popping a sub-dialog exposes its parent again rather than
     /// dismissing the whole flow.
     fn dialog_pop_one(&mut self) -> Option<Dialog> {
-        self.dialog_stack.pop()
+        let popped = self.dialog_stack.pop();
+        if !matches!(
+            self.dialog_stack.last(),
+            Some(Dialog::ContainerInfo { copied: true, .. })
+        ) {
+            self.container_info_copy_deadline = None;
+        }
+        popped
     }
 
     /// Clear every dialog on the stack — used by action paths that
     /// finish the flow (`SpawnAgent` after picking an agent,
-    /// `CopyToClipboard` after the OSC 52 fires, etc.) so the
+    /// destructive confirmations after they fire, etc.) so the
     /// operator returns straight to the focused pane.
     fn dialog_clear(&mut self) {
         self.dialog_stack.clear();
+        self.container_info_copy_deadline = None;
     }
 
     /// Replace the current top of stack with `d`. Used by transitions
@@ -471,6 +496,7 @@ impl Multiplexer {
         if self.active_tab >= self.tabs.len() {
             return;
         }
+        let prev_focused = self.active_focused_id();
         let tab_ids = self.tabs[self.active_tab].tree.all_ids();
         crate::clog!(
             "action: close_focused_tab tab_idx={} pane_count={}",
@@ -489,6 +515,7 @@ impl Multiplexer {
         }
         self.zoomed = None;
         self.resize_panes();
+        self.synthesise_focus_swap(prev_focused, self.active_focused_id());
     }
 
     /// Drop the session whose PTY just exited. Removes the pane from
@@ -513,6 +540,7 @@ impl Multiplexer {
         // cheaper than per-field re-validation and matches the
         // close_focused_pane / split path that already does the same.
         self.cancel_drag();
+        let prev_focused = self.active_focused_id();
         let owning_tab = self
             .tabs
             .iter()
@@ -528,7 +556,6 @@ impl Multiplexer {
                 // id and the operator sees a `Done` tab they
                 // cannot interact with.
                 let was_active = tab_idx == self.active_tab;
-                let prev_focused = self.active_focused_id();
                 self.tabs.remove(tab_idx);
                 if was_active {
                     // Move to the tab on the left when it exists;
@@ -543,8 +570,6 @@ impl Multiplexer {
                     if self.active_tab >= self.tabs.len() {
                         self.active_tab = self.tabs.len().saturating_sub(1);
                     }
-                    let new_focused = self.active_focused_id();
-                    self.synthesise_focus_swap(prev_focused, new_focused);
                 } else if tab_idx < self.active_tab {
                     // A non-active tab to the left of the active one
                     // vanished; shift `active_tab` down so it keeps
@@ -565,6 +590,7 @@ impl Multiplexer {
         self.pane_body_caches.remove(&session_id);
         self.zoomed = self.zoomed.filter(|&id| id != session_id);
         self.resize_panes();
+        self.synthesise_focus_swap(prev_focused, self.active_focused_id());
     }
 
     pub fn spawn_initial(&mut self, agent: &str) -> Result<u64> {
@@ -637,8 +663,11 @@ impl Multiplexer {
                 // answered by the green "✓ Copied!" badge the
                 // renderer paints on the Container ID row now that
                 // `copied = true` (flipped by the dialog's handle_key
-                // before this action returned). Esc dismisses.
+                // or row-click handler before this action returned).
+                // The badge expires from the daemon's tick loop.
                 self.send_output(encode_osc52_clipboard_write(&payload));
+                self.container_info_copy_deadline =
+                    Some(Instant::now() + CONTAINER_INFO_COPY_FEEDBACK_DURATION);
             }
             DialogAction::SplitDirection(direction) => {
                 // Chain to the agent picker carrying the direction —
@@ -708,13 +737,18 @@ impl Multiplexer {
         // under typical limits, but well past the size any operator
         // can usefully navigate.
         self.ensure_capacity_for_new_session(true)?;
+        let prev_focused = self.active_focused_id();
         let env_passthrough = self.env_for_spawn(env_overrides);
+        let cwd = self.workdir.as_path();
         let (label, cmd) = match &agent {
             Some(slug) => (
                 capitalize(slug),
-                build_agent_command(slug, &env_passthrough),
+                build_agent_command(slug, &env_passthrough, cwd),
             ),
-            None => ("Shell".to_string(), build_shell_command(&env_passthrough)),
+            None => (
+                "Shell".to_string(),
+                build_shell_command(&env_passthrough, cwd),
+            ),
         };
         let (session, id) = Session::spawn(
             &label,
@@ -739,6 +773,7 @@ impl Multiplexer {
         // term_cols` guess and the agent draws its bottom rows
         // past the pane's bottom border.
         self.resize_panes();
+        self.synthesise_focus_swap(prev_focused, Some(id));
         crate::clog!(
             "action: spawn_session id={id} agent={:?} label={label} tab_idx={}",
             agent,
@@ -803,12 +838,16 @@ impl Multiplexer {
             ),
         };
         let env_passthrough = self.env_for_spawn(env_overrides);
+        let cwd = self.workdir.as_path();
         let (label, cmd) = match &agent_slug {
             Some(slug) => (
                 capitalize(slug),
-                build_agent_command(slug, &env_passthrough),
+                build_agent_command(slug, &env_passthrough, cwd),
             ),
-            None => ("Shell".to_string(), build_shell_command(&env_passthrough)),
+            None => (
+                "Shell".to_string(),
+                build_shell_command(&env_passthrough, cwd),
+            ),
         };
         let agent_for_log = agent_slug.clone();
         let (session, new_id) = Session::spawn(
@@ -837,6 +876,7 @@ impl Multiplexer {
         }
         tab.focused_id = new_id;
         self.resize_panes();
+        self.synthesise_focus_swap(Some(from_id), Some(new_id));
         crate::clog!(
             "action: split id={new_id} from={from_id} dir={direction:?} agent={agent_for_log:?} label={label}",
         );
@@ -858,6 +898,7 @@ impl Multiplexer {
 
     fn close_focused_pane(&mut self) {
         self.cancel_drag();
+        let prev_focused = self.active_focused_id();
         let Some(tab) = self.tabs.get_mut(self.active_tab) else {
             return;
         };
@@ -889,6 +930,7 @@ impl Multiplexer {
             }
         }
         self.resize_panes();
+        self.synthesise_focus_swap(prev_focused, self.active_focused_id());
     }
 
     fn toggle_zoom(&mut self) {
@@ -1045,6 +1087,18 @@ impl Multiplexer {
         self.pending_full_redraw.is_some() || !self.dirty_panes.is_empty()
     }
 
+    fn expire_container_info_copy_feedback(&mut self, now: Instant) -> bool {
+        let Some(deadline) = self.container_info_copy_deadline else {
+            return false;
+        };
+        if now < deadline {
+            return false;
+        }
+        self.container_info_copy_deadline = None;
+        self.dialog_top_mut()
+            .is_some_and(Dialog::clear_copy_feedback)
+    }
+
     fn visible_panes(&self) -> Vec<VisiblePane> {
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
         let focused_id = self.active_focused_id();
@@ -1148,12 +1202,15 @@ impl Multiplexer {
             }
             // Reset the outer terminal to a known baseline, then
             // re-emit every mode the new pane wants live.
-            // Without the reset, mouse / focus / kitty / bracketed-
-            // paste from the previous focused pane would leak into
-            // shells and pre-TUI agents.
+            // Mouse/focus are reasserted as client-owned modes so a
+            // pane cannot downgrade the multiplexer's input channel
+            // to legacy X10 after a focus-changing close/split.
             if let Some(tx) = &self.attached_out {
                 let _ = tx.send(encode_server(ServerFrame::Output(
                     crate::session::Session::focus_swap_reset().to_vec(),
+                )));
+                let _ = tx.send(encode_server(ServerFrame::Output(
+                    crate::session::Session::client_owned_mode_state().to_vec(),
                 )));
                 for bytes in s.current_mode_state() {
                     let _ = tx.send(encode_server(ServerFrame::Output(bytes)));
@@ -1365,23 +1422,22 @@ impl Multiplexer {
                 col,
                 button: 0,
             } => {
-                // Click on the right-side container-name label copies
-                // the full container ID immediately, then opens the
-                // read-only `ContainerInfo` modal with the copied badge
-                // already visible. Clicks elsewhere on row 1 (the
-                // underline strip) are no-ops.
+                // Click on the right-side container-name label opens
+                // the read-only `ContainerInfo` modal. Copying is an
+                // explicit second action on the Container ID row.
+                // Clicks elsewhere on row 1 (the underline strip) are
+                // no-ops.
                 if self.status_bar.identity_at(2, col + 1) {
                     let focused_agent = self
                         .active_focused_id()
                         .and_then(|id| self.sessions.get(&id))
                         .and_then(|s| s.agent.clone());
                     let container_name = self.status_bar.container_name().to_string();
-                    self.send_output(encode_osc52_clipboard_write(&container_name));
                     self.dialog_push(Dialog::ContainerInfo {
                         container_name,
                         role: self.status_bar.role().to_string(),
                         focused_agent,
-                        copied: true,
+                        copied: false,
                     });
                     return Some(self.compose_full_frame(FullRedrawReason::DialogChange));
                 }
@@ -1518,9 +1574,10 @@ impl Multiplexer {
     /// Re-encode an SGR mouse event in the focused pane's local
     /// coordinate space and forward to its PTY. `press = true` emits
     /// the `M` final, `false` emits `m` (release). Forwarding is
-    /// gated by `session.mouse_enabled()` so shells and pre-mount
-    /// agents never see raw mouse bytes leak out as command-line
-    /// garbage.
+    /// gated by the focused pane's requested mouse mode so shells and
+    /// pre-mount agents never see raw mouse bytes leak out as
+    /// command-line garbage, and press-only panes do not receive
+    /// motion events from the multiplexer's always-on outer tracking.
     fn forward_mouse_to_focused_pane_with_kind(
         &mut self,
         col: u16,
@@ -1534,7 +1591,8 @@ impl Multiplexer {
         let Some(session) = self.sessions.get(&focused) else {
             return;
         };
-        if !session.mouse_enabled() {
+        let mouse_mode = session.mouse_protocol_mode();
+        if !mouse_event_allowed_for_mode(mouse_mode, button, press) {
             return;
         }
         let content_rect = Rect::new(STATUS_BAR_ROWS, 0, self.content_rows, self.term_cols);
@@ -2123,6 +2181,7 @@ impl Multiplexer {
     fn focus_session_globally(&mut self, session_id: u64) -> bool {
         use crate::layout::Rect;
         let probe_rect = Rect::new(0, 0, self.term_rows, self.term_cols);
+        let prev_focused = self.active_focused_id();
         for (tab_idx, tab) in self.tabs.iter().enumerate() {
             let leaf_ids: Vec<u64> = tab
                 .tree
@@ -2133,6 +2192,7 @@ impl Multiplexer {
             if leaf_ids.contains(&session_id) {
                 self.active_tab = tab_idx;
                 self.tabs[tab_idx].focused_id = session_id;
+                self.synthesise_focus_swap(prev_focused, Some(session_id));
                 return true;
             }
         }
@@ -2194,13 +2254,31 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(80u16);
 
+    // JACKIN_WORKDIR is the explicit contract between the host launcher
+    // and the daemon for "where panes open". Missing/empty means the
+    // host code path forgot to forward it — a deployment bug, not a
+    // user error — so bail loudly instead of silently degrading to
+    // portable_pty's `$HOME` default.
+    let workdir = std::env::var("JACKIN_WORKDIR")
+        .map_err(|_| anyhow::anyhow!("JACKIN_WORKDIR is not set; the host launcher must export it"))
+        .and_then(|v| {
+            if v.trim().is_empty() {
+                Err(anyhow::anyhow!("JACKIN_WORKDIR is set but empty"))
+            } else {
+                Ok(PathBuf::from(v))
+            }
+        })?;
+
     // Initialise the file logger before anything else can emit a
     // diagnostic. Failures fall back to stderr-only, so this is safe
     // to call unconditionally.
     crate::logging::init();
-    crate::clog!("daemon start: rows={rows} cols={cols} initial_agent={initial_agent:?}");
+    crate::clog!(
+        "daemon start: rows={rows} cols={cols} initial_agent={initial_agent:?} workdir={}",
+        workdir.display()
+    );
 
-    let mut mux = Multiplexer::new(rows, cols);
+    let mut mux = Multiplexer::new(rows, cols, workdir);
     // Spawn the first tab. Treat any spawn error as fatal at boot —
     // it usually means the entrypoint binary is missing from the
     // derived image, and silently degrading to an empty multiplexer
@@ -2396,10 +2474,13 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
                 });
                 let _ = new_out_tx.send(welcome);
                 // Initial mode-state restore: send the focused
-                // session's current modes (bracketed paste, etc.) so
-                // the outer terminal matches what the agent expects.
+                // session's current modes (bracketed paste, etc.) after
+                // reasserting the attach-client-owned mouse/focus modes.
                 // Without this, a re-attach loses bracketed-paste
                 // and the operator's clipboard arrives unwrapped.
+                let _ = new_out_tx.send(encode_server(ServerFrame::Output(
+                    Session::client_owned_mode_state().to_vec(),
+                )));
                 if let Some(focused) = mux.active_focused_id()
                     && let Some(session) = mux.sessions.get(&focused)
                 {
@@ -2554,6 +2635,11 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
             _ = state_ticker.tick() => {
                 for session in mux.sessions.values_mut() {
                     session.refresh_state();
+                }
+                if mux.expire_container_info_copy_feedback(Instant::now()) {
+                    let frame_data = mux.compose_full_frame(FullRedrawReason::DialogChange);
+                    mux.send_output(frame_data);
+                    continue;
                 }
                 mux.refresh_tab_labels();
                 let mut sbuf = b"\x1b7".to_vec();
@@ -2955,6 +3041,27 @@ fn is_wheel_button(button: u8) -> bool {
     (64..96).contains(&button)
 }
 
+fn mouse_event_allowed_for_mode(mode: vt100::MouseProtocolMode, button: u8, press: bool) -> bool {
+    use vt100::MouseProtocolMode;
+
+    if mode == MouseProtocolMode::None {
+        return false;
+    }
+    if is_wheel_button(button) {
+        return true;
+    }
+
+    let motion = button & 0b100000 != 0;
+    let passive_motion = motion && button & 0b11 == 3;
+    match mode {
+        MouseProtocolMode::None => false,
+        MouseProtocolMode::Press => press && !motion,
+        MouseProtocolMode::PressRelease => !motion,
+        MouseProtocolMode::ButtonMotion => !passive_motion,
+        MouseProtocolMode::AnyMotion => true,
+    }
+}
+
 fn encode_mouse_for_protocol(
     button: u8,
     col: u16,
@@ -3035,6 +3142,10 @@ fn pointer_shapes_supported_from_env() -> bool {
 mod tests {
     use super::*;
 
+    fn test_mux(rows: u16, cols: u16) -> Multiplexer {
+        Multiplexer::new(rows, cols, PathBuf::from("/workspace"))
+    }
+
     #[test]
     fn mouse_sgr_encoding_preserves_press_and_release() {
         assert_eq!(
@@ -3062,6 +3173,47 @@ mod tests {
     }
 
     #[test]
+    fn mouse_mode_filter_respects_tracking_granularity() {
+        use vt100::MouseProtocolMode;
+
+        assert!(!mouse_event_allowed_for_mode(
+            MouseProtocolMode::None,
+            0,
+            true
+        ));
+        assert!(mouse_event_allowed_for_mode(
+            MouseProtocolMode::Press,
+            0,
+            true
+        ));
+        assert!(!mouse_event_allowed_for_mode(
+            MouseProtocolMode::Press,
+            0,
+            false
+        ));
+        assert!(!mouse_event_allowed_for_mode(
+            MouseProtocolMode::PressRelease,
+            32,
+            true
+        ));
+        assert!(mouse_event_allowed_for_mode(
+            MouseProtocolMode::ButtonMotion,
+            32,
+            true
+        ));
+        assert!(!mouse_event_allowed_for_mode(
+            MouseProtocolMode::ButtonMotion,
+            SGR_NO_BUTTON_MOTION,
+            true
+        ));
+        assert!(mouse_event_allowed_for_mode(
+            MouseProtocolMode::AnyMotion,
+            SGR_NO_BUTTON_MOTION,
+            true
+        ));
+    }
+
+    #[test]
     fn osc22_pointer_shape_uses_css_names() {
         assert_eq!(
             osc22_pointer_shape(PointerShape::Pointer),
@@ -3075,7 +3227,7 @@ mod tests {
 
     #[test]
     fn pointer_shape_updates_only_when_shape_changes() {
-        let mut mux = Multiplexer::new(24, 80);
+        let mut mux = test_mux(24, 80);
         mux.pointer_shapes_supported = true;
         mux.status_bar.identity_region = Some((70, 80));
         let (tx, mut rx) = mpsc::unbounded_channel();
@@ -3090,8 +3242,8 @@ mod tests {
     }
 
     #[test]
-    fn status_identity_click_copies_and_shows_feedback_dialog() {
-        let mut mux = Multiplexer::new(24, 80);
+    fn status_identity_click_opens_container_info_without_copying() {
+        let mut mux = test_mux(24, 80);
         mux.pointer_shapes_supported = false;
         mux.status_bar.identity_label = "jk-test-container".to_string();
         mux.status_bar.role = "the-architect".to_string();
@@ -3107,12 +3259,33 @@ mod tests {
             })
             .expect("identity click should redraw");
 
-        let sent = rx.try_recv().expect("identity click should send OSC 52");
-        assert!(sent.windows(7).any(|w| w == b"\x1b]52;c;"));
-        assert!(String::from_utf8_lossy(&frame).contains("Copied!"));
+        assert!(
+            rx.try_recv().is_err(),
+            "opening container info must not send OSC 52"
+        );
+        assert!(!String::from_utf8_lossy(&frame).contains("Copied!"));
         assert!(matches!(
             mux.dialog_top(),
-            Some(Dialog::ContainerInfo { copied: true, .. })
+            Some(Dialog::ContainerInfo { copied: false, .. })
+        ));
+    }
+
+    #[test]
+    fn container_info_copy_feedback_expires() {
+        let mut mux = test_mux(24, 80);
+        mux.dialog_push(Dialog::ContainerInfo {
+            container_name: "jk-test-container".to_string(),
+            role: "the-architect".to_string(),
+            focused_agent: Some("claude".to_string()),
+            copied: true,
+        });
+        let now = Instant::now();
+        mux.container_info_copy_deadline = Some(now);
+
+        assert!(mux.expire_container_info_copy_feedback(now));
+        assert!(matches!(
+            mux.dialog_top(),
+            Some(Dialog::ContainerInfo { copied: false, .. })
         ));
     }
 

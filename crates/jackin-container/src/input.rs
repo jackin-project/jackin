@@ -95,6 +95,7 @@ enum State {
     PrefixAwait,
     EscStart,
     Csi,
+    X10Mouse,
     Osc,
     OtherEsc,
     /// SS3 — `\x1b O <final>`. Application-cursor-keys mode (DEC `?1`)
@@ -225,6 +226,10 @@ impl InputParser {
                 State::Csi => {
                     self.seq.push(b);
                     if matches!(b, 0x40..=0x7E) {
+                        if self.seq.as_slice() == b"\x1b[M" {
+                            self.state = State::X10Mouse;
+                            continue;
+                        }
                         // Final byte; classify the sequence.
                         let seq = std::mem::take(&mut self.seq);
                         if seq == PASTE_START {
@@ -243,6 +248,17 @@ impl InputParser {
                                 Some(None) => {}
                                 None => events.push(InputEvent::Data(seq)),
                             }
+                        }
+                        self.state = State::Idle;
+                    }
+                }
+                State::X10Mouse => {
+                    self.seq.push(b);
+                    if self.seq.len() == 6 {
+                        let seq = std::mem::take(&mut self.seq);
+                        match classify_x10_mouse(&seq) {
+                            Some(ev) => events.push(ev),
+                            None => events.push(InputEvent::Data(seq)),
                         }
                         self.state = State::Idle;
                     }
@@ -544,6 +560,23 @@ fn classify_csi(seq: &[u8]) -> Option<Option<InputEvent>> {
         }
     }
     None
+}
+
+fn classify_x10_mouse(seq: &[u8]) -> Option<InputEvent> {
+    if seq.len() != 6 || !seq.starts_with(b"\x1b[M") {
+        return None;
+    }
+    let button = seq[3].checked_sub(32)?;
+    let col = u16::from(seq[4]).checked_sub(33)?;
+    let row = u16::from(seq[5]).checked_sub(33)?;
+    if button & 0b11 == 3 && button & 0b100000 == 0 {
+        return Some(InputEvent::MouseRelease {
+            col,
+            row,
+            button: 0,
+        });
+    }
+    Some(InputEvent::MousePress { col, row, button })
 }
 
 #[cfg(test)]
