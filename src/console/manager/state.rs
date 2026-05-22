@@ -514,6 +514,16 @@ pub struct EditorState<'a> {
     pub original: WorkspaceConfig,
     pub pending: WorkspaceConfig,
     pub modal: Option<Modal<'a>>,
+    /// Parent chain backing the Esc-back rule from
+    /// `docs/.../tui-design-decisions.mdx` — modals that opened a
+    /// sub-modal (`open_sub_modal`) stash themselves here so cancel
+    /// on the child can pop back rather than dumping to the
+    /// underlying tab. Top of the vec = parent immediately under
+    /// the currently-visible `modal`. Empty = the visible modal has
+    /// no parent in the chain (Esc closes back to the tab as
+    /// before). `clear_modal_chain` empties both this and `modal` on
+    /// terminal commits where the chain has finished its job.
+    pub modal_parents: Vec<Modal<'a>>,
     /// Create-mode only; Edit mode reads name from `EditorMode::Edit`.
     pub pending_name: Option<String>,
     /// Signals the outer `handle_key` to save and/or pop to List.
@@ -1856,6 +1866,39 @@ impl ManagerState<'_> {
     }
 }
 
+impl<'a> EditorState<'a> {
+    /// Open `child` as a sub-modal of the currently-visible modal. If
+    /// a modal is already open it is stashed into `modal_parents`
+    /// (top of vec = nearest parent); Esc on `child` will then call
+    /// `pop_modal_chain` and restore the stashed parent. Use this for
+    /// every modal→modal transition unless the parent's commit is
+    /// terminal (in which case use `set_modal_terminal`).
+    pub fn open_sub_modal(&mut self, child: Modal<'a>) {
+        if let Some(parent) = self.modal.take() {
+            self.modal_parents.push(parent);
+        }
+        self.modal = Some(child);
+    }
+
+    /// Pop one frame from the modal chain. If `modal_parents` is
+    /// non-empty the previous parent becomes visible; otherwise the
+    /// chain finishes and `modal` is cleared. Mirrors
+    /// `crates/jackin-container/src/dialog.rs::dialog_pop_one` and is
+    /// the canonical "Esc went back" arm for child modals.
+    pub fn pop_modal_chain(&mut self) {
+        self.modal = self.modal_parents.pop();
+    }
+
+    /// Terminal commit: clear `modal` and the entire `modal_parents`
+    /// chain so the operator lands on the underlying tab in one step.
+    /// Use on the final action of a multi-step flow (env key + value
+    /// both committed, role + auth form saved, etc.).
+    pub fn clear_modal_chain(&mut self) {
+        self.modal = None;
+        self.modal_parents.clear();
+    }
+}
+
 impl EditorState<'_> {
     pub fn new_edit(name: String, ws: WorkspaceConfig) -> Self {
         Self {
@@ -1866,6 +1909,7 @@ impl EditorState<'_> {
             original: ws.clone(),
             pending: ws,
             modal: None,
+            modal_parents: Vec::new(),
             pending_name: None,
             exit_after_save: None,
             save_flow: EditorSaveFlow::Idle,
@@ -1897,6 +1941,7 @@ impl EditorState<'_> {
             original: empty.clone(),
             pending: empty,
             modal: None,
+            modal_parents: Vec::new(),
             pending_name: None,
             exit_after_save: None,
             save_flow: EditorSaveFlow::Idle,

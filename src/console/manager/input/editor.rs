@@ -721,7 +721,7 @@ fn open_agent_override_picker(editor: &mut EditorState<'_>, config: &AppConfig) 
     if eligible.is_empty() {
         return;
     }
-    editor.modal = Some(Modal::RoleOverridePicker {
+    editor.open_sub_modal(Modal::RoleOverridePicker {
         state: RolePickerState::with_confirm_label(eligible, "select"),
     });
 }
@@ -905,16 +905,10 @@ pub(super) fn handle_editor_modal(
                 }
                 ModalOutcome::Cancel => {
                     let target = target.clone();
-                    // Cancel of EnvKey/EnvValue must drop both the
-                    // stashed key and any picker value — otherwise a
-                    // later sentinel-picker commit silently applies
-                    // the path to an unrelated key.
-                    if let TextInputTarget::EnvKey { .. } | TextInputTarget::EnvValue { .. } =
-                        &target
-                    {
-                        editor.pending_env_key = None;
-                        editor.pending_picker_value = None;
-                    }
+                    let was_env_textinput = matches!(
+                        &target,
+                        TextInputTarget::EnvKey { .. } | TextInputTarget::EnvValue { .. }
+                    );
                     if matches!(target, TextInputTarget::AuthCredential) {
                         // Plain-text leg of the source-picker round trip
                         // recovers identically to the OpPicker leg.
@@ -922,7 +916,15 @@ pub(super) fn handle_editor_modal(
                         super::auth::restore_auth_form_after_op_picker_cancel(editor);
                         return;
                     }
-                    editor.modal = None;
+                    editor.pop_modal_chain();
+                    // Scratch slots only get dropped when the pop
+                    // unwinds the whole chain — a parent modal (e.g.
+                    // SourcePicker) still reading `pending_env_key`
+                    // must see it intact.
+                    if was_env_textinput && editor.modal.is_none() {
+                        editor.pending_env_key = None;
+                        editor.pending_picker_value = None;
+                    }
                 }
                 ModalOutcome::Continue => {}
             }
@@ -1031,13 +1033,13 @@ pub(super) fn handle_editor_modal(
                     let scope = SecretsScopeTag::Role(role_name.clone());
                     let label = format!("New {role_name} environment key");
                     let state = env_key_input_state(editor, &scope, label, "");
-                    editor.modal = Some(Modal::TextInput {
+                    editor.open_sub_modal(Modal::TextInput {
                         target: TextInputTarget::EnvKey { scope },
                         state,
                     });
                 }
                 ModalOutcome::Cancel => {
-                    editor.modal = None;
+                    editor.pop_modal_chain();
                 }
                 ModalOutcome::Continue => {}
             }
@@ -1105,7 +1107,7 @@ pub(super) fn handle_editor_modal(
                         "New workspace environment key",
                         String::new(),
                     );
-                    editor.modal = Some(Modal::TextInput {
+                    editor.open_sub_modal(Modal::TextInput {
                         target: TextInputTarget::EnvKey { scope },
                         state,
                     });
@@ -1119,7 +1121,7 @@ pub(super) fn handle_editor_modal(
                     }
                 }
                 ModalOutcome::Cancel => {
-                    editor.modal = None;
+                    editor.pop_modal_chain();
                 }
                 ModalOutcome::Continue => {}
             }
@@ -1133,7 +1135,7 @@ pub(super) fn handle_editor_modal(
                         editor.modal = None;
                         return;
                     };
-                    editor.modal = Some(Modal::TextInput {
+                    editor.open_sub_modal(Modal::TextInput {
                         target: TextInputTarget::EnvValue {
                             scope,
                             key: key.clone(),
@@ -1155,7 +1157,7 @@ pub(super) fn handle_editor_modal(
                     // pending_env_key would confuse a later
                     // sentinel-add commit.
                     editor.pending_env_key = None;
-                    editor.modal = Some(Modal::OpPicker {
+                    editor.open_sub_modal(Modal::OpPicker {
                         state: Box::new(OpPickerState::new_with_cache(op_cache)),
                     });
                 }
@@ -1163,7 +1165,7 @@ pub(super) fn handle_editor_modal(
                     // Cancel: drop the in-flight key name and close
                     // the modal. Operator returns to the Secrets tab
                     // with no env entry added.
-                    editor.modal = None;
+                    editor.pop_modal_chain();
                     editor.pending_env_key = None;
                     editor.pending_picker_value = None;
                 }
@@ -1196,18 +1198,18 @@ pub(super) fn handle_editor_modal(
                         kind,
                     };
                     let form = crate::console::widgets::auth_panel::AuthForm::new(kind);
-                    editor.modal = Some(Modal::AuthForm {
+                    editor.open_sub_modal(Modal::AuthForm {
                         target,
                         state: Box::new(form),
                         focus: crate::console::manager::state::AuthFormFocus::Mode,
                         literal_buffer: String::new(),
                     });
                 } else {
-                    editor.modal = None;
+                    editor.pop_modal_chain();
                 }
             }
             ModalOutcome::Cancel => {
-                editor.modal = None;
+                editor.pop_modal_chain();
             }
             ModalOutcome::Continue => {}
         },

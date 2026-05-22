@@ -275,12 +275,32 @@ Why this rule exists: a leading blank pad row pushes the filter one row down and
 
 ### Sub-dialogs push onto a stack — Esc walks back one step
 
-Modal dialogs that open from a parent modal (`Menu → New tab` → AgentPicker; `Menu → Split pane` → SplitDirectionPicker → AgentPicker; `Menu → Close` → CloseTargetPicker → ConfirmClose) MUST push onto a dialog stack rather than replace the parent. Esc pops one frame so the operator returns to the previous dialog instead of being dumped back to the pane. Terminal actions (an agent picked, a destructive action confirmed, a copy-to-clipboard fired) clear the whole stack so the operator drops onto the focused pane in one step. Mouse-click outside the box pops one frame, matching Esc.
+**Applies to every TUI surface jackin renders — host console (`src/console/`) and the in-container multiplexer (`crates/jackin-container/`).** Any modal that opens *another modal* as part of its flow MUST preserve the parent so a `Esc` press returns to it, not to the underlying screen. The operator's mental model is a breadcrumb chain; repeated `Esc` presses walk that chain one step at a time until the operator reaches the original surface (workspace list, secrets tab, focused pane).
 
-Two pieces follow from the rule:
+Concrete obligations:
 
-- The dialog state lives on a `Vec<Dialog>` (top of stack = visible). `dialog_top()` is the canonical "is a dialog open" check; new entries land via `dialog_push`; the back-nav arm calls `dialog_pop_one`; terminal-action arms call `dialog_clear`. The bare `Option<Dialog>` shape pre-dates this rule and is no longer correct for any surface that supports sub-dialogs.
-- A sub-dialog's "title" string must read as a step inside its parent's flow — `Split: ← Left` for the agent picker opened from the SplitDirectionPicker, not `Agent picker` again. The operator's mental model is the breadcrumb chain; the title is the part that surfaces it.
+- **Open**: push the new modal *on top of* the parent — do not overwrite the slot.
+- **Esc / Cancel**: pop one frame. Operator returns to whichever modal was visible immediately before.
+- **Mouse-click outside the box**: pops one frame, matching Esc.
+- **Commit / terminal action** (agent picked, role selected, destructive action confirmed, copy fired, env key + value both committed): clear the entire chain so the operator lands on the underlying screen in one step. A terminal action means "the chain achieved its goal" — walking back through every intermediate step would be noise.
+- **Sub-dialog titles** read as a step inside the parent's flow — `Split: ← Left` for the agent picker opened from a `SplitDirectionPicker`, not `Agent picker` again. The title is what surfaces the breadcrumb to the operator.
+
+Two implementation shapes carry this contract today:
+
+1. **`Vec<Dialog>` stack** (canonical, used by `crates/jackin-container/src/dialog.rs`). `dialog_top()` is "is a dialog open"; entries land via `dialog_push`; back-nav arms call `dialog_pop_one`; terminal-action arms call `dialog_clear`.
+2. **Per-flow return-path stash** (legacy, used by host console for the auth flow — `pending_auth_form_return`, `pending_env_key`, `pending_picker_target`). The parent's state is stashed in an `EditorState` field before the child modal mounts, and the child's cancel arm rebuilds the parent from the stash. Works for shallow chains but does not compose past two levels and is easy to forget when adding a new transition.
+
+The bare `Option<Modal>` slot in `src/console/manager/state.rs` is *not* a third valid shape — it cannot represent a parent under a child, so any new modal→modal transition added to a code path that still uses `Option<Modal>` regresses this rule by construction. New code MUST use one of the two shapes above; the eventual direction for the host console is to converge on the `Vec<Modal>` stack and retire the stash slots.
+
+Known compliance gaps as of writing — see <RepoFile path="src/console/manager/input/editor.rs" /> Modal handlers where `editor.modal = None` is set on `Cancel` while a parent modal exists in the operator's mental chain:
+
+- `Modal::RoleOverridePicker` cancel (line ~1040) — Esc from the role-override picker should restore the parent `ScopePicker` rather than dump to the Secrets tab.
+- `Modal::ScopePicker` → `Modal::TextInput` / `Modal::RoleOverridePicker` (line ~1117) — TextInput / role picker cancel currently sets `modal = None`; should restore the `ScopePicker`.
+- `Modal::AuthRolePicker` cancel (line ~1209) — Esc on the role picker dumps to the Auth tab; should restore whatever opened it (sentinel-add row).
+- `Modal::SourcePicker` cancel (line ~1162) and the `Modal::OpPicker` / nested `Modal::TextInput` paths chained from it should walk back one step rather than clearing both.
+- `FileBrowser → MountDstChoice → TextInput` chain inside the editor mount-add flow (Editor TextInput line ~1695, MountDstChoice line ~1801) — none of the three currently restores its parent.
+
+Treat new Esc-back regressions on any surface as bugs; fix the immediate flow with the appropriate shape (stack push/pop for in-container, stash-and-restore for host editor where the stack refactor has not landed yet).
 
 ---
 
