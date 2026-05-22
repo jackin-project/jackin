@@ -24,9 +24,9 @@ use tokio::time::{Duration, interval};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
-use crate::dialog::{Dialog, DialogAction, PaletteCommand, PickerIntent};
+use crate::dialog::{Dialog, DialogAction, PaletteCommand, PickerIntent, SplitDirection};
 use crate::input::{ArrowDir, InputEvent, InputParser, PrefixCommand};
-use crate::layout::{Direction, Rect, SplitOrient, Tab};
+use crate::layout::{Direction, Rect, SplitOrient, SplitPosition, Tab};
 use crate::protocol::attach::{ClientFrame, ServerFrame, encode_server, read_client_frame};
 use crate::protocol::control::{AgentState, SessionInfo};
 use crate::render::{draw_scrollbar, render_pane};
@@ -385,6 +385,17 @@ impl Multiplexer {
                 self.dialog = None;
                 self.send_output(encode_osc52_clipboard_write(&payload));
             }
+            DialogAction::SplitDirection(direction) => {
+                // Chain to the agent picker carrying the direction —
+                // the standard agent-pick flow finishes the spawn via
+                // `PickerIntent::Split(direction)` in
+                // `dispatch_spawn_intent`.
+                let agents = self.available_agents.clone();
+                self.dialog = Some(Dialog::new_agent_picker(
+                    agents,
+                    PickerIntent::Split(direction),
+                ));
+            }
         }
         self.compose_frame()
     }
@@ -398,8 +409,7 @@ impl Multiplexer {
         let agent_label = agent.as_deref().unwrap_or("shell").to_string();
         let result: anyhow::Result<()> = match intent {
             PickerIntent::NewTab => self.spawn_session(agent).map(|_| ()),
-            PickerIntent::SplitHorizontal => self.split_focused_into(true, agent),
-            PickerIntent::SplitVertical => self.split_focused_into(false, agent),
+            PickerIntent::Split(direction) => self.split_focused_into(direction, agent),
         };
         if let Err(err) = result {
             crate::clog!("spawn ({intent:?}, agent={agent_label}) failed: {err:?}");
@@ -476,7 +486,11 @@ impl Multiplexer {
         Ok(())
     }
 
-    fn split_focused_into(&mut self, horizontal: bool, agent_slug: Option<String>) -> Result<()> {
+    fn split_focused_into(
+        &mut self,
+        direction: SplitDirection,
+        agent_slug: Option<String>,
+    ) -> Result<()> {
         self.ensure_capacity_for_new_session(false)?;
         // Any selection / drag-resize is anchored to a specific pane
         // rect that this reflow is about to invalidate.
@@ -503,16 +517,24 @@ impl Multiplexer {
         )?;
         self.sessions.insert(new_id, session);
         let tab = &mut self.tabs[self.active_tab];
-        if horizontal {
-            tab.tree.split_h(from_id, new_id);
-        } else {
-            tab.tree.split_v(from_id, new_id);
+        match direction {
+            SplitDirection::Left => {
+                tab.tree.split_h(from_id, new_id, SplitPosition::Before);
+            }
+            SplitDirection::Right => {
+                tab.tree.split_h(from_id, new_id, SplitPosition::After);
+            }
+            SplitDirection::Above => {
+                tab.tree.split_v(from_id, new_id, SplitPosition::Before);
+            }
+            SplitDirection::Below => {
+                tab.tree.split_v(from_id, new_id, SplitPosition::After);
+            }
         }
         tab.focused_id = new_id;
         self.resize_panes();
         crate::clog!(
-            "action: split id={new_id} from={from_id} dir={} agent={agent_for_log:?} label={label}",
-            if horizontal { "horizontal" } else { "vertical" },
+            "action: split id={new_id} from={from_id} dir={direction:?} agent={agent_for_log:?} label={label}",
         );
         Ok(())
     }
@@ -520,14 +542,14 @@ impl Multiplexer {
     /// Split the focused pane and clone the source pane's agent into
     /// the new pane. Kept for the tmux-style `Ctrl+B %` / `Ctrl+B "`
     /// prefix bindings, which spawn-and-go without an agent picker.
-    fn split_focused(&mut self, horizontal: bool) -> Result<()> {
+    fn split_focused(&mut self, direction: SplitDirection) -> Result<()> {
         self.ensure_capacity_for_new_session(false)?;
         let Some(tab) = self.tabs.get(self.active_tab) else {
             return Ok(());
         };
         let from_id = tab.focused_id;
         let agent_slug = self.sessions.get(&from_id).and_then(|s| s.agent.clone());
-        self.split_focused_into(horizontal, agent_slug)
+        self.split_focused_into(direction, agent_slug)
     }
 
     fn close_focused_pane(&mut self) {
@@ -1088,12 +1110,12 @@ impl Multiplexer {
             PrefixCommand::PrevTab => self.prev_tab(),
             PrefixCommand::JumpTab(i) => self.jump_tab(i),
             PrefixCommand::SplitTopBottom => {
-                if let Err(err) = self.split_focused(false) {
+                if let Err(err) = self.split_focused(SplitDirection::Below) {
                     crate::clog!("split (top/bottom) failed: {err:?}");
                 }
             }
             PrefixCommand::SplitSideBySide => {
-                if let Err(err) = self.split_focused(true) {
+                if let Err(err) = self.split_focused(SplitDirection::Right) {
                     crate::clog!("split (side by side) failed: {err:?}");
                 }
             }
@@ -1334,19 +1356,17 @@ impl Multiplexer {
         // sub-dialog survives this handler.
         self.dialog = None;
         match cmd {
-            PaletteCommand::SplitHorizontal => {
-                let agents = self.available_agents.clone();
-                self.dialog = Some(Dialog::new_agent_picker(
-                    agents,
-                    PickerIntent::SplitHorizontal,
-                ));
-            }
-            PaletteCommand::SplitVertical => {
-                let agents = self.available_agents.clone();
-                self.dialog = Some(Dialog::new_agent_picker(
-                    agents,
-                    PickerIntent::SplitVertical,
-                ));
+            PaletteCommand::Split => {
+                // Open the SplitDirectionPicker sub-dialog. The
+                // operator picks the direction; that resolves to a
+                // `DialogAction::SplitDirection(...)` which
+                // `apply_dialog_action` chains into an `AgentPicker`
+                // carrying `PickerIntent::Split(direction)`. Final
+                // confirm spawns the new pane.
+                self.dialog = Some(Dialog::SplitDirectionPicker {
+                    selected: 0,
+                    filter: String::new(),
+                });
             }
             PaletteCommand::NewTab => {
                 // Always show the agent picker — even when the role

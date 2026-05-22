@@ -36,12 +36,34 @@ const UNSELECT_MARK: &str = "  ";
 pub enum PickerIntent {
     /// Spawn the chosen agent / shell as a brand-new tab.
     NewTab,
-    /// Split the focused pane side-by-side and spawn the chosen
-    /// agent / shell in the new pane.
-    SplitHorizontal,
-    /// Split the focused pane top/bottom and spawn the chosen
-    /// agent / shell in the new pane.
-    SplitVertical,
+    /// Split the focused pane in the carried direction and spawn the
+    /// chosen agent / shell in the new pane.
+    Split(SplitDirection),
+}
+
+/// Which side of the focused pane the operator wants the new pane on
+/// after a Split. Maps deterministically to `(PaneTree::split_h or
+/// split_v, SplitPosition)` in `Multiplexer::split_focused_into`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitDirection {
+    Left,
+    Right,
+    Above,
+    Below,
+}
+
+impl SplitDirection {
+    /// Operator-facing label for the SplitDirectionPicker rows and
+    /// the menu hint footer. Glyphs match the cardinal arrows the
+    /// operator presses to reach equivalent panes after the split.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Left => "← Left",
+            Self::Right => "Right →",
+            Self::Above => "↑ Above",
+            Self::Below => "↓ Below",
+        }
+    }
 }
 
 /// Cap on operator-typed tab labels. Long names break the tab-strip
@@ -97,12 +119,25 @@ pub enum Dialog {
         focused_agent: Option<String>,
         copied: bool,
     },
+    /// Direction sub-dialog opened when the operator picks "Split pane"
+    /// in the main menu. Operator chooses Left / Right / Above / Below;
+    /// on confirm, the dialog is replaced with an `AgentPicker` carrying
+    /// `PickerIntent::Split(<direction>)` so the standard agent-pick
+    /// flow finishes the spawn. Filterable just like the other list
+    /// dialogs (`selected` indexes into the filtered visible list).
+    SplitDirectionPicker {
+        selected: usize,
+        filter: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DialogAction {
     /// User confirmed a command-palette item.
     Command(PaletteCommand),
+    /// User picked a split direction in the SplitDirectionPicker —
+    /// daemon opens an AgentPicker with `PickerIntent::Split(direction)`.
+    SplitDirection(SplitDirection),
     /// User picked an agent slug (or "shell"). `intent` tells the
     /// daemon whether to spawn it as a tab or as a split pane.
     SpawnAgent {
@@ -134,8 +169,13 @@ pub enum PaletteCommand {
     NewTab,
     NextTab,
     PrevTab,
-    SplitHorizontal,
-    SplitVertical,
+    /// Open the SplitDirectionPicker. The operator picks Left /
+    /// Right / Above / Below in the sub-dialog, then the agent
+    /// picker for the new pane. Replaces the previous two-item
+    /// `SplitHorizontal` + `SplitVertical` shape so the menu reads
+    /// "Split pane" once and the directional detail lives in the
+    /// sub-dialog where it does not clutter the top-level list.
+    Split,
     ZoomPane,
     ClosePane,
     CloseTab,
@@ -151,15 +191,23 @@ pub enum PaletteCommand {
 /// so prefix-mode bindings continue to work.
 const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (PaletteCommand::NewTab, "New tab"),
-    (
-        PaletteCommand::SplitHorizontal,
-        "Split pane │ (side by side)",
-    ),
-    (PaletteCommand::SplitVertical, "Split pane ─ (top / bottom)"),
+    (PaletteCommand::Split, "Split pane"),
     (PaletteCommand::ZoomPane, "Zoom / unzoom pane"),
     (PaletteCommand::ClosePane, "Close pane"),
     (PaletteCommand::CloseTab, "Close tab"),
     (PaletteCommand::Detach, "Stop & exit"),
+];
+
+/// Items in the SplitDirectionPicker sub-dialog. Order matches the
+/// way the operator's hands move on the cardinal keys: Left, Right,
+/// Above, Below. The dialog is filter-able like the other list
+/// dialogs — typing `a` narrows to "Above," typing `l` narrows to
+/// "Left," etc.
+const SPLIT_DIRECTION_ITEMS: &[SplitDirection] = &[
+    SplitDirection::Left,
+    SplitDirection::Right,
+    SplitDirection::Above,
+    SplitDirection::Below,
 ];
 
 impl Dialog {
@@ -224,7 +272,8 @@ impl Dialog {
         }
         if is_arrow_up(key) {
             return match self {
-                Self::CommandPalette { selected, .. } => {
+                Self::CommandPalette { selected, .. }
+                | Self::SplitDirectionPicker { selected, .. } => {
                     if *selected > 0 {
                         *selected -= 1;
                     }
@@ -252,6 +301,13 @@ impl Dialog {
                     }
                     DialogAction::Redraw
                 }
+                Self::SplitDirectionPicker { selected, filter } => {
+                    let visible = split_direction_filtered_indices(filter);
+                    if *selected + 1 < visible.len() {
+                        *selected += 1;
+                    }
+                    DialogAction::Redraw
+                }
                 Self::AgentPicker {
                     agents,
                     selected,
@@ -267,7 +323,8 @@ impl Dialog {
         }
         if is_backspace(key) {
             match self {
-                Self::CommandPalette { filter, selected } => {
+                Self::CommandPalette { filter, selected }
+                | Self::SplitDirectionPicker { filter, selected } => {
                     filter.pop();
                     *selected = 0;
                 }
@@ -291,6 +348,13 @@ impl Dialog {
                     let visible = palette_filtered_indices(filter);
                     match visible.get(*selected) {
                         Some(idx) => DialogAction::Command(PALETTE_ITEMS[*idx].0.clone()),
+                        None => DialogAction::Redraw,
+                    }
+                }
+                Self::SplitDirectionPicker { selected, filter } => {
+                    let visible = split_direction_filtered_indices(filter);
+                    match visible.get(*selected) {
+                        Some(idx) => DialogAction::SplitDirection(SPLIT_DIRECTION_ITEMS[*idx]),
                         None => DialogAction::Redraw,
                     }
                 }
@@ -329,7 +393,8 @@ impl Dialog {
         // typing state.
         if let Some(c) = printable_filter_char(key) {
             match self {
-                Self::CommandPalette { filter, selected } => {
+                Self::CommandPalette { filter, selected }
+                | Self::SplitDirectionPicker { filter, selected } => {
                     filter.push(c);
                     *selected = 0;
                 }
@@ -407,6 +472,9 @@ impl Dialog {
         let first_item_row = box_row + 4;
         let visible_count: u16 = match self {
             Self::CommandPalette { filter, .. } => palette_filtered_indices(filter).len() as u16,
+            Self::SplitDirectionPicker { filter, .. } => {
+                split_direction_filtered_indices(filter).len() as u16
+            }
             Self::AgentPicker {
                 agents, filter, ..
             } => picker_filtered_rows(agents, filter).len() as u16,
@@ -424,6 +492,14 @@ impl Dialog {
                 };
                 *selected = visible_idx;
                 DialogAction::Command(PALETTE_ITEMS[source_idx].0.clone())
+            }
+            Self::SplitDirectionPicker { selected, filter } => {
+                let visible = split_direction_filtered_indices(filter);
+                let Some(&source_idx) = visible.get(visible_idx) else {
+                    return DialogAction::Consume;
+                };
+                *selected = visible_idx;
+                DialogAction::SplitDirection(SPLIT_DIRECTION_ITEMS[source_idx])
             }
             Self::AgentPicker {
                 agents,
@@ -484,6 +560,10 @@ impl Dialog {
                 let items = palette_filtered_indices(filter).len() as u16;
                 items + 6 // top + pad + filter + pad + items + bottom
             }
+            Self::SplitDirectionPicker { filter, .. } => {
+                let items = split_direction_filtered_indices(filter).len() as u16;
+                items + 6
+            }
             Self::AgentPicker {
                 agents, filter, ..
             } => {
@@ -530,6 +610,12 @@ impl Dialog {
             Self::CommandPalette { selected, filter } => {
                 render_palette(buf, box_row, box_col, height, width, *selected, filter);
                 render_bottom_hint(buf, term_rows, term_cols, PALETTE_HINT);
+            }
+            Self::SplitDirectionPicker { selected, filter } => {
+                render_split_direction_picker(
+                    buf, box_row, box_col, height, width, *selected, filter,
+                );
+                render_bottom_hint(buf, term_rows, term_cols, PICKER_HINT);
             }
             Self::AgentPicker {
                 agents,
@@ -671,6 +757,20 @@ fn printable_filter_char(key: &[u8]) -> Option<char> {
     } else {
         None
     }
+}
+
+/// Indices into `SPLIT_DIRECTION_ITEMS` whose label contains `filter`
+/// as a case-insensitive substring. Empty filter returns every item.
+fn split_direction_filtered_indices(filter: &str) -> Vec<usize> {
+    let needle = filter.to_ascii_lowercase();
+    SPLIT_DIRECTION_ITEMS
+        .iter()
+        .enumerate()
+        .filter(|(_, dir)| {
+            needle.is_empty() || dir.label().to_ascii_lowercase().contains(&needle)
+        })
+        .map(|(idx, _)| idx)
+        .collect()
 }
 
 /// Indices into `PALETTE_ITEMS` whose label contains `filter` as a
@@ -905,6 +1005,33 @@ fn render_palette(
     }
 }
 
+fn render_split_direction_picker(
+    buf: &mut Vec<u8>,
+    start_row: u16,
+    start_col: u16,
+    height: u16,
+    width: u16,
+    selected: usize,
+    filter: &str,
+) {
+    render_box(buf, start_row, start_col, height, width, "Split pane");
+    render_filter_input(buf, start_row + 2, start_col + 1, width, filter);
+    let interior_items = height.saturating_sub(6) as usize;
+    let visible = split_direction_filtered_indices(filter);
+    let drawn = visible.len().min(interior_items);
+    for (i, &source_idx) in visible.iter().enumerate().take(drawn) {
+        let label = SPLIT_DIRECTION_ITEMS[source_idx].label();
+        render_row(
+            buf,
+            start_row + 4 + i as u16,
+            start_col + 1,
+            width,
+            label,
+            i == selected,
+        );
+    }
+}
+
 fn render_agent_picker(
     buf: &mut Vec<u8>,
     start_row: u16,
@@ -916,12 +1043,11 @@ fn render_agent_picker(
     intent: PickerIntent,
     filter: &str,
 ) {
-    let title = match intent {
-        PickerIntent::NewTab => "New tab",
-        PickerIntent::SplitHorizontal => "Split pane │  (side by side)",
-        PickerIntent::SplitVertical => "Split pane ─  (top / bottom)",
+    let title: String = match intent {
+        PickerIntent::NewTab => "New tab".to_string(),
+        PickerIntent::Split(direction) => format!("Split: {}", direction.label()),
     };
-    render_box(buf, start_row, start_col, height, width, title);
+    render_box(buf, start_row, start_col, height, width, &title);
     render_filter_input(buf, start_row + 2, start_col + 1, width, filter);
 
     // Items occupy the rows below the filter + separator pad
@@ -1414,8 +1540,11 @@ mod tests {
             selected: 3,
             filter: String::new(),
         };
-        // Type "split" — narrows to the two split items + resets
-        // selection to 0.
+        // Type "split" — narrows to the single "Split pane" item +
+        // resets selection to 0. (The legacy `Split pane │ (side by
+        // side)` + `Split pane ─ (top / bottom)` pair collapsed into
+        // one menu entry; the directional choice now lives in the
+        // SplitDirectionPicker sub-dialog opened on confirm.)
         for &c in b"split" {
             d.handle_key(&[c]);
         }
@@ -1426,9 +1555,57 @@ mod tests {
         assert_eq!(*selected, 0, "filter input must reset selection to 0");
         assert_eq!(
             palette_filtered_indices(filter).len(),
-            2,
-            "exactly two PALETTE_ITEMS match 'split'"
+            1,
+            "exactly one PALETTE_ITEM matches 'split' after the collapse"
         );
+    }
+
+    #[test]
+    fn palette_split_opens_split_direction_picker_via_dialog_action() {
+        // Confirming "Split pane" in the menu produces
+        // `DialogAction::Command(PaletteCommand::Split)` — the daemon
+        // turns that into a new SplitDirectionPicker dialog. Lock the
+        // action shape so a refactor that flips the chain inadvertently
+        // (e.g. directly emitting SplitDirection) gets caught.
+        let mut d = Dialog::CommandPalette {
+            selected: 0,
+            filter: String::new(),
+        };
+        for &c in b"split" {
+            d.handle_key(&[c]);
+        }
+        match d.handle_key(b"\r") {
+            DialogAction::Command(cmd) => assert_eq!(cmd, PaletteCommand::Split),
+            other => panic!("expected Command(Split), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn split_direction_picker_enter_emits_split_direction() {
+        let mut d = Dialog::SplitDirectionPicker {
+            selected: 0,
+            filter: String::new(),
+        };
+        // selected = 0 → first item = Left
+        match d.handle_key(b"\r") {
+            DialogAction::SplitDirection(dir) => assert_eq!(dir, SplitDirection::Left),
+            other => panic!("expected SplitDirection(Left), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn split_direction_picker_typing_belo_narrows_to_below() {
+        let mut d = Dialog::SplitDirectionPicker {
+            selected: 0,
+            filter: String::new(),
+        };
+        for &c in b"belo" {
+            d.handle_key(&[c]);
+        }
+        match d.handle_key(b"\r") {
+            DialogAction::SplitDirection(dir) => assert_eq!(dir, SplitDirection::Below),
+            other => panic!("expected SplitDirection(Below), got {other:?}"),
+        }
     }
 
     #[test]

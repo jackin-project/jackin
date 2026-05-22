@@ -100,43 +100,59 @@ impl PaneTree {
         }
     }
 
-    /// Replace the leaf with `old_id` with an HSplit of `old_id` and `new_id`.
-    pub fn split_h(&mut self, old_id: u64, new_id: u64) -> bool {
+    /// Replace the leaf with `old_id` with an HSplit. `position`
+    /// controls whether `new_id` lands on the left or right of
+    /// `old_id`. Recurses into existing splits so nested layouts
+    /// still find the target leaf.
+    pub fn split_h(&mut self, old_id: u64, new_id: u64, position: SplitPosition) -> bool {
         match self {
             Self::Leaf(id) if *id == old_id => {
+                let (left, right) = match position {
+                    SplitPosition::Before => (new_id, old_id),
+                    SplitPosition::After => (old_id, new_id),
+                };
                 *self = Self::HSplit {
-                    left: Box::new(Self::Leaf(old_id)),
-                    right: Box::new(Self::Leaf(new_id)),
+                    left: Box::new(Self::Leaf(left)),
+                    right: Box::new(Self::Leaf(right)),
                     ratio: 0.5,
                 };
                 true
             }
             Self::HSplit { left, right, .. } => {
-                left.split_h(old_id, new_id) || right.split_h(old_id, new_id)
+                left.split_h(old_id, new_id, position)
+                    || right.split_h(old_id, new_id, position)
             }
             Self::VSplit { top, bottom, .. } => {
-                top.split_h(old_id, new_id) || bottom.split_h(old_id, new_id)
+                top.split_h(old_id, new_id, position)
+                    || bottom.split_h(old_id, new_id, position)
             }
             Self::Leaf(_) => false,
         }
     }
 
-    /// Replace the leaf with `old_id` with a VSplit of `old_id` and `new_id`.
-    pub fn split_v(&mut self, old_id: u64, new_id: u64) -> bool {
+    /// Replace the leaf with `old_id` with a VSplit. `position`
+    /// controls whether `new_id` lands above or below `old_id`.
+    pub fn split_v(&mut self, old_id: u64, new_id: u64, position: SplitPosition) -> bool {
         match self {
             Self::Leaf(id) if *id == old_id => {
+                let (top, bottom) = match position {
+                    SplitPosition::Before => (new_id, old_id),
+                    SplitPosition::After => (old_id, new_id),
+                };
                 *self = Self::VSplit {
-                    top: Box::new(Self::Leaf(old_id)),
-                    bottom: Box::new(Self::Leaf(new_id)),
+                    top: Box::new(Self::Leaf(top)),
+                    bottom: Box::new(Self::Leaf(bottom)),
                     ratio: 0.5,
                 };
                 true
             }
             Self::HSplit { left, right, .. } => {
-                left.split_v(old_id, new_id) || right.split_v(old_id, new_id)
+                left.split_v(old_id, new_id, position)
+                    || right.split_v(old_id, new_id, position)
             }
             Self::VSplit { top, bottom, .. } => {
-                top.split_v(old_id, new_id) || bottom.split_v(old_id, new_id)
+                top.split_v(old_id, new_id, position)
+                    || bottom.split_v(old_id, new_id, position)
             }
             Self::Leaf(_) => false,
         }
@@ -343,6 +359,16 @@ pub enum Direction {
     Down,
 }
 
+/// Where the new pane lands relative to the existing pane when a
+/// split fires. `Before` puts it left (for `split_h`) or above (for
+/// `split_v`); `After` puts it right or below — the legacy implicit
+/// behaviour before placement became operator-controllable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplitPosition {
+    Before,
+    After,
+}
+
 #[cfg(test)]
 mod rect_shrink_tests {
     use super::Rect;
@@ -374,12 +400,12 @@ mod rect_shrink_tests {
 
 #[cfg(test)]
 mod border_at_tests {
-    use super::{Direction, PaneTree, Rect, SplitOrient};
+    use super::{Direction, PaneTree, Rect, SplitOrient, SplitPosition};
 
     #[test]
     fn border_at_horizontal_split_returns_path_and_orient() {
         let mut tree = PaneTree::Leaf(1);
-        tree.split_h(1, 2);
+        tree.split_h(1, 2, SplitPosition::After);
         let rect = Rect::new(0, 0, 10, 20);
         // Boundary cols sit either side of col=10 (left=9, right=10).
         let hit = tree.border_at(rect, 5, 10).expect("boundary hit");
@@ -391,7 +417,7 @@ mod border_at_tests {
     #[test]
     fn border_at_vertical_split_returns_correct_orient() {
         let mut tree = PaneTree::Leaf(1);
-        tree.split_v(1, 2);
+        tree.split_v(1, 2, SplitPosition::After);
         let rect = Rect::new(0, 0, 10, 20);
         // Boundary row at row=5.
         let hit = tree.border_at(rect, 5, 4).expect("boundary hit");
@@ -401,7 +427,7 @@ mod border_at_tests {
     #[test]
     fn border_at_returns_none_for_pane_interior() {
         let mut tree = PaneTree::Leaf(1);
-        tree.split_h(1, 2);
+        tree.split_h(1, 2, SplitPosition::After);
         let rect = Rect::new(0, 0, 10, 20);
         // Click at col 3 is inside the left pane, not on the
         // boundary.
@@ -411,7 +437,7 @@ mod border_at_tests {
     #[test]
     fn set_ratio_at_clamps_to_safe_range() {
         let mut tree = PaneTree::Leaf(1);
-        tree.split_h(1, 2);
+        tree.split_h(1, 2, SplitPosition::After);
         assert!(tree.set_ratio_at(&[], 0.001));
         if let PaneTree::HSplit { ratio, .. } = tree {
             assert!(ratio >= 0.05);
@@ -423,7 +449,7 @@ mod border_at_tests {
     #[test]
     fn set_ratio_at_rejects_nan_and_infinity() {
         let mut tree = PaneTree::Leaf(1);
-        tree.split_h(1, 2);
+        tree.split_h(1, 2, SplitPosition::After);
         // `is_finite()` covers NaN AND ±∞ — both would survive
         // `f32::clamp` (NaN: stays NaN; ±∞: clamps to a bound but
         // would already have polluted intermediate arithmetic).
@@ -440,7 +466,7 @@ mod border_at_tests {
     #[test]
     fn resize_rejects_non_finite_delta() {
         let mut tree = PaneTree::Leaf(1);
-        tree.split_h(1, 2);
+        tree.split_h(1, 2, SplitPosition::After);
         for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
             assert!(!tree.resize(1, Direction::Right, bad));
             if let PaneTree::HSplit { ratio, .. } = tree {
@@ -455,9 +481,9 @@ mod border_at_tests {
     fn remove_3_deep_collapses_correctly() {
         // Build: HSplit{ Leaf(1), VSplit{ HSplit{ Leaf(2), Leaf(3) }, Leaf(4) } }
         let mut tree = PaneTree::Leaf(1);
-        assert!(tree.split_h(1, 2));
-        assert!(tree.split_v(2, 4));
-        assert!(tree.split_h(2, 3));
+        assert!(tree.split_h(1, 2, SplitPosition::After));
+        assert!(tree.split_v(2, 4, SplitPosition::After));
+        assert!(tree.split_h(2, 3, SplitPosition::After));
         // Removing leaf 3 should collapse its parent HSplit to Leaf(2).
         assert!(tree.remove(3));
         assert!(tree.all_ids().contains(&1));
