@@ -129,6 +129,34 @@ RUN chmod +x /usr/local/bin/jackin-container
         )
     });
 
+    // Append an oh-my-zsh title-hook source to /home/agent/.zshrc when
+    // the construct image's zshrc did not already do so. The hook emits
+    // OSC 0/2 (`user@host:cwd`) and OSC 7 on every prompt — the
+    // jackin-container multiplexer reads both and renders the pane
+    // border title from them (matches zellij convention).
+    //
+    // Idempotent via the `__JACKIN_AUTO_TITLE_LOADED` marker: new
+    // construct images source oh-my-zsh natively and export the
+    // marker, so this fallback no-ops once the operator rebuilds
+    // construct. Derived-from-derived builds (`base_image_override`)
+    // also skip the second append because the first build added the
+    // marker line to /home/agent/.zshrc.
+    #[allow(clippy::literal_string_with_formatting_args)] // shell ${...}, not a Rust format arg
+    const SHELL_TITLE_HOOK_SECTION: &str = "\
+RUN grep -q '__JACKIN_AUTO_TITLE_LOADED' /home/agent/.zshrc 2>/dev/null \\
+    || printf '%s\\n' \\
+    '' \\
+    '# jackin: source oh-my-zsh title hook when the active .zshrc did' \\
+    '# not already do so. Brings OSC 0/2 (window title) and OSC 7 (cwd)' \\
+    '# emit on every prompt for the multiplexer pane title.' \\
+    'if [ -z \"${__JACKIN_AUTO_TITLE_LOADED:-}\" ] && [ -f \"$HOME/.oh-my-zsh/lib/termsupport.zsh\" ]; then' \\
+    '    [ -f \"$HOME/.oh-my-zsh/lib/functions.zsh\" ] && source \"$HOME/.oh-my-zsh/lib/functions.zsh\"' \\
+    '    source \"$HOME/.oh-my-zsh/lib/termsupport.zsh\"' \\
+    '    export __JACKIN_AUTO_TITLE_LOADED=1' \\
+    'fi' >> /home/agent/.zshrc
+";
+    let shell_title_hook_section = SHELL_TITLE_HOOK_SECTION;
+
     format!(
         "\
 {base_dockerfile}
@@ -155,7 +183,7 @@ RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/de
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 RUN chmod +x /jackin/runtime/entrypoint.sh
-{jackin_container_section}RUN mkdir -p /run/jackin && chown agent:agent /run/jackin
+{shell_title_hook_section}{jackin_container_section}RUN mkdir -p /run/jackin && chown agent:agent /run/jackin
 ENV JACKIN_SUPPORTED_AGENTS={agents_csv}
 USER agent
 ENTRYPOINT [\"/usr/local/bin/jackin-container\"]
