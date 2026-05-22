@@ -122,6 +122,18 @@ jobs:
       # running nextest both with and without it would re-execute every
       # non-feature-gated test for no extra coverage.
       - run: cargo check --all-targets
+      # `dind_e2e` invokes `jackin load` end-to-end. `jackin load` calls
+      # `container_binary::ensure_available`, which downloads the
+      # `jackin-container` artifact from the rolling `preview` GitHub
+      # Release. CI runs before the preview workflow uploads that
+      # asset for this commit, so the download 404s. Build the binary
+      # in-place and point `ensure_available` at it via
+      # `JACKIN_CONTAINER_BIN`; the env var is inherited by every
+      # subprocess `dind_e2e` spawns.
+      - name: Build jackin-container for nextest
+        run: |
+          cargo build --release -p jackin-container
+          echo "JACKIN_CONTAINER_BIN=$PWD/target/release/jackin-container" >> "$GITHUB_ENV"
       - run: cargo nextest run --all-features --color=always
 
   msrv:
