@@ -22,7 +22,10 @@ use crate::socket::SOCKET_PATH;
 /// the first Hello frame asks the daemon to create that session before
 /// completing attach. Plain attach (operator-initiated reattach)
 /// passes `None`.
-pub async fn run_client(spawn_request: Option<SpawnRequest>) -> Result<()> {
+pub async fn run_client(
+    spawn_request: Option<SpawnRequest>,
+    focus_session: Option<u64>,
+) -> Result<()> {
     let (rows, cols) = terminal_size();
 
     crossterm::terminal::enable_raw_mode().context("failed to enable raw mode")?;
@@ -56,6 +59,7 @@ pub async fn run_client(spawn_request: Option<SpawnRequest>) -> Result<()> {
             cols,
             env: collect_session_env(spawn_request.is_some()),
             spawn: spawn_request,
+            focus_session,
         }))
         .await?;
 

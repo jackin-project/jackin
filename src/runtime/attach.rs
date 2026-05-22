@@ -97,23 +97,37 @@ pub(super) async fn reconnect_or_create_session(
     docker: &impl DockerApi,
     runner: &mut impl CommandRunner,
 ) -> anyhow::Result<()> {
+    reconnect_or_create_session_with_focus(paths, container_name, None, docker, runner).await
+}
+
+/// Same as `reconnect_or_create_session` but lets the caller direct
+/// the daemon's first-frame focus at a specific pane via the
+/// `--focus <session_id>` flag. The host console threads this through
+/// when the operator picks a pane out of the snapshot preview, so
+/// reattach lands inside the chosen pane instead of whichever leaf the
+/// daemon thinks is focused.
+pub(super) async fn reconnect_or_create_session_with_focus(
+    paths: &JackinPaths,
+    container_name: &str,
+    focus_session: Option<u64>,
+    docker: &impl DockerApi,
+    runner: &mut impl CommandRunner,
+) -> anyhow::Result<()> {
     set_role_terminal_title(paths, container_name);
-    // The daemon owns its session inventory and bootstraps the
-    // initial session at boot. There is nothing for the host to
-    // inspect before attach; just connect.
     let _ = docker;
+    let focus_arg = focus_session.map(|id| id.to_string());
+    let mut args: Vec<&str> = vec![
+        "exec",
+        "-it",
+        container_name,
+        "/usr/local/bin/jackin-container",
+    ];
+    if let Some(ref id) = focus_arg {
+        args.push("--focus");
+        args.push(id);
+    }
     runner
-        .run(
-            "docker",
-            &[
-                "exec",
-                "-it",
-                container_name,
-                "/usr/local/bin/jackin-container",
-            ],
-            None,
-            &RunOptions::default(),
-        )
+        .run("docker", &args, None, &RunOptions::default())
         .await
 }
 

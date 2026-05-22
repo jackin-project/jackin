@@ -53,6 +53,16 @@ pub enum ClientFrame {
         cols: u16,
         spawn: Option<SpawnRequest>,
         env: Vec<(String, String)>,
+        /// Optional pane-focus request: when `Some(session_id)` the
+        /// daemon switches its active tab + that tab's `focused_id`
+        /// to the leaf carrying this session id before forwarding any
+        /// content to the attached client. The host console emits
+        /// this when the operator picks a specific pane out of the
+        /// preview-pane snapshot so the operator lands inside the
+        /// pane they selected. Unknown / missing session ids are
+        /// ignored — the daemon attaches at the current focus and
+        /// the operator can navigate.
+        focus_session: Option<u64>,
     },
     Resize {
         rows: u16,
@@ -102,12 +112,14 @@ pub fn encode_client(frame: ClientFrame) -> Vec<u8> {
             cols,
             spawn,
             env,
+            focus_session,
         } => {
             // Layout:
             //   rows(2) cols(2) spawn_kind(1)
             //   agent_len(2) agent_bytes(N)
             //   env_count(2)
             //   repeated key_len(2) value_len(4) key_bytes value_bytes
+            //   focus_kind(1) [focus_session_id(8) if focus_kind == 1]
             let (spawn_kind, agent_bytes) = match spawn.as_ref() {
                 None => (0u8, b"".as_slice()),
                 Some(SpawnRequest::Shell) => (1u8, b"".as_slice()),
@@ -115,7 +127,7 @@ pub fn encode_client(frame: ClientFrame) -> Vec<u8> {
             };
             let agent_len = u16::try_from(agent_bytes.len()).unwrap_or(u16::MAX);
             let env_count = u16::try_from(env.len()).unwrap_or(u16::MAX);
-            let mut payload = Vec::with_capacity(9 + agent_bytes.len());
+            let mut payload = Vec::with_capacity(10 + agent_bytes.len());
             payload.extend_from_slice(&rows.to_be_bytes());
             payload.extend_from_slice(&cols.to_be_bytes());
             payload.push(spawn_kind);
@@ -131,6 +143,13 @@ pub fn encode_client(frame: ClientFrame) -> Vec<u8> {
                 payload.extend_from_slice(&value_len.to_be_bytes());
                 payload.extend_from_slice(&key_bytes[..key_len as usize]);
                 payload.extend_from_slice(&value_bytes[..value_len as usize]);
+            }
+            match focus_session {
+                None => payload.push(0u8),
+                Some(id) => {
+                    payload.push(1u8);
+                    payload.extend_from_slice(&id.to_be_bytes());
+                }
             }
             encode(TAG_HELLO, &payload)
         }
@@ -212,6 +231,7 @@ fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                     cols,
                     spawn: None,
                     env: Vec::new(),
+                    focus_session: None,
                 });
             }
             let spawn_kind = cursor.read_u8("spawn kind")?;
@@ -245,6 +265,22 @@ fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 let value = cursor.read_string(value_len, "env value")?;
                 env.push((key, value));
             }
+            // `focus_kind` (1 byte) + optional `session_id` (8 bytes).
+            // Pre-focus-session clients omit both, so a finished
+            // cursor at this point is still a valid Hello — fall
+            // back to `focus_session = None`. Future fields can be
+            // appended the same way: read if cursor still has bytes,
+            // otherwise default.
+            let focus_session = if cursor.finished() {
+                None
+            } else {
+                let focus_kind = cursor.read_u8("focus kind")?;
+                match focus_kind {
+                    0 => None,
+                    1 => Some(cursor.read_u64("focus session id")?),
+                    other => bail!("unknown hello focus kind {other}"),
+                }
+            };
             if !cursor.finished() {
                 bail!("hello payload has trailing bytes");
             }
@@ -253,6 +289,7 @@ fn decode_client(tag: u8, payload: Vec<u8>) -> Result<ClientFrame> {
                 cols,
                 spawn,
                 env,
+                focus_session,
             }
         }
         TAG_RESIZE => {
@@ -324,6 +361,14 @@ impl<'a> PayloadCursor<'a> {
         Ok(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
 
+    fn read_u64(&mut self, field: &str) -> Result<u64> {
+        let bytes = self.read_bytes(8, field)?;
+        let arr: [u8; 8] = bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("hello {field}: short slice"))?;
+        Ok(u64::from_be_bytes(arr))
+    }
+
     fn read_string(&mut self, len: usize, field: &str) -> Result<String> {
         let bytes = self.read_bytes(len, field)?;
         let s = std::str::from_utf8(bytes)
@@ -372,6 +417,7 @@ mod tests {
             cols: 100,
             spawn: None,
             env: Vec::new(),
+            focus_session: None,
         });
         // First byte is tag, never `0x00` (which is reserved for the
         // control-channel JSON length high byte).
@@ -386,6 +432,7 @@ mod tests {
             cols: 200,
             spawn: Some(SpawnRequest::Shell),
             env: Vec::new(),
+            focus_session: None,
         });
         let payload = bytes[5..].to_vec();
         let frame = decode_client(TAG_HELLO, payload).unwrap();
@@ -396,6 +443,7 @@ mod tests {
                 cols: 200,
                 spawn: Some(SpawnRequest::Shell),
                 env: Vec::new(),
+                focus_session: None,
             }
         );
     }
@@ -410,6 +458,7 @@ mod tests {
                 ("JACKIN_GIT_COAUTHOR_TRAILER".to_string(), "1".to_string()),
                 ("JACKIN_GIT_DCO".to_string(), "1".to_string()),
             ],
+            focus_session: None,
         });
         // Decode skips the 4-byte length prefix that `encode_client` writes
         // after the tag; reconstruct the payload to feed `decode_client`.
@@ -425,6 +474,7 @@ mod tests {
                     ("JACKIN_GIT_COAUTHOR_TRAILER".to_string(), "1".to_string()),
                     ("JACKIN_GIT_DCO".to_string(), "1".to_string()),
                 ],
+                focus_session: None,
             }
         );
     }
@@ -467,6 +517,7 @@ mod tests {
                 cols: 80,
                 spawn: None,
                 env: Vec::new(),
+                focus_session: None,
             }
         );
     }

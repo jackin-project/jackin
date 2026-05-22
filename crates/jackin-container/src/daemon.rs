@@ -2115,6 +2115,30 @@ impl Multiplexer {
             .collect()
     }
 
+    /// Switch the active tab to whichever tab contains the leaf
+    /// carrying `session_id`, and set that tab's `focused_id` to
+    /// `session_id`. Returns `true` when the search succeeded;
+    /// `false` when no tab references the id, leaving state
+    /// untouched.
+    fn focus_session_globally(&mut self, session_id: u64) -> bool {
+        use crate::layout::Rect;
+        let probe_rect = Rect::new(0, 0, self.term_rows, self.term_cols);
+        for (tab_idx, tab) in self.tabs.iter().enumerate() {
+            let leaf_ids: Vec<u64> = tab
+                .tree
+                .leaves(probe_rect)
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect();
+            if leaf_ids.contains(&session_id) {
+                self.active_tab = tab_idx;
+                self.tabs[tab_idx].focused_id = session_id;
+                return true;
+            }
+        }
+        false
+    }
+
     /// Build a tab/pane tree snapshot for the host console's preview
     /// pane. The leaf order matches `PaneTree::leaves` so the operator
     /// sees panes in the same left-to-right / top-to-bottom order the
@@ -2288,8 +2312,23 @@ pub async fn run_daemon(initial_agent: String) -> Result<()> {
 
             // Validated attach handshake from the spawned handshake task.
             Some(ready) = handshake_rx.recv() => {
-                let AttachHandshake { stream, rows, cols, spawn, env, client_permit } = ready;
+                let AttachHandshake {
+                    stream,
+                    rows,
+                    cols,
+                    spawn,
+                    env,
+                    focus_session,
+                    client_permit,
+                } = ready;
                 mux.resize(rows, cols);
+                if let Some(target) = focus_session
+                    && !mux.focus_session_globally(target)
+                {
+                    crate::clog!(
+                        "attach: ignoring unknown focus_session={target} (no matching pane)"
+                    );
+                }
                 // Honor a spawn intent from `jackin-container new
                 // <agent>` / `jackin-container new` (shell). Spawn
                 // failures get clog'd at error level so a
@@ -2621,6 +2660,12 @@ struct AttachHandshake {
     cols: u16,
     spawn: Option<SpawnRequest>,
     env: Vec<(String, String)>,
+    /// `Some(session_id)` when the client (typically the host
+    /// console picking out of the snapshot preview) wants the daemon
+    /// to focus a specific pane before forwarding content. The main
+    /// loop calls `Multiplexer::focus_session_globally` on receipt.
+    /// Unknown ids are silently ignored — see the daemon arm.
+    focus_session: Option<u64>,
     client_permit: tokio::sync::OwnedSemaphorePermit,
 }
 
@@ -2677,6 +2722,7 @@ async fn perform_handshake(
         cols,
         spawn,
         env,
+        focus_session,
     } = initial_frame
     else {
         crate::clog!("attach: rejected client whose first frame was not Hello: {initial_frame:?}");
@@ -2689,6 +2735,7 @@ async fn perform_handshake(
         cols,
         spawn,
         env,
+        focus_session,
         client_permit,
     };
     if handshake_tx.send(handshake).is_err() {

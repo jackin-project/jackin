@@ -43,6 +43,7 @@ async fn attach_hello_roundtrips_over_socket() {
                 cols: 80,
                 spawn: None,
                 env: Vec::new(),
+                focus_session: None,
             }
         );
         // Server replies with Welcome + a fake Output payload.
@@ -63,6 +64,7 @@ async fn attach_hello_roundtrips_over_socket() {
             cols: 80,
             spawn: None,
             env: Vec::new(),
+            focus_session: None,
         }))
         .await
         .unwrap();
@@ -164,6 +166,7 @@ async fn second_attach_takes_over_first() {
             cols: 80,
             spawn: None,
             env: Vec::new(),
+            focus_session: None,
         }))
         .await
         .unwrap();
@@ -175,6 +178,7 @@ async fn second_attach_takes_over_first() {
             cols: 80,
             spawn: None,
             env: Vec::new(),
+            focus_session: None,
         }))
         .await
         .unwrap();

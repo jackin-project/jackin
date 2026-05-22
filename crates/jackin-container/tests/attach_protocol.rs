@@ -37,6 +37,7 @@ fn hello_first_byte_never_collides_with_control_channel() {
         cols: 80,
         spawn: None,
         env: Vec::new(),
+        focus_session: None,
     });
     assert_ne!(bytes[0], 0x00);
     assert_eq!(bytes[0], TAG_HELLO);

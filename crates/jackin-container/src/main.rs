@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use jackin_container::{
-    client, daemon, protocol::attach::SpawnRequest, session::validate_agent_slug,
+    client, daemon, protocol::attach::SpawnRequest, runtime_setup, session::validate_agent_slug,
 };
 
 const DEFAULT_AGENT: &str = "claude";
@@ -20,14 +20,16 @@ async fn main() -> Result<()> {
         daemon::run_daemon(agent).await
     } else {
         let subcommand = args.get(1).map(String::as_str);
+        let focus_session = parse_focus_flag(&args);
         match subcommand {
-            None => client::run_client(None).await,
+            None => client::run_client(None, focus_session).await,
             Some("--version") | Some("-V") => {
                 println!("jackin-container {}", env!("JACKIN_CONTAINER_VERSION"));
                 Ok(())
             }
             Some("status") => client::run_status().await,
             Some("snapshot") => client::run_snapshot().await,
+            Some("runtime-setup") => runtime_setup::run(),
             Some("new") => {
                 let spawn = match args.get(2) {
                     None => Some(SpawnRequest::Shell),
@@ -41,15 +43,38 @@ async fn main() -> Result<()> {
                         }
                     },
                 };
-                client::run_client(spawn).await
+                client::run_client(spawn, focus_session).await
+            }
+            Some(other) if other.starts_with("--focus") => {
+                // Bare `jackin-container --focus <id>` → plain attach
+                // with focus.
+                client::run_client(None, focus_session).await
             }
             Some(other) => {
                 bail!(
-                    "unknown jackin-container subcommand {other:?} — known: status, snapshot, new <agent>, --version"
+                    "unknown jackin-container subcommand {other:?} — known: status, snapshot, runtime-setup, new <agent>, --focus <session_id>, --version"
                 )
             }
         }
     }
+}
+
+/// Parse `--focus <id>` / `--focus=<id>` out of the client argv.
+/// Returns `None` when the flag is missing or the value is not a
+/// `u64`. Invalid values fall through to "no focus" so a stale or
+/// hand-typed id never blocks the attach — the daemon ignores
+/// unknown focus targets anyway.
+fn parse_focus_flag(args: &[String]) -> Option<u64> {
+    let mut iter = args.iter().skip(1);
+    while let Some(arg) = iter.next() {
+        if let Some(value) = arg.strip_prefix("--focus=") {
+            return value.parse::<u64>().ok();
+        }
+        if arg == "--focus" {
+            return iter.next().and_then(|raw| raw.parse::<u64>().ok());
+        }
+    }
+    None
 }
 
 /// Resolve the initial agent slug for PID-1 daemon mode. Priority:
