@@ -43,6 +43,22 @@ pub async fn ensure_available(paths: &JackinPaths) -> Result<PathBuf> {
         return Ok(path);
     }
 
+    // Tests stub the binary by writing a placeholder file at this
+    // well-known location (see `install_test_stub`). Used by both lib
+    // tests via `cfg!(test)` and integration tests via the helper
+    // call; production hosts never have this file because the cache
+    // dir lives under `~/.jackin/cache/` and gets the real binary on
+    // first run. `cfg!(test)` short-circuits the stub write for lib
+    // tests so they don't need any per-test setup.
+    let stub_path = paths.cache_dir.join("jackin-container-test-stub");
+    if cfg!(test) {
+        install_test_stub(paths).context("installing in-process test stub")?;
+        return Ok(stub_path);
+    }
+    if stub_path.exists() && is_valid_cached_binary(&stub_path) {
+        return Ok(stub_path);
+    }
+
     let arch = container_arch();
     let cached = cached_binary_path(&paths.cache_dir, REQUIRED_VERSION, arch);
 
@@ -84,9 +100,16 @@ pub const fn container_arch() -> &'static str {
 
 async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()> {
     let url = download_url(version, arch);
+    let sha_url = format!("{url}.sha256");
     eprintln!("[jackin] downloading jackin-container {version} for linux/{arch}...");
 
     let tmp = dest.with_extension("tmp");
+    let tmp_path_str = tmp.to_str().ok_or_else(|| {
+        anyhow::anyhow!(
+            "cache temp path {} contains non-UTF-8 bytes; cannot pass to curl",
+            tmp.display()
+        )
+    })?;
     let status = tokio::process::Command::new("curl")
         .args([
             "--fail",
@@ -94,7 +117,7 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
             "--show-error",
             "--location",
             "--output",
-            tmp.to_str().unwrap_or_default(),
+            tmp_path_str,
             &url,
         ])
         .status()
@@ -116,21 +139,108 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
         );
     }
 
-    chmod_executable(&tmp);
+    // Fetch and verify the published SHA-256. The preview/release CI
+    // pipeline emits `<asset>.sha256` alongside every binary asset; if
+    // that companion file is missing or doesn't match the downloaded
+    // bytes the binary may have come from a tampered or partial
+    // release and we must refuse to cache it.
+    let expected_sha = fetch_remote_sha256(&sha_url)
+        .await
+        .with_context(|| format!("fetching jackin-container SHA-256 manifest at {sha_url}"))?;
+    let actual_sha = hash_file_sha256(&tmp)
+        .with_context(|| format!("hashing downloaded jackin-container at {}", tmp.display()))?;
+    if !actual_sha.eq_ignore_ascii_case(&expected_sha) {
+        let _ = std::fs::remove_file(&tmp);
+        anyhow::bail!(
+            "jackin-container SHA-256 mismatch for {url}\n  expected {expected_sha}\n  actual   {actual_sha}\n\
+             refusing to cache the binary; investigate network tampering and retry."
+        );
+    }
+
+    chmod_executable(&tmp).with_context(|| {
+        format!(
+            "setting executable bit on cached jackin-container at {}",
+            tmp.display()
+        )
+    })?;
     std::fs::rename(&tmp, dest)
         .with_context(|| format!("failed to move jackin-container to {}", dest.display()))?;
 
-    // Skip exec-based version check on non-Linux hosts: the binary is a Linux
-    // ELF and cannot be executed on macOS. Trust the download and let the
-    // container fail fast at startup if the binary is wrong.
+    // Skip exec-based version check on non-Linux hosts: the binary is a
+    // Linux ELF and cannot be executed on macOS. The SHA-256 check
+    // above already proves the bytes match the published release, so a
+    // version mismatch at this point would indicate the release ↔
+    // hash mapping itself drifted.
     #[cfg(target_os = "linux")]
     verify_version_exec(dest, version)?;
 
     eprintln!(
-        "[jackin] jackin-container {version} cached at {}",
-        dest.display()
+        "[jackin] jackin-container {version} cached at {} (sha256 {})",
+        dest.display(),
+        &actual_sha[..16.min(actual_sha.len())]
     );
     Ok(())
+}
+
+/// Fetch the published SHA-256 hex string for a release asset. The CI
+/// workflow emits the file as one line of lowercase hex (no filename
+/// suffix) so trim + lowercase is enough.
+async fn fetch_remote_sha256(url: &str) -> Result<String> {
+    let output = tokio::process::Command::new("curl")
+        .args([
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--location",
+            "--max-time",
+            "30",
+            url,
+        ])
+        .output()
+        .await
+        .context("failed to run curl for sha256 manifest")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "{url} download failed (status={}, stderr={})",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let text = String::from_utf8(output.stdout).context("sha256 manifest body is not UTF-8")?;
+    let hex = text.split_whitespace().next().unwrap_or("").to_lowercase();
+    if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        anyhow::bail!(
+            "{url} did not return a 64-char hex sha256 (got {:?})",
+            hex.chars().take(80).collect::<String>()
+        );
+    }
+    Ok(hex)
+}
+
+/// SHA-256 of a file, returned as lowercase hex.
+fn hash_file_sha256(path: &Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+    use std::io::Read as _;
+    let mut file = std::fs::File::open(path)
+        .with_context(|| format!("opening {} for hashing", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .with_context(|| format!("reading {} for hashing", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let digest = hasher.finalize();
+    let mut hex = String::with_capacity(64);
+    for byte in digest.iter() {
+        let _ = write!(hex, "{byte:02x}");
+    }
+    Ok(hex)
 }
 
 fn download_url(version: &str, arch: &str) -> String {
@@ -158,13 +268,36 @@ pub fn is_valid_cached_binary(path: &Path) -> bool {
             .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
 }
 
-pub fn chmod_executable(path: &Path) {
-    use std::os::unix::fs::PermissionsExt as _;
-    if let Ok(meta) = std::fs::metadata(path) {
-        let mut perms = meta.permissions();
-        perms.set_mode(0o755);
-        let _ = std::fs::set_permissions(path, perms);
+/// Write a placeholder file at `<cache_dir>/jackin-container-test-stub`
+/// with the executable bit set. The `ensure_available` lookup honours
+/// this path when present, short-circuiting the network download for
+/// integration tests that use `FakeDockerClient` and never actually
+/// `docker run` the produced image. Lib-tests (`cfg!(test)`) call this
+/// implicitly; integration tests in `tests/` opt in via
+/// `tests/common::install_container_binary_stub`.
+pub fn install_test_stub(paths: &JackinPaths) -> Result<()> {
+    let stub = paths.cache_dir.join("jackin-container-test-stub");
+    if let Some(parent) = stub.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create cache dir {}", parent.display()))?;
     }
+    if !stub.exists() {
+        std::fs::write(&stub, b"#!/bin/sh\necho jackin-container test stub\n")
+            .with_context(|| format!("writing test stub at {}", stub.display()))?;
+    }
+    chmod_executable(&stub)
+        .with_context(|| format!("setting +x on test stub {}", stub.display()))?;
+    Ok(())
+}
+
+pub fn chmod_executable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    let meta =
+        std::fs::metadata(path).with_context(|| format!("stating {} for chmod", path.display()))?;
+    let mut perms = meta.permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(path, perms)
+        .with_context(|| format!("chmod 0755 on {}", path.display()))
 }
 
 /// Verify the binary version by executing it. Linux only — macOS cannot exec Linux ELF.
@@ -231,5 +364,30 @@ mod tests {
         assert_eq!(linux_target("arm64"), "aarch64-unknown-linux-gnu");
         assert_eq!(linux_target("amd64"), "x86_64-unknown-linux-gnu");
         assert_eq!(linux_target("x86_64"), "x86_64-unknown-linux-gnu");
+    }
+
+    #[test]
+    fn hash_file_sha256_matches_known_vector() {
+        // SHA-256 of the empty string is the well-known
+        // e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let digest = hash_file_sha256(tmp.path()).unwrap();
+        assert_eq!(
+            digest,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[test]
+    fn hash_file_sha256_matches_for_known_bytes() {
+        // SHA-256 of the ASCII string "abc" is
+        // ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad.
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), b"abc").unwrap();
+        let digest = hash_file_sha256(tmp.path()).unwrap();
+        assert_eq!(
+            digest,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 }

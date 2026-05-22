@@ -222,6 +222,26 @@ pub fn shell_quote(value: &str) -> String {
     quoted
 }
 
+/// Validate that `value` looks like a Docker image reference and not
+/// arbitrary text. Operator-set `JACKIN_CONSTRUCT_IMAGE` flows through
+/// here before being interpolated into a `FROM` line; without this
+/// check a newline-containing value (e.g. from a poisoned `.envrc`)
+/// would inject arbitrary RUN instructions executed at image-build
+/// time. The accepted alphabet is the conservative subset that Docker
+/// itself accepts in references plus colons, slashes, `@`, and dots —
+/// everything else is rejected.
+fn looks_like_valid_image_ref(value: &str) -> bool {
+    if value.is_empty() || value.len() > 256 {
+        return false;
+    }
+    value.chars().all(|c| {
+        matches!(
+            c,
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '_' | '-' | '/' | ':' | '@' | '+'
+        )
+    })
+}
+
 /// Replace `FROM projectjackin/construct:<tag>[@<digest>] [AS alias]` lines in
 /// `contents` with `FROM <override_image> [AS alias]`. Digest pins are dropped
 /// because a local override image has no matching digest.
@@ -282,22 +302,38 @@ pub fn create_derived_build_context(
 
     let hooks = validated.manifest.hooks.as_ref();
 
-    let base_dockerfile = base_image_override.map_or_else(
-        || {
-            // When JACKIN_CONSTRUCT_IMAGE is not set or empty, leave the
-            // Dockerfile untouched so Docker uses whatever versioned tag the
-            // role pins.
+    let base_dockerfile = match base_image_override {
+        Some(image) => {
+            anyhow::ensure!(
+                looks_like_valid_image_ref(image),
+                "base_image_override {image:?} is not a valid Docker image reference; refusing to interpolate into Dockerfile FROM line",
+            );
+            format!("FROM {image}\n")
+        }
+        None => {
+            // When JACKIN_CONSTRUCT_IMAGE is unset / empty, leave the
+            // Dockerfile untouched so Docker uses whatever versioned
+            // tag the role pins. Validate any non-empty override
+            // against `looks_like_valid_image_ref` so a newline /
+            // shell-metachar in the env var cannot inject extra
+            // Dockerfile instructions executed at build time.
             let override_image = std::env::var("JACKIN_CONSTRUCT_IMAGE").unwrap_or_default();
-            if override_image.trim().is_empty() {
-                return validated.dockerfile.dockerfile_contents.clone();
+            let override_trimmed = override_image.trim();
+            if override_trimmed.is_empty() {
+                validated.dockerfile.dockerfile_contents.clone()
+            } else if looks_like_valid_image_ref(override_trimmed) {
+                apply_construct_image_override(
+                    &validated.dockerfile.dockerfile_contents,
+                    override_trimmed,
+                )
+            } else {
+                eprintln!(
+                    "[jackin] ignoring invalid JACKIN_CONSTRUCT_IMAGE={override_image:?}; using role's pinned base image"
+                );
+                validated.dockerfile.dockerfile_contents.clone()
             }
-            apply_construct_image_override(
-                &validated.dockerfile.dockerfile_contents,
-                &override_image,
-            )
-        },
-        |image| format!("FROM {image}\n"),
-    );
+        }
+    };
 
     let supported = validated.manifest.supported_agents();
     let dockerfile_path = context_dir.join(".jackin-runtime/DerivedDockerfile");

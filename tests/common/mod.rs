@@ -4,8 +4,18 @@ use jackin::docker::{CommandRunner, RunOptions};
 use jackin::docker_client::{
     ContainerRow, ContainerSpec, ContainerState, DockerApi, NetworkRow, RemoveImageOutcome,
 };
+use jackin::paths::JackinPaths;
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
+
+/// Install the test stub for `jackin-container` so integration tests
+/// don't try to download the binary from the GitHub preview release.
+/// `cargo test` of the lib uses `cfg!(test)` for the same purpose;
+/// integration tests need to call this explicitly because cfg(test)
+/// only affects the lib when compiled for the lib's own test target.
+pub fn install_container_binary_stub(paths: &JackinPaths) {
+    jackin::container_binary::install_test_stub(paths).expect("install jackin-container test stub");
+}
 
 /// Minimal no-op `DockerApi` stub. All operations return empty/success so
 /// `load_role` proceeds as if no containers exist.

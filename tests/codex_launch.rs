@@ -1,6 +1,6 @@
 mod common;
 
-use common::{FakeRunner, NoOpDocker};
+use common::{FakeRunner, NoOpDocker, install_container_binary_stub};
 use jackin::agent::Agent;
 use jackin::config::AppConfig;
 use jackin::isolation::MountIsolation;
@@ -15,6 +15,7 @@ async fn codex_launch_invokes_docker_run_with_codex_agent() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
+    install_container_binary_stub(&paths);
     std::fs::write(
         &paths.config_file,
         r#"[env]
@@ -136,6 +137,7 @@ async fn codex_launch_cli_agent_override_wins_over_workspace() {
     let temp = tempdir().unwrap();
     let paths = JackinPaths::for_tests(temp.path());
     paths.ensure_base_dirs().unwrap();
+    install_container_binary_stub(&paths);
     std::fs::write(
         &paths.config_file,
         r#"[env]

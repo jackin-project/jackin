@@ -175,6 +175,7 @@ fn build_via_zigbuild(workspace: &Path, arch: &str, dest: &Path) -> Result<()> {
 
     std::fs::copy(&built, dest)
         .with_context(|| format!("failed to copy {} to {}", built.display(), dest.display()))?;
-    chmod_executable(dest);
+    chmod_executable(dest)
+        .with_context(|| format!("setting +x on built binary {}", dest.display()))?;
     Ok(())
 }

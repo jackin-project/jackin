@@ -6,6 +6,7 @@ use crate::paths::JackinPaths;
 use crate::repo::CachedRepo;
 use crate::selector::RoleSelector;
 use crate::version_check;
+use anyhow::Context as _;
 use owo_colors::OwoColorize;
 
 use super::identity::HostIdentity;
@@ -120,9 +121,21 @@ pub(super) async fn build_agent_image(
     };
 
     // Ensure the jackin-container binary is available in the local cache.
-    // Downloads from the GitHub preview release if not cached for this version.
-    let jackin_container_binary = container_binary::ensure_available(paths).await.ok();
-    let jackin_container_src = jackin_container_binary.as_ref().and_then(|p| p.to_str());
+    // Downloads from the GitHub preview release if not cached for this
+    // version. Propagate the error: the derived image's ENTRYPOINT is
+    // `/usr/local/bin/jackin-container`, so a Dockerfile built without
+    // the binary would build successfully then fail at `docker run`
+    // with the opaque "exec: file not found." Failing fast here with
+    // the actionable message from `container_binary` is much better.
+    let jackin_container_binary = container_binary::ensure_available(paths)
+        .await
+        .context("preparing jackin-container binary for derived image build")?;
+    let jackin_container_src = jackin_container_binary.to_str().ok_or_else(|| {
+        anyhow::anyhow!(
+            "cached jackin-container path {} contains non-UTF-8 bytes; cannot reference it from Dockerfile",
+            jackin_container_binary.display()
+        )
+    })?;
 
     // create_derived_build_context copies the repo into a temp directory,
     // creating an immutable snapshot.  After this point the shared cached
@@ -131,7 +144,7 @@ pub(super) async fn build_agent_image(
         &cached_repo.repo_dir,
         validated_repo,
         base_image_override,
-        jackin_container_src,
+        Some(jackin_container_src),
     )?;
     drop(repo_lock);
 
