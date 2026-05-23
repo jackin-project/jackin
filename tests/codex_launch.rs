@@ -8,6 +8,7 @@ use jackin::paths::JackinPaths;
 use jackin::runtime::{LoadOptions, load_role};
 use jackin::selector::RoleSelector;
 use jackin::workspace::{MountConfig, ResolvedWorkspace};
+use std::path::Path;
 use tempfile::tempdir;
 
 fn recorded_docker_build(runner: &FakeRunner) -> &str {
@@ -51,6 +52,22 @@ fn capsule_config_for_run(paths: &JackinPaths, run_cmd: &str) -> jackin_protocol
         .join(recorded_role_container_name(run_cmd))
         .join(jackin_protocol::CAPSULE_CONFIG_FILENAME);
     toml::from_str(&std::fs::read_to_string(capsule_config_path).unwrap()).unwrap()
+}
+
+fn codex_workspace(repo_dir: &Path) -> ResolvedWorkspace {
+    ResolvedWorkspace {
+        label: repo_dir.display().to_string(),
+        workdir: "/workspace".to_string(),
+        mounts: vec![MountConfig {
+            src: repo_dir.display().to_string(),
+            dst: "/workspace".to_string(),
+            readonly: false,
+            isolation: MountIsolation::Shared,
+        }],
+        default_agent: Some(Agent::Codex),
+        keep_awake_enabled: false,
+        git_pull_on_entry: false,
+    }
 }
 
 #[tokio::test]
@@ -102,19 +119,7 @@ model = "gpt-5"
     assert!(dockerfile.contains("openai/codex/releases"));
 
     let mut config = AppConfig::load_or_init(&paths).unwrap();
-    let workspace = ResolvedWorkspace {
-        label: repo_dir.display().to_string(),
-        workdir: "/workspace".to_string(),
-        mounts: vec![MountConfig {
-            src: repo_dir.display().to_string(),
-            dst: "/workspace".to_string(),
-            readonly: false,
-            isolation: MountIsolation::Shared,
-        }],
-        default_agent: Some(Agent::Codex),
-        keep_awake_enabled: false,
-        git_pull_on_entry: false,
-    };
+    let workspace = codex_workspace(&repo_dir);
     // Capture queue (role-specific, after 4-slot preamble):
     //   [0] capture_secret: gh auth token → empty (no gh session in test)
     let mut runner = FakeRunner::for_load_agent([String::new()]);
