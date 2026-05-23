@@ -66,18 +66,30 @@ async fn main() -> Result<()> {
 }
 
 /// Parse `--focus <id>` / `--focus=<id>` out of the client argv.
-/// Returns `None` when the flag is missing or the value is not a
-/// `u64`. Invalid values fall through to "no focus" so a stale or
-/// hand-typed id never blocks the attach — the daemon ignores
-/// unknown focus targets anyway.
+/// Returns `None` when the flag is missing or the value cannot be
+/// parsed as `u64`. A malformed value emits a stderr warning so the
+/// operator sees the rejection instead of silently attaching to the
+/// daemon-picked default pane.
 fn parse_focus_flag(args: &[String]) -> Option<u64> {
     let mut iter = args.iter().skip(1);
     while let Some(arg) = iter.next() {
         if let Some(value) = arg.strip_prefix("--focus=") {
-            return value.parse::<u64>().ok();
+            return match value.parse::<u64>() {
+                Ok(n) => Some(n),
+                Err(_) => {
+                    eprintln!("[jackin-capsule] ignoring --focus={value:?}: not a u64");
+                    None
+                }
+            };
         }
         if arg == "--focus" {
-            return iter.next().and_then(|raw| raw.parse::<u64>().ok());
+            return iter.next().and_then(|raw| match raw.parse::<u64>() {
+                Ok(n) => Some(n),
+                Err(_) => {
+                    eprintln!("[jackin-capsule] ignoring --focus {raw:?}: not a u64");
+                    None
+                }
+            });
         }
     }
     None

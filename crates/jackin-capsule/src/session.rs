@@ -524,12 +524,22 @@ impl Session {
         // the latter panics inside spawn_blocking on a current-thread
         // runtime ("Cannot block the current thread from within a runtime").
         tokio::task::spawn_blocking(move || {
-            let writer = master_for_write
-                .lock()
-                .ok()
-                .and_then(|guard| guard.take_writer().ok());
+            let writer = match master_for_write.lock() {
+                Err(_) => {
+                    crate::clog!("session {sid}: PTY master mutex poisoned; aborting writer task");
+                    None
+                }
+                Ok(guard) => match guard.take_writer() {
+                    Ok(w) => Some(w),
+                    Err(e) => {
+                        crate::clog!(
+                            "session {sid}: take_writer failed: {e}; aborting writer task"
+                        );
+                        None
+                    }
+                },
+            };
             let Some(mut writer) = writer else {
-                crate::clog!("session {sid}: failed to take PTY writer; aborting writer task");
                 if event_tx_writer_err
                     .send(SessionEvent::Exited { session_id: sid })
                     .is_err()
@@ -561,12 +571,22 @@ impl Session {
 
         let event_tx_reader_err = event_tx.clone();
         tokio::task::spawn_blocking(move || {
-            let reader = master_for_read
-                .lock()
-                .ok()
-                .and_then(|guard| guard.try_clone_reader().ok());
+            let reader = match master_for_read.lock() {
+                Err(_) => {
+                    crate::clog!("session {sid}: PTY master mutex poisoned; aborting reader task");
+                    None
+                }
+                Ok(guard) => match guard.try_clone_reader() {
+                    Ok(r) => Some(r),
+                    Err(e) => {
+                        crate::clog!(
+                            "session {sid}: try_clone_reader failed: {e}; aborting reader task"
+                        );
+                        None
+                    }
+                },
+            };
             let Some(mut reader) = reader else {
-                crate::clog!("session {sid}: failed to clone PTY reader; aborting reader task");
                 if event_tx_reader_err
                     .send(SessionEvent::Exited { session_id: sid })
                     .is_err()
@@ -600,6 +620,9 @@ impl Session {
                             })
                             .is_err()
                         {
+                            crate::clog!(
+                                "session {sid}: event channel closed before PTY output drained; reader exiting"
+                            );
                             break;
                         }
                     }

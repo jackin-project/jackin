@@ -1299,6 +1299,7 @@ dependencies = [
  "dockerfile-parser-rs",
  "fs2",
  "futures-util",
+ "jackin-build-meta",
  "jackin-protocol",
  "jackin-tui",
  "nix 0.31.3",
@@ -1324,6 +1325,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "jackin-build-meta"
+version = "0.6.0-dev"
+
+[[package]]
 name = "jackin-capsule"
 version = "0.6.0-dev"
 dependencies = [
@@ -1331,10 +1336,10 @@ dependencies = [
  "base64",
  "chrono",
  "crossterm",
+ "jackin-build-meta",
  "jackin-protocol",
  "jackin-tui",
  "nix 0.31.3",
- "percent-encoding",
  "portable-pty",
  "serde",
  "serde_json",

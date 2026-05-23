@@ -139,6 +139,7 @@ pub(crate) fn start_listener_at(
                     // ladder and tripping the `1u64 << N` UB shift.
                     let shift = consecutive_failures.saturating_sub(1).min(16);
                     let backoff_ms = 50u64.saturating_mul(1u64 << shift).min(5_000);
+                    crate::clog!("socket: backing off {backoff_ms}ms before next accept");
                     tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                 }
             }

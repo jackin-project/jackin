@@ -1903,6 +1903,7 @@ impl ManagerState<'_> {
                 self.instance_sessions.clear();
                 self.instance_session_errors.clear();
                 self.instance_snapshots.clear();
+                let mut snapshot_targets: Vec<String> = Vec::new();
                 for entry in &self.instances {
                     if matches!(
                         entry.status,
@@ -1926,27 +1927,48 @@ impl ManagerState<'_> {
                                     .insert(entry.container_base.clone());
                             }
                         }
-                        // Best-effort live tab/pane snapshot via the
-                        // daemon's bind-mounted socket. Errors during
-                        // the container's bring-up window (socket not
-                        // yet bound, in-container fallback exits non-
-                        // zero) land in the debug log and the render
-                        // falls back to the manifest sessions; the
-                        // next refresh tick retries.
-                        match crate::runtime::snapshot::fetch_snapshot(paths, &entry.container_base)
-                        {
-                            Ok(Some(snapshot)) => {
-                                self.instance_snapshots
-                                    .insert(entry.container_base.clone(), snapshot);
-                            }
-                            Ok(None) => {}
-                            Err(e) => {
-                                crate::debug_log!(
-                                    "console",
-                                    "snapshot fetch failed for {}: {e:#}",
-                                    entry.container_base
-                                );
-                            }
+                        snapshot_targets.push(entry.container_base.clone());
+                    }
+                }
+                // Fan-out snapshot fetches in parallel so the render
+                // thread's wall-clock cost stays bounded by the
+                // per-fetch SOCKET_TIMEOUT (2 s) regardless of how
+                // many active instances exist. A serial loop would
+                // stall the TUI for N × 2 s on a host with several
+                // wedged containers.
+                let snapshot_results: Vec<(String, anyhow::Result<Option<crate::runtime::snapshot::InstanceSnapshot>>)> =
+                    std::thread::scope(|s| {
+                        // Collect all `spawn` handles first so every
+                        // thread starts before any join blocks; folding
+                        // collect+join into one chain would serialise
+                        // the work.
+                        #[allow(clippy::needless_collect)]
+                        let handles: Vec<_> = snapshot_targets
+                            .into_iter()
+                            .map(|container| {
+                                s.spawn(move || {
+                                    let result =
+                                        crate::runtime::snapshot::fetch_snapshot(paths, &container);
+                                    (container, result)
+                                })
+                            })
+                            .collect();
+                        handles
+                            .into_iter()
+                            .filter_map(|h| h.join().ok())
+                            .collect()
+                    });
+                for (container, result) in snapshot_results {
+                    match result {
+                        Ok(Some(snapshot)) => {
+                            self.instance_snapshots.insert(container, snapshot);
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            crate::debug_log!(
+                                "console",
+                                "snapshot fetch failed for {container}: {e:#}"
+                            );
                         }
                     }
                 }

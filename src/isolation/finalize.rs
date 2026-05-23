@@ -162,8 +162,9 @@ async fn has_jackin_sessions(
     container_name: &str,
 ) -> bool {
     // Only an explicit `Sessions: 0` header proves the capsule is
-    // idle. The shared status command masks failures with `|| true`,
-    // so empty or malformed stdout must be treated as unknown/present.
+    // idle. Empty/malformed stdout still routes to "unknown/present"
+    // even though the shared status command no longer masks failures;
+    // a torn write or a daemon restart mid-call must not auto-clean.
     match docker
         .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
         .await

@@ -4,7 +4,13 @@ use crate::docker::{CommandRunner, RunOptions};
 use crate::docker_client::DockerApi;
 use crate::instance::InstanceManifest;
 
-pub const JACKIN_STATUS_CMD: &str = "/jackin/runtime/jackin-capsule status 2>/dev/null || true";
+/// Shell command for querying the in-container daemon's session
+/// inventory. Failures propagate (no `|| true` suppression): every
+/// distinct failure mode — binary missing, socket unbound, daemon
+/// crashed, exec exited non-zero — must surface as
+/// `AgentSessionInventory::Unavailable` rather than collapsing into
+/// "no sessions".
+pub const JACKIN_STATUS_CMD: &str = "/jackin/runtime/jackin-capsule status";
 
 pub use crate::docker_client::ContainerState;
 #[cfg(test)]
@@ -43,17 +49,42 @@ pub async fn inspect_agent_sessions(
         .exec_capture(container_name, &["sh", "-c", JACKIN_STATUS_CMD])
         .await
     {
-        Ok(output) => AgentSessionInventory::Sessions(parse_jackin_sessions(&output)),
+        Ok(output) => match parse_jackin_sessions(&output) {
+            Ok(sessions) => AgentSessionInventory::Sessions(sessions),
+            Err(reason) => AgentSessionInventory::Unavailable(reason),
+        },
         Err(error) => AgentSessionInventory::Unavailable(error.to_string()),
     }
 }
 
 /// Parse session list from `jackin-capsule status` output.
-/// Each line is: `  [<id>] <label> (<agent>) state=<state> active=<bool>`.
-/// `<label>` originates from the rename dialog and may contain spaces.
-fn parse_jackin_sessions(output: &str) -> Vec<AgentSession> {
-    output
-        .lines()
+///
+/// The output starts with `Sessions: <N>` followed by N lines shaped
+/// `  [<id>] <label> (<agent>) state=<state> active=<bool>`. The
+/// header is required: without it, the function returns `Err` so
+/// callers can route to `Unavailable` instead of silently treating
+/// "no `[` lines" as "zero sessions". A cosmetic change to the
+/// capsule's status print therefore surfaces immediately as an
+/// operator-visible "sessions unavailable" rather than a wrong
+/// auto-cleanup.
+fn parse_jackin_sessions(output: &str) -> Result<Vec<AgentSession>, String> {
+    let mut lines = output.lines();
+    let header = loop {
+        let Some(line) = lines.next() else {
+            return Err(
+                "jackin-capsule status emitted no `Sessions: N` header — daemon may be unreachable"
+                    .to_string(),
+            );
+        };
+        if let Some(rest) = line.trim().strip_prefix("Sessions:") {
+            break rest.trim();
+        }
+    };
+    let expected: usize = header.parse().map_err(|e| {
+        format!("jackin-capsule status header `Sessions: {header}` not a usize: {e}")
+    })?;
+
+    let sessions: Vec<AgentSession> = lines
         .filter_map(|line| {
             let trimmed = line.trim();
             if trimmed.is_empty() || !trimmed.starts_with('[') {
@@ -71,7 +102,15 @@ fn parse_jackin_sessions(output: &str) -> Vec<AgentSession> {
                 name: name.to_string(),
             })
         })
-        .collect()
+        .collect();
+
+    if sessions.len() != expected {
+        return Err(format!(
+            "jackin-capsule status header claims {expected} sessions but {} were parsed",
+            sessions.len()
+        ));
+    }
+    Ok(sessions)
 }
 
 /// Builder for `docker inspect`-failure operator messages. `clause`
@@ -745,7 +784,7 @@ mod tests {
                 ContainerState::Running,
             ])),
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                "  [1] Claude (claude) state=working active=true".to_string(),
+                "Sessions: 1\n  [1] Claude (claude) state=working active=true".to_string(),
             ])),
             ..Default::default()
         };
@@ -1195,7 +1234,7 @@ mod tests {
                 },
             ])),
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                "  [1] jackin-claude-abc123 (claude) state=working active=true\n  [2] jackin-codex-abc (codex) state=idle active=false".to_string(),
+                "Sessions: 2\n  [1] jackin-claude-abc123 (claude) state=working active=true\n  [2] jackin-codex-abc (codex) state=idle active=false".to_string(),
             ])),
             inspect_network_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
                 Some(crate::docker_client::NetworkRow {
@@ -1232,7 +1271,7 @@ mod tests {
     async fn inspect_agent_sessions_lists_jackin_sessions() {
         let docker = FakeDockerClient {
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                "  [1] Claude (claude) state=working active=true\n  [2] Codex (codex) state=idle active=false".to_string(),
+                "Sessions: 2\n  [1] Claude (claude) state=working active=true\n  [2] Codex (codex) state=idle active=false".to_string(),
             ])),
             ..Default::default()
         };
@@ -1252,7 +1291,7 @@ mod tests {
     async fn inspect_agent_sessions_returns_empty_when_no_sessions_running() {
         let docker = FakeDockerClient {
             exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
-                String::new(),
+                "Sessions: 0".to_string(),
             ])),
             ..Default::default()
         };
@@ -1261,6 +1300,44 @@ mod tests {
             inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Running).await;
 
         assert_eq!(sessions, AgentSessionInventory::Sessions(vec![]));
+    }
+
+    #[tokio::test]
+    async fn inspect_agent_sessions_returns_unavailable_on_missing_header() {
+        // A daemon that crashed mid-call or a cosmetic change to the
+        // status print must surface as Unavailable, not as "zero sessions".
+        let docker = FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                String::new(),
+            ])),
+            ..Default::default()
+        };
+
+        let sessions =
+            inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Running).await;
+
+        assert!(
+            matches!(sessions, AgentSessionInventory::Unavailable(_)),
+            "expected Unavailable on missing header; got {sessions:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn inspect_agent_sessions_returns_unavailable_on_count_mismatch() {
+        let docker = FakeDockerClient {
+            exec_capture_queue: std::cell::RefCell::new(std::collections::VecDeque::from([
+                "Sessions: 5\n  [1] Claude (claude) state=working active=true".to_string(),
+            ])),
+            ..Default::default()
+        };
+
+        let sessions =
+            inspect_agent_sessions(&docker, "jk-agent-smith", &ContainerState::Running).await;
+
+        assert!(
+            matches!(sessions, AgentSessionInventory::Unavailable(_)),
+            "expected Unavailable on count mismatch; got {sessions:?}"
+        );
     }
 
     #[tokio::test]

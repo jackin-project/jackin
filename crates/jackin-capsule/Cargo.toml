@@ -36,11 +36,13 @@ nix = { version = "0.31", features = ["term", "signal", "process"] }
 # in TODO.md under `vt100-rust-fork`.
 vt100 = { git = "https://github.com/donbeave/vt100-rust", rev = "527f0715fad788cbbf9605b8d5923b519755c345" }
 url = "2"
-percent-encoding = "2"
 base64 = "0.22"
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 jackin-tui = { path = "../jackin-tui" }
+
+[build-dependencies]
+jackin-build-meta = { path = "../jackin-build-meta" }
 
 [dev-dependencies]
 tempfile = "3"

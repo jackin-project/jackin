@@ -1,0 +1,12 @@
+[package]
+name = "jackin-build-meta"
+version = "0.6.0-dev"
+edition = "2024"
+rust-version = "1.94"
+authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
+description = "Build-script helpers shared by jackin crates."
+license = "Apache-2.0"
+publish = false
+
+[lib]
+path = "src/lib.rs"

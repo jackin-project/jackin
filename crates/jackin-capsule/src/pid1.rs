@@ -22,8 +22,20 @@ pub fn register_managed_child(pid: u32) {
     let Ok(pid) = i32::try_from(pid) else {
         return;
     };
-    if let Ok(mut children) = managed_children().lock() {
-        children.insert(pid);
+    match managed_children().lock() {
+        Ok(mut children) => {
+            children.insert(pid);
+        }
+        Err(_) => {
+            // Poisoned mutex: every subsequent register/unregister silently
+            // no-ops, and `is_managed_child` returns false for live pids —
+            // the PID-1 reaper then races session owners for their children
+            // (the exact bug `reap_zombies_does_not_steal_registered_session_child`
+            // pins). Surface so the operator can restart the daemon.
+            crate::clog!(
+                "pid1: managed_children mutex poisoned; cannot register pid {pid}. Reaper may steal session children."
+            );
+        }
     }
 }
 
@@ -31,8 +43,13 @@ pub fn unregister_managed_child(pid: u32) {
     let Ok(pid) = i32::try_from(pid) else {
         return;
     };
-    if let Ok(mut children) = managed_children().lock() {
-        children.remove(&pid);
+    match managed_children().lock() {
+        Ok(mut children) => {
+            children.remove(&pid);
+        }
+        Err(_) => {
+            crate::clog!("pid1: managed_children mutex poisoned; cannot unregister pid {pid}");
+        }
     }
 }
 

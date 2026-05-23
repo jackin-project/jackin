@@ -1,5 +1,10 @@
 [workspace]
-members = ["crates/jackin-capsule", "crates/jackin-protocol", "crates/jackin-tui"]
+members = [
+    "crates/jackin-build-meta",
+    "crates/jackin-capsule",
+    "crates/jackin-protocol",
+    "crates/jackin-tui",
+]
 resolver = "2"
 
 [package]
@@ -60,6 +65,9 @@ rand = "0.10"
 tokio = { version = "1", features = ["rt", "process", "io-util", "sync", "macros", "time"] }
 bollard = "0.21"
 futures-util = "0.3"
+
+[build-dependencies]
+jackin-build-meta = { path = "crates/jackin-build-meta" }
 
 [dev-dependencies]
 assert_cmd = "=2.2.2"
