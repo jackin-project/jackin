@@ -197,6 +197,11 @@ pub struct OscCapture {
     /// here from `unhandled_csi` and consult it before synthesising
     /// `\x1b[I` / `\x1b[O` on focus swap.
     pub(crate) focus_events: bool,
+    /// Xterm modifyOtherKeys level requested by the focused program
+    /// (`CSI > 4 ; <n> m`). Full-screen agents may leave this enabled
+    /// when they return to a shell, making plain text arrive as CSI-u
+    /// fragments. Track it so alternate-screen exit can reset it.
+    pub(crate) modify_other_keys: Option<u16>,
     /// Most recently announced working directory, captured from
     /// `OSC 7` (`\x1b]7;file://<host>/<path>\x07`). Modern shells
     /// (zsh + starship, bash + PROMPT_COMMAND, fish) emit this on
@@ -215,6 +220,7 @@ impl OscCapture {
             icon_name: None,
             kitty_kb_stack: Vec::new(),
             focus_events: false,
+            modify_other_keys: None,
             cwd: None,
         }
     }
@@ -393,6 +399,17 @@ impl Callbacks for OscCapture {
         {
             self.focus_events = c == 'h';
             return;
+        }
+        if c == 'm'
+            && i1 == Some(b'>')
+            && let Some(first) = params.first().and_then(|p| p.first())
+            && *first == 4
+        {
+            self.modify_other_keys = params
+                .get(1)
+                .and_then(|p| p.first())
+                .copied()
+                .filter(|level| *level != 0);
         }
         // Re-emit verbatim. vt100 routes here only for CSI sequences
         // it does not itself handle — `modifyOtherKeys`
@@ -820,10 +837,26 @@ impl Session {
         if !bytes.is_empty() {
             self.received_output = true;
         }
+        let was_alternate = self.parser.screen().alternate_screen();
         self.parser.process(bytes);
+        let is_alternate = self.parser.screen().alternate_screen();
+        if was_alternate && !is_alternate {
+            self.clear_transient_keyboard_modes();
+        }
         self.scrollback_offset = self.parser.screen().scrollback();
         self.last_output_at = std::time::Instant::now();
         self.state = state_after_pty_output(self.state);
+    }
+
+    fn clear_transient_keyboard_modes(&mut self) {
+        let callbacks = self.parser.callbacks_mut();
+        if !callbacks.kitty_kb_stack.is_empty() {
+            callbacks.kitty_kb_stack.clear();
+            callbacks.pending.push(b"\x1b[<u".to_vec());
+        }
+        if callbacks.modify_other_keys.take().is_some() {
+            callbacks.pending.push(b"\x1b[>4;0m".to_vec());
+        }
     }
 
     /// Drain the OSC / unhandled-CSI byte sequences the parser captured

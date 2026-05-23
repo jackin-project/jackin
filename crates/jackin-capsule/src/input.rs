@@ -506,10 +506,10 @@ fn classify_csi(seq: &[u8]) -> Option<Option<InputEvent>> {
         .and_then(|body| body.strip_suffix(b"u"))
     {
         let (codepoint, modifier, event) = parse_csi_u_key(rest)?;
+        if event == Some(3) {
+            return Some(None);
+        }
         if codepoint == 27 && modifier.unwrap_or(1) == 1 {
-            if event == Some(3) {
-                return Some(None);
-            }
             return Some(Some(InputEvent::Data(b"\x1b".to_vec())));
         }
     }
@@ -793,6 +793,15 @@ mod tests {
         assert!(
             events.is_empty(),
             "kitty Esc release must be dropped, got {events:?}"
+        );
+    }
+
+    #[test]
+    fn kitty_printable_release_is_suppressed() {
+        let events = parse_all_default(b"\x1b[116;1:3u");
+        assert!(
+            events.is_empty(),
+            "kitty printable release must be dropped, got {events:?}"
         );
     }
 

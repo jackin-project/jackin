@@ -4072,6 +4072,25 @@ mod tests {
     }
 
     #[test]
+    fn alt_screen_exit_resets_keyboard_modes_for_shell_prompt() {
+        let (mut session, _input_rx) = test_session(8, 20);
+        session.feed_pty(b"\x1b[?1049h\x1b[>1u\x1b[>4;2m");
+        let _ = session.drain_passthrough();
+
+        session.feed_pty(b"\x1b[?1049l");
+        let drained = session.drain_passthrough();
+
+        assert!(
+            drained.iter().any(|bytes| bytes == b"\x1b[<u"),
+            "kitty keyboard reset missing from {drained:?}"
+        );
+        assert!(
+            drained.iter().any(|bytes| bytes == b"\x1b[>4;0m"),
+            "modifyOtherKeys reset missing from {drained:?}"
+        );
+    }
+
+    #[test]
     fn osc22_pointer_shape_uses_css_names() {
         assert_eq!(
             osc22_pointer_shape(PointerShape::Pointer),
