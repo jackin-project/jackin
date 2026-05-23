@@ -737,13 +737,11 @@ impl Session {
     /// `Screen::scrollback`. The saved offset is restored so this is
     /// safe to call from a render path.
     ///
-    /// Returns `0` while the alternate screen is active, because alt
-    /// grid has no scrollback by design — the agent owns the whole
-    /// surface and there is nothing for the operator to scroll into.
+    /// Includes alternate-screen overflow when the foreground program
+    /// lets the terminal retain it. Full-screen agents that keep their
+    /// own transcript state may still report `0`; in that case jackin'
+    /// cannot infer off-screen content from VT state alone.
     pub fn scrollback_filled(&mut self) -> usize {
-        if self.parser.screen().alternate_screen() {
-            return 0;
-        }
         let saved = self.parser.screen().scrollback();
         self.parser.screen_mut().set_scrollback(usize::MAX);
         let filled = self.parser.screen().scrollback();

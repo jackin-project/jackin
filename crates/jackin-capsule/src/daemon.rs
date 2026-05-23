@@ -28,6 +28,7 @@ use tokio::time::{Duration, interval};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use portable_pty::CommandBuilder;
 
 use crate::dialog::{
     ConfirmKind, Dialog, DialogAction, PaletteCloseLabel, PaletteCommand, PickerIntent,
@@ -46,6 +47,11 @@ use crate::session::{
 use crate::socket;
 use crate::statusbar::{STATUS_BAR_ROWS, StatusBar, draw_pane_box};
 use crate::terminal_geometry::{DEFAULT_COLS, DEFAULT_ROWS, normalize_size};
+
+struct SessionLaunch {
+    label: String,
+    cmd: CommandBuilder,
+}
 
 pub struct Multiplexer {
     sessions: HashMap<u64, Session>,
@@ -793,6 +799,24 @@ impl Multiplexer {
         self.launch_config.model_for_agent(agent)
     }
 
+    fn session_launch(
+        &self,
+        agent: Option<&str>,
+        env_passthrough: &[(String, String)],
+    ) -> SessionLaunch {
+        let cwd = self.workdir.as_path();
+        match agent {
+            Some(slug) => SessionLaunch {
+                label: capitalize(slug),
+                cmd: build_agent_command(slug, self.model_for_agent(slug), env_passthrough, cwd),
+            },
+            None => SessionLaunch {
+                label: "Shell".to_string(),
+                cmd: build_shell_command(env_passthrough, cwd),
+            },
+        }
+    }
+
     /// Single dispatch point for a `DialogAction`. Both the
     /// mouse-click and key-event paths call `Dialog::handle_*`
     /// and route the result here, so adding a new variant means
@@ -945,26 +969,16 @@ impl Multiplexer {
         self.cancel_drag();
         let prev_focused = self.active_focused_id();
         let env_passthrough = self.env_for_spawn(env_overrides);
-        let cwd = self.workdir.as_path();
-        let (label, cmd) = match &agent {
-            Some(slug) => (
-                capitalize(slug),
-                build_agent_command(slug, self.model_for_agent(slug), &env_passthrough, cwd),
-            ),
-            None => (
-                "Shell".to_string(),
-                build_shell_command(&env_passthrough, cwd),
-            ),
-        };
+        let launch = self.session_launch(agent.as_deref(), &env_passthrough);
         let (session, id) = Session::spawn(
-            &label,
+            &launch.label,
             agent.clone(),
-            cmd,
+            launch.cmd,
             self.content_rows.saturating_sub(2),
             self.term_cols.saturating_sub(2),
             self.event_tx.clone(),
         )?;
-        let tab_label = label.clone();
+        let tab_label = launch.label.clone();
         self.sessions.insert(id, session);
         if self.tabs.is_empty() {
             self.tabs.push(Tab::new_single(tab_label, id));
@@ -981,9 +995,10 @@ impl Multiplexer {
         self.resize_panes();
         self.synthesise_focus_swap(prev_focused, Some(id));
         crate::clog!(
-            "action: spawn_session id={id} agent={:?} label={label} tab_idx={}",
+            "action: spawn_session id={id} agent={:?} label={label} tab_idx={tab_idx}",
             agent,
-            self.active_tab
+            label = launch.label,
+            tab_idx = self.active_tab
         );
         Ok(id)
     }
@@ -1043,22 +1058,12 @@ impl Multiplexer {
             ),
         };
         let env_passthrough = self.env_for_spawn(env_overrides);
-        let cwd = self.workdir.as_path();
-        let (label, cmd) = match &agent_slug {
-            Some(slug) => (
-                capitalize(slug),
-                build_agent_command(slug, self.model_for_agent(slug), &env_passthrough, cwd),
-            ),
-            None => (
-                "Shell".to_string(),
-                build_shell_command(&env_passthrough, cwd),
-            ),
-        };
+        let launch = self.session_launch(agent_slug.as_deref(), &env_passthrough);
         let agent_for_log = agent_slug.clone();
         let (session, new_id) = Session::spawn(
-            &label,
+            &launch.label,
             agent_slug,
-            cmd,
+            launch.cmd,
             spawn_rows,
             spawn_cols,
             self.event_tx.clone(),
@@ -1089,6 +1094,7 @@ impl Multiplexer {
         self.synthesise_focus_swap(Some(from_id), Some(new_id));
         crate::clog!(
             "action: split id={new_id} from={from_id} dir={direction:?} agent={agent_for_log:?} label={label}",
+            label = launch.label,
         );
         Ok(())
     }
@@ -2117,12 +2123,10 @@ impl Multiplexer {
         let mut pane_body_bytes = 0usize;
 
         for pane in &panes {
-            let mut filled_for_scrollbar = 0usize;
-            let mut offset_for_scrollbar = 0usize;
+            let mut scrollbar = PaneScrollbar::default();
             let mut title = None;
             if let Some(session) = self.sessions.get_mut(&pane.id) {
-                offset_for_scrollbar = session.scrollback_offset;
-                filled_for_scrollbar = session.scrollback_filled();
+                scrollbar = pane_scrollbar(session, pane.inner.rows, pane.inner.cols);
                 title = Some(display_title(session));
                 let before = buf.len();
                 let stats = self
@@ -2150,9 +2154,9 @@ impl Multiplexer {
                 // convention and gives the operator a reliable place
                 // to read the live `OSC 2` title.
                 let highlight_focus = if zoomed {
-                    filled_for_scrollbar > 0
+                    scrollbar.visible()
                 } else {
-                    multi_pane || filled_for_scrollbar > 0
+                    multi_pane || scrollbar.visible()
                 };
                 draw_pane_box(
                     &mut buf,
@@ -2169,8 +2173,8 @@ impl Multiplexer {
                     pane.outer.col,
                     pane.outer.rows,
                     pane.outer.cols,
-                    offset_for_scrollbar,
-                    filled_for_scrollbar,
+                    scrollbar.offset,
+                    scrollbar.filled,
                     pane.focused && highlight_focus,
                 );
             }
@@ -2275,12 +2279,10 @@ impl Multiplexer {
         let multi_pane = panes.len() > 1;
         let zoomed = self.active_zoomed_id().is_some();
         for pane in panes.iter().filter(|pane| dirty_panes.contains(&pane.id)) {
-            let mut filled_for_scrollbar = 0usize;
-            let mut offset_for_scrollbar = 0usize;
+            let mut scrollbar = PaneScrollbar::default();
             let mut title = None;
             if let Some(session) = self.sessions.get_mut(&pane.id) {
-                offset_for_scrollbar = session.scrollback_offset;
-                filled_for_scrollbar = session.scrollback_filled();
+                scrollbar = pane_scrollbar(session, pane.inner.rows, pane.inner.cols);
                 title = Some(display_title(session));
                 let before = buf.len();
                 let stats = self
@@ -2307,9 +2309,9 @@ impl Multiplexer {
             }
             if let Some(title) = title {
                 let highlight_focus = if zoomed {
-                    filled_for_scrollbar > 0
+                    scrollbar.visible()
                 } else {
-                    multi_pane || filled_for_scrollbar > 0
+                    multi_pane || scrollbar.visible()
                 };
                 draw_pane_box(
                     &mut buf,
@@ -2326,8 +2328,8 @@ impl Multiplexer {
                     pane.outer.col,
                     pane.outer.rows,
                     pane.outer.cols,
-                    offset_for_scrollbar,
-                    filled_for_scrollbar,
+                    scrollbar.offset,
+                    scrollbar.filled,
                     pane.focused && highlight_focus,
                 );
             }
@@ -3502,6 +3504,55 @@ fn prefix_full_redraw_reason(cmd: &PrefixCommand) -> FullRedrawReason {
     }
 }
 
+#[derive(Default)]
+struct PaneScrollbar {
+    offset: usize,
+    filled: usize,
+}
+
+impl PaneScrollbar {
+    const fn visible(&self) -> bool {
+        self.filled > 0
+    }
+}
+
+fn pane_scrollbar(session: &mut Session, viewport_rows: u16, viewport_cols: u16) -> PaneScrollbar {
+    let scrollbar = PaneScrollbar {
+        offset: session.scrollback_offset,
+        filled: session.scrollback_filled(),
+    };
+    if scrollbar.visible()
+        || !session.screen().alternate_screen()
+        || !alternate_screen_has_scroll_affordance(session.screen(), viewport_rows, viewport_cols)
+    {
+        return scrollbar;
+    }
+
+    PaneScrollbar {
+        offset: 0,
+        filled: usize::from(viewport_rows).max(1),
+    }
+}
+
+fn alternate_screen_has_scroll_affordance(
+    screen: &vt100::Screen,
+    viewport_rows: u16,
+    viewport_cols: u16,
+) -> bool {
+    let (screen_rows, screen_cols) = screen.size();
+    let rows = viewport_rows.min(screen_rows);
+    let cols = viewport_cols.min(screen_cols);
+    if rows == 0 || cols == 0 {
+        return false;
+    }
+
+    let occupied_rows = (0..rows)
+        .filter(|&row| (0..cols).any(|col| screen.cell(row, col).is_some_and(|c| c.has_contents())))
+        .count();
+
+    occupied_rows >= usize::from(rows.saturating_sub(1).max(1))
+}
+
 /// SGR mouse wheel events set bit 6 of the button byte. Every value in
 /// `64..=95` is a wheel event with some combination of modifier flags
 /// (shift = +4, alt = +8, ctrl = +16). Primary-screen panes that did
@@ -3995,6 +4046,29 @@ mod tests {
             b"\x1b[<64;1;1M"
         );
         assert_eq!(mux.sessions.get(&1).unwrap().scrollback_offset, 0);
+    }
+
+    #[test]
+    fn alt_screen_overflow_draws_pane_scrollbar_chrome() {
+        let mut mux = single_pane_tab_mux();
+        let (mut session, _input_rx) = test_session(8, 20);
+        session.feed_pty(b"\x1b[?1049h");
+        for i in 0..20 {
+            session.feed_pty(format!("line {i}\r\n").as_bytes());
+        }
+        mux.sessions.insert(1, session);
+
+        let frame = mux.compose_full_frame(FullRedrawReason::FirstAttach);
+        let rendered = String::from_utf8_lossy(&frame);
+
+        assert!(
+            rendered.contains("\x1b[0;38;2;0;255;65m"),
+            "focused scrollable alt-screen pane should use green chrome"
+        );
+        assert!(
+            rendered.contains('█'),
+            "focused scrollable alt-screen pane should draw a scrollbar thumb"
+        );
     }
 
     #[test]
