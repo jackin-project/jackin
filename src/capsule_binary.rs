@@ -11,10 +11,12 @@
 ///   Use the already-cached binary.
 ///
 /// **Dev or preview version** (`-dev` or `-preview.` suffix, cache miss):
-///   Download from the rolling `preview` GitHub Release tag.
+///   Download the `.tar.gz` archive from the rolling `preview`
+///   GitHub Release tag, verify it, and extract the binary.
 ///
 /// **Stable release** (no `-dev`, no `-preview`, cache miss):
-///   Download from the versioned `v<version>` GitHub Release tag.
+///   Download the `.tar.gz` archive from the versioned `v<version>`
+///   GitHub Release tag, verify it, and extract the binary.
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -114,12 +116,12 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
     let url = download_url(version, arch);
     let sha_url = format!("{url}.sha256");
     eprintln!("[jackin] downloading jackin-capsule {version} for linux/{arch}...");
-
+    let tmp_archive = dest.with_extension("tar.gz.tmp");
     let tmp = dest.with_extension("tmp");
-    let tmp_path_str = tmp.to_str().ok_or_else(|| {
+    let tmp_archive_path_str = tmp_archive.to_str().ok_or_else(|| {
         anyhow::anyhow!(
             "cache temp path {} contains non-UTF-8 bytes; cannot pass to curl",
-            tmp.display()
+            tmp_archive.display()
         )
     })?;
     let status = tokio::process::Command::new("curl")
@@ -129,15 +131,15 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
             "--show-error",
             "--location",
             "--output",
-            tmp_path_str,
+            tmp_archive_path_str,
             &url,
         ])
         .status()
         .await
-        .context("failed to run curl to download jackin-capsule")?;
+        .context("failed to run curl to download jackin-capsule archive")?;
 
     if !status.success() {
-        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&tmp_archive);
         anyhow::bail!(
             "jackin-capsule {version} not found in GitHub Releases.\n\
              \n\
@@ -145,34 +147,44 @@ async fn download_and_cache(version: &str, arch: &str, dest: &Path) -> Result<()
                cargo run --bin build-jackin-capsule\n\
              Then retry `jackin load`.\n\
              \n\
-             Using an installed (Homebrew) jackin? The CI preview build may not\n\
+             Using an installed jackin? The CI preview build may not\n\
              have completed yet. Wait a few minutes and retry, or check:\n\
                https://github.com/jackin-project/jackin/releases/tag/preview"
         );
     }
 
     // Fetch and verify the published SHA-256. The preview/release CI
-    // pipeline emits `<asset>.sha256` alongside every binary asset; if
+    // pipeline emits `<asset>.sha256` alongside every archive asset; if
     // that companion file is missing or doesn't match the downloaded
-    // bytes the binary may have come from a tampered or partial
+    // bytes the archive may have come from a tampered or partial
     // release and we must refuse to cache it.
     let expected_sha = fetch_remote_sha256(&sha_url)
         .await
         .with_context(|| format!("fetching jackin-capsule SHA-256 manifest at {sha_url}"))?;
-    // Hashing a multi-MB binary parks the tokio worker; run it on the
+    // Hashing a multi-MB archive parks the tokio worker; run it on the
     // blocking pool so concurrent launch / TUI tasks keep progressing.
-    let tmp_for_hash = tmp.clone();
-    let actual_sha = tokio::task::spawn_blocking(move || hash_file_sha256(&tmp_for_hash))
+    let archive_for_hash = tmp_archive.clone();
+    let archive_for_context = archive_for_hash.clone();
+    let actual_sha = tokio::task::spawn_blocking(move || hash_file_sha256(&archive_for_hash))
         .await
         .context("hash worker join")?
-        .with_context(|| format!("hashing downloaded jackin-capsule at {}", tmp.display()))?;
+        .with_context(|| {
+            format!(
+                "hashing downloaded jackin-capsule archive at {}",
+                archive_for_context.display()
+            )
+        })?;
     if !actual_sha.eq_ignore_ascii_case(&expected_sha) {
-        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&tmp_archive);
         anyhow::bail!(
             "jackin-capsule SHA-256 mismatch for {url}\n  expected {expected_sha}\n  actual   {actual_sha}\n\
              refusing to cache the binary; investigate network tampering and retry."
         );
     }
+
+    extract_capsule_from_archive(&tmp_archive, &tmp)
+        .with_context(|| format!("extracting jackin-capsule from {}", tmp_archive.display()))?;
+    let _ = std::fs::remove_file(&tmp_archive);
 
     chmod_executable(&tmp).with_context(|| {
         format!(
@@ -277,12 +289,39 @@ fn hash_file_sha256(path: &Path) -> Result<String> {
 
 fn download_url(version: &str, arch: &str) -> String {
     let target = linux_target(arch);
-    let asset = format!("{ASSET_PREFIX}-{target}");
     if version.contains("-dev") || version.contains("-preview.") {
+        let asset = format!("{ASSET_PREFIX}-{target}.tar.gz");
         format!("https://github.com/jackin-project/jackin/releases/download/preview/{asset}")
     } else {
+        let asset = format!("{ASSET_PREFIX}-{version}-{target}.tar.gz");
         format!("https://github.com/jackin-project/jackin/releases/download/v{version}/{asset}")
     }
+}
+
+fn extract_capsule_from_archive(archive_path: &Path, dest: &Path) -> Result<()> {
+    let file = std::fs::File::open(archive_path)
+        .with_context(|| format!("opening {}", archive_path.display()))?;
+    let decoder = flate2::read::GzDecoder::new(file);
+    let mut archive = tar::Archive::new(decoder);
+    for entry in archive
+        .entries()
+        .with_context(|| format!("reading entries from {}", archive_path.display()))?
+    {
+        let mut entry =
+            entry.with_context(|| format!("reading entry from {}", archive_path.display()))?;
+        let is_capsule = entry.path().context("reading archive entry path")?.as_ref()
+            == Path::new("jackin-capsule");
+        if is_capsule && entry.header().entry_type().is_file() {
+            entry
+                .unpack(dest)
+                .with_context(|| format!("unpacking jackin-capsule to {}", dest.display()))?;
+            return Ok(());
+        }
+    }
+    anyhow::bail!(
+        "{} does not contain a top-level jackin-capsule binary",
+        archive_path.display()
+    )
 }
 
 fn linux_target(arch: &str) -> &'static str {
@@ -418,26 +457,39 @@ mod tests {
     fn download_url_dev_uses_preview_tag() {
         let url = download_url("0.6.0-dev+bf7df07", "amd64");
         assert!(url.contains("/releases/download/preview/"), "{url}");
-        assert!(url.contains("x86_64-unknown-linux-gnu"), "{url}");
+        assert!(
+            url.ends_with("/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz"),
+            "{url}"
+        );
     }
 
     #[test]
     fn download_url_stable_uses_version_tag() {
         let url = download_url("0.6.0", "amd64");
         assert!(url.contains("/releases/download/v0.6.0/"), "{url}");
-        assert!(url.contains("x86_64-unknown-linux-gnu"), "{url}");
+        assert!(
+            url.ends_with("/jackin-capsule-0.6.0-x86_64-unknown-linux-gnu.tar.gz"),
+            "{url}"
+        );
     }
 
     #[test]
     fn download_url_arm64_uses_aarch64_target() {
         let url = download_url("0.6.0-dev+bf7df07", "arm64");
-        assert!(url.contains("aarch64-unknown-linux-gnu"), "{url}");
+        assert!(
+            url.ends_with("/jackin-capsule-aarch64-unknown-linux-gnu.tar.gz"),
+            "{url}"
+        );
     }
 
     #[test]
     fn download_url_preview_uses_preview_tag() {
         let url = download_url("0.6.0-preview.411+bf7df07", "amd64");
         assert!(url.contains("/releases/download/preview/"), "{url}");
+        assert!(
+            url.ends_with("/jackin-capsule-x86_64-unknown-linux-gnu.tar.gz"),
+            "{url}"
+        );
     }
 
     #[test]
@@ -478,5 +530,29 @@ mod tests {
             digest,
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    #[test]
+    fn extract_capsule_from_archive_writes_top_level_binary() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive_path = temp.path().join("jackin-capsule.tar.gz");
+        let dest = temp.path().join("jackin-capsule");
+        let bytes = b"#!/bin/sh\necho capsule\n";
+
+        let archive_file = std::fs::File::create(&archive_path).unwrap();
+        let encoder = flate2::write::GzEncoder::new(archive_file, flate2::Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        let mut header = tar::Header::new_gnu();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        archive
+            .append_data(&mut header, "jackin-capsule", &bytes[..])
+            .unwrap();
+        let encoder = archive.into_inner().unwrap();
+        encoder.finish().unwrap();
+
+        extract_capsule_from_archive(&archive_path, &dest).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), bytes);
     }
 }

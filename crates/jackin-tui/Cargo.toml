@@ -6,6 +6,7 @@ rust-version = "1.94"
 authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
 description = "Shared phosphor palette and tab-strip helpers used by jackin's console TUI and the in-container multiplexer."
 license = "Apache-2.0"
+readme = "README.md"
 publish = false
 
 [lib]

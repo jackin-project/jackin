@@ -256,14 +256,17 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
-          cp "target/${TARGET}/release/jackin-capsule" "jackin-capsule-${TARGET}"
-          sha256sum "jackin-capsule-${TARGET}" | awk '{print $1}' > "jackin-capsule-${TARGET}.sha256"
+          archive="jackin-capsule-${TARGET}.tar.gz"
+          tar -czf "$archive" \
+            -C "target/${TARGET}/release" \
+            jackin-capsule
+          sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jackin-capsule-${{ matrix.target }}
           path: |
-            jackin-capsule-${{ matrix.target }}
-            jackin-capsule-${{ matrix.target }}.sha256
+            jackin-capsule-${{ matrix.target }}.tar.gz
+            jackin-capsule-${{ matrix.target }}.tar.gz.sha256
 
   publish-preview:
     needs: [source-changed, build-preview, build-jackin-capsule]
@@ -371,11 +374,10 @@ jobs:
             --target "$SHA" \
             --title "Preview ${VERSION}" \
             --notes "Preview build from [${SHA:0:7}](https://github.com/${GITHUB_REPOSITORY}/commit/${SHA})." \
-            artifacts/jackin-*.tar.gz \
-            artifacts/jackin-*.tar.gz.sha256 \
-            artifacts/jackin-capsule-aarch64-unknown-linux-gnu \
-            artifacts/jackin-capsule-x86_64-unknown-linux-gnu \
-            artifacts/jackin-capsule-*.sha256
+            artifacts/jackin-[ax]*.tar.gz \
+            artifacts/jackin-[ax]*.tar.gz.sha256 \
+            artifacts/jackin-capsule-*.tar.gz \
+            artifacts/jackin-capsule-*.tar.gz.sha256
 
       - name: Read platform SHA256s
         id: shas

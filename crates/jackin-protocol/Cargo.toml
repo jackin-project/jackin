@@ -8,6 +8,7 @@ description = "Shared wire-format types for jackin's host CLI ↔ in-container m
 homepage = "https://jackin.tailrocks.com/"
 repository = "https://github.com/jackin-project/jackin"
 license = "Apache-2.0"
+readme = "README.md"
 publish = false
 
 [lib]

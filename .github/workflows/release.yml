@@ -192,15 +192,19 @@ jobs:
       - name: Package
         env:
           TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.check-version.outputs.version }}
         run: |
-          cp "target/${TARGET}/release/jackin-capsule" "jackin-capsule-${TARGET}"
-          sha256sum "jackin-capsule-${TARGET}" | awk '{print $1}' > "jackin-capsule-${TARGET}.sha256"
+          archive="jackin-capsule-${VERSION}-${TARGET}.tar.gz"
+          tar -czf "$archive" \
+            -C "target/${TARGET}/release" \
+            jackin-capsule
+          sha256sum "$archive" | awk '{print $1}' > "$archive.sha256"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: jackin-capsule-${{ matrix.target }}
           path: |
-            jackin-capsule-${{ matrix.target }}
-            jackin-capsule-${{ matrix.target }}.sha256
+            jackin-capsule-*.tar.gz
+            jackin-capsule-*.tar.gz.sha256
 
   release:
     needs: [check-version, build, build-jackin-capsule]
@@ -228,11 +232,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "v${VERSION}" \
-            artifacts/jackin-*.tar.gz \
-            artifacts/jackin-*.tar.gz.sha256 \
-            artifacts/jackin-capsule-aarch64-unknown-linux-gnu \
-            artifacts/jackin-capsule-x86_64-unknown-linux-gnu \
-            artifacts/jackin-capsule-*.sha256 \
+            artifacts/jackin-[0-9]*.tar.gz \
+            artifacts/jackin-[0-9]*.tar.gz.sha256 \
+            artifacts/jackin-capsule-*.tar.gz \
+            artifacts/jackin-capsule-*.tar.gz.sha256 \
             --title "v${VERSION}" \
             --generate-notes
 

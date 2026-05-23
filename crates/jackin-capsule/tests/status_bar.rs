@@ -33,8 +33,8 @@ fn tab_click_region_includes_state_glyph_width() {
     let states = vec![(7u64, AgentState::Done)];
     let _ = render(&mut bar, 80, &tabs, 0, &states);
     let (start, end) = bar.tab_regions[0];
-    // Cell layout: 1 pad + name(5) + 2 sep + 1 glyph + 1 pad = 10 cols.
-    assert_eq!(end - start, 10);
+    // Cell layout: 1 pad + name(5) + 1 sep + 1 glyph + 1 pad = 9 cols.
+    assert_eq!(end - start, 9);
 }
 
 #[test]
