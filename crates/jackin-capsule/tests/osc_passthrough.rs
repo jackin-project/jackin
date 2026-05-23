@@ -113,13 +113,17 @@ fn kitty_kb_stack_tracks_push_and_pop() {
 #[test]
 fn kitty_kb_stack_caps_pathological_push() {
     // A buggy or hostile agent loops `\x1b[>1u`. The stack must
-    // not grow without bound; cap is documented as 64.
+    // not grow without bound and must saturate at the documented
+    // cap; importing the constant ties this test to whatever the
+    // session module currently enforces so a cap change cannot
+    // silently shrink protection.
+    use jackin_capsule::session::KITTY_KB_STACK_CAP;
     let mut p =
         Parser::new_with_callbacks(24, 80, 0, OscCapture::with_policy(OscPolicy::default()));
-    for _ in 0..200 {
+    for _ in 0..(KITTY_KB_STACK_CAP * 4) {
         p.process(b"\x1b[>1u");
     }
-    assert!(p.callbacks().kitty_kb_stack().len() <= 64);
+    assert_eq!(p.callbacks().kitty_kb_stack().len(), KITTY_KB_STACK_CAP);
 }
 
 #[test]

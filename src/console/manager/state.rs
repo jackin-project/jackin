@@ -1936,28 +1936,27 @@ impl ManagerState<'_> {
                 // many active instances exist. A serial loop would
                 // stall the TUI for N × 2 s on a host with several
                 // wedged containers.
-                let snapshot_results: Vec<(String, anyhow::Result<Option<crate::runtime::snapshot::InstanceSnapshot>>)> =
-                    std::thread::scope(|s| {
-                        // Collect all `spawn` handles first so every
-                        // thread starts before any join blocks; folding
-                        // collect+join into one chain would serialise
-                        // the work.
-                        #[allow(clippy::needless_collect)]
-                        let handles: Vec<_> = snapshot_targets
-                            .into_iter()
-                            .map(|container| {
-                                s.spawn(move || {
-                                    let result =
-                                        crate::runtime::snapshot::fetch_snapshot(paths, &container);
-                                    (container, result)
-                                })
+                let snapshot_results: Vec<(
+                    String,
+                    anyhow::Result<Option<crate::runtime::snapshot::InstanceSnapshot>>,
+                )> = std::thread::scope(|s| {
+                    // Collect all `spawn` handles first so every
+                    // thread starts before any join blocks; folding
+                    // collect+join into one chain would serialise
+                    // the work.
+                    #[allow(clippy::needless_collect)]
+                    let handles: Vec<_> = snapshot_targets
+                        .into_iter()
+                        .map(|container| {
+                            s.spawn(move || {
+                                let result =
+                                    crate::runtime::snapshot::fetch_snapshot(paths, &container);
+                                (container, result)
                             })
-                            .collect();
-                        handles
-                            .into_iter()
-                            .filter_map(|h| h.join().ok())
-                            .collect()
-                    });
+                        })
+                        .collect();
+                    handles.into_iter().filter_map(|h| h.join().ok()).collect()
+                });
                 for (container, result) in snapshot_results {
                     match result {
                         Ok(Some(snapshot)) => {

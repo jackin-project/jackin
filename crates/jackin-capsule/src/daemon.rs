@@ -138,7 +138,6 @@ struct ContainerInfoLookupRequest {
     workdir: PathBuf,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FullRedrawReason {
     FirstAttach,
@@ -151,10 +150,7 @@ enum FullRedrawReason {
     DialogChange,
     SelectionRepaint,
     PaletteOverlay,
-    ConfirmOverlay,
     FocusChange,
-    PaneChromeChanged,
-    ThemeStyleChange,
     SessionExit,
     PaneClear,
     ExplicitRedraw,
@@ -175,10 +171,7 @@ impl FullRedrawReason {
             Self::DialogChange => "dialog-change",
             Self::SelectionRepaint => "selection-repaint",
             Self::PaletteOverlay => "palette-overlay",
-            Self::ConfirmOverlay => "confirm-overlay",
             Self::FocusChange => "focus-change",
-            Self::PaneChromeChanged => "pane-chrome-changed",
-            Self::ThemeStyleChange => "theme-style-change",
             Self::SessionExit => "session-exit",
             Self::PaneClear => "pane-clear",
             Self::ExplicitRedraw => "explicit-redraw",

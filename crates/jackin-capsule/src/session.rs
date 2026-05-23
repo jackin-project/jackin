@@ -51,7 +51,7 @@ pub const SESSION_ENV_PASSTHROUGH: &[&str] = &[
 /// agent that loops `\x1b[>1u` would otherwise grow `kitty_kb_stack`
 /// without bound. 64 is well past any real terminal program's nested
 /// keymap-mode depth.
-const KITTY_KB_STACK_CAP: usize = 64;
+pub const KITTY_KB_STACK_CAP: usize = 64;
 
 /// True when an OSC 8 `URI` payload is safe to forward to the
 /// operator's host terminal. The empty URI is a terminator (closing

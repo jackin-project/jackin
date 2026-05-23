@@ -30,8 +30,8 @@ pub fn derive_version(git_dir_relative: &str) -> String {
         return override_version;
     }
 
-    let cargo_version =
-        std::env::var("CARGO_PKG_VERSION").expect("CARGO_PKG_VERSION set by cargo for build script");
+    let cargo_version = std::env::var("CARGO_PKG_VERSION")
+        .expect("CARGO_PKG_VERSION set by cargo for build script");
     let short_sha = Command::new("git")
         .args(["rev-parse", "--short=7", "HEAD"])
         .output()
