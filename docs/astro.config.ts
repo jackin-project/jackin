@@ -176,6 +176,7 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Overview', slug: 'reference/roadmap/agent-orchestrator-research' },
+                    { label: 'Orca ADE research', slug: 'reference/roadmap/orca-research' },
                     {
                       label: 'Fleet phase 1 — Foundation gaps',
                       collapsed: true,
@@ -195,6 +196,7 @@ export default defineConfig({
                         { label: 'Console resource panel', slug: 'reference/roadmap/console-resource-panel' },
                         { label: 'Agent tag protocol', slug: 'reference/roadmap/agent-tag-protocol' },
                         { label: 'GitHub link tracking', slug: 'reference/roadmap/github-link-tracking' },
+                        { label: 'Public attribution and project growth', slug: 'reference/roadmap/public-attribution-and-growth' },
                         { label: 'Custom operator tools', slug: 'reference/roadmap/custom-operator-tools' },
                       ],
                     },
