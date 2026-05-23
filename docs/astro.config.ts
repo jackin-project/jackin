@@ -141,20 +141,20 @@ export default defineConfig({
           label: "Behind jackin' — Internals",
           items: [
             { label: 'Architecture', slug: 'reference/architecture' },
-            { label: 'Container Session Lifecycle', slug: 'reference/container-session-lifecycle' },
+            { label: 'Capsule Session Lifecycle', slug: 'reference/capsule-session-lifecycle' },
             { label: 'Runtime Instance Model', slug: 'reference/runtime-instance-model' },
             { label: 'Instance and Resource Naming', slug: 'reference/instance-resource-naming' },
             { label: 'Configuration File', slug: 'reference/configuration' },
             { label: 'Schema Versions', slug: 'reference/schema-versions' },
             { label: 'Codebase Map', slug: 'reference/codebase-map' },
             { label: 'Claude Token Orchestrator', slug: 'reference/claude-token-orchestrator' },
-            { label: 'Jackin Capsule', slug: 'reference/jackin-capsule' },
+            { label: "jackin' Capsule", slug: 'reference/jackin-capsule' },
             { label: 'Multiplexer Design Rules', slug: 'reference/multiplexer-design-rules' },
             {
               label: 'Goal prompts',
               collapsed: true,
               items: [
-                { label: 'Jackin Desktop Agent Hub', slug: 'reference/goals/jackin-desktop-agent-hub' },
+                { label: "jackin' Desktop Agent Hub", slug: 'reference/goals/jackin-desktop-agent-hub' },
               ],
             },
             {
@@ -291,8 +291,8 @@ export default defineConfig({
                   collapsed: true,
                   items: [
                     { label: 'Overview', slug: 'reference/roadmap/jackin-daemon' },
-                    { label: 'Jackin Capsule control plane', slug: 'reference/roadmap/jackin-capsule' },
-                    { label: 'Jackin Desktop Agent Hub', slug: 'reference/roadmap/jackin-desktop-agent-hub' },
+                    { label: "jackin' Capsule control plane", slug: 'reference/roadmap/jackin-capsule' },
+                    { label: "jackin' Desktop Agent Hub", slug: 'reference/roadmap/jackin-desktop-agent-hub' },
                     {
                       label: 'Phase 2 — First reactive adapters',
                       collapsed: false,
