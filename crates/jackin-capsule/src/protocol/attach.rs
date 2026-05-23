@@ -622,6 +622,90 @@ mod tests {
     }
 
     #[test]
+    fn read_client_frame_accepts_exact_max_payload() {
+        // Boundary partner for `read_client_frame_rejects_oversize`: a
+        // refactor that swaps the inequality from `>` to `>=` in
+        // `read_framed_payload` would silently shrink the documented
+        // maximum by one byte. This test fails the moment that happens.
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::UnixStream;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let (mut a, mut b) = UnixStream::pair().unwrap();
+            let exact_len = MAX_FRAME_PAYLOAD as u32;
+            let write_task = tokio::spawn(async move {
+                a.write_all(&exact_len.to_be_bytes()).await.unwrap();
+                a.write_all(&vec![0x42u8; MAX_FRAME_PAYLOAD]).await.unwrap();
+                a.shutdown().await.unwrap();
+            });
+            let result = read_client_frame(&mut b, TAG_INPUT).await;
+            write_task.await.unwrap();
+            let frame = result
+                .expect("must not reject exact-max payload")
+                .expect("frame present");
+            match frame {
+                ClientFrame::Input(bytes) => assert_eq!(bytes.len(), MAX_FRAME_PAYLOAD),
+                other => panic!("expected Input, got {other:?}"),
+            }
+        });
+    }
+
+    #[test]
+    fn hello_env_count_at_cap_round_trips() {
+        // Partner for `hello_env_count_over_cap_is_rejected_by_encoder`:
+        // a refactor that swaps `>` to `>=` in the encoder OR decoder
+        // would silently shrink the documented cap. Both sides must
+        // accept exactly `MAX_HELLO_ENV` entries.
+        let env: Vec<(String, String)> = (0..MAX_HELLO_ENV)
+            .map(|i| (format!("K{i}"), "v".into()))
+            .collect();
+        let bytes = encode_client(ClientFrame::Hello {
+            rows: 24,
+            cols: 80,
+            spawn: None,
+            env: env.clone(),
+            focus_session: None,
+        })
+        .expect("at-cap env must encode");
+        let payload = bytes[5..].to_vec();
+        let decoded = decode_client(TAG_HELLO, payload).expect("at-cap env must decode");
+        match decoded {
+            ClientFrame::Hello { env: out, .. } => assert_eq!(out, env),
+            other => panic!("expected Hello, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn hello_with_focus_session_round_trips() {
+        // The console preview-pane click path sets
+        // `focus_session: Some(<session_id>)`. A refactor that drops
+        // the trailing 8 bytes of session id from the encoder while
+        // the decoder still expects them would only fail at a real
+        // attach. Exercise the round-trip explicitly so the contract
+        // is pinned in the test suite.
+        let target = 0xDEAD_BEEF_CAFE_BABEu64;
+        let bytes = encode_client(ClientFrame::Hello {
+            rows: 24,
+            cols: 80,
+            spawn: None,
+            env: Vec::new(),
+            focus_session: Some(target),
+        })
+        .expect("focus_session encode");
+        let payload = bytes[5..].to_vec();
+        let decoded = decode_client(TAG_HELLO, payload).expect("focus_session decode");
+        match decoded {
+            ClientFrame::Hello { focus_session, .. } => {
+                assert_eq!(focus_session, Some(target));
+            }
+            other => panic!("expected Hello, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn read_client_frame_eof_after_tag_returns_none() {
         use tokio::io::AsyncWriteExt;
         use tokio::net::UnixStream;
