@@ -957,7 +957,6 @@ async fn materialize_clone(
         .await?
         .trim()
         .to_string();
-    let scratch_branch = branch_name(container_name, None);
 
     if let Some(parent) = clone_path.parent() {
         std::fs::create_dir_all(parent)
@@ -972,21 +971,6 @@ async fn materialize_clone(
                 "--local",
                 &mount.src,
                 &clone_path.to_string_lossy(),
-            ],
-            None,
-            &crate::docker::RunOptions::default(),
-        )
-        .await?;
-    runner
-        .run(
-            "git",
-            &[
-                "-C",
-                &clone_path.to_string_lossy(),
-                "checkout",
-                "-B",
-                &scratch_branch,
-                &host_head,
             ],
             None,
             &crate::docker::RunOptions::default(),
@@ -1090,7 +1074,7 @@ async fn materialize_clone(
             original_src: mount.src.clone(),
             isolation: MountIsolation::Clone,
             worktree_path: clone_path.to_string_lossy().into(),
-            scratch_branch,
+            scratch_branch: String::new(),
             base_commit: host_head,
             selector_key: selector_key.into(),
             container_name: container_name.into(),
@@ -1706,10 +1690,9 @@ mod tests {
                 .any(|c| c.contains("git clone --local"))
         );
         assert!(
-            runner
-                .run_recorded
-                .iter()
-                .any(|c| c.contains("checkout -B jackin/scratch/jackin-x deadbeef"))
+            !runner.run_recorded.iter().any(|c| c.contains("checkout")),
+            "clone mode must not create or switch to a scratch branch: {:?}",
+            runner.run_recorded
         );
         // Origin rewritten from bind-mount loopback to host's upstream.
         assert!(
@@ -1725,6 +1708,7 @@ mod tests {
         assert_eq!(recs.len(), 1);
         assert_eq!(recs[0].isolation, MountIsolation::Clone);
         assert_eq!(recs[0].base_commit, "deadbeef");
+        assert_eq!(recs[0].scratch_branch, "");
     }
 
     #[tokio::test]

@@ -157,7 +157,7 @@ Workspace mounts can be marked **isolated** so that each container gets its own 
 |---|---|
 | `shared` (default) | Host path bind-mounted as-is. |
 | `worktree` | jackin' creates a per-container `git worktree` from the host repo. The container sees its own checkout and scratch branch; refs are shared with the host repo. |
-| `clone` | jackin' creates a per-container `git clone --local`. The container has its own `.git/` and independent refs. |
+| `clone` | jackin' creates a per-container `git clone --local` from the host repo's current branch. The container has its own `.git/` and independent refs; when the host repo has an `origin`, pushes from the container publish to that remote. |
 
 Set isolation per mount with `--mount-isolation <dst>=<type>` on `jackin workspace create` and `jackin workspace edit`. See [Per-mount isolation](/guides/workspaces/#per-mount-isolation) in the workspaces guide for the full validation rules and recommended patterns.
 
