@@ -122,9 +122,6 @@ pub fn run_prepare_commit_msg_hook(args: &[String]) -> Result<()> {
         .first()
         .map(Path::new)
         .context("prepare-commit-msg hook requires a commit message path")?;
-    if let Some("commit" | "squash") = args.get(1).map(String::as_str) {
-        return Ok(());
-    }
 
     if env_is_one("JACKIN_GIT_COAUTHOR_TRAILER") {
         let agent = std::env::var("JACKIN_AGENT").unwrap_or_default();

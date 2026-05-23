@@ -2,6 +2,7 @@ use std::io::Write as _;
 use std::os::unix::fs::symlink;
 use std::process::{Command, Stdio};
 
+const CLAUDE_TRAILER: &str = "Co-authored-by: Claude <noreply@anthropic.com>";
 const CODEX_TRAILER: &str = "Co-authored-by: Codex <codex@openai.com>";
 const SIGNOFF_TRAILER: &str = "Signed-off-by: Test User <test@example.com>";
 
@@ -98,4 +99,17 @@ fn hook_injects_trailers_for_merge_messages() {
     );
 
     assert_parseable_test_trailers(&message);
+}
+
+#[test]
+fn hook_adds_current_agent_to_reused_messages() {
+    let message = run_hook(&format!("subject\n\n{CLAUDE_TRAILER}\n"), Some("commit"));
+    let trailers = parse_trailers(&message);
+
+    assert!(trailers.contains(CLAUDE_TRAILER));
+    assert!(trailers.contains(CODEX_TRAILER));
+    assert!(trailers.contains(SIGNOFF_TRAILER));
+    assert_eq!(message.matches(CLAUDE_TRAILER).count(), 1);
+    assert_eq!(message.matches(CODEX_TRAILER).count(), 1);
+    assert_eq!(message.matches(SIGNOFF_TRAILER).count(), 1);
 }
