@@ -525,4 +525,104 @@ mod tests {
         let payload = vec![0, 24, 0, 80];
         assert!(decode_client(TAG_HELLO, payload).is_err());
     }
+
+    #[test]
+    fn hello_shell_with_non_empty_agent_slug_rejected() {
+        // spawn_kind=1 (Shell), agent_len=5 ("claude"-ish bytes).
+        // Shell + slug is structurally invalid; decode must bail.
+        let mut payload = vec![0, 24, 0, 80, 1, 0, 5];
+        payload.extend(b"claud");
+        payload.extend(&[0, 0]);
+        payload.push(0);
+        assert!(decode_client(TAG_HELLO, payload).is_err());
+    }
+
+    #[test]
+    fn hello_with_trailing_bytes_rejected() {
+        // Extra byte after the focus_kind tail must fail rather than be
+        // tolerated — the wire format is closed, future fields go via a
+        // versioned schema bump.
+        let mut bytes = encode_client(ClientFrame::Hello {
+            rows: 24,
+            cols: 80,
+            spawn: None,
+            env: Vec::new(),
+            focus_session: None,
+        })
+        .unwrap();
+        bytes.push(0xFF);
+        let payload = bytes[5..].to_vec();
+        assert!(decode_client(TAG_HELLO, payload).is_err());
+    }
+
+    #[test]
+    fn welcome_decodes_session_count() {
+        let bytes = encode_server(ServerFrame::Welcome { session_count: 7 });
+        let payload = bytes[5..].to_vec();
+        let frame = decode_server(TAG_WELCOME, payload).unwrap();
+        assert_eq!(frame, ServerFrame::Welcome { session_count: 7 });
+    }
+
+    #[test]
+    fn welcome_rejects_truncated_payload() {
+        assert!(decode_server(TAG_WELCOME, vec![0, 0]).is_err());
+    }
+
+    #[test]
+    fn server_frames_roundtrip() {
+        for frame in [
+            ServerFrame::Output(b"raw bytes".to_vec()),
+            ServerFrame::SessionList(br#"[{"id":1}]"#.to_vec()),
+            ServerFrame::Shutdown,
+            ServerFrame::Bell,
+        ] {
+            let bytes = encode_server(frame.clone());
+            let tag = bytes[0];
+            let payload = bytes[5..].to_vec();
+            assert_eq!(decode_server(tag, payload).unwrap(), frame);
+        }
+    }
+
+    #[test]
+    fn unknown_server_tag_rejected() {
+        assert!(decode_server(0xFE, Vec::new()).is_err());
+    }
+
+    #[test]
+    fn read_client_frame_rejects_oversize() {
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::UnixStream;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let (mut a, mut b) = UnixStream::pair().unwrap();
+            let oversize_len = (MAX_FRAME_PAYLOAD + 1) as u32;
+            a.write_all(&oversize_len.to_be_bytes()).await.unwrap();
+            a.shutdown().await.unwrap();
+            let result = read_client_frame(&mut b, TAG_INPUT).await;
+            assert!(result.is_err(), "expected oversize rejection, got {result:?}");
+        });
+    }
+
+    #[test]
+    fn read_client_frame_eof_after_tag_returns_none() {
+        use tokio::io::AsyncWriteExt;
+        use tokio::net::UnixStream;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let (mut a, mut b) = UnixStream::pair().unwrap();
+            // Tag is treated as already-peeked; write nothing else, then
+            // close. The reader should hit EOF inside the length read
+            // and return Ok(None), not Err.
+            a.shutdown().await.unwrap();
+            drop(a);
+            let result = read_client_frame(&mut b, TAG_INPUT).await.unwrap();
+            assert!(result.is_none());
+        });
+    }
 }

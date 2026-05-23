@@ -3570,6 +3570,23 @@ mod tests {
     }
 
     #[test]
+    fn resize_zero_zero_normalizes_to_default_dimensions() {
+        // A client sending Resize { rows: 0, cols: 0 } is asking for
+        // "use the defaults"; the daemon must floor through
+        // `normalize_size` and never store 0 in `term_rows`/`term_cols`,
+        // because zero-row PTYs collapse vt100 rendering.
+        let mut mux = test_mux(48, 160);
+        mux.resize(0, 0);
+        assert_eq!(
+            (mux.term_rows, mux.term_cols),
+            (
+                crate::terminal_geometry::DEFAULT_ROWS,
+                crate::terminal_geometry::DEFAULT_COLS
+            )
+        );
+    }
+
+    #[test]
     fn command_palette_labels_single_pane_close_as_close_tab() {
         let mut mux = single_pane_tab_mux();
         mux.open_command_palette();

@@ -183,3 +183,58 @@ pub async fn handle_control_request(
         crate::clog!("control reply write failed (msg={msg:?}): {e}");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn read_control_msg_rejects_oversize_length_prefix() {
+        // Length prefix claims 5 MiB (> 4 MiB cap). Reader must bail
+        // rather than allocate the buffer.
+        let (mut a, mut b) = UnixStream::pair().unwrap();
+        // Length = 5 MiB, as a 4-byte BE u32 split across `first_byte`
+        // (0x00) + the 3-byte suffix `read_control_msg` reads itself.
+        let len_bytes = (5u32 * 1024 * 1024).to_be_bytes();
+        a.write_all(&len_bytes[1..]).await.unwrap();
+        a.shutdown().await.unwrap();
+        let result = read_control_msg(&mut b, len_bytes[0]).await;
+        assert!(result.is_err(), "expected oversize rejection: {result:?}");
+    }
+
+    #[tokio::test]
+    async fn read_control_msg_rejects_malformed_json() {
+        let (mut a, mut b) = UnixStream::pair().unwrap();
+        let body = b"{not valid json";
+        let len_buf = (body.len() as u32).to_be_bytes();
+        a.write_all(&len_buf[1..]).await.unwrap();
+        a.write_all(body).await.unwrap();
+        a.shutdown().await.unwrap();
+        let result = read_control_msg(&mut b, len_buf[0]).await;
+        assert!(result.is_err(), "expected JSON parse error: {result:?}");
+    }
+
+    #[tokio::test]
+    async fn read_control_msg_decodes_known_request() {
+        let (mut a, mut b) = UnixStream::pair().unwrap();
+        let body = br#"{"type":"status"}"#;
+        let len_buf = (body.len() as u32).to_be_bytes();
+        a.write_all(&len_buf[1..]).await.unwrap();
+        a.write_all(body).await.unwrap();
+        a.shutdown().await.unwrap();
+        let msg = read_control_msg(&mut b, len_buf[0]).await.unwrap();
+        assert!(matches!(msg, ClientMsg::Status));
+    }
+
+    #[tokio::test]
+    async fn read_control_msg_decodes_unknown_variant_for_forward_compat() {
+        let (mut a, mut b) = UnixStream::pair().unwrap();
+        let body = br#"{"type":"future_query"}"#;
+        let len_buf = (body.len() as u32).to_be_bytes();
+        a.write_all(&len_buf[1..]).await.unwrap();
+        a.write_all(body).await.unwrap();
+        a.shutdown().await.unwrap();
+        let msg = read_control_msg(&mut b, len_buf[0]).await.unwrap();
+        assert!(matches!(msg, ClientMsg::Unknown));
+    }
+}
