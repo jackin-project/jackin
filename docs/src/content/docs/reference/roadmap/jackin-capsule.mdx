@@ -66,10 +66,10 @@ As PID 1, `jackin-capsule` must:
 
 ### Unix socket interface
 
-The binary listens on a Unix domain socket at `/run/jackin/jackin.sock` inside the container. The host bind-mounts a per-instance socket directory:
+The binary listens on a Unix domain socket at `/jackin/run/jackin.sock` inside the container. The host bind-mounts a per-instance socket directory:
 
 ```
-docker run ... -v ~/.jackin/sockets/<container-name>:/run/jackin ...
+docker run ... -v ~/.jackin/sockets/<container-name>:/jackin/run ...
 ```
 
 The daemon creates `jackin.sock` inside that directory, so the host-side path is `~/.jackin/sockets/<container-name>/jackin.sock`.
@@ -405,7 +405,7 @@ A regression test runs an end-to-end smoke against Ghostty's reported features: 
 
 #### What does not change
 
-- The host-side `docker run` mount of `/run/jackin/<instance-id>.sock:/run/jackin/jackin.sock`. The socket location, ownership, and lifetime are unchanged.
+- The host-side `docker run` mount of `/jackin/run/<instance-id>.sock:/jackin/run/jackin.sock`. The socket location, ownership, and lifetime are unchanged.
 - The derived image build pipeline that downloads or builds `jackin-capsule` and installs it at `/usr/local/bin/jackin-capsule`. <RepoFile path="src/bin/build_jackin_capsule.rs" /> stays as-is.
 - The Phase 2 `status` API on the control channel. Existing host callers do not need to change.
 - The `JACKIN_SUPPORTED_AGENTS` env-var contract between the derived image and the daemon, plus the initial-agent argv contract from the host launcher into PID 1.

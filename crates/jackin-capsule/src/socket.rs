@@ -1,12 +1,18 @@
 /// Unix domain socket server.
 ///
-/// Listens on `/run/jackin/jackin.sock`. Two protocols share the socket:
+/// Listens on `/jackin/run/jackin.sock`. Two protocols share the socket:
 /// the **control channel** (length-prefixed JSON, used by the host CLI
 /// for one-shot queries) and the **attach channel** (binary tag+length
 /// frames, used by interactive clients). The two are disambiguated by
 /// the first byte of the connection — `0x00` means a length prefix
 /// (control), anything else is an attach-channel tag.
-pub const SOCKET_PATH: &str = "/run/jackin/jackin.sock";
+///
+/// Path lives under the `/jackin/` container-root convention (see
+/// AGENTS.md "Container path convention"): every jackin-owned mount,
+/// runtime asset, and runtime state directory sits beneath `/jackin/`
+/// so an operator can `ls /jackin/` to find all jackin-controlled
+/// state in one place.
+pub const SOCKET_PATH: &str = "/jackin/run/jackin.sock";
 
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;

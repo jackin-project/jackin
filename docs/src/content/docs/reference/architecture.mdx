@@ -65,7 +65,7 @@ Automation stays on the small role-focused binary in <RepoFile path="src/bin/rol
 6. **Create a per-agent Docker network**
 7. **Start a privileged `docker:dind` sidecar** with TLS enabled and a shared certificate volume
 8. **Start the agent container detached** (`docker run -d ... <image> <agent>`) with `jackin-capsule` as PID 1. The trailing `<agent>` argv selects only the initial tab; it is not a container-level environment variable.
-9. **Attach the operator terminal** via `docker exec -it <container> /usr/local/bin/jackin-capsule`. The client connects to the PID 1 daemon over `/run/jackin/jackin.sock` and renders the in-container multiplexer.
+9. **Attach the operator terminal** via `docker exec -it <container> /usr/local/bin/jackin-capsule`. The client connects to the PID 1 daemon over `/jackin/run/jackin.sock` and renders the in-container multiplexer.
 
 The detached-start + exec split decouples the container's lifetime from the foreground attach: closing the operator's terminal detaches from the client, while the PID 1 daemon and live PTYs keep running. `jackin hardline` reconnects to the daemon or asks it to spawn a new session. Cleanup distinguishes three post-session states:
 

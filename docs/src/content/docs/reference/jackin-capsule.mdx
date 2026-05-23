@@ -42,7 +42,7 @@ Building it in-house gives jackin' a control plane that is:
 - Reaps zombie children (mandatory for PID 1 — processes re-parented to PID 1 when their parent exits must be waited on or they accumulate as zombies in the process table)
 - Spawns PTY sessions for each agent (one session per pane leaf in the layout tree)
 - Renders the status bar and compositor output
-- Listens on `/run/jackin/jackin.sock` for client connections and host CLI queries
+- Listens on `/jackin/run/jackin.sock` for client connections and host CLI queries
 
 The host launcher passes the initial agent slug as the container command
 argument after the image name, for example `docker run ... jk_the-architect
@@ -57,10 +57,10 @@ does not imply that every pane is the same agent.
 
 ### Socket Interface
 
-The daemon listens at `/run/jackin/jackin.sock` inside the container. jackin' bind-mounts a host directory for the instance to `/run/jackin`; the socket file appears inside that directory after the daemon starts:
+The daemon listens at `/jackin/run/jackin.sock` inside the container. jackin' bind-mounts a host directory for the instance to `/jackin/run`; the socket file appears inside that directory after the daemon starts:
 
 ```
-docker run ... -v ~/.jackin/sockets/<container-name>:/run/jackin ...
+docker run ... -v ~/.jackin/sockets/<container-name>:/jackin/run ...
 ```
 
 That makes the host-side path `~/.jackin/sockets/<container-name>/jackin.sock`. One socket directory exists per running instance. The first byte sent by a client selects the channel:
@@ -92,7 +92,7 @@ The `jackin` CLI talks to the Capsule through a few deliberately narrow paths:
 | Path | Mechanism | Purpose |
 |---|---|---|
 | Initial launch | `docker run -d ... <image> <agent>` | Starts `jackin-capsule` as PID 1. The trailing `<agent>` argv selects only the first tab; it is not exported as global container state. |
-| Interactive attach | `docker exec -it <container> /usr/local/bin/jackin-capsule` | Starts a second `jackin-capsule` process in attach client mode. That client connects to the PID 1 daemon over `/run/jackin/jackin.sock` and bridges the operator terminal. |
+| Interactive attach | `docker exec -it <container> /usr/local/bin/jackin-capsule` | Starts a second `jackin-capsule` process in attach client mode. That client connects to the PID 1 daemon over `/jackin/run/jackin.sock` and bridges the operator terminal. |
 | New agent or shell | `docker exec -it <container> /usr/local/bin/jackin-capsule new [agent]` | The attach client sends a `Hello` frame with a spawn request. The daemon creates the new PTY and sets `JACKIN_AGENT` only for agent sessions. |
 | Session inventory | `jackin-capsule status`, direct host `UnixStream`, or `docker exec ... jackin-capsule snapshot` | Sends a typed control request and receives typed state. The CLI command prints a human-readable line format for older host paths; console snapshot code reads JSON directly, using `docker exec` when the host cannot connect to the bind-mounted Unix socket. |
 | Runtime setup | `/jackin/runtime/entrypoint.sh` calls `jackin-capsule runtime-setup` | Runs container-local setup immediately before the selected agent process is `exec`'d. |

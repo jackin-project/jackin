@@ -200,7 +200,7 @@ RUN mkdir -p /jackin/default-home/.claude /jackin/default-home/.codex /jackin/de
     && chown -R agent:agent /jackin/default-home
 COPY .jackin-runtime/entrypoint.sh /jackin/runtime/entrypoint.sh
 RUN chmod +x /jackin/runtime/entrypoint.sh
-{shell_title_hook_section}{jackin_capsule_section}RUN mkdir -p /run/jackin && chown agent:agent /run/jackin
+{shell_title_hook_section}{jackin_capsule_section}RUN mkdir -p /jackin/run && chown agent:agent /jackin/run
 ENV JACKIN_SUPPORTED_AGENTS={agents_csv}
 USER agent
 ENTRYPOINT [\"/usr/local/bin/jackin-capsule\"]

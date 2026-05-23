@@ -55,6 +55,31 @@ When a design proposal or roadmap item mentions doing anything to the host, the 
 
 The reason: the host machine is where the operator works. Surprise mutations break their flow, surface as inexplicable bugs in terminals outside jackin', and erode trust in the orchestrator. The whole point of jackin' is to absorb the messiness inside containers so the host stays clean.
 
+## Container path convention: everything jackin' owns lives under `/jackin/` (hard rule)
+
+**Every path jackin' creates, mounts, or owns inside a role container must live under `/jackin/`.** No FHS-borrowed top-level directories (`/run/jackin/`, `/var/lib/jackin/`, `/opt/jackin/`, `/etc/jackin/`), no scattered locations the operator has to discover one-by-one. An operator who runs `ls /jackin/` inside any role container must see the complete map of jackin-owned state in one place.
+
+Concrete layout (current and going forward):
+
+- `/jackin/runtime/` — entrypoint script, hooks, agent-launch scaffolding (read-only image content).
+- `/jackin/state/` — runtime markers (`hooks/setup-once.done`, etc.) written during first-boot.
+- `/jackin/default-home/` — image-baked default home contents copied into `/home/agent/` on first boot.
+- `/jackin/run/` — runtime sockets, pidfiles, and other ephemeral runtime state. The jackin-capsule daemon socket lives at `/jackin/run/jackin.sock`.
+- `/jackin/{claude,codex,amp,kimi,opencode}/` — agent credential mounts.
+- `/jackin/host/` — read-only views of host paths exposed into the container.
+
+This rule is non-negotiable across runtime code, Dockerfile templates, design proposals, roadmap items, and PR descriptions. Examples of what this rule blocks:
+
+- New container paths under `/run/`, `/var/`, `/opt/`, `/srv/`, `/etc/`, or any other FHS root — even when they "feel natural" for the asset type (a Unix socket under `/run/` is the most common drift). The container is a single-purpose jackin runtime; the FHS layout is not what makes the in-container experience legible.
+- Per-container scratch paths under `/tmp/jackin*` or `/var/run/jackin*`. If it's jackin-owned and ephemeral, it goes under `/jackin/run/`.
+- Hard-coded paths in role-specific scripts that bypass the convention because "this is just for one role." Roles author their own files under `/home/agent/` or in the workspace; jackin-owned content stays under `/jackin/`.
+
+**Host-side state is a separate convention.** The host root for jackin-owned paths is `~/.jackin/` (per the Never-mutate-host-silently rule above), with its own subdirectory layout (`~/.jackin/{data,cache,sockets,roles,run}/`). The container and host conventions are deliberately parallel but not identical — the host follows operator-home dotfile customs (`~/.<tool>/`), the container follows the single-root `/jackin/` convention. A bind-mount that maps `~/.jackin/sockets/<container>/` to `/jackin/run/` is the canonical shape.
+
+When you find yourself wanting to introduce a new container-side path, place it under `/jackin/` first, then justify in the PR description if a real constraint forces an exception (e.g. a third-party tool that hard-codes `/run/<thing>` and cannot be relocated). PRs that introduce a top-level jackin-owned path outside `/jackin/` without an exception note must be rejected at review and the path moved.
+
+The reason: a flat, single-root convention makes the in-container surface debuggable. An operator who wants to know "what does jackin do to my container?" can `ls /jackin/` and see the answer; without the rule the answer is "grep through every Dockerfile, every entrypoint, every roadmap doc." The rule also makes future cleanup straightforward — `rm -rf /jackin` removes every jackin-owned artifact, leaving the base image intact for whatever rebuild the operator wants next.
+
 ## Prefer libraries over hand-rolled parsers / serializers / format handlers
 
 **Default to a maintained crate. Only hand-roll when the crate is unmaintained, the API is awkward for the call site, or the usage is so trivially small that adding a dependency is overkill.**

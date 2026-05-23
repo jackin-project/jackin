@@ -1091,11 +1091,11 @@ async fn launch_role_runtime(
             socket_dir.display(),
         )
     })?;
-    let socket_mount = format!("{socket_dir_str}:/run/jackin");
+    let socket_mount = format!("{socket_dir_str}:/jackin/run");
     run_args.extend_from_slice(&["-v", &socket_mount]);
     crate::debug_log!(
         "launch",
-        "prepared host socket dir {socket_dir_str} (0o700) for bind-mount at /run/jackin",
+        "prepared host socket dir {socket_dir_str} (0o700) for bind-mount at /jackin/run",
     );
     // Forward JACKIN_WORKDIR so the daemon spawns every PTY in the
     // workspace workdir (portable_pty defaults to $HOME otherwise).
@@ -1125,7 +1125,7 @@ async fn launch_role_runtime(
 
     // Connect the operator's terminal to the running jackin-capsule multiplexer.
     // jackin-capsule detects PID != 1 and runs in client mode, connecting to
-    // the daemon via /run/jackin/jackin.sock inside the container.
+    // the daemon via /jackin/run/jackin.sock inside the container.
     let session_result = runner
         .run(
             "docker",
