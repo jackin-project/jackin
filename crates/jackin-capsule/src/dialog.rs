@@ -60,7 +60,7 @@ impl SplitDirection {
     pub fn label(self) -> &'static str {
         match self {
             Self::Left => "← Left",
-            Self::Right => "Right →",
+            Self::Right => "→ Right",
             Self::Above => "↑ Above",
             Self::Below => "↓ Below",
         }
@@ -243,8 +243,8 @@ pub enum PaletteCommand {
     NewTab,
     NextTab,
     PrevTab,
-    /// Open the SplitDirectionPicker. The operator picks Left /
-    /// Right / Above / Below in the sub-dialog, then the agent
+    /// Open the SplitDirectionPicker. The operator picks Right /
+    /// Left / Below / Above in the sub-dialog, then the agent
     /// picker for the new pane. Top-level entry is one item; the
     /// directional detail lives in the sub-dialog so the palette
     /// stays scannable.
@@ -274,16 +274,16 @@ const PALETTE_ITEMS: &[(PaletteCommand, &str)] = &[
     (PaletteCommand::Exit, "Exit"),
 ];
 
-/// Items in the SplitDirectionPicker sub-dialog. Order matches the
-/// way the operator's hands move on the cardinal keys: Left, Right,
-/// Above, Below. The dialog is filter-able like the other list
+/// Items in the SplitDirectionPicker sub-dialog. Prefer the common
+/// forward/default placement first, then its opposite, then the
+/// vertical pair. The dialog is filter-able like the other list
 /// dialogs — typing `a` narrows to "Above," typing `l` narrows to
 /// "Left," etc.
 const SPLIT_DIRECTION_ITEMS: &[SplitDirection] = &[
-    SplitDirection::Left,
     SplitDirection::Right,
-    SplitDirection::Above,
+    SplitDirection::Left,
     SplitDirection::Below,
+    SplitDirection::Above,
 ];
 
 impl Dialog {
@@ -2170,11 +2170,22 @@ mod tests {
             selected: 0,
             filter: String::new(),
         };
-        // selected = 0 → first item = Left
+        // selected = 0 → first item = Right
         match d.handle_key(b"\r") {
-            DialogAction::SplitDirection(dir) => assert_eq!(dir, SplitDirection::Left),
-            other => panic!("expected SplitDirection(Left), got {other:?}"),
+            DialogAction::SplitDirection(dir) => assert_eq!(dir, SplitDirection::Right),
+            other => panic!("expected SplitDirection(Right), got {other:?}"),
         }
+    }
+
+    #[test]
+    fn split_direction_picker_orders_default_directions_and_arrow_prefixes() {
+        assert_eq!(
+            SPLIT_DIRECTION_ITEMS
+                .iter()
+                .map(|direction| direction.label())
+                .collect::<Vec<_>>(),
+            vec!["→ Right", "← Left", "↓ Below", "↑ Above"]
+        );
     }
 
     #[test]
